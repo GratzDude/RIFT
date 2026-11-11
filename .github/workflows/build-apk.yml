@@ -30,21 +30,12 @@ jobs:
 
       - name: Generate Missing Keystore & Web Client ID
         run: |
-          # 1. Generate the missing debug.keystore expected by build.gradle.kts
           if [ ! -f "debug.keystore" ]; then
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
           cp debug.keystore app/debug.keystore || true
-
-          # 2. Inject default_web_client_id so AuthScreen.kt compiles cleanly
           mkdir -p app/src/main/res/values
-          cat << 'EOF' > app/src/main/res/values/auth_ fallback.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="default_web_client_id" translatable="false">000000000000-placeholder.apps.googleusercontent.com</string>
-          </resources>
-          EOF
-          mv "app/src/main/res/values/auth_ fallback.xml" app/src/main/res/values/auth_fallback.xml
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="default_web_client_id" translatable="false">000000000000-placeholder.apps.googleusercontent.com</string>\n</resources>\n' > app/src/main/res/values/auth_fallback.xml
 
       - name: Build Debug APK
         env:
