@@ -204,7 +204,21 @@ fun RiftArenaScreen(
   var syndicateTag by remember { mutableStateOf(localPrefs.getSyndicateTag()) }
   var syndicateName by remember { mutableStateOf(localPrefs.getSyndicateName()) }
   var selectedShipId by remember { mutableIntStateOf(localPrefs.getPreferredShipId()) }
-  var selectedMode by remember { mutableStateOf(localPrefs.getPreferredMode()) }
+  var selectedMode by remember { mutableStateOf("FFA") }
+  var activeCustomSlotId by remember(currentUserId) {
+    mutableStateOf(localPrefs.getActiveCustomSlotId(currentUserId))
+  }
+  var activeCustomSlot by remember(currentUserId, activeCustomSlotId) {
+    val loaded = localPrefs.getCustomShipSlot(activeCustomSlotId, currentUserId)
+    com.example.engine.RiftCodex.updateActiveCustomShipSlot(loaded)
+    mutableStateOf(loaded)
+  }
+  var slot9BUnlocked by remember(currentUserId) {
+    mutableStateOf(localPrefs.isCustomSlotUnlocked("9B", currentUserId))
+  }
+  var slot9CUnlocked by remember(currentUserId) {
+    mutableStateOf(localPrefs.isCustomSlotUnlocked("9C", currentUserId))
+  }
   var cameraZoom by remember { mutableFloatStateOf(localPrefs.getCameraZoom()) }
   var playfieldTextScale by remember { mutableFloatStateOf(localPrefs.getPlayfieldTextScale()) }
   var syndicateStatusBanner by remember { mutableStateOf<String?>(null) }
@@ -499,8 +513,13 @@ fun RiftArenaScreen(
           pilotLevel = engine.pilotLevel,
           xpProgressFraction = hangarLvlFrac,
           customizationPointsTotal = engine.getCustomizationPointsTotal(),
-          spentCustomizationPoints = engine.spentCustomizationPoints,
+          spentCustomizationPoints = activeCustomSlot.totalAllocatedPoints(),
           riftShards = engine.riftShards,
+          unlockFullNinthShipOverride =
+            com.example.engine.RiftCalibrationState.unlockFullNinthShipOverride,
+          activeCustomSlot = activeCustomSlot,
+          slot9BUnlocked = slot9BUnlocked,
+          slot9CUnlocked = slot9CUnlocked,
           onOpenRiftShardsStore = {
             previousModalBeforeStore = ActiveModal.HANGAR
             activeModal = ActiveModal.RIFT_SHARDS_STORE
@@ -509,27 +528,132 @@ fun RiftArenaScreen(
             syndicateStatusBanner = null
             activeModal = ActiveModal.SYNDICATES
           },
-          onDeployPilot = { newCallsign, newShipId, newMode, asGuest ->
+          onSaveCustomSlot = { updatedSlot ->
+            activeCustomSlot = updatedSlot
+            localPrefs.saveCustomShipSlot(updatedSlot, currentUserId)
+            com.example.engine.RiftCodex.updateActiveCustomShipSlot(updatedSlot)
+            engine.spentCustomizationPoints = updatedSlot.totalAllocatedPoints()
+            engine.syncLocalPlayerCustomShipSpec()
+          },
+          onSwitchCustomSlot = { targetSlotId ->
+            activeCustomSlotId = targetSlotId
+            localPrefs.setActiveCustomSlotId(targetSlotId, currentUserId)
+            val loaded = localPrefs.getCustomShipSlot(targetSlotId, currentUserId)
+            activeCustomSlot = loaded
+            com.example.engine.RiftCodex.updateActiveCustomShipSlot(loaded)
+            engine.spentCustomizationPoints = loaded.totalAllocatedPoints()
+            engine.syncLocalPlayerCustomShipSpec()
+            sfx.playPrize()
+          },
+          onUnlockCustomSlot = { targetSlotId ->
+            if (engine.riftShards >= 300L) {
+              engine.riftShards -= 300L
+              engine.unlockedExtraSlots++
+              localPrefs.setCustomSlotUnlocked(targetSlotId, true, currentUserId)
+              slot9BUnlocked = localPrefs.isCustomSlotUnlocked("9B", currentUserId)
+              slot9CUnlocked = localPrefs.isCustomSlotUnlocked("9C", currentUserId)
+              activeCustomSlotId = targetSlotId
+              localPrefs.setActiveCustomSlotId(targetSlotId, currentUserId)
+              val loaded = localPrefs.getCustomShipSlot(targetSlotId, currentUserId)
+              activeCustomSlot = loaded
+              com.example.engine.RiftCodex.updateActiveCustomShipSlot(loaded)
+              engine.spentCustomizationPoints = loaded.totalAllocatedPoints()
+              engine.syncLocalPlayerCustomShipSpec()
+              sfx.playPrize()
+              true
+            } else {
+              false
+            }
+          },
+          onRespecCustomSlot = {
+            if (engine.riftShards >= 50L && activeCustomSlot.totalAllocatedPoints() > 0) {
+              engine.riftShards -= 50L
+              val zeroed =
+                activeCustomSlot.copy(
+                  speedPts = 0,
+                  thrustPts = 0,
+                  turnPts = 0,
+                  maxFluxPts = 0,
+                  rechargePts = 0,
+                  primaryPts = 0,
+                  secondaryPts = 0,
+                )
+              activeCustomSlot = zeroed
+              localPrefs.saveCustomShipSlot(zeroed, currentUserId)
+              com.example.engine.RiftCodex.updateActiveCustomShipSlot(zeroed)
+              engine.spentCustomizationPoints = 0
+              engine.syncLocalPlayerCustomShipSpec()
+              sfx.playPrize()
+              true
+            } else {
+              false
+            }
+          },
+          onForgeAiHullDesign = { promptText, hullTitle ->
+            val isFirstFree = activeCustomSlot.aiGenerationsCount == 0
+            val canAfford = isFirstFree || engine.aiShipDesignTokens > 0 || engine.riftShards >= 150L
+            if (!canAfford) {
+              Pair(false, "⚠️ NEED 150❖ RIFT SHARDS FOR AI HULL RE-DESIGN (TAP [+ GET RIFT SHARDS]).")
+            } else {
+              if (!isFirstFree) {
+                if (engine.aiShipDesignTokens > 0) {
+                  engine.aiShipDesignTokens--
+                } else {
+                  engine.riftShards -= 150L
+                }
+              }
+              val nextGenCount = activeCustomSlot.aiGenerationsCount + 1
+              val baseRecipe =
+                com.example.engine.CustomHullVisualRecipe.synthesizeFromPrompt(
+                  rawPrompt = promptText,
+                  variationSalt = nextGenCount,
+                )
+              val finalTitle =
+                hullTitle.trim().uppercase(Locale.US).take(18).ifEmpty { baseRecipe.hullName }
+              val finalRecipe = baseRecipe.copy(hullName = finalTitle)
+              val updatedSlot =
+                activeCustomSlot.copy(
+                  customName = finalTitle,
+                  visualRecipe = finalRecipe,
+                  aiGenerationsCount = nextGenCount,
+                )
+              activeCustomSlot = updatedSlot
+              localPrefs.saveCustomShipSlot(updatedSlot, currentUserId)
+              com.example.engine.RiftCodex.updateActiveCustomShipSlot(updatedSlot)
+              engine.syncLocalPlayerCustomShipSpec()
+              sfx.playPrize()
+              val costNote = if (isFirstFree) "FREE 1ST DESIGN" else "-150❖ SHARDS"
+              Pair(
+                true,
+                "🎨 AI HULL FORGED ($costNote): [$finalTitle] (${finalRecipe.silhouette} • ${finalRecipe.toJsonString().length}B JSON)",
+              )
+            }
+          },
+          onToggleDevLevel20Or100 = {
+            com.example.engine.RiftCalibrationState.unlockFullNinthShipOverride =
+              !com.example.engine.RiftCalibrationState.unlockFullNinthShipOverride
+            com.example.engine.RiftCalibrationState.savePersistedLayout(context)
+            engine.syncLocalPlayerCustomShipSpec()
+            sfx.playPrize()
+          },
+          onDeployPilot = { newCallsign, newShipId, _, asGuest ->
             if (asGuest) {
               localPrefs.setGuestBypassEnabled(true)
             }
             callsign = newCallsign
             selectedShipId = newShipId
-            selectedMode = newMode
+            selectedMode = "FFA"
             syndicateTag = localPrefs.getSyndicateTag()
             syndicateName = localPrefs.getSyndicateName()
 
             localPrefs.setCallsign(newCallsign)
             localPrefs.setPreferredShipId(newShipId)
-            localPrefs.setPreferredMode(newMode)
+            localPrefs.setPreferredMode("FFA")
 
             engine.localPlayer.callsign = newCallsign
             engine.localPlayer.syndicateTag = syndicateTag
             engine.syncLocalArmadaSelfSlot()
             engine.switchLocalPlayerShip(newShipId, forceFromHangar = true)
-            if (engine.mode != newMode) {
-              engine.rebuildRosterForMode(newMode)
-            }
             engine.onStatsUpdated()
             activeModal = ActiveModal.NONE
           },
@@ -582,9 +706,9 @@ fun RiftArenaScreen(
               PilotAchievement(
                 id = "flux_overlord",
                 title = "FLUX OVERLORD",
-                description = "Collect 5+ Glowing Buff Icons ('Greens') in open space.",
+                description = "Collect 5+ Supply Crates in open space.",
                 unlocked = engine.greensCollected >= 5L,
-                progressText = "${engine.greensCollected} / 5 GREENS",
+                progressText = "${engine.greensCollected} / 5 CRATES",
               ),
               PilotAchievement(
                 id = "phase_striker",
@@ -922,9 +1046,16 @@ fun RiftArenaScreen(
             }
           },
           onUnlockExtraSlot = {
-            if (engine.riftShards >= 200L) {
-              engine.riftShards -= 200L
+            if (engine.riftShards >= 300L) {
+              engine.riftShards -= 300L
               engine.unlockedExtraSlots++
+              if (!slot9BUnlocked) {
+                localPrefs.setCustomSlotUnlocked("9B", true, currentUserId)
+                slot9BUnlocked = true
+              } else if (!slot9CUnlocked) {
+                localPrefs.setCustomSlotUnlocked("9C", true, currentUserId)
+                slot9CUnlocked = true
+              }
               sfx.playPrize()
               engine.onStatsUpdated()
               true

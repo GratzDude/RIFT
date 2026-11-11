@@ -52,6 +52,7 @@ object RiftCalibrationState {
   var forceAllButtonsVisible by mutableStateOf(true)   // Display all combat buttons simultaneously for layout testing
   var isUiUnlockedForDragging by mutableStateOf(false) // Toggle allowing direct touch dragging of UI clusters
   var isCalibrationModalOpen by mutableStateOf(false)  // Toggle opening the full-screen calibration lab
+  var unlockFullNinthShipOverride by mutableStateOf(false) // Calibration override: unlocks full 9th ship (100 pts + all slots) without leveling up
 
   // 5. Draggable Offsets (in pixels) for every independent on-screen HUD element
   var topBarOffset by mutableStateOf(Offset.Zero)
@@ -69,13 +70,10 @@ object RiftCalibrationState {
   var calibrationBtnOffset by mutableStateOf(Offset.Zero)
   var toastContainerOffset by mutableStateOf(Offset.Zero)
 
-  // 6. Playfield Buff Spawner & Mode Cap Settings
-  var buffCap3v3 by mutableStateOf(12)
-  var buffCap5v5 by mutableStateOf(10)
-  var buffCap10v10 by mutableStateOf(20)
+  // 6. Playfield Supply Crate Spawner & Public FFA Cap Settings
   var buffCapFfa by mutableStateOf(40)
-  var buffModeOverride by mutableStateOf("AUTO") // "AUTO", "3v3", "5v5", "10v10", "FFA", "CUSTOM"
-  var buffTargetCountOverride by mutableStateOf<Int?>(null) // null = follow mode cap
+  var buffModeOverride by mutableStateOf("FFA") // "FFA", "CUSTOM"
+  var buffTargetCountOverride by mutableStateOf<Int?>(null) // null = follow FFA cap
   var buffRespawnFrequency by mutableFloatStateOf(1.0f) // 0.0f = Zero Respawn / Disabled, 1.0f = standard, up to 3.0f
   var buffBaseRespawnDelay by mutableFloatStateOf(2.0f) // 0.5s .. 10.0s
 
@@ -108,6 +106,7 @@ object RiftCalibrationState {
     calibrationBtnOffset = readOffset("calibrationBtn")
     toastContainerOffset = readOffset("toastContainer")
     idleWarningBannerOffset = readOffset("idleWarningBanner")
+    unlockFullNinthShipOverride = prefs.getBoolean("unlockFullNinthShipOverride", false)
   }
 
   fun savePersistedLayout(context: Context) {
@@ -132,6 +131,7 @@ object RiftCalibrationState {
     writeOffset("calibrationBtn", calibrationBtnOffset)
     writeOffset("toastContainer", toastContainerOffset)
     writeOffset("idleWarningBanner", idleWarningBannerOffset)
+    editor.putBoolean("unlockFullNinthShipOverride", unlockFullNinthShipOverride)
     editor.apply()
   }
 
@@ -176,11 +176,8 @@ object RiftCalibrationState {
     calibrationBtnOffset = Offset.Zero
     toastContainerOffset = Offset.Zero
 
-    buffCap3v3 = 12
-    buffCap5v5 = 10
-    buffCap10v10 = 20
     buffCapFfa = 40
-    buffModeOverride = "AUTO"
+    buffModeOverride = "FFA"
     buffTargetCountOverride = null
     buffRespawnFrequency = 1.0f
     buffBaseRespawnDelay = 2.0f

@@ -166,6 +166,59 @@ fun RiftCalibrationDialog(
             )
           }
 
+          // Full 9th Ship (100 Pts + All Slots) Override Switch
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.testTag("calibration_toggle_full_ninth_ship"),
+          ) {
+            Text(
+              text = "🛸 FULL 9TH SHIP (100 PTS)",
+              color = if (RiftCalibrationState.unlockFullNinthShipOverride) Color(0xFF00E676) else Color(0xFF94A3B8),
+              fontSize = 10.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.Monospace,
+            )
+            Switch(
+              checked = RiftCalibrationState.unlockFullNinthShipOverride,
+              onCheckedChange = {
+                RiftCalibrationState.unlockFullNinthShipOverride = it
+                RiftCalibrationState.savePersistedLayout(context)
+                engine?.syncLocalPlayerCustomShipSpec()
+              },
+              colors = SwitchDefaults.colors(
+                checkedThumbColor = Color(0xFF00E676),
+                checkedTrackColor = Color(0x8800E676),
+                uncheckedThumbColor = Color(0xFF94A3B8),
+                uncheckedTrackColor = Color(0x33475569),
+              ),
+              modifier = Modifier.height(24.dp),
+            )
+          }
+
+          // Quick Force Convergence / New FFA Map Button in Header
+          Box(
+            modifier =
+              Modifier.height(28.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0x440284C7))
+                .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                .clickable {
+                  engine?.concludePublicFfaMatchCycle(forceSimulateWinWithPresence = false)
+                }
+                .padding(horizontal = 8.dp)
+                .testTag("calibration_btn_force_convergence_top"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "🌀 FORCE CONVERGENCE",
+              color = Color(0xFFE0F2FE),
+              fontSize = 9.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+
           // Reset to 1.0x button
           Box(
             modifier =
@@ -209,6 +262,152 @@ fun RiftCalibrationDialog(
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           SectionHeader(title = "PLAYFIELD & IN-WORLD ENTITIES", color = Color(0xFF38BDF8))
+
+          // 0a. Full 9th Custom Modular Ship Override Card
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .background(
+                  if (RiftCalibrationState.unlockFullNinthShipOverride) Color(0x55062C1E) else Color(0x550B1626),
+                  RoundedCornerShape(10.dp),
+                )
+                .border(
+                  1.2.dp,
+                  if (RiftCalibrationState.unlockFullNinthShipOverride) Color(0xFF00E676) else Color(0x5538BDF8),
+                  RoundedCornerShape(10.dp),
+                )
+                .clickable {
+                  RiftCalibrationState.unlockFullNinthShipOverride = !RiftCalibrationState.unlockFullNinthShipOverride
+                  RiftCalibrationState.savePersistedLayout(context)
+                  engine?.syncLocalPlayerCustomShipSpec()
+                }
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+                .testTag("calibration_card_full_ninth_ship"),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "🛸 Unlock Full 9th Custom Modular Ship (100 Pts + Slots 9A/9B/9C)",
+                color = if (RiftCalibrationState.unlockFullNinthShipOverride) Color(0xFF00E676) else Color.White,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.SansSerif,
+              )
+              Text(
+                text = "Bypasses Level 20 gate & grants all 100 Customization Points + Slots 9A/9B/9C for immediate testing",
+                color = Color(0xFF94A3B8),
+                fontSize = 8.5.sp,
+                fontFamily = FontFamily.SansSerif,
+              )
+            }
+            Switch(
+              checked = RiftCalibrationState.unlockFullNinthShipOverride,
+              onCheckedChange = {
+                RiftCalibrationState.unlockFullNinthShipOverride = it
+                RiftCalibrationState.savePersistedLayout(context)
+                engine?.syncLocalPlayerCustomShipSpec()
+              },
+              colors = SwitchDefaults.colors(
+                checkedThumbColor = Color(0xFF00E676),
+                checkedTrackColor = Color(0x8800E676),
+                uncheckedThumbColor = Color(0xFF94A3B8),
+                uncheckedTrackColor = Color(0x33475569),
+              ),
+              modifier = Modifier.height(24.dp),
+            )
+          }
+
+          // 0b. Sector Convergence & New Procedural FFA Match Control Card
+          val matchSec = engine?.publicMatchDurationSec ?: 0f
+          val matchMins = (matchSec / 60f).toInt()
+          val matchRemSecs = (matchSec % 60f).toInt()
+          val presencePct = ((engine?.getMatchPresenceRatio() ?: 1f) * 100f).toInt().coerceIn(0, 100)
+          Column(
+            modifier =
+              Modifier.fillMaxWidth()
+                .background(Color(0x550D1E36), RoundedCornerShape(10.dp))
+                .border(1.2.dp, Color(0xFF38BDF8), RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+                .testTag("calibration_card_sector_convergence"),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = "🌀 Sector Convergence // Procedural New FFA Match Reset",
+                  color = Color(0xFF38BDF8),
+                  fontSize = 11.5.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  fontFamily = FontFamily.SansSerif,
+                )
+                Text(
+                  text = "At 60:00 (or manual trigger), #1 Bounty (>50% presence) wins +100❖ & arena resets into a new procedural map",
+                  color = Color(0xFF94A3B8),
+                  fontSize = 8.sp,
+                  fontFamily = FontFamily.SansSerif,
+                )
+              }
+              Text(
+                text = String.format(Locale.US, "%02d:%02d / 60:00 (%d%% PRESENCE)", matchMins, matchRemSecs, presencePct),
+                color = Color(0xFFFACC15),
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              Box(
+                modifier =
+                  Modifier.weight(1f)
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF0284C7))
+                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                    .clickable {
+                      engine?.concludePublicFfaMatchCycle(forceSimulateWinWithPresence = false)
+                    }
+                    .testTag("btn_force_convergence_new_map"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = "🌀 FORCE CONVERGENCE / NEW FFA MATCH",
+                  color = Color.White,
+                  fontSize = 8.5.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+              Box(
+                modifier =
+                  Modifier.weight(1f)
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF065F46))
+                    .border(1.dp, Color(0xFF34D399), RoundedCornerShape(6.dp))
+                    .clickable {
+                      engine?.concludePublicFfaMatchCycle(forceSimulateWinWithPresence = true)
+                    }
+                    .testTag("btn_force_convergence_win"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = "🏆 FORCE CONVERGENCE (SIMULATE >50% WIN +100❖)",
+                  color = Color(0xFFA7F3D0),
+                  fontSize = 8.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+          }
 
           // 1. Playfield Camera Zoom
           CalibrationCardWithPreview(
@@ -876,13 +1075,13 @@ private fun BuffPrizeCrateTuningCard(
     ) {
       Column(modifier = Modifier.weight(1f)) {
         Text(
-          text = "Buff Prize Crate & Spawner System",
+          text = "Supply Crate & Spawner System (Public FFA)",
           color = Color(0xFF34D399),
           fontSize = 11.5.sp,
           fontWeight = FontWeight.Bold,
         )
         Text(
-          text = "3D prize crate scale, mode caps & non-repeating spawner",
+          text = "3D Supply Crate scale, Public FFA cap & non-repeating spawner",
           color = Color(0xFF94A3B8),
           fontSize = 8.sp,
         )
@@ -987,9 +1186,9 @@ private fun BuffPrizeCrateTuningCard(
       )
     }
 
-    // 3. Quick Mode Selector Chips
+    // 3. Public FFA Supply Crate Spawner Preset Chips
     Text(
-      text = "LOBBY GAME MODE PRESETS",
+      text = "PUBLIC FFA SUPPLY CRATE PRESETS",
       color = Color(0xFF94A3B8),
       fontSize = 8.5.sp,
       fontWeight = FontWeight.Bold,
@@ -997,37 +1196,50 @@ private fun BuffPrizeCrateTuningCard(
     )
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(4.dp),
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-      val modes = listOf(
-        "3v3" to "3v3 (${RiftCalibrationState.buffCap3v3})",
-        "5v5" to "5v5 (${RiftCalibrationState.buffCap5v5})",
-        "10v10" to "10v10 (${RiftCalibrationState.buffCap10v10})",
-        "FFA" to "FFA (${RiftCalibrationState.buffCapFfa})",
-        "AUTO" to "AUTO SYNC",
-      )
-      modes.forEach { (modeKey, label) ->
-        val isSelected = (RiftCalibrationState.buffModeOverride == modeKey && RiftCalibrationState.buffTargetCountOverride == null)
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .height(24.dp)
-              .clip(RoundedCornerShape(5.dp))
-              .background(if (isSelected) Color(0x6610B981) else Color(0x221E293B))
-              .border(1.dp, if (isSelected) Color(0xFF10B981) else Color(0x33475569), RoundedCornerShape(5.dp))
-              .clickable {
-                RiftCalibrationState.buffModeOverride = modeKey
-                RiftCalibrationState.buffTargetCountOverride = null
-              },
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = label,
-            color = if (isSelected) Color.White else Color(0xFF94A3B8),
-            fontSize = 7.5.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-          )
-        }
+      val isDefaultFfa = RiftCalibrationState.buffTargetCountOverride == null
+      Box(
+        modifier =
+          Modifier.weight(1f)
+            .height(24.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(if (isDefaultFfa) Color(0x6610B981) else Color(0x221E293B))
+            .border(1.dp, if (isDefaultFfa) Color(0xFF10B981) else Color(0x33475569), RoundedCornerShape(5.dp))
+            .clickable {
+              RiftCalibrationState.buffModeOverride = "FFA"
+              RiftCalibrationState.buffTargetCountOverride = null
+            },
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = "PUBLIC FFA DEFAULT (${RiftCalibrationState.buffCapFfa} CRATES)",
+          color = if (isDefaultFfa) Color.White else Color(0xFF94A3B8),
+          fontSize = 7.5.sp,
+          fontWeight = if (isDefaultFfa) FontWeight.Bold else FontWeight.Normal,
+        )
+      }
+      Box(
+        modifier =
+          Modifier.weight(1f)
+            .height(24.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(if (!isDefaultFfa) Color(0x660284C7) else Color(0x221E293B))
+            .border(1.dp, if (!isDefaultFfa) Color(0xFF38BDF8) else Color(0x33475569), RoundedCornerShape(5.dp))
+            .clickable {
+              RiftCalibrationState.buffModeOverride = "CUSTOM"
+              if (RiftCalibrationState.buffTargetCountOverride == null) {
+                RiftCalibrationState.buffTargetCountOverride = RiftCalibrationState.buffCapFfa
+              }
+            },
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = "CUSTOM OVERRIDE (${RiftCalibrationState.buffTargetCountOverride ?: RiftCalibrationState.buffCapFfa})",
+          color = if (!isDefaultFfa) Color.White else Color(0xFF94A3B8),
+          fontSize = 7.5.sp,
+          fontWeight = if (!isDefaultFfa) FontWeight.Bold else FontWeight.Normal,
+        )
       }
     }
 
@@ -1136,29 +1348,9 @@ private fun BuffPrizeCrateTuningCard(
       ),
     )
 
-    // 7. Individual Mode Cap Presets Sub-Sliders
-    Text(
-      text = "MODE CAP THRESHOLDS (MAX CONCURRENT)",
-      color = Color(0xFF94A3B8),
-      fontSize = 8.5.sp,
-      fontWeight = FontWeight.Bold,
-      fontFamily = FontFamily.Monospace,
-      modifier = Modifier.padding(top = 2.dp),
-    )
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      // 3v3 and 5v5
-      Column(modifier = Modifier.weight(1f)) {
-        CompactCapSlider("3v3 Cap", RiftCalibrationState.buffCap3v3, 4..30) { RiftCalibrationState.buffCap3v3 = it }
-        CompactCapSlider("5v5 Cap", RiftCalibrationState.buffCap5v5, 4..30) { RiftCalibrationState.buffCap5v5 = it }
-      }
-      // 10v10 and FFA
-      Column(modifier = Modifier.weight(1f)) {
-        CompactCapSlider("10v10 Cap", RiftCalibrationState.buffCap10v10, 8..50) { RiftCalibrationState.buffCap10v10 = it }
-        CompactCapSlider("FFA Cap", RiftCalibrationState.buffCapFfa, 10..80) { RiftCalibrationState.buffCapFfa = it }
-      }
+    // 7. Public FFA Concurrent Supply Crate Cap Slider
+    CompactCapSlider("Public FFA Supply Crate Cap", RiftCalibrationState.buffCapFfa, 10..80) {
+      RiftCalibrationState.buffCapFfa = it
     }
   }
 }
@@ -1217,7 +1409,7 @@ private fun SafeZoneTuningCard(
           fontWeight = FontWeight.Bold,
         )
         Text(
-          text = "Central safe haven pad size & >15s continuous stay eviction teleport",
+          text = "Central Safe Zone pad size & >15s continuous stay eviction teleport",
           color = Color(0xFF64748B),
           fontSize = 8.sp,
         )
@@ -1669,7 +1861,7 @@ private fun SafeZonePreviewBox(scale: Float) {
       drawLine(Color(0xFF34D399), Offset(left + w, top + h - bLen), Offset(left + w, top + h), 1.5f)
     }
     Text(
-      text = String.format(Locale.US, "SAFE HAVEN • %.0fs MAX", RiftCalibrationState.safeZoneIdleLimitSec),
+      text = String.format(Locale.US, "SAFE ZONE • %.0fs MAX", RiftCalibrationState.safeZoneIdleLimitSec),
       color = Color(0xFF34D399),
       fontSize = 7.sp,
       fontWeight = FontWeight.Bold,
@@ -1911,7 +2103,7 @@ private fun ConsolePreviewBox(scale: Float) {
           .padding(horizontal = 8.dp),
       contentAlignment = Alignment.Center,
     ) {
-      Text("FLUX 2400❖ (100%)", color = Color(0xFF10B981), fontSize = 7.sp, fontWeight = FontWeight.Bold)
+      Text("FLUX 2400⚡ (100%)", color = Color(0xFF10B981), fontSize = 7.sp, fontWeight = FontWeight.Bold)
     }
   }
 }
@@ -1928,7 +2120,7 @@ private fun CombatButtonsPreviewBox(scale: Float) {
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    // [BOMB 180❖] Button
+    // [BOMB 180⚡] Button
     Box(
       modifier =
         Modifier.size(32.dp)
@@ -1939,7 +2131,7 @@ private fun CombatButtonsPreviewBox(scale: Float) {
     ) {
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text("BOMB", color = Color.White, fontSize = 6.5.sp, fontWeight = FontWeight.Bold)
-        Text("180❖", color = Color(0xFFFDE047), fontSize = 5.5.sp)
+        Text("180⚡", color = Color(0xFFFDE047), fontSize = 5.5.sp)
       }
     }
 
@@ -1954,7 +2146,7 @@ private fun CombatButtonsPreviewBox(scale: Float) {
     ) {
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text("FIRE", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
-        Text("28❖", color = Color(0xFFFECACA), fontSize = 6.sp)
+        Text("28⚡", color = Color(0xFFFECACA), fontSize = 6.sp)
       }
     }
   }

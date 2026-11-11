@@ -572,7 +572,7 @@ fun RiftHudOverlay(
         rootScreenSize = rootScreenSize,
       )
 
-      // Clean Right Wing: FLUX (❖) and BOUNTY readouts only
+      // Clean Right Wing: FLUX (⚡) and BOUNTY readouts only
       Row(
         modifier =
           Modifier.zIndex(1f)
@@ -594,7 +594,7 @@ fun RiftHudOverlay(
               else -> Color(0xFFEF4444)
             }
           Text(
-            text = "FLUX ${player.flux.toInt()}❖ (${(fluxPct * 100).toInt()}%)",
+            text = "FLUX ${player.flux.toInt()}⚡ (${(fluxPct * 100).toInt()}%)",
             color = fluxColor,
             fontSize = 10.5.sp,
             fontWeight = FontWeight.Bold,

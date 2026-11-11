@@ -197,16 +197,16 @@ class LocalPilotPrefs(context: Context) {
     )
   }
 
-  fun getPreferredShipId(): Int = prefs.getInt(KEY_SHIP_ID, 1).coerceIn(1, 8)
+  fun getPreferredShipId(): Int = prefs.getInt(KEY_SHIP_ID, 1).coerceIn(1, 9)
 
   fun setPreferredShipId(shipId: Int) {
-    prefs.edit().putInt(KEY_SHIP_ID, shipId.coerceIn(1, 8)).apply()
+    prefs.edit().putInt(KEY_SHIP_ID, shipId.coerceIn(1, 9)).apply()
   }
 
-  fun getPreferredMode(): String = prefs.getString(KEY_MODE, "warzone_10v10") ?: "warzone_10v10"
+  fun getPreferredMode(): String = "FFA"
 
   fun setPreferredMode(mode: String) {
-    prefs.edit().putString(KEY_MODE, mode).apply()
+    prefs.edit().putString(KEY_MODE, "FFA").apply()
   }
 
   fun getPvpKills(): Long = prefs.getLong(KEY_PVP_KILLS, 0L)
@@ -303,6 +303,66 @@ class LocalPilotPrefs(context: Context) {
       .edit()
       .putInt(KEY_AI_DESIGN_TOKENS, clean)
       .putInt(uidKey(KEY_AI_DESIGN_TOKENS, uid), clean)
+      .apply()
+  }
+
+  // Phase 4: 9th Custom Modular Ship Loadout Slots (9A, 9B, 9C) & Slot Unlock Persistence
+  fun getActiveCustomSlotId(uid: String? = null): String {
+    val raw = prefs.getString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), prefs.getString(KEY_ACTIVE_CUSTOM_SLOT_ID, "9A")) ?: "9A"
+    return if (raw in setOf("9A", "9B", "9C")) raw else "9A"
+  }
+
+  fun setActiveCustomSlotId(slotId: String, uid: String? = null) {
+    val clean = if (slotId in setOf("9A", "9B", "9C")) slotId else "9A"
+    prefs
+      .edit()
+      .putString(KEY_ACTIVE_CUSTOM_SLOT_ID, clean)
+      .putString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), clean)
+      .apply()
+  }
+
+  fun isCustomSlotUnlocked(slotId: String, uid: String? = null): Boolean {
+    return when (slotId) {
+      "9A" -> true
+      "9B" ->
+        prefs.getBoolean(uidKey(KEY_SLOT_9B_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_9B_UNLOCKED, false)) ||
+          getUnlockedExtraSlots(uid) >= 1
+      "9C" ->
+        prefs.getBoolean(uidKey(KEY_SLOT_9C_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_9C_UNLOCKED, false)) ||
+          getUnlockedExtraSlots(uid) >= 2
+      else -> true
+    }
+  }
+
+  fun setCustomSlotUnlocked(slotId: String, unlocked: Boolean, uid: String? = null) {
+    val key =
+      when (slotId) {
+        "9B" -> KEY_SLOT_9B_UNLOCKED
+        "9C" -> KEY_SLOT_9C_UNLOCKED
+        else -> return
+      }
+    prefs
+      .edit()
+      .putBoolean(key, unlocked)
+      .putBoolean(uidKey(key, uid), unlocked)
+      .apply()
+  }
+
+  fun getCustomShipSlot(slotId: String, uid: String? = null): com.example.engine.CustomShipLoadoutSlot {
+    val cleanId = if (slotId in setOf("9A", "9B", "9C")) slotId else "9A"
+    val baseKey = "${KEY_CUSTOM_SLOT_PREFIX}_$cleanId"
+    val raw = prefs.getString(uidKey(baseKey, uid), prefs.getString(baseKey, null))
+    return com.example.engine.CustomShipLoadoutSlot.fromJsonString(raw, cleanId)
+  }
+
+  fun saveCustomShipSlot(slot: com.example.engine.CustomShipLoadoutSlot, uid: String? = null) {
+    val cleanId = if (slot.slotId in setOf("9A", "9B", "9C")) slot.slotId else "9A"
+    val baseKey = "${KEY_CUSTOM_SLOT_PREFIX}_$cleanId"
+    val json = slot.toJsonString()
+    prefs
+      .edit()
+      .putString(baseKey, json)
+      .putString(uidKey(baseKey, uid), json)
       .apply()
   }
 
@@ -414,7 +474,7 @@ class LocalPilotPrefs(context: Context) {
           callsign = "CHRONO_X",
           syndicateTag = tag,
           shipId = 6,
-          statusText = "In Rift (Safe Haven) • [SOLO] Available for Armada",
+          statusText = "In Rift (Safe Zone) • [SOLO] Available for Armada",
           isOnline = true,
           currentArmadaName = "",
           currentArmadaCount = 1,
@@ -695,6 +755,10 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_SPENT_CUSTOM_POINTS = "spent_customization_points"
     private const val KEY_UNLOCKED_EXTRA_SLOTS = "unlocked_extra_hull_slots"
     private const val KEY_AI_DESIGN_TOKENS = "ai_ship_design_tokens"
+    private const val KEY_ACTIVE_CUSTOM_SLOT_ID = "active_custom_slot_id"
+    private const val KEY_SLOT_9B_UNLOCKED = "custom_slot_9b_unlocked"
+    private const val KEY_SLOT_9C_UNLOCKED = "custom_slot_9c_unlocked"
+    private const val KEY_CUSTOM_SLOT_PREFIX = "custom_ship_slot_json"
 
     const val FIFTEEN_DAYS_MS = 15L * 24L * 3600L * 1000L
 

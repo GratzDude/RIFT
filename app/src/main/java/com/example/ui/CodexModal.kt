@@ -80,7 +80,7 @@ fun CodexModal(
               letterSpacing = 1.2.sp,
             )
             Text(
-              text = "SPINNING EMERALD CRATES ('GREENS') • PERMANENT LIFE STACKS • ARENA RULES",
+              text = "3D SUPPLY CRATES • PERMANENT LIFE STACKS • ARENA RULES",
               color = Color(0xFF00F0FF),
               fontSize = 11.sp,
               fontWeight = FontWeight.Medium,
@@ -172,14 +172,14 @@ fun CodexModal(
           ) {
             Column {
               Text(
-                text = "🏰 SAFE HAVEN & PHASE SHIELD",
+                text = "🏰 SAFE ZONE & PHASE SHIELD",
                 color = Color(0xFF38BDF8),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
               )
               Text(
-                text = "Safe Haven strictly disarms weapons. Exiting grants 3.0s 75% defense Phase Shield (stripped upon firing).",
+                text = "Safe Zone strictly disarms weapons. Exiting grants 3.0s 75% defense Phase Shield (stripped upon firing).",
                 color = Color(0xFFE0F2FE),
                 fontSize = 10.sp,
                 fontFamily = FontFamily.SansSerif,

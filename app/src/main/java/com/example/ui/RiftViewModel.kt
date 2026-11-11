@@ -33,7 +33,7 @@ class RiftViewModel(
   val initialCallsign: String,
 ) : ViewModel() {
 
-  private val _activeSectorId = MutableStateFlow("warzone_10v10")
+  private val _activeSectorId = MutableStateFlow("FFA")
   val activeSectorId: StateFlow<String> = _activeSectorId.asStateFlow()
 
   val dossierState: StateFlow<UiState<PilotDossier?>> =
@@ -112,7 +112,7 @@ class RiftViewModel(
             callsign = initialCallsign,
             preferredShipId = 1L,
             preferredFoundry = "Kestrel",
-            preferredMode = "warzone_10v10",
+            preferredMode = "FFA",
             pvpKills = 0L,
             pvpDeaths = 0L,
             pvpBountyPeak = 100L,
@@ -148,7 +148,7 @@ class RiftViewModel(
         val callsign = obj.optString("callsign", initialCallsign)
         val shipId = obj.optLong("shipId", 1L)
         val foundry = obj.optString("foundry", "Kestrel")
-        val mode = obj.optString("mode", "warzone_10v10")
+        val mode = "FFA"
         val pvpKills = obj.optLong("pvpKills", 0L)
         val pvpDeaths = obj.optLong("pvpDeaths", 0L)
         val pvpBountyPeak = obj.optLong("pvpBountyPeak", 100L)
@@ -157,7 +157,7 @@ class RiftViewModel(
         val allTimeBountyPeak = obj.optLong("allTimeBountyPeak", 100L)
         val convergencesWon = obj.optLong("convergencesWon", 0L)
 
-        if (_activeSectorId.value != mode && mode in listOf("warzone_10v10", "ranked_3v3", "ranked_5v5")) {
+        if (_activeSectorId.value != mode) {
           _activeSectorId.value = mode
         }
 
@@ -202,8 +202,8 @@ class RiftViewModel(
     viewModelScope.launch {
       try {
         val obj = JSONObject(payloadJson)
-        val sectorId = obj.optString("sectorId", _activeSectorId.value)
-        if (_activeSectorId.value != sectorId && sectorId in listOf("warzone_10v10", "ranked_3v3", "ranked_5v5")) {
+        val sectorId = "FFA"
+        if (_activeSectorId.value != sectorId) {
           _activeSectorId.value = sectorId
         }
         val state =
@@ -245,8 +245,8 @@ class RiftViewModel(
     allTimeBountyPeak: Long,
     convergencesWon: Long,
   ) {
-    if (_activeSectorId.value != mode && mode in listOf("warzone_10v10", "ranked_3v3", "ranked_5v5")) {
-      _activeSectorId.value = mode
+    if (_activeSectorId.value != "FFA") {
+      _activeSectorId.value = "FFA"
     }
     if (currentUserId.startsWith("guest_") || currentUserId.startsWith("dev_")) return
     viewModelScope.launch {

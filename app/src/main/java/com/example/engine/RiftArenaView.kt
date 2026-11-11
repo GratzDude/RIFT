@@ -447,7 +447,7 @@ class RiftArenaView(
         UtilityButtonSlot(
           type = "SPECIAL",
           title = titleStr,
-          sub = "260❖",
+          sub = "260⚡",
           cx = baseArcX + cos(rad) * scaledDist + RiftCalibrationState.burstBtnOffset.x,
           cy = baseArcY + sin(rad) * scaledDist + RiftCalibrationState.burstBtnOffset.y,
           r = scaledR,
@@ -466,7 +466,7 @@ class RiftArenaView(
         UtilityButtonSlot(
           type = "REPEL",
           title = "REPEL $count",
-          sub = "320❖",
+          sub = "320⚡",
           cx = baseArcX + cos(rad) * scaledDist + RiftCalibrationState.repelBtnOffset.x,
           cy = baseArcY + sin(rad) * scaledDist + RiftCalibrationState.repelBtnOffset.y,
           r = scaledR,
@@ -614,9 +614,9 @@ class RiftArenaView(
       val safeBannerText =
         if (p.inSafeZone && p.respawnTimer <= 0f) {
           val rem = max(0f, RiftCalibrationState.safeZoneIdleLimitSec - p.safeZoneStayTimer)
-          String.format(java.util.Locale.US, "SAFE HAVEN // WEAPONS DISARMED // EVICTION WARP IN %.1fs", rem)
+          String.format(java.util.Locale.US, "SAFE ZONE // WEAPONS DISARMED // EVICTION WARP IN %.1fs", rem)
         } else {
-          String.format(java.util.Locale.US, "SAFE HAVEN // WEAPONS DISARMED // %.0fs MAX STAY", RiftCalibrationState.safeZoneIdleLimitSec)
+          String.format(java.util.Locale.US, "SAFE ZONE // WEAPONS DISARMED // %.0fs MAX STAY", RiftCalibrationState.safeZoneIdleLimitSec)
         }
       canvas.drawText(
         safeBannerText,
@@ -1349,7 +1349,7 @@ class RiftArenaView(
         unlocked -> "DRAG"
         engine.isCancelActive -> "CANCEL"
         disarmedInSafeZone -> "SAFE"
-        else -> "${gunCost}❖"
+        else -> "${gunCost}⚡"
       },
       fkX,
       fkY + 10.0f * dpDensity * arcScale,
@@ -1393,13 +1393,16 @@ class RiftArenaView(
           p.spec.bombType == "SIEGE" -> "SIEGE"
           p.spec.bombType == "PROX" -> "PROX"
           p.spec.bombType == "BOUNCE" -> "BOUNCE"
+          p.spec.bombType == "BURST" -> "BURST"
+          p.spec.bombType == "SHOTGUN" -> "SHOTGN"
+          p.spec.bombType == "MISSILE" -> "MISSILE"
           else -> "BOMB"
         }
       val bSub =
         when {
           unlocked -> "DRAG"
           engine.isBombCancelActive -> "CANCEL"
-          else -> "${bombCost.toInt()}❖"
+          else -> "${bombCost.toInt()}⚡"
         }
       hudLabelPaint.textSize = 9.5f * dpDensity * arcScale
       hudLabelPaint.color = Color.argb(bombAlpha, 255, 255, 255)
@@ -1409,7 +1412,7 @@ class RiftArenaView(
       canvas.drawText(bSub, bX, bY + 9.2f * dpDensity * arcScale, hudLabelPaint)
     }
 
-    // 4. Dynamic Upper-Arc Satellite Utility Buttons (BURST, REPEL, THOR — strictly hidden when count == 0)
+    // 4. Dynamic Upper-Arc Satellite Utility Buttons (SPECIAL BUFF SLOT & REPEL — strictly hidden when count == 0)
     for (slot in activeUtilitySlots) {
       drawSatelliteButton(
         canvas = canvas,
@@ -1521,7 +1524,7 @@ class RiftArenaView(
     val lY = effLeftBaseY()
     val lR = effLeftRadius()
 
-    // In UI Unlock Mode: allow independent dragging of Left Stick, Right Fire Stick, Bomb, Repel, Burst, and Thor
+    // In UI Unlock Mode: allow independent dragging of Left Stick, Right Fire Stick, Bomb, Repel, and Special Buff Slot
     if (RiftCalibrationState.isUiUnlockedForDragging) {
       when (action) {
         MotionEvent.ACTION_DOWN,
@@ -1602,7 +1605,7 @@ class RiftArenaView(
     when (action) {
       MotionEvent.ACTION_DOWN,
       MotionEvent.ACTION_POINTER_DOWN -> {
-        // 1. Check Active Upper-Arc Utility Buttons (BURST, REPEL, THOR — only present when count > 0 or showAll)
+        // 1. Check Active Upper-Arc Utility Buttons (SPECIAL BUFF SLOT & REPEL — only present when count > 0 or showAll)
         for (slot in activeUtilitySlots) {
           if (hypot(x - slot.cx, y - slot.cy) <= slot.r * 1.16f) {
             engine.activateUtility(slot.type)

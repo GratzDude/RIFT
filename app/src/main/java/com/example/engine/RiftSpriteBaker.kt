@@ -31,6 +31,15 @@ object RiftSpriteBaker {
   val nebulaCyanStamp: Bitmap
   val nebulaIndigoStamp: Bitmap
 
+  var customShip9AlliedBitmap: Bitmap
+    private set
+  var customShip9HostileBitmap: Bitmap
+    private set
+  var customShip9FlashBitmap: Bitmap
+    private set
+  var customShip9Version: Int = 1
+    private set
+
   init {
     wallTileBitmap = bakeWallTile()
     hazardBorderBitmap = bakeHazardBorderTile()
@@ -56,11 +65,34 @@ object RiftSpriteBaker {
     hostileShipBitmaps = hostile
     flashShipBitmaps = flash
 
+    val initialRecipe = RiftCodex.activeCustomShipSlot.visualRecipe
+    customShip9AlliedBitmap = bakeCustomShip9Bitmap(initialRecipe, 128, isAllied = true)
+    customShip9HostileBitmap = bakeCustomShip9Bitmap(initialRecipe, 128, isAllied = false)
+    customShip9FlashBitmap = bakeSolidWhiteFlashBitmap(customShip9AlliedBitmap)
+
     val buffs = mutableMapOf<Int, Bitmap>()
     for (buffType in 0..7) {
       buffs[buffType] = bakeBuffIconBitmap(buffType, 68)
     }
     buffIconBitmaps = buffs
+  }
+
+  fun updateCustomShip9Sprites(recipe: CustomHullVisualRecipe) {
+    customShip9AlliedBitmap = bakeCustomShip9Bitmap(recipe, 128, isAllied = true)
+    customShip9HostileBitmap = bakeCustomShip9Bitmap(recipe, 128, isAllied = false)
+    customShip9FlashBitmap = bakeSolidWhiteFlashBitmap(customShip9AlliedBitmap)
+    customShip9Version++
+  }
+
+  fun bakeCustomShip9Bitmap(
+    recipe: CustomHullVisualRecipe,
+    sizePx: Int = 128,
+    isAllied: Boolean = true,
+  ): Bitmap {
+    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    drawCustomModularShipOnCanvas(c, sizePx / 2f, sizePx / 2f, sizePx * 0.39f, recipe, isAllied)
+    return bmp
   }
 
   /**
@@ -96,6 +128,10 @@ object RiftSpriteBaker {
   }
 
   fun getShipSprite(shipId: Int, isAllied: Boolean = true, isHitFlashing: Boolean = false): Bitmap {
+    if (shipId == 9) {
+      if (isHitFlashing) return customShip9FlashBitmap
+      return if (isAllied) customShip9AlliedBitmap else customShip9HostileBitmap
+    }
     if (isHitFlashing) {
       return flashShipBitmaps[shipId] ?: flashShipBitmaps[1]!!
     }
@@ -1111,6 +1147,429 @@ object RiftSpriteBaker {
       c.drawCircle(-r * 0.42f, -r * 0.16f, r * 0.035f, whiteCorePaint)
       c.drawCircle(-r * 0.42f, r * 0.16f, r * 0.035f, whiteCorePaint)
     }
+
+    c.restore()
+  }
+
+  /**
+   * Phase 4 AI Hull Forge Procedural 3D Metallic Renderer for the 9th Custom Modular Ship:
+   * - Renders from the <2KB JSON CustomHullVisualRecipe
+   * - Enforces minimum luminance contrast (L >= 0.32) against #000000 space
+   * - Strictly fits within the 36x36px physical hitbox footprint with mandatory Allied/Hostile readability outline
+   */
+  fun drawCustomModularShipOnCanvas(
+    c: Canvas,
+    cx: Float,
+    cy: Float,
+    r: Float,
+    recipe: CustomHullVisualRecipe,
+    isAllied: Boolean = true,
+  ) {
+    c.save()
+    c.translate(cx, cy)
+
+    val safePrimaryHex = CustomHullVisualRecipe.ensureMinLuminanceHex(recipe.primaryHex, 0.32f)
+    val safeTrimHex = CustomHullVisualRecipe.ensureMinLuminanceHex(recipe.trimHex, 0.45f)
+    val safeCoreHex = CustomHullVisualRecipe.ensureMinLuminanceHex(recipe.coreGlowHex, 0.55f)
+
+    val baseHullInt = Color.parseColor(safePrimaryHex)
+    val trimInt = Color.parseColor(safeTrimHex)
+    val coreInt = Color.parseColor(safeCoreHex)
+
+    fun scaleColor(color: Int, factor: Float): Int {
+      val red = (Color.red(color) * factor).toInt().coerceIn(14, 255)
+      val green = (Color.green(color) * factor).toInt().coerceIn(16, 255)
+      val blue = (Color.blue(color) * factor).toInt().coerceIn(22, 255)
+      return Color.rgb(red, green, blue)
+    }
+
+    val hullColors =
+      intArrayOf(
+        scaleColor(baseHullInt, 0.45f),
+        scaleColor(baseHullInt, 0.85f),
+        scaleColor(baseHullInt, 1.45f),
+        scaleColor(baseHullInt, 0.85f),
+        scaleColor(baseHullInt, 0.45f),
+      )
+
+    val trimColors =
+      intArrayOf(
+        scaleColor(trimInt, 1.30f),
+        trimInt,
+        scaleColor(trimInt, 0.62f),
+        scaleColor(trimInt, 1.15f),
+      )
+
+    val trimPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader =
+          LinearGradient(
+            -r,
+            -r,
+            r,
+            r,
+            trimColors,
+            floatArrayOf(0f, 0.38f, 0.72f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      }
+
+    val hullPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader =
+          LinearGradient(
+            0f,
+            -r,
+            0f,
+            r,
+            hullColors,
+            floatArrayOf(0f, 0.30f, 0.50f, 0.70f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      }
+
+    val upperPlatePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader =
+          LinearGradient(
+            -r * 0.5f,
+            -r * 0.5f,
+            r * 0.6f,
+            r * 0.5f,
+            intArrayOf(hullColors[2], hullColors[1], hullColors[0]),
+            floatArrayOf(0f, 0.55f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      }
+
+    val readabilityOutlinePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.8f
+        strokeJoin = Paint.Join.ROUND
+        color = if (isAllied) Color.parseColor("#38BDF8") else Color.parseColor("#EF4444")
+      }
+
+    val specularEdgePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.6f
+        strokeJoin = Paint.Join.ROUND
+        color = Color.argb(210, 255, 255, 255)
+      }
+
+    val seamPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.5f
+        color = Color.parseColor("#020617")
+      }
+
+    val gunBarrelPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#1E293B")
+      }
+    val gunBarrelStroke =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.6f
+        color = Color.parseColor("#94A3B8")
+      }
+    val coreGlowPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = coreInt
+      }
+    val whiteCorePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.WHITE
+      }
+
+    // Clamp wingSweep to ensure silhouette stays strictly inside the 36x36 hitbox footprint
+    val sweep = recipe.wingSweep.coerceIn(0.68f, 1.08f)
+
+    // 1. Engine Housing Pods based on recipe.engineStyle
+    when (recipe.engineStyle) {
+      "QUAD_NOVA" -> {
+        for (ey in floatArrayOf(-0.62f, -0.34f, 0.34f, 0.62f)) {
+          c.drawRect(-r * 0.96f, ey * r - r * 0.08f, -r * 0.45f, ey * r + r * 0.08f, trimPaint)
+          c.drawRect(-r * 0.96f, ey * r - r * 0.08f, -r * 0.45f, ey * r + r * 0.08f, gunBarrelStroke)
+        }
+      }
+      "HEAVY_THRUSTER" -> {
+        c.drawRect(-r * 1.00f, -r * 0.56f, -r * 0.42f, -r * 0.24f, trimPaint)
+        c.drawRect(-r * 1.00f, r * 0.24f, -r * 0.42f, r * 0.56f, trimPaint)
+        c.drawRect(-r * 1.00f, -r * 0.56f, -r * 0.42f, -r * 0.24f, gunBarrelStroke)
+        c.drawRect(-r * 1.00f, r * 0.24f, -r * 0.42f, r * 0.56f, gunBarrelStroke)
+      }
+      "BIO_ARC" -> {
+        c.drawCircle(-r * 0.78f, -r * 0.36f, r * 0.14f, coreGlowPaint)
+        c.drawCircle(-r * 0.78f, r * 0.36f, r * 0.14f, coreGlowPaint)
+      }
+      else -> {
+        c.drawRect(-r * 0.94f, -r * 0.44f, -r * 0.46f, -r * 0.24f, gunBarrelPaint)
+        c.drawRect(-r * 0.94f, r * 0.24f, -r * 0.46f, r * 0.44f, gunBarrelPaint)
+      }
+    }
+
+    // Forward modular weapon barrels
+    c.drawRect(r * 0.36f, -r * 0.24f, r * 1.12f, -r * 0.12f, gunBarrelPaint)
+    c.drawRect(r * 0.36f, -r * 0.24f, r * 1.12f, -r * 0.12f, gunBarrelStroke)
+    c.drawRect(r * 0.36f, r * 0.12f, r * 1.12f, r * 0.24f, gunBarrelPaint)
+    c.drawRect(r * 0.36f, r * 0.12f, r * 1.12f, r * 0.24f, gunBarrelStroke)
+    c.drawCircle(r * 1.10f, -r * 0.18f, r * 0.055f, coreGlowPaint)
+    c.drawCircle(r * 1.10f, r * 0.18f, r * 0.055f, coreGlowPaint)
+
+    val outerTrimPath = Path()
+    val mainArmorPath = Path()
+    val upperDeckPath = Path()
+
+    when (recipe.silhouette) {
+      "CRESCENT_SCYTHE" -> {
+        outerTrimPath.apply {
+          moveTo(r * 1.08f, 0f)
+          cubicTo(r * 0.82f, -r * 0.55f * sweep, r * 0.28f, -r * 1.04f * sweep, -r * 0.72f, -r * 0.94f * sweep)
+          cubicTo(-r * 0.30f, -r * 0.54f * sweep, -r * 0.28f, -r * 0.22f, -r * 0.80f, 0f)
+          cubicTo(-r * 0.28f, r * 0.22f, -r * 0.30f, r * 0.54f * sweep, -r * 0.72f, r * 0.94f * sweep)
+          cubicTo(r * 0.28f, r * 1.04f * sweep, r * 0.82f, r * 0.55f * sweep, r * 1.08f, 0f)
+          close()
+        }
+        mainArmorPath.apply {
+          moveTo(r * 0.94f, 0f)
+          cubicTo(r * 0.70f, -r * 0.44f * sweep, r * 0.20f, -r * 0.88f * sweep, -r * 0.56f, -r * 0.80f * sweep)
+          cubicTo(-r * 0.20f, -r * 0.44f * sweep, -r * 0.20f, -r * 0.18f, -r * 0.66f, 0f)
+          cubicTo(-r * 0.20f, r * 0.18f, -r * 0.20f, r * 0.44f * sweep, -r * 0.56f, r * 0.80f * sweep)
+          cubicTo(r * 0.20f, r * 0.88f * sweep, r * 0.70f, r * 0.44f * sweep, r * 0.94f, 0f)
+          close()
+        }
+      }
+      "BASTION_DREADNOUGHT" -> {
+        outerTrimPath.apply {
+          moveTo(r * 0.98f, -r * 0.28f)
+          lineTo(r * 0.66f, -r * 0.68f * sweep)
+          lineTo(r * 0.38f, -r * 0.98f * sweep)
+          lineTo(-r * 0.56f, -r * 0.98f * sweep)
+          lineTo(-r * 0.96f, -r * 0.72f * sweep)
+          lineTo(-r * 0.82f, 0f)
+          lineTo(-r * 0.96f, r * 0.72f * sweep)
+          lineTo(-r * 0.56f, r * 0.98f * sweep)
+          lineTo(r * 0.38f, r * 0.98f * sweep)
+          lineTo(r * 0.66f, r * 0.68f * sweep)
+          lineTo(r * 0.98f, r * 0.28f)
+          close()
+        }
+        mainArmorPath.apply {
+          moveTo(r * 0.84f, -r * 0.22f)
+          lineTo(r * 0.54f, -r * 0.56f * sweep)
+          lineTo(r * 0.28f, -r * 0.84f * sweep)
+          lineTo(-r * 0.48f, -r * 0.84f * sweep)
+          lineTo(-r * 0.82f, -r * 0.60f * sweep)
+          lineTo(-r * 0.68f, 0f)
+          lineTo(-r * 0.82f, r * 0.60f * sweep)
+          lineTo(-r * 0.48f, r * 0.84f * sweep)
+          lineTo(r * 0.28f, r * 0.84f * sweep)
+          lineTo(r * 0.54f, r * 0.56f * sweep)
+          lineTo(r * 0.84f, r * 0.22f)
+          close()
+        }
+      }
+      "MANTA_STINGRAY" -> {
+        outerTrimPath.apply {
+          moveTo(r * 1.10f, -r * 0.38f * sweep)
+          lineTo(r * 0.28f, -r * 0.16f)
+          lineTo(r * 0.72f, 0f)
+          lineTo(r * 0.28f, r * 0.16f)
+          lineTo(r * 1.10f, r * 0.38f * sweep)
+          lineTo(r * 0.44f, r * 0.74f * sweep)
+          lineTo(-r * 0.26f, r * 1.00f * sweep)
+          lineTo(-r * 0.92f, r * 0.52f * sweep)
+          lineTo(-r * 0.62f, 0f)
+          lineTo(-r * 0.92f, -r * 0.52f * sweep)
+          lineTo(-r * 0.26f, -r * 1.00f * sweep)
+          lineTo(r * 0.44f, -r * 0.74f * sweep)
+          close()
+        }
+        mainArmorPath.apply {
+          moveTo(r * 0.94f, -r * 0.32f * sweep)
+          lineTo(r * 0.18f, -r * 0.12f)
+          lineTo(r * 0.54f, 0f)
+          lineTo(r * 0.18f, r * 0.12f)
+          lineTo(r * 0.94f, r * 0.32f * sweep)
+          lineTo(r * 0.36f, r * 0.60f * sweep)
+          lineTo(-r * 0.22f, r * 0.86f * sweep)
+          lineTo(-r * 0.78f, r * 0.42f * sweep)
+          lineTo(-r * 0.50f, 0f)
+          lineTo(-r * 0.78f, -r * 0.42f * sweep)
+          lineTo(-r * 0.22f, -r * 0.86f * sweep)
+          lineTo(r * 0.36f, -r * 0.60f * sweep)
+          close()
+        }
+      }
+      "X_VALKYRIE" -> {
+        outerTrimPath.apply {
+          moveTo(r * 1.06f, 0f)
+          lineTo(r * 0.42f, -r * 0.22f)
+          lineTo(r * 0.72f, -r * 0.98f * sweep)
+          lineTo(r * 0.32f, -r * 1.00f * sweep)
+          lineTo(-r * 0.08f, -r * 0.38f)
+          lineTo(-r * 0.68f, -r * 0.98f * sweep)
+          lineTo(-r * 0.96f, -r * 0.82f * sweep)
+          lineTo(-r * 0.54f, -r * 0.20f)
+          lineTo(-r * 0.88f, 0f)
+          lineTo(-r * 0.54f, r * 0.20f)
+          lineTo(-r * 0.96f, r * 0.82f * sweep)
+          lineTo(-r * 0.68f, r * 0.98f * sweep)
+          lineTo(-r * 0.08f, r * 0.38f)
+          lineTo(r * 0.32f, r * 1.00f * sweep)
+          lineTo(r * 0.72f, r * 0.98f * sweep)
+          lineTo(r * 0.42f, r * 0.22f)
+          close()
+        }
+        mainArmorPath.apply {
+          moveTo(r * 0.92f, 0f)
+          lineTo(r * 0.34f, -r * 0.18f)
+          lineTo(r * 0.58f, -r * 0.84f * sweep)
+          lineTo(r * 0.28f, -r * 0.86f * sweep)
+          lineTo(-r * 0.08f, -r * 0.30f)
+          lineTo(-r * 0.58f, -r * 0.84f * sweep)
+          lineTo(-r * 0.82f, -r * 0.70f * sweep)
+          lineTo(-r * 0.44f, -r * 0.16f)
+          lineTo(-r * 0.74f, 0f)
+          lineTo(-r * 0.44f, r * 0.16f)
+          lineTo(-r * 0.82f, r * 0.70f * sweep)
+          lineTo(-r * 0.58f, r * 0.84f * sweep)
+          lineTo(-r * 0.08f, r * 0.30f)
+          lineTo(r * 0.28f, r * 0.86f * sweep)
+          lineTo(r * 0.58f, r * 0.84f * sweep)
+          lineTo(r * 0.34f, r * 0.18f)
+          close()
+        }
+      }
+      "PINCER_MANDIBLE" -> {
+        outerTrimPath.apply {
+          moveTo(r * 1.08f, -r * 0.30f)
+          lineTo(r * 0.76f, -r * 0.66f * sweep)
+          lineTo(r * 0.26f, -r * 0.34f)
+          lineTo(r * 0.26f, r * 0.34f)
+          lineTo(r * 0.76f, r * 0.66f * sweep)
+          lineTo(r * 1.08f, r * 0.30f)
+          lineTo(r * 0.58f, r * 0.90f * sweep)
+          lineTo(-r * 0.12f, r * 1.00f * sweep)
+          lineTo(-r * 0.92f, r * 0.70f * sweep)
+          lineTo(-r * 0.72f, 0f)
+          lineTo(-r * 0.92f, -r * 0.70f * sweep)
+          lineTo(-r * 0.12f, -r * 1.00f * sweep)
+          lineTo(r * 0.58f, -r * 0.90f * sweep)
+          close()
+        }
+        mainArmorPath.apply {
+          moveTo(r * 0.92f, -r * 0.28f)
+          lineTo(r * 0.62f, -r * 0.54f * sweep)
+          lineTo(r * 0.18f, -r * 0.26f)
+          lineTo(r * 0.18f, r * 0.26f)
+          lineTo(r * 0.62f, r * 0.54f * sweep)
+          lineTo(r * 0.92f, r * 0.28f)
+          lineTo(r * 0.46f, r * 0.76f * sweep)
+          lineTo(-r * 0.10f, r * 0.86f * sweep)
+          lineTo(-r * 0.78f, r * 0.56f * sweep)
+          lineTo(-r * 0.60f, 0f)
+          lineTo(-r * 0.78f, -r * 0.56f * sweep)
+          lineTo(-r * 0.10f, -r * 0.86f * sweep)
+          lineTo(r * 0.46f, -r * 0.76f * sweep)
+          close()
+        }
+      }
+      else -> {
+        // RAZOR_INTERCEPTOR
+        outerTrimPath.apply {
+          moveTo(r * 1.08f, -r * 0.24f)
+          lineTo(r * 0.38f, -r * 0.30f)
+          lineTo(r * 0.20f, -r * 0.96f * sweep)
+          lineTo(-r * 0.36f, -r * 0.90f * sweep)
+          lineTo(-r * 0.90f, -r * 0.54f * sweep)
+          lineTo(-r * 0.70f, 0f)
+          lineTo(-r * 0.90f, r * 0.54f * sweep)
+          lineTo(-r * 0.36f, r * 0.90f * sweep)
+          lineTo(r * 0.20f, r * 0.96f * sweep)
+          lineTo(r * 0.38f, r * 0.30f)
+          lineTo(r * 1.08f, r * 0.24f)
+          lineTo(r * 0.34f, r * 0.08f)
+          lineTo(r * 0.60f, 0f)
+          lineTo(r * 0.34f, -r * 0.08f)
+          close()
+        }
+        mainArmorPath.apply {
+          moveTo(r * 0.98f, -r * 0.20f)
+          lineTo(r * 0.26f, -r * 0.26f)
+          lineTo(r * 0.10f, -r * 0.80f * sweep)
+          lineTo(-r * 0.32f, -r * 0.76f * sweep)
+          lineTo(-r * 0.78f, -r * 0.42f * sweep)
+          lineTo(-r * 0.58f, 0f)
+          lineTo(-r * 0.78f, r * 0.42f * sweep)
+          lineTo(-r * 0.32f, r * 0.76f * sweep)
+          lineTo(r * 0.10f, r * 0.80f * sweep)
+          lineTo(r * 0.26f, r * 0.26f)
+          lineTo(r * 0.98f, r * 0.20f)
+          lineTo(r * 0.22f, r * 0.08f)
+          lineTo(r * 0.48f, 0f)
+          lineTo(r * 0.22f, -r * 0.08f)
+          close()
+        }
+      }
+    }
+
+    upperDeckPath.apply {
+      moveTo(r * 0.58f, 0f)
+      lineTo(r * 0.04f, -r * 0.44f)
+      lineTo(-r * 0.54f, -r * 0.28f)
+      lineTo(-r * 0.40f, 0f)
+      lineTo(-r * 0.54f, r * 0.28f)
+      lineTo(r * 0.04f, r * 0.44f)
+      close()
+    }
+
+    // Layer 1: Trim + Mandatory Team Readability Outline
+    c.drawPath(outerTrimPath, trimPaint)
+    c.drawPath(outerTrimPath, readabilityOutlinePaint)
+
+    // Layer 2: Main 5-Stop Metallic Armor Hull + Specular Highlight
+    c.drawPath(mainArmorPath, hullPaint)
+    c.drawPath(mainArmorPath, specularEdgePaint)
+
+    // Layer 3: Superstructure Deck & Chassis Plates (1..4)
+    c.drawPath(upperDeckPath, upperPlatePaint)
+    c.drawPath(upperDeckPath, seamPaint)
+    for (pIdx in 1..recipe.chassisPlates.coerceIn(1, 4)) {
+      val frac = pIdx * 0.15f
+      c.drawLine(-r * 0.52f, -r * frac, r * 0.36f, -r * (frac * 0.5f), seamPaint)
+      c.drawLine(-r * 0.52f, r * frac, r * 0.36f, r * (frac * 0.5f), seamPaint)
+    }
+
+    // Layer 4: glowing V-Core Reactor in custom coreGlowHex
+    val vCoreOuter =
+      Path().apply {
+        moveTo(r * 0.40f, 0f)
+        lineTo(-r * 0.32f, -r * 0.38f)
+        lineTo(-r * 0.10f, 0f)
+        lineTo(-r * 0.32f, r * 0.38f)
+        close()
+      }
+    c.drawPath(vCoreOuter, coreGlowPaint)
+
+    val vCoreInner =
+      Path().apply {
+        moveTo(r * 0.24f, 0f)
+        lineTo(-r * 0.20f, -r * 0.20f)
+        lineTo(-r * 0.05f, 0f)
+        lineTo(-r * 0.20f, r * 0.20f)
+        close()
+      }
+    c.drawPath(vCoreInner, whiteCorePaint)
 
     c.restore()
   }

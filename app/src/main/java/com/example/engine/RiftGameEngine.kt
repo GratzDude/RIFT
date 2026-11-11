@@ -279,34 +279,12 @@ class RiftGameEngine(
   var radarBgBitmap: Bitmap? = null
 
   fun getEffectiveBuffCap(): Int {
-    if (RiftCalibrationState.buffTargetCountOverride != null) {
-      return RiftCalibrationState.buffTargetCountOverride!!.coerceAtLeast(0)
-    }
-    val effectiveMode = when (RiftCalibrationState.buffModeOverride) {
-      "3v3" -> "3v3"
-      "5v5" -> "5v5"
-      "10v10" -> "10v10"
-      "FFA" -> "FFA"
-      else -> {
-        when (mode) {
-          "ranked_3v3" -> "3v3"
-          "ranked_5v5" -> "5v5"
-          "FFA", "free_for_all", "ffa" -> "FFA"
-          else -> "10v10"
-        }
-      }
-    }
-    return when (effectiveMode) {
-      "3v3" -> RiftCalibrationState.buffCap3v3
-      "5v5" -> RiftCalibrationState.buffCap5v5
-      "10v10" -> RiftCalibrationState.buffCap10v10
-      "FFA" -> RiftCalibrationState.buffCapFfa
-      else -> RiftCalibrationState.buffCap10v10
-    }
+    return (RiftCalibrationState.buffTargetCountOverride ?: RiftCalibrationState.buffCapFfa)
+      .coerceAtLeast(0)
   }
 
-  var mode: String = "warzone_10v10"
-  var teamSize: Int = 10
+  var mode: String = "FFA"
+  var teamSize: Int = 20
   var buffVersion: Int = 0
 
   // Fluid Up-to-5-Man Named Armada State
@@ -397,7 +375,11 @@ class RiftGameEngine(
       xpFromBountyEarned.toLong() +
       xpFromBountyKilled.toLong()
 
-  fun getCustomizationPointsTotal(): Int = pilotLevel.coerceIn(1, 100)
+  fun isNinthShipUnlocked(): Boolean =
+    pilotLevel >= 20 || RiftCalibrationState.unlockFullNinthShipOverride
+
+  fun getCustomizationPointsTotal(): Int =
+    if (RiftCalibrationState.unlockFullNinthShipOverride) 100 else pilotLevel.coerceIn(1, 100)
 
   fun getCustomizationPointsAvailable(): Int =
     (getCustomizationPointsTotal() - spentCustomizationPoints).coerceAtLeast(0)
@@ -483,7 +465,9 @@ class RiftGameEngine(
 
   /**
    * Evaluates public FFA match / Sector Convergence conclusion:
-   * Awards +100 Rift Shards & +1 Public Game Win if the #1 top-bounty player was present for >50% of total match duration.
+   * 1. Awards +100❖ Rift Shards & +1 Public Game Win if the #1 top-bounty player was present for >50% of total match duration.
+   * 2. Procedurally resets the sector into a brand-new map (new seed, fresh walls, anomalies, Supply Crates, and radar map),
+   *    clears projectiles, resets bounties to 100, restores full Flux, and starts a new 60-minute FFA match cycle.
    */
   fun concludePublicFfaMatchCycle(forceSimulateWinWithPresence: Boolean = false) {
     if (forceSimulateWinWithPresence) {
@@ -508,32 +492,72 @@ class RiftGameEngine(
         riftShards += 100L
         sfx.playPrize()
         val bannerMsg =
-          "🏆 PUBLIC FFA VICTORY! #1 BOUNTY (${localPlayer.bounty} BTY • $presencePct% PRESENCE) — +100❖ RIFT SHARDS & +1 PUBLIC WIN!"
+          "🏆 SECTOR CONVERGENCE VICTORY! #1 BOUNTY (${localPlayer.bounty} BTY • $presencePct% PRESENCE) — +100❖ RIFT SHARDS & NEW FFA MAP!"
         highBountyShutdownBanner = bannerMsg
         highBountyShutdownTimer = 5.5f
-        spawnPooledFct(
-          text = "🏆 +100❖ SHARDS & +1 PUBLIC WIN!",
-          x = localPlayer.x,
-          y = localPlayer.y - 42f,
-          color = Color.parseColor("#FFD700"),
-          maxLife = 1.6f,
-        )
         onPrizeToast(bannerMsg)
       } else {
-        onPrizeToast(
-          "⚠️ #1 BOUNTY ACHIEVED, BUT PRESENCE ($presencePct%) WAS <= 50% OF MATCH DURATION (NO RIFT SHARDS AWARDED)"
-        )
+        val bannerMsg =
+          "🌀 SECTOR CONVERGENCE: #1 BOUNTY ACHIEVED, BUT PRESENCE ($presencePct%) <= 50% — NEW FFA MAP GENERATED!"
+        highBountyShutdownBanner = bannerMsg
+        highBountyShutdownTimer = 4.5f
+        onPrizeToast(bannerMsg)
       }
     } else {
       val winnerName = topShip?.callsign ?: "SECTOR ACE"
       val winnerBty = topShip?.bounty ?: 100
-      onPrizeToast("🌀 PUBLIC FFA MATCH CONCLUDED — WINNER: $winnerName ($winnerBty BTY)")
+      val bannerMsg =
+        "🌀 SECTOR CONVERGENCE: WINNER $winnerName ($winnerBty BTY) — PROCEDURAL NEW FFA MAP ONLINE!"
+      highBountyShutdownBanner = bannerMsg
+      highBountyShutdownTimer = 4.5f
+      onPrizeToast(bannerMsg)
     }
+
+    // Procedurally regenerate a brand-new arena map for the next 60-minute FFA match
+    val newSeed = Random.nextInt(10_000, 999_999)
+    generateSectorArena(seed = newSeed)
+    bullets.clear()
+    bombs.clear()
+    shockwaves.clear()
+    shieldRipples.clear()
 
     publicMatchDurationSec = 0f
     for (s in ships) {
       s.matchPresenceTimeSec = 0f
+      s.bounty = 100
+      s.flux = s.maxFlux
+      s.respawnTimer = 0f
+      s.vx = 0f
+      s.vy = 0f
+      s.safeZoneStayTimer = 0f
+      s.playfieldIdleTimer = 0f
+      s.isIdleDraining = false
+      if (s.isLocalPlayer) {
+        val sp = getSafeZoneSpawnPosition()
+        s.x = sp.first
+        s.y = sp.second
+        s.inSafeZone = true
+        s.wasInSafeZone = true
+        s.weaponsLocked = true
+        s.canFire = false
+        s.weaponState = "DISARMED"
+        s.phaseShieldTimer = 3.0f
+      } else {
+        val sp = getOuterGateSpawnPosition(s.freq)
+        s.x = sp.first
+        s.y = sp.second
+        s.inSafeZone = false
+        s.wasInSafeZone = false
+      }
     }
+    sfx.playWarp()
+    spawnPooledFct(
+      text = "🌀 NEW SECTOR MAP CONVERGED",
+      x = localPlayer.x,
+      y = localPlayer.y - 38f,
+      color = Color.parseColor("#00F0FF"),
+      maxLife = 1.6f,
+    )
     onStatsUpdated()
   }
 
@@ -564,7 +588,7 @@ class RiftGameEngine(
         phaseShieldTimer = 3.0f,
       )
     syncLocalArmadaSelfSlot()
-    rebuildRosterForMode("warzone_10v10")
+    rebuildRosterForMode("FFA")
   }
 
   /**
@@ -1114,16 +1138,10 @@ class RiftGameEngine(
     return (if (freq == 0) 560f else WORLD_SIZE - 560f) to (WORLD_SIZE / 2f)
   }
 
-  fun rebuildRosterForMode(newMode: String) {
-    mode = newMode
-    val isFfa = newMode == "FFA" || newMode == "free_for_all" || newMode == "ffa"
-    teamSize =
-      when (newMode) {
-        "ranked_3v3" -> 3
-        "ranked_5v5" -> 5
-        "FFA", "free_for_all", "ffa" -> 20
-        else -> 10
-      }
+  fun rebuildRosterForMode(newMode: String = "FFA") {
+    mode = "FFA"
+    val isFfa = true
+    teamSize = 20
 
     val updated = mutableListOf<ShipEntity>()
     updated.add(localPlayer)
@@ -1372,8 +1390,19 @@ class RiftGameEngine(
     localPlayer.multifireOn = false
     buffVersion++
     syncLocalArmadaSelfSlot()
-    onPrizeToast("HULL EQUIPPED: ${spec.id}-${spec.name.uppercase()} (${spec.maxFlux.toInt()}❖)")
+    onPrizeToast("HULL EQUIPPED: ${spec.id}-${spec.name.uppercase()} (${spec.maxFlux.toInt()}⚡)")
     return true
+  }
+
+  fun syncLocalPlayerCustomShipSpec() {
+    if (localPlayer.shipId == 9) {
+      val updatedSpec = RiftCodex.customShip9Spec
+      val fluxRatio = (localPlayer.flux / localPlayer.maxFlux.coerceAtLeast(1f)).coerceIn(0.1f, 1f)
+      localPlayer.spec = updatedSpec
+      localPlayer.maxFlux = updatedSpec.maxFlux
+      localPlayer.flux = (updatedSpec.maxFlux * fluxRatio).coerceAtLeast(200f)
+    }
+    onStatsUpdated()
   }
 
   fun engageManualBrake() {
@@ -1582,6 +1611,94 @@ class RiftGameEngine(
       return
     }
 
+    if (spec.bombType == "BURST") {
+      // Built-in Secondary Burst (9th Custom Ship): 24-pellet radial bouncing shrapnel ring powered by Flux
+      val count = 24
+      val pelletDmg = (spec.bombDamage / 3.2f) * (1f + ship.bombTierUpgrade * 0.12f)
+      for (i in 0 until count) {
+        val a = (i.toFloat() / count) * (Math.PI.toFloat() * 2f)
+        val spd = 880f
+        bullets.add(
+          BulletEntity(
+            ownerId = ship.id,
+            ownerCallsign = ship.callsign,
+            ownerSyndicateTag = ship.syndicateTag,
+            ownerArmadaName = ship.armadaName,
+            ownerIsHuman = ship.isHuman,
+            freq = ship.freq,
+            x = ship.x + cos(a) * 24f,
+            y = ship.y + sin(a) * 24f,
+            vx = cos(a) * spd,
+            vy = sin(a) * spd,
+            damage = pelletDmg,
+            bouncesLeft = 4,
+            color = Color.parseColor("#FF7A18"),
+            life = 2.6f,
+            isHeavyBurst = true,
+          )
+        )
+      }
+      return
+    }
+
+    if (spec.bombType == "SHOTGUN") {
+      // Built-in Secondary Shotgun (9th Custom Ship): 3-wave 60-degree cone blast powered by Flux
+      ship.shotgunAimAngle = fireAngle
+      fireShotgunWave(ship, fireAngle)
+      ship.shotgunWavesRemaining = 2
+      ship.shotgunWaveTimer = 0.085f
+      return
+    }
+
+    if (spec.bombType == "MISSILE") {
+      // Built-in Secondary Lock-On Bouncing Missile (9th Custom Ship): 1.5s homing capped to 4-Goliath top speed (420f)
+      val mx = ship.x + cos(fireAngle) * 48f
+      val my = ship.y + sin(fireAngle) * 48f
+      if (isInsideSafeZone(mx, my)) return
+      val missileMaxSpd = 420f
+      val lockTarget = findMissileLockTarget(ship, fireAngle)
+      val launchAngle =
+        if (lockTarget != null) {
+          atan2(lockTarget.y - ship.y, lockTarget.x - ship.x)
+        } else {
+          fireAngle
+        }
+      bombs.add(
+        BombEntity(
+          ownerId = ship.id,
+          ownerCallsign = ship.callsign,
+          ownerSyndicateTag = ship.syndicateTag,
+          ownerArmadaName = ship.armadaName,
+          ownerIsHuman = ship.isHuman,
+          freq = ship.freq,
+          type = "MISSILE",
+          x = mx,
+          y = my,
+          vx = cos(launchAngle) * missileMaxSpd,
+          vy = sin(launchAngle) * missileMaxSpd,
+          damage = spec.bombDamage * (1f + ship.bombTierUpgrade * 0.15f),
+          bouncesLeft = spec.bombBounces.coerceAtLeast(3),
+          passWalls = false,
+          life = 1.5f,
+          radius = 18f,
+          targetShipId = lockTarget?.id ?: "",
+        )
+      )
+      if (lockTarget != null) {
+        lockTarget.missileLockWarningTimer = 1.5f
+        if (ship.isLocalPlayer) {
+          sfx.playMissileLockBeep()
+          spawnPooledFct(
+            text = "🎯 MISSILE LOCK: ${lockTarget.callsign}",
+            x = ship.x,
+            y = ship.y - 28f,
+            color = Color.parseColor("#EF4444"),
+          )
+        }
+      }
+      return
+    }
+
     val bx = ship.x + cos(fireAngle) * 52f
     val by = ship.y + sin(fireAngle) * 52f
     if (isInsideSafeZone(bx, by)) return
@@ -1706,7 +1823,7 @@ class RiftGameEngine(
         if (localPlayer.specialWeaponCharges <= 0 || localPlayer.specialWeaponType == "NONE") return
         val fluxCost = 260f
         if (localPlayer.flux <= fluxCost) {
-          onPrizeToast("INSUFFICIENT FLUX FOR $resolvedType (260❖)")
+          onPrizeToast("INSUFFICIENT FLUX FOR $resolvedType (260⚡)")
           return
         }
         localPlayer.specialWeaponCharges--
@@ -1818,7 +1935,7 @@ class RiftGameEngine(
       "REPEL" -> {
         if (localPlayer.repels <= 0) return
         if (localPlayer.flux <= 320f) {
-          onPrizeToast("INSUFFICIENT FLUX FOR REPEL (320❖)")
+          onPrizeToast("INSUFFICIENT FLUX FOR REPEL (320⚡)")
           return
         }
         localPlayer.repels--
@@ -3356,7 +3473,7 @@ class RiftGameEngine(
                 sfx.playBounce()
                 addTrauma(0.24f)
                 spawnPooledFct(
-                  text = "☢ PLASMA RIFT -${dmg.toInt()}❖ (10%)",
+                  text = "☢ PLASMA RIFT -${dmg.toInt()}⚡ (10%)",
                   x = s.x,
                   y = s.y - 28f,
                   color = Color.parseColor("#EF4444"),
