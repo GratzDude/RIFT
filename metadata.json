@@ -1,0 +1,6 @@
+{
+  "name": "RIFT",
+  "description": "High-speed 2D Newtonian space combat arena inspired by SubSpace/Continuum with Brawl Stars twin-stick controls, 8 Foundry hulls, and Firebase Firestore multiplayer sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,6 @@
+{
+  "summary":  "Revised Phase 4 Implementation Plan: Added a dedicated [UNLOCK FULL 9TH SHIP (100 PTS)] Calibration setting in RiftCalibrationState.kt and RiftCalibrationDialog.kt so the 9th Custom Modular Chassis can be tested at full 100-point capacity without leveling up, alongside the Hangar 3x3 9-Ship Comparison Matrix and AI Hull Forge.",
+  "updatedAt":  "2026-11-11T14:46:40.040519969Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

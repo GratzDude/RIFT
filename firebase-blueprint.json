@@ -1,0 +1,293 @@
+{
+  "entities": {
+    "PilotDossier": {
+      "title": "PilotDossier",
+      "description": "Authenticated pilot profile, foundry preferences, and dual-bucket combat statistics.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "callsign": {
+          "type": "string",
+          "description": "Pilot display callsign in space and on leaderboards."
+        },
+        "preferredShipId": {
+          "type": "integer",
+          "description": "Selected hull ID (1-8)."
+        },
+        "preferredFoundry": {
+          "type": "string",
+          "enum": ["Kestrel", "Aurelia", "Vortex", "Rustweld"],
+          "description": "Selected ship foundry."
+        },
+        "preferredMode": {
+          "type": "string",
+          "enum": ["warzone_10v10", "ranked_3v3", "ranked_5v5"],
+          "description": "Selected combat arena queue."
+        },
+        "pvpKills": {
+          "type": "integer",
+          "description": "Eliminations scored against real human pilots."
+        },
+        "pvpDeaths": {
+          "type": "integer",
+          "description": "Deaths suffered from real human pilots."
+        },
+        "pvpBountyPeak": {
+          "type": "integer",
+          "description": "Highest bounty achieved in PVP combat."
+        },
+        "allTimeKills": {
+          "type": "integer",
+          "description": "Total eliminations across human pilots and AI bots."
+        },
+        "allTimeDeaths": {
+          "type": "integer",
+          "description": "Total deaths across human pilots and AI bots."
+        },
+        "allTimeBountyPeak": {
+          "type": "integer",
+          "description": "Highest bounty achieved across all sessions."
+        },
+        "convergencesWon": {
+          "type": "integer",
+          "description": "Number of hourly Sector Convergence resets won."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of dossier creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last dossier update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "callsign",
+        "preferredShipId",
+        "preferredFoundry",
+        "preferredMode",
+        "pvpKills",
+        "pvpDeaths",
+        "pvpBountyPeak",
+        "allTimeKills",
+        "allTimeDeaths",
+        "allTimeBountyPeak",
+        "convergencesWon",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Publicly readable competitive leaderboard entry without PII.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "description": "Visibility scope for query enforcement."
+        },
+        "callsign": {
+          "type": "string",
+          "description": "Pilot callsign."
+        },
+        "shipId": {
+          "type": "integer",
+          "description": "Active hull ID (1-8)."
+        },
+        "foundry": {
+          "type": "string",
+          "enum": ["Kestrel", "Aurelia", "Vortex", "Rustweld"],
+          "description": "Active ship foundry."
+        },
+        "pvpKills": {
+          "type": "integer",
+          "description": "Human-only PVP kills."
+        },
+        "pvpDeaths": {
+          "type": "integer",
+          "description": "Human-only PVP deaths."
+        },
+        "pvpBounty": {
+          "type": "integer",
+          "description": "Peak or active PVP bounty."
+        },
+        "allTimeKills": {
+          "type": "integer",
+          "description": "All-time kills (PVP + Bots)."
+        },
+        "allTimeDeaths": {
+          "type": "integer",
+          "description": "All-time deaths (PVP + Bots)."
+        },
+        "allTimeBounty": {
+          "type": "integer",
+          "description": "Peak all-time bounty."
+        },
+        "convergencesWon": {
+          "type": "integer",
+          "description": "Hourly sector convergences won."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of entry creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "visibility",
+        "callsign",
+        "shipId",
+        "foundry",
+        "pvpKills",
+        "pvpDeaths",
+        "pvpBounty",
+        "allTimeKills",
+        "allTimeDeaths",
+        "allTimeBounty",
+        "convergencesWon",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LivePilotState": {
+      "title": "LivePilotState",
+      "description": "Real-time sector presence, ship telemetry, and holo-ping state for human pilots.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "sectorId": {
+          "type": "string",
+          "enum": ["warzone_10v10", "ranked_3v3", "ranked_5v5"],
+          "description": "Sector queue identifier."
+        },
+        "callsign": {
+          "type": "string",
+          "description": "Pilot callsign."
+        },
+        "shipId": {
+          "type": "integer",
+          "description": "Active ship hull (1-8)."
+        },
+        "freq": {
+          "type": "integer",
+          "description": "Team frequency (0 for Yellow, 1 for Red)."
+        },
+        "x": {
+          "type": "number",
+          "description": "World X coordinate."
+        },
+        "y": {
+          "type": "number",
+          "description": "World Y coordinate."
+        },
+        "vx": {
+          "type": "number",
+          "description": "Velocity X component."
+        },
+        "vy": {
+          "type": "number",
+          "description": "Velocity Y component."
+        },
+        "angle": {
+          "type": "number",
+          "description": "Ship heading in radians."
+        },
+        "energy": {
+          "type": "integer",
+          "description": "Current unified energy capacitor value."
+        },
+        "maxEnergy": {
+          "type": "integer",
+          "description": "Maximum energy capacitor capacity."
+        },
+        "bounty": {
+          "type": "integer",
+          "description": "Current active bounty in sector."
+        },
+        "lastPingType": {
+          "type": "string",
+          "enum": ["NONE", "ATTACK", "DEFEND", "CONVERGENCE"],
+          "description": "Latest tactical holo-ping broadcast."
+        },
+        "lastPingX": {
+          "type": "number",
+          "description": "World X coordinate of holo-ping."
+        },
+        "lastPingY": {
+          "type": "number",
+          "description": "World Y coordinate of holo-ping."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of presence creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest telemetry heartbeat."
+        }
+      },
+      "required": [
+        "userId",
+        "sectorId",
+        "callsign",
+        "shipId",
+        "freq",
+        "x",
+        "y",
+        "vx",
+        "vy",
+        "angle",
+        "energy",
+        "maxEnergy",
+        "bounty",
+        "lastPingType",
+        "lastPingX",
+        "lastPingY",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/PilotDossier"
+      },
+      "description": "Owner-isolated pilot dossier and persistent combat record."
+    },
+    "/leaderboard/{userId}": {
+      "schema": {
+        "$ref": "#/entities/LeaderboardEntry"
+      },
+      "description": "Global dual-bucket competitive leaderboard (PVP Only and All-Time)."
+    },
+    "/sector_pilots/{userId}": {
+      "schema": {
+        "$ref": "#/entities/LivePilotState"
+      },
+      "description": "Real-time human pilot telemetry and tactical holo-pings per sector."
+    }
+  }
+}

@@ -1,0 +1,216 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core security primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidFoundry(f) {
+      return f is string && f.size() <= 20 && f in ['Kestrel', 'Aurelia', 'Vortex', 'Rustweld'];
+    }
+
+    function isValidSectorMode(m) {
+      return m is string && m.size() <= 30 && m in ['warzone_10v10', 'ranked_3v3', 'ranked_5v5'];
+    }
+
+    // 1. PilotDossier Validation Blueprint
+    function isValidPilotDossier(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.callsign is string && data.callsign.size() >= 2 && data.callsign.size() <= 24 &&
+             data.preferredShipId is int && data.preferredShipId >= 1 && data.preferredShipId <= 8 &&
+             isValidFoundry(data.preferredFoundry) &&
+             isValidSectorMode(data.preferredMode) &&
+             data.pvpKills is int && data.pvpKills >= 0 && data.pvpKills <= 10000000 &&
+             data.pvpDeaths is int && data.pvpDeaths >= 0 && data.pvpDeaths <= 10000000 &&
+             data.pvpBountyPeak is int && data.pvpBountyPeak >= 0 && data.pvpBountyPeak <= 100000000 &&
+             data.allTimeKills is int && data.allTimeKills >= 0 && data.allTimeKills <= 10000000 &&
+             data.allTimeDeaths is int && data.allTimeDeaths >= 0 && data.allTimeDeaths <= 10000000 &&
+             data.allTimeBountyPeak is int && data.allTimeBountyPeak >= 0 && data.allTimeBountyPeak <= 100000000 &&
+             data.convergencesWon is int && data.convergencesWon >= 0 && data.convergencesWon <= 1000000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // 2. LeaderboardEntry Validation Blueprint
+    function isValidLeaderboardEntry(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.visibility is string && data.visibility.size() == 6 && data.visibility == 'public' &&
+             data.callsign is string && data.callsign.size() >= 2 && data.callsign.size() <= 24 &&
+             data.shipId is int && data.shipId >= 1 && data.shipId <= 8 &&
+             isValidFoundry(data.foundry) &&
+             data.pvpKills is int && data.pvpKills >= 0 && data.pvpKills <= 10000000 &&
+             data.pvpDeaths is int && data.pvpDeaths >= 0 && data.pvpDeaths <= 10000000 &&
+             data.pvpBounty is int && data.pvpBounty >= 0 && data.pvpBounty <= 100000000 &&
+             data.allTimeKills is int && data.allTimeKills >= 0 && data.allTimeKills <= 10000000 &&
+             data.allTimeDeaths is int && data.allTimeDeaths >= 0 && data.allTimeDeaths <= 10000000 &&
+             data.allTimeBounty is int && data.allTimeBounty >= 0 && data.allTimeBounty <= 100000000 &&
+             data.convergencesWon is int && data.convergencesWon >= 0 && data.convergencesWon <= 1000000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // 3. LivePilotState Validation Blueprint
+    function isValidLivePilotState(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             isValidSectorMode(data.sectorId) &&
+             data.callsign is string && data.callsign.size() >= 2 && data.callsign.size() <= 24 &&
+             data.shipId is int && data.shipId >= 1 && data.shipId <= 8 &&
+             data.freq is int && data.freq >= 0 && data.freq <= 99 &&
+             (data.x is int || data.x is float) && data.x >= -100000 && data.x <= 100000 &&
+             (data.y is int || data.y is float) && data.y >= -100000 && data.y <= 100000 &&
+             (data.vx is int || data.vx is float) && data.vx >= -5000 && data.vx <= 5000 &&
+             (data.vy is int || data.vy is float) && data.vy >= -5000 && data.vy <= 5000 &&
+             (data.angle is int || data.angle is float) && data.angle >= -100 && data.angle <= 100 &&
+             data.energy is int && data.energy >= 0 && data.energy <= 5000 &&
+             data.maxEnergy is int && data.maxEnergy >= 100 && data.maxEnergy <= 5000 &&
+             data.bounty is int && data.bounty >= 0 && data.bounty <= 100000000 &&
+             data.lastPingType is string && data.lastPingType.size() <= 16 &&
+             data.lastPingType in ['NONE', 'ATTACK', 'DEFEND', 'CONVERGENCE'] &&
+             (data.lastPingX is int || data.lastPingX is float) && data.lastPingX >= -100000 && data.lastPingX <= 100000 &&
+             (data.lastPingY is int || data.lastPingY is float) && data.lastPingY >= -100000 && data.lastPingY <= 100000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // Collection 1: /users/{userId} (Owner-Isolated PilotDossier)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().keys().hasAll([
+                         'userId', 'callsign', 'preferredShipId', 'preferredFoundry', 'preferredMode',
+                         'pvpKills', 'pvpDeaths', 'pvpBountyPeak',
+                         'allTimeKills', 'allTimeDeaths', 'allTimeBountyPeak',
+                         'convergencesWon', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'callsign', 'preferredShipId', 'preferredFoundry', 'preferredMode',
+                         'pvpKills', 'pvpDeaths', 'pvpBountyPeak',
+                         'allTimeKills', 'allTimeDeaths', 'allTimeBountyPeak',
+                         'convergencesWon', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidPilotDossier(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidPilotDossier(incoming()) &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'callsign', 'preferredShipId', 'preferredFoundry', 'preferredMode',
+                         'pvpKills', 'pvpDeaths', 'pvpBountyPeak',
+                         'allTimeKills', 'allTimeDeaths', 'allTimeBountyPeak',
+                         'convergencesWon', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    // Collection 2: /leaderboard/{userId} (Publicly Queryable Non-PII Competitive Leaderboard)
+    match /leaderboard/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (resource == null || existing().visibility == 'public');
+      allow list: if isSignedIn() && existing().visibility == 'public';
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().keys().hasAll([
+                         'userId', 'visibility', 'callsign', 'shipId', 'foundry',
+                         'pvpKills', 'pvpDeaths', 'pvpBounty',
+                         'allTimeKills', 'allTimeDeaths', 'allTimeBounty',
+                         'convergencesWon', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'visibility', 'callsign', 'shipId', 'foundry',
+                         'pvpKills', 'pvpDeaths', 'pvpBounty',
+                         'allTimeKills', 'allTimeDeaths', 'allTimeBounty',
+                         'convergencesWon', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidLeaderboardEntry(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidLeaderboardEntry(incoming()) &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().visibility == existing().visibility &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'callsign', 'shipId', 'foundry',
+                         'pvpKills', 'pvpDeaths', 'pvpBounty',
+                         'allTimeKills', 'allTimeDeaths', 'allTimeBounty',
+                         'convergencesWon', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    // Collection 3: /sector_pilots/{userId} (Real-Time Sector Presence & Holo-Pings)
+    match /sector_pilots/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (resource == null || existing().sectorId in ['warzone_10v10', 'ranked_3v3', 'ranked_5v5']);
+      allow list: if isSignedIn() && existing().sectorId in ['warzone_10v10', 'ranked_3v3', 'ranked_5v5'];
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().keys().hasAll([
+                         'userId', 'sectorId', 'callsign', 'shipId', 'freq',
+                         'x', 'y', 'vx', 'vy', 'angle',
+                         'energy', 'maxEnergy', 'bounty',
+                         'lastPingType', 'lastPingX', 'lastPingY',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'sectorId', 'callsign', 'shipId', 'freq',
+                         'x', 'y', 'vx', 'vy', 'angle',
+                         'energy', 'maxEnergy', 'bounty',
+                         'lastPingType', 'lastPingX', 'lastPingY',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidLivePilotState(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidLivePilotState(incoming()) &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'sectorId', 'callsign', 'shipId', 'freq',
+                         'x', 'y', 'vx', 'vy', 'angle',
+                         'energy', 'maxEnergy', 'bounty',
+                         'lastPingType', 'lastPingX', 'lastPingY',
+                         'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+  }
+}

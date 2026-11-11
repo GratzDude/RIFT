@@ -1,0 +1,743 @@
+package com.example.data
+
+import android.content.Context
+import android.content.SharedPreferences
+import java.util.Locale
+import java.util.UUID
+import kotlin.math.ceil
+import org.json.JSONArray
+import org.json.JSONObject
+
+class LocalPilotPrefs(context: Context) {
+  private val prefs: SharedPreferences =
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+  /**
+   * Returns a permanent device-bound UID stored in local storage so guest stats and leaderboard
+   * identity follow the player forever across app launches without requiring Google OAuth popups.
+   */
+  fun getOrCreatePermanentDeviceUid(): String {
+    val existing = prefs.getString(KEY_DEVICE_UID, null)
+    if (!existing.isNullOrBlank()) return existing
+    val generated = "dev_" + UUID.randomUUID().toString().replace("-", "").take(16)
+    prefs.edit().putString(KEY_DEVICE_UID, generated).apply()
+    return generated
+  }
+
+  fun isGuestBypassEnabled(): Boolean = prefs.getBoolean(KEY_GUEST_BYPASS, false)
+
+  fun setGuestBypassEnabled(enabled: Boolean) {
+    val editor = prefs.edit().putBoolean(KEY_GUEST_BYPASS, enabled)
+    if (enabled && !prefs.contains(KEY_SYNDICATE_TAG)) {
+      editor.putString(KEY_SYNDICATE_TAG, "GUEST")
+      editor.putString(KEY_SYNDICATE_NAME, "Guest Tracking Framework")
+    }
+    editor.apply()
+  }
+
+  fun getCallsign(): String {
+    return prefs.getString(KEY_CALLSIGN, "COMMANDER") ?: "COMMANDER"
+  }
+
+  fun setCallsign(rawCallsign: String): String {
+    val cleaned =
+      rawCallsign
+        .trim()
+        .uppercase()
+        .replace(Regex("[^A-Z0-9_\\-]"), "")
+        .take(14)
+        .ifEmpty { "COMMANDER" }
+    prefs.edit().putString(KEY_CALLSIGN, cleaned).apply()
+    return cleaned
+  }
+
+  fun getSyndicateTag(): String {
+    return prefs.getString(KEY_SYNDICATE_TAG, "GUEST") ?: "GUEST"
+  }
+
+  fun getSyndicateName(): String {
+    return prefs.getString(KEY_SYNDICATE_NAME, "Guest Tracking Framework") ?: "Guest Tracking Framework"
+  }
+
+  fun getSyndicateLockUntilMs(): Long {
+    return prefs.getLong(KEY_SYNDICATE_LOCK_UNTIL_MS, 0L)
+  }
+
+  fun getRemainingSyndicateLockDays(nowMs: Long = System.currentTimeMillis()): Int {
+    val lockUntil = getSyndicateLockUntilMs()
+    if (lockUntil <= nowMs) return 0
+    val diffMs = lockUntil - nowMs
+    return ceil(diffMs.toDouble() / (24.0 * 3600.0 * 1000.0)).toInt()
+  }
+
+  fun getRemainingSyndicateLockFormatted(nowMs: Long = System.currentTimeMillis()): String {
+    val lockUntil = getSyndicateLockUntilMs()
+    if (lockUntil <= nowMs) return "00d 00h"
+    val diffMs = lockUntil - nowMs
+    val totalHours = ceil(diffMs.toDouble() / (3600.0 * 1000.0)).toInt()
+    val days = totalHours / 24
+    val hours = totalHours % 24
+    return String.format(Locale.US, "%02dd %02dh", days, hours)
+  }
+
+  fun joinOfficialSyndicate(tag: String, name: String, apply15DayLock: Boolean = true): Boolean {
+    if (apply15DayLock && getRemainingSyndicateLockDays() > 0) {
+      return false
+    }
+    val lockUntil =
+      if (apply15DayLock) {
+        System.currentTimeMillis() + FIFTEEN_DAYS_MS
+      } else {
+        getSyndicateLockUntilMs()
+      }
+    prefs
+      .edit()
+      .putString(KEY_SYNDICATE_TAG, tag.uppercase().take(4))
+      .putString(KEY_SYNDICATE_NAME, name.take(28))
+      .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
+      .apply()
+    return true
+  }
+
+  fun leaveSyndicate(): Boolean {
+    if (getRemainingSyndicateLockDays() > 0) {
+      return false
+    }
+    val lockUntil = System.currentTimeMillis() + FIFTEEN_DAYS_MS
+    prefs
+      .edit()
+      .putString(KEY_SYNDICATE_TAG, "GUEST")
+      .putString(KEY_SYNDICATE_NAME, "Guest Tracking Framework")
+      .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
+      .apply()
+    return true
+  }
+
+  fun getCameraZoom(): Float {
+    return prefs.getFloat(KEY_CAMERA_ZOOM, 1.0f).coerceIn(0.5f, 1.5f)
+  }
+
+  fun setCameraZoom(zoom: Float) {
+    prefs.edit().putFloat(KEY_CAMERA_ZOOM, zoom.coerceIn(0.5f, 1.5f)).apply()
+  }
+
+  // Active Named Armada (SOLO = "", or named up-to-5-man Armada e.g. "APEX_STRIKE")
+  fun getActiveArmadaName(): String = prefs.getString(KEY_ARMADA_NAME, "") ?: ""
+
+  fun setActiveArmadaName(armadaName: String) {
+    val clean = armadaName.trim().uppercase().replace(Regex("[^A-Z0-9_\\-]"), "").take(12)
+    prefs.edit().putString(KEY_ARMADA_NAME, clean).apply()
+  }
+
+  fun getMySyndicateRoster(
+    currentUid: String,
+    callsign: String,
+    shipId: Int,
+    bounty: Long,
+    kills: Long,
+  ): List<SyndicateMemberEntry> {
+    val tag = getSyndicateTag()
+    return listOf(
+      SyndicateMemberEntry(
+        uid = currentUid,
+        callsign = callsign,
+        tag = tag,
+        shipId = shipId,
+        shipName = "Hull #$shipId",
+        role = "SYNDICATE COMMANDER (YOU)",
+        bountyContribution = bounty.coerceAtLeast(getAllTimeBountyPeak()),
+        kills = kills,
+        isOnline = true,
+        isLocalPlayer = true,
+      ),
+      SyndicateMemberEntry(
+        uid = "${tag}_wing_1",
+        callsign = "VANGUARD_01",
+        tag = tag,
+        shipId = ((shipId % 8) + 1),
+        shipName = "Hull #${(shipId % 8) + 1}",
+        role = "STRIKE WINGMAN",
+        bountyContribution = 340L,
+        kills = 14L,
+        isOnline = true,
+      ),
+      SyndicateMemberEntry(
+        uid = "${tag}_wing_2",
+        callsign = "TRENCH_GUARD",
+        tag = tag,
+        shipId = 4,
+        shipName = "Goliath",
+        role = "HEAVY SIEGE",
+        bountyContribution = 290L,
+        kills = 11L,
+        isOnline = true,
+      ),
+      SyndicateMemberEntry(
+        uid = "${tag}_wing_3",
+        callsign = "PHASE_RUNNER",
+        tag = tag,
+        shipId = 6,
+        shipName = "Disruptor",
+        role = "EMP INTERCEPTOR",
+        bountyContribution = 245L,
+        kills = 9L,
+        isOnline = true,
+      ),
+      SyndicateMemberEntry(
+        uid = "${tag}_wing_4",
+        callsign = "SOLARIS_IX",
+        tag = tag,
+        shipId = 2,
+        shipName = "Ricochet",
+        role = "BOUNCE BOMBER",
+        bountyContribution = 215L,
+        kills = 7L,
+        isOnline = false,
+      ),
+    )
+  }
+
+  fun getPreferredShipId(): Int = prefs.getInt(KEY_SHIP_ID, 1).coerceIn(1, 8)
+
+  fun setPreferredShipId(shipId: Int) {
+    prefs.edit().putInt(KEY_SHIP_ID, shipId.coerceIn(1, 8)).apply()
+  }
+
+  fun getPreferredMode(): String = prefs.getString(KEY_MODE, "warzone_10v10") ?: "warzone_10v10"
+
+  fun setPreferredMode(mode: String) {
+    prefs.edit().putString(KEY_MODE, mode).apply()
+  }
+
+  fun getPvpKills(): Long = prefs.getLong(KEY_PVP_KILLS, 0L)
+  fun getPvpDeaths(): Long = prefs.getLong(KEY_PVP_DEATHS, 0L)
+  fun getPvpBountyPeak(): Long = prefs.getLong(KEY_PVP_BOUNTY_PEAK, 100L)
+  fun getAllTimeKills(): Long = prefs.getLong(KEY_ALL_KILLS, 0L)
+  fun getAllTimeDeaths(): Long = prefs.getLong(KEY_ALL_DEATHS, 0L)
+  fun getAllTimeBountyPeak(): Long = prefs.getLong(KEY_ALL_BOUNTY_PEAK, 100L)
+  fun getConvergencesWon(): Long = prefs.getLong(KEY_CONVERGENCES_WON, 0L)
+  fun getPublicGameWins(): Long = getConvergencesWon()
+  fun getHvtEliminations(): Long = prefs.getLong(KEY_HVT_ELIMINATIONS, 0L)
+  fun getGreensCollected(): Long = prefs.getLong(KEY_GREENS_COLLECTED, 0L)
+
+  // Phase 3: 5 XP Earning Sources & Pilot Level Progression (Levels 1..100) persisted per UID
+  private fun uidKey(baseKey: String, uid: String? = null): String {
+    val activeUid = uid?.takeIf { it.isNotBlank() } ?: getOrCreatePermanentDeviceUid()
+    return "${baseKey}_$activeUid"
+  }
+
+  fun getXpFromBuffs(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_XP_BUFFS, uid), prefs.getLong(KEY_XP_BUFFS, 0L))
+
+  fun getXpFromDamage(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_XP_DAMAGE, uid), prefs.getLong(KEY_XP_DAMAGE, 0L))
+
+  fun getXpFromAccuracy(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_XP_ACCURACY, uid), prefs.getLong(KEY_XP_ACCURACY, 0L))
+
+  fun getXpFromBountyEarned(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), prefs.getLong(KEY_XP_BOUNTY_EARNED, 0L))
+
+  fun getXpFromBountyKilled(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), prefs.getLong(KEY_XP_BOUNTY_KILLED, 0L))
+
+  fun getTotalXp(uid: String? = null): Long =
+    getXpFromBuffs(uid) +
+      getXpFromDamage(uid) +
+      getXpFromAccuracy(uid) +
+      getXpFromBountyEarned(uid) +
+      getXpFromBountyKilled(uid)
+
+  fun getPilotLevel(uid: String? = null): Int =
+    computeLevelFromTotalXp(getTotalXp(uid))
+
+  fun getCustomizationPointsTotal(uid: String? = null): Int =
+    getPilotLevel(uid).coerceIn(1, 100)
+
+  fun getSpentCustomizationPoints(uid: String? = null): Int =
+    prefs.getInt(uidKey(KEY_SPENT_CUSTOM_POINTS, uid), prefs.getInt(KEY_SPENT_CUSTOM_POINTS, 0))
+      .coerceIn(0, getCustomizationPointsTotal(uid))
+
+  fun setSpentCustomizationPoints(points: Int, uid: String? = null) {
+    val clamped = points.coerceIn(0, 100)
+    prefs
+      .edit()
+      .putInt(KEY_SPENT_CUSTOM_POINTS, clamped)
+      .putInt(uidKey(KEY_SPENT_CUSTOM_POINTS, uid), clamped)
+      .apply()
+  }
+
+  fun getRiftShards(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_RIFT_SHARDS, uid), prefs.getLong(KEY_RIFT_SHARDS, 150L))
+
+  fun setRiftShards(shards: Long, uid: String? = null) {
+    val clean = shards.coerceAtLeast(0L)
+    prefs
+      .edit()
+      .putLong(KEY_RIFT_SHARDS, clean)
+      .putLong(uidKey(KEY_RIFT_SHARDS, uid), clean)
+      .apply()
+  }
+
+  fun getHighestMilestoneLevelClaimed(uid: String? = null): Int =
+    prefs.getInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), prefs.getInt(KEY_HIGHEST_MILESTONE_LVL, 0))
+
+  fun getUnlockedExtraSlots(uid: String? = null): Int =
+    prefs.getInt(uidKey(KEY_UNLOCKED_EXTRA_SLOTS, uid), prefs.getInt(KEY_UNLOCKED_EXTRA_SLOTS, 0))
+
+  fun setUnlockedExtraSlots(slots: Int, uid: String? = null) {
+    val clean = slots.coerceAtLeast(0)
+    prefs
+      .edit()
+      .putInt(KEY_UNLOCKED_EXTRA_SLOTS, clean)
+      .putInt(uidKey(KEY_UNLOCKED_EXTRA_SLOTS, uid), clean)
+      .apply()
+  }
+
+  fun getAiShipDesignTokens(uid: String? = null): Int =
+    prefs.getInt(uidKey(KEY_AI_DESIGN_TOKENS, uid), prefs.getInt(KEY_AI_DESIGN_TOKENS, 0))
+
+  fun setAiShipDesignTokens(tokens: Int, uid: String? = null) {
+    val clean = tokens.coerceAtLeast(0)
+    prefs
+      .edit()
+      .putInt(KEY_AI_DESIGN_TOKENS, clean)
+      .putInt(uidKey(KEY_AI_DESIGN_TOKENS, uid), clean)
+      .apply()
+  }
+
+  fun savePilotProgression(
+    uid: String? = null,
+    xpFromBuffs: Long,
+    xpFromDamage: Long,
+    xpFromAccuracy: Long,
+    xpFromBountyEarned: Long,
+    xpFromBountyKilled: Long,
+    riftShards: Long,
+    highestMilestoneLevelClaimed: Int,
+  ) {
+    val cleanShards = riftShards.coerceAtLeast(0L)
+    prefs
+      .edit()
+      .putLong(KEY_XP_BUFFS, xpFromBuffs)
+      .putLong(uidKey(KEY_XP_BUFFS, uid), xpFromBuffs)
+      .putLong(KEY_XP_DAMAGE, xpFromDamage)
+      .putLong(uidKey(KEY_XP_DAMAGE, uid), xpFromDamage)
+      .putLong(KEY_XP_ACCURACY, xpFromAccuracy)
+      .putLong(uidKey(KEY_XP_ACCURACY, uid), xpFromAccuracy)
+      .putLong(KEY_XP_BOUNTY_EARNED, xpFromBountyEarned)
+      .putLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), xpFromBountyEarned)
+      .putLong(KEY_XP_BOUNTY_KILLED, xpFromBountyKilled)
+      .putLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), xpFromBountyKilled)
+      .putLong(KEY_RIFT_SHARDS, cleanShards)
+      .putLong(uidKey(KEY_RIFT_SHARDS, uid), cleanShards)
+      .putInt(KEY_HIGHEST_MILESTONE_LVL, highestMilestoneLevelClaimed)
+      .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), highestMilestoneLevelClaimed)
+      .apply()
+  }
+
+  // Adaptive Armada Tier Kills (1 = SOLO, 2 = 2-Man, 3 = 3-Man, 4 = 4-Man, 5 = 5-Man Armada)
+  fun getArmadaTierKills(tierSize: Int): Long {
+    val clamped = tierSize.coerceIn(1, 5)
+    return prefs.getLong("armada_tier_${clamped}_kills", 0L)
+  }
+
+  fun getArmadaTierBountyPeak(tierSize: Int): Long {
+    val clamped = tierSize.coerceIn(1, 5)
+    return prefs.getLong("armada_tier_${clamped}_bounty", 100L)
+  }
+
+  fun recordArmadaTierStat(tierSize: Int, addKills: Long, currentBounty: Long) {
+    val clamped = tierSize.coerceIn(1, 5)
+    val newKills = getArmadaTierKills(clamped) + addKills
+    val newPeak = kotlin.math.max(getArmadaTierBountyPeak(clamped), currentBounty)
+    prefs
+      .edit()
+      .putLong("armada_tier_${clamped}_kills", newKills)
+      .putLong("armada_tier_${clamped}_bounty", newPeak)
+      .apply()
+  }
+
+  fun saveCombatStats(
+    pvpKills: Long,
+    pvpDeaths: Long,
+    pvpBountyPeak: Long,
+    allTimeKills: Long,
+    allTimeDeaths: Long,
+    allTimeBountyPeak: Long,
+    convergencesWon: Long,
+    hvtEliminations: Long,
+    greensCollected: Long,
+  ) {
+    prefs
+      .edit()
+      .putLong(KEY_PVP_KILLS, pvpKills)
+      .putLong(KEY_PVP_DEATHS, pvpDeaths)
+      .putLong(KEY_PVP_BOUNTY_PEAK, pvpBountyPeak)
+      .putLong(KEY_ALL_KILLS, allTimeKills)
+      .putLong(KEY_ALL_DEATHS, allTimeDeaths)
+      .putLong(KEY_ALL_BOUNTY_PEAK, allTimeBountyPeak)
+      .putLong(KEY_CONVERGENCES_WON, convergencesWon)
+      .putLong(KEY_HVT_ELIMINATIONS, hvtEliminations)
+      .putLong(KEY_GREENS_COLLECTED, greensCollected)
+      .apply()
+  }
+
+  fun getFriendsList(): List<FriendPilotEntry> {
+    val tag = getSyndicateTag()
+    val defaults =
+      listOf(
+        FriendPilotEntry(
+          uid = "friend_vortex_ace",
+          callsign = "VORTEX_ACE",
+          syndicateTag = tag,
+          shipId = 1,
+          statusText = "In Rift (Sector D4) • Flying [APEX_4] Armada",
+          isOnline = true,
+          currentArmadaName = "APEX_4",
+          currentArmadaCount = 4,
+          bounty = 320,
+        ),
+        FriendPilotEntry(
+          uid = "friend_aurelia_prime",
+          callsign = "AURELIA_PRIME",
+          syndicateTag = "AURL",
+          shipId = 4,
+          statusText = "In Rift (Sector C3) • Flying [GOLD_WING] Armada",
+          isOnline = true,
+          currentArmadaName = "GOLD_WING",
+          currentArmadaCount = 2,
+          bounty = 275,
+        ),
+        FriendPilotEntry(
+          uid = "friend_chrono_x",
+          callsign = "CHRONO_X",
+          syndicateTag = tag,
+          shipId = 6,
+          statusText = "In Rift (Safe Haven) • [SOLO] Available for Armada",
+          isOnline = true,
+          currentArmadaName = "",
+          currentArmadaCount = 1,
+          bounty = 190,
+        ),
+        FriendPilotEntry(
+          uid = "friend_valkyrie_z",
+          callsign = "VALKYRIE_Z",
+          syndicateTag = "RUST",
+          shipId = 7,
+          statusText = "In Hangar • Tuning 7-Valkyrie Loadout",
+          isOnline = true,
+          currentArmadaName = "",
+          currentArmadaCount = 1,
+          bounty = 150,
+        ),
+        FriendPilotEntry(
+          uid = "friend_manta_ray",
+          callsign = "MANTA_RAY",
+          syndicateTag = tag,
+          shipId = 8,
+          statusText = "Offline • Last seen 2h ago",
+          isOnline = false,
+          currentArmadaName = "",
+          currentArmadaCount = 1,
+          bounty = 100,
+        ),
+      )
+
+    val customRaw = prefs.getString(KEY_CUSTOM_FRIENDS_JSON, "[]") ?: "[]"
+    val customList = mutableListOf<FriendPilotEntry>()
+    try {
+      val arr = JSONArray(customRaw)
+      for (i in 0 until arr.length()) {
+        val obj = arr.getJSONObject(i)
+        customList.add(
+          FriendPilotEntry(
+            uid = obj.optString("uid", "friend_custom_$i"),
+            callsign = obj.optString("callsign", "WINGMAN_$i"),
+            syndicateTag = obj.optString("syndicateTag", tag),
+            shipId = obj.optInt("shipId", 1),
+            statusText = obj.optString("statusText", "In Rift (Sector E5) • [SOLO] Online"),
+            isOnline = true,
+            currentArmadaName = obj.optString("currentArmadaName", ""),
+            currentArmadaCount = obj.optInt("currentArmadaCount", 1),
+            bounty = obj.optInt("bounty", 140),
+          )
+        )
+      }
+    } catch (_: Exception) {}
+
+    return customList + defaults
+  }
+
+  fun addFriendByCallsign(rawCallsign: String): FriendPilotEntry? {
+    val clean =
+      rawCallsign
+        .trim()
+        .uppercase()
+        .replace(Regex("[^A-Z0-9_\\-]"), "")
+        .take(14)
+    if (clean.length < 3) return null
+    val existing = getFriendsList()
+    if (existing.any { it.callsign.equals(clean, ignoreCase = true) }) {
+      return existing.first { it.callsign.equals(clean, ignoreCase = true) }
+    }
+
+    val created =
+      FriendPilotEntry(
+        uid = "friend_custom_${System.currentTimeMillis()}",
+        callsign = clean,
+        syndicateTag = getSyndicateTag(),
+        shipId = ((clean.hashCode().and(0x7FFFFFFF)) % 8) + 1,
+        statusText = "In Rift (Sector B4) • [SOLO] Ready for Armada",
+        isOnline = true,
+        currentArmadaName = "",
+        currentArmadaCount = 1,
+        bounty = 160,
+      )
+
+    val customRaw = prefs.getString(KEY_CUSTOM_FRIENDS_JSON, "[]") ?: "[]"
+    val arr =
+      try {
+        JSONArray(customRaw)
+      } catch (_: Exception) {
+        JSONArray()
+      }
+    arr.put(
+      JSONObject().apply {
+        put("uid", created.uid)
+        put("callsign", created.callsign)
+        put("syndicateTag", created.syndicateTag)
+        put("shipId", created.shipId)
+        put("statusText", created.statusText)
+        put("currentArmadaName", created.currentArmadaName)
+        put("currentArmadaCount", created.currentArmadaCount)
+        put("bounty", created.bounty)
+      }
+    )
+    prefs.edit().putString(KEY_CUSTOM_FRIENDS_JSON, arr.toString()).apply()
+    return created
+  }
+
+  fun getAllSyndicates(): List<SyndicateInfo> {
+    val defaults =
+      listOf(
+        SyndicateInfo(
+          id = "syn_kestrel",
+          tag = "KSTL",
+          name = "Kestrel Vanguard",
+          foundryOrigin = "Kestrel Syndicate",
+          motto = "Precision Rail Dominance & Ballistic Angles",
+          memberCount = 142,
+          combinedBounty = 48_900L,
+        ),
+        SyndicateInfo(
+          id = "syn_aurelia",
+          tag = "AURL",
+          name = "Aurelia Imperial Guard",
+          foundryOrigin = "Aurelia Syndicate",
+          motto = "Gold-Plated Dreadnoughts & Heavy Siege",
+          memberCount = 118,
+          combinedBounty = 44_250L,
+        ),
+        SyndicateInfo(
+          id = "syn_vortex",
+          tag = "VRTX",
+          name = "Vortex Bio-Tech Collective",
+          foundryOrigin = "Vortex Syndicate",
+          motto = "EMP Disruption & Twin-Boom Manta Swarms",
+          memberCount = 131,
+          combinedBounty = 46_100L,
+        ),
+        SyndicateInfo(
+          id = "syn_rustweld",
+          tag = "RUST",
+          name = "Rustweld Heavy Ironworks",
+          foundryOrigin = "Rustweld Syndicate",
+          motto = "Skeletal Thrusters & Proximity Minefields",
+          memberCount = 96,
+          combinedBounty = 39_800L,
+        ),
+        SyndicateInfo(
+          id = "syn_nova",
+          tag = "NOVA",
+          name = "Nova Core Raiders",
+          foundryOrigin = "Independent Sector Fleet",
+          motto = "Zero-Friction Drift & Center Trench Control",
+          memberCount = 84,
+          combinedBounty = 35_400L,
+        ),
+      )
+
+    val customRaw = prefs.getString(KEY_CUSTOM_SYNDICATES_JSON, "[]") ?: "[]"
+    val customList = mutableListOf<SyndicateInfo>()
+    try {
+      val arr = JSONArray(customRaw)
+      for (i in 0 until arr.length()) {
+        val obj = arr.getJSONObject(i)
+        customList.add(
+          SyndicateInfo(
+            id = obj.optString("id", "syn_custom_$i"),
+            tag = obj.optString("tag", "NOVA"),
+            name = obj.optString("name", "Custom Syndicate"),
+            foundryOrigin = obj.optString("foundryOrigin", "Player Registered Syndicate"),
+            motto = obj.optString("motto", "Forged in the Convergence"),
+            memberCount = obj.optInt("memberCount", 1),
+            combinedBounty = obj.optLong("combinedBounty", 1000L),
+            isCustom = true,
+          )
+        )
+      }
+    } catch (_: Exception) {}
+
+    return customList + defaults
+  }
+
+  fun createCustomSyndicate(tag: String, name: String, motto: String): Result<SyndicateInfo> {
+    val now = System.currentTimeMillis()
+    val remainingDays = getRemainingSyndicateLockDays(now)
+    if (remainingDays > 0) {
+      return Result.failure(
+        IllegalStateException(
+          "15-Day Syndicate Lock active (${getRemainingSyndicateLockFormatted(now)} remaining)."
+        )
+      )
+    }
+
+    val cleanTag = tag.trim().uppercase().replace(Regex("[^A-Z0-9]"), "")
+    if (cleanTag.length !in 3..4) {
+      return Result.failure(IllegalArgumentException("Syndicate Tag must be 3 to 4 letters/digits."))
+    }
+    val cleanName = name.trim().replace(Regex("[^a-zA-Z0-9 _\\-]"), "").take(26)
+    if (cleanName.length < 3) {
+      return Result.failure(IllegalArgumentException("Syndicate Name must be at least 3 characters."))
+    }
+
+    val existing = getAllSyndicates()
+    if (existing.any { it.tag.equals(cleanTag, ignoreCase = true) }) {
+      return Result.failure(IllegalArgumentException("Tag [$cleanTag] is already registered."))
+    }
+
+    val newSyndicate =
+      SyndicateInfo(
+        id = "syn_custom_$now",
+        tag = cleanTag,
+        name = cleanName,
+        foundryOrigin = "Player Founded Syndicate",
+        motto = motto.trim().take(60).ifEmpty { "Forged in the RIFT Convergence" },
+        memberCount = 1,
+        combinedBounty = getAllTimeBountyPeak().coerceAtLeast(250L),
+        isCustom = true,
+      )
+
+    val customRaw = prefs.getString(KEY_CUSTOM_SYNDICATES_JSON, "[]") ?: "[]"
+    val arr =
+      try {
+        JSONArray(customRaw)
+      } catch (_: Exception) {
+        JSONArray()
+      }
+    arr.put(
+      JSONObject().apply {
+        put("id", newSyndicate.id)
+        put("tag", newSyndicate.tag)
+        put("name", newSyndicate.name)
+        put("foundryOrigin", newSyndicate.foundryOrigin)
+        put("motto", newSyndicate.motto)
+        put("memberCount", newSyndicate.memberCount)
+        put("combinedBounty", newSyndicate.combinedBounty)
+      }
+    )
+
+    prefs.edit().putString(KEY_CUSTOM_SYNDICATES_JSON, arr.toString()).apply()
+    joinOfficialSyndicate(cleanTag, cleanName, apply15DayLock = true)
+    return Result.success(newSyndicate)
+  }
+
+  fun getPlayfieldTextScale(): Float = prefs.getFloat(KEY_PLAYFIELD_TEXT_SCALE, 1.0f)
+
+  fun setPlayfieldTextScale(scale: Float) {
+    prefs.edit().putFloat(KEY_PLAYFIELD_TEXT_SCALE, scale.coerceIn(0.75f, 2.0f)).apply()
+  }
+
+  companion object {
+    private const val PREFS_NAME = "rift_permanent_pilot_prefs"
+    private const val KEY_DEVICE_UID = "permanent_device_uid"
+    private const val KEY_GUEST_BYPASS = "guest_bypass_enabled"
+    private const val KEY_CALLSIGN = "pilot_callsign"
+    private const val KEY_SYNDICATE_TAG = "syndicate_tag"
+    private const val KEY_SYNDICATE_NAME = "syndicate_name"
+    private const val KEY_SYNDICATE_LOCK_UNTIL_MS = "syndicate_lock_until_ms"
+    private const val KEY_ARMADA_NAME = "active_armada_name"
+    private const val KEY_CUSTOM_SYNDICATES_JSON = "custom_syndicates_json"
+    private const val KEY_CUSTOM_FRIENDS_JSON = "custom_friends_json"
+    private const val KEY_SHIP_ID = "preferred_ship_id"
+    private const val KEY_MODE = "preferred_mode"
+    private const val KEY_PVP_KILLS = "pvp_kills"
+    private const val KEY_PVP_DEATHS = "pvp_deaths"
+    private const val KEY_PVP_BOUNTY_PEAK = "pvp_bounty_peak"
+    private const val KEY_ALL_KILLS = "all_time_kills"
+    private const val KEY_ALL_DEATHS = "all_time_deaths"
+    private const val KEY_ALL_BOUNTY_PEAK = "all_time_bounty_peak"
+    private const val KEY_CONVERGENCES_WON = "convergences_won"
+    private const val KEY_HVT_ELIMINATIONS = "hvt_eliminations"
+    private const val KEY_GREENS_COLLECTED = "greens_collected"
+    private const val KEY_CAMERA_ZOOM = "camera_zoom_level"
+    private const val KEY_PLAYFIELD_TEXT_SCALE = "playfield_text_scale"
+
+    // Phase 3: Pilot Level (1..100), 5 XP Sources & Rift Shards Currency Keys
+    private const val KEY_XP_BUFFS = "xp_source_buffs"
+    private const val KEY_XP_DAMAGE = "xp_source_damage"
+    private const val KEY_XP_ACCURACY = "xp_source_accuracy"
+    private const val KEY_XP_BOUNTY_EARNED = "xp_source_bounty_earned"
+    private const val KEY_XP_BOUNTY_KILLED = "xp_source_bounty_killed"
+    private const val KEY_RIFT_SHARDS = "rift_shards_balance"
+    private const val KEY_HIGHEST_MILESTONE_LVL = "highest_milestone_level_claimed"
+    private const val KEY_SPENT_CUSTOM_POINTS = "spent_customization_points"
+    private const val KEY_UNLOCKED_EXTRA_SLOTS = "unlocked_extra_hull_slots"
+    private const val KEY_AI_DESIGN_TOKENS = "ai_ship_design_tokens"
+
+    const val FIFTEEN_DAYS_MS = 15L * 24L * 3600L * 1000L
+
+    /**
+     * Cumulative XP required to reach the start of Level [level] (1..100).
+     * Level 1 starts at 0 XP; Level 2 requires 250 XP; each subsequent level step requires +50 XP more.
+     */
+    fun xpForLevelStart(level: Int): Long {
+      val clamped = level.coerceIn(1, 100)
+      if (clamped <= 1) return 0L
+      val n = (clamped - 1).toLong()
+      return n * 250L + (n * (n - 1L) / 2L) * 50L
+    }
+
+    /**
+     * Computes Pilot Level (1..100) from cumulative total XP.
+     */
+    fun computeLevelFromTotalXp(totalXp: Long): Int {
+      val cleanXp = totalXp.coerceAtLeast(0L)
+      for (lvl in 100 downTo 1) {
+        if (cleanXp >= xpForLevelStart(lvl)) {
+          return lvl
+        }
+      }
+      return 1
+    }
+
+    /**
+     * Returns (xpIntoCurrentLevel, xpSpanForCurrentLevel, progressFraction 0f..1f).
+     */
+    fun getXpProgressInLevel(totalXp: Long): Triple<Long, Long, Float> {
+      val cleanXp = totalXp.coerceAtLeast(0L)
+      val lvl = computeLevelFromTotalXp(cleanXp)
+      if (lvl >= 100) {
+        val capXp = xpForLevelStart(100)
+        return Triple(cleanXp - capXp, 0L, 1.0f)
+      }
+      val startXp = xpForLevelStart(lvl)
+      val nextXp = xpForLevelStart(lvl + 1)
+      val span = (nextXp - startXp).coerceAtLeast(1L)
+      val into = (cleanXp - startXp).coerceAtLeast(0L)
+      val frac = (into.toFloat() / span.toFloat()).coerceIn(0f, 1f)
+      return Triple(into, span, frac)
+    }
+  }
+}

@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">RIFT</string>
+    <string name="auth_title">RIFT // SECTOR CONVERGENCE</string>
+    <string name="auth_subtitle">2D Newtonian Space Combat Arena • 10v10 Continuous Warzone</string>
+    <string name="sign_in_with_google">Sign in with Google</string>
+    <string name="signing_in">Authenticating Command Link…</string>
+    <string name="auth_feature_physics">Zero-Friction Drift &amp; 0.65 Elastic Wall Bounce</string>
+    <string name="auth_feature_ships">4 Foundries • 8 Hulls • Unified Energy Capacitor</string>
+    <string name="auth_feature_cloud">Live Cloud Leaderboard (PVP Only &amp; All-Time) + Sector Sync</string>
+    <string name="sign_out">Sign Out</string>
+</resources>
