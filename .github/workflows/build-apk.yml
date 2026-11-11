@@ -3,7 +3,7 @@ name: Build & Publish RIFT APK
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # Lets you trigger a build manually with 1 click
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,10 +22,10 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK Licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Setup Gradle (Handles missing gradlew from AI Studio)
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
