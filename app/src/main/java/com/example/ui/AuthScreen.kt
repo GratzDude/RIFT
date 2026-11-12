@@ -23,10 +23,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -267,11 +266,11 @@ fun AuthScreen(
         )
         Spacer(modifier = Modifier.height(12.dp))
 
-        FeatureBullet(icon = Icons.Default.RocketLaunch, text = stringResource(R.string.auth_feature_physics))
+        FeatureBullet(icon = RiftAuthIcons.Rocket, text = stringResource(R.string.auth_feature_physics))
         Spacer(modifier = Modifier.height(6.dp))
-        FeatureBullet(icon = Icons.Default.Bolt, text = stringResource(R.string.auth_feature_ships))
+        FeatureBullet(icon = RiftAuthIcons.Bolt, text = stringResource(R.string.auth_feature_ships))
         Spacer(modifier = Modifier.height(6.dp))
-        FeatureBullet(icon = Icons.Default.Public, text = stringResource(R.string.auth_feature_cloud))
+        FeatureBullet(icon = RiftAuthIcons.Globe, text = stringResource(R.string.auth_feature_cloud))
 
         if (errorMessage != null) {
           Spacer(modifier = Modifier.height(10.dp))
@@ -371,7 +370,7 @@ fun AuthScreen(
 
 @Composable
 private fun FeatureBullet(
-  icon: androidx.compose.ui.graphics.vector.ImageVector,
+  icon: ImageVector,
   text: String,
 ) {
   Row(
@@ -392,5 +391,100 @@ private fun FeatureBullet(
       fontSize = 13.sp,
       fontFamily = FontFamily.Monospace,
     )
+  }
+}
+
+private object RiftAuthIcons {
+  val Rocket: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "RiftRocket",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+      )
+      .apply {
+        path(fill = SolidColor(Color.White)) {
+          moveTo(12f, 2.5f)
+          lineTo(16.5f, 9f)
+          lineTo(15f, 16.5f)
+          lineTo(18.5f, 19.5f)
+          lineTo(14f, 19.5f)
+          lineTo(12f, 22f)
+          lineTo(10f, 19.5f)
+          lineTo(5.5f, 19.5f)
+          lineTo(9f, 16.5f)
+          lineTo(7.5f, 9f)
+          close()
+        }
+      }
+      .build()
+  }
+
+  val Bolt: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "RiftBolt",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+      )
+      .apply {
+        path(fill = SolidColor(Color.White)) {
+          moveTo(11f, 21f)
+          lineTo(12f, 14f)
+          lineTo(7.5f, 14f)
+          lineTo(13f, 3f)
+          lineTo(12f, 10f)
+          lineTo(16.5f, 10f)
+          close()
+        }
+      }
+      .build()
+  }
+
+  val Globe: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "RiftGlobe",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+      )
+      .apply {
+        path(fill = SolidColor(Color.White)) {
+          moveTo(12f, 2f)
+          curveTo(6.48f, 2f, 2f, 6.48f, 2f, 12f)
+          curveTo(2f, 17.52f, 6.48f, 22f, 12f, 22f)
+          curveTo(17.52f, 22f, 22f, 17.52f, 22f, 12f)
+          curveTo(22f, 6.48f, 17.52f, 2f, 12f, 2f)
+          close()
+          moveTo(11f, 19.93f)
+          curveTo(7.05f, 19.44f, 4f, 16.08f, 4f, 12f)
+          curveTo(4f, 11.38f, 4.08f, 10.79f, 4.21f, 10.21f)
+          lineTo(9f, 15f)
+          verticalLineTo(16f)
+          curveTo(9f, 17.1f, 9.9f, 18f, 11f, 18f)
+          verticalLineTo(19.93f)
+          close()
+          moveTo(17.9f, 17.39f)
+          curveTo(17.64f, 16.58f, 16.9f, 16f, 16f, 16f)
+          horizontalLineTo(15f)
+          verticalLineTo(13f)
+          curveTo(15f, 12.45f, 14.55f, 12f, 14f, 12f)
+          horizontalLineTo(8f)
+          verticalLineTo(10f)
+          horizontalLineTo(10f)
+          curveTo(10.55f, 10f, 11f, 9.55f, 11f, 9f)
+          verticalLineTo(7f)
+          horizontalLineTo(13f)
+          curveTo(14.1f, 7f, 15f, 6.1f, 15f, 5f)
+          verticalLineTo(4.59f)
+          curveTo(17.93f, 5.78f, 20f, 8.65f, 20f, 12f)
+          curveTo(20f, 14.08f, 19.2f, 15.97f, 17.9f, 17.39f)
+          close()
+        }
+      }
+      .build()
   }
 }
