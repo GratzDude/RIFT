@@ -14,6 +14,8 @@ data class ShipSpec(
   val weaponSummary: String,
   val primaryTitle: String,
   val secondaryTitle: String,
+  val primaryShortLabel: String = "FIRE",
+  val secondaryShortLabel: String = "BOMB",
   val speedPts: Int,
   val thrustPts: Int,
   val turnPts: Int,
@@ -21,33 +23,282 @@ data class ShipSpec(
   val rechargePts: Int,
   val primaryPts: Int,
   val secondaryPts: Int,
-  val maxFlux: Float,
-  val rechargeRate: Float,
-  val topSpeed: Float,
-  val afterburnerSpeed: Float,
-  val thrust: Float,
-  val turnRate: Float,
-  val primaryCost: Float,
-  val primaryCooldown: Float,
-  val primaryDamage: Float,
-  val primarySpeed: Float,
+  var maxFlux: Float,
+  var rechargeRate: Float,
+  var topSpeed: Float,
+  var afterburnerSpeed: Float,
+  var thrust: Float,
+  var turnRate: Float,
+  var primaryCost: Float,
+  var primaryCooldown: Float,
+  var primaryDamage: Float,
+  var primarySpeed: Float,
   val primaryStreams: Int,
   val primarySpreadRad: Float,
-  val primaryBounces: Int,
+  var primaryBounces: Int,
   val isParallelTwin: Boolean = false,
   val hasBomb: Boolean,
-  val bombType: String, // "NONE", "PHASE_DASH", "BOUNCE", "SIEGE", "CLOAK_EMP", "PROX", "MINE", "BURST", "SHOTGUN", "MISSILE"
-  val bombCost: Float,
-  val bombCooldown: Float,
-  val bombDamage: Float,
-  val bombBounces: Int,
-  val bombRecoil: Float = 0f,
+  val bombType: String, // "NONE", "PHASE_DASH", "BOUNCE", "SIEGE", "CLOAK_EMP", "PROX", "MINE", "NOVA_RING", "SHATTER_CONE", "SEEKER_TORPEDO"
+  var bombCost: Float,
+  var bombCooldown: Float,
+  var bombDamage: Float,
+  var bombBounces: Int,
+  var bombRecoil: Float = 0f,
   val supportsNativeMultifire: Boolean = false,
   val initialRepels: Int = 2,
   val accentColorHex: Int,
 ) {
   val totalAllocatedPoints: Int
     get() = speedPts + thrustPts + turnPts + maxFluxPts + rechargePts + primaryPts + secondaryPts
+}
+
+enum class BuffAimMode {
+  TAP_INSTANT,
+  AIM_DIRECTIONAL,
+  AIM_BOUNCE_RAY,
+}
+
+enum class CustomBuffEffect(val label: String) {
+  NONE("Kinetic / Plasma Blast"),
+  EMP("EMP Flux Drain & Freeze"),
+  PULL("Gravity Vortex Pull"),
+  PUSH("Shockwave Knockback"),
+  SLOW("Cryo / Stasis Slow"),
+  BARRIER("Hard-Light Energy Wall"),
+  SPEED_BOOST("Hyper Thruster Overdrive"),
+  CLONE("Holographic Decoy Clone"),
+}
+
+data class SpecialBuffRegistryEntry(
+  val id: String,
+  val buffTypeIndex: Int,
+  var officialName: String,
+  var shortLabel: String,
+  var chargesPerPickup: Int,
+  var aimMode: BuffAimMode,
+  var strokeColorHex: String,
+  var fillColorArgb: Int,
+  var summary: String,
+  val isCustomForged: Boolean = false,
+  var projectileSpeed: Float = 720f,
+  var flightDuration: Float = 2.5f,
+  var damage: Float = 420f,
+  var blastRadius: Float = 180f,
+  var specialEffect: CustomBuffEffect = CustomBuffEffect.NONE,
+  var wallBounces: Int = 2,
+  val promptUsed: String = "",
+) {
+  val strokeColorInt: Int
+    get() =
+      try {
+        Color.parseColor(strokeColorHex)
+      } catch (_: Exception) {
+        Color.parseColor("#22D3EE")
+      }
+
+  fun toJsonObject(): JSONObject =
+    JSONObject().apply {
+      put("id", id)
+      put("buffTypeIndex", buffTypeIndex)
+      put("officialName", officialName)
+      put("shortLabel", shortLabel)
+      put("chargesPerPickup", chargesPerPickup)
+      put("aimMode", aimMode.name)
+      put("strokeColorHex", strokeColorHex)
+      put("fillColorArgb", fillColorArgb)
+      put("summary", summary)
+      put("isCustomForged", isCustomForged)
+      put("projectileSpeed", projectileSpeed.toDouble())
+      put("flightDuration", flightDuration.toDouble())
+      put("damage", damage.toDouble())
+      put("blastRadius", blastRadius.toDouble())
+      put("specialEffect", specialEffect.name)
+      put("wallBounces", wallBounces)
+      put("promptUsed", promptUsed)
+    }
+
+  companion object {
+    fun fillColorFromStroke(hex: String): Int {
+      return try {
+        val c = Color.parseColor(hex)
+        Color.argb(155, (Color.red(c) * 0.34f).toInt(), (Color.green(c) * 0.34f).toInt(), (Color.blue(c) * 0.34f).toInt())
+      } catch (_: Exception) {
+        Color.argb(155, 14, 58, 78)
+      }
+    }
+
+    fun fromJsonObject(obj: JSONObject): SpecialBuffRegistryEntry {
+      val stroke = CustomHullVisualRecipe.ensureMinLuminanceHex(obj.optString("strokeColorHex", "#22D3EE"), 0.45f)
+      val aim =
+        runCatching { BuffAimMode.valueOf(obj.optString("aimMode", "AIM_DIRECTIONAL")) }
+          .getOrDefault(BuffAimMode.AIM_DIRECTIONAL)
+      val eff =
+        runCatching { CustomBuffEffect.valueOf(obj.optString("specialEffect", "NONE")) }
+          .getOrDefault(CustomBuffEffect.NONE)
+      return SpecialBuffRegistryEntry(
+        id = obj.optString("id", "CUSTOM_BUFF_${System.currentTimeMillis()}"),
+        buffTypeIndex = obj.optInt("buffTypeIndex", 11).coerceAtLeast(11),
+        officialName = obj.optString("officialName", "CUSTOM ORB").take(22).uppercase(Locale.US),
+        shortLabel = obj.optString("shortLabel", "ORB").take(8).uppercase(Locale.US),
+        chargesPerPickup = obj.optInt("chargesPerPickup", 2).coerceIn(1, 8),
+        aimMode = aim,
+        strokeColorHex = stroke,
+        fillColorArgb = obj.optInt("fillColorArgb", fillColorFromStroke(stroke)),
+        summary = obj.optString("summary", "Custom AI-forged tactical arena ordnance."),
+        isCustomForged = obj.optBoolean("isCustomForged", true),
+        projectileSpeed = obj.optDouble("projectileSpeed", 640.0).toFloat().coerceIn(120f, 1600f),
+        flightDuration = obj.optDouble("flightDuration", 2.5).toFloat().coerceIn(0.4f, 12.0f),
+        damage = obj.optDouble("damage", 480.0).toFloat().coerceIn(0f, 2500f),
+        blastRadius = obj.optDouble("blastRadius", 200.0).toFloat().coerceIn(40f, 650f),
+        specialEffect = eff,
+        wallBounces = obj.optInt("wallBounces", 2).coerceIn(0, 8),
+        promptUsed = obj.optString("promptUsed", ""),
+      )
+    }
+
+    fun synthesizeFromPrompt(rawPrompt: String, nextBuffIndex: Int): SpecialBuffRegistryEntry {
+      val clean = rawPrompt.trim().ifEmpty { "Create a buff called Gravity Well that fires a slow orb that pulls nearby enemies inward for 3 seconds, 2 charges" }
+      val lower = clean.lowercase(Locale.US)
+
+      // 1. Extract explicit name ("called X", "named X", or quoted "X")
+      val quotedMatch = Regex("\"([^\"]{2,22})\"").find(clean)?.groupValues?.getOrNull(1)
+      val calledMatch =
+        Regex("(?i)(?:called|named)\\s+([A-Za-z0-9 _\\-]{2,22}?)(?:\\s+(?:that|which|with|firing|fires|for|costing|,)|$)")
+          .find(clean)
+          ?.groupValues
+          ?.getOrNull(1)
+      val rawName =
+        (quotedMatch ?: calledMatch ?: run {
+          val words =
+            clean.uppercase(Locale.US)
+              .replace(Regex("[^A-Z0-9 ]"), "")
+              .split(" ")
+              .filter { it.length >= 3 && it !in setOf("CREATE", "BUFF", "CALLED", "NAMED", "THAT", "FIRES", "WITH", "THE", "AND", "FOR", "CHARGES", "CHARGE", "SECONDS") }
+          if (words.size >= 2) "${words[0]} ${words[1]}" else words.firstOrNull() ?: "VOID ORB"
+        }).trim().uppercase(Locale.US).take(20)
+
+      val shortLbl =
+        rawName.split(" ")
+          .firstOrNull { it.length >= 3 }
+          ?.take(8)
+          ?: rawName.take(7).ifEmpty { "FORGE" }
+
+      // 2. Extract Special Effect
+      val effect =
+        when {
+          lower.contains("pull") || lower.contains("gravity") || lower.contains("vortex") || lower.contains("black hole") || lower.contains("inward") || lower.contains("suck") ->
+            CustomBuffEffect.PULL
+          lower.contains("push") || lower.contains("knock") || lower.contains("repulse") || lower.contains("shockwave") || lower.contains("impulse") ->
+            CustomBuffEffect.PUSH
+          lower.contains("emp") || lower.contains("drain") || lower.contains("disable") || lower.contains("jam") || lower.contains("ion") ->
+            CustomBuffEffect.EMP
+          lower.contains("slow") || lower.contains("stasis") || lower.contains("cryo") || lower.contains("freeze") || lower.contains("snare") || lower.contains("web") ->
+            CustomBuffEffect.SLOW
+          lower.contains("wall") || lower.contains("barrier") || lower.contains("shield") || lower.contains("block") ->
+            CustomBuffEffect.BARRIER
+          lower.contains("boost") || lower.contains("speed") || lower.contains("dash") || lower.contains("rush") || lower.contains("overdrive") || lower.contains("sprint") ->
+            CustomBuffEffect.SPEED_BOOST
+          lower.contains("clone") || lower.contains("decoy") || lower.contains("hologram") || lower.contains("illusion") || lower.contains("phantom") ->
+            CustomBuffEffect.CLONE
+          else -> CustomBuffEffect.NONE
+        }
+
+      // 3. Extract Aiming Mode
+      val aimMode =
+        when {
+          effect in setOf(CustomBuffEffect.BARRIER, CustomBuffEffect.SPEED_BOOST, CustomBuffEffect.CLONE) ->
+            BuffAimMode.TAP_INSTANT
+          lower.contains("bounce") || lower.contains("ricochet") || lower.contains("bank") || lower.contains("ray") ->
+            BuffAimMode.AIM_BOUNCE_RAY
+          lower.contains("instant") || lower.contains("nova") || lower.contains("360") || lower.contains("around") ->
+            BuffAimMode.TAP_INSTANT
+          else -> BuffAimMode.AIM_DIRECTIONAL
+        }
+
+      // 4. Extract Charges, Duration, Speed, Damage, Radius
+      val chargesMatch = Regex("(\\d+)\\s*charge").find(lower)?.groupValues?.getOrNull(1)?.toIntOrNull()
+      val charges = (chargesMatch ?: if (lower.contains("single")) 1 else 2).coerceIn(1, 8)
+
+      val durationMatch = Regex("(\\d+(?:\\.\\d+)?)\\s*(?:s|sec|second)").find(lower)?.groupValues?.getOrNull(1)?.toFloatOrNull()
+      val duration =
+        (durationMatch ?: when (effect) {
+          CustomBuffEffect.BARRIER -> 8.0f
+          CustomBuffEffect.CLONE -> 7.0f
+          CustomBuffEffect.SPEED_BOOST -> 3.0f
+          CustomBuffEffect.PULL -> 3.0f
+          else -> 2.5f
+        }).coerceIn(0.5f, 12.0f)
+
+      val speed =
+        when {
+          lower.contains("very slow") || lower.contains("stationary") -> 180f
+          lower.contains("slow") || effect == CustomBuffEffect.PULL -> 340f
+          lower.contains("hyper") || lower.contains("rail") || lower.contains("sniper") || lower.contains("instant") -> 1150f
+          lower.contains("fast") || lower.contains("rapid") -> 920f
+          else -> 640f
+        }
+
+      val dmgMatch = Regex("(\\d{2,4})\\s*(?:dmg|damage|flux)").find(lower)?.groupValues?.getOrNull(1)?.toFloatOrNull()
+      val damage =
+        (dmgMatch ?: when {
+          lower.contains("heavy") || lower.contains("nuke") || lower.contains("massive") -> 880f
+          lower.contains("non-lethal") || lower.contains("zero damage") || effect in setOf(CustomBuffEffect.SPEED_BOOST, CustomBuffEffect.CLONE, CustomBuffEffect.BARRIER) -> 0f
+          effect == CustomBuffEffect.PULL -> 360f
+          effect == CustomBuffEffect.EMP -> 440f
+          else -> 520f
+        }).coerceIn(0f, 2500f)
+
+      val radius =
+        when {
+          lower.contains("wide") || lower.contains("huge") || lower.contains("massive") -> 320f
+          lower.contains("small") || lower.contains("pinpoint") -> 110f
+          effect in setOf(CustomBuffEffect.PULL, CustomBuffEffect.PUSH, CustomBuffEffect.EMP) -> 260f
+          else -> 190f
+        }
+
+      val bounces = if (aimMode == BuffAimMode.AIM_BOUNCE_RAY || lower.contains("bounce")) 3 else 1
+
+      // 5. Color Selection
+      val colorHex =
+        when {
+          lower.contains("purple") || lower.contains("violet") || lower.contains("void") || effect == CustomBuffEffect.PULL -> "#C084FC"
+          lower.contains("emerald") || lower.contains("green") || lower.contains("acid") || lower.contains("plasma") -> "#34D399"
+          lower.contains("red") || lower.contains("crimson") || lower.contains("blood") || lower.contains("ruby") -> "#FB7185"
+          lower.contains("gold") || lower.contains("solar") || lower.contains("amber") || lower.contains("yellow") -> "#FACC15"
+          lower.contains("orange") || lower.contains("fire") || lower.contains("magma") -> "#FB923C"
+          lower.contains("cyan") || lower.contains("ice") || lower.contains("frost") || effect == CustomBuffEffect.EMP || effect == CustomBuffEffect.SLOW -> "#38BDF8"
+          else -> "#22D3EE"
+        }
+
+      val idSlug =
+        "FORGED_" +
+          rawName.replace(Regex("[^A-Z0-9]"), "_").trim('_').ifEmpty { "BUFF" } +
+          "_$nextBuffIndex"
+
+      val summaryText =
+        "${effect.label} • ${charges}x Charges • ${String.format(Locale.US, "%.1fs", duration)} flight • ${damage.toInt()}❖ DMG (${radius.toInt()}px radius)."
+
+      return SpecialBuffRegistryEntry(
+        id = idSlug,
+        buffTypeIndex = nextBuffIndex,
+        officialName = rawName,
+        shortLabel = shortLbl,
+        chargesPerPickup = charges,
+        aimMode = aimMode,
+        strokeColorHex = colorHex,
+        fillColorArgb = fillColorFromStroke(colorHex),
+        summary = summaryText,
+        isCustomForged = true,
+        projectileSpeed = speed,
+        flightDuration = duration,
+        damage = damage,
+        blastRadius = radius,
+        specialEffect = effect,
+        wallBounces = bounces,
+        promptUsed = clean.take(160),
+      )
+    }
+  }
 }
 
 /**
@@ -303,59 +554,66 @@ data class CustomShipLoadoutSlot(
     val isPureGunfighterPassive = secondaryType == "PASSIVE_GUNFIGHTER"
     val velBonus = if (isPureGunfighterPassive) 1.10f else 1.0f
 
-    val (priTitle, pCost, pCd, pDmg, pSpd, pStreams, pSpread, pBounces, isParallel) =
+    val (priTitle, priShort, pCost, pCd, pDmg, pSpd, pStreams, pSpread, pBounces, isParallel) =
       when (primaryArchetype) {
         "TWIN_SCATTER" ->
-          PrimaryTuple("Short-Range Twin Scatter", 56f, 0.14f, 175f, 900f * velBonus, 2, 0.065f, 0, false)
+          PrimaryTuple("Short-Range Twin Scatter", "SCATTER", 20f, 0.14f, 175f, 900f * velBonus, 2, 0.065f, 0, false)
         "ION_NEEDLER" ->
-          PrimaryTuple("Twin Ion Needlers", 54f, 0.13f, 165f, 950f * velBonus, 2, 0.04f, 0, false)
+          PrimaryTuple("Twin Ion Needlers", "NEEDLER", 18f, 0.13f, 165f, 950f * velBonus, 2, 0.04f, 0, false)
         "ANGLED_PULSE" ->
-          PrimaryTuple("Twin Angled Pulse", 58f, 0.16f, 195f, 930f * velBonus, 2, 0.045f, 1, false)
+          PrimaryTuple("Twin Angled Pulse", "PULSE", 20f, 0.16f, 195f, 930f * velBonus, 2, 0.045f, 1, false)
         "HEAVY_CANNON" ->
-          PrimaryTuple("Heavy Dual Cannon", 82f, 0.21f, 310f, 880f * velBonus, 2, 0.05f, 0, false)
+          PrimaryTuple("Heavy Dual Cannon", "CANNON", 40f, 0.21f, 310f, 880f * velBonus, 2, 0.05f, 0, false)
         "QUAD_PULSE" ->
-          PrimaryTuple("Quad-Converging Pulse", 64f, 0.15f, 72f, 940f * velBonus, 4, 0.045f, 0, false)
+          PrimaryTuple("Quad-Converging Pulse", "QUAD PULSE", 24f, 0.15f, 72f, 940f * velBonus, 4, 0.045f, 0, false)
         "SNIPER_RAIL" ->
-          PrimaryTuple("Hyper-Velocity Dual Rail", 62f, 0.15f, 285f, 1120f * velBonus, 1, 0f, 0, false)
+          PrimaryTuple("Hyper-Velocity Dual Rail", "RAIL", 25f, 0.15f, 285f, 1120f * velBonus, 1, 0f, 0, false)
         "ROTARY_PULSE" ->
-          PrimaryTuple("High-RPM Rotary Pulse", 48f, 0.095f, 240f, 980f * velBonus, 1, 0f, 0, false)
+          PrimaryTuple("High-RPM Rotary Pulse", "ROTARY", 15f, 0.095f, 240f, 980f * velBonus, 1, 0f, 0, false)
         "PARALLEL_TWIN" ->
-          PrimaryTuple("Parallel Twin-Stream Autocannon", 60f, 0.13f, 135f, 1000f * velBonus, 2, 0.025f, 0, true)
+          PrimaryTuple("Parallel Twin-Stream Autocannon", "AUTOCANNON", 22f, 0.13f, 135f, 1000f * velBonus, 2, 0.025f, 0, true)
         else -> // "LIGHT_PULSE" (0 Pts Free Starter Primary)
-          PrimaryTuple("Standard Light Pulse", 50f, 0.16f, 155f, 920f * velBonus, 1, 0f, 0, false)
+          PrimaryTuple("Standard Light Pulse", "LIGHT PULSE", 16f, 0.16f, 155f, 920f * velBonus, 1, 0f, 0, false)
       }
 
-    val nativeMultifire = secondaryType == "NATIVE_MULTISHOT"
-    val extraRepels = if (secondaryType == "MINE") 1 else 0
-    val hasActiveSecondaryButton =
-      secondaryType !in setOf("NONE", "PASSIVE_GUNFIGHTER", "NATIVE_MULTISHOT")
-
-    val (secTitle, bCost, bCd, bDmg, bBounces, bRecoil) =
+    val normalizedSecondary =
       when (secondaryType) {
+        "BURST" -> "NOVA_RING"
+        "SHOTGUN" -> "SHATTER_CONE"
+        "MISSILE" -> "SEEKER_TORPEDO"
+        else -> secondaryType
+      }
+    val nativeMultifire = normalizedSecondary == "NATIVE_MULTISHOT"
+    val extraRepels = if (normalizedSecondary == "MINE") 1 else 0
+    val hasActiveSecondaryButton =
+      normalizedSecondary !in setOf("NONE", "PASSIVE_GUNFIGHTER", "NATIVE_MULTISHOT")
+
+    val (secTitle, secShort, bCost, bCd, bDmg, bBounces, bRecoil) =
+      when (normalizedSecondary) {
         "PHASE_DASH" ->
-          SecondaryTuple("Phase Dash / Sniper Overcharge (300❖)", 300f, 2.5f, 0f, 0, 0f)
+          SecondaryTuple("Phase Dash / Sniper Overcharge (300❖)", "PHASE", 300f, 2.5f, 0f, 0, 0f)
         "NATIVE_MULTISHOT" ->
-          SecondaryTuple("Native 3x / 1/3x Split Multi-Shot", 0f, 0f, 0f, 0, 0f)
+          SecondaryTuple("Native 3x / 1/3x Split Multi-Shot", "SPLIT MULTI", 0f, 0f, 0f, 0, 0f)
         "MINE" ->
-          SecondaryTuple("Proximity Mines +1 Repel (340❖)", 340f, 0.80f, 1040f, 0, 0f)
+          SecondaryTuple("Proximity Mines +1 Repel (300❖)", "PROX MINE", 300f, 0.80f, 1040f, 0, 0f)
         "BOUNCE" ->
-          SecondaryTuple("Bounce Bomb (350❖)", 350f, 0.85f, 780f, 3, if (isPureGunfighterPassive) 0f else 180f)
+          SecondaryTuple("Bounce Bomb (350❖)", "BOUNCE BOMB", 350f, 0.85f, 780f, 3, if (isPureGunfighterPassive) 0f else 180f)
         "PROX" ->
-          SecondaryTuple("Proximity Flak Bomb (450❖)", 450f, 0.95f, 820f, 1, if (isPureGunfighterPassive) 0f else 210f)
-        "BURST" ->
-          SecondaryTuple("Native Radial Burst (500❖ • 4s CD)", 500f, 4.0f, 280f, 2, 0f)
-        "SHOTGUN" ->
-          SecondaryTuple("Native 3-Wave Shotgun (500❖ • 4s CD)", 500f, 4.0f, 55f, 2, 0f)
+          SecondaryTuple("Proximity Flak Bomb (450❖)", "PROX FLAK", 450f, 0.95f, 820f, 1, if (isPureGunfighterPassive) 0f else 210f)
+        "NOVA_RING" ->
+          SecondaryTuple("Native Nova Ring (500❖ • 4s CD)", "NOVA RING", 500f, 4.0f, 280f, 2, 0f)
+        "SHATTER_CONE" ->
+          SecondaryTuple("Native Shatter Cone (500❖ • 4s CD)", "SHATTER CONE", 500f, 4.0f, 55f, 2, 0f)
         "SIEGE" ->
-          SecondaryTuple("Siege Bomb (650❖ • Heavy Recoil)", 650f, 1.20f, 1350f, 1, if (isPureGunfighterPassive) 0f else 360f)
+          SecondaryTuple("Siege Bomb (650❖ • Heavy Recoil)", "SIEGE BOMB", 650f, 1.20f, 1350f, 1, if (isPureGunfighterPassive) 0f else 360f)
         "CLOAK_EMP" ->
-          SecondaryTuple("Tactical Cloak (180❖/s) + EMP Bomb (350❖)", 350f, 0.95f, 580f, 2, 0f)
-        "MISSILE" ->
-          SecondaryTuple("Native Lock-On Missile (600❖ • 5s CD)", 600f, 5.0f, 780f, 6, 0f)
+          SecondaryTuple("Tactical Cloak (180❖/s) + EMP Bomb (400❖)", "CLOAK", 400f, 0.95f, 580f, 2, 0f)
+        "SEEKER_TORPEDO" ->
+          SecondaryTuple("Native Seeker Torpedo (600❖ • 5s CD)", "SEEKER", 600f, 5.0f, 780f, 6, 0f)
         "PASSIVE_GUNFIGHTER" ->
-          SecondaryTuple("Pure Gunfighter Passive (+10% Vel, 0 Recoil)", 0f, 0f, 0f, 0, 0f)
+          SecondaryTuple("Pure Gunfighter Passive (+10% Vel, 0 Recoil)", "PASSIVE", 0f, 0f, 0f, 0, 0f)
         else ->
-          SecondaryTuple("No Secondary (0 Pts)", 0f, 0f, 0f, 0, 0f)
+          SecondaryTuple("No Secondary (0 Pts)", "NONE", 0f, 0f, 0f, 0, 0f)
       }
 
     val accentInt =
@@ -374,6 +632,8 @@ data class CustomShipLoadoutSlot(
       weaponSummary = "PRIMARY: $priTitle (${primaryPts}P) • CLASS/SEC: $secTitle (${secondaryPts}P)",
       primaryTitle = priTitle,
       secondaryTitle = secTitle,
+      primaryShortLabel = priShort,
+      secondaryShortLabel = secShort,
       speedPts = sPts,
       thrustPts = thPts,
       turnPts = tuPts,
@@ -396,7 +656,7 @@ data class CustomShipLoadoutSlot(
       primaryBounces = pBounces,
       isParallelTwin = isParallel,
       hasBomb = hasActiveSecondaryButton,
-      bombType = secondaryType,
+      bombType = normalizedSecondary,
       bombCost = bCost,
       bombCooldown = bCd,
       bombDamage = bDmg,
@@ -427,38 +687,46 @@ data class CustomShipLoadoutSlot(
   companion object {
     val PRIMARY_OPTIONS: List<PrimaryArchetypeOption> =
       listOf(
-        PrimaryArchetypeOption("LIGHT_PULSE", "Standard Light Pulse", 0, "Free starter pulse blaster (0 Pts)."),
-        PrimaryArchetypeOption("TWIN_SCATTER", "Short-Range Twin Scatter", 10, "Fast close-quarters twin defensive blasters (8-Manta style)."),
-        PrimaryArchetypeOption("ION_NEEDLER", "Twin Ion Needlers", 10, "Rapid-fire dual ion needlers (6-Disruptor style)."),
-        PrimaryArchetypeOption("ANGLED_PULSE", "Twin Angled Pulse", 12, "Dual-wing angled pulse with 1 native wall bounce (2-Ricochet style)."),
-        PrimaryArchetypeOption("HEAVY_CANNON", "Heavy Dual Cannon", 12, "Slow fire rate, heavy kinetic shells (4-Goliath style)."),
-        PrimaryArchetypeOption("QUAD_PULSE", "Quad-Converging Pulse", 12, "4 light bolts converging at mid-range (7-Valkyrie style)."),
-        PrimaryArchetypeOption("SNIPER_RAIL", "Hyper-Velocity Dual Rail", 15, "Fastest projectile velocity, pinpoint single-shot punch (1-Viper style)."),
-        PrimaryArchetypeOption("ROTARY_PULSE", "High-RPM Adaptive Rotary", 15, "Fastest fire rate sustained suppressive stream (3-Suppressor style)."),
-        PrimaryArchetypeOption("PARALLEL_TWIN", "Parallel Twin-Stream", 15, "2 parallel high-velocity bolts with wide dogfight hitbox (5-Twinfang style)."),
+        PrimaryArchetypeOption("LIGHT_PULSE", "Standard Light Pulse", 0, "Free starter pulse blaster (16❖)."),
+        PrimaryArchetypeOption("TWIN_SCATTER", "Short-Range Twin Scatter", 10, "Fast close-quarters twin defensive blasters (20❖, 8-Manta style)."),
+        PrimaryArchetypeOption("ION_NEEDLER", "Twin Ion Needlers", 10, "Rapid-fire dual ion needlers (18❖, 6-Disruptor style)."),
+        PrimaryArchetypeOption("ANGLED_PULSE", "Twin Angled Pulse", 12, "Dual-wing angled pulse with 1 native wall bounce (20❖, 2-Ricochet style)."),
+        PrimaryArchetypeOption("HEAVY_CANNON", "Heavy Dual Cannon", 12, "Slow fire rate, heavy kinetic shells (40❖, 4-Goliath style)."),
+        PrimaryArchetypeOption("QUAD_PULSE", "Quad-Converging Pulse", 12, "4 light bolts converging at mid-range (24❖, 7-Valkyrie style)."),
+        PrimaryArchetypeOption("SNIPER_RAIL", "Hyper-Velocity Dual Rail", 15, "Fastest projectile velocity, pinpoint single-shot punch (25❖, 1-Viper style)."),
+        PrimaryArchetypeOption("ROTARY_PULSE", "High-RPM Adaptive Rotary", 15, "Fastest fire rate sustained suppressive stream (15❖, 3-Suppressor style)."),
+        PrimaryArchetypeOption("PARALLEL_TWIN", "Parallel Twin-Stream", 15, "2 parallel high-velocity bolts with wide dogfight hitbox (22❖, 5-Twinfang style)."),
       )
 
     val SECONDARY_OPTIONS: List<SecondaryAbilityOption> =
       listOf(
         SecondaryAbilityOption("NONE", "No Secondary (Starter)", 0, "0❖", "Leaves Secondary slot empty so all points go to hull stats or primary."),
         SecondaryAbilityOption("PASSIVE_GUNFIGHTER", "Pure Gunfighter Passive", 10, "PASSIVE", "+10% Primary Bullet Velocity and 0 firing recoil."),
-        SecondaryAbilityOption("PHASE_DASH", "Phase Dash + Overcharge", 15, "300❖", "Instant directional dodge burst + 35% next-shot rail overcharge (2.5s CD)."),
+        SecondaryAbilityOption("PHASE_DASH", "Phase Dash + Overcharge", 15, "300❖", "Instant directional phase-shift dodge burst with brief i-frames + 35% next-shot rail overcharge (2.5s CD)."),
         SecondaryAbilityOption("NATIVE_MULTISHOT", "Native Split Multi-Shot", 15, "TOGGLE", "Permanently unlocks Multi-Shot ON/OFF (100% single vs 3x 1/3 split)."),
-        SecondaryAbilityOption("MINE", "Proximity Mines (+1 Repel)", 18, "340❖", "Drops armed proximity mines (max 6, 30s life) + starts with +1 Repel."),
+        SecondaryAbilityOption("MINE", "Proximity Mines (+1 Repel)", 18, "300❖", "Drops armed proximity mines (max 6, 30s life) + starts with +1 Repel."),
         SecondaryAbilityOption("BOUNCE", "Bounce Bomb", 20, "350❖", "Plasma warhead reflecting off walls up to 3 times with raycast line."),
         SecondaryAbilityOption("PROX", "Proximity Flak Bomb", 22, "450❖", "65px proximity fuse warhead bursting into 8 shrapnel pellets."),
-        SecondaryAbilityOption("BURST", "Native Shrapnel Burst", 22, "500❖", "Fires 360° bouncing shrapnel ring on Secondary Button (4s CD)."),
-        SecondaryAbilityOption("SHOTGUN", "Native 3-Wave Shotgun", 22, "500❖", "Fires 3 rapid 60° cone pellet waves on Secondary Button (4s CD)."),
+        SecondaryAbilityOption("NOVA_RING", "Native Nova Ring", 22, "500❖", "Fires 360° ricochet plasma bolt ring on Secondary Button (4s CD)."),
+        SecondaryAbilityOption("SHATTER_CONE", "Native Shatter Cone", 22, "500❖", "Fires 3 rapid 60° cone plasma shard waves on Secondary Button (4s CD)."),
         SecondaryAbilityOption("SIEGE", "Siege Bomb", 25, "650❖", "Massive nuclear dreadnought warhead with heavy backward recoil."),
-        SecondaryAbilityOption("CLOAK_EMP", "Tactical Cloak + EMP Bomb", 25, "180❖/s • 350❖", "Tap to Cloak invisibly; fire while cloaked to launch 35% Flux-drain EMP Bomb."),
-        SecondaryAbilityOption("MISSILE", "Native Lock-On Missile", 25, "600❖", "Fires homing wall-bouncing missile (1.5s detonation, 5s CD)."),
+        SecondaryAbilityOption("CLOAK_EMP", "Tactical Cloak + EMP Bomb", 25, "180❖/s • 400❖", "Tap to Cloak invisibly; fire while cloaked to launch 400❖ EMP Bomb."),
+        SecondaryAbilityOption("SEEKER_TORPEDO", "Native Seeker Torpedo", 25, "600❖", "Fires homing wall-bouncing Seeker Torpedo (2.5s flight, 5s CD)."),
       )
 
     fun getPrimaryPointCost(archetype: String): Int =
       PRIMARY_OPTIONS.firstOrNull { it.id == archetype }?.pointCost ?: 0
 
-    fun getSecondaryPointCost(secType: String): Int =
-      SECONDARY_OPTIONS.firstOrNull { it.id == secType }?.pointCost ?: 0
+    fun getSecondaryPointCost(secType: String): Int {
+      val norm =
+        when (secType) {
+          "BURST" -> "NOVA_RING"
+          "SHOTGUN" -> "SHATTER_CONE"
+          "MISSILE" -> "SEEKER_TORPEDO"
+          else -> secType
+        }
+      return SECONDARY_OPTIONS.firstOrNull { it.id == norm }?.pointCost ?: 0
+    }
 
     fun defaultSlot(slotId: String): CustomShipLoadoutSlot {
       return when (slotId) {
@@ -533,7 +801,13 @@ data class CustomShipLoadoutSlot(
         val recipeObj = obj.optJSONObject("visualRecipe")
         val rawPri = obj.optString("primaryArchetype", "LIGHT_PULSE")
         val validPri = if (PRIMARY_OPTIONS.any { it.id == rawPri }) rawPri else "LIGHT_PULSE"
-        val rawSec = obj.optString("secondaryType", "NONE")
+        val rawSec =
+          when (obj.optString("secondaryType", "NONE")) {
+            "BURST" -> "NOVA_RING"
+            "SHOTGUN" -> "SHATTER_CONE"
+            "MISSILE" -> "SEEKER_TORPEDO"
+            else -> obj.optString("secondaryType", "NONE")
+          }
         val validSec = if (SECONDARY_OPTIONS.any { it.id == rawSec }) rawSec else "NONE"
         CustomShipLoadoutSlot(
           slotId = obj.optString("slotId", fallbackSlotId),
@@ -562,6 +836,7 @@ data class CustomShipLoadoutSlot(
 
 private data class PrimaryTuple(
   val title: String,
+  val shortLabel: String,
   val cost: Float,
   val cooldown: Float,
   val damage: Float,
@@ -574,6 +849,7 @@ private data class PrimaryTuple(
 
 private data class SecondaryTuple(
   val title: String,
+  val shortLabel: String,
   val cost: Float,
   val cooldown: Float,
   val damage: Float,
@@ -614,6 +890,156 @@ object RiftCodex {
   fun computeMaxFlux(pts: Int): Float = BASE_MAX_FLUX + pts.coerceIn(0, 30) * MAX_FLUX_PER_PT
   fun computeRecharge(pts: Int): Float = BASE_RECHARGE + pts.coerceIn(0, 30) * RECHARGE_PER_PT
 
+  private fun createDefaultBuffRegistry(): LinkedHashMap<String, SpecialBuffRegistryEntry> =
+    linkedMapOf(
+      "NOVA_RING" to
+        SpecialBuffRegistryEntry(
+          id = "NOVA_RING",
+          buffTypeIndex = 0,
+          officialName = "NOVA RING",
+          shortLabel = "NOVA",
+          chargesPerPickup = 1,
+          aimMode = BuffAimMode.TAP_INSTANT,
+          strokeColorHex = "#F59E0B",
+          fillColorArgb = Color.argb(155, 80, 40, 6),
+          summary = "360° radial ring of high-velocity ricochet plasma bolts.",
+          projectileSpeed = 860f,
+          flightDuration = 1.05f,
+          damage = 280f,
+          blastRadius = 360f,
+        ),
+      "SHATTER_CONE" to
+        SpecialBuffRegistryEntry(
+          id = "SHATTER_CONE",
+          buffTypeIndex = 1,
+          officialName = "SHATTER CONE",
+          shortLabel = "SHATTER",
+          chargesPerPickup = 2,
+          aimMode = BuffAimMode.AIM_DIRECTIONAL,
+          strokeColorHex = "#FB7185",
+          fillColorArgb = Color.argb(155, 88, 18, 38),
+          summary = "Fires 3 rapid waves of bouncing plasma shards in a 60° cone.",
+          projectileSpeed = 980f,
+          flightDuration = 0.72f,
+          damage = 55f,
+          blastRadius = 60f,
+        ),
+      "SEEKER_TORPEDO" to
+        SpecialBuffRegistryEntry(
+          id = "SEEKER_TORPEDO",
+          buffTypeIndex = 2,
+          officialName = "SEEKER TORPEDO",
+          shortLabel = "SEEKER",
+          chargesPerPickup = 1,
+          aimMode = BuffAimMode.TAP_INSTANT,
+          strokeColorHex = "#EF4444",
+          fillColorArgb = Color.argb(155, 88, 14, 18),
+          summary = "Locks onto hostile targets, bounces off walls, and flies for a full 2.5 seconds before detonating.",
+          projectileSpeed = 380f,
+          flightDuration = 2.5f,
+          damage = 780f,
+          blastRadius = 155f,
+        ),
+      "HOLO_PHANTOM" to
+        SpecialBuffRegistryEntry(
+          id = "HOLO_PHANTOM",
+          buffTypeIndex = 3,
+          officialName = "HOLO PHANTOM",
+          shortLabel = "PHANTOM",
+          chargesPerPickup = 1,
+          aimMode = BuffAimMode.TAP_INSTANT,
+          strokeColorHex = "#38BDF8",
+          fillColorArgb = Color.argb(155, 12, 52, 78),
+          summary = "Spawns a holographic clone with your [TAG] Callsign and Bounty that mirrors velocity and breaks enemy Seeker locks.",
+          flightDuration = 8.0f,
+          damage = 0f,
+          specialEffect = CustomBuffEffect.CLONE,
+        ),
+      "STASIS_BARRIER" to
+        SpecialBuffRegistryEntry(
+          id = "STASIS_BARRIER",
+          buffTypeIndex = 4,
+          officialName = "STASIS BARRIER",
+          shortLabel = "BARRIER",
+          chargesPerPickup = 1,
+          aimMode = BuffAimMode.TAP_INSTANT,
+          strokeColorHex = "#22D3EE",
+          fillColorArgb = Color.argb(155, 10, 62, 72),
+          summary = "Deploys a crackling cyan/amber hard-light energy barrier perpendicular to the ship that blocks ships and bounces projectiles for 10s.",
+          flightDuration = 10.0f,
+          damage = 0f,
+          blastRadius = 120f,
+          specialEffect = CustomBuffEffect.BARRIER,
+        ),
+      "HYPER_SURGE" to
+        SpecialBuffRegistryEntry(
+          id = "HYPER_SURGE",
+          buffTypeIndex = 5,
+          officialName = "HYPER SURGE",
+          shortLabel = "SURGE",
+          chargesPerPickup = 1,
+          aimMode = BuffAimMode.TAP_INSTANT,
+          strokeColorHex = "#A855F7",
+          fillColorArgb = Color.argb(155, 58, 18, 88),
+          summary = "3.0-second 1.65x hyper-thruster speed burn costing 0❖ Flux.",
+          flightDuration = 3.0f,
+          damage = 0f,
+          specialEffect = CustomBuffEffect.SPEED_BOOST,
+        ),
+    )
+
+  /**
+   * Dynamic, Extensible Special Buff Registry (`BUFF_REGISTRY`) for the 4th Right-Hand Combat Button.
+   * Supports both the 6 core Bucket A buffs (0..5) and live AI-Forged custom buffs (11+).
+   */
+  val BUFF_REGISTRY: MutableMap<String, SpecialBuffRegistryEntry> = createDefaultBuffRegistry()
+
+  fun nextCustomBuffTypeIndex(): Int {
+    val maxExisting = BUFF_REGISTRY.values.maxOfOrNull { it.buffTypeIndex } ?: 10
+    return kotlin.math.max(11, maxExisting + 1)
+  }
+
+  fun registerCustomBuff(entry: SpecialBuffRegistryEntry) {
+    BUFF_REGISTRY[entry.id.uppercase(Locale.US)] = entry
+    RiftSpriteBaker.invalidateCustomBuffIcon(entry.buffTypeIndex)
+  }
+
+  fun removeCustomBuff(id: String) {
+    val key = id.uppercase(Locale.US)
+    val existing = BUFF_REGISTRY[key]
+    if (existing != null && existing.isCustomForged) {
+      BUFF_REGISTRY.remove(key)
+      RiftSpriteBaker.invalidateCustomBuffIcon(existing.buffTypeIndex)
+    }
+  }
+
+  fun getCustomForgedBuffs(): List<SpecialBuffRegistryEntry> =
+    BUFF_REGISTRY.values.filter { it.isCustomForged }
+
+  fun resetBuffRegistryToDefaults(preserveCustomForged: Boolean = false) {
+    val customs = if (preserveCustomForged) getCustomForgedBuffs() else emptyList()
+    BUFF_REGISTRY.clear()
+    BUFF_REGISTRY.putAll(createDefaultBuffRegistry())
+    customs.forEach { BUFF_REGISTRY[it.id] = it }
+  }
+
+  fun normalizeSpecialBuffId(rawType: String): String =
+    when (rawType.uppercase(Locale.US)) {
+      "BURST", "NOVA_RING", "NOVA" -> "NOVA_RING"
+      "SHOTGUN", "SHATTER_CONE", "SHATTER" -> "SHATTER_CONE"
+      "MISSILE", "SEEKER_TORPEDO", "SEEKER" -> "SEEKER_TORPEDO"
+      "DECOY", "HOLO_PHANTOM", "PHANTOM" -> "HOLO_PHANTOM"
+      "BRICK", "STASIS_BARRIER", "BARRIER" -> "STASIS_BARRIER"
+      "ROCKET", "HYPER_SURGE", "SURGE" -> "HYPER_SURGE"
+      else -> rawType.uppercase(Locale.US)
+    }
+
+  fun getBuffRegistryEntry(rawType: String): SpecialBuffRegistryEntry? =
+    BUFF_REGISTRY[normalizeSpecialBuffId(rawType)]
+
+  fun getBuffRegistryByIndex(buffTypeIndex: Int): SpecialBuffRegistryEntry? =
+    BUFF_REGISTRY.values.firstOrNull { it.buffTypeIndex == buffTypeIndex }
+
   var activeCustomShipSlot: CustomShipLoadoutSlot = CustomShipLoadoutSlot.defaultSlot("9A")
   var customShip9Spec: ShipSpec = activeCustomShipSlot.toShipSpec()
 
@@ -632,9 +1058,11 @@ object RiftCodex {
         role = "Rail Sniper Gunship",
         tacticalLore = "High-velocity interceptor built around a twin hyper-rail spine and directional Phase Dash capacitor.",
         silhouetteDesc = "Forward-swept obsidian rail-prongs with bronze wing-tips and a narrow V-cyan reactor spine.",
-        weaponSummary = "PRI: Hyper-Velocity Dual Rail (15P) • CLASS: Phase Dash + Sniper Overcharge (300❖ / 2.5s CD)",
+        weaponSummary = "PRI: RAIL (25❖) • CLASS: PHASE (300❖ / 2.5s CD)",
         primaryTitle = "Hyper-Velocity Dual Rail",
         secondaryTitle = "Phase Dash / Sniper Overcharge (300❖)",
+        primaryShortLabel = "RAIL",
+        secondaryShortLabel = "PHASE",
         speedPts = 30,
         turnPts = 20,
         rechargePts = 15,
@@ -648,7 +1076,7 @@ object RiftCodex {
         afterburnerSpeed = computeTopSpeed(30) * 1.30f,
         thrust = computeThrust(5), // 675 N/S²
         turnRate = computeTurnRate(20), // 5.2 RAD/S
-        primaryCost = 62f,
+        primaryCost = 25f,
         primaryCooldown = 0.15f,
         primaryDamage = 285f,
         primarySpeed = 1120f,
@@ -673,9 +1101,11 @@ object RiftCodex {
         role = "Trick-Shot Bounce Bomber",
         tacticalLore = "Geometry specialist engineered to bank angled plasma warheads around riveted steel corridors.",
         silhouetteDesc = "Twin-forked ballistic hull with gold-trimmed deflection vanes and a deep cyan V-core.",
-        weaponSummary = "PRI: Twin Angled Pulse (12P) • SEC: 3-Wall Bounce Bomb (350❖ + Recoil)",
+        weaponSummary = "PRI: PULSE (20❖) • SEC: BOUNCE BOMB (350❖ + Recoil)",
         primaryTitle = "Twin Angled Pulse",
         secondaryTitle = "Bounce Bomb (350❖ • 3 Bounces)",
+        primaryShortLabel = "PULSE",
+        secondaryShortLabel = "BOUNCE BOMB",
         speedPts = 18,
         turnPts = 18,
         thrustPts = 14,
@@ -689,7 +1119,7 @@ object RiftCodex {
         afterburnerSpeed = computeTopSpeed(18) * 1.32f,
         thrust = computeThrust(14), // 810 N/S²
         turnRate = computeTurnRate(18), // 5.0 RAD/S
-        primaryCost = 58f,
+        primaryCost = 20f,
         primaryCooldown = 0.16f,
         primaryDamage = 195f,
         primarySpeed = 930f,
@@ -714,9 +1144,11 @@ object RiftCodex {
         role = "Adaptive Rotary Gunship",
         tacticalLore = "High-RPM rotary gunship with native 1x focused punch or 3x 1/3-damage split corridor suppression.",
         silhouetteDesc = "Swept crescent wings in dark indigo & gold with an overcharged V-cyan heart.",
-        weaponSummary = "PRI: High-RPM Rotary Pulse (15P) • CLASS: Native 3x / 1/3x Split Multi-Shot Toggle",
+        weaponSummary = "PRI: ROTARY (15❖) • CLASS: SPLIT MULTI ON/OFF (0❖ Extra)",
         primaryTitle = "High-RPM Rotary Pulse",
         secondaryTitle = "Native 3x / 1/3x Split Multi-Shot",
+        primaryShortLabel = "ROTARY",
+        secondaryShortLabel = "SPLIT MULTI",
         rechargePts = 30,
         maxFluxPts = 15,
         speedPts = 10,
@@ -730,7 +1162,7 @@ object RiftCodex {
         afterburnerSpeed = computeTopSpeed(10) * 1.32f,
         thrust = computeThrust(5), // 675 N/S²
         turnRate = computeTurnRate(10), // 4.2 RAD/S
-        primaryCost = 48f,
+        primaryCost = 15f,
         primaryCooldown = 0.095f,
         primaryDamage = 240f, // 100% single stream when Multi-Shot OFF; 3 x 80f (33.3%) when Multi-Shot ON
         primarySpeed = 980f,
@@ -755,9 +1187,11 @@ object RiftCodex {
         role = "Cathedral Siege Dreadnought",
         tacticalLore = "Maximum-capacitor siege dreadnought armed with devastating nuclear warheads and heavy kinetic cannons.",
         silhouetteDesc = "Heavy armored dreadnought chassis with bronze bastion shoulders and a massive V-reactor.",
-        weaponSummary = "PRI: Heavy Dual Cannon (12P) • SEC: Siege Bomb (650❖ + Heavy Newtonian Recoil)",
+        weaponSummary = "PRI: CANNON (40❖) • SEC: SIEGE BOMB (650❖ + Recoil)",
         primaryTitle = "Heavy Dual Cannon",
         secondaryTitle = "Siege Bomb (650❖ • Heavy Recoil)",
+        primaryShortLabel = "CANNON",
+        secondaryShortLabel = "SIEGE BOMB",
         maxFluxPts = 30,
         rechargePts = 20,
         thrustPts = 8,
@@ -771,7 +1205,7 @@ object RiftCodex {
         afterburnerSpeed = computeTopSpeed(0) * 1.35f,
         thrust = computeThrust(8), // 720 N/S²
         turnRate = computeTurnRate(5), // 3.7 RAD/S
-        primaryCost = 82f,
+        primaryCost = 40f,
         primaryCooldown = 0.21f,
         primaryDamage = 310f,
         primarySpeed = 880f,
@@ -796,9 +1230,11 @@ object RiftCodex {
         role = "Dual-Barrel Dogfighter",
         tacticalLore = "Agile mid-range dogfighter firing parallel twin autocannon streams with native 4-bolt fan split.",
         silhouetteDesc = "Predatory twin-boom manta frame with bronze fangs and a split electric-cyan core.",
-        weaponSummary = "PRI: Parallel Twin-Stream (15P) • CLASS: Native Multi-Shot (4-Bolt Fan Split)",
+        weaponSummary = "PRI: AUTOCANNON (22❖) • CLASS: TWIN MULTI ON/OFF",
         primaryTitle = "Parallel Twin-Stream Autocannon",
         secondaryTitle = "Native Multi-Shot + Point-Defense",
+        primaryShortLabel = "AUTOCANNON",
+        secondaryShortLabel = "TWIN MULTI",
         speedPts = 22,
         thrustPts = 18,
         turnPts = 15,
@@ -812,7 +1248,7 @@ object RiftCodex {
         afterburnerSpeed = computeTopSpeed(22) * 1.32f,
         thrust = computeThrust(18), // 870 N/S²
         turnRate = computeTurnRate(15), // 4.7 RAD/S
-        primaryCost = 60f,
+        primaryCost = 22f,
         primaryCooldown = 0.13f,
         primaryDamage = 135f, // 2 parallel bolts x 135f = 270f total; when Multi-Shot ON: 4 bolts x 67.5f = 270f total
         primarySpeed = 1000f,
@@ -838,9 +1274,11 @@ object RiftCodex {
         role = "Stealth & EMP Infiltrator",
         tacticalLore = "Cloak-capable infiltrator that vanishes from enemy radar before unleashing a 35% Flux-draining EMP warhead.",
         silhouetteDesc = "Wide stingray hydrofoil with gold-plated arc emitters and a pulsing V-cyan capacitor.",
-        weaponSummary = "PRI: Twin Ion Needlers (10P) • SEC: Tactical Cloak (180❖/s) + EMP Bomb (350❖)",
+        weaponSummary = "PRI: NEEDLER (18❖) • SEC: CLOAK (180❖/s) / EMP BOMB (400❖)",
         primaryTitle = "Twin Ion Needlers",
-        secondaryTitle = "Tactical Cloak + EMP Bomb (350❖)",
+        secondaryTitle = "Tactical Cloak + EMP Bomb (400❖)",
+        primaryShortLabel = "NEEDLER",
+        secondaryShortLabel = "CLOAK",
         turnPts = 22,
         speedPts = 20,
         rechargePts = 13,
@@ -854,7 +1292,7 @@ object RiftCodex {
         afterburnerSpeed = computeTopSpeed(20) * 1.32f,
         thrust = computeThrust(5), // 675 N/S²
         turnRate = computeTurnRate(22), // 5.4 RAD/S
-        primaryCost = 54f,
+        primaryCost = 18f,
         primaryCooldown = 0.13f,
         primaryDamage = 165f,
         primarySpeed = 950f,
@@ -863,7 +1301,7 @@ object RiftCodex {
         primaryBounces = 0,
         hasBomb = true,
         bombType = "CLOAK_EMP",
-        bombCost = 350f,
+        bombCost = 400f,
         bombCooldown = 0.95f,
         bombDamage = 580f,
         bombBounces = 2,
@@ -879,9 +1317,11 @@ object RiftCodex {
         role = "Proximity Flak Gunship",
         tacticalLore = "Heavy X-frame gunship firing 4 converging bolts and 65px proximity-fused shrapnel warheads.",
         silhouetteDesc = "Aggressive X-wing skeletal interceptor with bronze thruster pods and V-cyan reactor.",
-        weaponSummary = "PRI: Quad-Converging Pulse (12P) • SEC: Proximity Flak Bomb (450❖ • 8 Shrapnel)",
+        weaponSummary = "PRI: QUAD PULSE (24❖) • SEC: PROX FLAK (450❖ • 8 Shrapnel)",
         primaryTitle = "Quad-Converging Pulse",
         secondaryTitle = "Proximity Flak Bomb (450❖)",
+        primaryShortLabel = "QUAD PULSE",
+        secondaryShortLabel = "PROX FLAK",
         maxFluxPts = 20,
         rechargePts = 16,
         thrustPts = 12,
@@ -895,7 +1335,7 @@ object RiftCodex {
         afterburnerSpeed = computeTopSpeed(10) * 1.32f,
         thrust = computeThrust(12), // 780 N/S²
         turnRate = computeTurnRate(8), // 4.0 RAD/S
-        primaryCost = 64f,
+        primaryCost = 24f,
         primaryCooldown = 0.15f,
         primaryDamage = 72f,
         primarySpeed = 940f,
@@ -920,9 +1360,11 @@ object RiftCodex {
         role = "Area-Denial Mine-Layer",
         tacticalLore = "High-thrust area-denial specialist deploying up to 6 armed proximity mines and +1 innate Repel charge.",
         silhouetteDesc = "Armored pincer hull with gold-beveled mandible plates and a twin-cell V-cyan core.",
-        weaponSummary = "PRI: Short-Range Twin Scatter (10P) • SEC: Proximity Mines (340❖ • Max 6) +1 Repel",
+        weaponSummary = "PRI: SCATTER (20❖) • SEC: PROX MINE (300❖ • X/6) +1 Repel",
         primaryTitle = "Short-Range Twin Scatter",
-        secondaryTitle = "Proximity Mines (340❖) +1 Repel",
+        secondaryTitle = "Proximity Mines (300❖ • Max 6) +1 Repel",
+        primaryShortLabel = "SCATTER",
+        secondaryShortLabel = "PROX MINE",
         thrustPts = 30,
         maxFluxPts = 16,
         rechargePts = 12,
@@ -936,7 +1378,7 @@ object RiftCodex {
         afterburnerSpeed = computeTopSpeed(4) * 1.34f,
         thrust = computeThrust(30), // 1,050 N/S²
         turnRate = computeTurnRate(10), // 4.2 RAD/S
-        primaryCost = 56f,
+        primaryCost = 20f,
         primaryCooldown = 0.14f,
         primaryDamage = 175f,
         primarySpeed = 900f,
@@ -945,7 +1387,7 @@ object RiftCodex {
         primaryBounces = 0,
         hasBomb = true,
         bombType = "MINE",
-        bombCost = 340f,
+        bombCost = 300f,
         bombCooldown = 0.80f,
         bombDamage = 1040f,
         bombBounces = 0,
@@ -958,65 +1400,65 @@ object RiftCodex {
 
   /**
    * Expanded 11-Buff Playfield Pool (89% Ship Size Glowing Icons, Capped at 40 in 20-player FFA):
-   * - Bucket A (0..5): Special Buff Slot Pickups (4th Right-Hand Button — Charge-Based, 0❖ Cost)
+   * - Bucket A (0..5): Official RIFT Special Buff Slot Pickups (4th Right-Hand Button — Charge-Based, 0❖ Cost)
    * - Bucket B (6..10): Instant Ship & Weapon Enhancers (Top-Center Expandable Buff Bar)
    */
   val POWERUP_CODEX: List<PowerUpCodexEntry> =
     listOf(
-      // Bucket A: Special Buff Slot Pickups (0..5) — Charge-Based, 0❖ Cost
+      // Bucket A: Official RIFT Special Buff Slot Pickups (0..5) — Charge-Based, 0❖ Cost
       PowerUpCodexEntry(
-        id = "special_burst",
+        id = "special_nova_ring",
         buffTypeIndex = 0,
-        title = "BURST (+1 CHARGE • 0❖)",
+        title = "NOVA RING (+1 CHARGE • 0❖)",
         dropRatePercent = 9,
         category = "BUCKET A: SPECIAL BUFF SLOT (0❖ COST)",
-        effectSummary = "Fires a 360° radial ring of 24 high-speed wall-bouncing shrapnel bullets.",
-        tacticalNote = "Stacks +1 charge if already holding Burst, or overwrites a different Special Buff Slot item.",
+        effectSummary = "Fires a 360° radial ring of 24 high-velocity ricochet plasma bolts.",
+        tacticalNote = "HUD Label: NOVA [X]. Stacks +1 charge if already holding Nova Ring, or overwrites a different Special Buff Slot item.",
       ),
       PowerUpCodexEntry(
-        id = "special_shotgun",
+        id = "special_shatter_cone",
         buffTypeIndex = 1,
-        title = "SHOTGUN (+2 CHARGES • 0❖)",
+        title = "SHATTER CONE (+2 CHARGES • 0❖)",
         dropRatePercent = 9,
         category = "BUCKET A: SPECIAL BUFF SLOT (0❖ COST)",
-        effectSummary = "Fires a dense 60° cone blast of bouncing pellets in 3 rapid consecutive waves.",
-        tacticalNote = "Massive close-quarters burst damage at zero Flux cost. Same-type pickups stack +2 charges.",
+        effectSummary = "Fires 3 rapid waves of bouncing plasma shards in a 60° cone.",
+        tacticalNote = "HUD Label: SHATTER [X]. Massive close-quarters burst damage at zero Flux cost. Same-type pickups stack +2 charges.",
       ),
       PowerUpCodexEntry(
-        id = "special_missile",
+        id = "special_seeker_torpedo",
         buffTypeIndex = 2,
-        title = "LOCK-ON BOUNCING MISSILE (+1 CHARGE • 0❖)",
+        title = "SEEKER TORPEDO (+1 CHARGE • 0❖)",
         dropRatePercent = 8,
         category = "BUCKET A: SPECIAL BUFF SLOT (0❖ COST)",
-        effectSummary = "Locks onto target (red MISSILE LOCK reticle/beep), travels at 4-Goliath speed (380 PX/S), bounces off walls, and detonates after 1.5s.",
-        tacticalNote = "Forces enemies to burn Repel, Phase Dash, or hide behind a Brick barrier.",
+        effectSummary = "Locks onto hostile targets, travels at 4-Goliath speed (380 PX/S), bounces off walls, and flies for a full 2.5 seconds before detonating.",
+        tacticalNote = "HUD Label: SEEKER [X]. Forces enemies to burn Repel, Phase Dash, Holo Phantom, or Stasis Barrier.",
       ),
       PowerUpCodexEntry(
-        id = "special_decoy",
+        id = "special_holo_phantom",
         buffTypeIndex = 3,
-        title = "DECOY HOLOGRAM (+1 CHARGE • 0❖)",
+        title = "HOLO PHANTOM (+1 CHARGE • 0❖)",
         dropRatePercent = 8,
         category = "BUCKET A: SPECIAL BUFF SLOT (0❖ COST)",
-        effectSummary = "Spawns a hologram clone of your exact ship (with callsign and bounty tag) along a mirrored/divergent heading for 8 seconds.",
-        tacticalNote = "Draws enemy AI fire and soaks active Lock-On Bouncing Missiles.",
+        effectSummary = "Spawns a holographic clone with your [TAG] Callsign and Bounty that mirrors velocity for 8 seconds.",
+        tacticalNote = "HUD Label: PHANTOM [X]. Draws enemy AI fire and breaks active Seeker Torpedo locks.",
       ),
       PowerUpCodexEntry(
-        id = "special_brick",
+        id = "special_stasis_barrier",
         buffTypeIndex = 4,
-        title = "BRICK ENERGY BARRIER (+1 CHARGE • 0❖)",
+        title = "STASIS BARRIER (+1 CHARGE • 0❖)",
         dropRatePercent = 8,
         category = "BUCKET A: SPECIAL BUFF SLOT (0❖ COST)",
-        effectSummary = "Deploys a solid 120px energy barrier wall perpendicular to your heading for 10 seconds.",
-        tacticalNote = "Physically blocks ships, bullets, and bombs while reflecting ricochet bank shots.",
+        effectSummary = "Deploys a crackling cyan/amber 120px hard-light energy barrier perpendicular to the ship for 10 seconds.",
+        tacticalNote = "HUD Label: BARRIER [X]. Physically blocks ships and bounces projectiles.",
       ),
       PowerUpCodexEntry(
-        id = "special_rocket",
+        id = "special_hyper_surge",
         buffTypeIndex = 5,
-        title = "ROCKET HYPER-THRUSTER (+1 CHARGE • 0❖)",
+        title = "HYPER SURGE (+1 CHARGE • 0❖)",
         dropRatePercent = 8,
         category = "BUCKET A: SPECIAL BUFF SLOT (0❖ COST)",
-        effectSummary = "Ignites a 3.0-second hyper-thruster boost (1.65x max speed) costing 0❖ Flux with a blazing plasma trail.",
-        tacticalNote = "Ultimate escape or high-bounty chase tool when your Flux capacitor is depleted.",
+        effectSummary = "Ignites a 3.0-second 1.65x hyper-thruster speed burn costing 0❖ Flux with a blazing plasma trail.",
+        tacticalNote = "HUD Label: SURGE [X]. Ultimate escape or high-bounty chase tool when your Flux capacitor is depleted.",
       ),
       // Bucket B: Instant Ship & Weapon Enhancers (6..10)
       PowerUpCodexEntry(
@@ -1040,11 +1482,11 @@ object RiftCodex {
       PowerUpCodexEntry(
         id = "shot_multishot",
         buffTypeIndex = 8,
-        title = "SHOT-LIMITED MULTI-SHOT (+25 SHOTS)",
+        title = "MULTI-SHOT CRATE (+25 SHOTS)",
         dropRatePercent = 9,
-        category = "BUCKET B: SHOT-LIMITED AUGMENT",
-        effectSummary = "Grants +25 primary trigger pulls of Multi-Shot (ticks down -1 per shot while Multi-Shot is ON).",
-        tacticalNote = "On native Multi-Shot ships (3-Suppressor, 5-Twinfang, or 9-Rift Frame), grants +25% damage / 5-stream overdrive for 25 shots!",
+        category = "BUCKET B: PRIMARY TRIGGER AUGMENT",
+        effectSummary = "Modifies the Primary Fire Stick trigger directly for 25 shots (never overwrites your Special Buff Slot).",
+        tacticalNote = "Displays a MULTI [25] badge on the Primary Fire Stick ring and automatically fires multi-stream volleys.",
       ),
       PowerUpCodexEntry(
         id = "bouncing_bullets",
@@ -1065,6 +1507,32 @@ object RiftCodex {
         tacticalNote = "At 3 stacks (+24% Speed/Thrust/Recharge), turns any hull into an apex sector predator.",
       ),
     )
+
+  val DEFAULT_SHIPS: List<ShipSpec> = SHIPS.map { it.copy() }
+
+  fun resetShipsToDefaults() {
+    for (i in SHIPS.indices) {
+      val def = DEFAULT_SHIPS[i]
+      val target = SHIPS[i]
+      target.maxFlux = def.maxFlux
+      target.rechargeRate = def.rechargeRate
+      target.topSpeed = def.topSpeed
+      target.afterburnerSpeed = def.afterburnerSpeed
+      target.thrust = def.thrust
+      target.turnRate = def.turnRate
+      target.primaryCost = def.primaryCost
+      target.primaryCooldown = def.primaryCooldown
+      target.primaryDamage = def.primaryDamage
+      target.primarySpeed = def.primarySpeed
+      target.primaryBounces = def.primaryBounces
+      target.bombCost = def.bombCost
+      target.bombCooldown = def.bombCooldown
+      target.bombDamage = def.bombDamage
+      target.bombBounces = def.bombBounces
+      target.bombRecoil = def.bombRecoil
+    }
+    customShip9Spec = activeCustomShipSlot.toShipSpec()
+  }
 
   fun getAllNineShips(): List<ShipSpec> = SHIPS + listOf(customShip9Spec)
 

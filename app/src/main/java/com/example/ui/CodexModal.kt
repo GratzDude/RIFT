@@ -122,14 +122,14 @@ fun CodexModal(
           ) {
             Column {
               Text(
-                text = "🎯 BUCKET A: SPECIAL BUFF SLOT (0⚡)",
+                text = "🎯 BUCKET A: SPECIAL BUFF SLOT (0❖)",
                 color = Color(0xFF10B981),
                 fontSize = 10.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
               )
               Text(
-                text = "Burst, Shotgun, Missile, Decoy, Brick & Rocket equip to the 4th button at 0⚡ Flux cost. Same-type stacks; new type overwrites.",
+                text = "Nova Ring, Shatter Cone, Seeker Torpedo, Holo Phantom, Stasis Barrier & Hyper Surge equip to the 4th button at 0❖ Flux cost. Same-type stacks; new type overwrites.",
                 color = Color(0xFFD1FAE5),
                 fontSize = 9.5.sp,
                 fontFamily = FontFamily.SansSerif,

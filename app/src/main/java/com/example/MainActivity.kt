@@ -224,6 +224,15 @@ fun RiftArenaScreen(
   var syndicateStatusBanner by remember { mutableStateOf<String?>(null) }
   var armadaStatusBanner by remember { mutableStateOf<String?>(null) }
   var friendsRefreshKey by remember { mutableIntStateOf(0) }
+  var allTimePeakSnapshot by remember(currentUserId) {
+    mutableStateOf(localPrefs.getAllTimePeakBountySnapshot(currentUserId))
+  }
+  var pvpPeakSnapshot by remember(currentUserId) {
+    mutableStateOf(localPrefs.getPvpPeakBountySnapshot(currentUserId))
+  }
+  var syndicateHistory by remember(currentUserId) {
+    mutableStateOf(localPrefs.getSyndicateServiceHistory(currentUserId))
+  }
 
   // Syndicate Chat Messages State (including interactive [ARMADA RECRUIT: UP TO 5-MAN] banners)
   val chatMessages = remember {
@@ -339,6 +348,16 @@ fun RiftArenaScreen(
       localPrefs.setSpentCustomizationPoints(engine.spentCustomizationPoints, currentUserId)
       localPrefs.setUnlockedExtraSlots(engine.unlockedExtraSlots, currentUserId)
       localPrefs.setAiShipDesignTokens(engine.aiShipDesignTokens, currentUserId)
+      if (engine.localPlayer.respawnTimer <= 0f) {
+        localPrefs.maybeRecordPeakBountySnapshot(
+          snapshot = engine.currentLifeStats.toSnapshot(),
+          hadPvp = engine.currentLifeHadPvp,
+          isFinalizedLifeEnd = false,
+          uid = currentUserId,
+        )
+        allTimePeakSnapshot = localPrefs.getAllTimePeakBountySnapshot(currentUserId)
+        pvpPeakSnapshot = localPrefs.getPvpPeakBountySnapshot(currentUserId)
+      }
       viewModel.syncNativePilotStats(
         callsign = engine.localPlayer.callsign,
         shipId = engine.localPlayer.shipId,
@@ -354,14 +373,34 @@ fun RiftArenaScreen(
       )
       frameTick++
     }
+    engine.onLifeRunEnded = { finalizedSnapshot, hadPvp ->
+      localPrefs.maybeRecordPeakBountySnapshot(
+        snapshot = finalizedSnapshot,
+        hadPvp = hadPvp,
+        isFinalizedLifeEnd = true,
+        uid = currentUserId,
+      )
+      allTimePeakSnapshot = localPrefs.getAllTimePeakBountySnapshot(currentUserId)
+      pvpPeakSnapshot = localPrefs.getPvpPeakBountySnapshot(currentUserId)
+    }
+    engine.onSyndicateContribution = { killsDelta, currentBounty, winsDelta ->
+      localPrefs.recordSyndicateContribution(
+        addKills = killsDelta,
+        currentBounty = currentBounty,
+        addPublicWins = winsDelta,
+        uid = currentUserId,
+      )
+      syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+    }
     onDispose {
       sfx.release()
     }
   }
 
-  // Load persisted HUD layout offsets on startup
+  // Load persisted HUD layout offsets, Calibration overrides, and AI-Forged Buffs on startup
   LaunchedEffect(Unit) {
     com.example.engine.RiftCalibrationState.loadPersistedLayout(context)
+    com.example.engine.RiftCalibrationState.applyCalibrationChangesLive(engine, null)
   }
 
   // P1: Non-Blocking Tactical Toasts auto-fade after 1.5s
@@ -738,6 +777,7 @@ fun RiftArenaScreen(
             if (joined) {
               syndicateTag = localPrefs.getSyndicateTag()
               syndicateName = localPrefs.getSyndicateName()
+              syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
               engine.localPlayer.syndicateTag = syndicateTag
               engine.syncLocalArmadaSelfSlot()
               syndicateStatusBanner =
@@ -753,6 +793,7 @@ fun RiftArenaScreen(
             if (left) {
               syndicateTag = localPrefs.getSyndicateTag()
               syndicateName = localPrefs.getSyndicateName()
+              syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
               engine.localPlayer.syndicateTag = syndicateTag
               engine.syncLocalArmadaSelfSlot()
               syndicateStatusBanner =
@@ -768,6 +809,7 @@ fun RiftArenaScreen(
             res.onSuccess { created ->
               syndicateTag = created.tag
               syndicateName = created.name
+              syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
               engine.localPlayer.syndicateTag = syndicateTag
               engine.syncLocalArmadaSelfSlot()
               syndicateStatusBanner =
@@ -993,6 +1035,13 @@ fun RiftArenaScreen(
           matchPresencePct = presencePct,
           fps = currentFps,
           cloudLeaderboardEntries = cloudLeaderboard,
+          allTimePeakSnapshot = allTimePeakSnapshot,
+          pvpPeakSnapshot = pvpPeakSnapshot,
+          currentLifeSnapshot =
+            remember(frameTick) {
+              if (engine.localPlayer.respawnTimer <= 0f) engine.currentLifeStats.toSnapshot() else null
+            },
+          syndicateServiceHistory = syndicateHistory,
           onOpenRiftShardsStore = {
             previousModalBeforeStore = ActiveModal.DOSSIER
             activeModal = ActiveModal.RIFT_SHARDS_STORE

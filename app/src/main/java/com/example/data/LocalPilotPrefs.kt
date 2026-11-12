@@ -91,22 +91,36 @@ class LocalPilotPrefs(context: Context) {
     return String.format(Locale.US, "%02dd %02dh", days, hours)
   }
 
-  fun joinOfficialSyndicate(tag: String, name: String, apply15DayLock: Boolean = true): Boolean {
+  fun joinOfficialSyndicate(
+    tag: String,
+    name: String,
+    apply15DayLock: Boolean = true,
+    role: String = "Pilot",
+  ): Boolean {
     if (apply15DayLock && getRemainingSyndicateLockDays() > 0) {
       return false
     }
+    val now = System.currentTimeMillis()
+    val cleanTag = tag.uppercase().take(4).ifEmpty { "GUEST" }
+    val cleanName = name.take(28).ifEmpty { "Guest Tracking Framework" }
     val lockUntil =
       if (apply15DayLock) {
-        System.currentTimeMillis() + FIFTEEN_DAYS_MS
+        now + FIFTEEN_DAYS_MS
       } else {
         getSyndicateLockUntilMs()
       }
     prefs
       .edit()
-      .putString(KEY_SYNDICATE_TAG, tag.uppercase().take(4))
-      .putString(KEY_SYNDICATE_NAME, name.take(28))
+      .putString(KEY_SYNDICATE_TAG, cleanTag)
+      .putString(KEY_SYNDICATE_NAME, cleanName)
       .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
       .apply()
+    appendSyndicateServiceTransition(
+      newTag = cleanTag,
+      newName = cleanName,
+      newRole = role,
+      nowMs = now,
+    )
     return true
   }
 
@@ -114,13 +128,20 @@ class LocalPilotPrefs(context: Context) {
     if (getRemainingSyndicateLockDays() > 0) {
       return false
     }
-    val lockUntil = System.currentTimeMillis() + FIFTEEN_DAYS_MS
+    val now = System.currentTimeMillis()
+    val lockUntil = now + FIFTEEN_DAYS_MS
     prefs
       .edit()
       .putString(KEY_SYNDICATE_TAG, "GUEST")
       .putString(KEY_SYNDICATE_NAME, "Guest Tracking Framework")
       .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
       .apply()
+    appendSyndicateServiceTransition(
+      newTag = "GUEST",
+      newName = "Guest Tracking Framework",
+      newRole = "Pilot",
+      nowMs = now,
+    )
     return true
   }
 
@@ -720,8 +741,175 @@ class LocalPilotPrefs(context: Context) {
     )
 
     prefs.edit().putString(KEY_CUSTOM_SYNDICATES_JSON, arr.toString()).apply()
-    joinOfficialSyndicate(cleanTag, cleanName, apply15DayLock = true)
+    joinOfficialSyndicate(cleanTag, cleanName, apply15DayLock = true, role = "Founder / Commander")
     return Result.success(newSyndicate)
+  }
+
+  fun getAllTimePeakBountySnapshot(uid: String? = null): PeakBountyRunSnapshot? {
+    val raw = prefs.getString(uidKey(KEY_ALL_TIME_PEAK_SNAPSHOT, uid), prefs.getString(KEY_ALL_TIME_PEAK_SNAPSHOT, null))
+    return PeakBountyRunSnapshot.fromJsonString(raw)
+  }
+
+  fun saveAllTimePeakBountySnapshot(snapshot: PeakBountyRunSnapshot, uid: String? = null) {
+    val json = snapshot.toJsonString()
+    prefs
+      .edit()
+      .putString(KEY_ALL_TIME_PEAK_SNAPSHOT, json)
+      .putString(uidKey(KEY_ALL_TIME_PEAK_SNAPSHOT, uid), json)
+      .apply()
+  }
+
+  fun getPvpPeakBountySnapshot(uid: String? = null): PeakBountyRunSnapshot? {
+    val raw = prefs.getString(uidKey(KEY_PVP_PEAK_SNAPSHOT, uid), prefs.getString(KEY_PVP_PEAK_SNAPSHOT, null))
+    return PeakBountyRunSnapshot.fromJsonString(raw)
+  }
+
+  fun savePvpPeakBountySnapshot(snapshot: PeakBountyRunSnapshot, uid: String? = null) {
+    val json = snapshot.toJsonString()
+    prefs
+      .edit()
+      .putString(KEY_PVP_PEAK_SNAPSHOT, json)
+      .putString(uidKey(KEY_PVP_PEAK_SNAPSHOT, uid), json)
+      .apply()
+  }
+
+  /**
+   * Evaluates a completed (or live milestone) life snapshot against historical All-Time and PvP-Only
+   * peak bounty snapshots, saving whenever it sets or updates the record (including Executioner telemetry on death).
+   */
+  fun maybeRecordPeakBountySnapshot(
+    snapshot: PeakBountyRunSnapshot,
+    hadPvp: Boolean,
+    isFinalizedLifeEnd: Boolean = true,
+    uid: String? = null,
+  ) {
+    val existingAll = getAllTimePeakBountySnapshot(uid)
+    val shouldSaveAll =
+      existingAll == null ||
+        snapshot.bountyReached > existingAll.bountyReached ||
+        (isFinalizedLifeEnd &&
+          snapshot.bountyReached == existingAll.bountyReached &&
+          existingAll.executioner.killerCallsign.isBlank() &&
+          !existingAll.executioner.survivedToConvergence)
+    if (shouldSaveAll) {
+      saveAllTimePeakBountySnapshot(snapshot, uid)
+    }
+
+    if (hadPvp || snapshot.pvpKills > 0) {
+      val existingPvp = getPvpPeakBountySnapshot(uid)
+      val shouldSavePvp =
+        existingPvp == null ||
+          snapshot.bountyReached > existingPvp.bountyReached ||
+          (isFinalizedLifeEnd &&
+            snapshot.bountyReached == existingPvp.bountyReached &&
+            existingPvp.executioner.killerCallsign.isBlank() &&
+            !existingPvp.executioner.survivedToConvergence)
+      if (shouldSavePvp) {
+        savePvpPeakBountySnapshot(snapshot, uid)
+      }
+    }
+  }
+
+  fun getSyndicateServiceHistory(uid: String? = null): List<SyndicateServiceEntry> {
+    val raw =
+      prefs.getString(uidKey(KEY_SYNDICATE_HISTORY_JSON, uid), prefs.getString(KEY_SYNDICATE_HISTORY_JSON, null))
+    val parsed = mutableListOf<SyndicateServiceEntry>()
+    if (!raw.isNullOrBlank()) {
+      try {
+        val arr = JSONArray(raw)
+        for (i in 0 until arr.length()) {
+          parsed.add(SyndicateServiceEntry.fromJson(arr.getJSONObject(i)))
+        }
+      } catch (_: Exception) {}
+    }
+    if (parsed.isEmpty()) {
+      val currentTag = getSyndicateTag()
+      val currentName = getSyndicateName()
+      val isCustomFounder =
+        getAllSyndicates().any { it.isCustom && it.tag.equals(currentTag, ignoreCase = true) }
+      val seed =
+        SyndicateServiceEntry(
+          syndicateTag = currentTag,
+          syndicateName = currentName,
+          role = if (isCustomFounder) "Founder / Commander" else "Pilot",
+          joinedTimestamp = prefs.getLong(KEY_FIRST_COMMISSION_MS, 0L).let {
+            if (it > 0L) it else {
+              val now = System.currentTimeMillis()
+              prefs.edit().putLong(KEY_FIRST_COMMISSION_MS, now).apply()
+              now
+            }
+          },
+          leftTimestamp = 0L,
+          totalKills = getAllTimeKills(),
+          peakBountyAchieved = getAllTimeBountyPeak(),
+          publicGameWins = getConvergencesWon(),
+        )
+      saveSyndicateServiceHistory(listOf(seed), uid)
+      return listOf(seed)
+    }
+    return parsed
+  }
+
+  fun saveSyndicateServiceHistory(entries: List<SyndicateServiceEntry>, uid: String? = null) {
+    val arr = JSONArray()
+    entries.forEach { arr.put(it.toJson()) }
+    val json = arr.toString()
+    prefs
+      .edit()
+      .putString(KEY_SYNDICATE_HISTORY_JSON, json)
+      .putString(uidKey(KEY_SYNDICATE_HISTORY_JSON, uid), json)
+      .apply()
+  }
+
+  private fun appendSyndicateServiceTransition(
+    newTag: String,
+    newName: String,
+    newRole: String,
+    nowMs: Long = System.currentTimeMillis(),
+    uid: String? = null,
+  ) {
+    val currentList = getSyndicateServiceHistory(uid).toMutableList()
+    val activeIdx = currentList.indexOfLast { it.leftTimestamp <= 0L }
+    if (activeIdx >= 0) {
+      val active = currentList[activeIdx]
+      if (active.syndicateTag.equals(newTag, ignoreCase = true) && active.role == newRole) {
+        return
+      }
+      currentList[activeIdx] = active.copy(leftTimestamp = nowMs)
+    }
+    currentList.add(
+      SyndicateServiceEntry(
+        syndicateTag = newTag,
+        syndicateName = newName,
+        role = newRole,
+        joinedTimestamp = nowMs,
+        leftTimestamp = 0L,
+        totalKills = 0L,
+        peakBountyAchieved = 100L,
+        publicGameWins = 0L,
+      )
+    )
+    saveSyndicateServiceHistory(currentList, uid)
+  }
+
+  fun recordSyndicateContribution(
+    addKills: Long = 0L,
+    currentBounty: Long = 100L,
+    addPublicWins: Long = 0L,
+    uid: String? = null,
+  ) {
+    val currentList = getSyndicateServiceHistory(uid).toMutableList()
+    val activeIdx = currentList.indexOfLast { it.leftTimestamp <= 0L }
+    if (activeIdx >= 0) {
+      val active = currentList[activeIdx]
+      currentList[activeIdx] =
+        active.copy(
+          totalKills = (active.totalKills + addKills).coerceAtLeast(0L),
+          peakBountyAchieved = kotlin.math.max(active.peakBountyAchieved, currentBounty),
+          publicGameWins = (active.publicGameWins + addPublicWins).coerceAtLeast(0L),
+        )
+      saveSyndicateServiceHistory(currentList, uid)
+    }
   }
 
   fun getPlayfieldTextScale(): Float = prefs.getFloat(KEY_PLAYFIELD_TEXT_SCALE, 1.0f)
@@ -770,6 +958,10 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_SLOT_9B_UNLOCKED = "custom_slot_9b_unlocked"
     private const val KEY_SLOT_9C_UNLOCKED = "custom_slot_9c_unlocked"
     private const val KEY_CUSTOM_SLOT_PREFIX = "custom_ship_slot_json"
+    private const val KEY_ALL_TIME_PEAK_SNAPSHOT = "all_time_peak_bounty_snapshot_json"
+    private const val KEY_PVP_PEAK_SNAPSHOT = "pvp_peak_bounty_snapshot_json"
+    private const val KEY_SYNDICATE_HISTORY_JSON = "syndicate_service_history_json"
+    private const val KEY_FIRST_COMMISSION_MS = "pilot_first_commission_ms"
 
     const val FIFTEEN_DAYS_MS = 15L * 24L * 3600L * 1000L
 

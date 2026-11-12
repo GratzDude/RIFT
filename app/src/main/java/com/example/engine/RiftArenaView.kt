@@ -424,44 +424,23 @@ class RiftArenaView(
     if (p.specialWeaponCharges > 0 || showAll) {
       val rad = ((startDeg + slotIndex * stepDeg) * PI / 180.0).toFloat()
       val count = if (p.specialWeaponCharges > 0) p.specialWeaponCharges else 1
-      val activeType = if (p.specialWeaponCharges > 0 && p.specialWeaponType != "NONE") p.specialWeaponType else "BURST"
-      val titleStr =
-        when (activeType) {
-          "SHOTGUN" -> "SHOTGN $count"
-          "MISSILE" -> "MISSILE $count"
-          "DECOY" -> "DECOY $count"
-          "BRICK" -> "BRICK $count"
-          "ROCKET" -> "ROCKET $count"
-          else -> "BURST $count"
+      val activeType =
+        if (p.specialWeaponCharges > 0 && p.specialWeaponType != "NONE") {
+          p.specialWeaponType
+        } else {
+          "NOVA_RING"
         }
-      val strokeCol =
-        when (activeType) {
-          "SHOTGUN" -> Color.parseColor("#FB7185")
-          "MISSILE" -> Color.parseColor("#EF4444")
-          "DECOY" -> Color.parseColor("#38BDF8")
-          "BRICK" -> Color.parseColor("#22D3EE")
-          "ROCKET" -> Color.parseColor("#A855F7")
-          else -> Color.parseColor("#F59E0B")
-        }
-      val fillCol =
-        when (activeType) {
-          "SHOTGUN" -> Color.argb(155, 88, 18, 38)
-          "MISSILE" -> Color.argb(155, 88, 14, 18)
-          "DECOY" -> Color.argb(155, 12, 52, 78)
-          "BRICK" -> Color.argb(155, 10, 62, 72)
-          "ROCKET" -> Color.argb(155, 58, 18, 88)
-          else -> Color.argb(155, 80, 40, 6)
-        }
+      val reg = RiftCodex.getBuffRegistryEntry(activeType) ?: RiftCodex.BUFF_REGISTRY.getValue("NOVA_RING")
       activeUtilitySlots.add(
         UtilityButtonSlot(
           type = "SPECIAL",
-          title = titleStr,
-          sub = "0⚡",
+          title = "${reg.shortLabel} [$count]",
+          sub = "0❖",
           cx = baseArcX + cos(rad) * scaledDist + RiftCalibrationState.burstBtnOffset.x,
           cy = baseArcY + sin(rad) * scaledDist + RiftCalibrationState.burstBtnOffset.y,
           r = scaledR,
-          strokeColor = strokeCol,
-          fillColor = fillCol,
+          strokeColor = reg.strokeColorInt,
+          fillColor = reg.fillColorArgb,
           enabled = p.canFire && p.specialWeaponCharges > 0,
         )
       )
@@ -474,8 +453,8 @@ class RiftArenaView(
       activeUtilitySlots.add(
         UtilityButtonSlot(
           type = "REPEL",
-          title = "REPEL $count",
-          sub = "320⚡",
+          title = "REPEL [$count]",
+          sub = "320❖",
           cx = baseArcX + cos(rad) * scaledDist + RiftCalibrationState.repelBtnOffset.x,
           cy = baseArcY + sin(rad) * scaledDist + RiftCalibrationState.repelBtnOffset.y,
           r = scaledR,
@@ -606,6 +585,21 @@ class RiftArenaView(
     val szCY = szBase.centerY()
     val sz = RectF(szCX - szW * 0.5f, szCY - szH * 0.5f, szCX + szW * 0.5f, szCY + szH * 0.5f)
     if (sz.right >= viewLeft && sz.left <= viewRight && sz.bottom >= viewTop && sz.top <= viewBottom) {
+      val isLockedOut = p.safeZoneLockoutTimer > 0f && p.respawnTimer <= 0f
+      if (isLockedOut) {
+        val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 480L) / 480f * (PI.toFloat() * 2f))
+        val borderColor = if (pulse > 0.5f) Color.parseColor("#EF4444") else Color.parseColor("#F59E0B")
+        safeFillPaint.color = Color.argb((22 + (18 * pulse).toInt()).coerceIn(18, 48), 239, 68, 68)
+        safeDashPaint.color = Color.argb(215, Color.red(borderColor), Color.green(borderColor), Color.blue(borderColor))
+        safeBracketPaint.color = borderColor
+        safeTextPaint.color = borderColor
+      } else {
+        safeFillPaint.color = Color.argb(20, 16, 185, 129)
+        safeDashPaint.color = Color.argb(115, 16, 185, 129)
+        safeBracketPaint.color = Color.argb(210, 56, 189, 248)
+        safeTextPaint.color = Color.argb(180, 16, 185, 129)
+      }
+
       canvas.drawRect(sz, safeFillPaint)
       canvas.drawRect(sz, safeDashPaint)
 
@@ -621,11 +615,19 @@ class RiftArenaView(
 
       safeTextPaint.textSize = 14f * szScale
       val safeBannerText =
-        if (p.inSafeZone && p.respawnTimer <= 0f) {
-          val rem = max(0f, RiftCalibrationState.safeZoneIdleLimitSec - p.safeZoneStayTimer)
-          String.format(java.util.Locale.US, "SAFE ZONE // WEAPONS DISARMED // EVICTION WARP IN %.1fs", rem)
-        } else {
-          String.format(java.util.Locale.US, "SAFE ZONE // WEAPONS DISARMED // %.0fs MAX STAY", RiftCalibrationState.safeZoneIdleLimitSec)
+        when {
+          isLockedOut ->
+            String.format(
+              java.util.Locale.US,
+              "⛔ SAFE ZONE LOCKED: %.1fs // REPULSION BARRIER ACTIVE",
+              p.safeZoneLockoutTimer,
+            )
+          p.inSafeZone && p.respawnTimer <= 0f -> {
+            val rem = max(0f, RiftCalibrationState.safeZoneIdleLimitSec - p.safeZoneStayTimer)
+            String.format(java.util.Locale.US, "SAFE ZONE // WEAPONS DISARMED // EVICTION WARP IN %.1fs", rem)
+          }
+          else ->
+            String.format(java.util.Locale.US, "SAFE ZONE // WEAPONS DISARMED // %.0fs MAX STAY", RiftCalibrationState.safeZoneIdleLimitSec)
         }
       canvas.drawText(
         safeBannerText,
@@ -833,14 +835,14 @@ class RiftArenaView(
       if (engine.fireStickActive && !engine.isCancelActive) {
         val activeAimAngle =
           if (p.independentAimActive) p.weaponAngle else engine.findQuickTapAutoAimAngle(p)
-        val hasMultiShot = p.multifireOn && engine.canShipUseMultiShot(p)
+        val hasMultiShot = (p.spec.supportsNativeMultifire && p.multifireOn) || p.multiShotCharges > 0
         val streams =
           when {
             p.shipId == 3 && !hasMultiShot -> 1
-            p.shipId == 3 && hasMultiShot && p.multiShotCharges > 0 -> 5
+            p.shipId == 3 && p.multiShotCharges > 0 -> 5
             p.shipId == 3 && hasMultiShot -> 3
             p.shipId == 5 && !hasMultiShot -> 2
-            p.shipId == 5 && hasMultiShot && p.multiShotCharges > 0 -> 5
+            p.shipId == 5 && p.multiShotCharges > 0 -> 5
             p.shipId == 5 && hasMultiShot -> 4
             hasMultiShot -> p.spec.primaryStreams + 2
             else -> p.spec.primaryStreams
@@ -935,6 +937,7 @@ class RiftArenaView(
           "EMP" -> Color.parseColor("#B388FF")
           "SIEGE" -> Color.parseColor("#F59E0B")
           "MINE", "MISSILE" -> Color.parseColor("#EF4444")
+          "CUSTOM_ORB" -> if (bm.customColor != 0) bm.customColor else Color.parseColor("#22D3EE")
           else -> Color.parseColor("#FBBF24")
         }
       if (bm.type == "MISSILE") {
@@ -945,6 +948,20 @@ class RiftArenaView(
         canvas.drawLine(bm.x, bm.y, tailX, tailY, bulletPaint)
         bombRingPaint.color = Color.argb(190, 239, 68, 68)
         canvas.drawCircle(bm.x, bm.y, (bm.radius + 10f) * projScale, bombRingPaint)
+      } else if (bm.type == "CUSTOM_ORB") {
+        val tailX = bm.x - bm.vx * 0.05f
+        val tailY = bm.y - bm.vy * 0.05f
+        bulletPaint.color = c
+        bulletPaint.strokeWidth = 7.5f * projScale
+        canvas.drawLine(bm.x, bm.y, tailX, tailY, bulletPaint)
+        bombRingPaint.color = Color.argb(150, Color.red(c), Color.green(c), Color.blue(c))
+        val auraR =
+          if (bm.customEffect != CustomBuffEffect.NONE && bm.customBlastRadius > 0f) {
+            (bm.customBlastRadius * 0.35f).coerceIn(bm.radius + 12f, 110f)
+          } else {
+            bm.radius + 12f
+          }
+        canvas.drawCircle(bm.x, bm.y, auraR * projScale, bombRingPaint)
       }
       bombPaint.color = c
       canvas.drawCircle(bm.x, bm.y, bm.radius * projScale, bombPaint)
@@ -988,12 +1005,13 @@ class RiftArenaView(
         canvas.drawBitmap(bmp, shipMatrix, null)
       }
 
+      val safeWorldScale = worldScale.coerceAtLeast(0.15f)
       val baseTextScale = engine.playfieldTextScale * RiftCalibrationState.labelTextScale
-      val callsignTextSize = 36.0f * baseTextScale
+      val callsignTextSize = (RiftCalibrationState.nametagFontSizePx * dpDensity * baseTextScale) / safeWorldScale
       val radialDist = (44f * RiftCalibrationState.shipScale + 12f) * RiftCalibrationState.labelDistanceOffset
       val tagStr = if (dc.armadaName.isNotEmpty()) "[${dc.armadaName}]" else "[${dc.syndicateTag.ifEmpty { "GUEST" }}]"
-      val labelText = if (isFriendlyDecoy) "[DECOY] ${dc.callsign}" else "$tagStr ${dc.callsign} • ${dc.bounty}"
-      shipLabelStrokePaint.strokeWidth = 5.0f * baseTextScale
+      val labelText = if (isFriendlyDecoy) "[PHANTOM] ${dc.callsign}" else "$tagStr ${dc.callsign} • ${dc.bounty}"
+      shipLabelStrokePaint.strokeWidth = (3.2f * dpDensity * baseTextScale) / safeWorldScale
       shipLabelStrokePaint.textSize = callsignTextSize
       shipLabelStrokePaint.alpha = 240
       shipLabelStrokePaint.textAlign = Paint.Align.CENTER
@@ -1090,7 +1108,7 @@ class RiftArenaView(
         popupPaint.color = Color.parseColor("#EF4444")
         popupPaint.alpha = (195 + (60 * pulse).toInt()).coerceIn(0, 255)
         popupPaint.textSize = 14f * RiftCalibrationState.shipScale
-        canvas.drawText("⚠ MISSILE LOCK", s.x, s.y - lockR - 8f, popupPaint)
+        canvas.drawText("⚠ SEEKER LOCK", s.x, s.y - lockR - 8f, popupPaint)
         popupPaint.alpha = 255
       }
 
@@ -1102,12 +1120,15 @@ class RiftArenaView(
 
       val inSafe = engine.isInsideSafeZone(s.x, s.y)
       val labelAlpha = if (inSafe) 130 else 255
-      val isHvt = s.bounty >= RiftGameEngine.HVT_BOUNTY_THRESHOLD
+      val isHvt = s.bounty >= RiftCalibrationState.hvtBountyThreshold
 
+      val safeWorldScale = worldScale.coerceAtLeast(0.15f)
       val baseTextScale = engine.playfieldTextScale * RiftCalibrationState.labelTextScale
-      val bountyTextSize = (if (isHvt) 44.0f else 40.0f) * baseTextScale
-      val callsignTextSize = 36.0f * baseTextScale
-      val tagTextSize = 34.0f * baseTextScale
+      val bountyScreenPx =
+        if (isHvt) RiftCalibrationState.bountyFontSizePx * 1.12f else RiftCalibrationState.bountyFontSizePx
+      val bountyTextSize = (bountyScreenPx * dpDensity * baseTextScale) / safeWorldScale
+      val callsignTextSize = (RiftCalibrationState.nametagFontSizePx * dpDensity * baseTextScale) / safeWorldScale
+      val tagTextSize = (RiftCalibrationState.nametagFontSizePx * 0.94f * dpDensity * baseTextScale) / safeWorldScale
 
       // Project ship position to screen coordinates to prevent HUD console and controls overlap
       val screenX = (s.x - effectiveCamX) * worldScale + vw * 0.5f
@@ -1162,7 +1183,7 @@ class RiftArenaView(
         val textY = if (isTop) s.y - radialDist else s.y + radialDist + callsignTextSize * 0.85f
         val lineText = "$badgePrefix ${s.callsign} • $bountyText"
 
-        shipLabelStrokePaint.strokeWidth = 5.2f * baseTextScale
+        shipLabelStrokePaint.strokeWidth = (3.4f * dpDensity * baseTextScale) / safeWorldScale
         shipLabelStrokePaint.textSize = callsignTextSize
         shipLabelStrokePaint.alpha = labelAlpha
         shipLabelStrokePaint.textAlign = Paint.Align.CENTER
@@ -1205,7 +1226,7 @@ class RiftArenaView(
 
           shipLabelStrokePaint.textAlign = align
           shipLabelFillPaint.textAlign = align
-          shipLabelStrokePaint.strokeWidth = 5.2f * baseTextScale
+          shipLabelStrokePaint.strokeWidth = (3.4f * dpDensity * baseTextScale) / safeWorldScale
           shipLabelStrokePaint.alpha = labelAlpha
           shipLabelFillPaint.alpha = labelAlpha
 
@@ -1283,13 +1304,15 @@ class RiftArenaView(
     }
     shockwavePaint.alpha = 255
 
+    val safeFctWorldScale = worldScale.coerceAtLeast(0.15f)
     for (fp in engine.floatingPopups) {
       if (!fp.active) continue
       val norm = (fp.elapsed / fp.maxLife).coerceIn(0f, 1f)
       val quadFade = (1f - norm * norm).coerceIn(0f, 1f)
       popupPaint.color = fp.color
       popupPaint.alpha = (quadFade * 255f).toInt()
-      popupPaint.textSize = 15.5f * fp.scale * RiftCalibrationState.fctScale
+      popupPaint.textSize =
+        (RiftCalibrationState.fctFontSizePx * dpDensity * fp.scale * RiftCalibrationState.fctScale) / safeFctWorldScale
       canvas.drawText(fp.text, fp.x, fp.y, popupPaint)
     }
     popupPaint.alpha = 255
@@ -1414,10 +1437,10 @@ class RiftArenaView(
     )
 
     val disarmedInSafeZone = !p.canFire && !unlocked
-    val gunCost = (p.spec.primaryCost * (if (p.multifireOn) 1.55f else 1f)).toInt()
+    val gunCost = p.spec.primaryCost.toInt()
     val arcScale = RiftCalibrationState.combatArcScale
 
-    // 2. Primary Right [FIRE] Stick with 32dp Cancel Deadzone Ring
+    // 2. Primary Right [FIRE] Stick with exact Per-Ship Primary Weapon Label & Flux Cost (❖) + 32dp Cancel Deadzone Ring
     val fX = effFireBtnX()
     val fY = effFireBtnY()
     val fR = effFireRadius()
@@ -1431,7 +1454,11 @@ class RiftArenaView(
       }
     canvas.drawCircle(fX, fY, fR, hudCircleFillPaint)
     hudCircleStrokePaint.color =
-      if (disarmedInSafeZone) Color.argb(100, 239, 68, 68) else Color.parseColor("#EF4444")
+      when {
+        disarmedInSafeZone -> Color.argb(100, 239, 68, 68)
+        p.multiShotCharges > 0 -> Color.parseColor("#FACC15")
+        else -> Color.parseColor("#EF4444")
+      }
     canvas.drawCircle(fX, fY, fR, hudCircleStrokePaint)
 
     if (unlocked) {
@@ -1457,29 +1484,52 @@ class RiftArenaView(
       }
     canvas.drawCircle(fkX, fkY, fR * 0.56f, hudCircleFillPaint)
 
-    hudLabelPaint.textSize = 11.0f * dpDensity * arcScale
+    val primaryShort = p.spec.primaryShortLabel.ifEmpty { "FIRE" }
+    hudLabelPaint.textSize = (if (primaryShort.length >= 9) 8.2f else 9.8f) * dpDensity * arcScale
     hudLabelPaint.color = Color.argb(fireAlpha, 255, 255, 255)
     canvas.drawText(
-      if (engine.isCancelActive) "✕" else "FIRE",
+      if (engine.isCancelActive) "✕" else primaryShort,
       fkX,
       fkY - 1.5f * dpDensity * arcScale,
       hudLabelPaint,
     )
-    hudLabelPaint.textSize = 8.5f * dpDensity * arcScale
+    hudLabelPaint.textSize = 8.4f * dpDensity * arcScale
     hudLabelPaint.color = Color.argb(fireAlpha, 254, 202, 202)
     canvas.drawText(
       when {
         unlocked -> "DRAG"
         engine.isCancelActive -> "CANCEL"
         disarmedInSafeZone -> "SAFE"
-        else -> "${gunCost}⚡"
+        else -> "(${gunCost}❖)"
       },
       fkX,
       fkY + 10.0f * dpDensity * arcScale,
       hudLabelPaint,
     )
 
-    // 3. Secondary / Class Ability Circular Button — ONLY rendered for ships with a Secondary/Class Ability (not 3-Suppressor or 5-Twinfang)
+    // 25-Shot Multi-Shot Crate Counter Badge on Primary Fire Stick Ring
+    if (p.multiShotCharges > 0) {
+      val badgeW = 68f * dpDensity * arcScale
+      val badgeH = 16f * dpDensity * arcScale
+      val badgeTop = fY - fR - badgeH * 0.65f
+      arcRect.set(fX - badgeW * 0.5f, badgeTop, fX + badgeW * 0.5f, badgeTop + badgeH)
+      hudCircleFillPaint.color = Color.argb(230, 66, 32, 6)
+      canvas.drawRoundRect(arcRect, 8f * dpDensity, 8f * dpDensity, hudCircleFillPaint)
+      hudCircleStrokePaint.strokeWidth = 1.6f
+      hudCircleStrokePaint.color = Color.parseColor("#FACC15")
+      canvas.drawRoundRect(arcRect, 8f * dpDensity, 8f * dpDensity, hudCircleStrokePaint)
+      hudCircleStrokePaint.strokeWidth = 2.6f
+      hudLabelPaint.textSize = 8.2f * dpDensity * arcScale
+      hudLabelPaint.color = Color.parseColor("#FEF08A")
+      canvas.drawText(
+        "MULTI [${p.multiShotCharges}]",
+        fX,
+        badgeTop + badgeH * 0.72f,
+        hudLabelPaint,
+      )
+    }
+
+    // 3. Contextual Secondary / Class Ability Circular Button — ONLY rendered for ships with a Secondary/Class Ability (HIDDEN on 3-Suppressor & 5-Twinfang)
     if (p.spec.hasBomb || RiftCalibrationState.forceAllButtonsVisible || unlocked) {
       val bX = effBombBtnX()
       val bY = effBombBtnY()
@@ -1518,33 +1568,40 @@ class RiftArenaView(
         canvas.drawCircle(bX, bY, bR + 3.5f * dpDensity, unlockDashPaint)
       }
 
+      val activeMineCount =
+        if (p.spec.bombType == "MINE") {
+          engine.bombs.count { it.ownerId == p.id && it.type == "MINE" }
+        } else {
+          0
+        }
       val bLabel =
         when {
           engine.isBombCancelActive -> "✕"
-          p.spec.bombType == "PHASE_DASH" -> "DASH"
-          p.spec.bombType == "CLOAK_EMP" -> if (p.isCloaked) "EMP" else "CLOAK"
-          p.spec.bombType == "MINE" -> "MINE"
-          p.spec.bombType == "EMP" -> "EMP"
-          p.spec.bombType == "SIEGE" -> "SIEGE"
-          p.spec.bombType == "PROX" -> "FLAK"
-          p.spec.bombType == "BOUNCE" -> "BOUNCE"
-          p.spec.bombType == "BURST" -> "BURST"
-          p.spec.bombType == "SHOTGUN" -> "SHOTGN"
-          p.spec.bombType == "MISSILE" -> "MISSILE"
-          else -> "BOMB"
+          p.spec.bombType == "PHASE_DASH" -> "PHASE"
+          p.spec.bombType == "CLOAK_EMP" -> if (p.isCloaked) "EMP BOMB" else "CLOAK"
+          p.spec.bombType == "MINE" -> "PROX MINE"
+          p.spec.bombType == "EMP" -> "EMP BOMB"
+          p.spec.bombType == "SIEGE" -> "SIEGE BOMB"
+          p.spec.bombType == "PROX" -> "PROX FLAK"
+          p.spec.bombType == "BOUNCE" -> "BOUNCE BOMB"
+          p.spec.bombType == "BURST" || p.spec.bombType == "NOVA_RING" -> "NOVA RING"
+          p.spec.bombType == "SHOTGUN" || p.spec.bombType == "SHATTER_CONE" -> "SHATTER"
+          p.spec.bombType == "MISSILE" || p.spec.bombType == "SEEKER_TORPEDO" -> "SEEKER"
+          else -> p.spec.secondaryShortLabel.ifEmpty { "BOMB" }
         }
       val bSub =
         when {
           unlocked -> "DRAG"
           engine.isBombCancelActive -> "CANCEL"
           p.bombTimer > 0.1f -> String.format(java.util.Locale.US, "%.1fs", p.bombTimer)
-          isCloakToggleReady -> "180⚡/S"
-          else -> "${bombCost.toInt()}⚡"
+          isCloakToggleReady -> "(180❖/s)"
+          p.spec.bombType == "MINE" -> "(${bombCost.toInt()}❖ • $activeMineCount/6)"
+          else -> "(${bombCost.toInt()}❖)"
         }
-      hudLabelPaint.textSize = 9.5f * dpDensity * arcScale
+      hudLabelPaint.textSize = (if (bLabel.length >= 9) 7.4f else 8.8f) * dpDensity * arcScale
       hudLabelPaint.color = Color.argb(bombAlpha, 255, 255, 255)
       canvas.drawText(bLabel, bX, bY - 1.2f * dpDensity * arcScale, hudLabelPaint)
-      hudLabelPaint.textSize = 8.0f * dpDensity * arcScale
+      hudLabelPaint.textSize = 7.6f * dpDensity * arcScale
       hudLabelPaint.color = Color.argb(bombAlpha, 253, 224, 71)
       canvas.drawText(bSub, bX, bY + 9.2f * dpDensity * arcScale, hudLabelPaint)
     }

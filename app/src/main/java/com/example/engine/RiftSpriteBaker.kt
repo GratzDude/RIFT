@@ -139,8 +139,128 @@ object RiftSpriteBaker {
     return map[shipId] ?: map[1] ?: bakeShipBitmap(RiftCodex.getShipById(shipId), 128, isAllied)
   }
 
+  private val customBuffIconCache = mutableMapOf<Int, Bitmap>()
+
+  fun invalidateCustomBuffIcon(buffType: Int) {
+    customBuffIconCache.remove(buffType)
+  }
+
   fun getBuffIconBitmap(buffType: Int): Bitmap {
+    if (buffType in 0..10) {
+      return buffIconBitmaps[buffType] ?: buffIconBitmaps[0]!!
+    }
+    customBuffIconCache[buffType]?.let { return it }
+    val entry = RiftCodex.getBuffRegistryByIndex(buffType)
+    if (entry != null) {
+      val baked = bakeCustomBuffIconBitmap(entry, 68)
+      customBuffIconCache[buffType] = baked
+      return baked
+    }
     return buffIconBitmaps[buffType.mod(11)] ?: buffIconBitmaps[0]!!
+  }
+
+  private fun bakeCustomBuffIconBitmap(entry: SpecialBuffRegistryEntry, sizePx: Int = 68): Bitmap {
+    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val cx = sizePx * 0.5f
+    val cy = sizePx * 0.5f
+    val r = sizePx * 0.36f
+    val accent = entry.strokeColorInt
+
+    val glowPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader =
+          RadialGradient(
+            cx,
+            cy,
+            sizePx * 0.48f,
+            intArrayOf(
+              Color.argb(200, Color.red(accent), Color.green(accent), Color.blue(accent)),
+              Color.argb(80, Color.red(accent), Color.green(accent), Color.blue(accent)),
+              Color.argb(0, Color.red(accent), Color.green(accent), Color.blue(accent)),
+            ),
+            floatArrayOf(0f, 0.58f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      }
+    c.drawCircle(cx, cy, sizePx * 0.48f, glowPaint)
+
+    val hexPath = Path()
+    for (i in 0 until 6) {
+      val a = (Math.PI / 3.0 * i - Math.PI / 6.0).toFloat()
+      val hx = cx + kotlin.math.cos(a) * r
+      val hy = cy + kotlin.math.sin(a) * r
+      if (i == 0) hexPath.moveTo(hx, hy) else hexPath.lineTo(hx, hy)
+    }
+    hexPath.close()
+
+    val platePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(235, 10, 18, 32)
+      }
+    c.drawPath(hexPath, platePaint)
+
+    val borderPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = sizePx * 0.042f
+        color = accent
+      }
+    c.drawPath(hexPath, borderPaint)
+
+    val glyphPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = sizePx * 0.048f
+        strokeCap = Paint.Cap.ROUND
+        color = Color.WHITE
+      }
+    val corePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = accent
+      }
+
+    when (entry.specialEffect) {
+      CustomBuffEffect.PULL -> {
+        c.drawCircle(cx, cy, r * 0.24f, corePaint)
+        for (i in 0 until 4) {
+          val a = (Math.PI / 2.0 * i + Math.PI / 4.0).toFloat()
+          c.drawLine(
+            cx + kotlin.math.cos(a) * r * 0.62f,
+            cy + kotlin.math.sin(a) * r * 0.62f,
+            cx + kotlin.math.cos(a + 0.45f) * r * 0.26f,
+            cy + kotlin.math.sin(a + 0.45f) * r * 0.26f,
+            glyphPaint,
+          )
+        }
+      }
+      CustomBuffEffect.PUSH -> {
+        c.drawCircle(cx, cy, r * 0.52f, borderPaint)
+        c.drawCircle(cx, cy, r * 0.26f, glyphPaint)
+      }
+      CustomBuffEffect.EMP -> {
+        val bolt = Path().apply {
+          moveTo(cx + r * 0.12f, cy - r * 0.55f)
+          lineTo(cx - r * 0.22f, cy - r * 0.04f)
+          lineTo(cx + r * 0.08f, cy + r * 0.02f)
+          lineTo(cx - r * 0.14f, cy + r * 0.55f)
+        }
+        c.drawPath(bolt, glyphPaint)
+      }
+      CustomBuffEffect.BARRIER -> {
+        c.drawLine(cx - r * 0.52f, cy, cx + r * 0.52f, cy, glyphPaint)
+        c.drawLine(cx - r * 0.42f, cy - r * 0.24f, cx + r * 0.42f, cy - r * 0.24f, borderPaint)
+        c.drawLine(cx - r * 0.42f, cy + r * 0.24f, cx + r * 0.42f, cy + r * 0.24f, borderPaint)
+      }
+      else -> {
+        c.drawCircle(cx, cy, r * 0.34f, corePaint)
+        c.drawCircle(cx, cy, r * 0.48f, glyphPaint)
+      }
+    }
+    return bmp
   }
 
   /**
