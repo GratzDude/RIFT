@@ -696,87 +696,104 @@ fun RiftHudOverlay(
       }
     }
 
-    // 5c. Independent Floating [MULTI ON/OFF] Button (Uncoupled from Console, Independently Draggable & Persisted)
-    val showMultiButton =
-      player.spec.supportsMultifire ||
-        RiftCalibrationState.forceAllButtonsVisible ||
-        RiftCalibrationState.isUiUnlockedForDragging
-    if (showMultiButton) {
-      Box(
-        modifier =
-          Modifier.align(Alignment.BottomCenter)
-            .padding(bottom = 14.dp, start = 480.dp)
-            .offset {
-              IntOffset(
-                RiftCalibrationState.multiBtnOffset.x.roundToInt(),
-                RiftCalibrationState.multiBtnOffset.y.roundToInt(),
-              )
-            }
-            .graphicsLayer {
-              scaleX = RiftCalibrationState.bottomConsoleScale
-              scaleY = RiftCalibrationState.bottomConsoleScale
-              transformOrigin = TransformOrigin(0.5f, 0.5f)
-            }
-            .then(
-              if (RiftCalibrationState.isUiUnlockedForDragging) {
-                Modifier.pointerInput(Unit) {
-                  detectDragGestures(
-                    onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
-                    onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
-                  ) { change, dragAmount ->
-                    change.consume()
-                    RiftCalibrationState.multiBtnOffset += dragAmount
-                  }
+    // 5c. Independent Floating [MULTI ON/OFF] Button (Always visible on Right Wing; shows ∞ for native ships, shot count for buff charges, or 0 dimmed when empty)
+    val canUseMulti = engine.canShipUseMultiShot(player)
+    val isNativeMulti = player.spec.supportsNativeMultifire
+    val multiCharges = player.multiShotCharges
+    Box(
+      modifier =
+        Modifier.align(Alignment.BottomCenter)
+          .padding(bottom = 14.dp, start = 480.dp)
+          .offset {
+            IntOffset(
+              RiftCalibrationState.multiBtnOffset.x.roundToInt(),
+              RiftCalibrationState.multiBtnOffset.y.roundToInt(),
+            )
+          }
+          .graphicsLayer {
+            scaleX = RiftCalibrationState.bottomConsoleScale
+            scaleY = RiftCalibrationState.bottomConsoleScale
+            transformOrigin = TransformOrigin(0.5f, 0.5f)
+          }
+          .then(
+            if (RiftCalibrationState.isUiUnlockedForDragging) {
+              Modifier.pointerInput(Unit) {
+                detectDragGestures(
+                  onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
+                  onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
+                ) { change, dragAmount ->
+                  change.consume()
+                  RiftCalibrationState.multiBtnOffset += dragAmount
                 }
-              } else {
-                Modifier
               }
-            )
-            .size(48.dp)
-            .clip(CircleShape)
-            .background(if (player.multifireOn) Color(0xCC2E2608) else Color(0xCC0E223B))
-            .border(
-              width = if (RiftCalibrationState.isUiUnlockedForDragging) 1.8.dp else 1.4.dp,
-              color =
-                when {
-                  RiftCalibrationState.isUiUnlockedForDragging -> Color(0xFFFACC15)
-                  player.multifireOn -> Color(0xFFFACC15)
-                  else -> Color(0xFF3A608C)
-                },
-              shape = CircleShape,
-            )
-            .clickable(enabled = !RiftCalibrationState.isUiUnlockedForDragging) { onToggleMultifire() }
-            .testTag("hud_multifire_button"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Column(
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.Center,
-        ) {
-          Text(
-            text = "MULTI",
-            color = if (player.multifireOn) Color(0xFFFACC15) else Color(0xFF94A3B8),
-            fontSize = 8.2.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.SansSerif,
-            style = CompactCircleTextStyle,
-            maxLines = 1,
+            } else {
+              Modifier
+            }
           )
-          Text(
-            text =
+          .size(48.dp)
+          .clip(CircleShape)
+          .background(
+            when {
+              player.multifireOn && canUseMulti -> Color(0xCC2E2608)
+              canUseMulti -> Color(0xCC0E223B)
+              else -> Color(0x88091322)
+            }
+          )
+          .border(
+            width = if (RiftCalibrationState.isUiUnlockedForDragging) 1.8.dp else 1.4.dp,
+            color =
               when {
-                RiftCalibrationState.isUiUnlockedForDragging -> "DRAG"
-                player.multifireOn -> "ON"
-                else -> "OFF"
+                RiftCalibrationState.isUiUnlockedForDragging -> Color(0xFFFACC15)
+                player.multifireOn && canUseMulti -> Color(0xFFFACC15)
+                canUseMulti -> Color(0xFF38BDF8)
+                else -> Color(0xFF334155)
               },
-            color = if (RiftCalibrationState.isUiUnlockedForDragging) Color(0xFFFACC15) else Color.White,
-            fontSize = 7.5.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            style = CompactCircleTextStyle,
-            maxLines = 1,
+            shape = CircleShape,
           )
-        }
+          .clickable(enabled = !RiftCalibrationState.isUiUnlockedForDragging) { onToggleMultifire() }
+          .testTag("hud_multifire_button"),
+      contentAlignment = Alignment.Center,
+    ) {
+      Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+      ) {
+        Text(
+          text = if (isNativeMulti && multiCharges > 0) "MULTI★" else "MULTI",
+          color =
+            when {
+              player.multifireOn && canUseMulti -> Color(0xFFFACC15)
+              canUseMulti -> Color(0xFF38BDF8)
+              else -> Color(0xFF64748B)
+            },
+          fontSize = 8.0.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.SansSerif,
+          style = CompactCircleTextStyle,
+          maxLines = 1,
+        )
+        val subLabel =
+          when {
+            RiftCalibrationState.isUiUnlockedForDragging -> "DRAG"
+            isNativeMulti && multiCharges > 0 -> "${if (player.multifireOn) "ON" else "OFF"}•$multiCharges"
+            isNativeMulti -> "${if (player.multifireOn) "ON" else "OFF"}•∞"
+            multiCharges > 0 -> "${if (player.multifireOn) "ON" else "OFF"}•$multiCharges"
+            else -> "0"
+          }
+        Text(
+          text = subLabel,
+          color =
+            when {
+              RiftCalibrationState.isUiUnlockedForDragging -> Color(0xFFFACC15)
+              canUseMulti -> Color.White
+              else -> Color(0xFF64748B)
+            },
+          fontSize = 7.2.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          style = CompactCircleTextStyle,
+          maxLines = 1,
+        )
       }
     }
 
@@ -1058,12 +1075,54 @@ private fun CircularRadarMinimap(
       val pulsePhase = ((nowMs % 1200L) / 1200f)
       val p = engine.localPlayer
 
+      // Draw active Brick Energy Walls on Minimap
+      for (bw in engine.brickWalls) {
+        val ax = ox + (if (bw.w >= bw.h) bw.x else bw.x + bw.w * 0.5f) * scale
+        val ay = oy + (if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y) * scale
+        val bx = ox + (if (bw.w >= bw.h) bw.x + bw.w else bw.x + bw.w * 0.5f) * scale
+        val by = oy + (if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y + bw.h) * scale
+        drawLine(
+          color = Color(0xFF22D3EE),
+          start = Offset(ax, ay),
+          end = Offset(bx, by),
+          strokeWidth = 2.2f,
+        )
+      }
+
+      // Draw active Decoy Hologram Clones on Minimap (fools enemy radar)
+      for (dc in engine.decoys) {
+        val dx = ox + dc.x * scale
+        val dy = oy + dc.y * scale
+        val isFriendlyDecoy =
+          dc.ownerId == p.id ||
+            (p.armadaName.isNotEmpty() && dc.armadaName == p.armadaName) ||
+            (p.syndicateTag != "GUEST" && dc.syndicateTag == p.syndicateTag)
+        val dotFill = if (isFriendlyDecoy) Color(0xFF38BDF8) else Color(0xFFEF4444)
+        drawCircle(
+          color = dotFill,
+          radius = 3.2f,
+          center = Offset(dx, dy),
+        )
+        drawCircle(
+          color = Color.White,
+          radius = 3.2f,
+          center = Offset(dx, dy),
+          style = Stroke(width = 1.1f),
+        )
+      }
+
       // Minimap Player Indicators (Strictly on Minimap):
       // - Enemies: Solid Red dots (#EF4444) with a crisp White outer circle ring (#FFFFFF)
       // - Armada Members / Syndicate Allies: Solid Blue dots (#3B82F6) with a crisp White outer circle ring (#FFFFFF)
       // - High-Value Targets (HVT): Pulsing Gold Sonar Minimap Rings (#FFD700)
+      // - Cloaked Enemies (s.isCloaked): Completely invisible on enemy minimap radar!
       for (s in engine.ships) {
         if (s.respawnTimer > 0f) {
+          smoothedPositions.remove(s.id)
+          continue
+        }
+        val isFriendly = engine.areAllied(p, s)
+        if (s.isCloaked && !isFriendly && !s.isLocalPlayer) {
           smoothedPositions.remove(s.id)
           continue
         }
@@ -1083,7 +1142,6 @@ private fun CircularRadarMinimap(
 
         val sx = smoothPos.x
         val sy = smoothPos.y
-        val isFriendly = engine.areAllied(p, s)
 
         // HVT Pulsing Gold Sonar Ring
         if (s.bounty >= RiftGameEngine.HVT_BOUNTY_THRESHOLD) {
@@ -1097,7 +1155,7 @@ private fun CircularRadarMinimap(
         }
 
         if (s.isLocalPlayer) {
-          // Local Player: Crisp Directional White Triangle
+          // Local Player: Crisp Directional White Triangle (Violet tint when Stealth Cloaked)
           val r = 5.4f
           val a = s.angle
           trianglePath.reset()
@@ -1105,7 +1163,7 @@ private fun CircularRadarMinimap(
           trianglePath.lineTo(sx + cos(a + 2.4f) * r * 0.85f, sy + sin(a + 2.4f) * r * 0.85f)
           trianglePath.lineTo(sx + cos(a - 2.4f) * r * 0.85f, sy + sin(a - 2.4f) * r * 0.85f)
           trianglePath.close()
-          drawPath(path = trianglePath, color = Color.White)
+          drawPath(path = trianglePath, color = if (s.isCloaked) Color(0xFFD8B4FE) else Color.White)
         } else {
           val dotFill = if (isFriendly) Color(0xFF3B82F6) else Color(0xFFEF4444)
           val dotRadius = if (s.isHuman) 4.0f else 3.3f
@@ -1402,42 +1460,85 @@ private fun ActivePowerupsDock(
     label = "buff_dock_scale",
   )
 
+  val specialSlotBuffId =
+    when (player.specialWeaponType) {
+      "BURST" -> 0
+      "SHOTGUN" -> 1
+      "MISSILE" -> 2
+      "DECOY" -> 3
+      "BRICK" -> 4
+      "ROCKET" -> 5
+      else -> 0
+    }
+  val hasSpecialOrClassState =
+    player.specialWeaponCharges > 0 ||
+      player.rocketBoostTimer > 0f ||
+      player.isCloaked ||
+      player.sniperOverchargeReady
+  val specialCountText =
+    when {
+      player.rocketBoostTimer > 0f -> String.format(Locale.US, "%.1fs", player.rocketBoostTimer)
+      player.isCloaked -> "CLOAK"
+      player.sniperOverchargeReady -> "+35%"
+      player.specialWeaponCharges > 0 -> "x${player.specialWeaponCharges}"
+      else -> "—"
+    }
+  val specialLabelText =
+    when {
+      player.rocketBoostTimer > 0f -> "ROCKET"
+      player.isCloaked -> "STEALTH"
+      player.sniperOverchargeReady -> "SNIPER"
+      player.specialWeaponCharges > 0 -> player.specialWeaponType.take(7)
+      else -> "SPECIAL"
+    }
+
   // Evaluated directly per recomposition so values are never stale
   val sockets = listOf(
     PowerupSocketSlot(
-      buffType = 1,
-      label = "RECHARGE",
-      isActive = player.rechargeStacks > 0,
-      countText = if (player.rechargeStacks > 0) "x${player.rechargeStacks}" else "—",
-      accentColor = Color(0xFF38BDF8),
-    ),
-    PowerupSocketSlot(
-      buffType = 2,
-      label = "OVERDRIVE",
-      isActive = player.speedStacks > 0,
-      countText = if (player.speedStacks > 0) "x${player.speedStacks}" else "—",
-      accentColor = Color(0xFFF59E0B),
-    ),
-    PowerupSocketSlot(
-      buffType = 3,
-      label = "MULTIFIRE",
-      isActive = player.multifireOn,
-      countText = if (player.multifireOn) "MULTI" else "—",
+      buffType = 8,
+      label = "MULTI-SHOT",
+      isActive = player.multifireOn && (player.spec.supportsNativeMultifire || player.multiShotCharges > 0),
+      countText =
+        when {
+          player.spec.supportsNativeMultifire && player.multiShotCharges > 0 -> "${player.multiShotCharges}★"
+          player.multiShotCharges > 0 -> "${player.multiShotCharges}"
+          player.spec.supportsNativeMultifire -> if (player.multifireOn) "SPLIT" else "1x"
+          else -> "0"
+        },
       accentColor = Color(0xFFFACC15),
     ),
     PowerupSocketSlot(
-      buffType = 4,
-      label = "RICOCHET",
-      isActive = player.bounceBulletsUpgrade > 0,
-      countText = if (player.bounceBulletsUpgrade > 0) "x${player.bounceBulletsUpgrade}" else "—",
+      buffType = 9,
+      label = "BOUNCE",
+      isActive = player.bouncingBulletsShots > 0 || player.spec.primaryBounces > 0,
+      countText =
+        when {
+          player.bouncingBulletsShots > 0 -> "${player.bouncingBulletsShots}"
+          player.spec.primaryBounces > 0 -> "NAT"
+          else -> "0"
+        },
       accentColor = Color(0xFFA855F7),
     ),
     PowerupSocketSlot(
-      buffType = 5,
-      label = "BOMB TIER",
-      isActive = player.bombTierUpgrade > 0,
-      countText = if (player.bombTierUpgrade > 0) "T${player.bombTierUpgrade}" else "—",
-      accentColor = Color(0xFFEF4444),
+      buffType = 10,
+      label = "SURGE +8%",
+      isActive = player.overchargeSurgeStacks > 0,
+      countText = if (player.overchargeSurgeStacks > 0) "x${player.overchargeSurgeStacks}" else "—",
+      accentColor = Color(0xFFF59E0B),
+    ),
+    PowerupSocketSlot(
+      buffType = 7,
+      label = "REPEL",
+      isActive = player.repels > 0,
+      countText = if (player.repels > 0) "x${player.repels}" else "0",
+      accentColor = Color(0xFF38BDF8),
+    ),
+    PowerupSocketSlot(
+      buffType = if (player.rocketBoostTimer > 0f) 5 else specialSlotBuffId,
+      label = specialLabelText,
+      isActive = hasSpecialOrClassState,
+      countText = specialCountText,
+      accentColor = Color(0xFF22D3EE),
     ),
   )
 
@@ -1483,7 +1584,7 @@ private fun ActivePowerupsDock(
     if (isExpanded) {
       Spacer(modifier = Modifier.height(2.dp))
       Text(
-        text = "ACTIVE PILOT UPGRADES (PER LIFE)",
+        text = "11-BUFF TELEMETRY • MULTI:${player.multiShotCharges} • BOUNCE:${player.bouncingBulletsShots} • SURGE:+${player.overchargeSurgeStacks * 8}%",
         color = Color(0xFF94A3B8),
         fontSize = 5.5.sp,
         fontWeight = FontWeight.Bold,

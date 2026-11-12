@@ -423,37 +423,46 @@ class RiftArenaView(
 
     if (p.specialWeaponCharges > 0 || showAll) {
       val rad = ((startDeg + slotIndex * stepDeg) * PI / 180.0).toFloat()
-      val count = if (p.specialWeaponCharges > 0) p.specialWeaponCharges else 2
+      val count = if (p.specialWeaponCharges > 0) p.specialWeaponCharges else 1
       val activeType = if (p.specialWeaponCharges > 0 && p.specialWeaponType != "NONE") p.specialWeaponType else "BURST"
       val titleStr =
         when (activeType) {
-          "SHOTGUN" -> "SHOTGUN $count"
+          "SHOTGUN" -> "SHOTGN $count"
           "MISSILE" -> "MISSILE $count"
+          "DECOY" -> "DECOY $count"
+          "BRICK" -> "BRICK $count"
+          "ROCKET" -> "ROCKET $count"
           else -> "BURST $count"
         }
       val strokeCol =
         when (activeType) {
           "SHOTGUN" -> Color.parseColor("#FB7185")
           "MISSILE" -> Color.parseColor("#EF4444")
+          "DECOY" -> Color.parseColor("#38BDF8")
+          "BRICK" -> Color.parseColor("#22D3EE")
+          "ROCKET" -> Color.parseColor("#A855F7")
           else -> Color.parseColor("#F59E0B")
         }
       val fillCol =
         when (activeType) {
           "SHOTGUN" -> Color.argb(155, 88, 18, 38)
           "MISSILE" -> Color.argb(155, 88, 14, 18)
+          "DECOY" -> Color.argb(155, 12, 52, 78)
+          "BRICK" -> Color.argb(155, 10, 62, 72)
+          "ROCKET" -> Color.argb(155, 58, 18, 88)
           else -> Color.argb(155, 80, 40, 6)
         }
       activeUtilitySlots.add(
         UtilityButtonSlot(
           type = "SPECIAL",
           title = titleStr,
-          sub = "260⚡",
+          sub = "0⚡",
           cx = baseArcX + cos(rad) * scaledDist + RiftCalibrationState.burstBtnOffset.x,
           cy = baseArcY + sin(rad) * scaledDist + RiftCalibrationState.burstBtnOffset.y,
           r = scaledR,
           strokeColor = strokeCol,
           fillColor = fillCol,
-          enabled = p.canFire && p.specialWeaponCharges > 0 && (p.flux - 260f >= 1f),
+          enabled = p.canFire && p.specialWeaponCharges > 0,
         )
       )
       slotIndex++
@@ -461,7 +470,7 @@ class RiftArenaView(
 
     if (p.repels > 0 || showAll) {
       val rad = ((startDeg + slotIndex * stepDeg) * PI / 180.0).toFloat()
-      val count = if (p.repels > 0) p.repels else 4
+      val count = if (p.repels > 0) p.repels else 3
       activeUtilitySlots.add(
         UtilityButtonSlot(
           type = "REPEL",
@@ -824,9 +833,20 @@ class RiftArenaView(
       if (engine.fireStickActive && !engine.isCancelActive) {
         val activeAimAngle =
           if (p.independentAimActive) p.weaponAngle else engine.findQuickTapAutoAimAngle(p)
-        val streams = if (p.multifireOn) p.spec.primaryStreams + 2 else p.spec.primaryStreams
+        val hasMultiShot = p.multifireOn && engine.canShipUseMultiShot(p)
+        val streams =
+          when {
+            p.shipId == 3 && !hasMultiShot -> 1
+            p.shipId == 3 && hasMultiShot && p.multiShotCharges > 0 -> 5
+            p.shipId == 3 && hasMultiShot -> 3
+            p.shipId == 5 && !hasMultiShot -> 2
+            p.shipId == 5 && hasMultiShot && p.multiShotCharges > 0 -> 5
+            p.shipId == 5 && hasMultiShot -> 4
+            hasMultiShot -> p.spec.primaryStreams + 2
+            else -> p.spec.primaryStreams
+          }
         val spreadRad =
-          if (p.multifireOn) max(0.12f, p.spec.primarySpreadRad * 1.7f) else p.spec.primarySpreadRad
+          if (hasMultiShot) max(0.11f, p.spec.primarySpreadRad * 1.4f) else p.spec.primarySpreadRad
 
         if (streams > 1 && spreadRad > 0.03f) {
           val halfConeDeg = (spreadRad * (streams - 1) * 0.5f) * (180f / PI.toFloat())
@@ -836,7 +856,7 @@ class RiftArenaView(
           canvas.drawArc(arcRect, centerDeg - halfConeDeg, halfConeDeg * 2f, true, spreadConePaint)
         }
 
-        val gunBounces = p.spec.primaryBounces + p.bounceBulletsUpgrade
+        val gunBounces = p.spec.primaryBounces + (if (p.bouncingBulletsShots > 0) 1 else 0)
         if (gunBounces > 0) {
           val pts = engine.computeBounceTrajectory(p, activeAimAngle, maxBounces = 2, segmentMaxLen = 540f * telegraphScale)
           drawRaycastTrajectory(canvas, pts, Color.parseColor("#38BDF8"))
@@ -847,7 +867,11 @@ class RiftArenaView(
         }
       }
 
-      if (engine.bombStickActive && !engine.isBombCancelActive && engine.bombStickMag > 0.12f && p.spec.hasBomb) {
+      val isProjectileBomb =
+        p.spec.hasBomb &&
+          p.spec.bombType != "PHASE_DASH" &&
+          !(p.spec.bombType == "CLOAK_EMP" && !p.isCloaked)
+      if (engine.bombStickActive && !engine.isBombCancelActive && engine.bombStickMag > 0.12f && isProjectileBomb) {
         val pts =
           engine.computeBounceTrajectory(
             p,
@@ -857,6 +881,35 @@ class RiftArenaView(
           )
         drawRaycastTrajectory(canvas, pts, Color.parseColor("#F59E0B"))
       }
+    }
+
+    // 7b. Solid Energy Brick Barriers (120px length, 10s lifespan)
+    for (bw in engine.brickWalls) {
+      if (bw.x + bw.w < viewLeft - 40f || bw.x > viewRight + 40f ||
+        bw.y + bw.h < viewTop - 40f || bw.y > viewBottom + 40f
+      ) {
+        continue
+      }
+      val lifeFade = (bw.life / 1.5f).coerceIn(0.25f, 1f)
+      val isFriendlyWall = bw.ownerId == p.id || bw.freq == p.freq
+      val ax = if (bw.w >= bw.h) bw.x else bw.x + bw.w * 0.5f
+      val ay = if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y
+      val bx = if (bw.w >= bw.h) bw.x + bw.w else bw.x + bw.w * 0.5f
+      val by = if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y + bw.h
+      val wallThickness = min(bw.w, bw.h)
+      bulletPaint.color =
+        if (isFriendlyWall) {
+          Color.argb((210 * lifeFade).toInt(), 34, 211, 238)
+        } else {
+          Color.argb((210 * lifeFade).toInt(), 249, 115, 22)
+        }
+      bulletPaint.strokeWidth = wallThickness * 1.05f
+      canvas.drawLine(ax, ay, bx, by, bulletPaint)
+      bulletCorePaint.strokeWidth = wallThickness * 0.38f
+      canvas.drawLine(ax, ay, bx, by, bulletCorePaint)
+      bombPaint.color = Color.WHITE
+      canvas.drawCircle(ax, ay, wallThickness * 0.42f, bombPaint)
+      canvas.drawCircle(bx, by, wallThickness * 0.42f, bombPaint)
     }
 
     // 8. 2x Bullets scaled by projectileScale
@@ -903,10 +956,60 @@ class RiftArenaView(
       }
     }
 
+    // 9b. Decoy Hologram Clones (Render identically to real ships for enemies; subtle cyan ring for owner/allies)
+    for (dc in engine.decoys) {
+      if (dc.x < viewLeft - 110f || dc.x > viewRight + 110f || dc.y < viewTop - 110f || dc.y > viewBottom + 110f) {
+        continue
+      }
+      val isFriendlyDecoy =
+        dc.ownerId == p.id ||
+          (p.armadaName.isNotEmpty() && dc.armadaName == p.armadaName) ||
+          (p.syndicateTag != "GUEST" && dc.syndicateTag == p.syndicateTag)
+      val bmp =
+        RiftSpriteBaker.getShipSprite(
+          shipId = dc.shipId,
+          isAllied = isFriendlyDecoy,
+          isHitFlashing = false,
+        )
+      val halfBmp = bmp.width * 0.5f
+      val drawScale = (88f / bmp.width.toFloat()) * RiftCalibrationState.shipScale
+      val renderHeadingRad = if (hypot(dc.vx, dc.vy) > 2f) atan2(dc.vy, dc.vx) else dc.angle
+      shipMatrix.reset()
+      shipMatrix.postTranslate(-halfBmp, -halfBmp)
+      shipMatrix.postScale(drawScale, drawScale)
+      shipMatrix.postRotate(renderHeadingRad * 180f / PI.toFloat())
+      shipMatrix.postTranslate(dc.x, dc.y)
+      if (isFriendlyDecoy) {
+        buffGlowPaint.alpha = 185
+        canvas.drawBitmap(bmp, shipMatrix, buffGlowPaint)
+        bombRingPaint.color = Color.argb(175, 56, 189, 248)
+        canvas.drawCircle(dc.x, dc.y, 44f * RiftCalibrationState.shipScale, bombRingPaint)
+      } else {
+        canvas.drawBitmap(bmp, shipMatrix, null)
+      }
+
+      val baseTextScale = engine.playfieldTextScale * RiftCalibrationState.labelTextScale
+      val callsignTextSize = 36.0f * baseTextScale
+      val radialDist = (44f * RiftCalibrationState.shipScale + 12f) * RiftCalibrationState.labelDistanceOffset
+      val tagStr = if (dc.armadaName.isNotEmpty()) "[${dc.armadaName}]" else "[${dc.syndicateTag.ifEmpty { "GUEST" }}]"
+      val labelText = if (isFriendlyDecoy) "[DECOY] ${dc.callsign}" else "$tagStr ${dc.callsign} • ${dc.bounty}"
+      shipLabelStrokePaint.strokeWidth = 5.0f * baseTextScale
+      shipLabelStrokePaint.textSize = callsignTextSize
+      shipLabelStrokePaint.alpha = 240
+      shipLabelStrokePaint.textAlign = Paint.Align.CENTER
+      shipLabelFillPaint.textSize = callsignTextSize
+      shipLabelFillPaint.alpha = 240
+      shipLabelFillPaint.textAlign = Paint.Align.CENTER
+      shipLabelFillPaint.color = if (isFriendlyDecoy) Color.parseColor("#38BDF8") else Color.parseColor("#F87171")
+      canvas.drawText(labelText, dc.x, dc.y + radialDist + callsignTextSize * 0.85f, shipLabelStrokePaint)
+      canvas.drawText(labelText, dc.x, dc.y + radialDist + callsignTextSize * 0.85f, shipLabelFillPaint)
+    }
+
     // 10. 2x Playfield 3D Metallic Ship Sprites (88px) + Split World Labels:
     //     - Zero thruster plumes
     //     - Bounty centered ABOVE ship hull
     //     - [TAG] Callsign centered BELOW ship hull
+    //     - Stealth Cloak (6-Disruptor / 9-Rift Frame): completely invisible to enemy ships!
     for (s in engine.ships) {
       if (s.respawnTimer > 0f) continue
       if (s.x < viewLeft - 110f || s.x > viewRight + 110f || s.y < viewTop - 110f || s.y > viewBottom + 110f) {
@@ -914,6 +1017,10 @@ class RiftArenaView(
       }
 
       val isFriendly = engine.areAllied(p, s)
+      if (s.isCloaked && !isFriendly && !s.isLocalPlayer) {
+        // Complete playfield + nametag invisibility against enemies while Stealth Cloak is active!
+        continue
+      }
 
       // 2x 3D Metallic Ship Sprite (88f world units, up from 44f) scaled by calibration
       val bmp =
@@ -930,7 +1037,23 @@ class RiftArenaView(
       shipMatrix.postScale(drawScale, drawScale)
       shipMatrix.postRotate(renderHeadingRad * 180f / PI.toFloat())
       shipMatrix.postTranslate(s.x, s.y)
-      canvas.drawBitmap(bmp, shipMatrix, null)
+      if (s.isCloaked) {
+        buffGlowPaint.alpha = 78
+        canvas.drawBitmap(bmp, shipMatrix, buffGlowPaint)
+        bombRingPaint.color = Color.argb(165, 179, 136, 255)
+        canvas.drawCircle(s.x, s.y, 44f * RiftCalibrationState.shipScale, bombRingPaint)
+      } else {
+        canvas.drawBitmap(bmp, shipMatrix, null)
+      }
+
+      if (s.sniperOverchargeReady) {
+        bombRingPaint.color = Color.argb(210, 56, 189, 248)
+        canvas.drawCircle(s.x, s.y, 46f * RiftCalibrationState.shipScale, bombRingPaint)
+      }
+      if (s.rocketBoostTimer > 0f) {
+        bombRingPaint.color = Color.argb(215, 249, 115, 22)
+        canvas.drawCircle(s.x, s.y, 48f * RiftCalibrationState.shipScale, bombRingPaint)
+      }
 
       // Independent 360-degree turret/rail directional indicator on 2x hull
       if (s.independentAimActive) {
@@ -1356,17 +1479,26 @@ class RiftArenaView(
       hudLabelPaint,
     )
 
-    // 3. Secondary [BOMB / MINE] Circular Stick — ONLY rendered for bomb/mine ships (or when forceAllButtonsVisible/unlocked is on)
+    // 3. Secondary / Class Ability Circular Button — ONLY rendered for ships with a Secondary/Class Ability (not 3-Suppressor or 5-Twinfang)
     if (p.spec.hasBomb || RiftCalibrationState.forceAllButtonsVisible || unlocked) {
       val bX = effBombBtnX()
       val bY = effBombBtnY()
       val bR = effBombRadius()
-      val bombCost = if (p.spec.hasBomb) p.spec.bombCost else 180f
-      val bombAvailable = (p.canFire && (p.flux - bombCost >= 1f)) || unlocked
+      val isCloakToggleReady = (p.spec.bombType == "CLOAK_EMP" && !p.isCloaked)
+      val bombCost =
+        when {
+          !p.spec.hasBomb -> 300f
+          isCloakToggleReady -> 180f
+          else -> p.spec.bombCost
+        }
+      val bombAvailable =
+        (p.canFire && p.bombTimer <= 0f && (p.flux - bombCost >= 1f)) || unlocked
       val bombAlpha = if (bombAvailable) 255 else 110
       hudCircleFillPaint.color =
         if (engine.isBombCancelActive) {
           Color.argb(195, 127, 29, 29)
+        } else if (p.isCloaked && p.spec.bombType == "CLOAK_EMP") {
+          Color.argb(215, 109, 40, 217)
         } else if (engine.bombStickActive && bombAvailable) {
           Color.argb(215, 245, 158, 11)
         } else {
@@ -1374,10 +1506,11 @@ class RiftArenaView(
         }
       canvas.drawCircle(bX, bY, bR, hudCircleFillPaint)
       hudCircleStrokePaint.color =
-        if (engine.isBombCancelActive) {
-          Color.parseColor("#EF4444")
-        } else {
-          Color.argb(bombAlpha, 245, 158, 11)
+        when {
+          engine.isBombCancelActive -> Color.parseColor("#EF4444")
+          p.spec.bombType == "PHASE_DASH" -> Color.argb(bombAlpha, 56, 189, 248)
+          p.spec.bombType == "CLOAK_EMP" -> Color.argb(bombAlpha, 179, 136, 255)
+          else -> Color.argb(bombAlpha, 245, 158, 11)
         }
       canvas.drawCircle(bX, bY, bR, hudCircleStrokePaint)
 
@@ -1388,10 +1521,12 @@ class RiftArenaView(
       val bLabel =
         when {
           engine.isBombCancelActive -> "✕"
+          p.spec.bombType == "PHASE_DASH" -> "DASH"
+          p.spec.bombType == "CLOAK_EMP" -> if (p.isCloaked) "EMP" else "CLOAK"
           p.spec.bombType == "MINE" -> "MINE"
           p.spec.bombType == "EMP" -> "EMP"
           p.spec.bombType == "SIEGE" -> "SIEGE"
-          p.spec.bombType == "PROX" -> "PROX"
+          p.spec.bombType == "PROX" -> "FLAK"
           p.spec.bombType == "BOUNCE" -> "BOUNCE"
           p.spec.bombType == "BURST" -> "BURST"
           p.spec.bombType == "SHOTGUN" -> "SHOTGN"
@@ -1402,6 +1537,8 @@ class RiftArenaView(
         when {
           unlocked -> "DRAG"
           engine.isBombCancelActive -> "CANCEL"
+          p.bombTimer > 0.1f -> String.format(java.util.Locale.US, "%.1fs", p.bombTimer)
+          isCloakToggleReady -> "180⚡/S"
           else -> "${bombCost.toInt()}⚡"
         }
       hudLabelPaint.textSize = 9.5f * dpDensity * arcScale
@@ -1613,11 +1750,15 @@ class RiftArenaView(
           }
         }
 
-        // 2. Check Secondary [BOMB / MINE] Concentric Slot
+        // 2. Check Secondary / Class Ability Concentric Slot
         if ((p.spec.hasBomb || RiftCalibrationState.forceAllButtonsVisible) &&
           hypot(x - bX, y - bY) <= bR * 1.18f
         ) {
-          if (!p.canFire) {
+          val isInstantSelfAbility =
+            !p.canFire ||
+              p.spec.bombType == "PHASE_DASH" ||
+              (p.spec.bombType == "CLOAK_EMP" && !p.isCloaked)
+          if (isInstantSelfAbility) {
             engine.fireSecondaryBomb(p, p.angle)
             return true
           }

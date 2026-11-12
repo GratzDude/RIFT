@@ -26,11 +26,11 @@ service cloud.firestore {
     }
 
     function isValidFoundry(f) {
-      return f is string && f.size() <= 20 && f in ['Kestrel', 'Aurelia', 'Vortex', 'Rustweld'];
+      return f is string && f.size() >= 1 && f.size() <= 40;
     }
 
     function isValidSectorMode(m) {
-      return m is string && m.size() <= 30 && m in ['warzone_10v10', 'ranked_3v3', 'ranked_5v5'];
+      return m is string && m.size() <= 30 && m in ['FFA', 'warzone_10v10', 'ranked_3v3', 'ranked_5v5'];
     }
 
     // 1. PilotDossier Validation Blueprint
@@ -38,7 +38,7 @@ service cloud.firestore {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
              data.userId == request.auth.uid &&
              data.callsign is string && data.callsign.size() >= 2 && data.callsign.size() <= 24 &&
-             data.preferredShipId is int && data.preferredShipId >= 1 && data.preferredShipId <= 8 &&
+             data.preferredShipId is int && data.preferredShipId >= 1 && data.preferredShipId <= 9 &&
              isValidFoundry(data.preferredFoundry) &&
              isValidSectorMode(data.preferredMode) &&
              data.pvpKills is int && data.pvpKills >= 0 && data.pvpKills <= 10000000 &&
@@ -58,7 +58,7 @@ service cloud.firestore {
              data.userId == request.auth.uid &&
              data.visibility is string && data.visibility.size() == 6 && data.visibility == 'public' &&
              data.callsign is string && data.callsign.size() >= 2 && data.callsign.size() <= 24 &&
-             data.shipId is int && data.shipId >= 1 && data.shipId <= 8 &&
+             data.shipId is int && data.shipId >= 1 && data.shipId <= 9 &&
              isValidFoundry(data.foundry) &&
              data.pvpKills is int && data.pvpKills >= 0 && data.pvpKills <= 10000000 &&
              data.pvpDeaths is int && data.pvpDeaths >= 0 && data.pvpDeaths <= 10000000 &&
@@ -77,7 +77,7 @@ service cloud.firestore {
              data.userId == request.auth.uid &&
              isValidSectorMode(data.sectorId) &&
              data.callsign is string && data.callsign.size() >= 2 && data.callsign.size() <= 24 &&
-             data.shipId is int && data.shipId >= 1 && data.shipId <= 8 &&
+             data.shipId is int && data.shipId >= 1 && data.shipId <= 9 &&
              data.freq is int && data.freq >= 0 && data.freq <= 99 &&
              (data.x is int || data.x is float) && data.x >= -100000 && data.x <= 100000 &&
              (data.y is int || data.y is float) && data.y >= -100000 && data.y <= 100000 &&
@@ -174,8 +174,8 @@ service cloud.firestore {
 
     // Collection 3: /sector_pilots/{userId} (Real-Time Sector Presence & Holo-Pings)
     match /sector_pilots/{userId} {
-      allow get: if isSignedIn() && isValidId(userId) && (resource == null || existing().sectorId in ['warzone_10v10', 'ranked_3v3', 'ranked_5v5']);
-      allow list: if isSignedIn() && existing().sectorId in ['warzone_10v10', 'ranked_3v3', 'ranked_5v5'];
+      allow get: if isSignedIn() && isValidId(userId) && (resource == null || existing().sectorId in ['FFA', 'warzone_10v10', 'ranked_3v3', 'ranked_5v5']);
+      allow list: if isSignedIn() && existing().sectorId in ['FFA', 'warzone_10v10', 'ranked_3v3', 'ranked_5v5'];
 
       allow create: if isSignedIn() &&
                        isValidId(userId) &&

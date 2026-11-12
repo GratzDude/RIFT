@@ -71,7 +71,7 @@ object RiftSpriteBaker {
     customShip9FlashBitmap = bakeSolidWhiteFlashBitmap(customShip9AlliedBitmap)
 
     val buffs = mutableMapOf<Int, Bitmap>()
-    for (buffType in 0..7) {
+    for (buffType in 0..10) {
       buffs[buffType] = bakeBuffIconBitmap(buffType, 68)
     }
     buffIconBitmaps = buffs
@@ -140,19 +140,24 @@ object RiftSpriteBaker {
   }
 
   fun getBuffIconBitmap(buffType: Int): Bitmap {
-    return buffIconBitmaps[buffType.mod(8)] ?: buffIconBitmaps[0]!!
+    return buffIconBitmaps[buffType.mod(11)] ?: buffIconBitmaps[0]!!
   }
 
   /**
-   * Pre-bakes high-definition item-specific graphical buff icons with glowing halos (0..7):
-   * 0 = Full Charge (Emerald Lightning Bolt)
-   * 1 = Recharge Rate (Cyan Dual-Ring Reactor Matrix)
-   * 2 = Top Speed (Amber Triple Afterburner Chevron)
-   * 3 = Multifire (Gold Triple-Spread Trident Beams)
-   * 4 = Bouncing Rails (Electric Violet Ricochet Bank-Shot)
-   * 5 = Burst Special Weapon (Orange 8-Point Shrapnel Starburst)
-   * 6 = Shotgun Special Weapon (Coral-Rose 60° Cone 3-Wave Pellet Blast)
-   * 7 = Lock-On Bouncing Missile Special Weapon (Crimson Homing Missile & Target Reticle)
+   * Pre-bakes high-definition item-specific graphical buff icons with glowing halos (0..10):
+   * Bucket A (Special Buff Slot Pickups — 0❖ Cost):
+   * 0 = Burst (Orange 8-Point Shrapnel Starburst)
+   * 1 = Shotgun (Coral-Rose 60° Cone 3-Wave Pellet Blast)
+   * 2 = Lock-On Bouncing Missile (Crimson Homing Missile & Target Reticle)
+   * 3 = Decoy (Teal Twin Hologram Clone Ships)
+   * 4 = Brick (Cyan Solid Energy Barrier Wall)
+   * 5 = Rocket (Magenta-Red Hyper-Thruster Boost Plume)
+   * Bucket B (Instant Ship & Weapon Enhancers):
+   * 6 = Full Flux Charge (Emerald Lightning Bolt)
+   * 7 = Repel Charge (Electric Cyan Concentric Shockwave Rings)
+   * 8 = Shot-Limited Multi-Shot +25 Shots (Gold Triple-Spread Trident Beams)
+   * 9 = Bouncing Bullets +30 Shots (Electric Violet Ricochet Bank-Shot)
+   * 10 = Overcharge Surge +8% x3 (Solar Amber Triple Upward Overdrive Chevrons)
    */
   private fun bakeBuffIconBitmap(buffType: Int, sizePx: Int = 68): Bitmap {
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
@@ -163,14 +168,17 @@ object RiftSpriteBaker {
 
     val accentColor =
       when (buffType) {
-        0 -> Color.parseColor("#10B981") // Emerald Full Charge
-        1 -> Color.parseColor("#38BDF8") // Cyan Recharge Matrix
-        2 -> Color.parseColor("#F59E0B") // Amber Speed Overdrive
-        3 -> Color.parseColor("#FACC15") // Gold Multifire Spread
-        4 -> Color.parseColor("#A855F7") // Violet Bouncing Rails
-        5 -> Color.parseColor("#F97316") // Orange Burst Shrapnel Starburst
-        6 -> Color.parseColor("#FB7185") // Coral-Rose Shotgun Cone Blaster
-        else -> Color.parseColor("#EF4444") // Crimson Lock-On Bouncing Missile
+        0 -> Color.parseColor("#F97316") // Burst
+        1 -> Color.parseColor("#FB7185") // Shotgun
+        2 -> Color.parseColor("#EF4444") // Missile
+        3 -> Color.parseColor("#2DD4BF") // Decoy
+        4 -> Color.parseColor("#38BDF8") // Brick
+        5 -> Color.parseColor("#F43F5E") // Rocket
+        6 -> Color.parseColor("#10B981") // Full Flux Charge
+        7 -> Color.parseColor("#00F5D4") // Repel Charge
+        8 -> Color.parseColor("#FACC15") // Shot-Limited Multi-Shot (+25)
+        9 -> Color.parseColor("#A855F7") // Bouncing Bullets (+30)
+        else -> Color.parseColor("#F59E0B") // Overcharge Surge (+8% x3)
       }
 
     // 1. Pre-rendered outer radial halo glow
@@ -248,63 +256,7 @@ object RiftSpriteBaker {
     // 3. Item-specific high-contrast vector icon inside housing
     when (buffType) {
       0 -> {
-        // FULL CHARGE: High-voltage lightning bolt
-        val bolt =
-          Path().apply {
-            moveTo(cx + r * 0.12f, cy - r * 0.58f)
-            lineTo(cx - r * 0.36f, cy + r * 0.05f)
-            lineTo(cx - r * 0.02f, cy + r * 0.05f)
-            lineTo(cx - r * 0.16f, cy + r * 0.58f)
-            lineTo(cx + r * 0.38f, cy - r * 0.06f)
-            lineTo(cx + r * 0.04f, cy - r * 0.06f)
-            close()
-          }
-        c.drawPath(bolt, glyphStrokePaint)
-        c.drawPath(bolt, glyphFillPaint)
-      }
-      1 -> {
-        // RECHARGE RATE: Dual concentric reactor rings + central energy cross
-        c.drawCircle(cx, cy, r * 0.52f, glyphStrokePaint)
-        c.drawCircle(cx, cy, r * 0.52f, innerRimPaint)
-        c.drawLine(cx - r * 0.32f, cy, cx + r * 0.32f, cy, glyphCoreStroke)
-        c.drawLine(cx, cy - r * 0.32f, cx, cy + r * 0.32f, glyphCoreStroke)
-      }
-      2 -> {
-        // TOP SPEED: Double forward supersonic chevrons
-        for (offset in listOf(-r * 0.22f, r * 0.14f)) {
-          val chev =
-            Path().apply {
-              moveTo(cx + offset - r * 0.22f, cy - r * 0.42f)
-              lineTo(cx + offset + r * 0.24f, cy)
-              lineTo(cx + offset - r * 0.22f, cy + r * 0.42f)
-            }
-          c.drawPath(chev, glyphStrokePaint)
-          c.drawPath(chev, glyphCoreStroke)
-        }
-      }
-      3 -> {
-        // MULTIFIRE: Triple-spread diverging laser trident
-        c.drawLine(cx, cy + r * 0.46f, cx, cy - r * 0.50f, glyphStrokePaint)
-        c.drawLine(cx, cy + r * 0.46f, cx - r * 0.46f, cy - r * 0.36f, glyphStrokePaint)
-        c.drawLine(cx, cy + r * 0.46f, cx + r * 0.46f, cy - r * 0.36f, glyphStrokePaint)
-        c.drawLine(cx, cy + r * 0.46f, cx, cy - r * 0.50f, glyphCoreStroke)
-        c.drawLine(cx, cy + r * 0.46f, cx - r * 0.46f, cy - r * 0.36f, glyphCoreStroke)
-        c.drawLine(cx, cy + r * 0.46f, cx + r * 0.46f, cy - r * 0.36f, glyphCoreStroke)
-      }
-      4 -> {
-        // BOUNCING RAILS: Ricochet V-bank trajectory with wall node
-        val ricochet =
-          Path().apply {
-            moveTo(cx - r * 0.46f, cy + r * 0.36f)
-            lineTo(cx - r * 0.05f, cy - r * 0.44f)
-            lineTo(cx + r * 0.46f, cy + r * 0.24f)
-          }
-        c.drawPath(ricochet, glyphStrokePaint)
-        c.drawPath(ricochet, glyphCoreStroke)
-        c.drawCircle(cx - r * 0.05f, cy - r * 0.44f, 3.5f, glyphFillPaint)
-      }
-      5 -> {
-        // BURST SPECIAL WEAPON: 8-point radial shrapnel starburst
+        // BURST: 8-point radial shrapnel starburst
         for (i in 0 until 4) {
           val a = (Math.PI / 4.0 * i).toFloat()
           val dx = kotlin.math.cos(a) * r * 0.52f
@@ -314,8 +266,8 @@ object RiftSpriteBaker {
         }
         c.drawCircle(cx, cy, r * 0.22f, glyphFillPaint)
       }
-      6 -> {
-        // SHOTGUN SPECIAL WEAPON: 60-degree cone blast with 3 concentric pellet wave arcs
+      1 -> {
+        // SHOTGUN: 60-degree cone blast with 3 concentric pellet wave arcs
         c.drawLine(cx, cy + r * 0.45f, cx - r * 0.46f, cy - r * 0.38f, glyphStrokePaint)
         c.drawLine(cx, cy + r * 0.45f, cx + r * 0.46f, cy - r * 0.38f, glyphStrokePaint)
         for (wave in 1..3) {
@@ -326,7 +278,7 @@ object RiftSpriteBaker {
           c.drawCircle(cx + spreadX, waveY, 2.2f, glyphFillPaint)
         }
       }
-      else -> {
+      2 -> {
         // LOCK-ON BOUNCING MISSILE: Homing warhead inside target lock reticle
         c.drawCircle(cx, cy, r * 0.48f, innerRimPaint)
         c.drawLine(cx - r * 0.58f, cy, cx - r * 0.32f, cy, glyphStrokePaint)
@@ -342,6 +294,98 @@ object RiftSpriteBaker {
             close()
           }
         c.drawPath(missilePath, glyphFillPaint)
+      }
+      3 -> {
+        // DECOY: Twin mirrored hologram ship chevrons
+        for (offsetX in listOf(-r * 0.24f, r * 0.24f)) {
+          val holo =
+            Path().apply {
+              moveTo(cx + offsetX, cy - r * 0.42f)
+              lineTo(cx + offsetX + r * 0.20f, cy + r * 0.34f)
+              lineTo(cx + offsetX, cy + r * 0.18f)
+              lineTo(cx + offsetX - r * 0.20f, cy + r * 0.34f)
+              close()
+            }
+          c.drawPath(holo, glyphStrokePaint)
+          c.drawPath(holo, glyphCoreStroke)
+        }
+      }
+      4 -> {
+        // BRICK: Solid interlocked energy barrier wall
+        c.drawRect(cx - r * 0.52f, cy - r * 0.22f, cx + r * 0.52f, cy + r * 0.22f, glyphStrokePaint)
+        c.drawRect(cx - r * 0.46f, cy - r * 0.16f, cx + r * 0.46f, cy + r * 0.16f, glyphFillPaint)
+        c.drawLine(cx, cy - r * 0.22f, cx, cy + r * 0.22f, rimPaint)
+      }
+      5 -> {
+        // ROCKET: Hyper-thruster boost fuselage with twin exhaust flames
+        val rocket =
+          Path().apply {
+            moveTo(cx, cy - r * 0.52f)
+            lineTo(cx + r * 0.26f, cy + r * 0.12f)
+            lineTo(cx - r * 0.26f, cy + r * 0.12f)
+            close()
+          }
+        c.drawPath(rocket, glyphStrokePaint)
+        c.drawPath(rocket, glyphFillPaint)
+        c.drawLine(cx - r * 0.14f, cy + r * 0.18f, cx - r * 0.22f, cy + r * 0.52f, glyphStrokePaint)
+        c.drawLine(cx, cy + r * 0.18f, cx, cy + r * 0.56f, glyphCoreStroke)
+        c.drawLine(cx + r * 0.14f, cy + r * 0.18f, cx + r * 0.22f, cy + r * 0.52f, glyphStrokePaint)
+      }
+      6 -> {
+        // FULL FLUX CHARGE: High-voltage lightning bolt
+        val bolt =
+          Path().apply {
+            moveTo(cx + r * 0.12f, cy - r * 0.58f)
+            lineTo(cx - r * 0.36f, cy + r * 0.05f)
+            lineTo(cx - r * 0.02f, cy + r * 0.05f)
+            lineTo(cx - r * 0.16f, cy + r * 0.58f)
+            lineTo(cx + r * 0.38f, cy - r * 0.06f)
+            lineTo(cx + r * 0.04f, cy - r * 0.06f)
+            close()
+          }
+        c.drawPath(bolt, glyphStrokePaint)
+        c.drawPath(bolt, glyphFillPaint)
+      }
+      7 -> {
+        // REPEL CHARGE: Dual concentric repulsion wave rings + outward arrows
+        c.drawCircle(cx, cy, r * 0.50f, glyphStrokePaint)
+        c.drawCircle(cx, cy, r * 0.26f, glyphCoreStroke)
+        c.drawLine(cx - r * 0.56f, cy, cx + r * 0.56f, cy, innerRimPaint)
+        c.drawLine(cx, cy - r * 0.56f, cx, cy + r * 0.56f, innerRimPaint)
+      }
+      8 -> {
+        // SHOT-LIMITED MULTI-SHOT (+25 SHOTS): Triple-spread diverging laser trident
+        c.drawLine(cx, cy + r * 0.46f, cx, cy - r * 0.50f, glyphStrokePaint)
+        c.drawLine(cx, cy + r * 0.46f, cx - r * 0.46f, cy - r * 0.36f, glyphStrokePaint)
+        c.drawLine(cx, cy + r * 0.46f, cx + r * 0.46f, cy - r * 0.36f, glyphStrokePaint)
+        c.drawLine(cx, cy + r * 0.46f, cx, cy - r * 0.50f, glyphCoreStroke)
+        c.drawLine(cx, cy + r * 0.46f, cx - r * 0.46f, cy - r * 0.36f, glyphCoreStroke)
+        c.drawLine(cx, cy + r * 0.46f, cx + r * 0.46f, cy - r * 0.36f, glyphCoreStroke)
+      }
+      9 -> {
+        // BOUNCING BULLETS (+30 SHOTS): Ricochet V-bank trajectory with wall node
+        val ricochet =
+          Path().apply {
+            moveTo(cx - r * 0.46f, cy + r * 0.36f)
+            lineTo(cx - r * 0.05f, cy - r * 0.44f)
+            lineTo(cx + r * 0.46f, cy + r * 0.24f)
+          }
+        c.drawPath(ricochet, glyphStrokePaint)
+        c.drawPath(ricochet, glyphCoreStroke)
+        c.drawCircle(cx - r * 0.05f, cy - r * 0.44f, 3.5f, glyphFillPaint)
+      }
+      else -> {
+        // OVERCHARGE SURGE (+8% x3): Double forward supersonic overdrive chevrons
+        for (offset in listOf(-r * 0.22f, r * 0.14f)) {
+          val chev =
+            Path().apply {
+              moveTo(cx + offset - r * 0.22f, cy - r * 0.42f)
+              lineTo(cx + offset + r * 0.24f, cy)
+              lineTo(cx + offset - r * 0.22f, cy + r * 0.42f)
+            }
+          c.drawPath(chev, glyphStrokePaint)
+          c.drawPath(chev, glyphCoreStroke)
+        }
       }
     }
 
@@ -463,9 +507,9 @@ object RiftSpriteBaker {
   /**
    * High-Definition Multi-Layered 3D Metallic Ship Renderer:
    * - Zero thruster flame plumes (strictly metallic exhaust housings)
-   * - Syndicate Foundry-specific 5-stop metallic armor shading + gold/bronze trim bevels
+   * - Hull-class specific 5-stop metallic armor shading + gold/bronze trim bevels
    * - Protruding weapon barrels, rail prongs, torpedo/mine bays, cockpit glass & V-cyan reactor cores
-   * - Crisp Brawl Stars team readability outline (#38BDF8 allied / #EF4444 hostile)
+   * - Crisp team readability outline (#38BDF8 allied / #EF4444 hostile)
    */
   fun drawMetallicShipOnCanvas(
     c: Canvas,
@@ -478,10 +522,10 @@ object RiftSpriteBaker {
     c.save()
     c.translate(cx, cy)
 
-    // Foundry-specific 5-stop 3D metallic gradient across [-r, r]
+    // Hull-specific 5-stop 3D metallic gradient across [-r, r]
     val hullColors =
-      when (spec.foundry) {
-        "Aurelia" ->
+      when (spec.id) {
+        3, 4 ->
           intArrayOf(
             Color.parseColor("#0D0B26"),
             Color.parseColor("#1E1B4B"),
@@ -489,7 +533,7 @@ object RiftSpriteBaker {
             Color.parseColor("#1E1B4B"),
             Color.parseColor("#0D0B26"),
           )
-        "Vortex" ->
+        5, 6 ->
           intArrayOf(
             Color.parseColor("#041924"),
             Color.parseColor("#0E3A4D"),
@@ -497,7 +541,7 @@ object RiftSpriteBaker {
             Color.parseColor("#0C3142"),
             Color.parseColor("#041924"),
           )
-        "Rustweld" ->
+        7, 8 ->
           intArrayOf(
             Color.parseColor("#14110F"),
             Color.parseColor("#292524"),
@@ -505,7 +549,7 @@ object RiftSpriteBaker {
             Color.parseColor("#292524"),
             Color.parseColor("#14110F"),
           )
-        else -> // Kestrel Obsidian Military Rail
+        else -> // Ships 1, 2 Obsidian Rail
           intArrayOf(
             Color.parseColor("#090D16"),
             Color.parseColor("#1E293B"),
@@ -516,15 +560,15 @@ object RiftSpriteBaker {
       }
 
     val trimColors =
-      when (spec.foundry) {
-        "Aurelia" ->
+      when (spec.id) {
+        3, 4 ->
           intArrayOf(
             Color.parseColor("#FEF08A"),
             Color.parseColor("#F59E0B"),
             Color.parseColor("#92400E"),
             Color.parseColor("#FACC15"),
           )
-        "Rustweld" ->
+        7, 8 ->
           intArrayOf(
             Color.parseColor("#FDBA74"),
             Color.parseColor("#EA580C"),

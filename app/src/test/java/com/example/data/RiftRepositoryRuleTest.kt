@@ -27,10 +27,10 @@ class RiftRepositoryRuleTest : FirestoreEmulatorTestBase() {
         repo.savePilotDossier(
           PilotDossier(
             userId = uid,
-            callsign = "KESTREL_ACE",
+            callsign = "VIPER_ACE",
             preferredShipId = 2L,
-            preferredFoundry = "Kestrel",
-            preferredMode = "warzone_10v10",
+            preferredFoundry = "Independent",
+            preferredMode = "FFA",
             pvpKills = 8L,
             pvpDeaths = 2L,
             pvpBountyPeak = 640L,
@@ -45,7 +45,7 @@ class RiftRepositoryRuleTest : FirestoreEmulatorTestBase() {
 
     val emitted =
       withTimeout(FLOW_TIMEOUT_MS) {
-        repo.observePilotDossier(uid).first { it != null && it.callsign == "KESTREL_ACE" }
+        repo.observePilotDossier(uid).first { it != null && it.callsign == "VIPER_ACE" }
       }
     assertNotNull(emitted)
     assertEquals(8L, emitted?.pvpKills)
@@ -80,7 +80,7 @@ class RiftRepositoryRuleTest : FirestoreEmulatorTestBase() {
             userId = aliceUid,
             callsign = "ALICE_TOP",
             shipId = 4L,
-            foundry = "Aurelia",
+            foundry = "Independent",
             pvpKills = 12L,
             pvpDeaths = 3L,
             pvpBounty = 950L,

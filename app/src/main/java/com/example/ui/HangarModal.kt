@@ -37,8 +37,8 @@ import kotlin.math.roundToInt
 @Composable
 fun HangarModal(
   initialCallsign: String,
-  syndicateTag: String = "KSTL",
-  syndicateName: String = "Kestrel Heavy Industries",
+  syndicateTag: String = "GUEST",
+  syndicateName: String = "Independent Pilot",
   selectedShipId: Int,
   selectedMode: String,
   pilotLevel: Int = 1,
@@ -567,7 +567,7 @@ private fun MatrixShipComparisonCell(
                 if (isNinthUnlocked) "SLOT $activeSlotId • $pointsAllocated/$pointBudget PTS"
                 else "🔒 LVL 20 GATE ($pointBudget PTS SAVED)"
               } else {
-                ship.foundry.uppercase(Locale.US)
+                ship.role.uppercase(Locale.US)
               },
             color = if (isNinthCell && !isNinthUnlocked) Color(0xFFF59E0B) else accentColor,
             fontSize = 7.sp,
@@ -601,32 +601,33 @@ private fun MatrixShipComparisonCell(
       } else {
         Column(horizontalAlignment = Alignment.End) {
           Text(
-            text = if (ship.hasBomb) "GUN+${ship.bombType}" else "PURE GUN",
+            text = "PRI:${ship.primaryPts}P•CLS:${ship.secondaryPts}P",
             color = if (ship.hasBomb) Color(0xFFF59E0B) else Color(0xFF38BDF8),
-            fontSize = 7.sp,
+            fontSize = 6.8.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
           Text(
-            text = "${ship.primaryDamage.toInt()} DMG",
+            text = ship.secondaryTitle.take(14).uppercase(),
             color = Color(0xFF94A3B8),
-            fontSize = 7.sp,
+            fontSize = 6.5.sp,
             fontFamily = FontFamily.Monospace,
+            maxLines = 1,
           )
         }
       }
     }
 
-    // 5 Aligned Comparative Stat Bars (Top Speed, Thrust, Turn Rate, Max Flux, Flux Recharge)
+    // 5 Aligned Comparative Stat Bars (Universal Baseline Floor + 0..30 Pts Ceiling)
     Column(
       modifier = Modifier.fillMaxWidth(),
       verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-      MiniMatrixStatRow("SPD", ship.topSpeed, 550f, Color(0xFF38BDF8))
-      MiniMatrixStatRow("THR", ship.thrust, 950f, Color(0xFF22C55E))
-      MiniMatrixStatRow("TRN", ship.turnRate, 5.2f, Color(0xFFA855F7))
-      MiniMatrixStatRow("FLX", ship.maxFlux, 3600f, Color(0xFFF59E0B))
-      MiniMatrixStatRow("RCH", ship.rechargeRate, 420f, Color(0xFFEC4899))
+      MiniMatrixStatRow("SPD", ship.topSpeed, 620f, Color(0xFF38BDF8))
+      MiniMatrixStatRow("THR", ship.thrust, 1050f, Color(0xFF22C55E))
+      MiniMatrixStatRow("TRN", ship.turnRate, 6.2f, Color(0xFFA855F7))
+      MiniMatrixStatRow("FLX", ship.maxFlux, 4600f, Color(0xFFF59E0B))
+      MiniMatrixStatRow("RCH", ship.rechargeRate, 480f, Color(0xFFEC4899))
     }
   }
 }
@@ -748,9 +749,10 @@ private fun ShipComparisonInspectorPanel(
             fontFamily = FontFamily.Monospace,
           )
           Text(
-            text = "${ship.role.uppercase()} • ${ship.foundry.uppercase()}",
+            text =
+              "${ship.role.uppercase()} • PRI:${ship.primaryPts}P • CLS:${ship.secondaryPts}P • STATS:${ship.speedPts + ship.thrustPts + ship.turnPts + ship.maxFluxPts + ship.rechargePts}P",
             color = accentColor,
-            fontSize = 8.sp,
+            fontSize = 7.5.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
           )
@@ -774,7 +776,7 @@ private fun ShipComparisonInspectorPanel(
           ) {
             Text(
               text =
-                if (isNinthUnlocked) "✨ 9TH CHASSIS UNLOCKED (SLOT ${activeSlot.slotId})"
+                if (isNinthUnlocked) "✨ 9-RIFT FRAME UNLOCKED (SLOT ${activeSlot.slotId})"
                 else "🔒 UNLOCKS AT PILOT LEVEL 20",
               color = if (isNinthUnlocked) Color(0xFF4ADE80) else Color(0xFFFBBF24),
               fontSize = 8.5.sp,
@@ -792,7 +794,7 @@ private fun ShipComparisonInspectorPanel(
 
           Text(
             text =
-              "Baseline ~70% hull floor + up to 100 Pts (0-25/stat). Capped to match Ships 1-8 ceiling.",
+              "Universal Baseline Hull Floor + Progressive Point Growth (Lv 20 = 20 Pts .. Lv 100 = 100 Pts). Exact parity with Ships 1-8.",
             color = Color(0xFFCBD5E1),
             fontSize = 7.5.sp,
             fontFamily = FontFamily.Monospace,
@@ -844,14 +846,14 @@ private fun ShipComparisonInspectorPanel(
         }
       } else {
         Text(
-          text = ship.silhouetteDesc,
+          text = ship.tacticalLore,
           color = Color(0xFF94A3B8),
           fontSize = 8.sp,
           lineHeight = 11.sp,
         )
       }
 
-      // Primary & Secondary Weapons Summary
+      // Primary & Secondary/Class Ability Summary
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -864,21 +866,23 @@ private fun ShipComparisonInspectorPanel(
               .padding(6.dp)
         ) {
           Text(
-            text = "PRIMARY GUN",
+            text = "PRIMARY (${ship.primaryPts} PTS)",
             color = Color(0xFF38BDF8),
             fontSize = 7.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
           Text(
-            text = "${ship.primaryDamage.toInt()} DMG • ${ship.primaryCost.toInt()}⚡ FLUX",
+            text = ship.primaryTitle,
             color = Color.White,
-            fontSize = 8.sp,
+            fontSize = 7.8.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
           Text(
-            text = if (isNinth) activeSlot.primaryArchetype else "${(1f / ship.primaryCooldown.coerceAtLeast(0.05f)).roundToInt()}/s ROF",
+            text = "${ship.primaryDamage.toInt()} DMG • ${ship.primaryCost.toInt()}⚡ FLUX",
             color = Color(0xFF94A3B8),
             fontSize = 7.sp,
             fontFamily = FontFamily.Monospace,
@@ -893,33 +897,39 @@ private fun ShipComparisonInspectorPanel(
               .padding(6.dp)
         ) {
           Text(
-            text = "SECONDARY (3RD)",
-            color = if (ship.hasBomb) Color(0xFFF59E0B) else Color(0xFF64748B),
+            text = "CLASS / SEC (${ship.secondaryPts} PTS)",
+            color = if (ship.hasBomb) Color(0xFFF59E0B) else Color(0xFF34D399),
             fontSize = 7.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
           Text(
-            text =
-              if (ship.hasBomb) "${ship.bombType} (${ship.bombCost.toInt()}⚡)"
-              else "NONE (GUNSHIP)",
+            text = ship.secondaryTitle,
             color = Color.White,
-            fontSize = 8.sp,
+            fontSize = 7.8.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
           Text(
             text =
-              if (ship.hasBomb) "${ship.bombDamage.toInt()} DMG • ${ship.bombCooldown}s CD"
-              else "+18% GUN CAP",
+              when {
+                ship.bombType == "PHASE_DASH" -> "300⚡ • 2.5s CD • +35% RAIL"
+                ship.bombType == "CLOAK_EMP" -> "180⚡/s CLOAK • 350⚡ EMP"
+                ship.supportsNativeMultifire -> "INNATE SPLIT MULTI-SHOT"
+                ship.hasBomb -> "${ship.bombDamage.toInt()} DMG • ${ship.bombCost.toInt()}⚡"
+                else -> "START REPELS: ${ship.initialRepels}"
+              },
             color = Color(0xFF94A3B8),
             fontSize = 7.sp,
             fontFamily = FontFamily.Monospace,
+            maxLines = 1,
           )
         }
       }
 
-      // Detailed Stat Readout Bars
+      // Detailed Stat Readout Bars (0..30 Pts Ceiling)
       Column(
         modifier =
           Modifier.fillMaxWidth()
@@ -928,11 +938,11 @@ private fun ShipComparisonInspectorPanel(
             .padding(7.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
       ) {
-        MiniMatrixStatRow("SPD", ship.topSpeed, 550f, Color(0xFF38BDF8))
-        MiniMatrixStatRow("THR", ship.thrust, 950f, Color(0xFF22C55E))
-        MiniMatrixStatRow("TRN", ship.turnRate, 5.2f, Color(0xFFA855F7))
-        MiniMatrixStatRow("FLX", ship.maxFlux, 3600f, Color(0xFFF59E0B))
-        MiniMatrixStatRow("RCH", ship.rechargeRate, 420f, Color(0xFFEC4899))
+        MiniMatrixStatRow("SPD", ship.topSpeed, 620f, Color(0xFF38BDF8))
+        MiniMatrixStatRow("THR", ship.thrust, 1050f, Color(0xFF22C55E))
+        MiniMatrixStatRow("TRN", ship.turnRate, 6.2f, Color(0xFFA855F7))
+        MiniMatrixStatRow("FLX", ship.maxFlux, 4600f, Color(0xFFF59E0B))
+        MiniMatrixStatRow("RCH", ship.rechargeRate, 480f, Color(0xFFEC4899))
       }
     }
 
@@ -1005,10 +1015,10 @@ private fun NinthShipModularForgePanel(
   fun adjustStatPoints(currentVal: Int, delta: Int, applyNewVal: (Int) -> CustomShipLoadoutSlot) {
     val maxAddition = pointsRemaining.coerceAtLeast(0)
     val clampedDelta =
-      if (delta > 0) delta.coerceAtMost(maxAddition).coerceAtMost(25 - currentVal)
+      if (delta > 0) delta.coerceAtMost(maxAddition).coerceAtMost(30 - currentVal)
       else delta.coerceAtLeast(-currentVal)
     if (clampedDelta != 0) {
-      val nextVal = (currentVal + clampedDelta).coerceIn(0, 25)
+      val nextVal = (currentVal + clampedDelta).coerceIn(0, 30)
       onSaveSlot(applyNewVal(nextVal))
     }
   }
@@ -1195,12 +1205,12 @@ private fun NinthShipModularForgePanel(
       }
     }
 
-    // Two-Column Body: Left = 100-Point Modular Attribute & Weapon Allocator | Right = AI Hull Forge (<2KB JSON Visual Recipe)
+    // Two-Column Body: Left = Option A 100-Point Progressive Allocator | Right = AI Hull Forge (<2KB JSON Visual Recipe)
     Row(
       modifier = Modifier.fillMaxSize(),
       horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-      // LEFT COLUMN: 7 Attribute Point Allocators + Primary Archetype + All-Secondary Weapon Selector
+      // LEFT COLUMN: 5 Core Stat Sliders (0..30 Pts) + Primary Weapon Tier (0..15 Pts) + Class/Secondary Slot (0..25 Pts)
       Column(
         modifier =
           Modifier.weight(0.54f)
@@ -1217,17 +1227,17 @@ private fun NinthShipModularForgePanel(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Text(
-            text = "⚙️ MODULAR ATTRIBUTE MATRIX (~70% BASE FLOOR)",
+            text = "⚙️ 9-RIFT FRAME MATRIX (UNIVERSAL FLOOR + 0..30/STAT)",
             color = Color(0xFF00F0FF),
-            fontSize = 9.5.sp,
+            fontSize = 9.0.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
           Text(
             text =
-              "AVAILABLE: $pointsRemaining / $effectivePointBudget PTS (USED: ${activeSlot.totalAllocatedPoints()})",
+              "FREE: $pointsRemaining / $effectivePointBudget PTS (USED: ${activeSlot.totalAllocatedPoints()})",
             color = if (pointsRemaining > 0) Color(0xFF4ADE80) else Color(0xFFFACC15),
-            fontSize = 8.5.sp,
+            fontSize = 8.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -1236,7 +1246,7 @@ private fun NinthShipModularForgePanel(
         AttributePointRow(
           label = "TOP SPEED",
           pts = activeSlot.speedPts,
-          statReadout = "${spec.topSpeed.toInt()} u/s (Cap 540)",
+          statReadout = "${spec.topSpeed.toInt()} PX/S (380 + 8/pt)",
           color = Color(0xFF38BDF8),
           tagPrefix = "stat_speed",
           onDelta = { d ->
@@ -1246,7 +1256,7 @@ private fun NinthShipModularForgePanel(
         AttributePointRow(
           label = "THRUST",
           pts = activeSlot.thrustPts,
-          statReadout = "${spec.thrust.toInt()} u/s² (Cap 920)",
+          statReadout = "${spec.thrust.toInt()} N/S² (600 + 15/pt)",
           color = Color(0xFF22C55E),
           tagPrefix = "stat_thrust",
           onDelta = { d ->
@@ -1256,7 +1266,7 @@ private fun NinthShipModularForgePanel(
         AttributePointRow(
           label = "TURN RATE",
           pts = activeSlot.turnPts,
-          statReadout = "${(spec.turnRate * 10f).roundToInt() / 10f} rad/s (Cap 5.4)",
+          statReadout = "${(spec.turnRate * 10f).roundToInt() / 10f} RAD/S (3.2 + 0.1/pt)",
           color = Color(0xFFA855F7),
           tagPrefix = "stat_turn",
           onDelta = { d ->
@@ -1266,7 +1276,7 @@ private fun NinthShipModularForgePanel(
         AttributePointRow(
           label = "MAX FLUX",
           pts = activeSlot.maxFluxPts,
-          statReadout = "${spec.maxFlux.toInt()}⚡ FLUX",
+          statReadout = "${spec.maxFlux.toInt()} ❖ (2200 + 80/pt)",
           color = Color(0xFFF59E0B),
           tagPrefix = "stat_flux",
           onDelta = { d ->
@@ -1276,118 +1286,108 @@ private fun NinthShipModularForgePanel(
         AttributePointRow(
           label = "FLUX RECHARGE",
           pts = activeSlot.rechargePts,
-          statReadout = "${spec.rechargeRate.toInt()}⚡/s (Cap 410)",
+          statReadout = "${spec.rechargeRate.toInt()} ❖/S (240 + 8/pt)",
           color = Color(0xFFEC4899),
           tagPrefix = "stat_recharge",
           onDelta = { d ->
             adjustStatPoints(activeSlot.rechargePts, d) { activeSlot.copy(rechargePts = it) }
           },
         )
-        AttributePointRow(
-          label = "PRIMARY WEAPON",
-          pts = activeSlot.primaryPts,
-          statReadout = "${spec.primaryDamage.toInt()} DMG • ${spec.primaryCost.toInt()}⚡ FLUX",
-          color = Color(0xFF00F0FF),
-          tagPrefix = "stat_primary",
-          onDelta = { d ->
-            adjustStatPoints(activeSlot.primaryPts, d) {
-              activeSlot.copy(primaryPts = it)
-            }
-          },
-        )
-        AttributePointRow(
-          label = "SECONDARY WEAPON",
-          pts = activeSlot.secondaryPts,
-          statReadout =
-            if (spec.hasBomb) "${spec.bombDamage.toInt()} DMG • ${spec.bombCost.toInt()}⚡ FLUX"
-            else "GUNSHIP +18% CAP",
-          color = Color(0xFFF97316),
-          tagPrefix = "stat_secondary",
-          onDelta = { d ->
-            adjustStatPoints(activeSlot.secondaryPts, d) {
-              activeSlot.copy(secondaryPts = it)
-            }
-          },
-        )
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        // Primary Weapon Archetype Selector
+        // Primary Weapon Upgrade Selector (0, 10, 12, 15 Pts)
         Text(
-          text = "🔫 PRIMARY WEAPON ARCHETYPE",
+          text = "🔫 PRIMARY WEAPON TIER (${activeSlot.primaryPts} PTS INVESTED)",
           color = Color(0xFF38BDF8),
           fontSize = 8.5.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
         )
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-          val archetypes =
-            listOf(
-              "SINGLE_RAIL" to "SINGLE RAIL (HIGH VEL)",
-              "TWIN_PULSE" to "TWIN PULSE (RAPID)",
-              "TRI_SPREAD" to "TRI-SPREAD (WIDE)",
-            )
-          archetypes.forEach { (key, label) ->
-            val selected = activeSlot.primaryArchetype == key
-            Box(
-              modifier =
-                Modifier.weight(1f)
-                  .testTag("btn_primary_arch_$key")
-                  .clip(RoundedCornerShape(6.dp))
-                  .background(if (selected) Color(0xFF0284C7) else Color(0xFF0F172A))
-                  .border(
-                    1.dp,
-                    if (selected) Color(0xFF38BDF8) else Color(0xFF334155),
-                    RoundedCornerShape(6.dp),
-                  )
-                  .clickable { onSaveSlot(activeSlot.copy(primaryArchetype = key)) }
-                  .padding(vertical = 5.dp),
-              contentAlignment = Alignment.Center,
-            ) {
-              Text(
-                text = label,
-                color = Color.White,
-                fontSize = 7.5.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-          }
-        }
-
-        // All-Secondary Weapon Selector (5 Native Bombs/Mines + 3 Special Buff Attacks + NONE)
-        Text(
-          text =
-            "💣 BUILT-IN SECONDARY WEAPON (3RD INPUT • USES FLUX; 4TH BUFF SLOT STAYS SEPARATE)",
-          color = Color(0xFFF59E0B),
-          fontSize = 8.5.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-        val secondaries =
-          listOf(
-            "BOUNCE" to "BOUNCE BOMB",
-            "SIEGE" to "SIEGE BOMB",
-            "EMP" to "EMP BOMB",
-            "PROX" to "PROX BOMB",
-            "MINE" to "SPACE MINE",
-            "BURST" to "★ BURST RING",
-            "SHOTGUN" to "★ SHOTGUN CONE",
-            "MISSILE" to "★ LOCK MISSILE",
-            "NONE" to "NONE (+18% FLX)",
-          )
+        val primaries = CustomShipLoadoutSlot.PRIMARY_OPTIONS
         for (rowIdx in 0 until 3) {
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(5.dp),
           ) {
             for (colIdx in 0 until 3) {
-              val (secKey, secLabel) = secondaries[rowIdx * 3 + colIdx]
+              val opt = primaries[rowIdx * 3 + colIdx]
+              val key = opt.id
+              val cost = opt.pointCost
+              val label = "${opt.title} (${cost}P)"
+              val selected = activeSlot.primaryArchetype == key
+              val candidateSlot = activeSlot.copy(primaryArchetype = key)
+              val canAfford = candidateSlot.totalAllocatedPoints() <= effectivePointBudget
+              Box(
+                modifier =
+                  Modifier.weight(1f)
+                    .testTag("btn_primary_arch_$key")
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(
+                      when {
+                        selected -> Color(0xFF0284C7)
+                        canAfford -> Color(0xFF0F172A)
+                        else -> Color(0xFF141824)
+                      }
+                    )
+                    .border(
+                      1.dp,
+                      when {
+                        selected -> Color(0xFF38BDF8)
+                        canAfford -> Color(0xFF334155)
+                        else -> Color(0xFF1E293B)
+                      },
+                      RoundedCornerShape(6.dp),
+                    )
+                    .clickable {
+                      if (canAfford || selected) {
+                        onSaveSlot(candidateSlot)
+                      } else {
+                        onStatusBannerChange(
+                          "⚠️ NEED $cost PTS FOR ${opt.title} (FREE SOME STAT POINTS OR LEVEL UP)."
+                        )
+                      }
+                    }
+                    .padding(vertical = 5.dp, horizontal = 3.dp),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = label,
+                  color = if (selected) Color.White else if (canAfford) Color(0xFFCBD5E1) else Color(0xFF64748B),
+                  fontSize = 6.8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+            }
+          }
+        }
+
+        // Class / Secondary Ability Selector (0, 10, 15, 18, 20, 22, 25 Pts)
+        Text(
+          text =
+            "💣 CLASS / SECONDARY SLOT (${activeSlot.secondaryPts} PTS • 4TH BUFF SLOT STAYS SEPARATE)",
+          color = Color(0xFFF59E0B),
+          fontSize = 8.5.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+        val secondaries = CustomShipLoadoutSlot.SECONDARY_OPTIONS
+        for (rowIdx in 0 until 4) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+          ) {
+            for (colIdx in 0 until 3) {
+              val secOpt = secondaries[rowIdx * 3 + colIdx]
+              val secKey = secOpt.id
+              val secCost = secOpt.pointCost
+              val secLabel = "${secOpt.title} (${secCost}P)"
               val isSelected = activeSlot.secondaryType == secKey
-              val isSpecial = secKey == "BURST" || secKey == "SHOTGUN" || secKey == "MISSILE"
+              val candidateSlot = activeSlot.copy(secondaryType = secKey)
+              val canAfford = candidateSlot.totalAllocatedPoints() <= effectivePointBudget
               Box(
                 modifier =
                   Modifier.weight(1f)
@@ -1395,31 +1395,40 @@ private fun NinthShipModularForgePanel(
                     .clip(RoundedCornerShape(6.dp))
                     .background(
                       when {
-                        isSelected && isSpecial -> Color(0xFF6D28D9)
                         isSelected -> Color(0xFFB45309)
-                        else -> Color(0xFF0F172A)
+                        canAfford -> Color(0xFF0F172A)
+                        else -> Color(0xFF141824)
                       }
                     )
                     .border(
                       1.dp,
                       when {
-                        isSelected && isSpecial -> Color(0xFFC084FC)
                         isSelected -> Color(0xFFFBBF24)
-                        isSpecial -> Color(0xFF6D28D9).copy(alpha = 0.6f)
-                        else -> Color(0xFF334155)
+                        canAfford -> Color(0xFF334155)
+                        else -> Color(0xFF1E293B)
                       },
                       RoundedCornerShape(6.dp),
                     )
-                    .clickable { onSaveSlot(activeSlot.copy(secondaryType = secKey)) }
-                    .padding(vertical = 5.dp),
+                    .clickable {
+                      if (canAfford || isSelected) {
+                        onSaveSlot(candidateSlot)
+                      } else {
+                        onStatusBannerChange(
+                          "⚠️ NEED $secCost PTS FOR ${secOpt.title} (FREE SOME STAT POINTS OR LEVEL UP)."
+                        )
+                      }
+                    }
+                    .padding(vertical = 5.dp, horizontal = 3.dp),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
                   text = secLabel,
-                  color = if (isSelected) Color.White else Color(0xFFCBD5E1),
-                  fontSize = 7.sp,
+                  color = if (isSelected) Color.White else if (canAfford) Color(0xFFCBD5E1) else Color(0xFF64748B),
+                  fontSize = 6.8.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
                 )
               }
             }
@@ -1740,7 +1749,7 @@ private fun AttributePointRow(
       )
     }
 
-    // 0..25 Progress Bar
+    // 0..30 Progress Bar
     Box(
       modifier =
         Modifier.weight(1f)
@@ -1752,13 +1761,13 @@ private fun AttributePointRow(
       Box(
         modifier =
           Modifier.fillMaxHeight()
-            .fillMaxWidth((pts / 25f).coerceIn(0.03f, 1f))
+            .fillMaxWidth((pts / 30f).coerceIn(0.03f, 1f))
             .background(color, RoundedCornerShape(3.dp))
       )
     }
 
     Text(
-      text = "$pts/25",
+      text = "$pts/30",
       color = Color.White,
       fontSize = 8.sp,
       fontWeight = FontWeight.Black,

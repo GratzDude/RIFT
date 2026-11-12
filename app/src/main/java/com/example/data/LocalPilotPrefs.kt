@@ -52,11 +52,22 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getSyndicateTag(): String {
-    return prefs.getString(KEY_SYNDICATE_TAG, "GUEST") ?: "GUEST"
+    val raw = prefs.getString(KEY_SYNDICATE_TAG, "GUEST") ?: "GUEST"
+    return if (raw.uppercase() in setOf("KSTL", "AURL", "VRTX", "RUST")) "GUEST" else raw
   }
 
   fun getSyndicateName(): String {
-    return prefs.getString(KEY_SYNDICATE_NAME, "Guest Tracking Framework") ?: "Guest Tracking Framework"
+    val raw = prefs.getString(KEY_SYNDICATE_NAME, "Guest Tracking Framework") ?: "Guest Tracking Framework"
+    return if (
+      raw.contains("Kestrel", ignoreCase = true) ||
+        raw.contains("Aurelia", ignoreCase = true) ||
+        raw.contains("Vortex", ignoreCase = true) ||
+        raw.contains("Rustweld", ignoreCase = true)
+    ) {
+      "Guest Tracking Framework"
+    } else {
+      raw
+    }
   }
 
   fun getSyndicateLockUntilMs(): Long {
@@ -448,8 +459,8 @@ class LocalPilotPrefs(context: Context) {
     val defaults =
       listOf(
         FriendPilotEntry(
-          uid = "friend_vortex_ace",
-          callsign = "VORTEX_ACE",
+          uid = "friend_viper_ace",
+          callsign = "VIPER_ACE",
           syndicateTag = tag,
           shipId = 1,
           statusText = "In Rift (Sector D4) • Flying [APEX_4] Armada",
@@ -459,9 +470,9 @@ class LocalPilotPrefs(context: Context) {
           bounty = 320,
         ),
         FriendPilotEntry(
-          uid = "friend_aurelia_prime",
-          callsign = "AURELIA_PRIME",
-          syndicateTag = "AURL",
+          uid = "friend_solaris_prime",
+          callsign = "SOLARIS_PRIME",
+          syndicateTag = "SOLR",
           shipId = 4,
           statusText = "In Rift (Sector C3) • Flying [GOLD_WING] Armada",
           isOnline = true,
@@ -483,7 +494,7 @@ class LocalPilotPrefs(context: Context) {
         FriendPilotEntry(
           uid = "friend_valkyrie_z",
           callsign = "VALKYRIE_Z",
-          syndicateTag = "RUST",
+          syndicateTag = "VOID",
           shipId = 7,
           statusText = "In Hangar • Tuning 7-Valkyrie Loadout",
           isOnline = true,
@@ -582,38 +593,38 @@ class LocalPilotPrefs(context: Context) {
     val defaults =
       listOf(
         SyndicateInfo(
-          id = "syn_kestrel",
-          tag = "KSTL",
-          name = "Kestrel Vanguard",
-          foundryOrigin = "Kestrel Syndicate",
+          id = "syn_apex",
+          tag = "APEX",
+          name = "Apex Strike Vanguard",
+          foundryOrigin = "Core Sector Coalition",
           motto = "Precision Rail Dominance & Ballistic Angles",
           memberCount = 142,
           combinedBounty = 48_900L,
         ),
         SyndicateInfo(
-          id = "syn_aurelia",
-          tag = "AURL",
-          name = "Aurelia Imperial Guard",
-          foundryOrigin = "Aurelia Syndicate",
-          motto = "Gold-Plated Dreadnoughts & Heavy Siege",
+          id = "syn_solaris",
+          tag = "SOLR",
+          name = "Solaris Heavy Guard",
+          foundryOrigin = "Outer Rim Bastion",
+          motto = "Heavy Siege Dreadnoughts & Trench Breakers",
           memberCount = 118,
           combinedBounty = 44_250L,
         ),
         SyndicateInfo(
-          id = "syn_vortex",
-          tag = "VRTX",
-          name = "Vortex Bio-Tech Collective",
-          foundryOrigin = "Vortex Syndicate",
-          motto = "EMP Disruption & Twin-Boom Manta Swarms",
+          id = "syn_eclipse",
+          tag = "ECLP",
+          name = "Eclipse Stealth Collective",
+          foundryOrigin = "Deep Rift Enclave",
+          motto = "Tactical Cloak, EMP Disruption & Interceptor Swarms",
           memberCount = 131,
           combinedBounty = 46_100L,
         ),
         SyndicateInfo(
-          id = "syn_rustweld",
-          tag = "RUST",
-          name = "Rustweld Heavy Ironworks",
-          foundryOrigin = "Rustweld Syndicate",
-          motto = "Skeletal Thrusters & Proximity Minefields",
+          id = "syn_void",
+          tag = "VOID",
+          name = "Void Horizon Ironworks",
+          foundryOrigin = "Frontier Mining Guild",
+          motto = "Proximity Flak Barrages & Chokepoint Minefields",
           memberCount = 96,
           combinedBounty = 39_800L,
         ),

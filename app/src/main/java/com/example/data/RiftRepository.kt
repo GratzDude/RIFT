@@ -40,11 +40,12 @@ class RiftRepository(private val db: FirebaseFirestore) {
   }
 
   private fun sanitizeFoundry(raw: String): String {
-    return if (raw in listOf("Kestrel", "Aurelia", "Vortex", "Rustweld")) raw else "Kestrel"
+    val clean = raw.trim()
+    return if (clean.isEmpty()) "Independent" else clean.take(32)
   }
 
   private fun sanitizeMode(raw: String): String {
-    return if (raw in listOf("warzone_10v10", "ranked_3v3", "ranked_5v5")) raw else "warzone_10v10"
+    return if (raw in listOf("FFA", "warzone_10v10", "ranked_3v3", "ranked_5v5")) raw else "FFA"
   }
 
   suspend fun getPilotDossier(userId: String = requireUserId()): Result<PilotDossier?> = runCatching {
@@ -94,7 +95,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
     val uid = requireUserId()
     val docRef = db.collection("users").document(uid)
     val safeCallsign = sanitizeCallsign(dossier.callsign)
-    val safeShipId = dossier.preferredShipId.coerceIn(1L, 8L)
+    val safeShipId = dossier.preferredShipId.coerceIn(1L, 9L)
     val safeFoundry = sanitizeFoundry(dossier.preferredFoundry)
     val safeMode = sanitizeMode(dossier.preferredMode)
 
@@ -149,7 +150,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
     val uid = requireUserId()
     val docRef = db.collection("leaderboard").document(uid)
     val safeCallsign = sanitizeCallsign(entry.callsign)
-    val safeShipId = entry.shipId.coerceIn(1L, 8L)
+    val safeShipId = entry.shipId.coerceIn(1L, 9L)
     val safeFoundry = sanitizeFoundry(entry.foundry)
 
     try {
@@ -228,7 +229,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
     val docRef = db.collection("sector_pilots").document(uid)
     val safeCallsign = sanitizeCallsign(state.callsign)
     val safeSector = sanitizeMode(state.sectorId)
-    val safeShip = state.shipId.coerceIn(1L, 8L)
+    val safeShip = state.shipId.coerceIn(1L, 9L)
     val safeFreq = state.freq.coerceIn(0L, 99L)
     val safePing =
       if (state.lastPingType in listOf("NONE", "ATTACK", "DEFEND", "CONVERGENCE")) {

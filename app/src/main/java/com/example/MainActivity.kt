@@ -238,8 +238,8 @@ fun RiftArenaScreen(
       ),
       SyndicateChatMessage(
         id = "msg_banner_apex",
-        senderUid = "friend_vortex_ace",
-        senderCallsign = "VORTEX_ACE",
+        senderUid = "friend_viper_ace",
+        senderCallsign = "VIPER_ACE",
         senderSyndicateTag = syndicateTag,
         timestampLabel = "LIVE RECRUIT",
         messageText = "",
@@ -251,9 +251,9 @@ fun RiftArenaScreen(
       ),
       SyndicateChatMessage(
         id = "msg_banner_gold",
-        senderUid = "friend_aurelia_prime",
-        senderCallsign = "AURELIA_PRIME",
-        senderSyndicateTag = "AURL",
+        senderUid = "friend_solaris_prime",
+        senderCallsign = "SOLARIS_PRIME",
+        senderSyndicateTag = "SOLR",
         timestampLabel = "LIVE RECRUIT",
         messageText = "",
         isArmadaRecruitBanner = true,
@@ -342,7 +342,7 @@ fun RiftArenaScreen(
       viewModel.syncNativePilotStats(
         callsign = engine.localPlayer.callsign,
         shipId = engine.localPlayer.shipId,
-        foundry = engine.localPlayer.spec.foundry,
+        foundry = engine.localPlayer.spec.role,
         mode = engine.mode,
         pvpKills = engine.pvpKills,
         pvpDeaths = engine.pvpDeaths,
@@ -575,8 +575,8 @@ fun RiftArenaScreen(
                   turnPts = 0,
                   maxFluxPts = 0,
                   rechargePts = 0,
-                  primaryPts = 0,
-                  secondaryPts = 0,
+                  primaryArchetype = "LIGHT_PULSE",
+                  secondaryType = "NONE",
                 )
               activeCustomSlot = zeroed
               localPrefs.saveCustomShipSlot(zeroed, currentUserId)

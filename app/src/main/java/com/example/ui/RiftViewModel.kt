@@ -111,7 +111,7 @@ class RiftViewModel(
             userId = currentUserId,
             callsign = initialCallsign,
             preferredShipId = 1L,
-            preferredFoundry = "Kestrel",
+            preferredFoundry = "Independent",
             preferredMode = "FFA",
             pvpKills = 0L,
             pvpDeaths = 0L,
@@ -127,7 +127,7 @@ class RiftViewModel(
             userId = currentUserId,
             callsign = initialCallsign,
             shipId = 1L,
-            foundry = "Kestrel",
+            foundry = "Independent",
             pvpKills = 0L,
             pvpDeaths = 0L,
             pvpBounty = 100L,
@@ -147,7 +147,7 @@ class RiftViewModel(
         val obj = JSONObject(payloadJson)
         val callsign = obj.optString("callsign", initialCallsign)
         val shipId = obj.optLong("shipId", 1L)
-        val foundry = obj.optString("foundry", "Kestrel")
+        val foundry = obj.optString("foundry", "Independent")
         val mode = "FFA"
         val pvpKills = obj.optLong("pvpKills", 0L)
         val pvpDeaths = obj.optLong("pvpDeaths", 0L)

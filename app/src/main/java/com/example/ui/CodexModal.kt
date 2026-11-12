@@ -72,17 +72,17 @@ fun CodexModal(
         ) {
           Column {
             Text(
-              text = "📖 RIFT CODEX: POWER-UPS & ARENA DOCTRINE",
+              text = "📖 RIFT CODEX: 11-BUFF POOL & 100-POINT PARITY DOCTRINE",
               color = Color.White,
-              fontSize = 18.sp,
+              fontSize = 17.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.SansSerif,
-              letterSpacing = 1.2.sp,
+              letterSpacing = 1.0.sp,
             )
             Text(
-              text = "3D SUPPLY CRATES • PERMANENT LIFE STACKS • ARENA RULES",
+              text = "BUCKET A SPECIAL BUFF SLOT (0⚡) • BUCKET B ENHANCERS • 100-PT SHIP PARITY",
               color = Color(0xFF00F0FF),
-              fontSize = 11.sp,
+              fontSize = 10.5.sp,
               fontWeight = FontWeight.Medium,
               fontFamily = FontFamily.Monospace,
             )
@@ -108,7 +108,7 @@ fun CodexModal(
           }
         }
 
-        // Persistent Buffs & 30s Munitions Rule Highlights
+        // Bucket A, Bucket B & 100-Point Parity Rule Highlights
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -122,18 +122,18 @@ fun CodexModal(
           ) {
             Column {
               Text(
-                text = "🛡️ PERMANENT LIFE BUFFS",
+                text = "🎯 BUCKET A: SPECIAL BUFF SLOT (0⚡)",
                 color = Color(0xFF10B981),
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
               )
               Text(
-                text = "Collected powerups stay active until your ship is destroyed. Active buffs with stack counts appear under the top HUD bar.",
+                text = "Burst, Shotgun, Missile, Decoy, Brick & Rocket equip to the 4th button at 0⚡ Flux cost. Same-type stacks; new type overwrites.",
                 color = Color(0xFFD1FAE5),
-                fontSize = 10.sp,
+                fontSize = 9.5.sp,
                 fontFamily = FontFamily.SansSerif,
-                lineHeight = 13.sp,
+                lineHeight = 12.5.sp,
               )
             }
           }
@@ -147,18 +147,18 @@ fun CodexModal(
           ) {
             Column {
               Text(
-                text = "💣 30-SECOND MUNITION EXPIRATION",
+                text = "⚡ BUCKET B: SHOT & SURGE ENHANCERS",
                 color = Color(0xFFF59E0B),
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
               )
               Text(
-                text = "Mines & unexploded bombs linger for 30s. Upon timer expiration, they detonate with 1.5x blast radius at 50% damage.",
+                text = "Multi-Shot (+25 shots), Bouncing Bullets (+30 shots), Overcharge Surge (+8% up to 3x), Repel (+1), and Full Flux Charge.",
                 color = Color(0xFFFEF3C7),
-                fontSize = 10.sp,
+                fontSize = 9.5.sp,
                 fontFamily = FontFamily.SansSerif,
-                lineHeight = 13.sp,
+                lineHeight = 12.5.sp,
               )
             }
           }
@@ -172,24 +172,24 @@ fun CodexModal(
           ) {
             Column {
               Text(
-                text = "🏰 SAFE ZONE & PHASE SHIELD",
+                text = "⚖️ 100-POINT HULL PARITY",
                 color = Color(0xFF38BDF8),
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
               )
               Text(
-                text = "Safe Zone strictly disarms weapons. Exiting grants 3.0s 75% defense Phase Shield (stripped upon firing).",
+                text = "Ships 1–8 share the Universal Baseline Floor + 100 Pts. 9-Rift Frame grows from 20 Pts (Lv 20) to 100 Pts (Lv 100).",
                 color = Color(0xFFE0F2FE),
-                fontSize = 10.sp,
+                fontSize = 9.5.sp,
                 fontFamily = FontFamily.SansSerif,
-                lineHeight = 13.sp,
+                lineHeight = 12.5.sp,
               )
             }
           }
         }
 
-        // Scrollable Power-Up Cards List
+        // Scrollable 11-Buff Pool Cards List
         LazyColumn(
           modifier =
             Modifier.fillMaxSize()
@@ -199,17 +199,20 @@ fun CodexModal(
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           itemsIndexed(RiftCodex.POWERUP_CODEX) { idx, entry ->
-            val buffType = idx % 8
+            val buffType = idx.coerceIn(0, 10)
             val accentColor =
               when (buffType) {
-                0 -> Color(0xFF10B981) // Full Charge
-                1 -> Color(0xFF38BDF8) // Recharge
-                2 -> Color(0xFFF59E0B) // Speed
-                3 -> Color(0xFFFACC15) // Multifire
-                4 -> Color(0xFFA855F7) // Ricochet
-                5 -> Color(0xFFF97316) // Burst Special Weapon
-                6 -> Color(0xFFFB7185) // Shotgun Special Weapon
-                else -> Color(0xFFEF4444) // Lock-On Bouncing Missile
+                0 -> Color(0xFFF59E0B) // Burst
+                1 -> Color(0xFFFB7185) // Shotgun
+                2 -> Color(0xFFEF4444) // Lock-On Missile
+                3 -> Color(0xFF38BDF8) // Decoy
+                4 -> Color(0xFF22D3EE) // Brick
+                5 -> Color(0xFFA855F7) // Rocket
+                6 -> Color(0xFF10B981) // Full Flux Charge
+                7 -> Color(0xFF60A5FA) // Repel Charge
+                8 -> Color(0xFFFACC15) // Shot-Limited Multi-Shot
+                9 -> Color(0xFFC084FC) // Bouncing Bullets
+                else -> Color(0xFFF97316) // Overcharge Surge
               }
 
             Row(
