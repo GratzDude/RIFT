@@ -74,6 +74,9 @@ object RiftSpriteBaker {
     for (buffType in 0..10) {
       buffs[buffType] = bakeBuffIconBitmap(buffType, 68)
     }
+    buffs[-10] = bakeBuffIconBitmap(-10, 68) // Speed Overcharge
+    buffs[-11] = bakeBuffIconBitmap(-11, 68) // Thrust Overcharge
+    buffs[-12] = bakeBuffIconBitmap(-12, 68) // Reactor Overcharge
     buffIconBitmaps = buffs
   }
 
@@ -146,8 +149,8 @@ object RiftSpriteBaker {
   }
 
   fun getBuffIconBitmap(buffType: Int): Bitmap {
-    if (buffType in 0..10) {
-      return buffIconBitmaps[buffType] ?: buffIconBitmaps[0]!!
+    if (buffType in 0..10 || buffType in -12..-10) {
+      return buffIconBitmaps[buffType] ?: buffIconBitmaps[10]!!
     }
     customBuffIconCache[buffType]?.let { return it }
     val entry = RiftCodex.getBuffRegistryByIndex(buffType)
@@ -297,8 +300,11 @@ object RiftSpriteBaker {
         6 -> Color.parseColor("#10B981") // Full Flux Charge
         7 -> Color.parseColor("#00F5D4") // Repel Charge
         8 -> Color.parseColor("#FACC15") // Shot-Limited Multi-Shot (+25)
-        9 -> Color.parseColor("#A855F7") // Bouncing Bullets (+30)
-        else -> Color.parseColor("#F59E0B") // Overcharge Surge (+8% x3)
+        9 -> Color.parseColor("#A855F7") // Bouncing Bullets (Permanent Life Upgrade)
+        -10 -> Color.parseColor("#38BDF8") // Speed Overcharge (+8% x3)
+        -11 -> Color.parseColor("#F59E0B") // Thrust Overcharge (+8% x3)
+        -12 -> Color.parseColor("#10B981") // Reactor Overcharge (+8% x3)
+        else -> Color.parseColor("#38BDF8") // Overcharge Surge (+8% x3)
       }
 
     // 1. Pre-rendered outer radial halo glow
@@ -494,8 +500,38 @@ object RiftSpriteBaker {
         c.drawPath(ricochet, glyphCoreStroke)
         c.drawCircle(cx - r * 0.05f, cy - r * 0.44f, 3.5f, glyphFillPaint)
       }
+      -11 -> {
+        // THRUST OVERCHARGE (+8% x3): Twin vector thruster nozzles with high-impulse flare
+        val nozzle =
+          Path().apply {
+            moveTo(cx, cy - r * 0.48f)
+            lineTo(cx + r * 0.34f, cy + r * 0.14f)
+            lineTo(cx + r * 0.12f, cy + r * 0.14f)
+            lineTo(cx + r * 0.18f, cy + r * 0.48f)
+            lineTo(cx, cy + r * 0.28f)
+            lineTo(cx - r * 0.18f, cy + r * 0.48f)
+            lineTo(cx - r * 0.12f, cy + r * 0.14f)
+            lineTo(cx - r * 0.34f, cy + r * 0.14f)
+            close()
+          }
+        c.drawPath(nozzle, glyphStrokePaint)
+        c.drawPath(nozzle, glyphCoreStroke)
+      }
+      -12 -> {
+        // REACTOR OVERCHARGE (+8% x3): Capacitor diamond ring + central lightning spark
+        val diamond =
+          Path().apply {
+            moveTo(cx, cy - r * 0.50f)
+            lineTo(cx + r * 0.46f, cy)
+            lineTo(cx, cy + r * 0.50f)
+            lineTo(cx - r * 0.46f, cy)
+            close()
+          }
+        c.drawPath(diamond, glyphStrokePaint)
+        c.drawCircle(cx, cy, r * 0.18f, glyphFillPaint)
+      }
       else -> {
-        // OVERCHARGE SURGE (+8% x3): Double forward supersonic overdrive chevrons
+        // SPEED OVERCHARGE (-10 / 10): Double forward supersonic overdrive chevrons
         for (offset in listOf(-r * 0.22f, r * 0.14f)) {
           val chev =
             Path().apply {

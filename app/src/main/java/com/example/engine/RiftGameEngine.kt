@@ -98,10 +98,12 @@ data class ShipEntity(
   var shotgunWaveTimer: Float = 0f,
   var shotgunAimAngle: Float = 0f,
   var multiShotCharges: Int = 0, // Shot-limited Multi-Shot (+25 per pickup, stackable)
-  var bouncingBulletsShots: Int = 0, // Shot-limited Bouncing Bullets (+30 per pickup, stackable)
-  var overchargeSurgeStacks: Int = 0, // Stacks up to 3x (+8% Speed, Thrust, Recharge per stack until death)
-  var sniperOverchargeReady: Boolean = false, // 1-Viper / Phase Dash overcharges next rail shot (+35% vel & dmg)
-  var isCloaked: Boolean = false, // 6-Disruptor / Cloak+EMP stealth cloak (180❖/s drain, hides ship & minimap dot)
+  var hasBouncingBulletsUpgrade: Boolean = false, // Permanent-until-death +1 primary wall bounce upgrade
+  var speedOverchargeStacks: Int = 0, // Stacks up to 3x (+8% Top Speed per stack until death)
+  var thrustOverchargeStacks: Int = 0, // Stacks up to 3x (+8% Thrust per stack until death)
+  var rechargeOverchargeStacks: Int = 0, // Stacks up to 3x (+8% Flux Recharge per stack until death)
+  var sniperOverchargeReady: Boolean = false, // Viper / Phase Dash overcharges next rail shot (+35% vel & dmg)
+  var isCloaked: Boolean = false, // Disruptor / Cloak+EMP stealth cloak (180❖/s drain, hides ship & minimap dot)
   var rocketBoostTimer: Float = 0f, // 3.0s Hyper Surge boost (1.65x max speed at 0❖)
   var wasInSafeZone: Boolean = false,
   var inSafeZone: Boolean = false,
@@ -142,7 +144,7 @@ data class BulletEntity(
   val color: Int,
   val isHeavyBurst: Boolean = false,
   var wormholeCooldownTimer: Float = 0f,
-  val ownerShipLabel: String = "1-Viper",
+  val ownerShipLabel: String = "Viper",
   val weaponLabel: String = "Primary Blaster",
 )
 
@@ -165,7 +167,7 @@ data class BombEntity(
   val radius: Float,
   var wormholeCooldownTimer: Float = 0f,
   var targetShipId: String = "",
-  val ownerShipLabel: String = "2-Ricochet",
+  val ownerShipLabel: String = "Ricochet",
   val weaponLabel: String = "Warhead",
   val customColor: Int = 0,
   val customEffect: CustomBuffEffect = CustomBuffEffect.NONE,
@@ -415,10 +417,11 @@ class RiftGameEngine(
 
   // Dossier Upgrade 1: Live Current-Life Telemetry & Peak Bounty Run Snapshot Tracker
   var currentLifeStats: com.example.data.CurrentLifeStats =
-    com.example.data.CurrentLifeStats(shipId = 1, shipFlown = "1-Viper")
+    com.example.data.CurrentLifeStats(shipId = 1, shipFlown = "Viper")
   var currentLifeHadPvp: Boolean = false
 
-  fun formatShipLabel(ship: ShipEntity): String = "${ship.spec.id}-${ship.spec.name}"
+  fun formatShipLabel(ship: ShipEntity): String =
+    if (ship.spec.id == 9) "Rift Frame" else ship.spec.name
 
   fun resetCurrentLifeStats() {
     currentLifeStats =
@@ -638,9 +641,11 @@ class RiftGameEngine(
       s.isCloaked = false
       s.sniperOverchargeReady = false
       s.rocketBoostTimer = 0f
-      s.overchargeSurgeStacks = 0
+      s.speedOverchargeStacks = 0
+      s.thrustOverchargeStacks = 0
+      s.rechargeOverchargeStacks = 0
       s.multiShotCharges = 0
-      s.bouncingBulletsShots = 0
+      s.hasBouncingBulletsUpgrade = false
       s.safeZoneStayTimer = 0f
       s.safeZoneLockoutTimer = 0f
       s.playfieldIdleTimer = 0f
@@ -1163,7 +1168,15 @@ class RiftGameEngine(
       if (customIndices.isNotEmpty() && Random.nextFloat() < 0.16f) {
         customIndices[Random.nextInt(customIndices.size)]
       } else {
-        Random.nextInt(11)
+        when (val baseRoll = Random.nextInt(11)) {
+          10 ->
+            when (Random.nextInt(3)) {
+              0 -> -10 // Speed Overcharge (+8% Top Speed)
+              1 -> -11 // Thrust Overcharge (+8% Thrust)
+              else -> -12 // Reactor Overcharge (+8% Flux Recharge)
+            }
+          else -> baseRoll
+        }
       }
 
     greens.add(
@@ -1527,10 +1540,10 @@ class RiftGameEngine(
       localPlayer.multifireOn = false
     }
     currentLifeStats.shipId = spec.id
-    currentLifeStats.shipFlown = "${spec.id}-${spec.name}"
+    currentLifeStats.shipFlown = formatShipLabel(localPlayer)
     buffVersion++
     syncLocalArmadaSelfSlot()
-    onPrizeToast("HULL EQUIPPED: ${spec.id}-${spec.name.uppercase()} (${spec.maxFlux.toInt()}❖)")
+    onPrizeToast("HULL EQUIPPED: ${formatShipLabel(localPlayer).uppercase(java.util.Locale.US)} (${spec.maxFlux.toInt()}❖)")
     return true
   }
 
@@ -1679,6 +1692,12 @@ class RiftGameEngine(
     }
     if (ship.isCloaked) {
       ship.isCloaked = false
+      if (ship.isLocalPlayer) buffVersion++
+      if (ship.spec.bombType == "CLOAK_EMP" && ship.flux > ship.spec.bombCost + 1f) {
+        selfDrainFlux(ship, ship.spec.bombCost)
+        ship.bombTimer = ship.spec.bombCooldown
+        detonateHullEmpPulse(ship)
+      }
     }
 
     // Validate Multi-Shot toggle state on non-native hulls
@@ -1709,7 +1728,7 @@ class RiftGameEngine(
       }
     ship.weaponAngle = baseFireAngle
 
-    // Check 1-Viper / Phase Dash Sniper Overcharge (+bonus% velocity and damage on next rail shot)
+    // Check Viper / Phase Dash Sniper Overcharge (+bonus% velocity and damage on next rail shot)
     val overcharged = ship.sniperOverchargeReady
     val bonusPct = RiftCalibrationState.phaseOverchargeBonusPct
     if (overcharged) {
@@ -1721,13 +1740,8 @@ class RiftGameEngine(
     }
     val overchargeMult = if (overcharged) (1.0f + bonusPct) else 1.0f
 
-    // Check Shot-Limited Bouncing Bullets (+shots per crate)
-    var bonusBounce = 0
-    if (ship.bouncingBulletsShots > 0) {
-      bonusBounce = 1
-      ship.bouncingBulletsShots--
-      if (ship.isLocalPlayer) buffVersion++
-    }
+    // Permanent-Until-Death Bouncing Bullets Hull Upgrade (+1 wall bounce)
+    val bonusBounce = if (ship.hasBouncingBulletsUpgrade) 1 else 0
     val bounces = spec.primaryBounces + bonusBounce
     val bulletSpeed = spec.primarySpeed * overchargeMult
     val isFriendlyToLocal = areAllied(localPlayer, ship)
@@ -1854,7 +1868,75 @@ class RiftGameEngine(
   }
 
   /**
-   * Handles the Contextual Class / Secondary Ability Button for all ships (1–9).
+   * Unleashes a 360-degree radial AoE EMP shockwave centered directly on Disruptor's hull,
+   * draining 35% Maximum Flux from all hostile ships inside empPulseRadius and disabling
+   * their Flux recharge for 2.5 seconds.
+   */
+  private fun detonateHullEmpPulse(ship: ShipEntity) {
+    val pulseRadius = RiftCalibrationState.empPulseRadius
+    shockwaves.add(ShockwaveEntity(ship.x, ship.y, 18f, pulseRadius, Color.parseColor("#00F5D4")))
+    shockwaves.add(ShockwaveEntity(ship.x, ship.y, 10f, pulseRadius * 0.86f, Color.parseColor("#B388FF")))
+
+    if (particles.size < 92) {
+      for (i in 0 until 14) {
+        val a = (i / 14f) * (PI.toFloat() * 2f)
+        val sp = 180f + Random.nextFloat() * 160f
+        particles.add(
+          ParticleEntity(
+            x = ship.x + cos(a) * 18f,
+            y = ship.y + sin(a) * 18f,
+            vx = cos(a) * sp,
+            vy = sin(a) * sp,
+            life = 0.36f,
+            maxLife = 0.36f,
+            size = 5.5f,
+            color = if (i % 2 == 0) Color.parseColor("#00F5D4") else Color.parseColor("#B388FF"),
+          )
+        )
+      }
+    }
+
+    if (ship.isLocalPlayer || hypot(ship.x - localPlayer.x, ship.y - localPlayer.y) < 1100f) {
+      sfx.playBomb()
+    }
+    if (ship.isLocalPlayer) {
+      currentLifeStats.shotsFired++
+      addTrauma(0.32f)
+      spawnPooledFct(
+        text = "⚡ 360° EMP PULSE",
+        x = ship.x,
+        y = ship.y - 30f,
+        color = Color.parseColor("#00F5D4"),
+        maxLife = 1.15f,
+      )
+    }
+
+    val attackerLbl = formatShipLabel(ship)
+    for (other in ships) {
+      if (other.id == ship.id) continue
+      if (other.respawnTimer > 0f) continue
+      if (areAllied(ship, other)) continue
+      if (isInsideSafeZone(other.x, other.y)) continue
+      val dist = hypot(other.x - ship.x, other.y - ship.y)
+      if (dist <= pulseRadius + other.radius * 0.5f) {
+        val impactAngle = atan2(other.y - ship.y, other.x - ship.x)
+        applyProjectileDamage(
+          target = other,
+          attackerId = ship.id,
+          attackerIsHuman = ship.isHuman,
+          rawDamage = 0f,
+          impactAngle = impactAngle,
+          isHeavyImpact = true,
+          isEmp = true,
+          attackerShipLabel = attackerLbl,
+          weaponLabel = "360° AoE EMP Pulse",
+        )
+      }
+    }
+  }
+
+  /**
+   * Handles the Contextual Class / Secondary Ability Button for all ships.
    */
   fun fireSecondaryBomb(ship: ShipEntity, aimAngle: Float? = null) {
     if (ship.respawnTimer > 0f) return
@@ -1876,7 +1958,7 @@ class RiftGameEngine(
     ship.weaponAngle = fireAngle
     val shipLbl = formatShipLabel(ship)
 
-    // 1. 6-Disruptor Combined Tactical Cloak + EMP Bomb System
+    // 1. Disruptor Combined Tactical Cloak + 360° AoE EMP Pulse System (No Bomb Projectile)
     if (spec.bombType == "CLOAK_EMP") {
       if (!ship.isCloaked) {
         if (ship.flux <= 200f) {
@@ -1890,54 +1972,23 @@ class RiftGameEngine(
           buffVersion++
           sfx.playWarp()
           spawnPooledFct("👻 STEALTH CLOAK ENGAGED", ship.x, ship.y - 28f, Color.parseColor("#B388FF"))
-          onPrizeToast("STEALTH CLOAK ACTIVE (${RiftCalibrationState.cloakDrainPerSec.toInt()}❖/s) — TAP OR AIM SECONDARY TO LAUNCH EMP BOMB!")
+          onPrizeToast("STEALTH CLOAK ACTIVE (${RiftCalibrationState.cloakDrainPerSec.toInt()}❖/s) — TAP EMP PULSE OR FIRE TO UNLEASH 360° EMP!")
         }
         return
       } else {
-        // Already cloaked: firing while cloaked breaks stealth and launches the EMP Bomb!
+        // Already cloaked: tapping EMP PULSE breaks stealth and unleashes a 360° radial AoE EMP centered on Disruptor's hull!
         ship.isCloaked = false
         if (ship.isLocalPlayer) buffVersion++
         val empCost = spec.bombCost
         if (ship.flux <= empCost + 1f) {
-          if (ship.isLocalPlayer) onPrizeToast("STEALTH DISENGAGED (INSUFFICIENT FLUX FOR ${empCost.toInt()}❖ EMP)")
+          if (ship.isLocalPlayer) onPrizeToast("STEALTH DISENGAGED (INSUFFICIENT FLUX FOR ${empCost.toInt()}❖ EMP PULSE)")
           ship.bombTimer = 0.35f
           return
         }
         if (ship.phaseShieldTimer > 0f) ship.phaseShieldTimer = 0f
         selfDrainFlux(ship, empCost)
         ship.bombTimer = spec.bombCooldown
-        if (ship.isLocalPlayer) {
-          currentLifeStats.shotsFired++
-          sfx.playBomb()
-          spawnPooledFct("⚡ EMP BOMB LAUNCHED", ship.x, ship.y - 28f, Color.parseColor("#B388FF"))
-        }
-        val bx = ship.x + cos(fireAngle) * 52f
-        val by = ship.y + sin(fireAngle) * 52f
-        if (!isInsideSafeZone(bx, by)) {
-          val speed = 640f
-          bombs.add(
-            BombEntity(
-              ownerId = ship.id,
-              ownerCallsign = ship.callsign,
-              ownerSyndicateTag = ship.syndicateTag,
-              ownerArmadaName = ship.armadaName,
-              ownerIsHuman = ship.isHuman,
-              freq = ship.freq,
-              type = "EMP",
-              x = bx,
-              y = by,
-              vx = ship.vx * 0.25f + cos(fireAngle) * speed,
-              vy = ship.vy * 0.25f + sin(fireAngle) * speed,
-              damage = spec.bombDamage,
-              bouncesLeft = spec.bombBounces,
-              passWalls = false,
-              life = 30.0f,
-              radius = 19f,
-              ownerShipLabel = shipLbl,
-              weaponLabel = "EMP Bomb",
-            )
-          )
-        }
+        detonateHullEmpPulse(ship)
         return
       }
     }
@@ -2842,7 +2893,7 @@ class RiftGameEngine(
     if (isEmp) {
       target.empTimer = RiftCalibrationState.empFreezeSec
       if (target.isLocalPlayer) {
-        onPrizeToast("⚡ HIT BY EMP BOMB! -${(RiftCalibrationState.empFluxDrainPct * 100f).toInt()}% FLUX & RECHARGE DISABLED FOR ${String.format(java.util.Locale.US, "%.1fs", RiftCalibrationState.empFreezeSec)}!")
+        onPrizeToast("⚡ HIT BY 360° EMP PULSE! -${(RiftCalibrationState.empFluxDrainPct * 100f).toInt()}% FLUX & RECHARGE DISABLED FOR ${String.format(java.util.Locale.US, "%.1fs", RiftCalibrationState.empFreezeSec)}!")
       }
     }
 
@@ -2908,7 +2959,10 @@ class RiftGameEngine(
       target.isCloaked = false
       target.sniperOverchargeReady = false
       target.rocketBoostTimer = 0f
-      target.overchargeSurgeStacks = 0
+      target.speedOverchargeStacks = 0
+      target.thrustOverchargeStacks = 0
+      target.rechargeOverchargeStacks = 0
+      target.hasBouncingBulletsUpgrade = false
 
       if (target.isLocalPlayer || hypot(target.x - localPlayer.x, target.y - localPlayer.y) < 1100f) {
         sfx.playExplosion()
@@ -3045,6 +3099,13 @@ class RiftGameEngine(
     target.playfieldIdleTimer = 0f
     target.safeZoneStayTimer = 0f
     target.isIdleDraining = false
+    target.isCloaked = false
+    target.sniperOverchargeReady = false
+    target.rocketBoostTimer = 0f
+    target.speedOverchargeStacks = 0
+    target.thrustOverchargeStacks = 0
+    target.rechargeOverchargeStacks = 0
+    target.hasBouncingBulletsUpgrade = false
 
     if (target.isLocalPlayer || hypot(target.x - localPlayer.x, target.y - localPlayer.y) < 1100f) {
       sfx.playExplosion()
@@ -3407,12 +3468,13 @@ class RiftGameEngine(
         desiredAngle = strafeAngle
       }
 
-      // 6-Disruptor bots cloak when approaching and fire EMP Bomb when within 560px
+      // Disruptor bots cloak when approaching and unleash 360° AoE EMP Pulse inside empPulseRadius
       if (bot.spec.bombType == "CLOAK_EMP") {
-        if (!bot.isCloaked && nearestDist in 520f..1050f && bot.flux > bot.maxFlux * 0.60f && bot.bombTimer <= 0f) {
+        val pulseR = RiftCalibrationState.empPulseRadius
+        if (!bot.isCloaked && nearestDist in (pulseR * 1.15f)..980f && bot.flux > bot.maxFlux * 0.55f && bot.bombTimer <= 0f) {
           fireSecondaryBomb(bot, aimAngle) // Engages Stealth Cloak
-        } else if (bot.isCloaked && nearestDist < 540f && bot.flux > 420f && bot.bombTimer <= 0f) {
-          fireSecondaryBomb(bot, aimAngle) // Breaks stealth and launches EMP Bomb!
+        } else if (bot.isCloaked && nearestDist <= pulseR * 0.92f && bot.flux > bot.spec.bombCost + 20f && bot.bombTimer <= 0f) {
+          fireSecondaryBomb(bot, aimAngle) // Breaks stealth and unleashes 360° AoE EMP Pulse!
         }
       } else if (bot.spec.bombType == "PHASE_DASH") {
         if (nearestDist in 450f..900f && bot.flux > bot.maxFlux * 0.55f && bot.bombTimer <= 0f) {
@@ -3441,10 +3503,10 @@ class RiftGameEngine(
       desiredAngle = atan2(steerY, steerX)
     }
 
-    val surgeMult = 1f + bot.overchargeSurgeStacks * RiftCalibrationState.overchargeSurgePctPerStack
+    val thrustSurgeMult = 1f + bot.thrustOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack
     val sideDamp = 0.34.pow(dt.toDouble()).toFloat()
-    bot.vx = bot.vx * sideDamp + cos(desiredAngle) * bot.spec.thrust * surgeMult * 0.88f * dt
-    bot.vy = bot.vy * sideDamp + sin(desiredAngle) * bot.spec.thrust * surgeMult * 0.88f * dt
+    bot.vx = bot.vx * sideDamp + cos(desiredAngle) * bot.spec.thrust * thrustSurgeMult * 0.88f * dt
+    bot.vy = bot.vy * sideDamp + sin(desiredAngle) * bot.spec.thrust * thrustSurgeMult * 0.88f * dt
     if (hypot(bot.vx, bot.vy) > 2f) {
       bot.angle = atan2(bot.vy, bot.vx)
     }
@@ -3480,7 +3542,7 @@ class RiftGameEngine(
       localPlayer.canFire = !localInSafe
       localPlayer.weaponState = if (localInSafe) "DISARMED" else "ARMED"
       localPlayer.afterburning = false
-      val surgeMult = 1f + localPlayer.overchargeSurgeStacks * RiftCalibrationState.overchargeSurgePctPerStack
+      val thrustSurgeMult = 1f + localPlayer.thrustOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack
       val rocketMult = if (localPlayer.rocketBoostTimer > 0f) RiftCalibrationState.hyperSurgeSpeedMult else 1.0f
 
       if (leftStickActive && leftStickMag > 0.08f) {
@@ -3488,7 +3550,7 @@ class RiftGameEngine(
         val isAfterburner = leftStickMag > 0.80f && localPlayer.flux > 25f && localPlayer.rocketBoostTimer <= 0f
         val accel =
           localPlayer.spec.thrust *
-            surgeMult *
+            thrustSurgeMult *
             rocketMult *
             (if (isAfterburner) RiftCalibrationState.afterburnerThrustMult else leftStickMag)
         localPlayer.vx += cos(leftStickAngle) * accel * dt
@@ -3660,9 +3722,11 @@ class RiftGameEngine(
           s.vy = 0f
           s.bounty = 100
           s.flux = s.maxFlux
-          s.overchargeSurgeStacks = 0
+          s.speedOverchargeStacks = 0
+          s.thrustOverchargeStacks = 0
+          s.rechargeOverchargeStacks = 0
           s.multiShotCharges = 0
-          s.bouncingBulletsShots = 0
+          s.hasBouncingBulletsUpgrade = false
           s.sniperOverchargeReady = false
           s.isCloaked = false
           s.rocketBoostTimer = 0f
@@ -3721,14 +3785,14 @@ class RiftGameEngine(
         }
       }
 
-      // Step 6-Disruptor Stealth Cloak continuous drain (cloakDrainPerSec; auto-uncloaks below 150❖)
+      // Step Disruptor Stealth Cloak continuous drain (cloakDrainPerSec; forced uncloak at 150❖ floor without firing EMP)
       if (s.isCloaked) {
         selfDrainFlux(s, RiftCalibrationState.cloakDrainPerSec * dt)
-        if (s.flux < 150f || isInsideSafeZone(s.x, s.y)) {
+        if (s.flux <= 150f || isInsideSafeZone(s.x, s.y)) {
           s.isCloaked = false
           if (s.isLocalPlayer) {
             buffVersion++
-            onPrizeToast("STEALTH CLOAK DEACTIVATED (FLUX BELOW 150❖ FLOOR)")
+            onPrizeToast("STEALTH CLOAK DEACTIVATED (FLUX AT 150❖ SAFETY FLOOR)")
           }
         }
       }
@@ -3823,17 +3887,18 @@ class RiftGameEngine(
         }
       }
 
-      val surgeMult = 1f + s.overchargeSurgeStacks * RiftCalibrationState.overchargeSurgePctPerStack
+      val rechargeSurgeMult = 1f + s.rechargeOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack
       if (s.empTimer > 0f) {
         s.empTimer = max(0f, s.empTimer - dt)
       } else if (!s.isIdleDraining && !s.isCloaked) {
         val safeBonus = if (currentlyInSafe) RiftCalibrationState.safeZoneRechargeMult else 1.0f
-        s.flux = min(s.maxFlux, s.flux + s.spec.rechargeRate * surgeMult * safeBonus * dt)
+        s.flux = min(s.maxFlux, s.flux + s.spec.rechargeRate * rechargeSurgeMult * safeBonus * dt)
       }
 
+      val speedSurgeMult = 1f + s.speedOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack
       val rocketSpeedMult = if (s.rocketBoostTimer > 0f) RiftCalibrationState.hyperSurgeSpeedMult else 1.0f
       val maxSp =
-        (if (s.afterburning) s.spec.afterburnerSpeed else s.spec.topSpeed) * surgeMult * rocketSpeedMult
+        (if (s.afterburning) s.spec.afterburnerSpeed else s.spec.topSpeed) * speedSurgeMult * rocketSpeedMult
       val curSp = hypot(s.vx, s.vy)
       if (curSp > maxSp) {
         s.vx = (s.vx / curSp) * maxSp
@@ -3933,10 +3998,16 @@ class RiftGameEngine(
               }
             }
             gr.buffType == 9 -> {
-              s.bouncingBulletsShots += RiftCalibrationState.crateBounceBulletAmmo
+              s.hasBouncingBulletsUpgrade = true
+            }
+            gr.buffType == -11 -> {
+              s.thrustOverchargeStacks = min(3, s.thrustOverchargeStacks + 1)
+            }
+            gr.buffType == -12 -> {
+              s.rechargeOverchargeStacks = min(3, s.rechargeOverchargeStacks + 1)
             }
             else -> {
-              s.overchargeSurgeStacks = min(3, s.overchargeSurgeStacks + 1)
+              s.speedOverchargeStacks = min(3, s.speedOverchargeStacks + 1)
             }
           }
           if (s.isLocalPlayer) {
@@ -4004,13 +4075,23 @@ class RiftGameEngine(
                   }
                 }
                 gr.buffType == 9 -> {
-                  spawnPooledFct("⛛ BOUNCE BULLETS (${s.bouncingBulletsShots})", s.x, s.y - 24f, Color.parseColor("#A855F7"))
-                  "SHOT-LIMITED AUGMENT: BOUNCING BULLETS +${RiftCalibrationState.crateBounceBulletAmmo} SHOTS (${s.bouncingBulletsShots} TOTAL)"
+                  spawnPooledFct("⛛ BOUNCE UPGRADE (+1)", s.x, s.y - 24f, Color.parseColor("#A855F7"))
+                  "HULL UPGRADE: BOUNCING BULLETS ACTIVE UNTIL DEATH (+1 WALL BOUNCE)"
+                }
+                gr.buffType == -11 -> {
+                  val pct = (s.thrustOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack * 100f).toInt()
+                  spawnPooledFct("🔥 THR +$pct% (${s.thrustOverchargeStacks}/3)", s.x, s.y - 24f, Color.parseColor("#F59E0B"))
+                  "HULL UPGRADE: THRUST OVERCHARGE ${s.thrustOverchargeStacks}/3 (+$pct% THRUST UNTIL DEATH)"
+                }
+                gr.buffType == -12 -> {
+                  val pct = (s.rechargeOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack * 100f).toInt()
+                  spawnPooledFct("❖ RCH +$pct% (${s.rechargeOverchargeStacks}/3)", s.x, s.y - 24f, Color.parseColor("#10B981"))
+                  "HULL UPGRADE: REACTOR OVERCHARGE ${s.rechargeOverchargeStacks}/3 (+$pct% FLUX RECHARGE UNTIL DEATH)"
                 }
                 else -> {
-                  val pct = (s.overchargeSurgeStacks * RiftCalibrationState.overchargeSurgePctPerStack * 100f).toInt()
-                  spawnPooledFct("⚡ OVERCHARGE SURGE x${s.overchargeSurgeStacks} (+$pct%)", s.x, s.y - 24f, Color.parseColor("#F59E0B"))
-                  "LIFE HULL SURGE: OVERCHARGE SURGE x${s.overchargeSurgeStacks} (+$pct% SPEED, THRUST & RECHARGE)"
+                  val pct = (s.speedOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack * 100f).toInt()
+                  spawnPooledFct("⚡ SPD +$pct% (${s.speedOverchargeStacks}/3)", s.x, s.y - 24f, Color.parseColor("#38BDF8"))
+                  "HULL UPGRADE: SPEED OVERCHARGE ${s.speedOverchargeStacks}/3 (+$pct% TOP SPEED UNTIL DEATH)"
                 }
               }
             onPrizeToast(msg)

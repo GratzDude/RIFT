@@ -858,7 +858,7 @@ class RiftArenaView(
           canvas.drawArc(arcRect, centerDeg - halfConeDeg, halfConeDeg * 2f, true, spreadConePaint)
         }
 
-        val gunBounces = p.spec.primaryBounces + (if (p.bouncingBulletsShots > 0) 1 else 0)
+        val gunBounces = p.spec.primaryBounces + (if (p.hasBouncingBulletsUpgrade) 1 else 0)
         if (gunBounces > 0) {
           val pts = engine.computeBounceTrajectory(p, activeAimAngle, maxBounces = 2, segmentMaxLen = 540f * telegraphScale)
           drawRaycastTrajectory(canvas, pts, Color.parseColor("#38BDF8"))
@@ -872,7 +872,7 @@ class RiftArenaView(
       val isProjectileBomb =
         p.spec.hasBomb &&
           p.spec.bombType != "PHASE_DASH" &&
-          !(p.spec.bombType == "CLOAK_EMP" && !p.isCloaked)
+          p.spec.bombType != "CLOAK_EMP"
       if (engine.bombStickActive && !engine.isBombCancelActive && engine.bombStickMag > 0.12f && isProjectileBomb) {
         val pts =
           engine.computeBounceTrajectory(
@@ -1312,7 +1312,7 @@ class RiftArenaView(
       popupPaint.color = fp.color
       popupPaint.alpha = (quadFade * 255f).toInt()
       popupPaint.textSize =
-        (RiftCalibrationState.fctFontSizePx * 0.5f * dpDensity * fp.scale * RiftCalibrationState.fctScale) / safeFctWorldScale
+        (RiftCalibrationState.fctFontSizePx * 0.5f * dpDensity * fp.scale * engine.playfieldTextScale * RiftCalibrationState.fctScale) / safeFctWorldScale
       canvas.drawText(fp.text, fp.x, fp.y, popupPaint)
     }
     popupPaint.alpha = 255
@@ -1392,10 +1392,11 @@ class RiftArenaView(
     val baseLeftX = effLeftBaseX()
     val baseLeftY = effLeftBaseY()
     val effLeftR = effLeftRadius()
-    val lx = if (leftActive) leftOriginX else baseLeftX
-    val ly = if (leftActive) leftOriginY else baseLeftY
-    val kx = if (leftActive) leftCurX else baseLeftX
-    val ky = if (leftActive) leftCurY else baseLeftY
+    // Lock all concentric rings and center puck to shared (baseLeftX, baseLeftY) center when UI Unlock is active
+    val lx = if (leftActive && !unlocked) leftOriginX else baseLeftX
+    val ly = if (leftActive && !unlocked) leftOriginY else baseLeftY
+    val kx = if (leftActive && !unlocked) leftCurX else baseLeftX
+    val ky = if (leftActive && !unlocked) leftCurY else baseLeftY
 
     hudCircleFillPaint.color = Color.argb((110 * stickAlphaScale).toInt(), 8, 18, 34)
     canvas.drawCircle(lx, ly, effLeftR, hudCircleFillPaint)
@@ -1408,11 +1409,7 @@ class RiftArenaView(
       }
     canvas.drawCircle(lx, ly, effLeftR, hudCircleStrokePaint)
 
-    if (unlocked) {
-      canvas.drawCircle(lx, ly, effLeftR + 4f * dpDensity, unlockDashPaint)
-    }
-
-    // Afterburner 80% threshold ring
+    // Afterburner 80% threshold ring (concentric with outer ring)
     hudCircleStrokePaint.strokeWidth = 1.5f
     hudCircleStrokePaint.color = Color.argb((110 * stickAlphaScale).toInt(), 245, 158, 11)
     canvas.drawCircle(lx, ly, effLeftR * 0.80f, hudCircleStrokePaint)
@@ -1430,11 +1427,16 @@ class RiftArenaView(
     hudLabelPaint.textSize = 9.0f * dpDensity * RiftCalibrationState.leftStickScale
     hudLabelPaint.color = Color.argb((255 * stickAlphaScale).toInt(), 3, 7, 18)
     canvas.drawText(
-      if (unlocked) "DRAG" else if (p.afterburning) "BURN" else "THRUST",
+      if (p.afterburning) "BURN" else "THRUST",
       kx,
       ky + 3.2f * dpDensity,
       hudLabelPaint,
     )
+
+    if (unlocked) {
+      canvas.drawCircle(lx, ly, effLeftR, unlockDashPaint)
+      drawUnlockCornerBadge(canvas, lx + effLeftR * 0.707f, ly - effLeftR * 0.707f)
+    }
 
     val disarmedInSafeZone = !p.canFire && !unlocked
     val gunCost = p.spec.primaryCost.toInt()
@@ -1461,11 +1463,7 @@ class RiftArenaView(
       }
     canvas.drawCircle(fX, fY, fR, hudCircleStrokePaint)
 
-    if (unlocked) {
-      canvas.drawCircle(fX, fY, fR + 4f * dpDensity, unlockDashPaint)
-    }
-
-    if (engine.fireStickActive && fireHasExitedDeadzone) {
+    if (engine.fireStickActive && fireHasExitedDeadzone && !unlocked) {
       hudCircleStrokePaint.strokeWidth = 2.0f
       hudCircleStrokePaint.color =
         if (engine.isCancelActive) Color.parseColor("#EF4444") else Color.argb(110, 239, 68, 68)
@@ -1473,8 +1471,8 @@ class RiftArenaView(
       hudCircleStrokePaint.strokeWidth = 2.6f
     }
 
-    val fkX = if (firePointerId != MotionEvent.INVALID_POINTER_ID) fireCurX else fX
-    val fkY = if (firePointerId != MotionEvent.INVALID_POINTER_ID) fireCurY else fY
+    val fkX = if (firePointerId != MotionEvent.INVALID_POINTER_ID && !unlocked) fireCurX else fX
+    val fkY = if (firePointerId != MotionEvent.INVALID_POINTER_ID && !unlocked) fireCurY else fY
     hudCircleFillPaint.color =
       when {
         disarmedInSafeZone -> Color.argb(95, 140, 40, 52)
@@ -1497,15 +1495,19 @@ class RiftArenaView(
     hudLabelPaint.color = Color.argb(fireAlpha, 254, 202, 202)
     canvas.drawText(
       when {
-        unlocked -> "DRAG"
         engine.isCancelActive -> "CANCEL"
-        disarmedInSafeZone -> "SAFE"
+        !p.canFire -> "SAFE"
         else -> "(${gunCost}❖)"
       },
       fkX,
       fkY + 10.0f * dpDensity * arcScale,
       hudLabelPaint,
     )
+
+    if (unlocked) {
+      canvas.drawCircle(fX, fY, fR, unlockDashPaint)
+      drawUnlockCornerBadge(canvas, fX + fR * 0.707f, fY - fR * 0.707f)
+    }
 
     // 25-Shot Multi-Shot Crate Counter Badge on Primary Fire Stick Ring
     if (p.multiShotCharges > 0) {
@@ -1529,7 +1531,7 @@ class RiftArenaView(
       )
     }
 
-    // 3. Contextual Secondary / Class Ability Circular Button — ONLY rendered for ships with a Secondary/Class Ability (HIDDEN on 3-Suppressor & 5-Twinfang)
+    // 3. Contextual Secondary / Class Ability Circular Button — ONLY rendered for ships with a Secondary/Class Ability (HIDDEN on Suppressor & Twinfang)
     if (p.spec.hasBomb || RiftCalibrationState.forceAllButtonsVisible || unlocked) {
       val bX = effBombBtnX()
       val bY = effBombBtnY()
@@ -1538,7 +1540,7 @@ class RiftArenaView(
       val bombCost =
         when {
           !p.spec.hasBomb -> 300f
-          isCloakToggleReady -> 180f
+          isCloakToggleReady -> RiftCalibrationState.cloakDrainPerSec
           else -> p.spec.bombCost
         }
       val bombAvailable =
@@ -1564,10 +1566,6 @@ class RiftArenaView(
         }
       canvas.drawCircle(bX, bY, bR, hudCircleStrokePaint)
 
-      if (unlocked) {
-        canvas.drawCircle(bX, bY, bR + 3.5f * dpDensity, unlockDashPaint)
-      }
-
       val activeMineCount =
         if (p.spec.bombType == "MINE") {
           engine.bombs.count { it.ownerId == p.id && it.type == "MINE" }
@@ -1578,7 +1576,7 @@ class RiftArenaView(
         when {
           engine.isBombCancelActive -> "✕"
           p.spec.bombType == "PHASE_DASH" -> "PHASE"
-          p.spec.bombType == "CLOAK_EMP" -> if (p.isCloaked) "EMP BOMB" else "CLOAK"
+          p.spec.bombType == "CLOAK_EMP" -> if (p.isCloaked) "EMP PULSE" else "CLOAK"
           p.spec.bombType == "MINE" -> "PROX MINE"
           p.spec.bombType == "EMP" -> "EMP BOMB"
           p.spec.bombType == "SIEGE" -> "SIEGE BOMB"
@@ -1591,10 +1589,9 @@ class RiftArenaView(
         }
       val bSub =
         when {
-          unlocked -> "DRAG"
           engine.isBombCancelActive -> "CANCEL"
           p.bombTimer > 0.1f -> String.format(java.util.Locale.US, "%.1fs", p.bombTimer)
-          isCloakToggleReady -> "(180❖/s)"
+          isCloakToggleReady -> "(${RiftCalibrationState.cloakDrainPerSec.toInt()}❖/s)"
           p.spec.bombType == "MINE" -> "(${bombCost.toInt()}❖ • $activeMineCount/6)"
           else -> "(${bombCost.toInt()}❖)"
         }
@@ -1604,6 +1601,11 @@ class RiftArenaView(
       hudLabelPaint.textSize = 7.6f * dpDensity * arcScale
       hudLabelPaint.color = Color.argb(bombAlpha, 253, 224, 71)
       canvas.drawText(bSub, bX, bY + 9.2f * dpDensity * arcScale, hudLabelPaint)
+
+      if (unlocked) {
+        canvas.drawCircle(bX, bY, bR, unlockDashPaint)
+        drawUnlockCornerBadge(canvas, bX + bR * 0.707f, bY - bR * 0.707f)
+      }
     }
 
     // 4. Dynamic Upper-Arc Satellite Utility Buttons (SPECIAL BUFF SLOT & REPEL — strictly hidden when count == 0)
@@ -1614,7 +1616,7 @@ class RiftArenaView(
         cy = slot.cy,
         r = slot.r,
         title = slot.title,
-        sub = if (unlocked) "DRAG" else slot.sub,
+        sub = slot.sub,
         strokeColor = slot.strokeColor,
         fillColor = slot.fillColor,
         enabled = slot.enabled || unlocked,
@@ -1622,6 +1624,19 @@ class RiftArenaView(
         arcScale = arcScale,
       )
     }
+  }
+
+  private fun drawUnlockCornerBadge(canvas: Canvas, x: Float, y: Float) {
+    val badgeR = 6.2f * dpDensity
+    hudCircleFillPaint.color = Color.argb(235, 30, 27, 8)
+    canvas.drawCircle(x, y, badgeR, hudCircleFillPaint)
+    hudCircleStrokePaint.strokeWidth = 1.4f
+    hudCircleStrokePaint.color = Color.parseColor("#FACC15")
+    canvas.drawCircle(x, y, badgeR, hudCircleStrokePaint)
+    hudCircleStrokePaint.strokeWidth = 2.6f
+    hudLabelPaint.textSize = 7.2f * dpDensity
+    hudLabelPaint.color = Color.parseColor("#FACC15")
+    canvas.drawText("✥", x, y + 2.5f * dpDensity, hudLabelPaint)
   }
 
   private fun drawSatelliteButton(
@@ -1655,10 +1670,6 @@ class RiftArenaView(
       )
     canvas.drawCircle(cx, cy, r, hudCircleStrokePaint)
 
-    if (unlocked) {
-      canvas.drawCircle(cx, cy, r + 3.2f * dpDensity, unlockDashPaint)
-    }
-
     hudLabelPaint.textSize = 8.6f * dpDensity * arcScale
     hudLabelPaint.color = Color.argb(alphaVal, 255, 255, 255)
     canvas.drawText(title, cx, cy - 1.0f * dpDensity * arcScale, hudLabelPaint)
@@ -1671,6 +1682,11 @@ class RiftArenaView(
         Color.blue(strokeColor),
       )
     canvas.drawText(sub, cx, cy + 8.6f * dpDensity * arcScale, hudLabelPaint)
+
+    if (unlocked) {
+      canvas.drawCircle(cx, cy, r, unlockDashPaint)
+      drawUnlockCornerBadge(canvas, cx + r * 0.707f, cy - r * 0.707f)
+    }
   }
 
   private fun drawStationaryRespawnBanner(canvas: Canvas, vw: Float, vh: Float, timer: Float) {
@@ -1814,7 +1830,7 @@ class RiftArenaView(
           val isInstantSelfAbility =
             !p.canFire ||
               p.spec.bombType == "PHASE_DASH" ||
-              (p.spec.bombType == "CLOAK_EMP" && !p.isCloaked)
+              p.spec.bombType == "CLOAK_EMP"
           if (isInstantSelfAbility) {
             engine.fireSecondaryBomb(p, p.angle)
             return true

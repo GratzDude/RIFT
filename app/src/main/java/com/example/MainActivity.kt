@@ -227,10 +227,10 @@ fun RiftArenaScreen(
     mutableStateOf(loaded)
   }
   var slot9BUnlocked by remember(currentUserId) {
-    mutableStateOf(localPrefs.isCustomSlotUnlocked("9B", currentUserId))
+    mutableStateOf(localPrefs.isCustomSlotUnlocked("Frame B", currentUserId))
   }
   var slot9CUnlocked by remember(currentUserId) {
-    mutableStateOf(localPrefs.isCustomSlotUnlocked("9C", currentUserId))
+    mutableStateOf(localPrefs.isCustomSlotUnlocked("Frame C", currentUserId))
   }
   var cameraZoom by remember { mutableFloatStateOf(localPrefs.getCameraZoom()) }
   var playfieldTextScale by remember { mutableFloatStateOf(localPrefs.getPlayfieldTextScale()) }
@@ -610,8 +610,8 @@ fun RiftArenaScreen(
               engine.riftShards -= 300L
               engine.unlockedExtraSlots++
               localPrefs.setCustomSlotUnlocked(targetSlotId, true, currentUserId)
-              slot9BUnlocked = localPrefs.isCustomSlotUnlocked("9B", currentUserId)
-              slot9CUnlocked = localPrefs.isCustomSlotUnlocked("9C", currentUserId)
+              slot9BUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
+              slot9CUnlocked = localPrefs.isCustomSlotUnlocked("Frame C", currentUserId)
               activeCustomSlotId = targetSlotId
               localPrefs.setActiveCustomSlotId(targetSlotId, currentUserId)
               val loaded = localPrefs.getCustomShipSlot(targetSlotId, currentUserId)
@@ -1130,10 +1130,10 @@ fun RiftArenaScreen(
               engine.riftShards -= 300L
               engine.unlockedExtraSlots++
               if (!slot9BUnlocked) {
-                localPrefs.setCustomSlotUnlocked("9B", true, currentUserId)
+                localPrefs.setCustomSlotUnlocked("Frame B", true, currentUserId)
                 slot9BUnlocked = true
               } else if (!slot9CUnlocked) {
-                localPrefs.setCustomSlotUnlocked("9C", true, currentUserId)
+                localPrefs.setCustomSlotUnlocked("Frame C", true, currentUserId)
                 slot9CUnlocked = true
               }
               sfx.playPrize()
@@ -1235,7 +1235,7 @@ fun RiftArenaScreen(
 
         val activeShipTitle =
           remember(engine.localPlayer.shipId, activeCustomSlot, frameTick) {
-            "${engine.localPlayer.spec.id}-${engine.localPlayer.spec.name}"
+            engine.formatShipLabel(engine.localPlayer)
           }
 
         val buildLiveSnapshot: () -> String = {

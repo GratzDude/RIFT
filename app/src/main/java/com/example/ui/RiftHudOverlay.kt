@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,10 +38,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
@@ -50,6 +53,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
@@ -60,13 +64,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.engine.AnomalyType
-import com.example.engine.RiftCodex
 import com.example.engine.KillFeedEntry
 import com.example.engine.RiftCalibrationState
 import com.example.engine.RiftGameEngine
@@ -75,6 +80,7 @@ import com.example.engine.ShipEntity
 import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlinx.coroutines.Job
@@ -91,15 +97,51 @@ private val CompactCircleTextStyle =
 private val WingTelemetryTextStyle =
   TextStyle(
     platformStyle = PlatformTextStyle(includeFontPadding = false),
-    lineHeight = 12.sp,
   )
 
-data class ActiveBuffBadgeData(
-  val buffType: Int,
-  val label: String,
-  val countText: String,
-  val accentColor: Color,
-)
+private fun Modifier.wysiwygUnlockOutline(
+  enabled: Boolean,
+  isCircle: Boolean = false,
+  cornerRadius: Dp = 10.dp,
+): Modifier {
+  if (!enabled) return this
+  return this.drawWithContent {
+    drawContent()
+    val strokePx = 1.6.dp.toPx()
+    val dash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()), 0f)
+    val amber = Color(0xFFFACC15)
+    if (isCircle) {
+      val r = (size.minDimension - strokePx) * 0.5f
+      val cx = size.width * 0.5f
+      val cy = size.height * 0.5f
+      drawCircle(
+        color = amber,
+        radius = r,
+        center = Offset(cx, cy),
+        style = Stroke(width = strokePx, pathEffect = dash),
+      )
+      val bx = cx + r * 0.707f
+      val by = cy - r * 0.707f
+      drawCircle(color = Color(0xEB1E1B08), radius = 5.5.dp.toPx(), center = Offset(bx, by))
+      drawCircle(
+        color = amber,
+        radius = 5.5.dp.toPx(),
+        center = Offset(bx, by),
+        style = Stroke(width = 1.2.dp.toPx()),
+      )
+      drawCircle(color = amber, radius = 1.8.dp.toPx(), center = Offset(bx, by))
+    } else {
+      val cr = cornerRadius.toPx()
+      drawRoundRect(
+        color = amber,
+        topLeft = Offset(strokePx * 0.5f, strokePx * 0.5f),
+        size = Size((size.width - strokePx).coerceAtLeast(1f), (size.height - strokePx).coerceAtLeast(1f)),
+        cornerRadius = CornerRadius(cr, cr),
+        style = Stroke(width = strokePx, pathEffect = dash),
+      )
+    }
+  }
+}
 
 @Composable
 fun RiftHudOverlay(
@@ -126,6 +168,9 @@ fun RiftHudOverlay(
   val context = LocalContext.current
   val player = engine.localPlayer
   val tickRead = frameTick
+  val uiUnlocked = RiftCalibrationState.isUiUnlockedForDragging
+  val textScale = engine.playfieldTextScale.coerceIn(0.65f, 1.45f)
+
   val speed = hypot(player.vx, player.vy).toInt()
   val sectorX = ((player.x / 1000f).toInt()).coerceIn(0, 7)
   val sectorY = ((player.y / 1000f).toInt()).coerceIn(0, 7)
@@ -149,7 +194,9 @@ fun RiftHudOverlay(
           }
         }
   ) {
-    // 0. Middle-Left Anchored [⚙ CALIBRATION] Button (Independently Draggable & Persisted in UI Unlock Mode)
+    // 0. Middle-Left Auto-Scaling [⚙ CALIBRATION] Glass Pill (1:1 WYSIWYG Unlock Outline)
+    val calPadH = (8.0f * textScale).dp
+    val calPadV = (5.5f * textScale).dp
     Box(
       modifier =
         Modifier.align(Alignment.CenterStart)
@@ -160,7 +207,7 @@ fun RiftHudOverlay(
             )
           }
           .then(
-            if (RiftCalibrationState.isUiUnlockedForDragging) {
+            if (uiUnlocked) {
               Modifier.pointerInput(Unit) {
                 detectDragGestures(
                   onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
@@ -175,43 +222,47 @@ fun RiftHudOverlay(
             }
           )
           .padding(start = 6.dp)
-          .clip(RoundedCornerShape(12.dp))
+          .wrapContentSize()
+          .clip(RoundedCornerShape(11.dp))
           .background(Color(0xCC0B192C))
           .border(
-            width = if (RiftCalibrationState.isUiUnlockedForDragging) 1.6.dp else 1.2.dp,
-            color = if (RiftCalibrationState.isUiUnlockedForDragging) Color(0xFFFACC15) else Color(0xFF38BDF8),
-            shape = RoundedCornerShape(12.dp),
+            width = 1.1.dp,
+            color = Color(0xFF38BDF8),
+            shape = RoundedCornerShape(11.dp),
           )
+          .wysiwygUnlockOutline(enabled = uiUnlocked, cornerRadius = 11.dp)
           .clickable { RiftCalibrationState.isCalibrationModalOpen = true }
-          .padding(horizontal = 8.dp, vertical = 6.dp)
+          .padding(horizontal = calPadH, vertical = calPadV)
           .testTag("hud_btn_calibration_anchor"),
       contentAlignment = Alignment.Center,
     ) {
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy((4.5f * textScale).dp),
       ) {
-        Text("⚙", color = Color(0xFF38BDF8), fontSize = 12.sp)
-        Column {
+        Text("⚙", color = Color(0xFF38BDF8), fontSize = (11.5f * textScale).sp)
+        Column(verticalArrangement = Arrangement.spacedBy((1.2f * textScale).dp)) {
           Text(
             text = "CALIBRATION",
             color = Color.White,
-            fontSize = 7.5.sp,
+            fontSize = (7.5f * textScale).sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
+            style = WingTelemetryTextStyle,
           )
           Text(
-            text = if (RiftCalibrationState.isUiUnlockedForDragging) "UNLOCKED • DRAG" else "LOCKED",
-            color = if (RiftCalibrationState.isUiUnlockedForDragging) Color(0xFFFACC15) else Color(0xFF38BDF8),
-            fontSize = 6.5.sp,
+            text = if (uiUnlocked) "UNLOCKED" else "LOCKED",
+            color = if (uiUnlocked) Color(0xFFFACC15) else Color(0xFF38BDF8),
+            fontSize = (6.5f * textScale).sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
+            style = WingTelemetryTextStyle,
           )
         }
       }
     }
 
-    // 1. Left-Anchored Top Navigation Bar (0.75x of 2x = 31.5dp Height, Strictly Constrained Left of Killboard)
+    // 1. Left-Anchored Auto-Scaling Top Navigation Bar (Strictly Constrained Left of Killboard)
     Box(
       modifier =
         Modifier.align(Alignment.TopStart)
@@ -226,8 +277,9 @@ fun RiftHudOverlay(
     ) {
       Row(
         modifier =
-          Modifier.then(
-              if (RiftCalibrationState.isUiUnlockedForDragging) {
+          Modifier.wrapContentSize()
+            .then(
+              if (uiUnlocked) {
                 Modifier.pointerInput(Unit) {
                   detectDragGestures(
                     onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
@@ -236,7 +288,7 @@ fun RiftHudOverlay(
                     change.consume()
                     RiftCalibrationState.topBarOffset += dragAmount
                   }
-                }.border(1.dp, Color(0xAA38BDF8), RoundedCornerShape(10.5.dp))
+                }
               } else {
                 Modifier.horizontalScroll(rememberScrollState())
               }
@@ -246,81 +298,90 @@ fun RiftHudOverlay(
               scaleY = RiftCalibrationState.topBarScale
               transformOrigin = TransformOrigin(0f, 0f)
             }
-            .height(31.5.dp)
             .background(Color(0x47080E18), RoundedCornerShape(10.5.dp))
             .border(0.85.dp, Color(0x5238BDF8), RoundedCornerShape(10.5.dp))
-            .padding(horizontal = 4.5.dp)
+            .wysiwygUnlockOutline(enabled = uiUnlocked, cornerRadius = 10.5.dp)
+            .padding(horizontal = (4.5f * textScale).dp, vertical = (3.5f * textScale).dp)
             .testTag("hud_top_nav_bar"),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.6.dp),
+        horizontalArrangement = Arrangement.spacedBy((2.8f * textScale).dp),
       ) {
-      val (_, _, lvlFrac) = engine.getXpProgressInCurrentLevel()
-      TopPilotLevelBadge(
-        pilotLevel = engine.pilotLevel,
-        xpProgressFraction = lvlFrac,
-        riftShards = engine.riftShards,
-        onClick = onOpenDossier,
-      )
-      TopPillAction(
-        label = "🚀 HANGAR",
-        textColor = Color(0xFF38BDF8),
-        borderColor = Color(0x8838BDF8),
-        onClick = onOpenHangar,
-        tag = "hud_pill_hangar",
-      )
-      TopPillAction(
-        label = "📖 CODEX",
-        textColor = Color(0xFF34D399),
-        borderColor = Color(0x8834D399),
-        onClick = onOpenCodex,
-        tag = "hud_pill_codex",
-      )
-      TopPillAction(
-        label = "🏛️ SYNDICATE",
-        textColor = Color(0xFFF59E0B),
-        borderColor = Color(0x88F59E0B),
-        onClick = onOpenSyndicateCommand,
-        tag = "hud_pill_syndicates",
-      )
-      TopPillAction(
-        label = "👥 ARMADA",
-        textColor = Color(0xFF60A5FA),
-        borderColor = Color(0x883B82F6),
-        onClick = onOpenArmadaFleet,
-        tag = "hud_pill_armada",
-      )
-      TopPillAction(
-        label = if (unreadCommsCount > 0) "💬 COMMS ($unreadCommsCount)" else "💬 COMMS",
-        textColor = if (unreadCommsCount > 0) Color(0xFF10B981) else Color(0xFF80D8FF),
-        borderColor = if (unreadCommsCount > 0) Color(0xAA10B981) else Color(0x6680D8FF),
-        onClick = onOpenComms,
-        tag = "hud_pill_chat",
-      )
-      TopPillAction(
-        label = "📋 DOSSIER",
-        textColor = Color(0xFFFFD700),
-        borderColor = Color(0x88FFD700),
-        onClick = onOpenDossier,
-        tag = "hud_pill_dossier",
-      )
-      TopPillAction(
-        label = "⚙️ SETTINGS",
-        textColor = Color(0xFFE2E8F0),
-        borderColor = Color(0x668A99AD),
-        onClick = onOpenSettings,
-        tag = "hud_pill_settings",
-      )
-      TopPillAction(
-        label = "🔍 $zoomFormatted",
-        textColor = Color(0xFF94A3B8),
-        borderColor = Color(0x4438BDF8),
-        onClick = onCycleCameraZoom,
-        tag = "hud_pill_zoom",
-      )
+        val (_, _, lvlFrac) = engine.getXpProgressInCurrentLevel()
+        TopPilotLevelBadge(
+          pilotLevel = engine.pilotLevel,
+          xpProgressFraction = lvlFrac,
+          riftShards = engine.riftShards,
+          textScale = textScale,
+          onClick = onOpenDossier,
+        )
+        TopPillAction(
+          label = "🚀 HANGAR",
+          textColor = Color(0xFF38BDF8),
+          borderColor = Color(0x8838BDF8),
+          textScale = textScale,
+          onClick = onOpenHangar,
+          tag = "hud_pill_hangar",
+        )
+        TopPillAction(
+          label = "📖 CODEX",
+          textColor = Color(0xFF34D399),
+          borderColor = Color(0x8834D399),
+          textScale = textScale,
+          onClick = onOpenCodex,
+          tag = "hud_pill_codex",
+        )
+        TopPillAction(
+          label = "🏛️ SYNDICATE",
+          textColor = Color(0xFFF59E0B),
+          borderColor = Color(0x88F59E0B),
+          textScale = textScale,
+          onClick = onOpenSyndicateCommand,
+          tag = "hud_pill_syndicates",
+        )
+        TopPillAction(
+          label = "👥 ARMADA",
+          textColor = Color(0xFF60A5FA),
+          borderColor = Color(0x883B82F6),
+          textScale = textScale,
+          onClick = onOpenArmadaFleet,
+          tag = "hud_pill_armada",
+        )
+        TopPillAction(
+          label = if (unreadCommsCount > 0) "💬 COMMS ($unreadCommsCount)" else "💬 COMMS",
+          textColor = if (unreadCommsCount > 0) Color(0xFF10B981) else Color(0xFF80D8FF),
+          borderColor = if (unreadCommsCount > 0) Color(0xAA10B981) else Color(0x6680D8FF),
+          textScale = textScale,
+          onClick = onOpenComms,
+          tag = "hud_pill_chat",
+        )
+        TopPillAction(
+          label = "📋 DOSSIER",
+          textColor = Color(0xFFFFD700),
+          borderColor = Color(0x88FFD700),
+          textScale = textScale,
+          onClick = onOpenDossier,
+          tag = "hud_pill_dossier",
+        )
+        TopPillAction(
+          label = "⚙️ SETTINGS",
+          textColor = Color(0xFFE2E8F0),
+          borderColor = Color(0x668A99AD),
+          textScale = textScale,
+          onClick = onOpenSettings,
+          tag = "hud_pill_settings",
+        )
+        TopPillAction(
+          label = "🔍 $zoomFormatted",
+          textColor = Color(0xFF94A3B8),
+          borderColor = Color(0x4438BDF8),
+          textScale = textScale,
+          onClick = onCycleCameraZoom,
+          tag = "hud_pill_zoom",
+        )
       }
     }
 
-    // 2. Centered Active Powerups Dock (Shifted cleanly below the 31.5dp Top Bar; Scalable & Draggable in Calibration Mode)
+    // 2. Centered Compact 4-Slot Permanent Hull Upgrade Buff Pill (BOUNCE, SPD, THR, RCH)
     Box(
       modifier =
         Modifier.align(Alignment.TopCenter)
@@ -331,7 +392,7 @@ fun RiftHudOverlay(
             )
           }
           .then(
-            if (RiftCalibrationState.isUiUnlockedForDragging) {
+            if (uiUnlocked) {
               Modifier.pointerInput(Unit) {
                 detectDragGestures(
                   onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
@@ -340,7 +401,7 @@ fun RiftHudOverlay(
                   change.consume()
                   RiftCalibrationState.buffBarOffset += dragAmount
                 }
-              }.border(1.dp, Color(0xAAFACC15), RoundedCornerShape(10.dp))
+              }
             } else {
               Modifier
             }
@@ -350,7 +411,7 @@ fun RiftHudOverlay(
             scaleY = RiftCalibrationState.buffBarScale
             transformOrigin = TransformOrigin(0.5f, 0f)
           }
-          .padding(top = 41.dp)
+          .padding(top = 42.dp)
           .testTag("hud_active_powerups_dock"),
       contentAlignment = Alignment.Center,
     ) {
@@ -358,6 +419,8 @@ fun RiftHudOverlay(
         player = player,
         buffVersion = engine.buffVersion,
         frameTick = tickRead,
+        textScale = textScale,
+        uiUnlocked = uiUnlocked,
       )
     }
 
@@ -372,7 +435,7 @@ fun RiftHudOverlay(
             )
           }
           .then(
-            if (RiftCalibrationState.isUiUnlockedForDragging) {
+            if (uiUnlocked) {
               Modifier.pointerInput(Unit) {
                 detectDragGestures(
                   onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
@@ -381,7 +444,7 @@ fun RiftHudOverlay(
                   change.consume()
                   RiftCalibrationState.killLogOffset += dragAmount
                 }
-              }.border(1.dp, Color(0xAA38BDF8), RoundedCornerShape(8.dp))
+              }.wysiwygUnlockOutline(enabled = true, cornerRadius = 8.dp)
             } else {
               Modifier
             }
@@ -404,19 +467,80 @@ fun RiftHudOverlay(
       }
     }
 
-    // 4. System Prompts / Tactical Toasts Container (Independently Draggable & Persisted; visible preview box in UI Unlock mode)
-    val showToastBox = !toastMessage.isNullOrBlank() || RiftCalibrationState.isUiUnlockedForDragging
-    if (showToastBox) {
-      val displayToast =
-        if (!toastMessage.isNullOrBlank()) {
-          toastMessage
-        } else {
-          "❖ SYSTEM PROMPTS / TOASTS — DRAG TO REPOSITION"
+    // 4. Unified System Prompts / Tactical Toasts Container
+    // Routes ALL in-game alerts (High-Bounty Shutdowns, Idle Flux Drain, Safe Zone Lockout, Safe Zone Eviction, & Toasts)
+    // into the single player-positioned draggable glass container!
+    val shutdownBanner = engine.highBountyShutdownBanner
+    val hasShutdown = !shutdownBanner.isNullOrBlank() && engine.highBountyShutdownTimer > 0f
+    val hasIdleDrain = player.isIdleDraining && player.respawnTimer <= 0f
+    val hasToast = !toastMessage.isNullOrBlank()
+    val hasSafeLockout = player.safeZoneLockoutTimer > 0f && player.respawnTimer <= 0f
+    val hasSafeEviction = player.inSafeZone && player.respawnTimer <= 0f && player.safeZoneStayTimer >= 3.0f
+
+    val showUnifiedPromptBox =
+      hasShutdown || hasIdleDrain || hasToast || hasSafeLockout || hasSafeEviction || uiUnlocked
+
+    if (showUnifiedPromptBox) {
+      val pulseWave = 0.55f + 0.45f * (0.5f + 0.5f * sin((System.currentTimeMillis() % 440L) / 440f * 6.28318f))
+      val fluxPctInt = ((player.flux / player.maxFlux).coerceIn(0f, 1f) * 100f).roundToInt()
+      val drainPctInt = (RiftCalibrationState.playfieldIdleDrainPctPerSec * 100f).roundToInt()
+      val evictionRemSec = (RiftCalibrationState.safeZoneIdleLimitSec - player.safeZoneStayTimer).coerceAtLeast(0f)
+
+      val promptTitle: String
+      val promptSubtitle: String?
+      val promptBg: Color
+      val promptBorder: Color
+      val promptTextColor: Color
+
+      when {
+        hasShutdown -> {
+          promptTitle = shutdownBanner ?: ""
+          promptSubtitle = null
+          promptBg = Color(0xEE241404)
+          promptBorder = Color(0xFFF59E0B).copy(alpha = pulseWave)
+          promptTextColor = Color(0xFFFEF08A)
         }
+        hasIdleDrain -> {
+          promptTitle = "⚠ IDLE FLUX DRAIN — ENGAGE THRUSTERS ⚠"
+          promptSubtitle = "DRAINING -$drainPctInt% MAX FLUX/SEC • FLUX AT $fluxPctInt%"
+          promptBg = Color(0xE62A060B)
+          promptBorder = Color(0xFFEF4444).copy(alpha = pulseWave)
+          promptTextColor = Color(0xFFFECACA)
+        }
+        hasToast -> {
+          promptTitle = toastMessage ?: ""
+          promptSubtitle = null
+          promptBg = Color(0xCC080E18)
+          promptBorder = Color(0xAA38BDF8)
+          promptTextColor = Color(0xFFFACC15)
+        }
+        hasSafeLockout -> {
+          promptTitle = String.format(Locale.US, "⛔ SAFE ZONE LOCKED: %.1fs", player.safeZoneLockoutTimer)
+          promptSubtitle = null
+          promptBg = Color(0xD924070B)
+          promptBorder = Color(0xFFEF4444).copy(alpha = pulseWave)
+          promptTextColor = Color(0xFFFCA5A5)
+        }
+        hasSafeEviction -> {
+          promptTitle = String.format(Locale.US, "SAFE ZONE EVICTION TELEPORT IN %.1fs", evictionRemSec)
+          promptSubtitle = null
+          promptBg = Color(0xD9051824)
+          promptBorder = if (evictionRemSec <= 5f) Color(0xFFFACC15) else Color(0xFF38BDF8)
+          promptTextColor = if (evictionRemSec <= 5f) Color(0xFFFACC15) else Color(0xFF38BDF8)
+        }
+        else -> {
+          promptTitle = "❖ SYSTEM PROMPTS / TOASTS"
+          promptSubtitle = null
+          promptBg = Color(0xCC080E18)
+          promptBorder = Color(0x8838BDF8)
+          promptTextColor = Color(0xFFFACC15)
+        }
+      }
+
       Box(
         modifier =
           Modifier.align(Alignment.TopCenter)
-            .padding(top = 69.dp)
+            .padding(top = 74.dp)
             .offset {
               IntOffset(
                 RiftCalibrationState.toastContainerOffset.x.roundToInt(),
@@ -424,7 +548,7 @@ fun RiftHudOverlay(
               )
             }
             .then(
-              if (RiftCalibrationState.isUiUnlockedForDragging) {
+              if (uiUnlocked) {
                 Modifier.pointerInput(Unit) {
                   detectDragGestures(
                     onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
@@ -438,73 +562,52 @@ fun RiftHudOverlay(
                 Modifier
               }
             )
-            .background(
-              if (RiftCalibrationState.isUiUnlockedForDragging && toastMessage.isNullOrBlank()) {
-                Color(0xD91E1B08)
-              } else {
-                Color(0xCC080E18)
-              }
-              ,
-              RoundedCornerShape(10.dp),
+            .wrapContentSize()
+            .clip(RoundedCornerShape(10.dp))
+            .background(promptBg)
+            .border(1.2.dp, promptBorder, RoundedCornerShape(10.dp))
+            .wysiwygUnlockOutline(enabled = uiUnlocked, cornerRadius = 10.dp)
+            .padding(
+              horizontal = (11f * textScale).dp,
+              vertical = (5f * textScale).dp,
             )
-            .border(
-              width = if (RiftCalibrationState.isUiUnlockedForDragging) 1.4.dp else 1.dp,
-              color = if (RiftCalibrationState.isUiUnlockedForDragging) Color(0xFFFACC15) else Color(0x8838BDF8),
-              shape = RoundedCornerShape(10.dp),
-            )
-            .padding(horizontal = 10.dp, vertical = 4.dp)
             .testTag("hud_tactical_toast"),
-      ) {
-        Text(
-          text = displayToast,
-          color = Color(0xFFFACC15),
-          fontSize = 11.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.SansSerif,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
-    }
-
-    // 4b. High-Bounty Shutdown (>1,000 Bounty) Arena Announcement Banner
-    val shutdownBanner = engine.highBountyShutdownBanner
-    if (!shutdownBanner.isNullOrBlank() && engine.highBountyShutdownTimer > 0f) {
-      val pulse = 0.65f + 0.35f * (0.5f + 0.5f * sin((System.currentTimeMillis() % 450L) / 450f * 6.28318f))
-      Box(
-        modifier =
-          Modifier.align(Alignment.TopCenter)
-            .padding(top = 97.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xF0241404))
-            .border(1.8.dp, Color(0xFFF59E0B).copy(alpha = pulse), RoundedCornerShape(12.dp))
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .testTag("hud_high_bounty_shutdown_banner"),
         contentAlignment = Alignment.Center,
       ) {
-        Text(
-          text = shutdownBanner,
-          color = Color(0xFFFEF08A),
-          fontSize = 11.5.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.Monospace,
-          style =
-            TextStyle(
-              shadow =
-                Shadow(
-                  color = Color(0xFFF59E0B),
-                  offset = Offset(0f, 0f),
-                  blurRadius = 12f,
-                )
-            ),
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
+        Column(
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy((1.5f * textScale).dp),
+        ) {
+          Text(
+            text = promptTitle,
+            color = promptTextColor,
+            fontSize = (11.0f * textScale).sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.SansSerif,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          if (promptSubtitle != null) {
+            Text(
+              text = promptSubtitle,
+              color = Color(0xFFF87171),
+              fontSize = (8.5f * textScale).sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
       }
     }
 
-    // 5. Bottom-Center EVE Echoes Console: Clean Telemetry Wings + 1.5s Tap-to-Expand Minimap
-    Row(
+    // 5. Bottom-Center EVE Echoes Console: Auto-Scaling Symmetric Telemetry Wings + Circular Radar Minimap
+    // Uses SubcomposeLayout so BOTH wings auto-scale with user Text Size (zero hardcoded width/height)
+    // while matching each other 1:1 in width and height alongside the embedded frameless swirling NEXUS vortex!
+    // When UI Unlock is active, NO outer rectangular wrapper box is drawn; amber dashed outlines trace
+    // directly around the two rounded Wing pills and the circular Radar border!
+    Box(
       modifier =
         Modifier.align(Alignment.BottomCenter)
           .offset {
@@ -514,7 +617,7 @@ fun RiftHudOverlay(
             )
           }
           .then(
-            if (RiftCalibrationState.isUiUnlockedForDragging) {
+            if (uiUnlocked) {
               Modifier.pointerInput(Unit) {
                 detectDragGestures(
                   onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
@@ -523,7 +626,7 @@ fun RiftHudOverlay(
                   change.consume()
                   RiftCalibrationState.bottomConsoleOffset += dragAmount
                 }
-              }.border(1.dp, Color(0xAA38BDF8), RoundedCornerShape(28.dp))
+              }
             } else {
               Modifier
             }
@@ -533,108 +636,24 @@ fun RiftHudOverlay(
             scaleY = RiftCalibrationState.bottomConsoleScale
             transformOrigin = TransformOrigin(0.5f, 1f)
           }
-          .padding(bottom = 8.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
+          .padding(bottom = 8.dp)
     ) {
-      // Left Wing: Exact same 154dp x 54dp size as Right Wing (SPEED & SECTOR on left + Frameless NEXUS Vortex on right)
-      Row(
-        modifier =
-          Modifier.zIndex(1f)
-            .width(154.dp)
-            .height(54.dp)
-            .background(Color(0xF6080E18), RoundedCornerShape(27.dp))
-            .border(1.dp, Color(0x5938BDF8), RoundedCornerShape(27.dp))
-            .padding(start = 14.dp, end = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Column(
-          modifier = Modifier.weight(1f),
-          verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-          Text(
-            text = "SPEED $speed",
-            color = Color(0xFF38BDF8),
-            fontSize = 10.5.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            style = WingTelemetryTextStyle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-          Text(
-            text = "SECTOR $sectorCode $armadaBadge".uppercase(),
-            color = Color(0xFF94A3B8),
-            fontSize = 8.8.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            style = WingTelemetryTextStyle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
-
-        SwirlingRiftHudOrb(
-          isStreaming = isNexusStreaming,
-          onClick = onOpenNexus,
-        )
-      }
-
-      // Center Translucent Radar Minimap with 1.5s Tap-to-Expand (~1.65x) & Intelligent Screen-Edge Anchoring
-      CircularRadarMinimap(
+      SymmetricBottomConsoleLayout(
         engine = engine,
+        player = player,
+        speed = speed,
+        sectorCode = sectorCode,
+        armadaBadge = armadaBadge,
+        textScale = textScale,
+        uiUnlocked = uiUnlocked,
+        isNexusStreaming = isNexusStreaming,
+        onOpenNexus = onOpenNexus,
         frameTick = tickRead,
         rootScreenSize = rootScreenSize,
       )
-
-      // Clean Right Wing: Exact same 154dp x 54dp size (FLUX ⚡ and BOUNTY readouts)
-      Row(
-        modifier =
-          Modifier.zIndex(1f)
-            .width(154.dp)
-            .height(54.dp)
-            .background(Color(0xF6080E18), RoundedCornerShape(27.dp))
-            .border(1.dp, Color(0x5938BDF8), RoundedCornerShape(27.dp))
-            .padding(horizontal = 15.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Column(
-          modifier = Modifier.fillMaxWidth(),
-          verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-          val fluxPct = (player.flux / player.maxFlux).coerceIn(0f, 1f)
-          val fluxColor =
-            when {
-              fluxPct > 0.75f -> Color(0xFF10B981)
-              fluxPct >= 0.25f -> Color(0xFFF59E0B)
-              else -> Color(0xFFEF4444)
-            }
-          Text(
-            text = "FLUX ${player.flux.toInt()}⚡ (${(fluxPct * 100).toInt()}%)",
-            color = fluxColor,
-            fontSize = 10.5.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            style = WingTelemetryTextStyle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-          Text(
-            text = "BOUNTY ${player.bounty}",
-            color = Color(0xFFFACC15),
-            fontSize = 9.5.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            style = WingTelemetryTextStyle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
-      }
     }
 
-    // 5b. Independent Floating [BRAKE] Button (Uncoupled from Console, Independently Draggable & Persisted)
+    // 5b. Independent Floating [BRAKE] Button (1:1 WYSIWYG labels & circle size in UI Unlock Mode)
     val brakingActive = engine.autoBraking && speed > 0
     Box(
       modifier =
@@ -652,7 +671,7 @@ fun RiftHudOverlay(
             transformOrigin = TransformOrigin(0.5f, 0.5f)
           }
           .then(
-            if (RiftCalibrationState.isUiUnlockedForDragging) {
+            if (uiUnlocked) {
               Modifier.pointerInput(Unit) {
                 detectDragGestures(
                   onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
@@ -667,19 +686,15 @@ fun RiftHudOverlay(
             }
           )
           .size(48.dp)
+          .wysiwygUnlockOutline(enabled = uiUnlocked, isCircle = true)
           .clip(CircleShape)
           .background(if (brakingActive) Color(0xCC3B1D0A) else Color(0xCC0E2947))
           .border(
-            width = if (RiftCalibrationState.isUiUnlockedForDragging) 1.8.dp else 1.4.dp,
-            color =
-              when {
-                RiftCalibrationState.isUiUnlockedForDragging -> Color(0xFFFACC15)
-                brakingActive -> Color(0xFFF59E0B)
-                else -> Color(0xFF38BDF8)
-              },
+            width = 1.4.dp,
+            color = if (brakingActive) Color(0xFFF59E0B) else Color(0xFF38BDF8),
             shape = CircleShape,
           )
-          .clickable(enabled = !RiftCalibrationState.isUiUnlockedForDragging) { onEngageBrake() }
+          .clickable(enabled = !uiUnlocked) { onEngageBrake() }
           .testTag("hud_brake_button"),
       contentAlignment = Alignment.Center,
     ) {
@@ -697,13 +712,8 @@ fun RiftHudOverlay(
           maxLines = 1,
         )
         Text(
-          text =
-            when {
-              RiftCalibrationState.isUiUnlockedForDragging -> "DRAG"
-              brakingActive -> "ACTIVE"
-              else -> "STOP"
-            },
-          color = if (RiftCalibrationState.isUiUnlockedForDragging) Color(0xFFFACC15) else Color.White,
+          text = if (brakingActive) "ACTIVE" else "STOP",
+          color = Color.White,
           fontSize = 7.2.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
@@ -713,11 +723,11 @@ fun RiftHudOverlay(
       }
     }
 
-    // 5c. Independent Floating [MULTI ON/OFF] Button — Strictly visible ONLY on Native Multi-Shot Hulls (3-Suppressor, 5-Twinfang, or 9-Custom Ship with Native Multi-Shot)
+    // 5c. Independent Floating [MULTI ON/OFF] Button — Strictly visible ONLY on Native Multi-Shot Hulls (Suppressor, Twinfang, or Rift Frame with Native Multi-Shot)
     val isNativeMulti = player.spec.supportsNativeMultifire
     val showMultiButton =
       isNativeMulti ||
-        RiftCalibrationState.isUiUnlockedForDragging ||
+        uiUnlocked ||
         RiftCalibrationState.forceAllButtonsVisible
     if (showMultiButton) {
       val multiCharges = player.multiShotCharges
@@ -742,7 +752,7 @@ fun RiftHudOverlay(
               transformOrigin = TransformOrigin(0.5f, 0.5f)
             }
             .then(
-              if (RiftCalibrationState.isUiUnlockedForDragging) {
+              if (uiUnlocked) {
                 Modifier.pointerInput(Unit) {
                   detectDragGestures(
                     onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
@@ -757,6 +767,7 @@ fun RiftHudOverlay(
               }
             )
             .size(50.dp)
+            .wysiwygUnlockOutline(enabled = uiUnlocked, isCircle = true)
             .clip(CircleShape)
             .background(
               when {
@@ -766,17 +777,16 @@ fun RiftHudOverlay(
               }
             )
             .border(
-              width = if (RiftCalibrationState.isUiUnlockedForDragging) 1.8.dp else 1.4.dp,
+              width = 1.4.dp,
               color =
                 when {
-                  RiftCalibrationState.isUiUnlockedForDragging -> Color(0xFFFACC15)
                   player.multifireOn && isNativeMulti -> Color(0xFFFACC15)
                   isNativeMulti -> Color(0xFF38BDF8)
                   else -> Color(0xFF334155)
                 },
               shape = CircleShape,
             )
-            .clickable(enabled = !RiftCalibrationState.isUiUnlockedForDragging) { onToggleMultifire() }
+            .clickable(enabled = !uiUnlocked) { onToggleMultifire() }
             .testTag("hud_multifire_button"),
         contentAlignment = Alignment.Center,
       ) {
@@ -800,19 +810,13 @@ fun RiftHudOverlay(
           )
           val subLabel =
             when {
-              RiftCalibrationState.isUiUnlockedForDragging -> "DRAG"
               isNativeMulti && multiCharges > 0 -> "${if (player.multifireOn) "ON" else "OFF"}•[$multiCharges]"
               isNativeMulti -> if (player.multifireOn) "ON (0❖)" else "OFF"
               else -> "OFF"
             }
           Text(
             text = subLabel,
-            color =
-              when {
-                RiftCalibrationState.isUiUnlockedForDragging -> Color(0xFFFACC15)
-                isNativeMulti -> Color.White
-                else -> Color(0xFF64748B)
-              },
+            color = if (isNativeMulti) Color.White else Color(0xFF64748B),
             fontSize = 7.0.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
@@ -820,111 +824,6 @@ fun RiftHudOverlay(
             maxLines = 1,
           )
         }
-      }
-    }
-
-    // Playfield Idle Flux Drain Warning Banner ("IDLE FLUX DRAIN — ENGAGE THRUSTERS") & Safe Zone 15s Lockout HUD Badge
-    val showIdleWarningBanner = (player.isIdleDraining && player.respawnTimer <= 0f) || RiftCalibrationState.isUiUnlockedForDragging
-    if (showIdleWarningBanner) {
-      val pulseAlpha = 0.55f + 0.45f * (0.5f + 0.5f * sin((System.currentTimeMillis() % 420L) / 420f * 6.28318f))
-      val fluxPctInt = ((player.flux / player.maxFlux).coerceIn(0f, 1f) * 100f).roundToInt()
-      val drainPctInt = (RiftCalibrationState.playfieldIdleDrainPctPerSec * 100f).roundToInt()
-      Box(
-        modifier =
-          Modifier.align(Alignment.BottomCenter)
-            .padding(bottom = 142.dp)
-            .offset {
-              IntOffset(
-                RiftCalibrationState.idleWarningBannerOffset.x.roundToInt(),
-                RiftCalibrationState.idleWarningBannerOffset.y.roundToInt(),
-              )
-            }
-            .graphicsLayer {
-              scaleX = RiftCalibrationState.idleWarningBannerScale
-              scaleY = RiftCalibrationState.idleWarningBannerScale
-              transformOrigin = TransformOrigin(0.5f, 1.0f)
-            }
-            .then(
-              if (RiftCalibrationState.isUiUnlockedForDragging) {
-                Modifier.border(1.5.dp, Color(0xFFFACC15), RoundedCornerShape(10.dp))
-                  .pointerInput(Unit) {
-                    detectDragGestures(
-                      onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
-                      onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
-                    ) { change, dragAmount ->
-                      change.consume()
-                      RiftCalibrationState.idleWarningBannerOffset += dragAmount
-                    }
-                  }
-              } else {
-                Modifier
-              }
-            )
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xE62A060B))
-            .border(1.5.dp, Color(0xFFEF4444).copy(alpha = pulseAlpha), RoundedCornerShape(10.dp))
-            .padding(horizontal = 14.dp, vertical = 6.dp)
-            .testTag("hud_idle_flux_drain_banner"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-          Text(
-            text = "⚠ IDLE FLUX DRAIN — ENGAGE THRUSTERS ⚠",
-            color = Color(0xFFFECACA),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-          )
-          Text(
-            text = "DRAINING -$drainPctInt% MAX FLUX/SEC • FLUX AT $fluxPctInt%",
-            color = Color(0xFFF87171),
-            fontSize = 8.5.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-    } else if (player.safeZoneLockoutTimer > 0f && player.respawnTimer <= 0f) {
-      val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 480L) / 480f * 6.28318f)
-      val borderColor = if (pulse > 0.5f) Color(0xFFEF4444) else Color(0xFFF59E0B)
-      Box(
-        modifier =
-          Modifier.align(Alignment.BottomCenter)
-            .padding(bottom = 142.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xD924070B))
-            .border(1.2.dp, borderColor, RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .testTag("hud_safe_zone_lockout_badge"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = String.format(Locale.US, "⛔ SAFE ZONE LOCKED: %.1fs", player.safeZoneLockoutTimer),
-          color = borderColor,
-          fontSize = 9.5.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-    } else if (player.inSafeZone && player.respawnTimer <= 0f && player.safeZoneStayTimer >= 3.0f) {
-      val remSec = (RiftCalibrationState.safeZoneIdleLimitSec - player.safeZoneStayTimer).coerceAtLeast(0f)
-      Box(
-        modifier =
-          Modifier.align(Alignment.BottomCenter)
-            .padding(bottom = 142.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xD9051824))
-            .border(1.dp, if (remSec <= 5f) Color(0xFFFACC15) else Color(0xFF38BDF8), RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = String.format(Locale.US, "SAFE ZONE EVICTION TELEPORT IN %.1fs", remSec),
-          color = if (remSec <= 5f) Color(0xFFFACC15) else Color(0xFF38BDF8),
-          fontSize = 9.5.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
-        )
       }
     }
 
@@ -939,10 +838,163 @@ fun RiftHudOverlay(
 }
 
 @Composable
+private fun SymmetricBottomConsoleLayout(
+  engine: RiftGameEngine,
+  player: ShipEntity,
+  speed: Int,
+  sectorCode: String,
+  armadaBadge: String,
+  textScale: Float,
+  uiUnlocked: Boolean,
+  isNexusStreaming: Boolean,
+  onOpenNexus: () -> Unit,
+  frameTick: Int,
+  rootScreenSize: IntSize,
+) {
+  val fluxPct = (player.flux / player.maxFlux).coerceIn(0f, 1f)
+  val fluxColor =
+    when {
+      fluxPct > 0.75f -> Color(0xFF10B981)
+      fluxPct >= 0.25f -> Color(0xFFF59E0B)
+      else -> Color(0xFFEF4444)
+    }
+
+  val padStart = (13f * textScale).dp
+  val padEnd = (11f * textScale).dp
+  val padVert = (8f * textScale).dp
+  val lineGap = (2.5f * textScale).dp
+  val consoleGap = 8.dp
+
+  @Composable
+  fun LeftWingInner(fillEqualSpace: Boolean) {
+    Row(
+      modifier =
+        (if (fillEqualSpace) Modifier.fillMaxSize() else Modifier.wrapContentSize())
+          .background(Color(0xF6080E18), RoundedCornerShape(50))
+          .border(1.dp, Color(0x5938BDF8), RoundedCornerShape(50))
+          .wysiwygUnlockOutline(enabled = uiUnlocked && fillEqualSpace, cornerRadius = 28.dp)
+          .padding(start = padStart, end = (6f * textScale).dp, top = padVert, bottom = padVert),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement =
+        if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((6f * textScale).dp),
+    ) {
+      Column(
+        verticalArrangement = Arrangement.spacedBy(lineGap),
+      ) {
+        Text(
+          text = "SPEED $speed",
+          color = Color(0xFF38BDF8),
+          fontSize = (10.5f * textScale).sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          style = WingTelemetryTextStyle,
+          maxLines = 1,
+        )
+        Text(
+          text = "SECTOR $sectorCode $armadaBadge".uppercase(Locale.US),
+          color = Color(0xFF94A3B8),
+          fontSize = (8.8f * textScale).sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          style = WingTelemetryTextStyle,
+          maxLines = 1,
+        )
+      }
+      SwirlingRiftHudOrb(
+        isStreaming = isNexusStreaming,
+        onClick = onOpenNexus,
+      )
+    }
+  }
+
+  @Composable
+  fun RightWingInner(fillEqualSpace: Boolean) {
+    Row(
+      modifier =
+        (if (fillEqualSpace) Modifier.fillMaxSize() else Modifier.wrapContentSize())
+          .background(Color(0xF6080E18), RoundedCornerShape(50))
+          .border(1.dp, Color(0x5938BDF8), RoundedCornerShape(50))
+          .wysiwygUnlockOutline(enabled = uiUnlocked && fillEqualSpace, cornerRadius = 28.dp)
+          .padding(start = padStart, end = padEnd, top = padVert, bottom = padVert),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Column(
+        verticalArrangement = Arrangement.spacedBy(lineGap),
+      ) {
+        Text(
+          text = "FLUX ${player.flux.toInt()}⚡ (${(fluxPct * 100).toInt()}%)",
+          color = fluxColor,
+          fontSize = (10.5f * textScale).sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          style = WingTelemetryTextStyle,
+          maxLines = 1,
+        )
+        Text(
+          text = "BOUNTY ${player.bounty}",
+          color = Color(0xFFFACC15),
+          fontSize = (9.5f * textScale).sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          style = WingTelemetryTextStyle,
+          maxLines = 1,
+        )
+      }
+    }
+  }
+
+  SubcomposeLayout { constraints ->
+    val unbounded = Constraints()
+    val probeLeft = subcompose("probe_left") { LeftWingInner(fillEqualSpace = false) }
+      .first()
+      .measure(unbounded)
+    val probeRight = subcompose("probe_right") { RightWingInner(fillEqualSpace = false) }
+      .first()
+      .measure(unbounded)
+
+    val sharedWingW = max(probeLeft.width, probeRight.width)
+    val sharedWingH = max(probeLeft.height, probeRight.height)
+    val wingFixedConstraints = Constraints.fixed(sharedWingW, sharedWingH)
+
+    val leftPlaceable = subcompose("left_wing") { LeftWingInner(fillEqualSpace = true) }
+      .first()
+      .measure(wingFixedConstraints)
+    val radarPlaceable = subcompose("radar") {
+      CircularRadarMinimap(
+        engine = engine,
+        frameTick = frameTick,
+        rootScreenSize = rootScreenSize,
+        uiUnlocked = uiUnlocked,
+      )
+    }.first().measure(unbounded)
+    val rightPlaceable = subcompose("right_wing") { RightWingInner(fillEqualSpace = true) }
+      .first()
+      .measure(wingFixedConstraints)
+
+    val gapPx = consoleGap.roundToPx()
+    val totalW =
+      (leftPlaceable.width + gapPx + radarPlaceable.width + gapPx + rightPlaceable.width)
+        .coerceAtMost(constraints.maxWidth)
+    val totalH = max(radarPlaceable.height, sharedWingH)
+
+    layout(totalW, totalH) {
+      val wingY = (totalH - sharedWingH) / 2
+      val radarY = (totalH - radarPlaceable.height) / 2
+      leftPlaceable.placeRelative(0, wingY, zIndex = 1f)
+      val radarX = leftPlaceable.width + gapPx
+      val rightX = radarX + radarPlaceable.width + gapPx
+      rightPlaceable.placeRelative(rightX, wingY, zIndex = 1f)
+      radarPlaceable.placeRelative(radarX, radarY, zIndex = 2f)
+    }
+  }
+}
+
+@Composable
 private fun CircularRadarMinimap(
   engine: RiftGameEngine,
   frameTick: Int,
   rootScreenSize: IntSize,
+  uiUnlocked: Boolean = false,
 ) {
   var panOffsetX by remember { mutableFloatStateOf(0f) }
   var panOffsetY by remember { mutableFloatStateOf(0f) }
@@ -986,7 +1038,6 @@ private fun CircularRadarMinimap(
       else -> normY
     }
 
-  // Butter-Smooth Minimap Interpolation State Map (prevents integer step jitter)
   val smoothedPositions = remember { mutableMapOf<String, Offset>() }
 
   Box(
@@ -1006,10 +1057,11 @@ private fun CircularRadarMinimap(
           scaleY = expandScale
           transformOrigin = TransformOrigin(intelligentPivotX, intelligentPivotY)
         }
+        .wysiwygUnlockOutline(enabled = uiUnlocked, isCircle = true)
         .clip(CircleShape)
         .background(if (isExpanded) Color(0xE6040B16) else Color(0x99040B16))
         .then(
-          if (!RiftCalibrationState.isUiUnlockedForDragging) {
+          if (!uiUnlocked) {
             Modifier.pointerInput(Unit) {
               detectTapGestures(
                 onTap = {
@@ -1017,7 +1069,7 @@ private fun CircularRadarMinimap(
                   isExpanded = true
                   expandCollapseJob =
                     scope.launch {
-                      delay(1500L) // Stays expanded at 1.65x for 1.5 seconds, then automatically transitions back
+                      delay(1500L)
                       isExpanded = false
                     }
                 }
@@ -1049,7 +1101,6 @@ private fun CircularRadarMinimap(
       val unusedTick = frameTick
       val w = size.width
       val h = size.height
-      // Map fills the circular radar evenly (with pan support) so no rectangular box edge appears inside the circle
       val drawSize = w * 0.88f
       val ox = (w - drawSize) * 0.5f + panOffsetX
       val oy = (h - drawSize) * 0.5f + panOffsetY
@@ -1064,7 +1115,6 @@ private fun CircularRadarMinimap(
         )
       }
 
-      // Subtle concentric radar range ring
       drawCircle(
         color = Color(0x2638BDF8),
         radius = w * 0.28f,
@@ -1072,7 +1122,6 @@ private fun CircularRadarMinimap(
         style = Stroke(width = 1.0f),
       )
 
-      // Draw Glowing Buff Icons as interpolated emerald blips on minimap
       for ((idx, g) in engine.greens.withIndex()) {
         val key = "buff_$idx"
         val targetOffset = Offset(ox + g.x * scale, oy + g.y * scale)
@@ -1095,17 +1144,17 @@ private fun CircularRadarMinimap(
         )
       }
 
-      // Draw Playfield Rift Obstacles on Minimap Radar
       for (anom in engine.anomalies) {
         val ax = ox + anom.x * scale
         val ay = oy + anom.y * scale
-        val aColor = when (anom.type) {
-          AnomalyType.PLASMA_RIFT -> Color(0xFFEF4444)
-          AnomalyType.REPULSOR_RIFT -> Color.White
-          AnomalyType.GRAVITY_RIFT -> Color(0xFFA855F7)
-          AnomalyType.PHASE_RIFT_A -> Color(0xFF2DD4BF)
-          AnomalyType.PHASE_RIFT_B -> Color(0xFF38BDF8)
-        }
+        val aColor =
+          when (anom.type) {
+            AnomalyType.PLASMA_RIFT -> Color(0xFFEF4444)
+            AnomalyType.REPULSOR_RIFT -> Color.White
+            AnomalyType.GRAVITY_RIFT -> Color(0xFFA855F7)
+            AnomalyType.PHASE_RIFT_A -> Color(0xFF2DD4BF)
+            AnomalyType.PHASE_RIFT_B -> Color(0xFF38BDF8)
+          }
         drawCircle(
           color = aColor.copy(alpha = 0.85f),
           radius = 3.6f,
@@ -1123,7 +1172,6 @@ private fun CircularRadarMinimap(
       val pulsePhase = ((nowMs % 1200L) / 1200f)
       val p = engine.localPlayer
 
-      // Draw active Brick Energy Walls on Minimap
       for (bw in engine.brickWalls) {
         val ax = ox + (if (bw.w >= bw.h) bw.x else bw.x + bw.w * 0.5f) * scale
         val ay = oy + (if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y) * scale
@@ -1137,7 +1185,6 @@ private fun CircularRadarMinimap(
         )
       }
 
-      // Draw active Decoy Hologram Clones on Minimap (fools enemy radar)
       for (dc in engine.decoys) {
         val dx = ox + dc.x * scale
         val dy = oy + dc.y * scale
@@ -1159,11 +1206,6 @@ private fun CircularRadarMinimap(
         )
       }
 
-      // Minimap Player Indicators (Strictly on Minimap):
-      // - Enemies: Solid Red dots (#EF4444) with a crisp White outer circle ring (#FFFFFF)
-      // - Armada Members / Syndicate Allies: Solid Blue dots (#3B82F6) with a crisp White outer circle ring (#FFFFFF)
-      // - High-Value Targets (HVT): Pulsing Gold Sonar Minimap Rings (#FFD700)
-      // - Cloaked Enemies (s.isCloaked): Completely invisible on enemy minimap radar!
       for (s in engine.ships) {
         if (s.respawnTimer > 0f) {
           smoothedPositions.remove(s.id)
@@ -1191,7 +1233,6 @@ private fun CircularRadarMinimap(
         val sx = smoothPos.x
         val sy = smoothPos.y
 
-        // HVT Pulsing Gold Sonar Ring
         if (s.bounty >= RiftGameEngine.HVT_BOUNTY_THRESHOLD) {
           val pingR = 4.5f + pulsePhase * 10f
           drawCircle(
@@ -1203,7 +1244,6 @@ private fun CircularRadarMinimap(
         }
 
         if (s.isLocalPlayer) {
-          // Local Player: Crisp Directional White Triangle (Violet tint when Stealth Cloaked)
           val r = 5.4f
           val a = s.angle
           trianglePath.reset()
@@ -1229,10 +1269,6 @@ private fun CircularRadarMinimap(
         }
       }
 
-      // Dynamic Minimap Outer-Ring Flux Indicator:
-      // - Steady vibrant Emerald Green (#10B981) when Flux > 75%
-      // - Smooth transition through Amber (#F59E0B) (25%..75%)
-      // - Pulses/flashes bright Critical Red (#EF4444) when Flux < 25% or when Idle Flux Drain is active
       val fluxPct = (p.flux / p.maxFlux).coerceIn(0f, 1f)
       val critFlash =
         if (fluxPct < 0.25f || p.isIdleDraining) {
@@ -1258,7 +1294,6 @@ private fun CircularRadarMinimap(
       val inset = strokeW * 0.6f
       val arcSize = Size(w - inset * 2f, h - inset * 2f)
 
-      // Background outer track ring
       drawCircle(
         color = ringColor.copy(alpha = 0.28f),
         radius = (w - inset * 2f) * 0.5f,
@@ -1266,7 +1301,6 @@ private fun CircularRadarMinimap(
         style = Stroke(width = strokeW),
       )
 
-      // Active Flux Capacitor Ring around minimap perimeter
       drawArc(
         color = ringColor,
         startAngle = -90f,
@@ -1285,55 +1319,56 @@ private fun TopPilotLevelBadge(
   pilotLevel: Int,
   xpProgressFraction: Float,
   riftShards: Long,
+  textScale: Float,
   onClick: () -> Unit,
 ) {
   Column(
     modifier =
-      Modifier.height(24.dp)
+      Modifier.wrapContentSize()
         .clip(RoundedCornerShape(7.5.dp))
         .background(Color(0x4D0E1D34))
         .border(0.75.dp, Color(0xBB00F0FF), RoundedCornerShape(7.5.dp))
         .clickable { onClick() }
-        .padding(horizontal = 5.2.dp, vertical = 2.dp)
+        .padding(horizontal = (5.5f * textScale).dp, vertical = (2.8f * textScale).dp)
         .testTag("hud_pill_pilot_level"),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.Center,
   ) {
     Row(
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(3.dp),
+      horizontalArrangement = Arrangement.spacedBy((3.0f * textScale).dp),
     ) {
       Text(
         text = "LVL $pilotLevel",
         color = Color(0xFF00F0FF),
-        fontSize = 7.9.sp,
+        fontSize = (7.9f * textScale).sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = FontFamily.Monospace,
-        lineHeight = 8.6.sp,
+        style = WingTelemetryTextStyle,
         maxLines = 1,
       )
       Text(
         text = "❖$riftShards",
         color = Color(0xFFFFD700),
-        fontSize = 7.4.sp,
+        fontSize = (7.4f * textScale).sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
-        lineHeight = 8.6.sp,
+        style = WingTelemetryTextStyle,
         maxLines = 1,
       )
     }
-    Spacer(modifier = Modifier.height(1.8.dp))
+    Spacer(modifier = Modifier.height((1.8f * textScale).dp))
     Box(
       modifier =
-        Modifier.width(42.dp)
-          .height(2.6.dp)
+        Modifier.width((42f * textScale).dp)
+          .height((2.6f * textScale).dp)
           .clip(RoundedCornerShape(1.3.dp))
           .background(Color(0xFF142844))
     ) {
       Box(
         modifier =
           Modifier.fillMaxWidth(xpProgressFraction.coerceIn(0f, 1f))
-            .height(2.6.dp)
+            .height((2.6f * textScale).dp)
             .background(Color(0xFF00E676), RoundedCornerShape(1.3.dp))
       )
     }
@@ -1345,27 +1380,28 @@ private fun TopPillAction(
   label: String,
   textColor: Color,
   borderColor: Color,
+  textScale: Float,
   onClick: () -> Unit,
   tag: String,
 ) {
   Box(
     modifier =
-      Modifier.height(24.dp)
+      Modifier.wrapContentSize()
         .clip(RoundedCornerShape(7.5.dp))
         .background(Color(0x3D111C2D))
         .border(0.7.dp, borderColor.copy(alpha = 0.65f), RoundedCornerShape(7.5.dp))
         .clickable { onClick() }
-        .padding(horizontal = 4.5.dp)
+        .padding(horizontal = (5.2f * textScale).dp, vertical = (4.2f * textScale).dp)
         .testTag(tag),
     contentAlignment = Alignment.Center,
   ) {
     Text(
       text = label,
       color = textColor,
-      fontSize = 8.1.sp,
+      fontSize = (8.1f * textScale).sp,
       fontWeight = FontWeight.Bold,
       fontFamily = FontFamily.SansSerif,
-      lineHeight = 9.0.sp,
+      style = WingTelemetryTextStyle,
       maxLines = 1,
     )
   }
@@ -1478,11 +1514,11 @@ private fun KillFeedRow(
   }
 }
 
-data class PowerupSocketSlot(
-  val buffType: Int,
+data class PermanentUpgradeSlot(
+  val iconType: Int,
   val label: String,
+  val valueText: String,
   val isActive: Boolean,
-  val countText: String,
   val accentColor: Color,
 )
 
@@ -1491,215 +1527,127 @@ private fun ActivePowerupsDock(
   player: ShipEntity,
   buffVersion: Int,
   frameTick: Int,
+  textScale: Float,
+  uiUnlocked: Boolean,
 ) {
-  // Reading buffVersion and frameTick ensures reactive recomposition when crates are collected or ticks occur
   val unusedTick = frameTick + buffVersion
+  val pctPerStack = RiftCalibrationState.overchargeSurgePctPerStack
+  val spdPct = (player.speedOverchargeStacks * pctPerStack * 100f).roundToInt()
+  val thrPct = (player.thrustOverchargeStacks * pctPerStack * 100f).roundToInt()
+  val rchPct = (player.rechargeOverchargeStacks * pctPerStack * 100f).roundToInt()
 
-  var isExpanded by remember { mutableStateOf(false) }
-  val scope = rememberCoroutineScope()
-  var autoShrinkJob by remember { mutableStateOf<Job?>(null) }
+  // Strictly 4 Permanent-Until-Death Hull Upgrades ONLY (BOUNCE, SPD, THR, RCH)
+  val slots =
+    listOf(
+      PermanentUpgradeSlot(
+        iconType = 9,
+        label = "BOUNCE",
+        valueText =
+          when {
+            player.hasBouncingBulletsUpgrade -> "ON"
+            player.spec.primaryBounces > 0 -> "NAT"
+            else -> "OFF"
+          },
+        isActive = player.hasBouncingBulletsUpgrade || player.spec.primaryBounces > 0,
+        accentColor = Color(0xFFA855F7),
+      ),
+      PermanentUpgradeSlot(
+        iconType = -10,
+        label = "SPD",
+        valueText = "+$spdPct%",
+        isActive = player.speedOverchargeStacks > 0,
+        accentColor = Color(0xFF38BDF8),
+      ),
+      PermanentUpgradeSlot(
+        iconType = -11,
+        label = "THR",
+        valueText = "+$thrPct%",
+        isActive = player.thrustOverchargeStacks > 0,
+        accentColor = Color(0xFFF59E0B),
+      ),
+      PermanentUpgradeSlot(
+        iconType = -12,
+        label = "RCH",
+        valueText = "+$rchPct%",
+        isActive = player.rechargeOverchargeStacks > 0,
+        accentColor = Color(0xFF10B981),
+      ),
+    )
 
-  val scale by animateFloatAsState(
-    targetValue = 1.0f,
-    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-    label = "buff_dock_scale",
-  )
-
-  val regEntry = RiftCodex.getBuffRegistryEntry(player.specialWeaponType)
-  val specialSlotBuffId = regEntry?.buffTypeIndex ?: 0
-  val hasSpecialOrClassState =
-    player.specialWeaponCharges > 0 ||
-      player.rocketBoostTimer > 0f ||
-      player.isCloaked ||
-      player.sniperOverchargeReady
-  val specialCountText =
-    when {
-      player.rocketBoostTimer > 0f -> String.format(Locale.US, "%.1fs", player.rocketBoostTimer)
-      player.isCloaked -> "CLOAK"
-      player.sniperOverchargeReady -> "+35%"
-      player.specialWeaponCharges > 0 -> "[${player.specialWeaponCharges}]"
-      else -> "—"
-    }
-  val specialLabelText =
-    when {
-      player.rocketBoostTimer > 0f -> "SURGE"
-      player.isCloaked -> "STEALTH"
-      player.sniperOverchargeReady -> "PHASE"
-      player.specialWeaponCharges > 0 -> regEntry?.shortLabel ?: "SPECIAL"
-      else -> "SPECIAL"
-    }
-
-  // Evaluated directly per recomposition so values are never stale
-  val sockets = listOf(
-    PowerupSocketSlot(
-      buffType = 8,
-      label = "MULTI",
-      isActive = (player.spec.supportsNativeMultifire && player.multifireOn) || player.multiShotCharges > 0,
-      countText =
-        when {
-          player.spec.supportsNativeMultifire && player.multiShotCharges > 0 -> "[${player.multiShotCharges}]★"
-          player.multiShotCharges > 0 -> "[${player.multiShotCharges}]"
-          player.spec.supportsNativeMultifire -> if (player.multifireOn) "ON" else "1x"
-          else -> "0"
-        },
-      accentColor = Color(0xFFFACC15),
-    ),
-    PowerupSocketSlot(
-      buffType = 9,
-      label = "BOUNCE",
-      isActive = player.bouncingBulletsShots > 0 || player.spec.primaryBounces > 0,
-      countText =
-        when {
-          player.bouncingBulletsShots > 0 -> "[${player.bouncingBulletsShots}]"
-          player.spec.primaryBounces > 0 -> "NAT"
-          else -> "0"
-        },
-      accentColor = Color(0xFFA855F7),
-    ),
-    PowerupSocketSlot(
-      buffType = 10,
-      label = "SURGE +8%",
-      isActive = player.overchargeSurgeStacks > 0,
-      countText = if (player.overchargeSurgeStacks > 0) "x${player.overchargeSurgeStacks}" else "—",
-      accentColor = Color(0xFFF59E0B),
-    ),
-    PowerupSocketSlot(
-      buffType = 7,
-      label = "REPEL",
-      isActive = player.repels > 0,
-      countText = if (player.repels > 0) "[${player.repels}]" else "0",
-      accentColor = Color(0xFF38BDF8),
-    ),
-    PowerupSocketSlot(
-      buffType = if (player.rocketBoostTimer > 0f) 5 else specialSlotBuffId,
-      label = specialLabelText,
-      isActive = hasSpecialOrClassState,
-      countText = specialCountText,
-      accentColor = Color(0xFF22D3EE),
-    ),
-  )
-
-  Column(
-    horizontalAlignment = Alignment.CenterHorizontally,
+  Row(
     modifier =
-      Modifier.graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-        transformOrigin = TransformOrigin(0.5f, 0f)
-      },
+      Modifier.wrapContentSize()
+        .clip(RoundedCornerShape(9.dp))
+        .background(Color(0x59080E18))
+        .border(0.85.dp, Color(0x4D38BDF8), RoundedCornerShape(9.dp))
+        .wysiwygUnlockOutline(enabled = uiUnlocked, cornerRadius = 9.dp)
+        .padding(
+          horizontal = (7.0f * textScale).dp,
+          vertical = (3.0f * textScale).dp,
+        ),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy((7.0f * textScale).dp),
   ) {
-    Row(
-      modifier =
-        Modifier.clip(RoundedCornerShape(8.dp))
-          .background(if (isExpanded) Color(0xF2081324) else Color(0x33080E18))
-          .border(
-            width = if (isExpanded) 1.0.dp else 0.8.dp,
-            color = if (isExpanded) Color(0xFF38BDF8) else Color(0x3D38BDF8),
-            shape = RoundedCornerShape(8.dp),
-          )
-          .clickable {
-            autoShrinkJob?.cancel()
-            isExpanded = true
-            autoShrinkJob =
-              scope.launch {
-                delay(3500L) // Stays enlarged for 3.5 seconds, then smoothly shrinks back
-                isExpanded = false
-              }
-          }
-          .padding(
-            horizontal = if (isExpanded) 7.dp else 5.dp,
-            vertical = if (isExpanded) 2.5.dp else 1.5.dp,
-          ),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(if (isExpanded) 6.dp else 4.5.dp),
-    ) {
-      sockets.forEach { slot ->
-        PowerupSocketIndicator(slot = slot, isExpanded = isExpanded)
-      }
-    }
-
-    if (isExpanded) {
-      Spacer(modifier = Modifier.height(2.dp))
-      Text(
-        text = "11-BUFF TELEMETRY • MULTI:${player.multiShotCharges} • BOUNCE:${player.bouncingBulletsShots} • SURGE:+${player.overchargeSurgeStacks * 8}%",
-        color = Color(0xFF94A3B8),
-        fontSize = 5.5.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.Monospace,
-      )
+    slots.forEach { slot ->
+      PermanentUpgradeBadge(slot = slot, textScale = textScale)
     }
   }
 }
 
 @Composable
-private fun PowerupSocketIndicator(slot: PowerupSocketSlot, isExpanded: Boolean) {
-  val bmp = remember(slot.buffType) { RiftSpriteBaker.getBuffIconBitmap(slot.buffType).asImageBitmap() }
-  Column(
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.Center,
+private fun PermanentUpgradeBadge(
+  slot: PermanentUpgradeSlot,
+  textScale: Float,
+) {
+  val bmp = remember(slot.iconType) { RiftSpriteBaker.getBuffIconBitmap(slot.iconType).asImageBitmap() }
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy((3.0f * textScale).dp),
   ) {
     Box(
-      modifier = Modifier.size(if (isExpanded) 18.dp else 14.dp),
+      modifier = Modifier.size((14.0f * textScale).dp),
       contentAlignment = Alignment.Center,
     ) {
       Canvas(modifier = Modifier.fillMaxSize()) {
-        val strokeWidthPx = (if (slot.isActive) (if (isExpanded) 1.2.dp else 1.0.dp) else (if (isExpanded) 0.8.dp else 0.6.dp)).toPx()
+        val strokeWidthPx = (if (slot.isActive) 1.1.dp else 0.7.dp).toPx()
         val radius = (size.minDimension - strokeWidthPx) / 2f
         if (slot.isActive) {
-          // Radiant glowing halo
           drawCircle(
-            color = slot.accentColor.copy(alpha = 0.28f),
+            color = slot.accentColor.copy(alpha = 0.25f),
             radius = radius,
-            style = Stroke(width = strokeWidthPx * 1.5f),
+            style = Stroke(width = strokeWidthPx * 1.4f),
           )
-          // Radiant active status ring
           drawCircle(
             color = slot.accentColor,
             radius = radius,
             style = Stroke(width = strokeWidthPx),
           )
         } else {
-          // Dimmed inactive socket track ring
           drawCircle(
-            color = Color(0x33475569),
+            color = Color(0x3D475569),
             radius = radius,
             style = Stroke(width = strokeWidthPx),
           )
         }
       }
-
-      // Buff icon bitmap (full opacity if active, 22% alpha if inactive socket)
-      Canvas(modifier = Modifier.size(if (isExpanded) 13.dp else 10.dp)) {
+      Canvas(modifier = Modifier.size((10.0f * textScale).dp)) {
         drawImage(
           image = bmp,
           dstOffset = IntOffset.Zero,
           dstSize = IntSize(size.width.toInt(), size.height.toInt()),
-          alpha = if (slot.isActive) 1.0f else 0.22f,
+          alpha = if (slot.isActive) 1.0f else 0.28f,
         )
       }
     }
 
-    // Stack count or active badge
     Text(
-      text = slot.countText,
-      color = if (slot.isActive) slot.accentColor else Color(0xFF475569),
-      fontSize = if (isExpanded) 6.8.sp else 5.8.sp,
+      text = "${slot.label} ${slot.valueText}",
+      color = if (slot.isActive) slot.accentColor else Color(0xFF64748B),
+      fontSize = (6.8f * textScale).sp,
       fontWeight = FontWeight.ExtraBold,
       fontFamily = FontFamily.Monospace,
-      lineHeight = if (isExpanded) 7.5.sp else 6.5.sp,
+      style = WingTelemetryTextStyle,
+      maxLines = 1,
     )
-
-    if (isExpanded) {
-      Text(
-        text = slot.label,
-        color = if (slot.isActive) slot.accentColor else Color(0xFF64748B),
-        fontSize = 4.8.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.Monospace,
-        lineHeight = 5.5.sp,
-      )
-    }
   }
 }
-
-

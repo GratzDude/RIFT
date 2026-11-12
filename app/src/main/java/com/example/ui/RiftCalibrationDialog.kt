@@ -77,10 +77,10 @@ import kotlin.math.roundToInt
 
 private val CALIBRATION_TAB_TITLES =
   listOf(
-    "📷 Camera, HUD & Text",
+    "🎛️ HUD & Arena Scale",
     "🚀 Flight & Safe Zone",
-    "🛸 Ship Stats (1–9)",
-    "🔫 Weapons (1–9)",
+    "🛸 Ship Stats",
+    "🔫 Weapons",
     "⚡ Special Buffs",
     "🌀 Playfield Rifts",
     "🤖 AI Bot Behavior",
@@ -100,11 +100,13 @@ fun RiftCalibrationDialog(
     RiftCalibrationState.ensureBaselineCaptured()
     onDispose {
       RiftCalibrationState.isDraggingAnySlider = false
+      RiftCalibrationState.activeDraggingParamKey = null
     }
   }
 
   BackHandler {
     RiftCalibrationState.isDraggingAnySlider = false
+    RiftCalibrationState.activeDraggingParamKey = null
     onDismiss()
   }
 
@@ -118,10 +120,16 @@ fun RiftCalibrationDialog(
   // Read revision so Compose recomposes immediately whenever any slider, hide toggle, or forged buff updates
   val rev = RiftCalibrationState.calibrationRevision
   val isLivePeeking = RiftCalibrationState.isDraggingAnySlider
-  val modalAlpha by animateFloatAsState(
-    targetValue = if (isLivePeeking) 0.15f else 1.0f,
+  val activeDragKey = RiftCalibrationState.activeDraggingParamKey
+  val backdropAlpha by animateFloatAsState(
+    targetValue = if (isLivePeeking) 0.0f else 0.82f,
     animationSpec = tween(durationMillis = 120),
-    label = "calibrationLivePeekAlpha",
+    label = "calibrationBackdropAlpha",
+  )
+  val surfaceBgAlpha by animateFloatAsState(
+    targetValue = if (isLivePeeking) 0.42f else 0.95f,
+    animationSpec = tween(durationMillis = 120),
+    label = "calibrationSurfaceAlpha",
   )
 
   val allDescriptors =
@@ -152,9 +160,10 @@ fun RiftCalibrationDialog(
   Box(
     modifier =
       Modifier.fillMaxSize()
-        .background(Color(0xCC02060D).copy(alpha = 0.82f * modalAlpha))
+        .background(Color(0xFF02060D).copy(alpha = backdropAlpha))
         .clickable {
           RiftCalibrationState.isDraggingAnySlider = false
+          RiftCalibrationState.activeDraggingParamKey = null
           onDismiss()
         }
         .padding(horizontal = 14.dp, vertical = 8.dp)
@@ -164,10 +173,9 @@ fun RiftCalibrationDialog(
     Surface(
       modifier =
         Modifier.fillMaxSize()
-          .graphicsLayer { alpha = modalAlpha }
           .clickable(enabled = false) {}
           .border(1.dp, Color(0x8838BDF8), RoundedCornerShape(14.dp)),
-      color = Color(0xF207111F),
+      color = Color(0xFF0A0F1A).copy(alpha = surfaceBgAlpha),
       shape = RoundedCornerShape(14.dp),
     ) {
       Column(
@@ -192,9 +200,9 @@ fun RiftCalibrationDialog(
             Text(
               text =
                 if (isLivePeeking) {
-                  "👁 LIVE PEEK ACTIVE (15% OPACITY) — RELEASE SLIDER TO RESTORE WINDOW"
+                  "👁 LIVE PEEK ACTIVE — ACTIVE SLIDER 100% READABLE • ARENA VISIBLE THROUGH GLASS"
                 } else {
-                  "100% LIVE-WIRED ENGINE TUNING • DRAG ANY SLIDER TO PEEK THROUGH AT 15% OPACITY"
+                  "100% LIVE-WIRED BALANCE TUNING • ZOOM & TEXT SIZE LIVE EXCLUSIVELY IN ⚙ SETTINGS"
                 },
               color = if (isLivePeeking) Color(0xFF00E676) else Color(0xFF38BDF8),
               fontSize = 9.5.sp,
@@ -249,6 +257,7 @@ fun RiftCalibrationDialog(
             Button(
               onClick = {
                 RiftCalibrationState.isDraggingAnySlider = false
+                RiftCalibrationState.activeDraggingParamKey = null
                 onDismiss()
               },
               colors =
@@ -372,9 +381,9 @@ fun RiftCalibrationDialog(
           CalibrationToggleChip(
             label =
               if (RiftCalibrationState.unlockFullNinthShipOverride) {
-                "🛸 9TH SHIP 100P: ON"
+                "🛸 RIFT FRAME 100P: ON"
               } else {
-                "🛸 9TH SHIP 100P: OFF"
+                "🛸 RIFT FRAME 100P: OFF"
               },
             active = RiftCalibrationState.unlockFullNinthShipOverride,
             activeColor = Color(0xFFC084FC),
@@ -439,13 +448,7 @@ fun RiftCalibrationDialog(
 
         // 4. OPTIONAL SUB-BAR FOR TABS 0, 2 & 3
         if (activeTab == 0) {
-          // 1:1 Physical Screen-Pixel Sample + Ship Label Placement Selector
-          PhysicalPixelTextPreviewAndClockBar(
-            nametagPx = RiftCalibrationState.nametagFontSizePx * RiftCalibrationState.labelTextScale,
-            bountyPx = RiftCalibrationState.bountyFontSizePx * RiftCalibrationState.labelTextScale,
-            fctPx = RiftCalibrationState.fctFontSizePx * RiftCalibrationState.fctScale,
-            density = density.density,
-            fontScale = density.fontScale,
+          ShipLabelClockPlacementBar(
             onPlacementChanged = {
               RiftCalibrationState.applyCalibrationChangesLive(engine, context)
             },
@@ -475,9 +478,9 @@ fun RiftCalibrationDialog(
               onClick = { selectedShipFilter = 0 },
             )
             for (sId in 1..9) {
-              val sName = RiftCodex.getShipById(sId).name
+              val sName = if (sId == 9) "Rift Frame" else RiftCodex.getShipById(sId).name
               CalibrationToggleChip(
-                label = "$sId-$sName",
+                label = sName,
                 active = selectedShipFilter == sId,
                 activeColor = Color(0xFF00F0FF),
                 testTag = "calibration_ship_filter_$sId",
@@ -499,7 +502,10 @@ fun RiftCalibrationDialog(
             modifier =
               Modifier.weight(1f)
                 .fillMaxWidth()
-                .background(Color(0x88091424), RoundedCornerShape(10.dp))
+                .background(
+                  if (isLivePeeking) Color(0x22091424) else Color(0x88091424),
+                  RoundedCornerShape(10.dp),
+                )
                 .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
           ) {
@@ -522,9 +528,17 @@ fun RiftCalibrationDialog(
             } else {
               items(filteredDescriptors, key = { it.key }) { desc ->
                 val isHidden = hiddenKeys.contains(desc.key)
+                val rowAlpha =
+                  when {
+                    !isLivePeeking -> 1.0f
+                    activeDragKey == desc.key -> 1.0f
+                    else -> 0.55f
+                  }
                 CalibrationParameterRow(
                   descriptor = desc,
                   isHidden = isHidden,
+                  rowAlpha = rowAlpha,
+                  isActivelyDragged = isLivePeeking && activeDragKey == desc.key,
                   defaultValue = RiftCalibrationState.DEFAULT_GAME_CONFIG[desc.key],
                   onValueChanged = { newVal ->
                     desc.setter(newVal)
@@ -532,6 +546,7 @@ fun RiftCalibrationDialog(
                   },
                   onDragFinished = {
                     RiftCalibrationState.isDraggingAnySlider = false
+                    RiftCalibrationState.activeDraggingParamKey = null
                     RiftCalibrationState.applyCalibrationChangesLive(engine, context)
                   },
                   onToggleHidden = { hide ->
@@ -568,19 +583,9 @@ fun RiftCalibrationDialog(
 }
 
 @Composable
-private fun PhysicalPixelTextPreviewAndClockBar(
-  nametagPx: Float,
-  bountyPx: Float,
-  fctPx: Float,
-  density: Float,
-  fontScale: Float,
+private fun ShipLabelClockPlacementBar(
   onPlacementChanged: () -> Unit,
 ) {
-  // Convert true 1:1 physical pixel height to Compose sp matching RiftArenaView (0.5f * dpDensity)
-  val nametagSp = ((nametagPx * 0.5f / fontScale.coerceAtLeast(0.5f)).coerceIn(5.5f, 22f)).sp
-  val bountySp = ((bountyPx * 0.5f / fontScale.coerceAtLeast(0.5f)).coerceIn(5.5f, 24f)).sp
-  val fctSp = ((fctPx * 0.5f / fontScale.coerceAtLeast(0.5f)).coerceIn(5.5f, 22f)).sp
-
   Row(
     modifier =
       Modifier.fillMaxWidth()
@@ -590,39 +595,13 @@ private fun PhysicalPixelTextPreviewAndClockBar(
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    Row(
-      horizontalArrangement = Arrangement.spacedBy(14.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(
-        text = "1:1 LIVE PIXEL PREVIEW:",
-        color = Color(0xFF94A3B8),
-        fontSize = 9.5.sp,
-        fontWeight = FontWeight.ExtraBold,
-        fontFamily = FontFamily.Monospace,
-      )
-      Text(
-        text = "[NOVA] RAZOR",
-        color = Color(0xFF38BDF8),
-        fontSize = nametagSp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.Monospace,
-      )
-      Text(
-        text = "👑 420",
-        color = Color(0xFFFFD700),
-        fontSize = bountySp,
-        fontWeight = FontWeight.ExtraBold,
-        fontFamily = FontFamily.Monospace,
-      )
-      Text(
-        text = "-285❖",
-        color = Color(0xFFFB7185),
-        fontSize = fctSp,
-        fontWeight = FontWeight.ExtraBold,
-        fontFamily = FontFamily.Monospace,
-      )
-    }
+    Text(
+      text = "IN-SPACE LABEL CLOCK ORIENTATION (Camera Zoom & Text Size live in ⚙ SETTINGS):",
+      color = Color(0xFF94A3B8),
+      fontSize = 9.5.sp,
+      fontWeight = FontWeight.ExtraBold,
+      fontFamily = FontFamily.Monospace,
+    )
 
     Row(
       horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -660,6 +639,8 @@ private fun PhysicalPixelTextPreviewAndClockBar(
 private fun CalibrationParameterRow(
   descriptor: CalibrationParamDescriptor,
   isHidden: Boolean,
+  rowAlpha: Float = 1.0f,
+  isActivelyDragged: Boolean = false,
   defaultValue: Float?,
   onValueChanged: (Float) -> Unit,
   onDragFinished: () -> Unit,
@@ -669,6 +650,7 @@ private fun CalibrationParameterRow(
   val isModified = defaultValue != null && abs(currentVal - defaultValue) > 0.0005f
   val borderColor =
     when {
+      isActivelyDragged -> Color(0xFF00F5D4)
       isHidden -> Color(0xFFF59E0B)
       isModified -> Color(0xFF10B981)
       else -> Color(0x3338BDF8)
@@ -677,11 +659,16 @@ private fun CalibrationParameterRow(
   Column(
     modifier =
       Modifier.fillMaxWidth()
+        .graphicsLayer { alpha = rowAlpha }
         .background(
-          if (isHidden) Color(0xCC241A08) else Color(0xCC0D1B2E),
+          when {
+            isActivelyDragged -> Color(0xF20D1B2E)
+            isHidden -> Color(0xCC241A08)
+            else -> Color(0xCC0D1B2E)
+          },
           RoundedCornerShape(9.dp),
         )
-        .border(1.dp, borderColor, RoundedCornerShape(9.dp))
+        .border(if (isActivelyDragged) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(9.dp))
         .padding(horizontal = 10.dp, vertical = 6.dp),
   ) {
     Row(
@@ -793,6 +780,7 @@ private fun CalibrationParameterRow(
       Slider(
         value = currentVal.coerceIn(descriptor.min, descriptor.max),
         onValueChange = { raw ->
+          RiftCalibrationState.activeDraggingParamKey = descriptor.key
           RiftCalibrationState.isDraggingAnySlider = true
           val snapped =
             if (descriptor.step > 0f) {

@@ -167,7 +167,7 @@ data class ExecutionerTelemetry(
         survivedToConvergence = obj.optBoolean("survivedToConvergence", false),
         killerCallsign = obj.optString("killerCallsign", ""),
         killerSyndicateTag = cleanTag,
-        killerShip = obj.optString("killerShip", ""),
+        killerShip = stripShipNumberPrefix(obj.optString("killerShip", "")),
         killingWeapon = obj.optString("killingWeapon", ""),
         killerBountyAtKill = obj.optInt("killerBountyAtKill", 0),
         bountyEarnedFromYou = obj.optInt("bountyEarnedFromYou", 0),
@@ -176,10 +176,18 @@ data class ExecutionerTelemetry(
   }
 }
 
+private fun stripShipNumberPrefix(raw: String): String =
+  raw
+    .trim()
+    .replace(Regex("^\\d+\\s*-\\s*"), "")
+    .replace("9A", "Frame A")
+    .replace("9B", "Frame B")
+    .replace("9C", "Frame C")
+
 data class CurrentLifeStats(
   var bountyReached: Int = 100,
   var shipId: Int = 1,
-  var shipFlown: String = "1-Viper",
+  var shipFlown: String = "Viper",
   var timeSurvivedSec: Float = 0f,
   var pvpKills: Int = 0,
   var botKills: Int = 0,
@@ -220,7 +228,7 @@ data class CurrentLifeStats(
 data class PeakBountyRunSnapshot(
   val bountyReached: Int = 100,
   val shipId: Int = 1,
-  val shipFlown: String = "1-Viper",
+  val shipFlown: String = "Viper",
   val timeSurvivedSec: Float = 0f,
   val pvpKills: Int = 0,
   val botKills: Int = 0,
@@ -271,7 +279,7 @@ data class PeakBountyRunSnapshot(
         PeakBountyRunSnapshot(
           bountyReached = obj.optInt("bountyReached", 100),
           shipId = obj.optInt("shipId", 1),
-          shipFlown = obj.optString("shipFlown", "1-Viper"),
+          shipFlown = stripShipNumberPrefix(obj.optString("shipFlown", "Viper")).ifEmpty { "Viper" },
           timeSurvivedSec = obj.optDouble("timeSurvivedSec", 0.0).toFloat(),
           pvpKills = obj.optInt("pvpKills", 0),
           botKills = obj.optInt("botKills", 0),

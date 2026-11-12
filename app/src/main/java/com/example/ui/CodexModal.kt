@@ -74,7 +74,7 @@ fun CodexModal(
         ) {
           Column {
             Text(
-              text = "📖 RIFT CODEX: 11-BUFF POOL & 100-POINT PARITY DOCTRINE",
+              text = "📖 RIFT CODEX: SUPPLY BUFF POOL & 100-POINT PARITY DOCTRINE",
               color = Color.White,
               fontSize = 17.sp,
               fontWeight = FontWeight.Bold,
@@ -82,7 +82,7 @@ fun CodexModal(
               letterSpacing = 1.0.sp,
             )
             Text(
-              text = "BUCKET A SPECIAL BUFF SLOT (0⚡) • BUCKET B ENHANCERS • 100-PT SHIP PARITY",
+              text = "BUCKET A SPECIAL BUFF SLOT (0❖) • BUCKET B HULL UPGRADES • 100-PT SHIP PARITY",
               color = Color(0xFF00F0FF),
               fontSize = 10.5.sp,
               fontWeight = FontWeight.Medium,
@@ -160,14 +160,14 @@ fun CodexModal(
           ) {
             Column {
               Text(
-                text = "⚡ BUCKET B: SHOT & SURGE ENHANCERS",
+                text = "⚡ BUCKET B: HULL UPGRADES & ENHANCERS",
                 color = Color(0xFFF59E0B),
                 fontSize = 10.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
               )
               Text(
-                text = "Multi-Shot (+25 shots), Bouncing Bullets (+30 shots), Overcharge Surge (+8% up to 3x), Repel (+1), and Full Flux Charge.",
+                text = "Bouncing Bullets (+1 bounce until death), Speed / Thrust / Reactor Overcharge (+8% up to 3/3 until death), Multi-Shot (+25 shots), Repel (+1), & Full Flux.",
                 color = Color(0xFFFEF3C7),
                 fontSize = 9.5.sp,
                 fontFamily = FontFamily.SansSerif,
@@ -192,7 +192,7 @@ fun CodexModal(
                 fontFamily = FontFamily.SansSerif,
               )
               Text(
-                text = "Ships 1–8 share the Universal Baseline Floor + 100 Pts. 9-Rift Frame grows from 20 Pts (Lv 20) to 100 Pts (Lv 100).",
+                text = "Standard hulls share the Universal Baseline Floor + 100 Pts. Rift Frame grows from 20 Pts (Lv 20) to 100 Pts (Lv 100).",
                 color = Color(0xFFE0F2FE),
                 fontSize = 9.5.sp,
                 fontFamily = FontFamily.SansSerif,
@@ -202,7 +202,7 @@ fun CodexModal(
           }
         }
 
-        // Scrollable 11-Buff Pool Cards List
+        // Scrollable Supply Buff Pool Cards List
         LazyColumn(
           modifier =
             Modifier.fillMaxSize()
@@ -211,21 +211,24 @@ fun CodexModal(
               .padding(8.dp),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          itemsIndexed(RiftCodex.POWERUP_CODEX) { idx, entry ->
-            val buffType = idx.coerceIn(0, 10)
+          itemsIndexed(RiftCodex.POWERUP_CODEX) { _, entry ->
+            val buffType = entry.buffTypeIndex
             val accentColor =
               when (buffType) {
-                0 -> Color(0xFFF59E0B) // Burst
-                1 -> Color(0xFFFB7185) // Shotgun
-                2 -> Color(0xFFEF4444) // Lock-On Missile
-                3 -> Color(0xFF38BDF8) // Decoy
-                4 -> Color(0xFF22D3EE) // Brick
-                5 -> Color(0xFFA855F7) // Rocket
+                0 -> Color(0xFFF59E0B) // Nova Ring
+                1 -> Color(0xFFFB7185) // Shatter Cone
+                2 -> Color(0xFFEF4444) // Seeker Torpedo
+                3 -> Color(0xFF38BDF8) // Holo Phantom
+                4 -> Color(0xFF22D3EE) // Stasis Barrier
+                5 -> Color(0xFFA855F7) // Hyper Surge
                 6 -> Color(0xFF10B981) // Full Flux Charge
                 7 -> Color(0xFF60A5FA) // Repel Charge
                 8 -> Color(0xFFFACC15) // Shot-Limited Multi-Shot
-                9 -> Color(0xFFC084FC) // Bouncing Bullets
-                else -> Color(0xFFF97316) // Overcharge Surge
+                9 -> Color(0xFFC084FC) // Permanent Bouncing Bullets
+                -10 -> Color(0xFF38BDF8) // Speed Overcharge
+                -11 -> Color(0xFFF59E0B) // Thrust Overcharge
+                -12 -> Color(0xFF10B981) // Reactor Overcharge
+                else -> Color(0xFF38BDF8)
               }
 
             Row(

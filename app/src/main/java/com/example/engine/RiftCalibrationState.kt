@@ -60,6 +60,7 @@ object RiftCalibrationState {
   // UI Modal & Live Peek States
   var isCalibrationModalOpen by mutableStateOf(false)
   var isDraggingAnySlider by mutableStateOf(false)
+  var activeDraggingParamKey by mutableStateOf<String?>(null)
   var showHiddenParameters by mutableStateOf(false)
   var hiddenCalibrationKeys by mutableStateOf<Set<String>>(emptySet())
   var calibrationRevision by mutableIntStateOf(0)
@@ -132,6 +133,7 @@ object RiftCalibrationState {
 
   // 4. Shared Class & Secondary Weapon Mechanics (Tab 3)
   var cloakDrainPerSec by mutableFloatStateOf(180f)
+  var empPulseRadius by mutableFloatStateOf(220f)
   var empFluxDrainPct by mutableFloatStateOf(0.35f)
   var empFreezeSec by mutableFloatStateOf(2.5f)
   var phaseDashImpulse by mutableFloatStateOf(620f)
@@ -226,52 +228,7 @@ object RiftCalibrationState {
   fun buildAllParameterDescriptors(): List<CalibrationParamDescriptor> {
     val list = mutableListOf<CalibrationParamDescriptor>()
 
-    // --- TAB 0: CAMERA, HUD & TEXT SIZES ---
-    list += CalibrationParamDescriptor(
-      key = "cameraZoomScale",
-      tabIndex = 0,
-      title = "Camera Zoom Distance",
-      unit = "x",
-      description = "Scales the arena viewport zoom around your ship (lower = wider tactical view).",
-      min = 0.40f, max = 2.00f, step = 0.05f, decimals = 2,
-      getter = { cameraZoomScale }, setter = { cameraZoomScale = it.coerceIn(0.40f, 2.00f) },
-    )
-    list += CalibrationParamDescriptor(
-      key = "nametagFontSizePx",
-      tabIndex = 0,
-      title = "Ship Nametag Font Size",
-      unit = "px",
-      description = "Exact 1:1 physical screen-pixel height for [TAG] Callsign labels in space.",
-      min = 9f, max = 30f, step = 1f, decimals = 0,
-      getter = { nametagFontSizePx }, setter = { nametagFontSizePx = it.coerceIn(9f, 30f) },
-    )
-    list += CalibrationParamDescriptor(
-      key = "bountyFontSizePx",
-      tabIndex = 0,
-      title = "Ship Bounty Font Size",
-      unit = "px",
-      description = "Exact 1:1 physical screen-pixel height for Bounty badges around ships in space.",
-      min = 9f, max = 32f, step = 1f, decimals = 0,
-      getter = { bountyFontSizePx }, setter = { bountyFontSizePx = it.coerceIn(9f, 32f) },
-    )
-    list += CalibrationParamDescriptor(
-      key = "fctFontSizePx",
-      tabIndex = 0,
-      title = "Floating Combat Text Size",
-      unit = "px",
-      description = "Exact 1:1 physical screen-pixel height for floating damage and pickup numbers.",
-      min = 9f, max = 30f, step = 1f, decimals = 0,
-      getter = { fctFontSizePx }, setter = { fctFontSizePx = it.coerceIn(9f, 30f) },
-    )
-    list += CalibrationParamDescriptor(
-      key = "labelTextScale",
-      tabIndex = 0,
-      title = "World Label Master Multiplier",
-      unit = "x",
-      description = "Uniformly scales all ship callsign, syndicate tag, and bounty text together.",
-      min = 0.60f, max = 1.80f, step = 0.05f, decimals = 2,
-      getter = { labelTextScale }, setter = { labelTextScale = it.coerceIn(0.60f, 1.80f) },
-    )
+    // --- TAB 0: HUD & ARENA VISUAL SCALES (Camera Zoom & Text Size live exclusively in User Settings) ---
     list += CalibrationParamDescriptor(
       key = "labelDistanceOffset",
       tabIndex = 0,
@@ -338,9 +295,9 @@ object RiftCalibrationState {
     list += CalibrationParamDescriptor(
       key = "buffBarScale",
       tabIndex = 0,
-      title = "Expandable Buff Bar Scale",
+      title = "4-Slot Buff Bar Scale",
       unit = "x",
-      description = "Resizes the top-center 5-socket active buff indicator strip.",
+      description = "Resizes the compact 4-slot permanent hull upgrade strip.",
       min = 0.60f, max = 1.80f, step = 0.05f, decimals = 2,
       getter = { buffBarScale }, setter = { buffBarScale = it.coerceIn(0.60f, 1.80f) },
     )
@@ -491,10 +448,10 @@ object RiftCalibrationState {
       getter = { playfieldIdleDrainPctPerSec }, setter = { playfieldIdleDrainPctPerSec = it.coerceIn(0.02f, 0.50f) },
     )
 
-    // --- TAB 2: PER-SHIP HULL STATS (SHIPS 1..9) ---
+    // --- TAB 2: PER-SHIP HULL STATS ---
     for (shipId in 1..9) {
       val spec = RiftCodex.getShipById(shipId)
-      val prefix = "${shipId}-${spec.name}"
+      val prefix = if (shipId == 9) "Rift Frame" else spec.name
       list += CalibrationParamDescriptor(
         key = "ship_${shipId}_maxFlux",
         tabIndex = 2,
@@ -564,17 +521,27 @@ object RiftCalibrationState {
       shipIdFilter = 0,
       title = "Stealth Cloak Flux Drain",
       unit = "❖/s",
-      description = "Continuous Flux drain while Tactical Cloak is active on 6-Disruptor or Ship 9.",
+      description = "Continuous Flux drain while Tactical Cloak is active on Disruptor or Rift Frame.",
       min = 40f, max = 500f, step = 10f, decimals = 0,
       getter = { cloakDrainPerSec }, setter = { cloakDrainPerSec = it.coerceIn(40f, 500f) },
+    )
+    list += CalibrationParamDescriptor(
+      key = "empPulseRadius",
+      tabIndex = 3,
+      shipIdFilter = 0,
+      title = "Disruptor 360° AoE EMP Radius",
+      unit = "px",
+      description = "Radial shockwave radius centered on Disruptor's hull when breaking cloak with EMP Pulse.",
+      min = 100f, max = 420f, step = 10f, decimals = 0,
+      getter = { empPulseRadius }, setter = { empPulseRadius = it.coerceIn(100f, 420f) },
     )
     list += CalibrationParamDescriptor(
       key = "empFluxDrainPct",
       tabIndex = 3,
       shipIdFilter = 0,
-      title = "EMP Bomb Flux Drain",
+      title = "AoE EMP Max Flux Drain",
       unit = "%",
-      description = "Fraction of enemy current Flux stripped by an EMP warhead blast.",
+      description = "Percentage of enemy Maximum Flux drained by Disruptor's 360° AoE EMP pulse.",
       min = 0.10f, max = 0.80f, step = 0.05f, decimals = 2,
       getter = { empFluxDrainPct }, setter = { empFluxDrainPct = it.coerceIn(0.10f, 0.80f) },
     )
@@ -594,7 +561,7 @@ object RiftCalibrationState {
       shipIdFilter = 0,
       title = "Phase Dash Burst Velocity",
       unit = "px/s",
-      description = "Instant forward phase-shift velocity burst granted to 1-Viper and Phase Dash hulls.",
+      description = "Instant forward phase-shift velocity burst granted to Viper and Phase Dash hulls.",
       min = 300f, max = 1200f, step = 20f, decimals = 0,
       getter = { phaseDashImpulse }, setter = { phaseDashImpulse = it.coerceIn(300f, 1200f) },
     )
@@ -614,7 +581,7 @@ object RiftCalibrationState {
       shipIdFilter = 0,
       title = "Proximity Flak Trigger Radius",
       unit = "px",
-      description = "Detection radius at which 7-Valkyrie Proximity Flak warheads detonate into shrapnel.",
+      description = "Detection radius at which Valkyrie Proximity Flak warheads detonate into shrapnel.",
       min = 30f, max = 160f, step = 5f, decimals = 0,
       getter = { proxFuseRadius }, setter = { proxFuseRadius = it.coerceIn(30f, 160f) },
     )
@@ -631,7 +598,7 @@ object RiftCalibrationState {
 
     for (shipId in 1..9) {
       val spec = RiftCodex.getShipById(shipId)
-      val prefix = "${shipId}-${spec.name}"
+      val prefix = if (shipId == 9) "Rift Frame" else spec.name
       list += CalibrationParamDescriptor(
         key = "ship_${shipId}_primaryDamage",
         tabIndex = 3,
@@ -916,20 +883,11 @@ object RiftCalibrationState {
       getter = { crateMultiShotAmmo.toFloat() }, setter = { crateMultiShotAmmo = it.roundToInt().coerceIn(5, 80) },
     )
     list += CalibrationParamDescriptor(
-      key = "crateBounceBulletAmmo",
-      tabIndex = 4,
-      title = "Bouncing Bullets Crate Grant",
-      unit = "shots",
-      description = "Trigger pulls of wall-bouncing primary bolts granted per Bouncing Bullets crate.",
-      min = 5f, max = 90f, step = 5f, decimals = 0,
-      getter = { crateBounceBulletAmmo.toFloat() }, setter = { crateBounceBulletAmmo = it.roundToInt().coerceIn(5, 90) },
-    )
-    list += CalibrationParamDescriptor(
       key = "overchargeSurgePctPerStack",
       tabIndex = 4,
-      title = "Overcharge Surge Bonus Per Stack",
+      title = "Permanent Overcharge Bonus Per Stack",
       unit = "%",
-      description = "Speed, thrust, and Flux recharge bonus per Overcharge Surge stack (max 3 stacks).",
+      description = "Stat bonus per stack for Speed, Thrust, or Reactor Overcharge upgrades (max 3 stacks each).",
       min = 0.02f, max = 0.25f, step = 0.01f, decimals = 2,
       getter = { overchargeSurgePctPerStack }, setter = { overchargeSurgePctPerStack = it.coerceIn(0.02f, 0.25f) },
     )
@@ -1352,10 +1310,20 @@ object RiftCalibrationState {
     if (!savedConfigRaw.isNullOrBlank()) {
       try {
         val obj = JSONObject(savedConfigRaw)
+        val excludedUserSettingKeys =
+          setOf(
+            "cameraZoomScale",
+            "nametagFontSizePx",
+            "bountyFontSizePx",
+            "fctFontSizePx",
+            "labelTextScale",
+            "fctScale",
+          )
         val descriptorsByKey = buildAllParameterDescriptors().associateBy { it.key }
         val keys = obj.keys()
         while (keys.hasNext()) {
           val k = keys.next()
+          if (k in excludedUserSettingKeys) continue
           val desc = descriptorsByKey[k]
           if (desc != null) {
             desc.setter(obj.optDouble(k, desc.getter().toDouble()).toFloat())
@@ -1363,6 +1331,13 @@ object RiftCalibrationState {
         }
       } catch (_: Exception) {}
     }
+    // Keep base constants neutral so user Settings (rift_user_settings) exclusively controls Zoom & Text Size
+    cameraZoomScale = 1.0f
+    nametagFontSizePx = 15.0f
+    bountyFontSizePx = 16.0f
+    fctFontSizePx = 14.0f
+    labelTextScale = 1.0f
+    fctScale = 1.0f
     applyCalibrationChangesLive(null, null)
   }
 

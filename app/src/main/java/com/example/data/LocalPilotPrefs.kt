@@ -11,6 +11,8 @@ import org.json.JSONObject
 class LocalPilotPrefs(context: Context) {
   private val prefs: SharedPreferences =
     context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+  private val userSettingsPrefs: SharedPreferences =
+    context.applicationContext.getSharedPreferences(USER_SETTINGS_PREFS_NAME, Context.MODE_PRIVATE)
 
   /**
    * Returns a permanent device-bound UID stored in local storage so guest stats and leaderboard
@@ -146,11 +148,13 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getCameraZoom(): Float {
-    return prefs.getFloat(KEY_CAMERA_ZOOM, 1.0f).coerceIn(0.5f, 1.5f)
+    val fallback = prefs.getFloat(KEY_CAMERA_ZOOM, 1.0f)
+    return userSettingsPrefs.getFloat(KEY_CAMERA_ZOOM, fallback).coerceIn(0.5f, 1.5f)
   }
 
   fun setCameraZoom(zoom: Float) {
-    prefs.edit().putFloat(KEY_CAMERA_ZOOM, zoom.coerceIn(0.5f, 1.5f)).apply()
+    val clamped = zoom.coerceIn(0.5f, 1.5f)
+    userSettingsPrefs.edit().putFloat(KEY_CAMERA_ZOOM, clamped).apply()
   }
 
   // Active Named Armada (SOLO = "", or named up-to-5-man Armada e.g. "APEX_STRIKE")
@@ -175,7 +179,7 @@ class LocalPilotPrefs(context: Context) {
         callsign = callsign,
         tag = tag,
         shipId = shipId,
-        shipName = "Hull #$shipId",
+        shipName = cleanShipNameForId(shipId),
         role = "SYNDICATE COMMANDER (YOU)",
         bountyContribution = bounty.coerceAtLeast(getAllTimeBountyPeak()),
         kills = kills,
@@ -187,7 +191,7 @@ class LocalPilotPrefs(context: Context) {
         callsign = "VANGUARD_01",
         tag = tag,
         shipId = ((shipId % 8) + 1),
-        shipName = "Hull #${(shipId % 8) + 1}",
+        shipName = cleanShipNameForId((shipId % 8) + 1),
         role = "STRIKE WINGMAN",
         bountyContribution = 340L,
         kills = 14L,
@@ -338,14 +342,32 @@ class LocalPilotPrefs(context: Context) {
       .apply()
   }
 
-  // Phase 4: 9th Custom Modular Ship Loadout Slots (9A, 9B, 9C) & Slot Unlock Persistence
+  // Custom Modular Ship Loadout Slots (Frame A, Frame B, Frame C) with seamless legacy migration
+  fun normalizeCustomSlotId(rawSlotId: String?): String =
+    when (rawSlotId?.trim()?.uppercase(Locale.US)) {
+      "FRAME B", "9B", "B" -> "Frame B"
+      "FRAME C", "9C", "C" -> "Frame C"
+      else -> "Frame A"
+    }
+
+  private fun legacySlotKeySuffix(cleanSlotId: String): String =
+    when (cleanSlotId) {
+      "Frame B" -> "9B"
+      "Frame C" -> "9C"
+      else -> "9A"
+    }
+
   fun getActiveCustomSlotId(uid: String? = null): String {
-    val raw = prefs.getString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), prefs.getString(KEY_ACTIVE_CUSTOM_SLOT_ID, "9A")) ?: "9A"
-    return if (raw in setOf("9A", "9B", "9C")) raw else "9A"
+    val raw =
+      prefs.getString(
+        uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid),
+        prefs.getString(KEY_ACTIVE_CUSTOM_SLOT_ID, "Frame A"),
+      ) ?: "Frame A"
+    return normalizeCustomSlotId(raw)
   }
 
   fun setActiveCustomSlotId(slotId: String, uid: String? = null) {
-    val clean = if (slotId in setOf("9A", "9B", "9C")) slotId else "9A"
+    val clean = normalizeCustomSlotId(slotId)
     prefs
       .edit()
       .putString(KEY_ACTIVE_CUSTOM_SLOT_ID, clean)
@@ -354,13 +376,13 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun isCustomSlotUnlocked(slotId: String, uid: String? = null): Boolean {
-    return when (slotId) {
-      "9A" -> true
-      "9B" ->
-        prefs.getBoolean(uidKey(KEY_SLOT_9B_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_9B_UNLOCKED, false)) ||
+    return when (normalizeCustomSlotId(slotId)) {
+      "Frame A" -> true
+      "Frame B" ->
+        prefs.getBoolean(uidKey(KEY_SLOT_B_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_B_UNLOCKED, false)) ||
           getUnlockedExtraSlots(uid) >= 1
-      "9C" ->
-        prefs.getBoolean(uidKey(KEY_SLOT_9C_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_9C_UNLOCKED, false)) ||
+      "Frame C" ->
+        prefs.getBoolean(uidKey(KEY_SLOT_C_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_C_UNLOCKED, false)) ||
           getUnlockedExtraSlots(uid) >= 2
       else -> true
     }
@@ -368,9 +390,9 @@ class LocalPilotPrefs(context: Context) {
 
   fun setCustomSlotUnlocked(slotId: String, unlocked: Boolean, uid: String? = null) {
     val key =
-      when (slotId) {
-        "9B" -> KEY_SLOT_9B_UNLOCKED
-        "9C" -> KEY_SLOT_9C_UNLOCKED
+      when (normalizeCustomSlotId(slotId)) {
+        "Frame B" -> KEY_SLOT_B_UNLOCKED
+        "Frame C" -> KEY_SLOT_C_UNLOCKED
         else -> return
       }
     prefs
@@ -381,16 +403,20 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getCustomShipSlot(slotId: String, uid: String? = null): com.example.engine.CustomShipLoadoutSlot {
-    val cleanId = if (slotId in setOf("9A", "9B", "9C")) slotId else "9A"
+    val cleanId = normalizeCustomSlotId(slotId)
     val baseKey = "${KEY_CUSTOM_SLOT_PREFIX}_$cleanId"
-    val raw = prefs.getString(uidKey(baseKey, uid), prefs.getString(baseKey, null))
+    val legacyBaseKey = "${KEY_CUSTOM_SLOT_PREFIX}_${legacySlotKeySuffix(cleanId)}"
+    val raw =
+      prefs.getString(uidKey(baseKey, uid), prefs.getString(baseKey, null))
+        ?: prefs.getString(uidKey(legacyBaseKey, uid), prefs.getString(legacyBaseKey, null))
     return com.example.engine.CustomShipLoadoutSlot.fromJsonString(raw, cleanId)
   }
 
   fun saveCustomShipSlot(slot: com.example.engine.CustomShipLoadoutSlot, uid: String? = null) {
-    val cleanId = if (slot.slotId in setOf("9A", "9B", "9C")) slot.slotId else "9A"
+    val cleanId = normalizeCustomSlotId(slot.slotId)
+    val normalizedSlot = slot.copy(slotId = cleanId)
     val baseKey = "${KEY_CUSTOM_SLOT_PREFIX}_$cleanId"
-    val json = slot.toJsonString()
+    val json = normalizedSlot.toJsonString()
     prefs
       .edit()
       .putString(baseKey, json)
@@ -517,7 +543,7 @@ class LocalPilotPrefs(context: Context) {
           callsign = "VALKYRIE_Z",
           syndicateTag = "VOID",
           shipId = 7,
-          statusText = "In Hangar • Tuning 7-Valkyrie Loadout",
+          statusText = "In Hangar • Tuning Valkyrie Loadout",
           isOnline = true,
           currentArmadaName = "",
           currentArmadaCount = 1,
@@ -912,14 +938,32 @@ class LocalPilotPrefs(context: Context) {
     }
   }
 
-  fun getPlayfieldTextScale(): Float = prefs.getFloat(KEY_PLAYFIELD_TEXT_SCALE, 1.0f)
+  fun getPlayfieldTextScale(): Float {
+    val fallback = prefs.getFloat(KEY_PLAYFIELD_TEXT_SCALE, 1.0f)
+    return userSettingsPrefs.getFloat(KEY_PLAYFIELD_TEXT_SCALE, fallback).coerceIn(0.75f, 2.0f)
+  }
 
   fun setPlayfieldTextScale(scale: Float) {
-    prefs.edit().putFloat(KEY_PLAYFIELD_TEXT_SCALE, scale.coerceIn(0.75f, 2.0f)).apply()
+    val clamped = scale.coerceIn(0.75f, 2.0f)
+    userSettingsPrefs.edit().putFloat(KEY_PLAYFIELD_TEXT_SCALE, clamped).apply()
   }
+
+  private fun cleanShipNameForId(shipId: Int): String =
+    when (shipId) {
+      1 -> "Viper"
+      2 -> "Ricochet"
+      3 -> "Suppressor"
+      4 -> "Goliath"
+      5 -> "Twinfang"
+      6 -> "Disruptor"
+      7 -> "Valkyrie"
+      8 -> "Manta"
+      else -> "Rift Frame"
+    }
 
   companion object {
     private const val PREFS_NAME = "rift_permanent_pilot_prefs"
+    private const val USER_SETTINGS_PREFS_NAME = "rift_user_settings"
     private const val KEY_DEVICE_UID = "permanent_device_uid"
     private const val KEY_GUEST_BYPASS = "guest_bypass_enabled"
     private const val KEY_CALLSIGN = "pilot_callsign"
@@ -955,8 +999,8 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_UNLOCKED_EXTRA_SLOTS = "unlocked_extra_hull_slots"
     private const val KEY_AI_DESIGN_TOKENS = "ai_ship_design_tokens"
     private const val KEY_ACTIVE_CUSTOM_SLOT_ID = "active_custom_slot_id"
-    private const val KEY_SLOT_9B_UNLOCKED = "custom_slot_9b_unlocked"
-    private const val KEY_SLOT_9C_UNLOCKED = "custom_slot_9c_unlocked"
+    private const val KEY_SLOT_B_UNLOCKED = "custom_slot_9b_unlocked"
+    private const val KEY_SLOT_C_UNLOCKED = "custom_slot_9c_unlocked"
     private const val KEY_CUSTOM_SLOT_PREFIX = "custom_ship_slot_json"
     private const val KEY_ALL_TIME_PEAK_SNAPSHOT = "all_time_peak_bounty_snapshot_json"
     private const val KEY_PVP_PEAK_SNAPSHOT = "pvp_peak_bounty_snapshot_json"

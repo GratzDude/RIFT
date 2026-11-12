@@ -505,12 +505,12 @@ data class SecondaryAbilityOption(
 )
 
 /**
- * Represents one of the 3 saveable loadout slots (Slot 9A, Slot 9B, Slot 9C) for the 9th Ship ("Rift Frame").
+ * Represents one of the 3 saveable loadout slots (Frame A, Frame B, Frame C) for the 9th Ship ("Rift Frame").
  * Implements Option A (Free-Spend + Universal Baseline Hull Floor, 0..30 pts per stat, 100-Point Parity Matrix).
  */
 data class CustomShipLoadoutSlot(
-  val slotId: String = "9A", // "9A", "9B", "9C"
-  val customName: String = "RIFT FRAME 9A",
+  val slotId: String = "Frame A", // "Frame A", "Frame B", "Frame C"
+  val customName: String = "Rift Frame",
   val speedPts: Int = 4,
   val thrustPts: Int = 4,
   val turnPts: Int = 4,
@@ -607,7 +607,7 @@ data class CustomShipLoadoutSlot(
         "SIEGE" ->
           SecondaryTuple("Siege Bomb (650❖ • Heavy Recoil)", "SIEGE BOMB", 650f, 1.20f, 1350f, 1, if (isPureGunfighterPassive) 0f else 360f)
         "CLOAK_EMP" ->
-          SecondaryTuple("Tactical Cloak (180❖/s) + EMP Bomb (400❖)", "CLOAK", 400f, 0.95f, 580f, 2, 0f)
+          SecondaryTuple("Tactical Cloak + 360° AoE EMP (350❖)", "CLOAK", 350f, 0.95f, 0f, 0, 0f)
         "SEEKER_TORPEDO" ->
           SecondaryTuple("Native Seeker Torpedo (600❖ • 5s CD)", "SEEKER", 600f, 5.0f, 780f, 6, 0f)
         "PASSIVE_GUNFIGHTER" ->
@@ -623,9 +623,18 @@ data class CustomShipLoadoutSlot(
         0xFF00F5D4.toInt()
       }
 
+    val cleanCustomTitle =
+      customName
+        .replace(Regex("(?i)RIFT FRAME\\s*9([ABC])"), "Rift Frame")
+        .replace("9A", "Frame A")
+        .replace("9B", "Frame B")
+        .replace("9C", "Frame C")
+        .trim()
+        .ifBlank { "Rift Frame" }
+
     return ShipSpec(
       id = 9,
-      name = customName.ifBlank { "Rift Frame $slotId" },
+      name = cleanCustomTitle,
       role = "Custom Modular Rift Frame ($slotId • ${totalAllocatedPoints()} Pts)",
       tacticalLore = "Progressive Level 20–100 modular chassis engineered on the universal Baseline Hull Floor with AI Hull Forge shader geometry.",
       silhouetteDesc = visualRecipe.promptUsed,
@@ -688,14 +697,14 @@ data class CustomShipLoadoutSlot(
     val PRIMARY_OPTIONS: List<PrimaryArchetypeOption> =
       listOf(
         PrimaryArchetypeOption("LIGHT_PULSE", "Standard Light Pulse", 0, "Free starter pulse blaster (16❖)."),
-        PrimaryArchetypeOption("TWIN_SCATTER", "Short-Range Twin Scatter", 10, "Fast close-quarters twin defensive blasters (20❖, 8-Manta style)."),
-        PrimaryArchetypeOption("ION_NEEDLER", "Twin Ion Needlers", 10, "Rapid-fire dual ion needlers (18❖, 6-Disruptor style)."),
-        PrimaryArchetypeOption("ANGLED_PULSE", "Twin Angled Pulse", 12, "Dual-wing angled pulse with 1 native wall bounce (20❖, 2-Ricochet style)."),
-        PrimaryArchetypeOption("HEAVY_CANNON", "Heavy Dual Cannon", 12, "Slow fire rate, heavy kinetic shells (40❖, 4-Goliath style)."),
-        PrimaryArchetypeOption("QUAD_PULSE", "Quad-Converging Pulse", 12, "4 light bolts converging at mid-range (24❖, 7-Valkyrie style)."),
-        PrimaryArchetypeOption("SNIPER_RAIL", "Hyper-Velocity Dual Rail", 15, "Fastest projectile velocity, pinpoint single-shot punch (25❖, 1-Viper style)."),
-        PrimaryArchetypeOption("ROTARY_PULSE", "High-RPM Adaptive Rotary", 15, "Fastest fire rate sustained suppressive stream (15❖, 3-Suppressor style)."),
-        PrimaryArchetypeOption("PARALLEL_TWIN", "Parallel Twin-Stream", 15, "2 parallel high-velocity bolts with wide dogfight hitbox (22❖, 5-Twinfang style)."),
+        PrimaryArchetypeOption("TWIN_SCATTER", "Short-Range Twin Scatter", 10, "Fast close-quarters twin defensive blasters (20❖, Manta style)."),
+        PrimaryArchetypeOption("ION_NEEDLER", "Twin Ion Needlers", 10, "Rapid-fire dual ion needlers (18❖, Disruptor style)."),
+        PrimaryArchetypeOption("ANGLED_PULSE", "Twin Angled Pulse", 12, "Dual-wing angled pulse with 1 native wall bounce (20❖, Ricochet style)."),
+        PrimaryArchetypeOption("HEAVY_CANNON", "Heavy Dual Cannon", 12, "Slow fire rate, heavy kinetic shells (40❖, Goliath style)."),
+        PrimaryArchetypeOption("QUAD_PULSE", "Quad-Converging Pulse", 12, "4 light bolts converging at mid-range (24❖, Valkyrie style)."),
+        PrimaryArchetypeOption("SNIPER_RAIL", "Hyper-Velocity Dual Rail", 15, "Fastest projectile velocity, pinpoint single-shot punch (25❖, Viper style)."),
+        PrimaryArchetypeOption("ROTARY_PULSE", "High-RPM Adaptive Rotary", 15, "Fastest fire rate sustained suppressive stream (15❖, Suppressor style)."),
+        PrimaryArchetypeOption("PARALLEL_TWIN", "Parallel Twin-Stream", 15, "2 parallel high-velocity bolts with wide dogfight hitbox (22❖, Twinfang style)."),
       )
 
     val SECONDARY_OPTIONS: List<SecondaryAbilityOption> =
@@ -710,7 +719,7 @@ data class CustomShipLoadoutSlot(
         SecondaryAbilityOption("NOVA_RING", "Native Nova Ring", 22, "500❖", "Fires 360° ricochet plasma bolt ring on Secondary Button (4s CD)."),
         SecondaryAbilityOption("SHATTER_CONE", "Native Shatter Cone", 22, "500❖", "Fires 3 rapid 60° cone plasma shard waves on Secondary Button (4s CD)."),
         SecondaryAbilityOption("SIEGE", "Siege Bomb", 25, "650❖", "Massive nuclear dreadnought warhead with heavy backward recoil."),
-        SecondaryAbilityOption("CLOAK_EMP", "Tactical Cloak + EMP Bomb", 25, "180❖/s • 400❖", "Tap to Cloak invisibly; fire while cloaked to launch 400❖ EMP Bomb."),
+        SecondaryAbilityOption("CLOAK_EMP", "Tactical Cloak + 360° AoE EMP (350❖)", 25, "180❖/s • 350❖", "Tap to Cloak invisibly (180❖/s); tap EMP PULSE or fire from stealth to unleash a 220px 360° AoE EMP (-35% Max Flux, 2.5s recharge lockout)."),
         SecondaryAbilityOption("SEEKER_TORPEDO", "Native Seeker Torpedo", 25, "600❖", "Fires homing wall-bouncing Seeker Torpedo (2.5s flight, 5s CD)."),
       )
 
@@ -728,12 +737,19 @@ data class CustomShipLoadoutSlot(
       return SECONDARY_OPTIONS.firstOrNull { it.id == norm }?.pointCost ?: 0
     }
 
+    fun normalizeSlotId(slotId: String): String =
+      when (slotId.trim().uppercase(Locale.US)) {
+        "FRAME B", "9B", "B" -> "Frame B"
+        "FRAME C", "9C", "C" -> "Frame C"
+        else -> "Frame A"
+      }
+
     fun defaultSlot(slotId: String): CustomShipLoadoutSlot {
-      return when (slotId) {
-        "9B" ->
+      return when (normalizeSlotId(slotId)) {
+        "Frame B" ->
           CustomShipLoadoutSlot(
-            slotId = "9B",
-            customName = "RIFT FRAME 9B",
+            slotId = "Frame B",
+            customName = "Rift Frame",
             speedPts = 2,
             thrustPts = 2,
             turnPts = 2,
@@ -743,7 +759,7 @@ data class CustomShipLoadoutSlot(
             secondaryType = "NONE",
             visualRecipe =
               CustomHullVisualRecipe(
-                hullName = "RIFT FRAME 9B",
+                hullName = "FRAME B",
                 silhouette = "BASTION_DREADNOUGHT",
                 wingSweep = 1.15f,
                 chassisPlates = 4,
@@ -754,10 +770,10 @@ data class CustomShipLoadoutSlot(
                 promptUsed = "Obsidian violet dreadnought with gold bastion armor and solar core",
               ),
           )
-        "9C" ->
+        "Frame C" ->
           CustomShipLoadoutSlot(
-            slotId = "9C",
-            customName = "RIFT FRAME 9C",
+            slotId = "Frame C",
+            customName = "Rift Frame",
             speedPts = 5,
             thrustPts = 0,
             turnPts = 0,
@@ -767,7 +783,7 @@ data class CustomShipLoadoutSlot(
             secondaryType = "PHASE_DASH",
             visualRecipe =
               CustomHullVisualRecipe(
-                hullName = "RIFT FRAME 9C",
+                hullName = "FRAME C",
                 silhouette = "MANTA_STINGRAY",
                 wingSweep = 1.25f,
                 chassisPlates = 2,
@@ -780,8 +796,8 @@ data class CustomShipLoadoutSlot(
           )
         else ->
           CustomShipLoadoutSlot(
-            slotId = "9A",
-            customName = "RIFT FRAME 9A",
+            slotId = "Frame A",
+            customName = "Rift Frame",
             speedPts = 4,
             thrustPts = 4,
             turnPts = 4,
@@ -794,8 +810,9 @@ data class CustomShipLoadoutSlot(
       }
     }
 
-    fun fromJsonString(raw: String?, fallbackSlotId: String = "9A"): CustomShipLoadoutSlot {
-      if (raw.isNullOrBlank()) return defaultSlot(fallbackSlotId)
+    fun fromJsonString(raw: String?, fallbackSlotId: String = "Frame A"): CustomShipLoadoutSlot {
+      val cleanFallback = normalizeSlotId(fallbackSlotId)
+      if (raw.isNullOrBlank()) return defaultSlot(cleanFallback)
       return try {
         val obj = JSONObject(raw)
         val recipeObj = obj.optJSONObject("visualRecipe")
@@ -809,9 +826,19 @@ data class CustomShipLoadoutSlot(
             else -> obj.optString("secondaryType", "NONE")
           }
         val validSec = if (SECONDARY_OPTIONS.any { it.id == rawSec }) rawSec else "NONE"
+        val cleanSlot = normalizeSlotId(obj.optString("slotId", cleanFallback))
+        val rawCustomName = obj.optString("customName", "Rift Frame")
+        val cleanName =
+          rawCustomName
+            .replace(Regex("(?i)^RIFT FRAME\\s*9[ABC]$"), "Rift Frame")
+            .replace("9A", "Frame A")
+            .replace("9B", "Frame B")
+            .replace("9C", "Frame C")
+            .take(18)
+            .ifBlank { "Rift Frame" }
         CustomShipLoadoutSlot(
-          slotId = obj.optString("slotId", fallbackSlotId),
-          customName = obj.optString("customName", "RIFT FRAME $fallbackSlotId").take(18),
+          slotId = cleanSlot,
+          customName = cleanName,
           speedPts = obj.optInt("speedPts", 4).coerceIn(0, 30),
           thrustPts = obj.optInt("thrustPts", 4).coerceIn(0, 30),
           turnPts = obj.optInt("turnPts", 4).coerceIn(0, 30),
@@ -828,7 +855,7 @@ data class CustomShipLoadoutSlot(
           aiGenerationsCount = obj.optInt("aiGenerationsCount", 0).coerceAtLeast(0),
         )
       } catch (_: Exception) {
-        defaultSlot(fallbackSlotId)
+        defaultSlot(cleanFallback)
       }
     }
   }
@@ -1040,7 +1067,7 @@ object RiftCodex {
   fun getBuffRegistryByIndex(buffTypeIndex: Int): SpecialBuffRegistryEntry? =
     BUFF_REGISTRY.values.firstOrNull { it.buffTypeIndex == buffTypeIndex }
 
-  var activeCustomShipSlot: CustomShipLoadoutSlot = CustomShipLoadoutSlot.defaultSlot("9A")
+  var activeCustomShipSlot: CustomShipLoadoutSlot = CustomShipLoadoutSlot.defaultSlot("Frame A")
   var customShip9Spec: ShipSpec = activeCustomShipSlot.toShipSpec()
 
   fun updateActiveCustomShipSlot(slot: CustomShipLoadoutSlot) {
@@ -1267,16 +1294,16 @@ object RiftCodex {
         initialRepels = 2,
         accentColorHex = 0xFF00E5FF.toInt(),
       ),
-      // 6-Disruptor (Stealth & EMP Infiltrator — 100 Pts Total: 10 Pri + 25 Sec + 65 Stats)
+      // Disruptor (Stealth & EMP Infiltrator — 100 Pts Total: 10 Pri + 25 Class + 65 Stats)
       ShipSpec(
         id = 6,
         name = "Disruptor",
         role = "Stealth & EMP Infiltrator",
-        tacticalLore = "Cloak-capable infiltrator that vanishes from enemy radar before unleashing a 35% Flux-draining EMP warhead.",
+        tacticalLore = "Cloak-capable infiltrator that vanishes from enemy radar before breaking stealth with a 220px 360° AoE EMP pulse (-35% Max Flux, 2.5s recharge lockout).",
         silhouetteDesc = "Wide stingray hydrofoil with gold-plated arc emitters and a pulsing V-cyan capacitor.",
-        weaponSummary = "PRI: NEEDLER (18❖) • SEC: CLOAK (180❖/s) / EMP BOMB (400❖)",
+        weaponSummary = "PRI: NEEDLER (18❖) • CLS: Tactical Cloak + 360° AoE EMP (350❖)",
         primaryTitle = "Twin Ion Needlers",
-        secondaryTitle = "Tactical Cloak + EMP Bomb (400❖)",
+        secondaryTitle = "Tactical Cloak + 360° AoE EMP (350❖)",
         primaryShortLabel = "NEEDLER",
         secondaryShortLabel = "CLOAK",
         turnPts = 22,
@@ -1301,10 +1328,10 @@ object RiftCodex {
         primaryBounces = 0,
         hasBomb = true,
         bombType = "CLOAK_EMP",
-        bombCost = 400f,
+        bombCost = 350f,
         bombCooldown = 0.95f,
-        bombDamage = 580f,
-        bombBounces = 2,
+        bombDamage = 0f,
+        bombBounces = 0,
         bombRecoil = 0f,
         supportsNativeMultifire = false,
         initialRepels = 2,
@@ -1430,7 +1457,7 @@ object RiftCodex {
         title = "SEEKER TORPEDO (+1 CHARGE • 0❖)",
         dropRatePercent = 8,
         category = "BUCKET A: SPECIAL BUFF SLOT (0❖ COST)",
-        effectSummary = "Locks onto hostile targets, travels at 4-Goliath speed (380 PX/S), bounces off walls, and flies for a full 2.5 seconds before detonating.",
+        effectSummary = "Locks onto hostile targets, travels at Goliath speed (380 PX/S), bounces off walls, and flies for a full 2.5 seconds before detonating.",
         tacticalNote = "HUD Label: SEEKER [X]. Forces enemies to burn Repel, Phase Dash, Holo Phantom, or Stasis Barrier.",
       ),
       PowerUpCodexEntry(
@@ -1491,20 +1518,38 @@ object RiftCodex {
       PowerUpCodexEntry(
         id = "bouncing_bullets",
         buffTypeIndex = 9,
-        title = "BOUNCING BULLETS (+30 SHOTS)",
+        title = "BOUNCING BULLETS (PERMANENT LIFE UPGRADE)",
         dropRatePercent = 9,
-        category = "BUCKET B: SHOT-LIMITED AUGMENT",
-        effectSummary = "Primary gun projectiles reflect off arena walls (+1 wall bounce) for your next 30 primary trigger pulls.",
-        tacticalNote = "Stackable shot counter displayed in the top-center Expandable Buff Bar.",
+        category = "BUCKET B: PERMANENT HULL UPGRADE",
+        effectSummary = "Permanently upgrades your primary guns with +1 arena wall bounce for the rest of your current life.",
+        tacticalNote = "Tracked in the compact 4-Slot Buff Bar (BOUNCE ON) until ship destruction or Convergence.",
       ),
       PowerUpCodexEntry(
-        id = "overcharge_surge",
+        id = "overcharge_speed",
         buffTypeIndex = 10,
-        title = "OVERCHARGE SURGE (+8% • MAX 3x)",
-        dropRatePercent = 8,
-        category = "BUCKET B: LIFE HULL SURGE",
-        effectSummary = "Increases Top Speed, Thrust, and Flux Recharge by +8% per stack (up to 3 stacks) until death.",
-        tacticalNote = "At 3 stacks (+24% Speed/Thrust/Recharge), turns any hull into an apex sector predator.",
+        title = "SPEED OVERCHARGE (+8% • MAX 3/3)",
+        dropRatePercent = 3,
+        category = "BUCKET B: PERMANENT HULL UPGRADE",
+        effectSummary = "Permanently increases Top Cruise & Afterburner Speed by +8% per stack (up to +24% at 3/3) until death.",
+        tacticalNote = "Shares the Overcharge crate slot evenly with Thrust Overcharge and Reactor Overcharge.",
+      ),
+      PowerUpCodexEntry(
+        id = "overcharge_thrust",
+        buffTypeIndex = -11,
+        title = "THRUST OVERCHARGE (+8% • MAX 3/3)",
+        dropRatePercent = 3,
+        category = "BUCKET B: PERMANENT HULL UPGRADE",
+        effectSummary = "Permanently increases Newtonian Engine Thrust by +8% per stack (up to +24% at 3/3) until death.",
+        tacticalNote = "Tracked in the compact 4-Slot Buff Bar (THR +X%).",
+      ),
+      PowerUpCodexEntry(
+        id = "overcharge_recharge",
+        buffTypeIndex = -12,
+        title = "REACTOR OVERCHARGE (+8% • MAX 3/3)",
+        dropRatePercent = 2,
+        category = "BUCKET B: PERMANENT HULL UPGRADE",
+        effectSummary = "Permanently increases passive Flux Recharge Rate by +8% per stack (up to +24% at 3/3) until death.",
+        tacticalNote = "Tracked in the compact 4-Slot Buff Bar (RCH +X%).",
       ),
     )
 

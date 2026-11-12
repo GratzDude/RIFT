@@ -357,16 +357,16 @@ fun RiftShardsStoreModal(
             )
 
             StoreActionRow(
-              title = "🛸 UNLOCK EXTRA CUSTOM HULL BAY SLOT (+$unlockedExtraSlots UNLOCKED)",
-              subtitle = "Unlocks Slot 9B or Slot 9C on the 9th Custom Modular Chassis",
+              title = "🛸 UNLOCK EXTRA RIFT FRAME SLOT (+$unlockedExtraSlots UNLOCKED)",
+              subtitle = "Unlocks Frame B or Frame C on the Rift Frame Custom Modular Chassis",
               costLabel = "300❖ SHARDS",
               accent = Color(0xFFFFD700),
               tag = "btn_unlock_extra_slot",
               onClick = {
                 if (onUnlockExtraSlot()) {
-                  statusBanner = "✓ UNLOCKED EXTRA CUSTOM HULL BAY SLOT (-300❖ RIFT SHARDS)!"
+                  statusBanner = "✓ UNLOCKED EXTRA RIFT FRAME SLOT (-300❖ RIFT SHARDS)!"
                 } else {
-                  statusBanner = "⚠️ INSUFFICIENT RIFT SHARDS OR ALL SLOTS (9A/9B/9C) UNLOCKED (300❖)."
+                  statusBanner = "⚠️ INSUFFICIENT RIFT SHARDS OR ALL FRAMES (FRAME A / FRAME B / FRAME C) UNLOCKED (300❖)."
                 }
               },
             )

@@ -32,7 +32,26 @@ import com.example.engine.RiftCodex
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.ShipSpec
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
+
+private val HangarElectricCyan = Color(0xFF38BDF8)
+private val HangarDeltaPositive = Color(0xFF10B981)
+private val HangarDeltaNegative = Color(0xFFEF4444)
+
+/**
+ * Anchors Hangar stat bars to the Universal Baseline Hull Floor:
+ * 0 pts = 10% visual bar width, 30 pts = 100% visual bar width.
+ */
+private fun baselineAnchoredStatFraction(pts: Int): Float =
+  0.10f + (pts.coerceIn(0, 30) / 30f) * 0.90f
+
+private fun cleanShipDisplayTitle(ship: ShipSpec): String =
+  if (ship.id == 9 && ship.name.equals("Rift Frame", ignoreCase = true)) {
+    "RIFT FRAME"
+  } else {
+    ship.name.replace(Regex("^[0-9]+-"), "").uppercase(Locale.US)
+  }
 
 @Composable
 fun HangarModal(
@@ -68,7 +87,7 @@ fun HangarModal(
   val currentMode = "FFA"
   var showPilotIdentityBar by remember { mutableStateOf(false) }
 
-  // Watch customShip9Version so the 3x3 matrix and inspector re-render immediately when AI Hull Forge updates Ship 9
+  // Watch customShip9Version so the 3x3 matrix and inspector re-render immediately when AI Hull Forge updates Rift Frame
   val spriteVersion = RiftSpriteBaker.customShip9Version
   val allNineShips = remember(activeCustomSlot, spriteVersion) { RiftCodex.getAllNineShips() }
 
@@ -78,6 +97,10 @@ fun HangarModal(
   val inspectedShip =
     remember(currentShipId, allNineShips) {
       allNineShips.find { it.id == currentShipId } ?: allNineShips.first()
+    }
+  val equippedShip =
+    remember(selectedShipId, allNineShips) {
+      allNineShips.find { it.id == selectedShipId } ?: allNineShips.first()
     }
 
   val isNinthUnlocked = pilotLevel >= 20 || unlockFullNinthShipOverride
@@ -121,7 +144,6 @@ fun HangarModal(
               fontFamily = FontFamily.Monospace,
             )
 
-            // Pilot Identity & Mode Bar Toggle Pill
             Box(
               modifier =
                 Modifier.testTag("btn_toggle_pilot_identity")
@@ -129,21 +151,20 @@ fun HangarModal(
                   .background(
                     if (showPilotIdentityBar) Color(0xFF1E293B) else Color(0xFF0D182A)
                   )
-                  .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                  .border(1.dp, HangarElectricCyan, RoundedCornerShape(6.dp))
                   .clickable { showPilotIdentityBar = !showPilotIdentityBar }
                   .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
               Text(
                 text = "🪪 [$syndicateTag] $callsignInput • PUBLIC FFA ▾",
-                color = Color(0xFF38BDF8),
-                fontSize = 9.sp,
+                color = HangarElectricCyan,
+                fontSize = 9.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
               )
             }
           }
 
-          // NEXUS AI Swirling Portal Pill, Level Badge, Customization Points, Rift Shards & Close
           Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -177,7 +198,7 @@ fun HangarModal(
                 Text(
                   text = "$pointsRemainingInSlot/$effectivePointBudget PTS",
                   color = Color(0xFF22C55E),
-                  fontSize = 8.sp,
+                  fontSize = 8.5.sp,
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -198,7 +219,6 @@ fun HangarModal(
               }
             }
 
-            // [+ GET RIFT SHARDS] Button
             Box(
               modifier =
                 Modifier.testTag("btn_hangar_get_rift_shards")
@@ -239,7 +259,6 @@ fun HangarModal(
           }
         }
 
-        // Collapsible Pilot Callsign, Syndicate Command & Arena Mode Selector Bar
         if (showPilotIdentityBar) {
           Spacer(modifier = Modifier.height(4.dp))
           Row(
@@ -254,13 +273,13 @@ fun HangarModal(
             Text(
               text = "CALLSIGN:",
               color = Color(0xFF94A3B8),
-              fontSize = 8.sp,
+              fontSize = 8.5.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
             )
             Box(
               modifier =
-                Modifier.width(120.dp)
+                Modifier.width(124.dp)
                   .background(Color(0xFF050A14), RoundedCornerShape(5.dp))
                   .border(1.dp, Color(0xFF334155), RoundedCornerShape(5.dp))
                   .padding(horizontal = 6.dp, vertical = 4.dp)
@@ -276,7 +295,7 @@ fun HangarModal(
                 textStyle =
                   TextStyle(
                     color = Color.White,
-                    fontSize = 10.sp,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                   ),
@@ -297,7 +316,7 @@ fun HangarModal(
               Text(
                 text = "🏛️ [$syndicateTag] SYNDICATE",
                 color = Color(0xFFE9D5FF),
-                fontSize = 8.sp,
+                fontSize = 8.5.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
@@ -306,7 +325,7 @@ fun HangarModal(
             Text(
               text = "ARENA MODE:",
               color = Color(0xFF94A3B8),
-              fontSize = 8.sp,
+              fontSize = 8.5.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
             )
@@ -315,13 +334,13 @@ fun HangarModal(
                 Modifier.testTag("mode_chip_FFA")
                   .clip(RoundedCornerShape(5.dp))
                   .background(Color(0xFF0284C7))
-                  .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(5.dp))
+                  .border(1.dp, HangarElectricCyan, RoundedCornerShape(5.dp))
                   .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
               Text(
                 text = "PUBLIC FFA (60M SECTOR CONVERGENCE)",
                 color = Color.White,
-                fontSize = 7.5.sp,
+                fontSize = 8.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
@@ -331,7 +350,6 @@ fun HangarModal(
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Main Body: Either Full 9th-Ship Modular Customization & AI Hull Forge View OR 3x3 Side-by-Side Comparison Matrix + Right Inspector
         if (showFullNinthShipForgeModal) {
           NinthShipModularForgePanel(
             spec = allNineShips.last(),
@@ -350,13 +368,13 @@ fun HangarModal(
             },
             onSwitchSlot = { slotId ->
               onSwitchCustomSlot(slotId)
-              forgeStatusBanner = "✓ SWITCHED ACTIVE LOADOUT TO SLOT $slotId"
+              forgeStatusBanner = "✓ SWITCHED ACTIVE LOADOUT TO ${slotId.uppercase(Locale.US)}"
             },
             onUnlockSlot = { slotId ->
               if (onUnlockCustomSlot(slotId)) {
-                forgeStatusBanner = "✓ UNLOCKED SLOT $slotId (-300❖ RIFT SHARDS)!"
+                forgeStatusBanner = "✓ UNLOCKED ${slotId.uppercase(Locale.US)} (-300❖ RIFT SHARDS)!"
               } else {
-                forgeStatusBanner = "⚠️ NEED 300❖ RIFT SHARDS TO UNLOCK SLOT $slotId (TAP [+ SHARDS])."
+                forgeStatusBanner = "⚠️ NEED 300❖ RIFT SHARDS TO UNLOCK ${slotId.uppercase(Locale.US)} (TAP [+ GET RIFT SHARDS])."
               }
             },
             onRespecSlot = {
@@ -367,13 +385,13 @@ fun HangarModal(
               }
             },
             onForgeAiHull = { prompt, hullName ->
-              val (ok, msg) = onForgeAiHullDesign(prompt, hullName)
+              val (_, msg) = onForgeAiHullDesign(prompt, hullName)
               forgeStatusBanner = msg
             },
             onToggleDevLevel20Or100 = {
               onToggleDevLevel20Or100()
               forgeStatusBanner =
-                "⚡ DEV OVERRIDE TOGGLED: 9TH SHIP UNLOCKED WITH 100 CUSTOMIZATION POINTS!"
+                "⚡ DEV OVERRIDE TOGGLED: RIFT FRAME UNLOCKED WITH 100 CUSTOMIZATION POINTS!"
             },
             onDeployNinthShip = {
               if (isNinthUnlocked) {
@@ -392,10 +410,10 @@ fun HangarModal(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            // LEFT / MAIN: 3x3 ALL-SHIPS SIDE-BY-SIDE COMPARISON MATRIX (Ships 1-8 + 9th Custom Ship in Cell 9)
+            // LEFT / MAIN: Decluttered 3x3 Ship Comparison Matrix (Clean 3-Bar SPD/THR/FLX Preview & High-Legibility Titles)
             Column(
-              modifier = Modifier.weight(0.68f).fillMaxHeight(),
-              verticalArrangement = Arrangement.spacedBy(5.dp),
+              modifier = Modifier.weight(0.62f).fillMaxHeight(),
+              verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
               for (rowIndex in 0 until 3) {
                 Row(
@@ -417,7 +435,7 @@ fun HangarModal(
                       isEquipped = isEquipped,
                       isNinthCell = isNinthCell,
                       isNinthUnlocked = isNinthUnlocked,
-                      activeSlotId = activeCustomSlot.slotId,
+                      activeSlotId = CustomShipLoadoutSlot.normalizeSlotId(activeCustomSlot.slotId),
                       pointsAllocated = pointsAllocatedInSlot,
                       pointBudget = effectivePointBudget,
                       onSelect = {
@@ -433,10 +451,11 @@ fun HangarModal(
               }
             }
 
-            // RIGHT: Detailed Selected Hull Telemetry & Quick Action Inspector
+            // RIGHT: High-Readability Inspector Panel with Monochrome Cyan Bars + Emerald/Crimson Comparison Deltas
             ShipComparisonInspectorPanel(
-              modifier = Modifier.weight(0.32f).fillMaxHeight(),
+              modifier = Modifier.weight(0.38f).fillMaxHeight(),
               ship = inspectedShip,
+              equippedShip = equippedShip,
               spriteVersion = spriteVersion,
               isCurrentShip = inspectedShip.id == selectedShipId,
               isNinthUnlocked = isNinthUnlocked,
@@ -500,6 +519,8 @@ private fun MatrixShipComparisonCell(
       else -> Color(0xFF0A1322)
     }
 
+  val cleanName = cleanShipDisplayTitle(ship)
+
   Column(
     modifier =
       modifier
@@ -508,10 +529,10 @@ private fun MatrixShipComparisonCell(
         .background(bgColor)
         .border(if (isSelected || isEquipped) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(9.dp))
         .clickable { onSelect() }
-        .padding(horizontal = 7.dp, vertical = 5.dp),
+        .padding(horizontal = 8.dp, vertical = 6.dp),
     verticalArrangement = Arrangement.SpaceBetween,
   ) {
-    // Top Row: Sprite + Name + Syndicate/Slot Tag + Weapon Badges
+    // Top Row: Sprite + Enlarged Bold Name (15sp) + Role Subtitle (11sp)
     Row(
       modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
@@ -519,7 +540,7 @@ private fun MatrixShipComparisonCell(
     ) {
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
         modifier = Modifier.weight(1f),
       ) {
         val spriteBitmap =
@@ -533,16 +554,16 @@ private fun MatrixShipComparisonCell(
           }
         Box(
           modifier =
-            Modifier.size(30.dp)
-              .background(Color(0xFF050A14), RoundedCornerShape(6.dp))
-              .border(1.dp, accentColor.copy(alpha = 0.55f), RoundedCornerShape(6.dp)),
+            Modifier.size(34.dp)
+              .background(Color(0xFF050A14), RoundedCornerShape(7.dp))
+              .border(1.dp, accentColor.copy(alpha = 0.55f), RoundedCornerShape(7.dp)),
           contentAlignment = Alignment.Center,
         ) {
           Image(
             bitmap = spriteBitmap,
-            contentDescription = ship.name,
+            contentDescription = cleanName,
             filterQuality = FilterQuality.High,
-            modifier = Modifier.size(25.dp),
+            modifier = Modifier.size(28.dp),
           )
         }
 
@@ -552,11 +573,12 @@ private fun MatrixShipComparisonCell(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
           ) {
             Text(
-              text = "${ship.id}-${ship.name.uppercase()}",
+              text = cleanName,
               color = Color.White,
-              fontSize = 9.sp,
+              fontSize = 15.sp,
               fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
+              fontFamily = FontFamily.SansSerif,
+              lineHeight = 16.sp,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
@@ -564,7 +586,7 @@ private fun MatrixShipComparisonCell(
               Text(
                 text = "★",
                 color = Color(0xFF22C55E),
-                fontSize = 9.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Black,
               )
             }
@@ -572,22 +594,22 @@ private fun MatrixShipComparisonCell(
           Text(
             text =
               if (isNinthCell) {
-                if (isNinthUnlocked) "SLOT $activeSlotId • $pointsAllocated/$pointBudget PTS"
-                else "🔒 LVL 20 GATE ($pointBudget PTS SAVED)"
+                if (isNinthUnlocked) "${activeSlotId.uppercase(Locale.US)} • $pointsAllocated/$pointBudget PTS"
+                else "🔒 LVL 20 GATE"
               } else {
                 ship.role.uppercase(Locale.US)
               },
             color = if (isNinthCell && !isNinthUnlocked) Color(0xFFF59E0B) else accentColor,
-            fontSize = 7.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = FontFamily.SansSerif,
+            lineHeight = 12.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
         }
       }
 
-      // Weapon Quick Tag or Customize Button for Cell 9
       if (isNinthCell) {
         Box(
           modifier =
@@ -596,93 +618,152 @@ private fun MatrixShipComparisonCell(
               .background(Color(0xFF4C1D95))
               .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(5.dp))
               .clickable { onOpenNinthForge() }
-              .padding(horizontal = 5.dp, vertical = 2.dp)
+              .padding(horizontal = 6.dp, vertical = 3.dp)
         ) {
           Text(
             text = "🛠️ FORGE",
             color = Color.White,
-            fontSize = 7.sp,
+            fontSize = 8.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
-          )
-        }
-      } else {
-        Column(horizontalAlignment = Alignment.End) {
-          Text(
-            text = "PRI:${ship.primaryPts}P•CLS:${ship.secondaryPts}P",
-            color = if (ship.hasBomb) Color(0xFFF59E0B) else Color(0xFF38BDF8),
-            fontSize = 6.8.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-          Text(
-            text = ship.secondaryTitle.take(14).uppercase(),
-            color = Color(0xFF94A3B8),
-            fontSize = 6.5.sp,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
           )
         }
       }
     }
 
-    // 5 Aligned Comparative Stat Bars (Universal Baseline Floor + 0..30 Pts Ceiling)
+    // Decluttered 3-Bar Core Hull Preview (SPD / THR / FLX) — Monochrome Cyan, Anchored at Baseline Floor (0 pts = 10%)
     Column(
       modifier = Modifier.fillMaxWidth(),
-      verticalArrangement = Arrangement.spacedBy(2.dp),
+      verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-      MiniMatrixStatRow("SPD", ship.topSpeed, 620f, Color(0xFF38BDF8))
-      MiniMatrixStatRow("THR", ship.thrust, 1050f, Color(0xFF22C55E))
-      MiniMatrixStatRow("TRN", ship.turnRate, 6.2f, Color(0xFFA855F7))
-      MiniMatrixStatRow("FLX", ship.maxFlux, 4600f, Color(0xFFF59E0B))
-      MiniMatrixStatRow("RCH", ship.rechargeRate, 480f, Color(0xFFEC4899))
+      CardMatrixStatBar("SPD", ship.speedPts, ship.topSpeed.roundToInt().toString())
+      CardMatrixStatBar("THR", ship.thrustPts, ship.thrust.roundToInt().toString())
+      CardMatrixStatBar("FLX", ship.maxFluxPts, ship.maxFlux.roundToInt().toString())
     }
   }
 }
 
 @Composable
-private fun MiniMatrixStatRow(
+private fun CardMatrixStatBar(
   label: String,
-  value: Float,
-  maxScale: Float,
-  barColor: Color,
+  pts: Int,
+  valueText: String,
 ) {
-  val fraction = (value / maxScale).coerceIn(0.06f, 1.0f)
+  val fraction = baselineAnchoredStatFraction(pts)
   Row(
     modifier = Modifier.fillMaxWidth(),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(4.dp),
+    horizontalArrangement = Arrangement.spacedBy(5.dp),
   ) {
     Text(
       text = label,
       color = Color(0xFF94A3B8),
-      fontSize = 6.5.sp,
+      fontSize = 8.5.sp,
       fontWeight = FontWeight.Bold,
       fontFamily = FontFamily.Monospace,
-      modifier = Modifier.width(20.dp),
+      modifier = Modifier.width(24.dp),
     )
     Box(
       modifier =
         Modifier.weight(1f)
-          .height(4.dp)
-          .clip(RoundedCornerShape(2.dp))
+          .height(5.dp)
+          .clip(RoundedCornerShape(2.5.dp))
           .background(Color(0xFF1E293B))
     ) {
       Box(
         modifier =
           Modifier.fillMaxHeight()
             .fillMaxWidth(fraction)
-            .background(barColor, RoundedCornerShape(2.dp))
+            .background(HangarElectricCyan, RoundedCornerShape(2.5.dp))
       )
     }
     Text(
-      text = if (value < 10f) "${(value * 10f).roundToInt() / 10f}" else "${value.toInt()}",
+      text = valueText,
       color = Color(0xFFE2E8F0),
-      fontSize = 6.5.sp,
+      fontSize = 8.5.sp,
       fontWeight = FontWeight.Bold,
       fontFamily = FontFamily.Monospace,
-      modifier = Modifier.width(24.dp),
+      modifier = Modifier.width(30.dp),
     )
+  }
+}
+
+@Composable
+private fun InspectorStatComparisonRow(
+  label: String,
+  pts: Int,
+  value: Float,
+  equippedValue: Float,
+  showDelta: Boolean,
+  isDecimal: Boolean = false,
+) {
+  val fraction = baselineAnchoredStatFraction(pts)
+  val diff = value - equippedValue
+  val hasMeaningfulDelta = showDelta && (if (isDecimal) abs(diff) >= 0.05f else abs(diff) >= 1f)
+
+  val valueStr =
+    if (isDecimal) String.format(Locale.US, "%.1f", value)
+    else "${value.roundToInt()}"
+  val deltaStr =
+    if (!hasMeaningfulDelta) {
+      ""
+    } else if (isDecimal) {
+      val sign = if (diff > 0f) "+" else ""
+      " ($sign${String.format(Locale.US, "%.1f", diff)})"
+    } else {
+      val sign = if (diff > 0f) "+" else ""
+      " ($sign${diff.roundToInt()})"
+    }
+
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    Text(
+      text = label,
+      color = Color(0xFFCBD5E1),
+      fontSize = 13.sp,
+      fontWeight = FontWeight.Bold,
+      fontFamily = FontFamily.Monospace,
+      modifier = Modifier.width(34.dp),
+    )
+    Box(
+      modifier =
+        Modifier.weight(1f)
+          .height(6.dp)
+          .clip(RoundedCornerShape(3.dp))
+          .background(Color(0xFF1E293B))
+    ) {
+      Box(
+        modifier =
+          Modifier.fillMaxHeight()
+            .fillMaxWidth(fraction)
+            .background(HangarElectricCyan, RoundedCornerShape(3.dp))
+      )
+    }
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.End,
+      modifier = Modifier.widthIn(min = 78.dp),
+    ) {
+      Text(
+        text = valueStr,
+        color = Color.White,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+      )
+      if (deltaStr.isNotEmpty()) {
+        Text(
+          text = deltaStr,
+          color = if (diff > 0f) HangarDeltaPositive else HangarDeltaNegative,
+          fontSize = 12.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
+    }
   }
 }
 
@@ -690,6 +771,7 @@ private fun MiniMatrixStatRow(
 private fun ShipComparisonInspectorPanel(
   modifier: Modifier = Modifier,
   ship: ShipSpec,
+  equippedShip: ShipSpec,
   spriteVersion: Int,
   isCurrentShip: Boolean,
   isNinthUnlocked: Boolean,
@@ -706,6 +788,8 @@ private fun ShipComparisonInspectorPanel(
   val accentColor =
     if (isNinth) Color(0xFFC084FC)
     else Color(ship.accentColorHex)
+  val cleanTitle = cleanShipDisplayTitle(ship)
+  val normalizedSlotLabel = CustomShipLoadoutSlot.normalizeSlotId(activeSlot.slotId).uppercase(Locale.US)
 
   Column(
     modifier =
@@ -717,12 +801,12 @@ private fun ShipComparisonInspectorPanel(
   ) {
     Column(
       modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(6.dp),
+      verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-      // Header + Sprite
+      // Header + Sprite (18sp Ship Title)
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
       ) {
         val largeSprite =
           remember(ship.id, spriteVersion) {
@@ -735,47 +819,47 @@ private fun ShipComparisonInspectorPanel(
           }
         Box(
           modifier =
-            Modifier.size(48.dp)
+            Modifier.size(50.dp)
               .background(Color(0xFF050A14), RoundedCornerShape(8.dp))
               .border(1.5.dp, accentColor, RoundedCornerShape(8.dp)),
           contentAlignment = Alignment.Center,
         ) {
           Image(
             bitmap = largeSprite,
-            contentDescription = ship.name,
+            contentDescription = cleanTitle,
             filterQuality = FilterQuality.High,
-            modifier = Modifier.size(40.dp),
+            modifier = Modifier.size(42.dp),
           )
         }
 
         Column(modifier = Modifier.weight(1f)) {
           Text(
-            text = "${ship.id}-${ship.name.uppercase()}",
+            text = cleanTitle,
             color = Color.White,
-            fontSize = 12.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = FontFamily.SansSerif,
+            lineHeight = 20.sp,
           )
           Text(
-            text =
-              "${ship.role.uppercase()} • PRI:${ship.primaryPts}P • CLS:${ship.secondaryPts}P • STATS:${ship.speedPts + ship.thrustPts + ship.turnPts + ship.maxFluxPts + ship.rechargePts}P",
+            text = ship.role.uppercase(Locale.US),
             color = accentColor,
-            fontSize = 7.5.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = FontFamily.SansSerif,
           )
         }
       }
 
       if (isNinth) {
-        // 9th Ship Status & Quick Editor Entry Card
+        // Rift Frame Status & Quick Editor Entry Card
         Column(
           modifier =
             Modifier.fillMaxWidth()
               .background(Color(0xFF170F2E), RoundedCornerShape(8.dp))
               .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(8.dp))
               .padding(8.dp),
-          verticalArrangement = Arrangement.spacedBy(5.dp),
+          verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
           Row(
             modifier = Modifier.fillMaxWidth(),
@@ -784,17 +868,17 @@ private fun ShipComparisonInspectorPanel(
           ) {
             Text(
               text =
-                if (isNinthUnlocked) "✨ 9-RIFT FRAME UNLOCKED (SLOT ${activeSlot.slotId})"
+                if (isNinthUnlocked) "✨ RIFT FRAME ($normalizedSlotLabel)"
                 else "🔒 UNLOCKS AT PILOT LEVEL 20",
               color = if (isNinthUnlocked) Color(0xFF4ADE80) else Color(0xFFFBBF24),
-              fontSize = 8.5.sp,
+              fontSize = 12.sp,
               fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
+              fontFamily = FontFamily.SansSerif,
             )
             Text(
               text = "${activeSlot.totalAllocatedPoints()}/$effectivePointBudget PTS",
               color = Color(0xFFC084FC),
-              fontSize = 8.5.sp,
+              fontSize = 12.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -802,28 +886,27 @@ private fun ShipComparisonInspectorPanel(
 
           Text(
             text =
-              "Universal Baseline Hull Floor + Progressive Point Growth (Lv 20 = 20 Pts .. Lv 100 = 100 Pts). Exact parity with Ships 1-8.",
+              "Universal Baseline Hull Floor + Progressive Point Growth (Lv 20 = 20 Pts .. Lv 100 = 100 Pts). Full competitive parity with standard hulls.",
             color = Color(0xFFCBD5E1),
-            fontSize = 7.5.sp,
-            fontFamily = FontFamily.Monospace,
+            fontSize = 12.5.sp,
+            lineHeight = 16.sp,
           )
 
           Button(
             onClick = onOpenNinthShipForge,
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6D28D9)),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-            modifier = Modifier.fillMaxWidth().height(30.dp).testTag("btn_open_ninth_ship_editor"),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+            modifier = Modifier.fillMaxWidth().height(34.dp).testTag("btn_open_ninth_ship_editor"),
           ) {
             Text(
-              text = "🛠️ CUSTOMIZE 9TH SHIP & AI HULL FORGE",
+              text = "🛠️ CUSTOMIZE RIFT FRAME & AI FORGE",
               color = Color.White,
-              fontSize = 8.5.sp,
+              fontSize = 11.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
           }
 
-          // Quick Dev Override Toggle inside Inspector
           Box(
             modifier =
               Modifier.fillMaxWidth()
@@ -838,7 +921,7 @@ private fun ShipComparisonInspectorPanel(
                   RoundedCornerShape(6.dp),
                 )
                 .clickable { onToggleDevLevel20Or100() }
-                .padding(vertical = 4.dp),
+                .padding(vertical = 5.dp),
             contentAlignment = Alignment.Center,
           ) {
             Text(
@@ -846,7 +929,7 @@ private fun ShipComparisonInspectorPanel(
                 if (unlockFullNinthShipOverride) "⚡ DEV TEST: FULL 100 PTS ACTIVE (TAP TO OFF)"
                 else "⚡ DEV TEST: TOGGLE LVL 20 / 100 PTS",
               color = if (unlockFullNinthShipOverride) Color(0xFF6EE7B7) else Color(0xFFE2E8F0),
-              fontSize = 7.5.sp,
+              fontSize = 10.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -855,102 +938,109 @@ private fun ShipComparisonInspectorPanel(
       } else {
         Text(
           text = ship.tacticalLore,
-          color = Color(0xFF94A3B8),
-          fontSize = 8.sp,
-          lineHeight = 11.sp,
+          color = Color(0xFFCBD5E1),
+          fontSize = 13.sp,
+          lineHeight = 17.sp,
         )
       }
 
-      // Primary & Secondary/Class Ability Summary
-      Row(
+      // Primary & Class Ability Cards (13sp–14sp High-Contrast Readability)
+      Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         Column(
           modifier =
-            Modifier.weight(1f)
-              .background(Color(0xFF070E1A), RoundedCornerShape(6.dp))
-              .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(6.dp))
-              .padding(6.dp)
+            Modifier.fillMaxWidth()
+              .background(Color(0xFF070E1A), RoundedCornerShape(7.dp))
+              .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(7.dp))
+              .padding(horizontal = 8.dp, vertical = 6.dp),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
           Text(
-            text = "PRIMARY (${ship.primaryPts} PTS)",
-            color = Color(0xFF38BDF8),
-            fontSize = 7.5.sp,
+            text = "PRIMARY WEAPON (${ship.primaryPts} PTS)",
+            color = HangarElectricCyan,
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
           Text(
             text = ship.primaryTitle,
             color = Color.White,
-            fontSize = 7.8.sp,
+            fontSize = 13.5.sp,
             fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            fontFamily = FontFamily.SansSerif,
           )
           Text(
-            text = "${ship.primaryDamage.toInt()} DMG • ${ship.primaryCost.toInt()}⚡ FLUX",
+            text = "${ship.primaryDamage.toInt()} DMG • ${ship.primaryCost.toInt()}❖ FLUX",
             color = Color(0xFF94A3B8),
-            fontSize = 7.sp,
+            fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
           )
         }
 
         Column(
           modifier =
-            Modifier.weight(1f)
-              .background(Color(0xFF070E1A), RoundedCornerShape(6.dp))
-              .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(6.dp))
-              .padding(6.dp)
+            Modifier.fillMaxWidth()
+              .background(Color(0xFF070E1A), RoundedCornerShape(7.dp))
+              .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(7.dp))
+              .padding(horizontal = 8.dp, vertical = 6.dp),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
           Text(
-            text = "CLASS / SEC (${ship.secondaryPts} PTS)",
+            text = "CLASS ABILITY (${ship.secondaryPts} PTS)",
             color = if (ship.hasBomb) Color(0xFFF59E0B) else Color(0xFF34D399),
-            fontSize = 7.5.sp,
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
           Text(
             text = ship.secondaryTitle,
             color = Color.White,
-            fontSize = 7.8.sp,
+            fontSize = 13.5.sp,
             fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            fontFamily = FontFamily.SansSerif,
           )
           Text(
             text =
               when {
-                ship.bombType == "PHASE_DASH" -> "300⚡ • 2.5s CD • +35% RAIL"
-                ship.bombType == "CLOAK_EMP" -> "180⚡/s CLOAK • 350⚡ EMP"
-                ship.supportsNativeMultifire -> "INNATE SPLIT MULTI-SHOT"
-                ship.hasBomb -> "${ship.bombDamage.toInt()} DMG • ${ship.bombCost.toInt()}⚡"
-                else -> "START REPELS: ${ship.initialRepels}"
+                ship.bombType == "PHASE_DASH" -> "300❖ • 2.5s CD • +35% RAIL OVERCHARGE"
+                ship.bombType == "CLOAK_EMP" -> "180❖/s CLOAK • 360° AoE EMP PULSE (350❖)"
+                ship.supportsNativeMultifire -> "INNATE SPLIT MULTI-SHOT (0❖ EXTRA COST)"
+                ship.hasBomb -> "${ship.bombDamage.toInt()} DMG • ${ship.bombCost.toInt()}❖ FLUX"
+                else -> "STARTING REPEL CHARGES: ${ship.initialRepels}"
               },
             color = Color(0xFF94A3B8),
-            fontSize = 7.sp,
+            fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
-            maxLines = 1,
           )
         }
       }
 
-      // Detailed Stat Readout Bars (0..30 Pts Ceiling)
+      // Detailed 5-Stat Readout Bars (Baseline-Anchored, Monochrome Cyan + Emerald/Crimson Deltas vs. Equipped Hull)
       Column(
         modifier =
           Modifier.fillMaxWidth()
             .background(Color(0xFF070E1A), RoundedCornerShape(8.dp))
             .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
-            .padding(7.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
       ) {
-        MiniMatrixStatRow("SPD", ship.topSpeed, 620f, Color(0xFF38BDF8))
-        MiniMatrixStatRow("THR", ship.thrust, 1050f, Color(0xFF22C55E))
-        MiniMatrixStatRow("TRN", ship.turnRate, 6.2f, Color(0xFFA855F7))
-        MiniMatrixStatRow("FLX", ship.maxFlux, 4600f, Color(0xFFF59E0B))
-        MiniMatrixStatRow("RCH", ship.rechargeRate, 480f, Color(0xFFEC4899))
+        val showComparison = !isCurrentShip
+        if (showComparison) {
+          Text(
+            text = "COMPARING VS EQUIPPED ${cleanShipDisplayTitle(equippedShip)}",
+            color = Color(0xFF94A3B8),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+        InspectorStatComparisonRow("SPD", ship.speedPts, ship.topSpeed, equippedShip.topSpeed, showComparison)
+        InspectorStatComparisonRow("THR", ship.thrustPts, ship.thrust, equippedShip.thrust, showComparison)
+        InspectorStatComparisonRow("TRN", ship.turnPts, ship.turnRate, equippedShip.turnRate, showComparison, isDecimal = true)
+        InspectorStatComparisonRow("FLX", ship.maxFluxPts, ship.maxFlux, equippedShip.maxFlux, showComparison)
+        InspectorStatComparisonRow("RCH", ship.rechargePts, ship.rechargeRate, equippedShip.rechargeRate, showComparison)
       }
     }
 
@@ -968,17 +1058,17 @@ private fun ShipComparisonInspectorPanel(
             }
         ),
       shape = RoundedCornerShape(8.dp),
-      modifier = Modifier.fillMaxWidth().height(36.dp).testTag("btn_deploy_pilot"),
+      modifier = Modifier.fillMaxWidth().height(38.dp).testTag("btn_deploy_pilot"),
     ) {
       Text(
         text =
           when {
             isNinth && !isNinthUnlocked -> "🔒 LVL 20 GATE (TAP TO INSPECT FORGE)"
-            isCurrentShip -> "⚡ RE-DEPLOY ${ship.id}-${ship.name.uppercase()}"
-            else -> "⚡ DEPLOY ${ship.id}-${ship.name.uppercase()}"
+            isCurrentShip -> "⚡ RE-DEPLOY $cleanTitle"
+            else -> "⚡ DEPLOY $cleanTitle"
           },
         color = Color.White,
-        fontSize = 9.5.sp,
+        fontSize = 12.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
       )
@@ -1008,12 +1098,13 @@ private fun NinthShipModularForgePanel(
   onDeployNinthShip: () -> Unit,
   onBackToMatrix: () -> Unit,
 ) {
+  val normalizedCurrentSlot = CustomShipLoadoutSlot.normalizeSlotId(activeSlot.slotId)
   var hullNameInput by
-    remember(activeSlot.slotId, activeSlot.visualRecipe.hullName) {
+    remember(normalizedCurrentSlot, activeSlot.visualRecipe.hullName) {
       mutableStateOf(activeSlot.visualRecipe.hullName)
     }
   var aiPromptInput by
-    remember(activeSlot.slotId, activeSlot.visualRecipe.promptUsed) {
+    remember(normalizedCurrentSlot, activeSlot.visualRecipe.promptUsed) {
       mutableStateOf(activeSlot.visualRecipe.promptUsed)
     }
 
@@ -1035,7 +1126,7 @@ private fun NinthShipModularForgePanel(
     modifier = Modifier.fillMaxSize(),
     verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
-    // Subheader Bar: Back to 3x3 Matrix + Slot Tabs (9A, 9B, 9C) + Respec (50❖) + Dev Test Lvl 20/100 Toggle
+    // Subheader Bar: Back to 3x3 Matrix + Saved Loadout Tabs (Frame A, Frame B, Frame C) + Respec (50❖) + Dev Test Toggle
     Row(
       modifier =
         Modifier.fillMaxWidth()
@@ -1054,31 +1145,32 @@ private fun NinthShipModularForgePanel(
             Modifier.testTag("btn_back_to_3x3_matrix")
               .clip(RoundedCornerShape(6.dp))
               .background(Color(0xFF1E293B))
-              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+              .border(1.dp, HangarElectricCyan, RoundedCornerShape(6.dp))
               .clickable { onBackToMatrix() }
               .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
           Text(
             text = "◀ 3x3 MATRIX",
-            color = Color(0xFF38BDF8),
-            fontSize = 8.5.sp,
+            color = HangarElectricCyan,
+            fontSize = 9.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
         }
 
-        // Loadout Slot Tabs: 9A (Free), 9B (300❖), 9C (300❖)
+        // Loadout Slot Tabs: Frame A (Free), Frame B (300❖), Frame C (300❖)
         val slots =
           listOf(
-            Triple("9A", true, "SLOT 9A"),
-            Triple("9B", slot9BUnlocked, if (slot9BUnlocked) "SLOT 9B" else "🔒 9B (300❖)"),
-            Triple("9C", slot9CUnlocked, if (slot9CUnlocked) "SLOT 9C" else "🔒 9C (300❖)"),
+            Triple("Frame A", true, "FRAME A"),
+            Triple("Frame B", slot9BUnlocked, if (slot9BUnlocked) "FRAME B" else "🔒 FRAME B (300❖)"),
+            Triple("Frame C", slot9CUnlocked, if (slot9CUnlocked) "FRAME C" else "🔒 FRAME C (300❖)"),
           )
         slots.forEach { (slotId, unlocked, label) ->
-          val isCurrentSlot = activeSlot.slotId == slotId
+          val isCurrentSlot = normalizedCurrentSlot == slotId
+          val safeTag = slotId.replace(" ", "_")
           Box(
             modifier =
-              Modifier.testTag("btn_custom_slot_$slotId")
+              Modifier.testTag("btn_custom_slot_$safeTag")
                 .clip(RoundedCornerShape(6.dp))
                 .background(
                   when {
@@ -1109,14 +1201,13 @@ private fun NinthShipModularForgePanel(
                   unlocked -> Color(0xFFCBD5E1)
                   else -> Color(0xFFFBBF24)
                 },
-              fontSize = 8.sp,
+              fontSize = 8.5.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
           }
         }
 
-        // Respec Button (50❖)
         Box(
           modifier =
             Modifier.testTag("btn_hangar_respec_points")
@@ -1129,14 +1220,13 @@ private fun NinthShipModularForgePanel(
           Text(
             text = "🔄 RESPEC (50❖)",
             color = Color(0xFFFDA4AF),
-            fontSize = 8.sp,
+            fontSize = 8.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
         }
       }
 
-      // Right Side: [DEV TEST: TOGGLE LVL 20 / LVL 100] + Deploy Button
       Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1150,7 +1240,7 @@ private fun NinthShipModularForgePanel(
               )
               .border(
                 1.dp,
-                if (unlockFullNinthShipOverride) Color(0xFF34D399) else Color(0xFF38BDF8),
+                if (unlockFullNinthShipOverride) Color(0xFF34D399) else HangarElectricCyan,
                 RoundedCornerShape(6.dp),
               )
               .clickable { onToggleDevLevel20Or100() }
@@ -1160,8 +1250,8 @@ private fun NinthShipModularForgePanel(
             text =
               if (unlockFullNinthShipOverride) "⚡ DEV TEST: 100 PTS ON"
               else "⚡ DEV TEST: TOGGLE LVL 20 / LVL 100",
-            color = if (unlockFullNinthShipOverride) Color(0xFFA7F3D0) else Color(0xFF38BDF8),
-            fontSize = 8.sp,
+            color = if (unlockFullNinthShipOverride) Color(0xFFA7F3D0) else HangarElectricCyan,
+            fontSize = 8.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -1177,9 +1267,9 @@ private fun NinthShipModularForgePanel(
           modifier = Modifier.height(26.dp).testTag("btn_deploy_9th_ship"),
         ) {
           Text(
-            text = if (isUnlocked) "⚡ DEPLOY 9TH SHIP" else "🔒 LVL 20 GATE",
+            text = if (isUnlocked) "⚡ DEPLOY RIFT FRAME" else "🔒 LVL 20 GATE",
             color = Color.White,
-            fontSize = 8.5.sp,
+            fontSize = 9.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -1200,7 +1290,7 @@ private fun NinthShipModularForgePanel(
         Text(
           text = statusBanner,
           color = Color(0xFF00F0FF),
-          fontSize = 8.5.sp,
+          fontSize = 9.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
         )
@@ -1213,12 +1303,11 @@ private fun NinthShipModularForgePanel(
       }
     }
 
-    // Two-Column Body: Left = Option A 100-Point Progressive Allocator | Right = AI Hull Forge (<2KB JSON Visual Recipe)
     Row(
       modifier = Modifier.fillMaxSize(),
       horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-      // LEFT COLUMN: 5 Core Stat Sliders (0..30 Pts) + Primary Weapon Tier (0..15 Pts) + Class/Secondary Slot (0..25 Pts)
+      // LEFT COLUMN: 5 Core Stat Sliders (0..30 Pts, Monochrome Cyan) + Primary Weapon Tier + Class Ability Slot
       Column(
         modifier =
           Modifier.weight(0.54f)
@@ -1235,9 +1324,9 @@ private fun NinthShipModularForgePanel(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Text(
-            text = "⚙️ 9-RIFT FRAME MATRIX (UNIVERSAL FLOOR + 0..30/STAT)",
+            text = "⚙️ RIFT FRAME MATRIX (UNIVERSAL FLOOR + 0..30/STAT)",
             color = Color(0xFF00F0FF),
-            fontSize = 9.0.sp,
+            fontSize = 9.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -1245,7 +1334,7 @@ private fun NinthShipModularForgePanel(
             text =
               "FREE: $pointsRemaining / $effectivePointBudget PTS (USED: ${activeSlot.totalAllocatedPoints()})",
             color = if (pointsRemaining > 0) Color(0xFF4ADE80) else Color(0xFFFACC15),
-            fontSize = 8.2.sp,
+            fontSize = 8.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -1255,7 +1344,6 @@ private fun NinthShipModularForgePanel(
           label = "TOP SPEED",
           pts = activeSlot.speedPts,
           statReadout = "${spec.topSpeed.toInt()} PX/S (380 + 8/pt)",
-          color = Color(0xFF38BDF8),
           tagPrefix = "stat_speed",
           onDelta = { d ->
             adjustStatPoints(activeSlot.speedPts, d) { activeSlot.copy(speedPts = it) }
@@ -1265,7 +1353,6 @@ private fun NinthShipModularForgePanel(
           label = "THRUST",
           pts = activeSlot.thrustPts,
           statReadout = "${spec.thrust.toInt()} N/S² (600 + 15/pt)",
-          color = Color(0xFF22C55E),
           tagPrefix = "stat_thrust",
           onDelta = { d ->
             adjustStatPoints(activeSlot.thrustPts, d) { activeSlot.copy(thrustPts = it) }
@@ -1275,7 +1362,6 @@ private fun NinthShipModularForgePanel(
           label = "TURN RATE",
           pts = activeSlot.turnPts,
           statReadout = "${(spec.turnRate * 10f).roundToInt() / 10f} RAD/S (3.2 + 0.1/pt)",
-          color = Color(0xFFA855F7),
           tagPrefix = "stat_turn",
           onDelta = { d ->
             adjustStatPoints(activeSlot.turnPts, d) { activeSlot.copy(turnPts = it) }
@@ -1285,7 +1371,6 @@ private fun NinthShipModularForgePanel(
           label = "MAX FLUX",
           pts = activeSlot.maxFluxPts,
           statReadout = "${spec.maxFlux.toInt()} ❖ (2200 + 80/pt)",
-          color = Color(0xFFF59E0B),
           tagPrefix = "stat_flux",
           onDelta = { d ->
             adjustStatPoints(activeSlot.maxFluxPts, d) { activeSlot.copy(maxFluxPts = it) }
@@ -1295,7 +1380,6 @@ private fun NinthShipModularForgePanel(
           label = "FLUX RECHARGE",
           pts = activeSlot.rechargePts,
           statReadout = "${spec.rechargeRate.toInt()} ❖/S (240 + 8/pt)",
-          color = Color(0xFFEC4899),
           tagPrefix = "stat_recharge",
           onDelta = { d ->
             adjustStatPoints(activeSlot.rechargePts, d) { activeSlot.copy(rechargePts = it) }
@@ -1304,11 +1388,10 @@ private fun NinthShipModularForgePanel(
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        // Primary Weapon Upgrade Selector (0, 10, 12, 15 Pts)
         Text(
           text = "🔫 PRIMARY WEAPON TIER (${activeSlot.primaryPts} PTS INVESTED)",
-          color = Color(0xFF38BDF8),
-          fontSize = 8.5.sp,
+          color = HangarElectricCyan,
+          fontSize = 9.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
         )
@@ -1341,7 +1424,7 @@ private fun NinthShipModularForgePanel(
                     .border(
                       1.dp,
                       when {
-                        selected -> Color(0xFF38BDF8)
+                        selected -> HangarElectricCyan
                         canAfford -> Color(0xFF334155)
                         else -> Color(0xFF1E293B)
                       },
@@ -1356,13 +1439,13 @@ private fun NinthShipModularForgePanel(
                         )
                       }
                     }
-                    .padding(vertical = 5.dp, horizontal = 3.dp),
+                    .padding(vertical = 5.dp, horizontal = 4.dp),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
                   text = label,
                   color = if (selected) Color.White else if (canAfford) Color(0xFFCBD5E1) else Color(0xFF64748B),
-                  fontSize = 6.8.sp,
+                  fontSize = 7.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                   maxLines = 1,
@@ -1373,12 +1456,11 @@ private fun NinthShipModularForgePanel(
           }
         }
 
-        // Class / Secondary Ability Selector (0, 10, 15, 18, 20, 22, 25 Pts)
         Text(
           text =
             "💣 CLASS / SECONDARY SLOT (${activeSlot.secondaryPts} PTS • 4TH BUFF SLOT STAYS SEPARATE)",
           color = Color(0xFFF59E0B),
-          fontSize = 8.5.sp,
+          fontSize = 9.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
         )
@@ -1426,13 +1508,13 @@ private fun NinthShipModularForgePanel(
                         )
                       }
                     }
-                    .padding(vertical = 5.dp, horizontal = 3.dp),
+                    .padding(vertical = 5.dp, horizontal = 4.dp),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
                   text = secLabel,
                   color = if (isSelected) Color.White else if (canAfford) Color(0xFFCBD5E1) else Color(0xFF64748B),
-                  fontSize = 6.8.sp,
+                  fontSize = 7.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                   maxLines = 1,
@@ -1444,7 +1526,7 @@ private fun NinthShipModularForgePanel(
         }
       }
 
-      // RIGHT COLUMN: AI Hull Forge ("Describe your custom ship hull..." -> <2KB JSON Visual Recipe + Live 3D Preview)
+      // RIGHT COLUMN: AI Hull Forge (<2KB JSON Visual Recipe + Live 3D Preview)
       Column(
         modifier =
           Modifier.weight(0.46f)
@@ -1474,13 +1556,12 @@ private fun NinthShipModularForgePanel(
           Text(
             text = "RECIPE: ${recipeBytes}B (<2KB)",
             color = Color(0xFF4ADE80),
-            fontSize = 7.5.sp,
+            fontSize = 8.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
           )
         }
 
-        // Live 3D Allied & Hostile Sprite Preview + Hitbox/Contrast Guardrail Badges
         Row(
           modifier =
             Modifier.fillMaxWidth()
@@ -1506,7 +1587,7 @@ private fun NinthShipModularForgePanel(
               modifier =
                 Modifier.size(56.dp)
                   .background(Color.Black, RoundedCornerShape(8.dp))
-                  .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp)),
+                  .border(1.dp, HangarElectricCyan, RoundedCornerShape(8.dp)),
               contentAlignment = Alignment.Center,
             ) {
               Image(
@@ -1518,8 +1599,8 @@ private fun NinthShipModularForgePanel(
             }
             Text(
               text = "ALLIED (36x36)",
-              color = Color(0xFF38BDF8),
-              fontSize = 6.5.sp,
+              color = HangarElectricCyan,
+              fontSize = 7.sp,
               fontFamily = FontFamily.Monospace,
             )
           }
@@ -1542,7 +1623,7 @@ private fun NinthShipModularForgePanel(
             Text(
               text = "HOSTILE (36x36)",
               color = Color(0xFFEF4444),
-              fontSize = 6.5.sp,
+              fontSize = 7.sp,
               fontFamily = FontFamily.Monospace,
             )
           }
@@ -1554,7 +1635,7 @@ private fun NinthShipModularForgePanel(
             Text(
               text = "SILHOUETTE: ${recipe.silhouette}",
               color = Color.White,
-              fontSize = 8.sp,
+              fontSize = 8.5.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -1562,27 +1643,26 @@ private fun NinthShipModularForgePanel(
               text =
                 "SWEEP: ${recipe.wingSweep} • PLATES: ${recipe.chassisPlates} • ENG: ${recipe.engineStyle}",
               color = Color(0xFFCBD5E1),
-              fontSize = 7.sp,
+              fontSize = 7.5.sp,
               fontFamily = FontFamily.Monospace,
             )
             Text(
               text =
                 "PALETTE: ${recipe.primaryHex} / ${recipe.trimHex} / ${recipe.coreGlowHex}",
               color = Color(0xFFC084FC),
-              fontSize = 7.sp,
+              fontSize = 7.5.sp,
               fontFamily = FontFamily.Monospace,
             )
             Text(
               text = "✓ GUARDRAILS: 36PX HITBOX • L>=0.32 CONTRAST • TEAM RING",
               color = Color(0xFF4ADE80),
-              fontSize = 6.5.sp,
+              fontSize = 7.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
             )
           }
         }
 
-        // Custom Hull Name Input
         Row(
           modifier = Modifier.fillMaxWidth(),
           verticalAlignment = Alignment.CenterVertically,
@@ -1591,7 +1671,7 @@ private fun NinthShipModularForgePanel(
           Text(
             text = "HULL NAME:",
             color = Color(0xFFCBD5E1),
-            fontSize = 8.sp,
+            fontSize = 8.5.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
           )
@@ -1609,7 +1689,7 @@ private fun NinthShipModularForgePanel(
               textStyle =
                 TextStyle(
                   color = Color.White,
-                  fontSize = 9.sp,
+                  fontSize = 9.5.sp,
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.Monospace,
                 ),
@@ -1619,11 +1699,10 @@ private fun NinthShipModularForgePanel(
           }
         }
 
-        // AI Hull Prompt Input ("Describe your custom ship hull...")
         Text(
           text = "DESCRIBE YOUR CUSTOM SHIP HULL:",
           color = Color(0xFFCBD5E1),
-          fontSize = 8.sp,
+          fontSize = 8.5.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
         )
@@ -1657,7 +1736,6 @@ private fun NinthShipModularForgePanel(
           )
         }
 
-        // Quick Preset Prompt Chips
         Row(
           modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -1681,7 +1759,7 @@ private fun NinthShipModularForgePanel(
                   .background(Color(0xFF1E1035))
                   .border(1.dp, Color(0xFF7C3AED), RoundedCornerShape(5.dp))
                   .clickable {
-                    hullNameInput = chipTitle.take(18).uppercase()
+                    hullNameInput = chipTitle.take(18).uppercase(Locale.US)
                     aiPromptInput = chipPrompt
                   }
                   .padding(horizontal = 6.dp, vertical = 3.dp)
@@ -1689,7 +1767,7 @@ private fun NinthShipModularForgePanel(
               Text(
                 text = "✨ $chipTitle",
                 color = Color(0xFFE9D5FF),
-                fontSize = 7.sp,
+                fontSize = 7.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1697,7 +1775,6 @@ private fun NinthShipModularForgePanel(
           }
         }
 
-        // [🎨 FORGE AI SHIP DESIGN (RIFT SHARDS)] Button (First generation FREE; re-designs cost 150❖)
         Button(
           onClick = { onForgeAiHull(aiPromptInput, hullNameInput) },
           colors =
@@ -1727,7 +1804,6 @@ private fun AttributePointRow(
   label: String,
   pts: Int,
   statReadout: String,
-  color: Color,
   tagPrefix: String,
   onDelta: (Int) -> Unit,
 ) {
@@ -1736,28 +1812,28 @@ private fun AttributePointRow(
       Modifier.fillMaxWidth()
         .background(Color(0xFF060C17), RoundedCornerShape(6.dp))
         .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(6.dp))
-        .padding(horizontal = 6.dp, vertical = 3.dp),
+        .padding(horizontal = 6.dp, vertical = 4.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.SpaceBetween,
   ) {
-    Column(modifier = Modifier.width(118.dp)) {
+    Column(modifier = Modifier.width(126.dp)) {
       Text(
         text = label,
         color = Color.White,
-        fontSize = 8.sp,
+        fontSize = 9.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
       )
       Text(
         text = statReadout,
-        color = color,
-        fontSize = 7.sp,
+        color = HangarElectricCyan,
+        fontSize = 7.8.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
       )
     }
 
-    // 0..30 Progress Bar
+    // Baseline-Anchored 0..30 Progress Bar (0 pts = 10% visual width .. 30 pts = 100%)
     Box(
       modifier =
         Modifier.weight(1f)
@@ -1769,18 +1845,18 @@ private fun AttributePointRow(
       Box(
         modifier =
           Modifier.fillMaxHeight()
-            .fillMaxWidth((pts / 30f).coerceIn(0.03f, 1f))
-            .background(color, RoundedCornerShape(3.dp))
+            .fillMaxWidth(baselineAnchoredStatFraction(pts))
+            .background(HangarElectricCyan, RoundedCornerShape(3.dp))
       )
     }
 
     Text(
       text = "$pts/30",
       color = Color.White,
-      fontSize = 8.sp,
+      fontSize = 8.5.sp,
       fontWeight = FontWeight.Black,
       fontFamily = FontFamily.Monospace,
-      modifier = Modifier.width(30.dp),
+      modifier = Modifier.width(34.dp),
     )
 
     Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1807,7 +1883,7 @@ private fun PointStepBtn(label: String, tag: String, onClick: () -> Unit) {
     Text(
       text = label,
       color = Color.White,
-      fontSize = 7.5.sp,
+      fontSize = 8.sp,
       fontWeight = FontWeight.Black,
       fontFamily = FontFamily.Monospace,
     )
@@ -1821,6 +1897,7 @@ fun ShipSpritePreview(
   isAllied: Boolean = true,
 ) {
   val customVer = RiftSpriteBaker.customShip9Version
+  val shipName = remember(shipId) { RiftCodex.getShipById(shipId.coerceIn(1, 9)).name }
   val bmp =
     remember(shipId, isAllied, customVer) {
       RiftSpriteBaker.getShipSprite(
@@ -1832,9 +1909,8 @@ fun ShipSpritePreview(
     }
   Image(
     bitmap = bmp,
-    contentDescription = "Ship #$shipId",
+    contentDescription = shipName,
     filterQuality = FilterQuality.High,
     modifier = Modifier.size(sizeDp.dp),
   )
 }
-

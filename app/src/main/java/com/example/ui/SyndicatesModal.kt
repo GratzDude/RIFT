@@ -584,7 +584,7 @@ private fun MySyndicateRosterPane(
                 fontFamily = FontFamily.SansSerif,
               )
               Text(
-                text = "HULL: ${shipSpec.id}-${shipSpec.name.uppercase()} (${shipSpec.role.uppercase()})",
+                text = "HULL: ${shipSpec.name.uppercase()} (${shipSpec.role.uppercase()})",
                 color = Color(0xFF8A99AD),
                 fontSize = 11.sp,
                 fontFamily = FontFamily.SansSerif,
