@@ -43,12 +43,16 @@ import com.example.data.RiftRepository
 import com.example.data.SyndicateChatMessage
 import com.example.engine.RiftArenaView
 import com.example.engine.RiftGameEngine
+import com.example.engine.RiftNexusKnowledge
 import com.example.engine.RiftSoundSynthesizer
 import com.example.ui.ArmadaFleetModal
 import com.example.ui.AuthScreen
 import com.example.ui.DossierModal
 import com.example.ui.CodexModal
 import com.example.ui.HangarModal
+import com.example.ui.NexusAiConsoleModal
+import com.example.ui.NexusAiViewModel
+import com.example.ui.NexusStreamState
 import com.example.ui.RiftHudOverlay
 import com.example.ui.RiftShardsStoreModal
 import com.example.ui.RiftViewModel
@@ -86,11 +90,13 @@ private enum class ActiveModal {
   DOSSIER,
   SETTINGS,
   RIFT_SHARDS_STORE,
+  NEXUS,
 }
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    configureAppCheck(this, intent)
     enableEdgeToEdge()
     hideSystemBars()
     // P0: Native Landscape Enforcement (SCREEN_ORIENTATION_SENSOR_LANDSCAPE)
@@ -188,6 +194,12 @@ fun RiftArenaScreen(
   val leaderboardState by viewModel.leaderboardState.collectAsStateWithLifecycle()
   val sectorPilotsState by viewModel.sectorPilotsState.collectAsStateWithLifecycle()
 
+  val nexusViewModel: NexusAiViewModel = viewModel(key = "nexus_$currentUserId")
+  val nexusMessages by nexusViewModel.messages.collectAsStateWithLifecycle()
+  val nexusStreamState by nexusViewModel.streamState.collectAsStateWithLifecycle()
+  val isNexusStreaming =
+    nexusStreamState is NexusStreamState.Loading || nexusStreamState is NexusStreamState.Streaming
+
   val sfx = remember { RiftSoundSynthesizer() }
   var sfxEnabled by remember { mutableStateOf(true) }
   var currentFps by remember { mutableIntStateOf(60) }
@@ -200,6 +212,7 @@ fun RiftArenaScreen(
 
   var activeModal by remember { mutableStateOf(ActiveModal.NONE) }
   var previousModalBeforeStore by remember { mutableStateOf(ActiveModal.DOSSIER) }
+  var previousModalBeforeNexus by remember { mutableStateOf(ActiveModal.NONE) }
   var callsign by remember { mutableStateOf(localPrefs.getCallsign()) }
   var syndicateTag by remember { mutableStateOf(localPrefs.getSyndicateTag()) }
   var syndicateName by remember { mutableStateOf(localPrefs.getSyndicateName()) }
@@ -455,7 +468,10 @@ fun RiftArenaScreen(
   }
 
   BackHandler {
-    if (activeModal != ActiveModal.NONE) {
+    if (activeModal == ActiveModal.NEXUS) {
+      activeModal = previousModalBeforeNexus
+      previousModalBeforeNexus = ActiveModal.NONE
+    } else if (activeModal != ActiveModal.NONE) {
       activeModal = ActiveModal.NONE
     } else {
       activeModal = ActiveModal.HANGAR
@@ -528,6 +544,11 @@ fun RiftArenaScreen(
         localPrefs.setCameraZoom(nextZoom)
         toastMessage = String.format(Locale.US, "🔍 CAMERA ZOOM SET TO %.2fx", nextZoom)
         toastVersion++
+      },
+      isNexusStreaming = isNexusStreaming,
+      onOpenNexus = {
+        previousModalBeforeNexus = ActiveModal.NONE
+        activeModal = ActiveModal.NEXUS
       },
       onEngageBrake = {
         engine.engageManualBrake()
@@ -675,6 +696,11 @@ fun RiftArenaScreen(
             engine.syncLocalPlayerCustomShipSpec()
             sfx.playPrize()
           },
+          isNexusStreaming = isNexusStreaming,
+          onOpenNexus = {
+            previousModalBeforeNexus = ActiveModal.HANGAR
+            activeModal = ActiveModal.NEXUS
+          },
           onDeployPilot = { newCallsign, newShipId, _, asGuest ->
             if (asGuest) {
               localPrefs.setGuestBypassEnabled(true)
@@ -702,6 +728,11 @@ fun RiftArenaScreen(
 
       ActiveModal.CODEX -> {
         CodexModal(
+          isNexusStreaming = isNexusStreaming,
+          onOpenNexus = {
+            previousModalBeforeNexus = ActiveModal.CODEX
+            activeModal = ActiveModal.NEXUS
+          },
           onCloseModal = { activeModal = ActiveModal.NONE },
         )
       }
@@ -1177,6 +1208,78 @@ fun RiftArenaScreen(
             signOut(credentialManager = credentialManager, scope = scope)
           },
           onCloseModal = { activeModal = ActiveModal.NONE },
+        )
+      }
+
+      ActiveModal.NEXUS -> {
+        val cloudLeaderboard =
+          (leaderboardState as? UiState.Success)?.data ?: emptyList()
+        val topCloudEntry = cloudLeaderboard.maxByOrNull { it.allTimeBounty }
+        val topLiveShip = engine.ships.maxByOrNull { it.bounty }
+        val highestBountySummary =
+          remember(cloudLeaderboard, engine.allTimeBountyPeak, frameTick) {
+            val cloudMax = topCloudEntry?.allTimeBounty ?: 0L
+            val localMax =
+              maxOf(engine.allTimeBountyPeak, allTimePeakSnapshot?.bountyReached?.toLong() ?: 0L)
+            val liveMax = (topLiveShip?.bounty ?: 0).toLong()
+            when {
+              cloudMax >= localMax && cloudMax >= liveMax && topCloudEntry != null ->
+                "[${RiftGameEngine.cleanTag(topCloudEntry.syndicateTag)}] ${topCloudEntry.callsign} (${topCloudEntry.allTimeBounty})"
+              localMax >= liveMax && localMax > 0L ->
+                "[$syndicateTag] $callsign ($localMax)"
+              topLiveShip != null ->
+                "[${topLiveShip.syndicateTag}] ${topLiveShip.callsign} (${topLiveShip.bounty})"
+              else -> "[$syndicateTag] $callsign (${engine.localPlayer.bounty})"
+            }
+          }
+
+        val activeShipTitle =
+          remember(engine.localPlayer.shipId, activeCustomSlot, frameTick) {
+            "${engine.localPlayer.spec.id}-${engine.localPlayer.spec.name}"
+          }
+
+        val buildLiveSnapshot: () -> String = {
+          RiftNexusKnowledge.compileLiveSnapshot(
+            engine = engine,
+            localPrefs = localPrefs,
+            currentUserId = currentUserId,
+            callsign = callsign,
+            syndicateTag = syndicateTag,
+            syndicateName = syndicateName,
+            cloudLeaderboard = cloudLeaderboard,
+            allTimePeakSnapshot = localPrefs.getAllTimePeakBountySnapshot(currentUserId) ?: allTimePeakSnapshot,
+            pvpPeakSnapshot = localPrefs.getPvpPeakBountySnapshot(currentUserId) ?: pvpPeakSnapshot,
+            syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId).ifEmpty { syndicateHistory },
+          )
+        }
+
+        NexusAiConsoleModal(
+          messages = nexusMessages,
+          streamState = nexusStreamState,
+          lastFailedQuestion = nexusViewModel.lastFailedQuestion,
+          activeShipSummary = activeShipTitle,
+          pilotLevel = engine.pilotLevel,
+          pointBudget = engine.getCustomizationPointsTotal(),
+          highestBountySummary = highestBountySummary,
+          onSendQuestion = { query ->
+            nexusViewModel.askNexus(
+              rawQuestion = query,
+              liveTelemetrySnapshot = buildLiveSnapshot(),
+            )
+          },
+          onRetryLastQuestion = {
+            nexusViewModel.retryLastQuestion(
+              liveTelemetrySnapshot = buildLiveSnapshot(),
+            )
+          },
+          onClearHistory = {
+            nexusViewModel.clearConversation()
+          },
+          onCloseModal = {
+            val target = previousModalBeforeNexus
+            previousModalBeforeNexus = ActiveModal.NONE
+            activeModal = target
+          },
         )
       }
 

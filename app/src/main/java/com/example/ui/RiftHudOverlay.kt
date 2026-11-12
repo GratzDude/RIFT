@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -35,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -115,6 +118,8 @@ fun RiftHudOverlay(
   onOpenDossier: () -> Unit,
   onOpenSettings: () -> Unit,
   onCycleCameraZoom: () -> Unit = {},
+  isNexusStreaming: Boolean = false,
+  onOpenNexus: () -> Unit = {},
   onEngageBrake: () -> Unit,
   onToggleMultifire: () -> Unit,
 ) {
@@ -206,45 +211,49 @@ fun RiftHudOverlay(
       }
     }
 
-    // 1. Left-Anchored Top Navigation Bar (Scalable & Draggable in Calibration Mode)
-    Row(
+    // 1. Left-Anchored Top Navigation Bar (0.75x of 2x = 31.5dp Height, Strictly Constrained Left of Killboard)
+    Box(
       modifier =
         Modifier.align(Alignment.TopStart)
+          .padding(start = 6.dp, top = 6.dp, end = 256.dp)
           .offset {
             IntOffset(
               RiftCalibrationState.topBarOffset.x.roundToInt(),
               RiftCalibrationState.topBarOffset.y.roundToInt(),
             )
           }
-          .then(
-            if (RiftCalibrationState.isUiUnlockedForDragging) {
-              Modifier.pointerInput(Unit) {
-                detectDragGestures(
-                  onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
-                  onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
-                ) { change, dragAmount ->
-                  change.consume()
-                  RiftCalibrationState.topBarOffset += dragAmount
-                }
-              }.border(1.dp, Color(0xAA38BDF8), RoundedCornerShape(10.dp))
-            } else {
-              Modifier
-            }
-          )
-          .graphicsLayer {
-            scaleX = RiftCalibrationState.topBarScale
-            scaleY = RiftCalibrationState.topBarScale
-            transformOrigin = TransformOrigin(0f, 0f)
-          }
-          .padding(start = 6.dp, top = 6.dp)
-          .height(21.dp)
-          .background(Color(0x33080E18), RoundedCornerShape(10.dp))
-          .border(0.8.dp, Color(0x3D38BDF8), RoundedCornerShape(10.dp))
-          .padding(horizontal = 4.dp)
-          .testTag("hud_top_nav_bar"),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(2.dp),
+          .clipToBounds()
     ) {
+      Row(
+        modifier =
+          Modifier.then(
+              if (RiftCalibrationState.isUiUnlockedForDragging) {
+                Modifier.pointerInput(Unit) {
+                  detectDragGestures(
+                    onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
+                    onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
+                  ) { change, dragAmount ->
+                    change.consume()
+                    RiftCalibrationState.topBarOffset += dragAmount
+                  }
+                }.border(1.dp, Color(0xAA38BDF8), RoundedCornerShape(10.5.dp))
+              } else {
+                Modifier.horizontalScroll(rememberScrollState())
+              }
+            )
+            .graphicsLayer {
+              scaleX = RiftCalibrationState.topBarScale
+              scaleY = RiftCalibrationState.topBarScale
+              transformOrigin = TransformOrigin(0f, 0f)
+            }
+            .height(31.5.dp)
+            .background(Color(0x47080E18), RoundedCornerShape(10.5.dp))
+            .border(0.85.dp, Color(0x5238BDF8), RoundedCornerShape(10.5.dp))
+            .padding(horizontal = 4.5.dp)
+            .testTag("hud_top_nav_bar"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.6.dp),
+      ) {
       val (_, _, lvlFrac) = engine.getXpProgressInCurrentLevel()
       TopPilotLevelBadge(
         pilotLevel = engine.pilotLevel,
@@ -308,9 +317,10 @@ fun RiftHudOverlay(
         onClick = onCycleCameraZoom,
         tag = "hud_pill_zoom",
       )
+      }
     }
 
-    // 2. Centered Active Powerups Dock (Scalable & Draggable in Calibration Mode)
+    // 2. Centered Active Powerups Dock (Shifted cleanly below the 31.5dp Top Bar; Scalable & Draggable in Calibration Mode)
     Box(
       modifier =
         Modifier.align(Alignment.TopCenter)
@@ -340,7 +350,7 @@ fun RiftHudOverlay(
             scaleY = RiftCalibrationState.buffBarScale
             transformOrigin = TransformOrigin(0.5f, 0f)
           }
-          .padding(top = 28.dp)
+          .padding(top = 41.dp)
           .testTag("hud_active_powerups_dock"),
       contentAlignment = Alignment.Center,
     ) {
@@ -406,7 +416,7 @@ fun RiftHudOverlay(
       Box(
         modifier =
           Modifier.align(Alignment.TopCenter)
-            .padding(top = 58.dp)
+            .padding(top = 69.dp)
             .offset {
               IntOffset(
                 RiftCalibrationState.toastContainerOffset.x.roundToInt(),
@@ -433,7 +443,8 @@ fun RiftHudOverlay(
                 Color(0xD91E1B08)
               } else {
                 Color(0xCC080E18)
-              },
+              }
+              ,
               RoundedCornerShape(10.dp),
             )
             .border(
@@ -463,7 +474,7 @@ fun RiftHudOverlay(
       Box(
         modifier =
           Modifier.align(Alignment.TopCenter)
-            .padding(top = 86.dp)
+            .padding(top = 97.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xF0241404))
             .border(1.8.dp, Color(0xFFF59E0B).copy(alpha = pulse), RoundedCornerShape(12.dp))
@@ -526,24 +537,26 @@ fun RiftHudOverlay(
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      // Clean Left Wing: SPEED and SECTOR readouts only
+      // Left Wing: Exact same 154dp x 54dp size as Right Wing (SPEED & SECTOR on left + Frameless NEXUS Vortex on right)
       Row(
         modifier =
           Modifier.zIndex(1f)
+            .width(154.dp)
             .height(54.dp)
             .background(Color(0xF6080E18), RoundedCornerShape(27.dp))
             .border(1.dp, Color(0x5938BDF8), RoundedCornerShape(27.dp))
-            .padding(horizontal = 16.dp),
+            .padding(start = 14.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
       ) {
         Column(
-          modifier = Modifier.widthIn(min = 104.dp, max = 138.dp),
+          modifier = Modifier.weight(1f),
           verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
           Text(
             text = "SPEED $speed",
             color = Color(0xFF38BDF8),
-            fontSize = 11.sp,
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
             style = WingTelemetryTextStyle,
@@ -553,7 +566,7 @@ fun RiftHudOverlay(
           Text(
             text = "SECTOR $sectorCode $armadaBadge".uppercase(),
             color = Color(0xFF94A3B8),
-            fontSize = 9.5.sp,
+            fontSize = 8.8.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
             style = WingTelemetryTextStyle,
@@ -561,6 +574,11 @@ fun RiftHudOverlay(
             overflow = TextOverflow.Ellipsis,
           )
         }
+
+        SwirlingRiftHudOrb(
+          isStreaming = isNexusStreaming,
+          onClick = onOpenNexus,
+        )
       }
 
       // Center Translucent Radar Minimap with 1.5s Tap-to-Expand (~1.65x) & Intelligent Screen-Edge Anchoring
@@ -570,18 +588,19 @@ fun RiftHudOverlay(
         rootScreenSize = rootScreenSize,
       )
 
-      // Clean Right Wing: FLUX (⚡) and BOUNTY readouts only
+      // Clean Right Wing: Exact same 154dp x 54dp size (FLUX ⚡ and BOUNTY readouts)
       Row(
         modifier =
           Modifier.zIndex(1f)
+            .width(154.dp)
             .height(54.dp)
             .background(Color(0xF6080E18), RoundedCornerShape(27.dp))
             .border(1.dp, Color(0x5938BDF8), RoundedCornerShape(27.dp))
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Column(
-          modifier = Modifier.widthIn(min = 104.dp, max = 138.dp),
+          modifier = Modifier.fillMaxWidth(),
           verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
           val fluxPct = (player.flux / player.maxFlux).coerceIn(0f, 1f)
@@ -1270,11 +1289,12 @@ private fun TopPilotLevelBadge(
 ) {
   Column(
     modifier =
-      Modifier.clip(RoundedCornerShape(8.dp))
-        .background(Color(0x3B0E1D34))
-        .border(0.7.dp, Color(0xAA00F0FF), RoundedCornerShape(8.dp))
+      Modifier.height(24.dp)
+        .clip(RoundedCornerShape(7.5.dp))
+        .background(Color(0x4D0E1D34))
+        .border(0.75.dp, Color(0xBB00F0FF), RoundedCornerShape(7.5.dp))
         .clickable { onClick() }
-        .padding(horizontal = 4.5.dp, vertical = 1.dp)
+        .padding(horizontal = 5.2.dp, vertical = 2.dp)
         .testTag("hud_pill_pilot_level"),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.Center,
@@ -1286,35 +1306,35 @@ private fun TopPilotLevelBadge(
       Text(
         text = "LVL $pilotLevel",
         color = Color(0xFF00F0FF),
-        fontSize = 6.8.sp,
+        fontSize = 7.9.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = FontFamily.Monospace,
-        lineHeight = 7.0.sp,
+        lineHeight = 8.6.sp,
         maxLines = 1,
       )
       Text(
         text = "❖$riftShards",
         color = Color(0xFFFFD700),
-        fontSize = 6.4.sp,
+        fontSize = 7.4.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
-        lineHeight = 7.0.sp,
+        lineHeight = 8.6.sp,
         maxLines = 1,
       )
     }
-    Spacer(modifier = Modifier.height(1.dp))
+    Spacer(modifier = Modifier.height(1.8.dp))
     Box(
       modifier =
-        Modifier.width(38.dp)
-          .height(2.2.dp)
-          .clip(RoundedCornerShape(1.1.dp))
+        Modifier.width(42.dp)
+          .height(2.6.dp)
+          .clip(RoundedCornerShape(1.3.dp))
           .background(Color(0xFF142844))
     ) {
       Box(
         modifier =
           Modifier.fillMaxWidth(xpProgressFraction.coerceIn(0f, 1f))
-            .height(2.2.dp)
-            .background(Color(0xFF00E676), RoundedCornerShape(1.1.dp))
+            .height(2.6.dp)
+            .background(Color(0xFF00E676), RoundedCornerShape(1.3.dp))
       )
     }
   }
@@ -1330,20 +1350,22 @@ private fun TopPillAction(
 ) {
   Box(
     modifier =
-      Modifier.clip(RoundedCornerShape(8.dp))
-        .background(Color(0x2B111C2D))
-        .border(0.6.dp, borderColor.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
+      Modifier.height(24.dp)
+        .clip(RoundedCornerShape(7.5.dp))
+        .background(Color(0x3D111C2D))
+        .border(0.7.dp, borderColor.copy(alpha = 0.65f), RoundedCornerShape(7.5.dp))
         .clickable { onClick() }
-        .padding(horizontal = 4.dp, vertical = 1.dp)
+        .padding(horizontal = 4.5.dp)
         .testTag(tag),
+    contentAlignment = Alignment.Center,
   ) {
     Text(
       text = label,
       color = textColor,
-      fontSize = 7.2.sp,
+      fontSize = 8.1.sp,
       fontWeight = FontWeight.Bold,
       fontFamily = FontFamily.SansSerif,
-      lineHeight = 7.5.sp,
+      lineHeight = 9.0.sp,
       maxLines = 1,
     )
   }

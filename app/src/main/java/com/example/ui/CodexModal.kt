@@ -41,6 +41,8 @@ import com.example.engine.RiftSpriteBaker
 
 @Composable
 fun CodexModal(
+  isNexusStreaming: Boolean = false,
+  onOpenNexus: () -> Unit = {},
   onCloseModal: () -> Unit,
 ) {
   Box(
@@ -88,23 +90,34 @@ fun CodexModal(
             )
           }
 
-          Button(
-            onClick = onCloseModal,
-            colors =
-              ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF28111B),
-                contentColor = Color(0xFFFF3B4E),
-              ),
-            border = BorderStroke(1.dp, Color(0xFFFF3B4E)),
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.height(36.dp).testTag("codex_close_button"),
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
-            Text(
-              text = "✕ CLOSE",
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
+            SwirlingRiftHeaderPill(
+              onClick = onOpenNexus,
+              tag = "btn_codex_nexus_ai",
+              isStreaming = isNexusStreaming,
             )
+
+            Button(
+              onClick = onCloseModal,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = Color(0xFF28111B),
+                  contentColor = Color(0xFFFF3B4E),
+                ),
+              border = BorderStroke(1.dp, Color(0xFFFF3B4E)),
+              shape = RoundedCornerShape(8.dp),
+              modifier = Modifier.height(36.dp).testTag("codex_close_button"),
+            ) {
+              Text(
+                text = "✕ CLOSE",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+              )
+            }
           }
         }
 

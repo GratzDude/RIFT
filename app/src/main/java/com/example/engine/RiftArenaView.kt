@@ -1007,11 +1007,11 @@ class RiftArenaView(
 
       val safeWorldScale = worldScale.coerceAtLeast(0.15f)
       val baseTextScale = engine.playfieldTextScale * RiftCalibrationState.labelTextScale
-      val callsignTextSize = (RiftCalibrationState.nametagFontSizePx * dpDensity * baseTextScale) / safeWorldScale
-      val radialDist = (44f * RiftCalibrationState.shipScale + 12f) * RiftCalibrationState.labelDistanceOffset
+      val callsignTextSize = (RiftCalibrationState.nametagFontSizePx * 0.5f * dpDensity * baseTextScale) / safeWorldScale
+      val radialDist = (44f * RiftCalibrationState.shipScale + 10f) * RiftCalibrationState.labelDistanceOffset
       val tagStr = if (dc.armadaName.isNotEmpty()) "[${dc.armadaName}]" else "[${dc.syndicateTag.ifEmpty { "GUEST" }}]"
       val labelText = if (isFriendlyDecoy) "[PHANTOM] ${dc.callsign}" else "$tagStr ${dc.callsign} • ${dc.bounty}"
-      shipLabelStrokePaint.strokeWidth = (3.2f * dpDensity * baseTextScale) / safeWorldScale
+      shipLabelStrokePaint.strokeWidth = (1.7f * dpDensity * baseTextScale) / safeWorldScale
       shipLabelStrokePaint.textSize = callsignTextSize
       shipLabelStrokePaint.alpha = 240
       shipLabelStrokePaint.textAlign = Paint.Align.CENTER
@@ -1126,9 +1126,9 @@ class RiftArenaView(
       val baseTextScale = engine.playfieldTextScale * RiftCalibrationState.labelTextScale
       val bountyScreenPx =
         if (isHvt) RiftCalibrationState.bountyFontSizePx * 1.12f else RiftCalibrationState.bountyFontSizePx
-      val bountyTextSize = (bountyScreenPx * dpDensity * baseTextScale) / safeWorldScale
-      val callsignTextSize = (RiftCalibrationState.nametagFontSizePx * dpDensity * baseTextScale) / safeWorldScale
-      val tagTextSize = (RiftCalibrationState.nametagFontSizePx * 0.94f * dpDensity * baseTextScale) / safeWorldScale
+      val bountyTextSize = (bountyScreenPx * 0.5f * dpDensity * baseTextScale) / safeWorldScale
+      val callsignTextSize = (RiftCalibrationState.nametagFontSizePx * 0.5f * dpDensity * baseTextScale) / safeWorldScale
+      val tagTextSize = (RiftCalibrationState.nametagFontSizePx * 0.94f * 0.5f * dpDensity * baseTextScale) / safeWorldScale
 
       // Project ship position to screen coordinates to prevent HUD console and controls overlap
       val screenX = (s.x - effectiveCamX) * worldScale + vw * 0.5f
@@ -1183,7 +1183,7 @@ class RiftArenaView(
         val textY = if (isTop) s.y - radialDist else s.y + radialDist + callsignTextSize * 0.85f
         val lineText = "$badgePrefix ${s.callsign} • $bountyText"
 
-        shipLabelStrokePaint.strokeWidth = (3.4f * dpDensity * baseTextScale) / safeWorldScale
+        shipLabelStrokePaint.strokeWidth = (1.7f * dpDensity * baseTextScale) / safeWorldScale
         shipLabelStrokePaint.textSize = callsignTextSize
         shipLabelStrokePaint.alpha = labelAlpha
         shipLabelStrokePaint.textAlign = Paint.Align.CENTER
@@ -1226,7 +1226,7 @@ class RiftArenaView(
 
           shipLabelStrokePaint.textAlign = align
           shipLabelFillPaint.textAlign = align
-          shipLabelStrokePaint.strokeWidth = (3.4f * dpDensity * baseTextScale) / safeWorldScale
+          shipLabelStrokePaint.strokeWidth = (1.7f * dpDensity * baseTextScale) / safeWorldScale
           shipLabelStrokePaint.alpha = labelAlpha
           shipLabelFillPaint.alpha = labelAlpha
 
@@ -1312,7 +1312,7 @@ class RiftArenaView(
       popupPaint.color = fp.color
       popupPaint.alpha = (quadFade * 255f).toInt()
       popupPaint.textSize =
-        (RiftCalibrationState.fctFontSizePx * dpDensity * fp.scale * RiftCalibrationState.fctScale) / safeFctWorldScale
+        (RiftCalibrationState.fctFontSizePx * 0.5f * dpDensity * fp.scale * RiftCalibrationState.fctScale) / safeFctWorldScale
       canvas.drawText(fp.text, fp.x, fp.y, popupPaint)
     }
     popupPaint.alpha = 255

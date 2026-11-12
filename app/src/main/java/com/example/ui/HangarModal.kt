@@ -58,6 +58,8 @@ fun HangarModal(
   onRespecCustomSlot: () -> Boolean = { false },
   onForgeAiHullDesign: (String, String) -> Pair<Boolean, String> = { _, _ -> Pair(false, "") },
   onToggleDevLevel20Or100: () -> Unit = {},
+  isNexusStreaming: Boolean = false,
+  onOpenNexus: () -> Unit = {},
   onDeployPilot: (callsign: String, shipId: Int, mode: String, asGuest: Boolean) -> Unit,
   onCloseModal: () -> Unit,
 ) {
@@ -141,11 +143,17 @@ fun HangarModal(
             }
           }
 
-          // Level Badge, Customization Points, Rift Shards & Close
+          // NEXUS AI Swirling Portal Pill, Level Badge, Customization Points, Rift Shards & Close
           Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
+            SwirlingRiftHeaderPill(
+              onClick = onOpenNexus,
+              tag = "btn_hangar_nexus_ai",
+              isStreaming = isNexusStreaming,
+            )
+
             Column(
               modifier =
                 Modifier.background(Color(0xFF0E1B2E), RoundedCornerShape(6.dp))

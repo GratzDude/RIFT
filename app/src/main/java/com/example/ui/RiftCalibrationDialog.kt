@@ -576,10 +576,10 @@ private fun PhysicalPixelTextPreviewAndClockBar(
   fontScale: Float,
   onPlacementChanged: () -> Unit,
 ) {
-  // Convert true 1:1 physical logical-dp height directly to Compose sp ignoring fontScale distortion
-  val nametagSp = ((nametagPx / fontScale.coerceAtLeast(0.5f)).coerceIn(8f, 34f)).sp
-  val bountySp = ((bountyPx / fontScale.coerceAtLeast(0.5f)).coerceIn(8f, 36f)).sp
-  val fctSp = ((fctPx / fontScale.coerceAtLeast(0.5f)).coerceIn(8f, 34f)).sp
+  // Convert true 1:1 physical pixel height to Compose sp matching RiftArenaView (0.5f * dpDensity)
+  val nametagSp = ((nametagPx * 0.5f / fontScale.coerceAtLeast(0.5f)).coerceIn(5.5f, 22f)).sp
+  val bountySp = ((bountyPx * 0.5f / fontScale.coerceAtLeast(0.5f)).coerceIn(5.5f, 24f)).sp
+  val fctSp = ((fctPx * 0.5f / fontScale.coerceAtLeast(0.5f)).coerceIn(5.5f, 22f)).sp
 
   Row(
     modifier =

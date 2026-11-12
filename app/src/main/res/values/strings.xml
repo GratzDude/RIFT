@@ -5,7 +5,14 @@
     <string name="sign_in_with_google">Sign in with Google</string>
     <string name="signing_in">Authenticating Command Link…</string>
     <string name="auth_feature_physics">Zero-Friction Drift &amp; 0.65 Elastic Wall Bounce</string>
-    <string name="auth_feature_ships">4 Foundries • 8 Hulls • Unified Energy Capacitor</string>
+    <string name="auth_feature_ships">9 Modular Hulls • 11-Buff Pool • Unified Flux Capacitor</string>
     <string name="auth_feature_cloud">Live Cloud Leaderboard (PVP Only &amp; All-Time) + Sector Sync</string>
     <string name="sign_out">Sign Out</string>
+    <string name="nexus_orb_content_desc">Open NEXUS Rift Core Tactical Intelligence</string>
+    <string name="nexus_console_title">NEXUS // OMNISCIENT RIFT CORE</string>
+    <string name="nexus_input_placeholder">Ask NEXUS anything in RIFT (pixel specs, 100-pt builds, top bounties…)</string>
+    <string name="nexus_transmit">TRANSMIT</string>
+    <string name="nexus_clear">CLEAR</string>
+    <string name="nexus_close">CLOSE</string>
+    <string name="nexus_retry">RETRY</string>
 </resources>

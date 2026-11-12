@@ -112,6 +112,7 @@ object RiftCalibrationState {
   var brakeBtnOffset by mutableStateOf(Offset.Zero)
   var multiBtnOffset by mutableStateOf(Offset.Zero)
   var calibrationBtnOffset by mutableStateOf(Offset.Zero)
+  var nexusBtnOffset by mutableStateOf(Offset.Zero)
   var toastContainerOffset by mutableStateOf(Offset.Zero)
   var idleWarningBannerOffset by mutableStateOf(Offset.Zero)
 
@@ -1327,6 +1328,7 @@ object RiftCalibrationState {
     brakeBtnOffset = readOffset("brakeBtn")
     multiBtnOffset = readOffset("multiBtn")
     calibrationBtnOffset = readOffset("calibrationBtn")
+    nexusBtnOffset = readOffset("nexusBtn")
     toastContainerOffset = readOffset("toastContainer")
     idleWarningBannerOffset = readOffset("idleWarningBanner")
     unlockFullNinthShipOverride = prefs.getBoolean("unlockFullNinthShipOverride", false)
@@ -1385,6 +1387,7 @@ object RiftCalibrationState {
     writeOffset("brakeBtn", brakeBtnOffset)
     writeOffset("multiBtn", multiBtnOffset)
     writeOffset("calibrationBtn", calibrationBtnOffset)
+    writeOffset("nexusBtn", nexusBtnOffset)
     writeOffset("toastContainer", toastContainerOffset)
     writeOffset("idleWarningBanner", idleWarningBannerOffset)
     editor.putBoolean("unlockFullNinthShipOverride", unlockFullNinthShipOverride)
@@ -1462,6 +1465,7 @@ object RiftCalibrationState {
     brakeBtnOffset = Offset.Zero
     multiBtnOffset = Offset.Zero
     calibrationBtnOffset = Offset.Zero
+    nexusBtnOffset = Offset.Zero
     toastContainerOffset = Offset.Zero
     idleWarningBannerOffset = Offset.Zero
 
