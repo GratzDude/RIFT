@@ -962,6 +962,12 @@ class LocalPilotPrefs(context: Context) {
     userSettingsPrefs.edit().putFloat(KEY_PLAYFIELD_TEXT_SCALE, clamped).apply()
   }
 
+  fun getLastSeenChangelogBuild(): Int = userSettingsPrefs.getInt(KEY_LAST_SEEN_CHANGELOG_BUILD, 0)
+
+  fun setLastSeenChangelogBuild(buildNumber: Int) {
+    userSettingsPrefs.edit().putInt(KEY_LAST_SEEN_CHANGELOG_BUILD, buildNumber).apply()
+  }
+
   fun getBlockedPilotUids(): Set<String> {
     val raw = prefs.getString(KEY_BLOCKED_PILOT_UIDS, "") ?: ""
     return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
@@ -1038,6 +1044,7 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_GREENS_COLLECTED = "greens_collected"
     private const val KEY_CAMERA_ZOOM = "camera_zoom_level"
     private const val KEY_PLAYFIELD_TEXT_SCALE = "playfield_text_scale"
+    private const val KEY_LAST_SEEN_CHANGELOG_BUILD = "last_seen_changelog_build"
 
     // Phase 3: Pilot Level (1..100), 5 XP Sources & Rift Shards Currency Keys
     private const val KEY_XP_BUFFS = "xp_source_buffs"

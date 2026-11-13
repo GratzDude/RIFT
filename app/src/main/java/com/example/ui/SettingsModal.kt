@@ -50,6 +50,7 @@ fun SettingsModal(
   onRequestGoogleSignIn: () -> Unit,
   onRequestSignOut: () -> Unit,
   onCloseModal: () -> Unit,
+  onOpenChangelog: () -> Unit = {},
 ) {
   val scrollState = rememberScrollState()
 
@@ -81,7 +82,7 @@ fun SettingsModal(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          Column {
+          Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
             Text(
               text = "⚙️ ARENA COCKPIT SETTINGS",
               color = Color.White,
@@ -99,23 +100,47 @@ fun SettingsModal(
             )
           }
 
-          Button(
-            onClick = onCloseModal,
-            colors =
-              ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF28111B),
-                contentColor = Color(0xFFFF3B4E),
-              ),
-            border = BorderStroke(1.dp, Color(0xFFFF3B4E)),
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.height(36.dp).testTag("settings_close_button"),
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
           ) {
-            Text(
-              text = "✕ CLOSE",
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
-            )
+            Button(
+              onClick = onOpenChangelog,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = Color(0xFF0D2036),
+                  contentColor = Color(0xFF00F5D4),
+                ),
+              border = BorderStroke(1.dp, Color(0xFF00F5D4)),
+              shape = RoundedCornerShape(8.dp),
+              modifier = Modifier.height(36.dp).testTag("settings_btn_open_changelog"),
+            ) {
+              Text(
+                text = "📜 FULL VERSION CHANGELOG",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+              )
+            }
+
+            Button(
+              onClick = onCloseModal,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = Color(0xFF28111B),
+                  contentColor = Color(0xFFFF3B4E),
+                ),
+              border = BorderStroke(1.dp, Color(0xFFFF3B4E)),
+              shape = RoundedCornerShape(8.dp),
+              modifier = Modifier.height(36.dp).testTag("settings_close_button"),
+            ) {
+              Text(
+                text = "✕ CLOSE",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+              )
+            }
           }
         }
 

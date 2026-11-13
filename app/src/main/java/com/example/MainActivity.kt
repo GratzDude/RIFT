@@ -50,12 +50,14 @@ import com.example.engine.RiftNexusKnowledge
 import com.example.engine.RiftSoundSynthesizer
 import com.example.ui.ArmadaFleetModal
 import com.example.ui.AuthScreen
-import com.example.ui.DossierModal
+import com.example.ui.CURRENT_RIFT_BUILD_VERSION
 import com.example.ui.CodexModal
+import com.example.ui.DossierModal
 import com.example.ui.HangarModal
 import com.example.ui.NexusAiConsoleModal
 import com.example.ui.NexusAiViewModel
 import com.example.ui.NexusStreamState
+import com.example.ui.RiftChangelogModal
 import com.example.ui.RiftHudOverlay
 import com.example.ui.RiftShardsStoreModal
 import com.example.ui.RiftViewModel
@@ -137,30 +139,63 @@ fun AppNavigation(
 
   val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
   var isGuestMode by remember { mutableStateOf(localPrefs.isGuestBypassEnabled()) }
+  var lastSeenBuild by remember { mutableIntStateOf(localPrefs.getLastSeenChangelogBuild()) }
+  var showChangelogBeforeAuth by remember {
+    mutableStateOf(lastSeenBuild < CURRENT_RIFT_BUILD_VERSION)
+  }
+  var manualChangelogOpen by remember { mutableStateOf(false) }
   val user = currentUser
 
-  if (user == null && !isGuestMode) {
-    AuthScreen(
-      onAuthSuccess = {},
-      onPlayAsGuest = {
-        localPrefs.setGuestBypassEnabled(true)
-        if (localPrefs.getCallsign() == "COMMANDER") {
-          localPrefs.setCallsign("GUEST_${(1000..9999).random()}")
-        }
-        isGuestMode = true
+  if (showChangelogBeforeAuth) {
+    RiftChangelogModal(
+      lastSeenBuild = lastSeenBuild,
+      onAcknowledgeAndContinue = {
+        localPrefs.setLastSeenChangelogBuild(CURRENT_RIFT_BUILD_VERSION)
+        lastSeenBuild = CURRENT_RIFT_BUILD_VERSION
+        showChangelogBeforeAuth = false
+        manualChangelogOpen = false
       },
     )
   } else {
-    val uid = user?.uid ?: permanentDeviceUid
-    val initialCallsign = localPrefs.getCallsign()
+    Box(modifier = Modifier.fillMaxSize()) {
+      if (user == null && !isGuestMode) {
+        AuthScreen(
+          onAuthSuccess = {},
+          onPlayAsGuest = {
+            localPrefs.setGuestBypassEnabled(true)
+            if (localPrefs.getCallsign() == "COMMANDER") {
+              localPrefs.setCallsign("GUEST_${(1000..9999).random()}")
+            }
+            isGuestMode = true
+          },
+          onOpenChangelog = { manualChangelogOpen = true },
+        )
+      } else {
+        val uid = user?.uid ?: permanentDeviceUid
+        val initialCallsign = localPrefs.getCallsign()
 
-    key(uid) {
-      RiftArenaScreen(
-        currentUserId = uid,
-        initialCallsign = initialCallsign,
-        isGoogleAuthenticated = user != null,
-        localPrefs = localPrefs,
-      )
+        key(uid) {
+          RiftArenaScreen(
+            currentUserId = uid,
+            initialCallsign = initialCallsign,
+            isGoogleAuthenticated = user != null,
+            localPrefs = localPrefs,
+            onOpenChangelog = { manualChangelogOpen = true },
+          )
+        }
+      }
+
+      if (manualChangelogOpen) {
+        RiftChangelogModal(
+          lastSeenBuild = lastSeenBuild,
+          onAcknowledgeAndContinue = {
+            localPrefs.setLastSeenChangelogBuild(CURRENT_RIFT_BUILD_VERSION)
+            lastSeenBuild = CURRENT_RIFT_BUILD_VERSION
+            showChangelogBeforeAuth = false
+            manualChangelogOpen = false
+          },
+        )
+      }
     }
   }
 }
@@ -171,6 +206,7 @@ fun RiftArenaScreen(
   initialCallsign: String,
   isGoogleAuthenticated: Boolean,
   localPrefs: LocalPilotPrefs = LocalPilotPrefs(LocalContext.current),
+  onOpenChangelog: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
@@ -1389,6 +1425,7 @@ fun RiftArenaScreen(
             signOut(credentialManager = credentialManager, scope = scope)
           },
           onCloseModal = { activeModal = ActiveModal.NONE },
+          onOpenChangelog = onOpenChangelog,
         )
       }
 
