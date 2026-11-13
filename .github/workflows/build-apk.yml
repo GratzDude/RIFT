@@ -59,7 +59,7 @@ jobs:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"
         run: |
           set -o pipefail
-          gradle assembleDebug bundleRelease -x lint -x lintVitalRelease --no-daemon 2>&1 | tee gradle-build.log
+          gradle assembleDebug bundleRelease --no-daemon 2>&1 | tee gradle-build.log
 
       - name: Bundle Live Codebase & Build Log for Gemini Review
         if: always()
