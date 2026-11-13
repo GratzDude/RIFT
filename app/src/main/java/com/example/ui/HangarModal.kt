@@ -1,9 +1,12 @@
 package com.example.ui
 
+import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,11 +18,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -28,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.engine.CustomShipLoadoutSlot
+import com.example.engine.RiftCalibrationState
 import com.example.engine.RiftCodex
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.ShipSpec
@@ -93,6 +100,17 @@ fun HangarModal(
 
   var showFullNinthShipForgeModal by remember { mutableStateOf(false) }
   var forgeStatusBanner by remember { mutableStateOf<String?>(null) }
+  val hangarFocusRequester = remember { FocusRequester() }
+
+  LaunchedEffect(showFullNinthShipForgeModal) {
+    if (!showPilotIdentityBar) {
+      runCatching { hangarFocusRequester.requestFocus() }
+    }
+  }
+
+  BackHandler(enabled = showFullNinthShipForgeModal) {
+    showFullNinthShipForgeModal = false
+  }
 
   val inspectedShip =
     remember(currentShipId, allNineShips) {
@@ -113,6 +131,92 @@ fun HangarModal(
     modifier =
       Modifier.fillMaxSize()
         .background(Color(0xEB040812))
+        .focusRequester(hangarFocusRequester)
+        .focusable()
+        .onPreviewKeyEvent { keyEvent ->
+          val native = keyEvent.nativeKeyEvent
+          if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
+            RiftCalibrationState.gamepadConnected = true
+            when (native.keyCode) {
+              KeyEvent.KEYCODE_BUTTON_B -> {
+                if (showFullNinthShipForgeModal) {
+                  showFullNinthShipForgeModal = false
+                } else {
+                  onCloseModal()
+                }
+                true
+              }
+
+              KeyEvent.KEYCODE_DPAD_LEFT -> {
+                if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
+                  currentShipId = if (currentShipId > 1) currentShipId - 1 else 9
+                  true
+                } else {
+                  false
+                }
+              }
+
+              KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
+                  currentShipId = if (currentShipId < 9) currentShipId + 1 else 1
+                  true
+                } else {
+                  false
+                }
+              }
+
+              KeyEvent.KEYCODE_DPAD_UP -> {
+                if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
+                  currentShipId = if (currentShipId > 3) currentShipId - 3 else currentShipId + 6
+                  true
+                } else {
+                  false
+                }
+              }
+
+              KeyEvent.KEYCODE_DPAD_DOWN -> {
+                if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
+                  currentShipId = if (currentShipId <= 6) currentShipId + 3 else currentShipId - 6
+                  true
+                } else {
+                  false
+                }
+              }
+
+              KeyEvent.KEYCODE_BUTTON_A,
+              KeyEvent.KEYCODE_DPAD_CENTER -> {
+                if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
+                  if (currentShipId == 9 && !isNinthUnlocked) {
+                    showFullNinthShipForgeModal = true
+                  } else {
+                    val cleanCallsign =
+                      com.example.data.UgcModeration.sanitizeIdentifier(
+                        callsignInput.trim(),
+                        "COMMANDER",
+                      )
+                    onDeployPilot(cleanCallsign, currentShipId, currentMode, false)
+                  }
+                  true
+                } else {
+                  false
+                }
+              }
+
+              KeyEvent.KEYCODE_BUTTON_X -> {
+                if (!showFullNinthShipForgeModal && currentShipId == 9) {
+                  showFullNinthShipForgeModal = true
+                  true
+                } else {
+                  false
+                }
+              }
+
+              else -> false
+            }
+          } else {
+            false
+          }
+        }
         .clickable(enabled = true, onClick = {})
         .padding(horizontal = 10.dp, vertical = 6.dp),
     contentAlignment = Alignment.Center,

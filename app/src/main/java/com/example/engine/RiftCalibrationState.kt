@@ -94,10 +94,14 @@ object RiftCalibrationState {
   var leftStickScale by mutableFloatStateOf(1.0f)
   var idleWarningBannerScale by mutableFloatStateOf(1.0f)
 
-  // Testing Feature Flags
+  // Testing Feature Flags & Hardware Gamepad State
   var forceAllButtonsVisible by mutableStateOf(false)
   var isUiUnlockedForDragging by mutableStateOf(false)
   var unlockFullNinthShipOverride by mutableStateOf(false)
+  var gamepadConnected by mutableStateOf(false)
+  var gamepadDeadzoneLeft by mutableFloatStateOf(0.12f)
+  var gamepadDeadzoneRight by mutableFloatStateOf(0.18f)
+  var gamepadIdleTouchOpacity by mutableFloatStateOf(0.28f)
 
   // Draggable Offsets (in pixels) for every independent on-screen HUD element
   var topBarOffset by mutableStateOf(Offset.Zero)
@@ -337,8 +341,35 @@ object RiftCalibrationState {
       min = 0.60f, max = 1.60f, step = 0.05f, decimals = 2,
       getter = { leftStickScale }, setter = { leftStickScale = it.coerceIn(0.60f, 1.60f) },
     )
+    list += CalibrationParamDescriptor(
+      key = "gamepadIdleTouchOpacity",
+      tabIndex = 0,
+      title = "Gamepad Idle Touch Ring Opacity",
+      unit = "%",
+      description = "Opacity of on-screen touch rings when a physical controller is active and sticks are idle.",
+      min = 0.10f, max = 0.85f, step = 0.05f, decimals = 2,
+      getter = { gamepadIdleTouchOpacity }, setter = { gamepadIdleTouchOpacity = it.coerceIn(0.10f, 0.85f) },
+    )
 
     // --- TAB 1: FLIGHT PHYSICS & SAFE ZONE RULES ---
+    list += CalibrationParamDescriptor(
+      key = "gamepadDeadzoneLeft",
+      tabIndex = 1,
+      title = "Gamepad Left Stick Deadzone",
+      unit = "%",
+      description = "Radial inner deadzone for physical controller Left Stick flight thrust (prevents stick drift).",
+      min = 0.05f, max = 0.35f, step = 0.01f, decimals = 2,
+      getter = { gamepadDeadzoneLeft }, setter = { gamepadDeadzoneLeft = it.coerceIn(0.05f, 0.35f) },
+    )
+    list += CalibrationParamDescriptor(
+      key = "gamepadDeadzoneRight",
+      tabIndex = 1,
+      title = "Gamepad Right Stick Deadzone",
+      unit = "%",
+      description = "Radial inner deadzone for physical controller Right Stick 360° independent turret aiming.",
+      min = 0.05f, max = 0.35f, step = 0.01f, decimals = 2,
+      getter = { gamepadDeadzoneRight }, setter = { gamepadDeadzoneRight = it.coerceIn(0.05f, 0.35f) },
+    )
     list += CalibrationParamDescriptor(
       key = "wallElasticity",
       tabIndex = 1,

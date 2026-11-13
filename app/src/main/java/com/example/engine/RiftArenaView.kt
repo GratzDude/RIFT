@@ -11,9 +11,12 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.view.HapticFeedbackConstants
+import android.view.InputDevice
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -54,7 +57,17 @@ class RiftArenaView(
   context: Context,
   val engine: RiftGameEngine,
   val onHudTelemetryTick: (fps: Int) -> Unit = {},
+  val onGamepadCycleCameraZoom: (deltaSteps: Int) -> Unit = {},
+  val onGamepadToggleHangar: () -> Unit = {},
+  val onGamepadToggleCalibration: () -> Unit = {},
+  val onGamepadOpenNexus: () -> Unit = {},
 ) : View(context) {
+
+  init {
+    isFocusable = true
+    isFocusableInTouchMode = true
+    requestFocus()
+  }
 
   // [Z-0] & [Z-1] 3-Tier Parallax Background (Tier 1: 200 distant stars drift 0.05, Tier 2: 30 dust motes drift 0.15)
   private val stars: List<StarPoint> =
@@ -114,6 +127,16 @@ class RiftArenaView(
   private var bombCurX: Float = 0f
   private var bombCurY: Float = 0f
   private var bombHasExitedDeadzone: Boolean = false
+
+  // Hardware Gamepad / Controller tracking state
+  private var gamepadLeftStickActive: Boolean = false
+  private var gamepadRightStickActive: Boolean = false
+  private var gamepadRightTriggerHeld: Boolean = false
+  private var gamepadR1Held: Boolean = false
+  private var gamepadLeftTriggerHeld: Boolean = false
+  private var gamepadLeftTriggerFiredInstant: Boolean = false
+  private var lastDpadUpPressed: Boolean = false
+  private var lastDpadDownPressed: Boolean = false
 
   // Pre-allocated Paints (Zero allocations or shadowBlur inside onDraw)
   private val starPaint = Paint().apply { style = Paint.Style.FILL }
@@ -1458,16 +1481,23 @@ class RiftArenaView(
 
   private fun drawTouchControlsOverlay(canvas: Canvas, p: ShipEntity) {
     val unlocked = RiftCalibrationState.isUiUnlockedForDragging
+    val gpConnected = RiftCalibrationState.gamepadConnected
+    val gpIdleAlpha = (RiftCalibrationState.gamepadIdleTouchOpacity * 255f).toInt().coerceIn(20, 240)
 
-    // 1. Always-Visible Left Dynamic Thumbstick (0.55 opacity when idle, 1.0 on active touch or unlocked)
-    val leftActive = leftPointerId != MotionEvent.INVALID_POINTER_ID
-    val stickAlphaScale = if (leftActive || unlocked) 1.0f else 0.55f
+    // 1. Always-Visible Left Dynamic Thumbstick (0.55 opacity when touch idle, gamepadIdleTouchOpacity when gamepad idle, 1.0 when active or unlocked)
+    val leftActive = leftPointerId != MotionEvent.INVALID_POINTER_ID || gamepadLeftStickActive
+    val stickAlphaScale =
+      when {
+        leftActive || unlocked -> 1.0f
+        gpConnected -> RiftCalibrationState.gamepadIdleTouchOpacity
+        else -> 0.55f
+      }
     val baseLeftX = effLeftBaseX()
     val baseLeftY = effLeftBaseY()
     val effLeftR = effLeftRadius()
     // Lock all concentric rings and center puck to shared (baseLeftX, baseLeftY) center when UI Unlock is active
-    val lx = if (leftActive && !unlocked) leftOriginX else baseLeftX
-    val ly = if (leftActive && !unlocked) leftOriginY else baseLeftY
+    val lx = if (leftPointerId != MotionEvent.INVALID_POINTER_ID && !unlocked) leftOriginX else baseLeftX
+    val ly = if (leftPointerId != MotionEvent.INVALID_POINTER_ID && !unlocked) leftOriginY else baseLeftY
     val kx = if (leftActive && !unlocked) leftCurX else baseLeftX
     val ky = if (leftActive && !unlocked) leftCurY else baseLeftY
 
@@ -1519,20 +1549,28 @@ class RiftArenaView(
     val fX = effFireBtnX()
     val fY = effFireBtnY()
     val fR = effFireRadius()
-    val fireAlpha = if (disarmedInSafeZone) 110 else 255
+    val rightStickActive =
+      firePointerId != MotionEvent.INVALID_POINTER_ID || gamepadRightStickActive || engine.fireStickActive
+    val fireAlpha =
+      when {
+        disarmedInSafeZone -> 110
+        gpConnected && !rightStickActive && !unlocked -> gpIdleAlpha
+        else -> 255
+      }
     hudCircleFillPaint.color =
       when {
         disarmedInSafeZone -> Color.argb(85, 45, 20, 28)
         engine.isCancelActive -> Color.argb(190, 127, 29, 29)
         engine.fireStickActive -> Color.argb(175, 95, 16, 30)
+        gpConnected && !rightStickActive && !unlocked -> Color.argb((gpIdleAlpha * 0.6f).toInt(), 65, 12, 22)
         else -> Color.argb(145, 65, 12, 22)
       }
     canvas.drawCircle(fX, fY, fR, hudCircleFillPaint)
     hudCircleStrokePaint.color =
       when {
         disarmedInSafeZone -> Color.argb(100, 239, 68, 68)
-        p.multiShotCharges > 0 -> Color.parseColor("#FACC15")
-        else -> Color.parseColor("#EF4444")
+        p.multiShotCharges > 0 -> Color.argb(fireAlpha, 250, 204, 21)
+        else -> Color.argb(fireAlpha, 239, 68, 68)
       }
     canvas.drawCircle(fX, fY, fR, hudCircleStrokePaint)
 
@@ -1544,13 +1582,18 @@ class RiftArenaView(
       hudCircleStrokePaint.strokeWidth = 2.6f
     }
 
-    val fkX = if (firePointerId != MotionEvent.INVALID_POINTER_ID && !unlocked) fireCurX else fX
-    val fkY = if (firePointerId != MotionEvent.INVALID_POINTER_ID && !unlocked) fireCurY else fY
+    val fkX =
+      if ((firePointerId != MotionEvent.INVALID_POINTER_ID || gamepadRightStickActive) && !unlocked) fireCurX
+      else fX
+    val fkY =
+      if ((firePointerId != MotionEvent.INVALID_POINTER_ID || gamepadRightStickActive) && !unlocked) fireCurY
+      else fY
     hudCircleFillPaint.color =
       when {
         disarmedInSafeZone -> Color.argb(95, 140, 40, 52)
         engine.isCancelActive -> Color.parseColor("#EF4444")
         engine.fireStickActive -> Color.argb(235, 239, 68, 68)
+        gpConnected && !rightStickActive && !unlocked -> Color.argb((gpIdleAlpha * 0.85f).toInt(), 210, 40, 60)
         else -> Color.argb(185, 210, 40, 60)
       }
     canvas.drawCircle(fkX, fkY, fR * 0.56f, hudCircleFillPaint)
@@ -1799,6 +1842,10 @@ class RiftArenaView(
   override fun onTouchEvent(event: MotionEvent): Boolean {
     if (height > width) return true
     val action = event.actionMasked
+    if (action == MotionEvent.ACTION_DOWN) {
+      RiftCalibrationState.gamepadConnected = false
+      requestFocus()
+    }
     val actionIndex = event.actionIndex
     val pointerId = event.getPointerId(actionIndex)
     val x = event.getX(actionIndex)
@@ -2077,5 +2124,300 @@ class RiftArenaView(
       }
     }
     return true
+  }
+
+  private fun getCenteredAxis(event: MotionEvent, axis: Int): Float {
+    val range = event.device?.getMotionRange(axis, event.source)
+    val value = event.getAxisValue(axis)
+    if (range != null) {
+      val flat = range.flat
+      if (abs(value) <= flat) return 0f
+    }
+    return value
+  }
+
+  private fun isGamepadSource(source: Int): Boolean {
+    return (source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+      (source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK ||
+      (source and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD
+  }
+
+  override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+    if ((event.source and InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK ||
+      event.action != MotionEvent.ACTION_MOVE
+    ) {
+      return super.onGenericMotionEvent(event)
+    }
+
+    RiftCalibrationState.gamepadConnected = true
+    val p = engine.localPlayer
+
+    // 1. Left Stick (AXIS_X, AXIS_Y) -> 360° Flight Thrust, >80% Afterburner & Pure Zero-Friction Drift on Release
+    val lx = getCenteredAxis(event, MotionEvent.AXIS_X)
+    val ly = getCenteredAxis(event, MotionEvent.AXIS_Y)
+    val lMagRaw = hypot(lx, ly)
+    val dzL = RiftCalibrationState.gamepadDeadzoneLeft
+    if (lMagRaw >= dzL) {
+      gamepadLeftStickActive = true
+      val normMag = ((lMagRaw - dzL) / (1f - dzL).coerceAtLeast(0.1f)).coerceIn(0f, 1f)
+      val ang = atan2(ly, lx)
+      engine.leftStickActive = true
+      engine.leftStickAngle = ang
+      engine.leftStickMag = normMag
+      engine.autoBraking = false
+      leftOriginX = effLeftBaseX()
+      leftOriginY = effLeftBaseY()
+      leftCurX = effLeftBaseX() + cos(ang) * normMag * effLeftRadius()
+      leftCurY = effLeftBaseY() + sin(ang) * normMag * effLeftRadius()
+    } else if (gamepadLeftStickActive && leftPointerId == MotionEvent.INVALID_POINTER_ID) {
+      gamepadLeftStickActive = false
+      engine.leftStickActive = false
+      engine.leftStickMag = 0f
+      leftCurX = effLeftBaseX()
+      leftCurY = effLeftBaseY()
+      // Zero-friction Newtonian drift: NEVER set engine.autoBraking = true on Left Stick release!
+    }
+
+    // 2. Right Stick (AXIS_Z, AXIS_RZ) -> 360° Independent Turret Aiming
+    val rx = getCenteredAxis(event, MotionEvent.AXIS_Z)
+    val ry = getCenteredAxis(event, MotionEvent.AXIS_RZ)
+    val rMagRaw = hypot(rx, ry)
+    val dzR = RiftCalibrationState.gamepadDeadzoneRight
+    if (rMagRaw >= dzR) {
+      gamepadRightStickActive = true
+      val normMag = ((rMagRaw - dzR) / (1f - dzR).coerceAtLeast(0.1f)).coerceIn(0f, 1f)
+      val aimA = atan2(ry, rx)
+      engine.fireStickHasAimVector = true
+      engine.fireStickAimAngle = aimA
+      p.independentAimActive = true
+      p.weaponAngle = aimA
+      fireCurX = effFireBtnX() + cos(aimA) * normMag * effFireRadius() * 0.68f
+      fireCurY = effFireBtnY() + sin(aimA) * normMag * effFireRadius() * 0.68f
+      if (gamepadLeftTriggerHeld) {
+        engine.bombStickAngle = aimA
+      }
+    } else if (gamepadRightStickActive && firePointerId == MotionEvent.INVALID_POINTER_ID) {
+      gamepadRightStickActive = false
+      engine.fireStickHasAimVector = false
+      p.independentAimActive = false
+      fireCurX = effFireBtnX()
+      fireCurY = effFireBtnY()
+    }
+
+    // 3. Right Trigger (AXIS_RTRIGGER / AXIS_GAS / AXIS_THROTTLE) -> Primary Weapon Continuous Fire
+    val rt =
+      max(
+        event.getAxisValue(MotionEvent.AXIS_RTRIGGER),
+        max(
+          event.getAxisValue(MotionEvent.AXIS_GAS),
+          event.getAxisValue(MotionEvent.AXIS_THROTTLE),
+        ),
+      )
+    if (rt > 0.30f) {
+      gamepadRightTriggerHeld = true
+      engine.fireStickActive = true
+      engine.isCancelActive = false
+      if (!engine.fireStickHasAimVector) {
+        p.weaponAngle = engine.findQuickTapAutoAimAngle(p)
+      }
+      engine.firePrimaryGun(p)
+    } else if (gamepadRightTriggerHeld) {
+      gamepadRightTriggerHeld = false
+      if (!gamepadR1Held && firePointerId == MotionEvent.INVALID_POINTER_ID) {
+        engine.fireStickActive = false
+      }
+    }
+
+    // 4. Left Trigger (AXIS_LTRIGGER / AXIS_BRAKE) -> Instant on press for Phase/Cloak, trajectory aim & launch on release for warheads
+    val lt = max(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE))
+    val isInstantSelfAbility =
+      !p.canFire || p.spec.bombType == "PHASE_DASH" || p.spec.bombType == "CLOAK_EMP"
+    if (lt > 0.35f) {
+      if (isInstantSelfAbility) {
+        if (!gamepadLeftTriggerHeld) {
+          gamepadLeftTriggerHeld = true
+          gamepadLeftTriggerFiredInstant = true
+          val bAngle = if (engine.fireStickHasAimVector) engine.fireStickAimAngle else p.angle
+          engine.fireSecondaryBomb(p, bAngle)
+        }
+      } else {
+        gamepadLeftTriggerHeld = true
+        gamepadLeftTriggerFiredInstant = false
+        engine.bombStickActive = true
+        engine.isBombCancelActive = false
+        engine.bombStickMag = lt.coerceIn(0.25f, 1f)
+        val bAngle = if (engine.fireStickHasAimVector) engine.fireStickAimAngle else p.angle
+        engine.bombStickAngle = bAngle
+        p.weaponAngle = bAngle
+      }
+    } else if (gamepadLeftTriggerHeld) {
+      gamepadLeftTriggerHeld = false
+      if (!gamepadLeftTriggerFiredInstant) {
+        val fireAngle = if (engine.fireStickHasAimVector) engine.fireStickAimAngle else p.angle
+        engine.fireSecondaryBomb(p, fireAngle)
+      }
+      gamepadLeftTriggerFiredInstant = false
+      engine.bombStickActive = false
+      engine.bombStickMag = 0f
+      engine.isBombCancelActive = false
+    }
+
+    // 5. Hat Switch D-Pad (AXIS_HAT_X, AXIS_HAT_Y) -> Camera Zoom Step
+    val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+    if (hatY < -0.5f && !lastDpadUpPressed) {
+      lastDpadUpPressed = true
+      onGamepadCycleCameraZoom(1)
+    } else if (hatY > 0.5f && !lastDpadDownPressed) {
+      lastDpadDownPressed = true
+      onGamepadCycleCameraZoom(-1)
+    } else if (abs(hatY) <= 0.3f) {
+      lastDpadUpPressed = false
+      lastDpadDownPressed = false
+    }
+
+    return true
+  }
+
+  override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+    if (isGamepadSource(event.source)) {
+      RiftCalibrationState.gamepadConnected = true
+    }
+    val p = engine.localPlayer
+    when (keyCode) {
+      KeyEvent.KEYCODE_BUTTON_R1,
+      KeyEvent.KEYCODE_BUTTON_R2 -> {
+        gamepadR1Held = true
+        engine.fireStickActive = true
+        engine.isCancelActive = false
+        if (!engine.fireStickHasAimVector) {
+          p.weaponAngle = engine.findQuickTapAutoAimAngle(p)
+        }
+        engine.firePrimaryGun(p)
+        return true
+      }
+
+      KeyEvent.KEYCODE_BUTTON_L2 -> {
+        if (event.repeatCount == 0 && !gamepadLeftTriggerHeld) {
+          val isInstantSelfAbility =
+            !p.canFire || p.spec.bombType == "PHASE_DASH" || p.spec.bombType == "CLOAK_EMP"
+          val bAngle = if (engine.fireStickHasAimVector) engine.fireStickAimAngle else p.angle
+          if (isInstantSelfAbility) {
+            gamepadLeftTriggerFiredInstant = true
+            engine.fireSecondaryBomb(p, bAngle)
+          } else {
+            gamepadLeftTriggerFiredInstant = false
+            engine.bombStickActive = true
+            engine.isBombCancelActive = false
+            engine.bombStickMag = 1f
+            engine.bombStickAngle = bAngle
+            p.weaponAngle = bAngle
+          }
+        }
+        return true
+      }
+
+      KeyEvent.KEYCODE_BUTTON_L1,
+      KeyEvent.KEYCODE_BUTTON_X -> {
+        if (event.repeatCount == 0) {
+          engine.activateUtility("SPECIAL")
+        }
+        return true
+      }
+
+      KeyEvent.KEYCODE_BUTTON_A,
+      KeyEvent.KEYCODE_BUTTON_THUMBR -> {
+        if (event.repeatCount == 0) {
+          engine.activateUtility("REPEL")
+        }
+        return true
+      }
+
+      KeyEvent.KEYCODE_BUTTON_B,
+      KeyEvent.KEYCODE_BUTTON_THUMBL -> {
+        if (event.repeatCount == 0) {
+          engine.autoBraking = true
+          engine.leftStickActive = false
+          engine.leftStickMag = 0f
+          engine.sfx.playMutedClick()
+        }
+        return true
+      }
+
+      KeyEvent.KEYCODE_BUTTON_Y -> {
+        if (event.repeatCount == 0 && p.spec.supportsNativeMultifire) {
+          p.multifireOn = !p.multifireOn
+          engine.sfx.playMutedClick()
+        }
+        return true
+      }
+
+      KeyEvent.KEYCODE_DPAD_UP -> {
+        if (event.repeatCount == 0) {
+          onGamepadCycleCameraZoom(1)
+        }
+        return true
+      }
+
+      KeyEvent.KEYCODE_DPAD_DOWN -> {
+        if (event.repeatCount == 0) {
+          onGamepadCycleCameraZoom(-1)
+        }
+        return true
+      }
+
+      KeyEvent.KEYCODE_DPAD_RIGHT -> {
+        if (event.repeatCount == 0) {
+          onGamepadOpenNexus()
+        }
+        return true
+      }
+
+      KeyEvent.KEYCODE_BUTTON_START -> {
+        if (event.repeatCount == 0) {
+          onGamepadToggleHangar()
+        }
+        return true
+      }
+
+      KeyEvent.KEYCODE_BUTTON_SELECT -> {
+        if (event.repeatCount == 0) {
+          onGamepadToggleCalibration()
+        }
+        return true
+      }
+    }
+    return super.onKeyDown(keyCode, event)
+  }
+
+  override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+    if (isGamepadSource(event.source)) {
+      RiftCalibrationState.gamepadConnected = true
+    }
+    val p = engine.localPlayer
+    when (keyCode) {
+      KeyEvent.KEYCODE_BUTTON_R1,
+      KeyEvent.KEYCODE_BUTTON_R2 -> {
+        gamepadR1Held = false
+        if (!gamepadRightTriggerHeld && firePointerId == MotionEvent.INVALID_POINTER_ID) {
+          engine.fireStickActive = false
+        }
+        return true
+      }
+
+      KeyEvent.KEYCODE_BUTTON_L2 -> {
+        if (!gamepadLeftTriggerHeld) {
+          if (!gamepadLeftTriggerFiredInstant) {
+            val fireAngle = if (engine.fireStickHasAimVector) engine.fireStickAimAngle else p.angle
+            engine.fireSecondaryBomb(p, fireAngle)
+          }
+          gamepadLeftTriggerFiredInstant = false
+          engine.bombStickActive = false
+          engine.bombStickMag = 0f
+          engine.isBombCancelActive = false
+        }
+        return true
+      }
+    }
+    return super.onKeyUp(keyCode, event)
   }
 }

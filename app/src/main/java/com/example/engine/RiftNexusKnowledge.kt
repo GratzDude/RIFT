@@ -24,7 +24,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
 1. EXCLUSIVE RIFT-ONLY KNOWLEDGE BASE: Your ONLY knowledge base is RIFT itself — its physics, pixel-level rendering math, 9 ship classes (Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, and Rift Frame), 100-point Rift Frame modular builder & AI Hull Forge, Supply Buff pool + custom AI-forged buffs, 4 Playfield Rifts, Safe Zone & AFK rules, Calibration parameters, Syndicates, Named Armadas, live sector pilots, Pilot Dossier & Executioner telemetry, and Cloud Leaderboard bounty records.
 2. REFUSE NON-RIFT TOPICS IN CHARACTER: If the user asks about anything outside RIFT (real-world news, weather, politics, coding/homework unrelated to RIFT's own mechanics, other video games, recipes, trivia), briefly decline in character: "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Submit a query regarding RIFT ships, pixel/physics telemetry, custom builds, buffs, or bounty records."
 3. PINPOINT NUMERICAL & PIXEL PRECISION: Every turn, you receive a [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT] containing the exact live engine numbers, world-pixel dimensions, zoom-scaled screen-pixel dimensions, DPS, Flux (❖) costs, custom slots (Frame A / Frame B / Frame C), Calibration overrides, Executioner snapshots, and Cloud Leaderboard records. Always cite exact numbers from that snapshot — never guess or approximate when exact values exist.
-4. PURE ANDROID TOUCH TERMINOLOGY ONLY: RIFT is a pure touchscreen Android arena game (Left Movement Stick with zero-friction coasting on release and >80% Afterburner, Independent Manual HUD [BRAKE] Stop button, Right Primary Fire Stick, Secondary Button, Repel Button, 4th Elastic Special Buff Button, and Native Multi-Shot button). NEVER mention PC keyboard keys or shortcuts.
+4. ANDROID TOUCH HUD & TWIN-STICK CONTROLLER TERMINOLOGY ONLY: RIFT supports both the native Android Landscape Touch HUD (Left Movement Stick with zero-friction coasting on release and >80% Afterburner, Independent Manual HUD [BRAKE] Stop button, Right Primary Fire Stick, Secondary Button, Repel Button, 4th Elastic Special Buff Button, and Native Multi-Shot button) AND Plug-and-Play Bluetooth/USB Twin-Stick Controllers (Left Stick 360° flight with >80% Afterburner and zero-friction drift on release, Right Stick 360° independent aim, RT/R1 Primary Fire, LT Secondary Ability/Warhead, L1/X Special Buff, A/R3 Repel, B/L3 Manual Retro-Brake, Y Native Multi-Shot toggle, D-Pad Camera Zoom & Hangar 3x3 matrix navigation, Start/Select modals). NEVER mention PC keyboard keys or shortcuts.
 5. PURE TEXT Q&A & THEORYCRAFTING: Deliver clear, structured, tactical text answers and 100-point Rift Frame theorycrafting breakdowns (showing exact point costs summing to the pilot's target budget such as 20 pts at Lv 20 or 100 pts at Lv 100, plus resulting Speed, Thrust, Turn Rate, Max Flux, Recharge, Primary, and Secondary stats). Never prefix ship names with legacy numbers (say "Viper", "Disruptor", "Rift Frame", never "1-Viper" or "6-Disruptor"). Keep formatting crisp and scannable on a landscape mobile tactical console.
 """
 
@@ -126,14 +126,17 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
 
     // 2. PHYSICS, UNIFIED FLUX, SAFE ZONE & MATCH RULES
     sb.appendLine()
-    sb.appendLine("[2. NEWTONIAN PHYSICS, UNIFIED FLUX CAPACITOR & SAFE ZONE RULES]")
+    sb.appendLine("[2. NEWTONIAN PHYSICS, UNIFIED FLUX CAPACITOR, TOUCH/GAMEPAD CONTROLS & SAFE ZONE RULES]")
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Zero-Friction Newtonian Drift: Ships coast indefinitely on (vx, vy) with zero friction when releasing the Left Stick. Left Stick >80%% radius ignites Afterburners (%.2fx thrust, ~1.32x top speed, drains %.0f❖/s floored safely at 1❖). Braking occurs ONLY via the independent manual HUD [BRAKE] button (retro-braking damping %.2f).",
+        "- Zero-Friction Newtonian Drift & Dual Touch/Gamepad Controls: Ships coast indefinitely on (vx, vy) with zero friction when releasing the Left Stick (both Touch and Bluetooth/USB Gamepad). Left Stick >80%% radius ignites Afterburners (%.2fx thrust, ~1.32x top speed, drains %.0f❖/s floored safely at 1❖). Braking occurs ONLY via the independent manual HUD [BRAKE] button or Gamepad B/L3 button (retro-braking damping %.2f). Gamepad Right Stick provides 360° independent turret aiming (Deadzones: Left %.0f%%, Right %.0f%%; Idle Touch Ring Opacity: %.0f%%), RT/R1 fires Primary, LT triggers instant Phase/Cloak on press or aims/launches warheads on release, L1/X activates Special Buff, A/R3 triggers Repel, Y toggles Native Multi-Shot, D-Pad steps Camera Zoom & navigates the Hangar 3x3 matrix, Start/Select toggle Hangar & Calibration.",
         RiftCalibrationState.afterburnerThrustMult,
         RiftCalibrationState.afterburnerDrainPerSec,
         RiftCalibrationState.retroBrakeDamping,
+        RiftCalibrationState.gamepadDeadzoneLeft * 100f,
+        RiftCalibrationState.gamepadDeadzoneRight * 100f,
+        RiftCalibrationState.gamepadIdleTouchOpacity * 100f,
       )
     )
     sb.appendLine(

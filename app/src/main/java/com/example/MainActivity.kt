@@ -2,6 +2,7 @@ package com.example
 
 import android.content.pm.ActivityInfo
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -24,6 +25,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.viewinterop.AndroidView
@@ -470,8 +473,32 @@ fun RiftArenaScreen(
     }
   }
 
+  var arenaViewRef by remember { mutableStateOf<RiftArenaView?>(null) }
+  val topNavModals = remember {
+    listOf(
+      ActiveModal.HANGAR,
+      ActiveModal.CODEX,
+      ActiveModal.SYNDICATES,
+      ActiveModal.ARMADA,
+      ActiveModal.CHAT,
+      ActiveModal.DOSSIER,
+      ActiveModal.SETTINGS,
+    )
+  }
+
+  LaunchedEffect(activeModal, com.example.engine.RiftCalibrationState.isCalibrationModalOpen) {
+    if (
+      activeModal == ActiveModal.NONE &&
+        !com.example.engine.RiftCalibrationState.isCalibrationModalOpen
+    ) {
+      arenaViewRef?.requestFocus()
+    }
+  }
+
   BackHandler {
-    if (activeModal == ActiveModal.NEXUS) {
+    if (com.example.engine.RiftCalibrationState.isCalibrationModalOpen) {
+      com.example.engine.RiftCalibrationState.isCalibrationModalOpen = false
+    } else if (activeModal == ActiveModal.NEXUS) {
       activeModal = previousModalBeforeNexus
       previousModalBeforeNexus = ActiveModal.NONE
     } else if (activeModal != ActiveModal.NONE) {
@@ -485,6 +512,105 @@ fun RiftArenaScreen(
     modifier =
       Modifier.fillMaxSize()
         .background(Color.Black)
+        .onPreviewKeyEvent { keyEvent ->
+          val native = keyEvent.nativeKeyEvent
+          if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
+            when (native.keyCode) {
+              KeyEvent.KEYCODE_BUTTON_START -> {
+                com.example.engine.RiftCalibrationState.gamepadConnected = true
+                activeModal =
+                  if (activeModal == ActiveModal.HANGAR) ActiveModal.NONE else ActiveModal.HANGAR
+                sfx.playMutedClick()
+                true
+              }
+
+              KeyEvent.KEYCODE_BUTTON_SELECT -> {
+                com.example.engine.RiftCalibrationState.gamepadConnected = true
+                com.example.engine.RiftCalibrationState.isCalibrationModalOpen =
+                  !com.example.engine.RiftCalibrationState.isCalibrationModalOpen
+                sfx.playMutedClick()
+                true
+              }
+
+              KeyEvent.KEYCODE_BUTTON_L1 -> {
+                if (activeModal != ActiveModal.NONE) {
+                  com.example.engine.RiftCalibrationState.gamepadConnected = true
+                  val curIdx = topNavModals.indexOf(activeModal)
+                  val nextIdx =
+                    if (curIdx <= 0) topNavModals.lastIndex else curIdx - 1
+                  val nextModal = topNavModals[nextIdx]
+                  if (nextModal == ActiveModal.CHAT) unreadCommsCount = 0
+                  activeModal = nextModal
+                  sfx.playMutedClick()
+                  true
+                } else {
+                  false
+                }
+              }
+
+              KeyEvent.KEYCODE_BUTTON_R1 -> {
+                if (activeModal != ActiveModal.NONE) {
+                  com.example.engine.RiftCalibrationState.gamepadConnected = true
+                  val curIdx = topNavModals.indexOf(activeModal)
+                  val nextIdx =
+                    if (curIdx < 0 || curIdx >= topNavModals.lastIndex) 0 else curIdx + 1
+                  val nextModal = topNavModals[nextIdx]
+                  if (nextModal == ActiveModal.CHAT) unreadCommsCount = 0
+                  activeModal = nextModal
+                  sfx.playMutedClick()
+                  true
+                } else {
+                  false
+                }
+              }
+
+              KeyEvent.KEYCODE_BUTTON_B -> {
+                if (com.example.engine.RiftCalibrationState.isCalibrationModalOpen) {
+                  com.example.engine.RiftCalibrationState.gamepadConnected = true
+                  com.example.engine.RiftCalibrationState.isCalibrationModalOpen = false
+                  sfx.playMutedClick()
+                  true
+                } else if (
+                  activeModal != ActiveModal.NONE && activeModal != ActiveModal.HANGAR
+                ) {
+                  com.example.engine.RiftCalibrationState.gamepadConnected = true
+                  if (activeModal == ActiveModal.NEXUS) {
+                    activeModal = previousModalBeforeNexus
+                    previousModalBeforeNexus = ActiveModal.NONE
+                  } else if (activeModal == ActiveModal.RIFT_SHARDS_STORE) {
+                    activeModal = previousModalBeforeStore
+                  } else {
+                    activeModal = ActiveModal.NONE
+                  }
+                  sfx.playMutedClick()
+                  true
+                } else {
+                  false
+                }
+              }
+
+              else -> false
+            }
+          } else {
+            false
+          }
+        }
+        .onKeyEvent { keyEvent ->
+          val native = keyEvent.nativeKeyEvent
+          if (
+            native.action == KeyEvent.ACTION_DOWN &&
+              native.repeatCount == 0 &&
+              native.keyCode == KeyEvent.KEYCODE_BUTTON_B &&
+              activeModal != ActiveModal.NONE
+          ) {
+            com.example.engine.RiftCalibrationState.gamepadConnected = true
+            activeModal = ActiveModal.NONE
+            sfx.playMutedClick()
+            true
+          } else {
+            false
+          }
+        }
         .testTag("rift_arena_native_container")
   ) {
     // 1. High-Performance 60+ FPS Native Canvas View
@@ -498,12 +624,34 @@ fun RiftArenaScreen(
             currentFps = fps
             frameTick++
           },
+          onGamepadCycleCameraZoom = { deltaSteps ->
+            val nextZoom = (cameraZoom + deltaSteps * 0.15f).coerceIn(0.50f, 1.50f)
+            cameraZoom = nextZoom
+            engine.cameraZoom = nextZoom
+            localPrefs.setCameraZoom(nextZoom)
+          },
+          onGamepadToggleHangar = {
+            activeModal =
+              if (activeModal == ActiveModal.HANGAR) ActiveModal.NONE else ActiveModal.HANGAR
+            sfx.playMutedClick()
+          },
+          onGamepadToggleCalibration = {
+            com.example.engine.RiftCalibrationState.isCalibrationModalOpen =
+              !com.example.engine.RiftCalibrationState.isCalibrationModalOpen
+            sfx.playMutedClick()
+          },
+          onGamepadOpenNexus = {
+            previousModalBeforeNexus = ActiveModal.NONE
+            activeModal = ActiveModal.NEXUS
+            sfx.playMutedClick()
+          },
         ).apply {
           layoutParams =
             ViewGroup.LayoutParams(
               ViewGroup.LayoutParams.MATCH_PARENT,
               ViewGroup.LayoutParams.MATCH_PARENT,
             )
+          arenaViewRef = this
         }
       },
     )
