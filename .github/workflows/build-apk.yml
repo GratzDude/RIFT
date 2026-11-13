@@ -1,4 +1,4 @@
-name: Build & Publish RIFT APK
+name: Build & Publish RIFT APK + Play Store AAB
 
 on:
   push:
@@ -28,38 +28,84 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Generate Missing Keystore & Web Client ID
+      - name: Ensure Persistent Upload Keystore & Web Client ID
         run: |
           if [ ! -f "debug.keystore" ]; then
-            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=RIFT Game,O=Syndicate Studios,C=US"
           fi
           cp debug.keystore app/debug.keystore || true
           mkdir -p app/src/main/res/values
           printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="default_web_client_id" translatable="false">000000000000-placeholder.apps.googleusercontent.com</string>\n</resources>\n' > app/src/main/res/values/auth_fallback.xml
 
-      - name: Build Debug APK
+      - name: Set Package ID to com.game.rift & Auto-Increment VersionCode
+        run: |
+          sed -i 's/applicationId = "[^"]*"/applicationId = "com.game.rift"/g' app/build.gradle.kts
+          sed -i 's/versionCode = [0-9]*/versionCode = ${{ github.run_number }}/g' app/build.gradle.kts
+          sed -i 's/versionName = "[^"]*"/versionName = "1.0.${{ github.run_number }}"/g' app/build.gradle.kts
+          if ! grep -q "signingConfig = signingConfigs.getByName" app/build.gradle.kts; then
+            sed -i '/buildTypes {/a \        release {\n            signingConfig = signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")\n            isMinifyEnabled = false\n            isShrinkResources = false\n        }' app/build.gradle.kts || true
+          fi
+
+      - name: Build Debug APK & Signed Release AAB
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"
         run: |
-          gradle assembleDebug --no-daemon
+          gradle assembleDebug bundleRelease --no-daemon
 
-      - name: Rename APK to RIFT.apk
+      - name: Collect APK and Play Store AAB
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk RIFT.apk
+          AAB_PATH=$(find app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          cp "$AAB_PATH" RIFT-release.aab
 
-      - name: Upload APK to Workflow Artifacts
+      - name: Bundle Live Codebase for Gemini Review
+        run: |
+          {
+            echo "# RIFT — Full Codebase Snapshot (Build #${{ github.run_number }})"
+            echo "## 1. Directory Tree"
+            echo '```text'
+            find app public index.html build.gradle.kts settings.gradle.kts -maxdepth 6 -not -path "*/build/*" 2>/dev/null | sort
+            echo '```'
+            echo "## 2. Source Code Files"
+            find app public index.html build.gradle.kts settings.gradle.kts -type f \
+              \( -name "*.kt" -o -name "*.html" -o -name "*.js" -o -name "*.css" -o -name "*.kts" -o -name "*.xml" -o -name "*.json" \) \
+              -not -path "*/build/*" 2>/dev/null | sort | while read -r f; do
+                echo ""
+                echo "### FILE: $f"
+                echo '```'
+                cat "$f"
+                echo ""
+                echo '```'
+            done
+          } > RIFT-codebase.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f RIFT-codebase.md
+          git commit -m "chore: update RIFT-codebase.md snapshot (Build #${{ github.run_number }})" || true
+          git push -f origin HEAD:refs/heads/snapshot
+
+      - name: Upload APK, AAB & Codebase Snapshot to Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: RIFT-APK
-          path: RIFT.apk
+          name: RIFT-Builds
+          path: |
+            RIFT.apk
+            RIFT-release.aab
+            RIFT-codebase.md
 
-      - name: Publish to GitHub Releases (Latest)
+      - name: Publish APK, Play Store AAB & Codebase Snapshot to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "RIFT — Latest Test Build"
-          body: "Automated APK build from latest AI Studio push. Tap **RIFT.apk** below on your Android phone to download and install."
-          files: RIFT.apk
+          name: "RIFT — Build #${{ github.run_number }} (com.game.rift)"
+          body: |
+            - **Direct Phone Install:** Tap **RIFT.apk** below.
+            - **Google Play Console Upload:** Download **RIFT-release.aab** (`com.game.rift`, Version Code `${{ github.run_number }}`).
+            - **Full Codebase Bundle for Gemini:** `RIFT-codebase.md`
+          files: |
+            RIFT.apk
+            RIFT-release.aab
+            RIFT-codebase.md
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
