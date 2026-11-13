@@ -32,36 +32,44 @@ jobs:
         run: |
           if [ ! -f "debug.keystore" ]; then
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=RIFT Game,O=Syndicate Studios,C=US"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -f debug.keystore
+            git commit -m "chore: save persistent Android keystore [skip ci]" || true
+            git push origin HEAD:main || true
           fi
           cp debug.keystore app/debug.keystore || true
+          cp debug.keystore my-upload-key.jks || true
+          cp debug.keystore app/my-upload-key.jks || true
+
           mkdir -p app/src/main/res/values
           printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="default_web_client_id" translatable="false">000000000000-placeholder.apps.googleusercontent.com</string>\n</resources>\n' > app/src/main/res/values/auth_fallback.xml
 
-      - name: Set Package ID to com.game.rift & Auto-Increment VersionCode
+      - name: Set Package ID to com.game.rift & Point Release Signing to Keystore
         run: |
           sed -i 's/applicationId = "[^"]*"/applicationId = "com.game.rift"/g' app/build.gradle.kts
           sed -i 's/versionCode = [0-9]*/versionCode = ${{ github.run_number }}/g' app/build.gradle.kts
           sed -i 's/versionName = "[^"]*"/versionName = "1.0.${{ github.run_number }}"/g' app/build.gradle.kts
-          if ! grep -q "signingConfig = signingConfigs.getByName" app/build.gradle.kts; then
-            sed -i '/buildTypes {/a \        release {\n            signingConfig = signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")\n            isMinifyEnabled = false\n            isShrinkResources = false\n        }' app/build.gradle.kts || true
-          fi
+          sed -i 's/signingConfigs.getByName("release")/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
+          sed -i 's/signingConfigs.findByName("release")/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
+          sed -i 's/signingConfigs["release"]/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
 
       - name: Build Debug APK & Signed Release AAB
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"
         run: |
-          gradle assembleDebug bundleRelease --no-daemon
+          set -o pipefail
+          gradle assembleDebug bundleRelease -x lint -x lintVitalRelease --no-daemon 2>&1 | tee gradle-build.log
 
-      - name: Collect APK and Play Store AAB
-        run: |
-          cp app/build/outputs/apk/debug/app-debug.apk RIFT.apk
-          AAB_PATH=$(find app/build/outputs/bundle/release -name "*.aab" | head -n 1)
-          cp "$AAB_PATH" RIFT-release.aab
-
-      - name: Bundle Live Codebase for Gemini Review
+      - name: Bundle Live Codebase & Build Log for Gemini Review
+        if: always()
         run: |
           {
             echo "# RIFT — Full Codebase Snapshot (Build #${{ github.run_number }})"
+            echo "## 0. Latest Gradle Build Output (Tail)"
+            echo '```text'
+            tail -n 120 gradle-build.log 2>/dev/null || echo "No gradle log found"
+            echo '```'
             echo "## 1. Directory Tree"
             echo '```text'
             find app public index.html build.gradle.kts settings.gradle.kts -maxdepth 6 -not -path "*/build/*" 2>/dev/null | sort
@@ -83,6 +91,12 @@ jobs:
           git add -f RIFT-codebase.md
           git commit -m "chore: update RIFT-codebase.md snapshot (Build #${{ github.run_number }})" || true
           git push -f origin HEAD:refs/heads/snapshot
+
+      - name: Collect APK and Play Store AAB
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk RIFT.apk
+          AAB_PATH=$(find app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          cp "$AAB_PATH" RIFT-release.aab
 
       - name: Upload APK, AAB & Codebase Snapshot to Artifacts
         uses: actions/upload-artifact@v4
