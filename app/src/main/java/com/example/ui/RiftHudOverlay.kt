@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,8 +56,10 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -184,6 +187,18 @@ fun RiftHudOverlay(
   val zoomFormatted = String.format(Locale.US, "%.2fx", cameraZoom).replace(".00x", ".0x")
 
   var rootScreenSize by remember { mutableStateOf(IntSize(1920, 1080)) }
+  var bottomConsoleWidthPx by remember { mutableIntStateOf(0) }
+  val density = LocalDensity.current
+  val bottomConsoleSpreadDp =
+    remember(bottomConsoleWidthPx, RiftCalibrationState.bottomConsoleScale, density) {
+      val measuredDp =
+        if (bottomConsoleWidthPx > 0) {
+          with(density) { (bottomConsoleWidthPx * RiftCalibrationState.bottomConsoleScale).toDp().value }
+        } else {
+          0f
+        }
+      max(480f, measuredDp + 64f).dp
+    }
 
   Box(
     modifier =
@@ -636,6 +651,7 @@ fun RiftHudOverlay(
             scaleY = RiftCalibrationState.bottomConsoleScale
             transformOrigin = TransformOrigin(0.5f, 1f)
           }
+          .onSizeChanged { bottomConsoleWidthPx = it.width }
           .padding(bottom = 8.dp)
     ) {
       SymmetricBottomConsoleLayout(
@@ -658,7 +674,7 @@ fun RiftHudOverlay(
     Box(
       modifier =
         Modifier.align(Alignment.BottomCenter)
-          .padding(bottom = 14.dp, end = 480.dp)
+          .padding(bottom = 14.dp, end = bottomConsoleSpreadDp)
           .offset {
             IntOffset(
               RiftCalibrationState.brakeBtnOffset.x.roundToInt(),
@@ -739,7 +755,7 @@ fun RiftHudOverlay(
       Box(
         modifier =
           Modifier.align(Alignment.BottomCenter)
-            .padding(bottom = 14.dp, start = 480.dp)
+            .padding(bottom = 14.dp, start = bottomConsoleSpreadDp)
             .offset {
               IntOffset(
                 RiftCalibrationState.multiBtnOffset.x.roundToInt(),

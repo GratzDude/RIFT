@@ -10,6 +10,7 @@ import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.RadialGradient
+import android.graphics.RectF
 import android.graphics.Shader
 
 object RiftSpriteBaker {
@@ -17,6 +18,7 @@ object RiftSpriteBaker {
   val hostileShipBitmaps: Map<Int, Bitmap>
   val flashShipBitmaps: Map<Int, Bitmap>
   val buffIconBitmaps: Map<Int, Bitmap>
+  val riftAnomalyIconBitmaps: Map<String, Bitmap>
 
   val wallTileBitmap: Bitmap
   val hazardBorderBitmap: Bitmap
@@ -78,6 +80,18 @@ object RiftSpriteBaker {
     buffs[-11] = bakeBuffIconBitmap(-11, 68) // Thrust Overcharge
     buffs[-12] = bakeBuffIconBitmap(-12, 68) // Reactor Overcharge
     buffIconBitmaps = buffs
+
+    riftAnomalyIconBitmaps =
+      mapOf(
+        "plasma_rift" to bakeRiftAnomalyIconBitmap("plasma_rift", 68),
+        "repulsor_rift" to bakeRiftAnomalyIconBitmap("repulsor_rift", 68),
+        "gravity_rift" to bakeRiftAnomalyIconBitmap("gravity_rift", 68),
+        "phase_rift_pair" to bakeRiftAnomalyIconBitmap("phase_rift_pair", 68),
+      )
+  }
+
+  fun getRiftAnomalyIconBitmap(riftId: String): Bitmap {
+    return riftAnomalyIconBitmaps[riftId] ?: riftAnomalyIconBitmaps["plasma_rift"]!!
   }
 
   fun updateCustomShip9Sprites(recipe: CustomHullVisualRecipe) {
@@ -559,52 +573,167 @@ object RiftSpriteBaker {
     return bmp
   }
 
+  /**
+   * Bakes a seamless 64x64 Dark Obsidian Bulkhead Tile with staggered armored hull plates,
+   * mitered 45° corner chamfers, recessed dark titanium bolts, and subtle V-cyan conduit seams.
+   */
   private fun bakeWallTile(): Bitmap {
-    val bmp = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+    val size = 64
+    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
-    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    val borderPaint =
+
+    // 1. Deep void-obsidian recessed channel base
+    val abyssPaint =
       Paint().apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#04070D")
+      }
+    c.drawRect(0f, 0f, size.toFloat(), size.toFloat(), abyssPaint)
+
+    // 2. Subtle glowing cyan energy conduit seams running along recessed channels
+    val seamGlowPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1f
-        color = Color.parseColor("#060A12")
+        strokeWidth = 3.2f
+        color = Color.argb(46, 0, 240, 255)
       }
-    val highlightPaint =
-      Paint().apply {
-        style = Paint.Style.FILL
-        color = Color.parseColor("#1E293B")
+    val seamCorePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.0f
+        color = Color.argb(115, 56, 189, 248)
       }
-    val rivetPaint =
-      Paint().apply {
+    // Horizontal & staggered vertical conduit seams in the recessed grooves (seamless across 64x64 edges)
+    c.drawLine(0f, 32f, 64f, 32f, seamGlowPaint)
+    c.drawLine(0f, 0f, 64f, 0f, seamGlowPaint)
+    c.drawLine(0f, 64f, 64f, 64f, seamGlowPaint)
+    c.drawLine(32f, 0f, 32f, 32f, seamGlowPaint)
+    c.drawLine(16f, 32f, 16f, 64f, seamGlowPaint)
+    c.drawLine(48f, 32f, 48f, 64f, seamGlowPaint)
+
+    c.drawLine(0f, 32f, 64f, 32f, seamCorePaint)
+    c.drawLine(0f, 0.5f, 64f, 0.5f, seamCorePaint)
+    c.drawLine(32f, 0f, 32f, 32f, seamCorePaint)
+    c.drawLine(16f, 32f, 16f, 64f, seamCorePaint)
+    c.drawLine(48f, 32f, 48f, 64f, seamCorePaint)
+
+    val plateFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    val topBevelPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.15f
+        color = Color.parseColor("#223452")
+      }
+    val bottomShadePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.2f
+        color = Color.parseColor("#020409")
+      }
+    val ribGroovePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 0.9f
+        color = Color.parseColor("#060B14")
+      }
+    val ribHighlightPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 0.8f
+        color = Color.argb(95, 56, 189, 248)
+      }
+    val boltSocketPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#94A3B8")
+        color = Color.parseColor("#050912")
+      }
+    val boltPinPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#64748B")
+      }
+    val nodeSparkPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(145, 0, 240, 255)
       }
 
-    for (gy in 0 until 2) {
-      for (gx in 0 until 2) {
-        val x = gx * 16f
-        val y = gy * 16f
-        fillPaint.shader =
-          LinearGradient(
-            x,
-            y,
-            x,
-            y + 16f,
-            intArrayOf(
-              Color.parseColor("#1E293B"),
-              Color.parseColor("#0B1320"),
-              Color.parseColor("#060A12"),
-            ),
-            floatArrayOf(0f, 0.5f, 1f),
-            Shader.TileMode.CLAMP,
-          )
-        c.drawRect(x, y, x + 16f, y + 16f, fillPaint)
-        c.drawRect(x + 0.5f, y + 0.5f, x + 15.5f, y + 15.5f, borderPaint)
-        c.drawRect(x + 1f, y + 1f, x + 15f, y + 3f, highlightPaint)
-        c.drawCircle(x + 4f, y + 4f, 1.3f, rivetPaint)
-        c.drawCircle(x + 12f, y + 12f, 1.3f, rivetPaint)
+    fun drawObsidianPlate(left: Float, top: Float, right: Float, bottom: Float, hasCenterNode: Boolean) {
+      val insetL = left + 1.4f
+      val insetT = top + 1.4f
+      val insetR = right - 1.4f
+      val insetB = bottom - 1.4f
+      val ch = 3.0f
+
+      val platePath =
+        Path().apply {
+          moveTo(insetL + ch, insetT)
+          lineTo(insetR - ch, insetT)
+          lineTo(insetR, insetT + ch)
+          lineTo(insetR, insetB - ch)
+          lineTo(insetR - ch, insetB)
+          lineTo(insetL + ch, insetB)
+          lineTo(insetL, insetB - ch)
+          lineTo(insetL, insetT + ch)
+          close()
+        }
+
+      plateFillPaint.shader =
+        LinearGradient(
+          insetL,
+          insetT,
+          insetR,
+          insetB,
+          intArrayOf(
+            Color.parseColor("#162338"),
+            Color.parseColor("#0C1322"),
+            Color.parseColor("#080D17"),
+            Color.parseColor("#101A2C"),
+          ),
+          floatArrayOf(0f, 0.45f, 0.82f, 1f),
+          Shader.TileMode.CLAMP,
+        )
+      c.drawPath(platePath, plateFillPaint)
+
+      // Top/left specular armor bevel
+      c.drawLine(insetL + ch, insetT, insetR - ch, insetT, topBevelPaint)
+      c.drawLine(insetL, insetT + ch, insetL, insetB - ch, topBevelPaint)
+      // Bottom/right recessed shadow bevel
+      c.drawLine(insetL + ch, insetB, insetR - ch, insetB, bottomShadePaint)
+      c.drawLine(insetR, insetT + ch, insetR, insetB - ch, bottomShadePaint)
+
+      // Recessed internal structural rib + subtle cyan micro-trace
+      val midY = (insetT + insetB) * 0.5f
+      c.drawLine(insetL + 5f, midY, insetR - 5f, midY, ribGroovePaint)
+      if (hasCenterNode) {
+        c.drawLine(insetL + 7f, midY - 0.8f, insetR - 7f, midY - 0.8f, ribHighlightPaint)
+        val midX = (insetL + insetR) * 0.5f
+        c.drawCircle(midX, midY, 1.3f, nodeSparkPaint)
+      }
+
+      // Corner titanium micro-bolts
+      val bOff = 4.2f
+      val corners =
+        arrayOf(
+          insetL + bOff to insetT + bOff,
+          insetR - bOff to insetT + bOff,
+          insetL + bOff to insetB - bOff,
+          insetR - bOff to insetB - bOff,
+        )
+      for ((bx, by) in corners) {
+        c.drawCircle(bx, by, 1.5f, boltSocketPaint)
+        c.drawCircle(bx - 0.25f, by - 0.25f, 0.9f, boltPinPaint)
       }
     }
+
+    // Top row: two 32x32 obsidian bulkhead plates
+    drawObsidianPlate(0f, 0f, 32f, 32f, hasCenterNode = true)
+    drawObsidianPlate(32f, 0f, 64f, 32f, hasCenterNode = false)
+    // Bottom row: staggered brick-bond obsidian bulkhead plates (wraps seamlessly at x=0/64)
+    drawObsidianPlate(16f, 32f, 48f, 64f, hasCenterNode = true)
+    drawObsidianPlate(-16f, 32f, 16f, 64f, hasCenterNode = false)
+    drawObsidianPlate(48f, 32f, 80f, 64f, hasCenterNode = false)
+
     return bmp
   }
 
@@ -614,42 +743,198 @@ object RiftSpriteBaker {
     val bgPaint =
       Paint().apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#0B1320")
+        color = Color.parseColor("#070C16")
       }
     c.drawRect(0f, 0f, 32f, 32f, bgPaint)
 
     val stripePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.argb(192, 245, 158, 11) // rgba(245, 158, 11, 0.75)
+        color = Color.argb(115, 14, 165, 233) // Subtle dark cyan-slate bulkhead chevron trim
       }
 
     val p1 =
       Path().apply {
         moveTo(0f, 0f)
-        lineTo(14f, 0f)
-        lineTo(0f, 14f)
+        lineTo(10f, 0f)
+        lineTo(0f, 10f)
         close()
       }
     val p2 =
       Path().apply {
         moveTo(16f, 0f)
-        lineTo(30f, 0f)
-        lineTo(0f, 30f)
+        lineTo(26f, 0f)
+        lineTo(0f, 26f)
         lineTo(0f, 16f)
         close()
       }
     val p3 =
       Path().apply {
         moveTo(32f, 16f)
-        lineTo(32f, 30f)
+        lineTo(32f, 26f)
         lineTo(16f, 32f)
-        lineTo(2f, 32f)
+        lineTo(6f, 32f)
         close()
       }
     c.drawPath(p1, stripePaint)
     c.drawPath(p2, stripePaint)
     c.drawPath(p3, stripePaint)
+    return bmp
+  }
+
+  private fun bakeRiftAnomalyIconBitmap(riftId: String, sizePx: Int = 68): Bitmap {
+    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val cx = sizePx * 0.5f
+    val cy = sizePx * 0.5f
+    val r = sizePx * 0.36f
+
+    when (riftId) {
+      "plasma_rift" -> {
+        val halo =
+          Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader =
+              RadialGradient(
+                cx,
+                cy,
+                sizePx * 0.48f,
+                intArrayOf(
+                  Color.argb(235, 255, 240, 245),
+                  Color.argb(210, 239, 68, 68),
+                  Color.argb(135, 217, 70, 239),
+                  Color.argb(0, 239, 68, 68),
+                ),
+                floatArrayOf(0f, 0.32f, 0.68f, 1f),
+                Shader.TileMode.CLAMP,
+              )
+          }
+        c.drawCircle(cx, cy, sizePx * 0.48f, halo)
+        val arcPaint =
+          Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 2.6f
+            strokeCap = Paint.Cap.ROUND
+            color = Color.parseColor("#FCA5A5")
+          }
+        for (i in 0 until 6) {
+          val a = (i * Math.PI / 3.0).toFloat()
+          val p =
+            Path().apply {
+              moveTo(cx + kotlin.math.cos(a) * (r * 0.25f), cy + kotlin.math.sin(a) * (r * 0.25f))
+              lineTo(cx + kotlin.math.cos(a + 0.28f) * (r * 0.68f), cy + kotlin.math.sin(a + 0.28f) * (r * 0.68f))
+              lineTo(cx + kotlin.math.cos(a - 0.14f) * (r * 1.05f), cy + kotlin.math.sin(a - 0.14f) * (r * 1.05f))
+            }
+          c.drawPath(p, arcPaint)
+        }
+      }
+      "repulsor_rift" -> {
+        val halo =
+          Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader =
+              RadialGradient(
+                cx,
+                cy,
+                sizePx * 0.48f,
+                intArrayOf(
+                  Color.WHITE,
+                  Color.argb(190, 56, 189, 248),
+                  Color.argb(0, 56, 189, 248),
+                ),
+                floatArrayOf(0f, 0.45f, 1f),
+                Shader.TileMode.CLAMP,
+              )
+          }
+        c.drawCircle(cx, cy, sizePx * 0.48f, halo)
+        val ringPaint =
+          Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 2.2f
+            color = Color.WHITE
+          }
+        c.drawCircle(cx, cy, r * 0.55f, ringPaint)
+        ringPaint.color = Color.argb(180, 125, 211, 252)
+        c.drawCircle(cx, cy, r * 0.92f, ringPaint)
+        for (i in 0 until 4) {
+          val a = (i * Math.PI / 2.0 + Math.PI / 4.0).toFloat()
+          c.drawLine(
+            cx + kotlin.math.cos(a) * (r * 0.58f),
+            cy + kotlin.math.sin(a) * (r * 0.58f),
+            cx + kotlin.math.cos(a) * (r * 1.08f),
+            cy + kotlin.math.sin(a) * (r * 1.08f),
+            ringPaint,
+          )
+        }
+      }
+      "gravity_rift" -> {
+        val halo =
+          Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader =
+              RadialGradient(
+                cx,
+                cy,
+                sizePx * 0.48f,
+                intArrayOf(
+                  Color.BLACK,
+                  Color.argb(235, 168, 85, 247),
+                  Color.argb(120, 99, 102, 241),
+                  Color.argb(0, 99, 102, 241),
+                ),
+                floatArrayOf(0f, 0.34f, 0.72f, 1f),
+                Shader.TileMode.CLAMP,
+              )
+          }
+        c.drawCircle(cx, cy, sizePx * 0.48f, halo)
+        val corePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#030008") }
+        c.drawCircle(cx, cy, r * 0.42f, corePaint)
+        val swirlPaint =
+          Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 2.2f
+            strokeCap = Paint.Cap.ROUND
+            color = Color.parseColor("#D8B4FE")
+          }
+        val rect = RectF(cx - r * 0.85f, cy - r * 0.85f, cx + r * 0.85f, cy + r * 0.85f)
+        c.drawArc(rect, 15f, 120f, false, swirlPaint)
+        c.drawArc(rect, 195f, 120f, false, swirlPaint)
+      }
+      else -> {
+        // Paired Phase Rifts (Node A ⇄ Node B)
+        val c1x = sizePx * 0.34f
+        val c1y = sizePx * 0.36f
+        val c2x = sizePx * 0.66f
+        val c2y = sizePx * 0.64f
+        val linkPaint =
+          Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 2.2f
+            color = Color.argb(195, 45, 212, 191)
+          }
+        c.drawLine(c1x, c1y, c2x, c2y, linkPaint)
+        for ((px, py, hex) in listOf(Triple(c1x, c1y, "#2DD4BF"), Triple(c2x, c2y, "#38BDF8"))) {
+          val col = Color.parseColor(hex)
+          val g =
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+              shader =
+                RadialGradient(
+                  px,
+                  py,
+                  sizePx * 0.28f,
+                  intArrayOf(Color.WHITE, col, Color.argb(0, Color.red(col), Color.green(col), Color.blue(col))),
+                  floatArrayOf(0f, 0.52f, 1f),
+                  Shader.TileMode.CLAMP,
+                )
+            }
+          c.drawCircle(px, py, sizePx * 0.28f, g)
+          val ring =
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+              style = Paint.Style.STROKE
+              strokeWidth = 1.8f
+              color = Color.WHITE
+            }
+          c.drawCircle(px, py, sizePx * 0.14f, ring)
+        }
+      }
+    }
     return bmp
   }
 

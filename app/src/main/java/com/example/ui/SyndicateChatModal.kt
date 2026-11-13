@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.ArmadaMemberSlot
 import com.example.data.FriendPilotEntry
 import com.example.data.SyndicateChatMessage
+import com.example.data.UgcModeration
 import com.example.engine.ShipEntity
 import kotlinx.coroutines.delay
 
@@ -70,6 +71,10 @@ fun SyndicateChatModal(
   friendsList: List<FriendPilotEntry> = emptyList(),
   chatMessages: List<SyndicateChatMessage>,
   activeShipsInSector: List<ShipEntity>,
+  localPilotUid: String = "",
+  blockedPilotUids: Set<String> = emptySet(),
+  onBlockPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
+  onReportPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
   onSendChatMessage: (String) -> Unit,
   onPostArmadaRecruitBanner: () -> Unit,
   onRequestInviteToArmada: (armadaName: String, leaderCallsign: String) -> Unit,
@@ -103,6 +108,15 @@ fun SyndicateChatModal(
 
   val focusManager = LocalFocusManager.current
   val keyboardController = LocalSoftwareKeyboardController.current
+
+  val visibleMessages =
+    remember(chatMessages.toList(), blockedPilotUids) {
+      chatMessages.filter { it.senderUid !in blockedPilotUids }
+    }
+  val visibleFriends =
+    remember(friendsList, blockedPilotUids) {
+      friendsList.filter { it.uid !in blockedPilotUids }
+    }
 
   val inSpaceArmadas =
     remember(activeShipsInSector) {
@@ -200,7 +214,7 @@ fun SyndicateChatModal(
             tag = "drawer_tab_comms",
           )
           DrawerModePill(
-            label = "🛡️ ARMADA & FRIENDS (${friendsList.count { it.isOnline }})",
+            label = "🛡️ ARMADA & FRIENDS (${visibleFriends.count { it.isOnline }})",
             selected = drawerTab == 1,
             onClick = { drawerTab = 1 },
             modifier = Modifier.weight(1f),
@@ -345,7 +359,8 @@ fun SyndicateChatModal(
               }
             }
 
-            items(chatMessages, key = { it.id }) { msg ->
+            items(visibleMessages, key = { it.id }) { msg ->
+              val isSelfSender = localPilotUid.isNotEmpty() && msg.senderUid == localPilotUid
               if (msg.isArmadaRecruitBanner) {
                 val isAlreadyInThisArmada =
                   activeArmadaName.equals(msg.armadaName, ignoreCase = true)
@@ -372,16 +387,36 @@ fun SyndicateChatModal(
                       fontSize = 11.5.sp,
                       fontWeight = FontWeight.Bold,
                       fontFamily = FontFamily.SansSerif,
+                      modifier = Modifier.weight(1f),
                     )
-                    Text(
-                      text = "[${msg.senderSyndicateTag}] ${msg.senderCallsign}",
-                      color = Color(0xFF38BDF8),
-                      fontSize = 10.sp,
-                      fontFamily = FontFamily.Monospace,
-                    )
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                      Text(
+                        text = "[${msg.senderSyndicateTag}] ${msg.senderCallsign}",
+                        color = Color(0xFF38BDF8),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                      )
+                      if (!isSelfSender) {
+                        UgcActionChip(
+                          label = "⚑",
+                          accent = Color(0xFFF59E0B),
+                          onClick = { onReportPilot(msg.senderUid, msg.senderCallsign) },
+                          tag = "report_pilot_${msg.senderUid}",
+                        )
+                        UgcActionChip(
+                          label = "🚫",
+                          accent = Color(0xFFEF4444),
+                          onClick = { onBlockPilot(msg.senderUid, msg.senderCallsign) },
+                          tag = "block_pilot_${msg.senderUid}",
+                        )
+                      }
+                    }
                   }
                   Text(
-                    text = msg.armadaObjective,
+                    text = UgcModeration.sanitizeUgcText(msg.armadaObjective),
                     color = Color.White,
                     fontSize = 10.5.sp,
                     fontFamily = FontFamily.SansSerif,
@@ -450,6 +485,7 @@ fun SyndicateChatModal(
                   Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                   ) {
                     Text(
                       text = "[${msg.senderSyndicateTag}] ${msg.senderCallsign}",
@@ -458,16 +494,35 @@ fun SyndicateChatModal(
                       fontWeight = FontWeight.Bold,
                       fontFamily = FontFamily.SansSerif,
                     )
-                    Text(
-                      text = msg.timestampLabel,
-                      color = Color(0xFF94A3B8),
-                      fontSize = 9.sp,
-                      fontFamily = FontFamily.Monospace,
-                    )
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                      Text(
+                        text = msg.timestampLabel,
+                        color = Color(0xFF94A3B8),
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                      )
+                      if (!isSelfSender) {
+                        UgcActionChip(
+                          label = "⚑",
+                          accent = Color(0xFFF59E0B),
+                          onClick = { onReportPilot(msg.senderUid, msg.senderCallsign) },
+                          tag = "report_pilot_${msg.senderUid}",
+                        )
+                        UgcActionChip(
+                          label = "🚫",
+                          accent = Color(0xFFEF4444),
+                          onClick = { onBlockPilot(msg.senderUid, msg.senderCallsign) },
+                          tag = "block_pilot_${msg.senderUid}",
+                        )
+                      }
+                    }
                   }
                   Spacer(modifier = Modifier.height(2.dp))
                   Text(
-                    text = msg.messageText,
+                    text = UgcModeration.sanitizeUgcText(msg.messageText),
                     color = Color.White,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.SansSerif,
@@ -492,7 +547,7 @@ fun SyndicateChatModal(
                 KeyboardActions(
                   onSend = {
                     if (messageInput.isNotBlank()) {
-                      onSendChatMessage(messageInput.trim())
+                      onSendChatMessage(UgcModeration.sanitizeUgcText(messageInput.trim()))
                       messageInput = ""
                     }
                     focusManager.clearFocus()
@@ -549,7 +604,7 @@ fun SyndicateChatModal(
             Button(
               onClick = {
                 if (messageInput.isNotBlank()) {
-                  onSendChatMessage(messageInput.trim())
+                  onSendChatMessage(UgcModeration.sanitizeUgcText(messageInput.trim()))
                   messageInput = ""
                 }
                 focusManager.clearFocus()
@@ -638,7 +693,7 @@ fun SyndicateChatModal(
               }
             }
 
-            items(friendsList, key = { "drawer_friend_${it.uid}" }) { friend ->
+            items(visibleFriends, key = { "drawer_friend_${it.uid}" }) { friend ->
               val reqKey = "dreq_${friend.uid}"
               val invKey = "dinv_${friend.uid}"
               val reqRem = requestCooldownSec[reqKey] ?: 0
@@ -681,6 +736,18 @@ fun SyndicateChatModal(
                       fontFamily = FontFamily.SansSerif,
                     )
                   }
+                  UgcActionChip(
+                    label = "⚑",
+                    accent = Color(0xFFF59E0B),
+                    onClick = { onReportPilot(friend.uid, friend.callsign) },
+                    tag = "report_drawer_friend_${friend.uid}",
+                  )
+                  UgcActionChip(
+                    label = "🚫",
+                    accent = Color(0xFFEF4444),
+                    onClick = { onBlockPilot(friend.uid, friend.callsign) },
+                    tag = "block_drawer_friend_${friend.uid}",
+                  )
                 }
 
                 if (friend.isOnline) {
@@ -808,6 +875,32 @@ private fun QuickPingChip(
       fontSize = 9.5.sp,
       fontWeight = FontWeight.Bold,
       fontFamily = FontFamily.SansSerif,
+    )
+  }
+}
+
+@Composable
+private fun UgcActionChip(
+  label: String,
+  accent: Color,
+  onClick: () -> Unit,
+  tag: String,
+) {
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(6.dp))
+        .background(Color(0xFF111C2D))
+        .border(0.8.dp, accent.copy(alpha = 0.65f), RoundedCornerShape(6.dp))
+        .clickable { onClick() }
+        .padding(horizontal = 6.dp, vertical = 3.dp)
+        .testTag(tag),
+    contentAlignment = Alignment.Center,
+  ) {
+    Text(
+      text = label,
+      color = accent,
+      fontSize = 9.5.sp,
+      fontWeight = FontWeight.Bold,
     )
   }
 }

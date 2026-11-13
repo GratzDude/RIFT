@@ -136,7 +136,7 @@ object RiftCalibrationState {
   var empPulseRadius by mutableFloatStateOf(220f)
   var empFluxDrainPct by mutableFloatStateOf(0.35f)
   var empFreezeSec by mutableFloatStateOf(2.5f)
-  var phaseDashImpulse by mutableFloatStateOf(620f)
+  var phaseDashImpulse by mutableFloatStateOf(1120f)
   var phaseOverchargeBonusPct by mutableFloatStateOf(0.35f)
   var proxFuseRadius by mutableFloatStateOf(65f)
   var maxMinesPerShip by mutableIntStateOf(6)
@@ -306,7 +306,7 @@ object RiftCalibrationState {
       tabIndex = 0,
       title = "Borderless Killboard Scale",
       unit = "x",
-      description = "Resizes the floating top-left combat elimination feed.",
+      description = "Resizes the floating top-right combat elimination feed.",
       min = 0.60f, max = 1.80f, step = 0.05f, decimals = 2,
       getter = { killLogScale }, setter = { killLogScale = it.coerceIn(0.60f, 1.80f) },
     )
@@ -369,9 +369,9 @@ object RiftCalibrationState {
     list += CalibrationParamDescriptor(
       key = "retroBrakeDamping",
       tabIndex = 1,
-      title = "Snap-Back Auto-Brake Strength",
+      title = "Manual Brake Stop Strength",
       unit = "x",
-      description = "Smooth retro-thruster deceleration strength applied when releasing the left thumbstick.",
+      description = "Smooth retro-thruster deceleration applied when engaging the manual HUD [BRAKE] button (left stick coasts freely on release).",
       min = 0.05f, max = 0.85f, step = 0.02f, decimals = 2,
       getter = { retroBrakeDamping }, setter = { retroBrakeDamping = it.coerceIn(0.05f, 0.85f) },
     )
@@ -561,9 +561,9 @@ object RiftCalibrationState {
       shipIdFilter = 0,
       title = "Phase Dash Burst Velocity",
       unit = "px/s",
-      description = "Instant forward phase-shift velocity burst granted to Viper and Phase Dash hulls.",
-      min = 300f, max = 1200f, step = 20f, decimals = 0,
-      getter = { phaseDashImpulse }, setter = { phaseDashImpulse = it.coerceIn(300f, 1200f) },
+      description = "Supersonic forward phase-shift burst velocity granted to Viper and Phase Dash hulls.",
+      min = 700f, max = 1650f, step = 20f, decimals = 0,
+      getter = { phaseDashImpulse }, setter = { phaseDashImpulse = it.coerceIn(700f, 1650f) },
     )
     list += CalibrationParamDescriptor(
       key = "phaseOverchargeBonusPct",
@@ -644,17 +644,19 @@ object RiftCalibrationState {
         setter = { RiftCodex.getShipById(shipId).primarySpeed = it.coerceIn(450f, 1800f) },
       )
       if (spec.hasBomb) {
-        list += CalibrationParamDescriptor(
-          key = "ship_${shipId}_bombCost",
-          tabIndex = 3,
-          shipIdFilter = shipId,
-          title = "$prefix Secondary Flux Cost",
-          unit = "❖",
-          description = "Flux drained when activating $prefix's secondary (${spec.secondaryShortLabel}).",
-          min = 0f, max = 1200f, step = 25f, decimals = 0,
-          getter = { RiftCodex.getShipById(shipId).bombCost },
-          setter = { RiftCodex.getShipById(shipId).bombCost = it.coerceIn(0f, 1200f) },
-        )
+        if (spec.bombType != "CLOAK_EMP") {
+          list += CalibrationParamDescriptor(
+            key = "ship_${shipId}_bombCost",
+            tabIndex = 3,
+            shipIdFilter = shipId,
+            title = "$prefix Secondary Flux Cost",
+            unit = "❖",
+            description = "Flux drained when activating $prefix's secondary (${spec.secondaryShortLabel}).",
+            min = 0f, max = 1200f, step = 25f, decimals = 0,
+            getter = { RiftCodex.getShipById(shipId).bombCost },
+            setter = { RiftCodex.getShipById(shipId).bombCost = it.coerceIn(0f, 1200f) },
+          )
+        }
         list += CalibrationParamDescriptor(
           key = "ship_${shipId}_bombCooldown",
           tabIndex = 3,
@@ -840,9 +842,9 @@ object RiftCalibrationState {
     list += CalibrationParamDescriptor(
       key = "holoPhantomDuration",
       tabIndex = 4,
-      title = "Holo Phantom Decoy Lifespan",
+      title = "Holo Phantom Clone Lifespan",
       unit = "s",
-      description = "Seconds your holographic decoy ship mirrors flight and breaks Seeker locks.",
+      description = "Seconds your holographic phantom clone mirrors flight and breaks Seeker locks.",
       min = 2.0f, max = 20.0f, step = 0.5f, decimals = 1,
       getter = { holoPhantomDuration }, setter = { holoPhantomDuration = it.coerceIn(2.0f, 20.0f) },
     )
@@ -972,7 +974,7 @@ object RiftCalibrationState {
       tabIndex = 5,
       title = "Plasma Rift Burn Rate",
       unit = "%",
-      description = "Fraction of Max Flux burned per second while inside a crimson Plasma Rift.",
+      description = "Fraction of Max Flux burned per 0.6s tick while inside a crimson Plasma Rift.",
       min = 0.02f, max = 0.40f, step = 0.02f, decimals = 2,
       getter = { plasmaRiftDamagePct }, setter = { plasmaRiftDamagePct = it.coerceIn(0.02f, 0.40f) },
     )
@@ -1318,6 +1320,7 @@ object RiftCalibrationState {
             "fctFontSizePx",
             "labelTextScale",
             "fctScale",
+            "ship_6_bombCost",
           )
         val descriptorsByKey = buildAllParameterDescriptors().associateBy { it.key }
         val keys = obj.keys()
@@ -1326,11 +1329,17 @@ object RiftCalibrationState {
           if (k in excludedUserSettingKeys) continue
           val desc = descriptorsByKey[k]
           if (desc != null) {
-            desc.setter(obj.optDouble(k, desc.getter().toDouble()).toFloat())
+            val loadedVal = obj.optDouble(k, desc.getter().toDouble()).toFloat()
+            if (k == "phaseDashImpulse" && loadedVal <= 650f) {
+              desc.setter(1120f)
+            } else {
+              desc.setter(loadedVal)
+            }
           }
         }
       } catch (_: Exception) {}
     }
+    RiftCodex.getShipById(6).bombCost = 0f
     // Keep base constants neutral so user Settings (rift_user_settings) exclusively controls Zoom & Text Size
     cameraZoomScale = 1.0f
     nametagFontSizePx = 15.0f

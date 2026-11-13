@@ -635,7 +635,7 @@ fun DossierModal(
                       )
                       Text(
                         text =
-                          "TIER: $tierBadge • HULL #${entry.shipId} (${RiftCodex.getShipById(entry.shipId.toInt()).name.uppercase()})",
+                          "TIER: $tierBadge • HULL: ${RiftCodex.getShipById(entry.shipId.toInt()).name.uppercase()}",
                         color = Color(0xFF8A99AD),
                         fontSize = 10.sp,
                         fontFamily = FontFamily.SansSerif,

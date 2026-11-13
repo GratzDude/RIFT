@@ -396,7 +396,11 @@ fun HangarModal(
             onDeployNinthShip = {
               if (isNinthUnlocked) {
                 currentShipId = 9
-                val finalCallsign = callsignInput.trim().ifEmpty { "COMMANDER" }
+                val finalCallsign =
+                  com.example.data.UgcModeration.sanitizeIdentifier(
+                    callsignInput.trim(),
+                    "COMMANDER",
+                  )
                 onDeployPilot(finalCallsign, 9, currentMode, false)
               } else {
                 forgeStatusBanner =
@@ -1004,8 +1008,8 @@ private fun ShipComparisonInspectorPanel(
           Text(
             text =
               when {
-                ship.bombType == "PHASE_DASH" -> "300❖ • 2.5s CD • +35% RAIL OVERCHARGE"
-                ship.bombType == "CLOAK_EMP" -> "180❖/s CLOAK • 360° AoE EMP PULSE (350❖)"
+                ship.bombType == "PHASE_DASH" -> "300❖ • 2.5s CD • BLINK + I-FRAMES + 35% RAIL"
+                ship.bombType == "CLOAK_EMP" -> "180❖/s CLOAK • 0❖ DECLOAK 360° EMP PULSE"
                 ship.supportsNativeMultifire -> "INNATE SPLIT MULTI-SHOT (0❖ EXTRA COST)"
                 ship.hasBomb -> "${ship.bombDamage.toInt()} DMG • ${ship.bombCost.toInt()}❖ FLUX"
                 else -> "STARTING REPEL CHARGES: ${ship.initialRepels}"

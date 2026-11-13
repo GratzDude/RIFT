@@ -24,7 +24,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
 1. EXCLUSIVE RIFT-ONLY KNOWLEDGE BASE: Your ONLY knowledge base is RIFT itself — its physics, pixel-level rendering math, 9 ship classes (Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, and Rift Frame), 100-point Rift Frame modular builder & AI Hull Forge, Supply Buff pool + custom AI-forged buffs, 4 Playfield Rifts, Safe Zone & AFK rules, Calibration parameters, Syndicates, Named Armadas, live sector pilots, Pilot Dossier & Executioner telemetry, and Cloud Leaderboard bounty records.
 2. REFUSE NON-RIFT TOPICS IN CHARACTER: If the user asks about anything outside RIFT (real-world news, weather, politics, coding/homework unrelated to RIFT's own mechanics, other video games, recipes, trivia), briefly decline in character: "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Submit a query regarding RIFT ships, pixel/physics telemetry, custom builds, buffs, or bounty records."
 3. PINPOINT NUMERICAL & PIXEL PRECISION: Every turn, you receive a [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT] containing the exact live engine numbers, world-pixel dimensions, zoom-scaled screen-pixel dimensions, DPS, Flux (❖) costs, custom slots (Frame A / Frame B / Frame C), Calibration overrides, Executioner snapshots, and Cloud Leaderboard records. Always cite exact numbers from that snapshot — never guess or approximate when exact values exist.
-4. PURE ANDROID TOUCH TERMINOLOGY ONLY: RIFT is a pure touchscreen Android arena game (Left Movement Stick with >80% Afterburner & snap-back retro-brake, Right Primary Fire Stick, Secondary Button, Repel Button, 4th Elastic Special Buff Button, Independent Brake & Native Multi-Shot buttons). NEVER mention PC keyboard keys or shortcuts.
+4. PURE ANDROID TOUCH TERMINOLOGY ONLY: RIFT is a pure touchscreen Android arena game (Left Movement Stick with zero-friction coasting on release and >80% Afterburner, Independent Manual HUD [BRAKE] Stop button, Right Primary Fire Stick, Secondary Button, Repel Button, 4th Elastic Special Buff Button, and Native Multi-Shot button). NEVER mention PC keyboard keys or shortcuts.
 5. PURE TEXT Q&A & THEORYCRAFTING: Deliver clear, structured, tactical text answers and 100-point Rift Frame theorycrafting breakdowns (showing exact point costs summing to the pilot's target budget such as 20 pts at Lv 20 or 100 pts at Lv 100, plus resulting Speed, Thrust, Turn Rate, Max Flux, Recharge, Primary, and Secondary stats). Never prefix ship names with legacy numbers (say "Viper", "Disruptor", "Rift Frame", never "1-Viper" or "6-Disruptor"). Keep formatting crisp and scannable on a landscape mobile tactical console.
 """
 
@@ -89,13 +89,16 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Secondary Warhead & Ability Pixel Radii (scaled by projectileScale %.2fx): Siege Bomb = %.1f world px radius (24px base, 48px dia, 540 px/s + 25%% ship vel); Bounce Bomb & Proximity Flak Bomb = %.1f world px radius (17px base, 34px dia, 640 px/s + 25%% ship vel; Prox Flak fuse trigger = %.0f world px, red sensor ring = %.1f world px, bursts into 8 shrapnel bolts); Disruptor 360° AoE EMP Pulse = %.0f world px radial shockwave centered on Disruptor's hull upon uncloaking (350❖ cost, drains %.0f%% Max Flux & disables recharge for %.1fs; forced uncloak from enemy fire or <=150❖ floor breaks stealth cleanly without firing EMP); Proximity Mine = %.1f world px radius (18px base, 36px dia, stationary, max %d active mines, 30s life); Seeker Torpedo = %.1f world px radius (%.0f px/s, %.1fs flight = %.0f world px max flight path); Stasis Barrier = %.0f world px hard-light span (%.1fs duration).",
+        "- Secondary Warhead & Ability Pixel Radii (scaled by projectileScale %.2fx): Viper Phase Dash = 135 world px wall-safe spatial blink + %.0f px/s supersonic dodge burst (0.42s combat dodge i-frames + 0.65s phase shield + +%.0f%% next-shot rail overcharge, 300❖ cost, 2.5s CD); Siege Bomb = %.1f world px radius (24px base, 48px dia, 540 px/s + 25%% ship vel); Bounce Bomb & Proximity Flak Bomb = %.1f world px radius (17px base, 34px dia, 640 px/s + 25%% ship vel; Prox Flak fuse trigger = %.0f world px, red sensor ring = %.1f world px, bursts into 8 shrapnel bolts); Disruptor 360° AoE EMP Pulse = %.0f world px radial shockwave centered on Disruptor's hull upon uncloaking (0❖ decloak EMP cost while Cloak drains %.0f❖/s; drains %.0f%% Max Flux & disables recharge for %.1fs; forced uncloak from enemy fire or <=150❖ floor breaks stealth cleanly without firing EMP); Proximity Mine = %.1f world px radius (18px base, 36px dia, stationary, max %d active mines, 30s life); Seeker Torpedo = %.1f world px radius (%.0f px/s, %.1fs flight = %.0f world px max flight path); Stasis Barrier = %.0f world px hard-light span (%.1fs duration).",
         projScale,
+        RiftCalibrationState.phaseDashImpulse,
+        RiftCalibrationState.phaseOverchargeBonusPct * 100f,
         24f * projScale,
         17f * projScale,
         RiftCalibrationState.proxFuseRadius,
         45f * projScale,
         RiftCalibrationState.empPulseRadius,
+        RiftCalibrationState.cloakDrainPerSec,
         RiftCalibrationState.empFluxDrainPct * 100f,
         RiftCalibrationState.empFreezeSec,
         18f * projScale,
@@ -111,7 +114,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Supply Crates, Walls & World Labels: Supply Crate offscreen icon = 68x68 px, world render size = %.2f world px (88 * 0.89 * crateScale %.2fx = 89%% of ship visual size); Arena Wall & Yellow/Black Hazard Border tiles = 16x16 px repeating shaders; World Label Fonts = 1:1 physical screen pixels (Nametag %.0fpx, Bounty %.0fpx, Floating Combat Text %.0fpx * textScale %.2fx); Circular Radar Minimap = 122dp diameter (expands 1.65x for 1.5s on tap).",
+        "- Supply Crates, Walls & World Labels: Supply Crate offscreen icon = 68x68 px, world render size = %.2f world px (88 * 0.89 * crateScale %.2fx = 89%% of ship visual size); Arena Walls = 64x64 px dark obsidian bulkhead tiles with cyan energy conduit seams & 3D mitered bevels; World Label Fonts = 1:1 physical screen pixels (Nametag %.0fpx, Bounty %.0fpx, Floating Combat Text %.0fpx * textScale %.2fx); Circular Radar Minimap = 122dp diameter (expands 1.65x for 1.5s on tap).",
         78.32f * crateVisScale,
         crateVisScale,
         RiftCalibrationState.nametagFontSizePx,
@@ -127,7 +130,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Zero-Friction Newtonian Drift: Ships coast indefinitely on (vx, vy). Left Stick >80%% radius ignites Afterburners (%.2fx thrust, ~1.32x top speed, drains %.0f❖/s floored safely at 1❖). Releasing Left Stick snaps to center and engages smooth retro-braking (damping %.2f); independent [BRAKE] button also toggles full stop.",
+        "- Zero-Friction Newtonian Drift: Ships coast indefinitely on (vx, vy) with zero friction when releasing the Left Stick. Left Stick >80%% radius ignites Afterburners (%.2fx thrust, ~1.32x top speed, drains %.0f❖/s floored safely at 1❖). Braking occurs ONLY via the independent manual HUD [BRAKE] button (retro-braking damping %.2f).",
         RiftCalibrationState.afterburnerThrustMult,
         RiftCalibrationState.afterburnerDrainPerSec,
         RiftCalibrationState.retroBrakeDamping,
@@ -349,7 +352,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "  1) PLASMA RIFT (Crimson): Burns %.0f%% Max Flux/sec on contact (non-lethal floor 1❖ unless finished by enemy).",
+        "  1) PLASMA RIFT (Crimson): Burns %.0f%% Max Flux per 0.6s tick on contact and can destroy ships if Flux drops <= 0❖.",
         RiftCalibrationState.plasmaRiftDamagePct * 100f,
       )
     )
@@ -373,7 +376,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "  4) PHASE RIFT A & B (Paired Teal/Cyan Gateways): Instantaneously warps ships and projectiles between Node A and Node B while preserving momentum (%.2fs re-entry cooldown).",
+        "  4) PHASE RIFT A & B (Paired Teal/Cyan Gateways): Instantaneously warps ships, projectiles, and aim-guide raycasts between Node A and Node B while preserving momentum (%.2fs re-entry cooldown).",
         RiftCalibrationState.phaseRiftCooldownSec,
       )
     )

@@ -155,36 +155,53 @@ class RiftArenaView(
       color = Color.argb(185, 56, 189, 248)
     }
 
-  // Procedural Beveled Industrial Wall Paints
+  // Procedural Dark Obsidian + Cyan Energy Seam Bulkhead Wall Paints
   private val wallBodyPaint =
-    Paint().apply {
+    Paint(Paint.FILTER_BITMAP_FLAG).apply {
       style = Paint.Style.FILL
-      color = Color.parseColor("#0B1320")
+      color = Color.parseColor("#080D17")
+      shader = RiftSpriteBaker.wallShader
     }
 
   private val wallTopBevelPaint =
-    Paint().apply {
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.FILL
-      color = Color.parseColor("#1E293B")
+      color = Color.parseColor("#243B5E")
     }
 
   private val wallBottomBevelPaint =
-    Paint().apply {
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.FILL
-      color = Color.parseColor("#060A12")
+      color = Color.parseColor("#02040A")
     }
 
   private val wallHazardPaint =
-    Paint().apply {
+    Paint(Paint.FILTER_BITMAP_FLAG).apply {
       style = Paint.Style.STROKE
-      strokeWidth = 7f
+      strokeWidth = 4.5f
       shader = RiftSpriteBaker.hazardShader
+    }
+
+  private val wallCyanSeamPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeWidth = 1.5f
+      color = Color.argb(96, 0, 240, 255)
     }
 
   private val wallRivetPaint =
     Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.FILL
-      color = Color.parseColor("#94A3B8")
+      color = Color.parseColor("#64748B")
+    }
+
+  private val phaseEchoPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+      colorFilter =
+        android.graphics.PorterDuffColorFilter(
+          Color.argb(185, 0, 245, 212),
+          android.graphics.PorterDuff.Mode.SRC_ATOP,
+        )
     }
 
   private val shieldRipplePaint =
@@ -1023,11 +1040,34 @@ class RiftArenaView(
       canvas.drawText(labelText, dc.x, dc.y + radialDist + callsignTextSize * 0.85f, shipLabelFillPaint)
     }
 
+    // 9b. Phase Dash Holographic Cyan Afterimages (spatial blink echoes)
+    for (pa in engine.phaseAfterimages) {
+      if (pa.x < viewLeft - 110f || pa.x > viewRight + 110f || pa.y < viewTop - 110f || pa.y > viewBottom + 110f) {
+        continue
+      }
+      val echoBmp =
+        RiftSpriteBaker.getShipSprite(
+          shipId = pa.shipId,
+          isAllied = pa.isAllied,
+          isHitFlashing = false,
+        )
+      val halfEcho = echoBmp.width * 0.5f
+      val echoScale = (88f / echoBmp.width.toFloat()) * RiftCalibrationState.shipScale
+      val normLife = (pa.life / pa.maxLife).coerceIn(0f, 1f)
+      shipMatrix.reset()
+      shipMatrix.postTranslate(-halfEcho, -halfEcho)
+      shipMatrix.postScale(echoScale, echoScale)
+      shipMatrix.postRotate(pa.angleRad * 180f / PI.toFloat())
+      shipMatrix.postTranslate(pa.x, pa.y)
+      phaseEchoPaint.alpha = (normLife * 195f).toInt().coerceIn(0, 255)
+      canvas.drawBitmap(echoBmp, shipMatrix, phaseEchoPaint)
+    }
+
     // 10. 2x Playfield 3D Metallic Ship Sprites (88px) + Split World Labels:
     //     - Zero thruster plumes
     //     - Bounty centered ABOVE ship hull
     //     - [TAG] Callsign centered BELOW ship hull
-    //     - Stealth Cloak (6-Disruptor / 9-Rift Frame): completely invisible to enemy ships!
+    //     - Stealth Cloak (Disruptor / Rift Frame): completely invisible to enemy ships!
     for (s in engine.ships) {
       if (s.respawnTimer > 0f) continue
       if (s.x < viewLeft - 110f || s.x > viewRight + 110f || s.y < viewTop - 110f || s.y > viewBottom + 110f) {
@@ -1064,6 +1104,12 @@ class RiftArenaView(
         canvas.drawBitmap(bmp, shipMatrix, null)
       }
 
+      if (s.phaseDashTimer > 0f) {
+        bombRingPaint.strokeWidth = 3.2f
+        bombRingPaint.color = Color.argb(235, 0, 245, 212)
+        canvas.drawCircle(s.x, s.y, 50f * RiftCalibrationState.shipScale, bombRingPaint)
+        bombRingPaint.strokeWidth = 2.2f
+      }
       if (s.sniperOverchargeReady) {
         bombRingPaint.color = Color.argb(210, 56, 189, 248)
         canvas.drawCircle(s.x, s.y, 46f * RiftCalibrationState.shipScale, bombRingPaint)
@@ -1337,18 +1383,37 @@ class RiftArenaView(
     val right = w.x + w.w
     val bottom = w.y + w.h
 
+    // 1. Seamless 64x64 Dark Obsidian Armor Plates + Cyan Energy Conduit Seams
     canvas.drawRect(left, top, right, bottom, wallBodyPaint)
-    canvas.drawRect(left, top, right, top + 3.5f, wallTopBevelPaint)
-    canvas.drawRect(left, top, left + 3.5f, bottom, wallTopBevelPaint)
-    canvas.drawRect(left, bottom - 3.5f, right, bottom, wallBottomBevelPaint)
-    canvas.drawRect(right - 3.5f, top, right, bottom, wallBottomBevelPaint)
-    canvas.drawRect(left + 5f, top + 5f, right - 5f, bottom - 5f, wallHazardPaint)
 
-    var rx = left + 16f
-    while (rx <= right - 12f) {
-      canvas.drawCircle(rx, top + 11f, 2.2f, wallRivetPaint)
-      canvas.drawCircle(rx, bottom - 11f, 2.2f, wallRivetPaint)
-      rx += 64f
+    // 2. Crisp 3D Mitered Outer Specular & Shadow Bevels
+    canvas.drawRect(left, top, right, top + 4f, wallTopBevelPaint)
+    canvas.drawRect(left, top, left + 4f, bottom, wallTopBevelPaint)
+    canvas.drawRect(left, bottom - 4f, right, bottom, wallBottomBevelPaint)
+    canvas.drawRect(right - 4f, top, right, bottom, wallBottomBevelPaint)
+
+    // 3. Recessed Tech Trim + Inner Glowing Cyan Energy Seam
+    if (w.w > 18f && w.h > 18f) {
+      canvas.drawRect(left + 5.5f, top + 5.5f, right - 5.5f, bottom - 5.5f, wallHazardPaint)
+      canvas.drawRect(left + 8f, top + 8f, right - 8f, bottom - 8f, wallCyanSeamPaint)
+    }
+
+    // 4. Perimeter Titanium Micro-Bolts along Horizontal & Vertical Bulkhead Edges
+    if (w.h >= 24f) {
+      var rx = left + 18f
+      while (rx <= right - 14f) {
+        canvas.drawCircle(rx, top + 11.5f, 1.9f, wallRivetPaint)
+        canvas.drawCircle(rx, bottom - 11.5f, 1.9f, wallRivetPaint)
+        rx += 64f
+      }
+    }
+    if (w.w >= 24f && w.h >= 96f) {
+      var ry = top + 50f
+      while (ry <= bottom - 36f) {
+        canvas.drawCircle(left + 11.5f, ry, 1.9f, wallRivetPaint)
+        canvas.drawCircle(right - 11.5f, ry, 1.9f, wallRivetPaint)
+        ry += 64f
+      }
     }
   }
 
@@ -1358,12 +1423,20 @@ class RiftArenaView(
     trajPath.reset()
     trajPath.moveTo(pts[0].x, pts[0].y)
     for (i in 1 until pts.size) {
-      trajPath.lineTo(pts[i].x, pts[i].y)
+      val pt = pts[i]
+      if (pt.isWarp && pt.isBounce) {
+        trajPath.moveTo(pt.x, pt.y)
+      } else {
+        trajPath.lineTo(pt.x, pt.y)
+      }
     }
     canvas.drawPath(trajPath, trajectoryLinePaint)
-    bombRingPaint.color = color
     for (pt in pts) {
-      if (pt.isBounce) {
+      if (pt.isWarp) {
+        bombRingPaint.color = Color.parseColor("#2DD4BF")
+        canvas.drawCircle(pt.x, pt.y, 9.0f, bombRingPaint)
+      } else if (pt.isBounce) {
+        bombRingPaint.color = color
         canvas.drawCircle(pt.x, pt.y, 6.5f, bombRingPaint)
       }
     }
@@ -1537,14 +1610,22 @@ class RiftArenaView(
       val bY = effBombBtnY()
       val bR = effBombRadius()
       val isCloakToggleReady = (p.spec.bombType == "CLOAK_EMP" && !p.isCloaked)
+      val isCloakEmpPulseReady = (p.spec.bombType == "CLOAK_EMP" && p.isCloaked)
       val bombCost =
         when {
           !p.spec.hasBomb -> 300f
           isCloakToggleReady -> RiftCalibrationState.cloakDrainPerSec
+          isCloakEmpPulseReady -> 0f
           else -> p.spec.bombCost
         }
+      val hasEnoughFluxForSecondary =
+        when {
+          isCloakEmpPulseReady -> true
+          isCloakToggleReady -> p.flux > 200f
+          else -> (p.flux - bombCost) >= 1f
+        }
       val bombAvailable =
-        (p.canFire && p.bombTimer <= 0f && (p.flux - bombCost >= 1f)) || unlocked
+        (p.canFire && p.bombTimer <= 0f && hasEnoughFluxForSecondary) || unlocked
       val bombAlpha = if (bombAvailable) 255 else 110
       hudCircleFillPaint.color =
         if (engine.isBombCancelActive) {
@@ -1592,6 +1673,7 @@ class RiftArenaView(
           engine.isBombCancelActive -> "CANCEL"
           p.bombTimer > 0.1f -> String.format(java.util.Locale.US, "%.1fs", p.bombTimer)
           isCloakToggleReady -> "(${RiftCalibrationState.cloakDrainPerSec.toInt()}❖/s)"
+          isCloakEmpPulseReady -> "(0❖)"
           p.spec.bombType == "MINE" -> "(${bombCost.toInt()}❖ • $activeMineCount/6)"
           else -> "(${bombCost.toInt()}❖)"
         }

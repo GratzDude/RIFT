@@ -504,6 +504,16 @@ data class SecondaryAbilityOption(
   val summary: String,
 )
 
+data class PlayfieldRiftCodexEntry(
+  val id: String,
+  val title: String,
+  val classification: String,
+  val specBadge: String,
+  val accentHex: String,
+  val effectSummary: String,
+  val tacticalNote: String,
+)
+
 /**
  * Represents one of the 3 saveable loadout slots (Frame A, Frame B, Frame C) for the 9th Ship ("Rift Frame").
  * Implements Option A (Free-Spend + Universal Baseline Hull Floor, 0..30 pts per stat, 100-Point Parity Matrix).
@@ -607,7 +617,7 @@ data class CustomShipLoadoutSlot(
         "SIEGE" ->
           SecondaryTuple("Siege Bomb (650❖ • Heavy Recoil)", "SIEGE BOMB", 650f, 1.20f, 1350f, 1, if (isPureGunfighterPassive) 0f else 360f)
         "CLOAK_EMP" ->
-          SecondaryTuple("Tactical Cloak + 360° AoE EMP (350❖)", "CLOAK", 350f, 0.95f, 0f, 0, 0f)
+          SecondaryTuple("Tactical Cloak (180❖/s) + 0❖ Decloak EMP", "CLOAK", 0f, 0.95f, 0f, 0, 0f)
         "SEEKER_TORPEDO" ->
           SecondaryTuple("Native Seeker Torpedo (600❖ • 5s CD)", "SEEKER", 600f, 5.0f, 780f, 6, 0f)
         "PASSIVE_GUNFIGHTER" ->
@@ -711,7 +721,7 @@ data class CustomShipLoadoutSlot(
       listOf(
         SecondaryAbilityOption("NONE", "No Secondary (Starter)", 0, "0❖", "Leaves Secondary slot empty so all points go to hull stats or primary."),
         SecondaryAbilityOption("PASSIVE_GUNFIGHTER", "Pure Gunfighter Passive", 10, "PASSIVE", "+10% Primary Bullet Velocity and 0 firing recoil."),
-        SecondaryAbilityOption("PHASE_DASH", "Phase Dash + Overcharge", 15, "300❖", "Instant directional phase-shift dodge burst with brief i-frames + 35% next-shot rail overcharge (2.5s CD)."),
+        SecondaryAbilityOption("PHASE_DASH", "Phase Dash + Overcharge", 15, "300❖", "Instant 135px phase-blink + supersonic dodge burst, 0.65s i-frames & +35% next-shot rail overcharge (2.5s CD)."),
         SecondaryAbilityOption("NATIVE_MULTISHOT", "Native Split Multi-Shot", 15, "TOGGLE", "Permanently unlocks Multi-Shot ON/OFF (100% single vs 3x 1/3 split)."),
         SecondaryAbilityOption("MINE", "Proximity Mines (+1 Repel)", 18, "300❖", "Drops armed proximity mines (max 6, 30s life) + starts with +1 Repel."),
         SecondaryAbilityOption("BOUNCE", "Bounce Bomb", 20, "350❖", "Plasma warhead reflecting off walls up to 3 times with raycast line."),
@@ -719,7 +729,7 @@ data class CustomShipLoadoutSlot(
         SecondaryAbilityOption("NOVA_RING", "Native Nova Ring", 22, "500❖", "Fires 360° ricochet plasma bolt ring on Secondary Button (4s CD)."),
         SecondaryAbilityOption("SHATTER_CONE", "Native Shatter Cone", 22, "500❖", "Fires 3 rapid 60° cone plasma shard waves on Secondary Button (4s CD)."),
         SecondaryAbilityOption("SIEGE", "Siege Bomb", 25, "650❖", "Massive nuclear dreadnought warhead with heavy backward recoil."),
-        SecondaryAbilityOption("CLOAK_EMP", "Tactical Cloak + 360° AoE EMP (350❖)", 25, "180❖/s • 350❖", "Tap to Cloak invisibly (180❖/s); tap EMP PULSE or fire from stealth to unleash a 220px 360° AoE EMP (-35% Max Flux, 2.5s recharge lockout)."),
+        SecondaryAbilityOption("CLOAK_EMP", "Tactical Cloak + 0❖ Decloak EMP", 25, "180❖/s • 0❖ EMP", "Tap to Cloak invisibly (180❖/s); decloaking via EMP PULSE or primary fire unleashes a free 0❖ 220px 360° AoE EMP (-35% Max Flux, 2.5s recharge lockout)."),
         SecondaryAbilityOption("SEEKER_TORPEDO", "Native Seeker Torpedo", 25, "600❖", "Fires homing wall-bouncing Seeker Torpedo (2.5s flight, 5s CD)."),
       )
 
@@ -1299,11 +1309,11 @@ object RiftCodex {
         id = 6,
         name = "Disruptor",
         role = "Stealth & EMP Infiltrator",
-        tacticalLore = "Cloak-capable infiltrator that vanishes from enemy radar before breaking stealth with a 220px 360° AoE EMP pulse (-35% Max Flux, 2.5s recharge lockout).",
+        tacticalLore = "Cloak-capable infiltrator that drains Flux while invisible (180❖/s) and detonates a free 0❖ 220px 360° AoE EMP pulse upon decloaking (-35% Max Flux, 2.5s recharge lockout).",
         silhouetteDesc = "Wide stingray hydrofoil with gold-plated arc emitters and a pulsing V-cyan capacitor.",
-        weaponSummary = "PRI: NEEDLER (18❖) • CLS: Tactical Cloak + 360° AoE EMP (350❖)",
+        weaponSummary = "PRI: NEEDLER (18❖) • CLS: Cloak (180❖/s) + 0❖ Decloak AoE EMP",
         primaryTitle = "Twin Ion Needlers",
-        secondaryTitle = "Tactical Cloak + 360° AoE EMP (350❖)",
+        secondaryTitle = "Tactical Cloak (180❖/s) + 0❖ Decloak EMP",
         primaryShortLabel = "NEEDLER",
         secondaryShortLabel = "CLOAK",
         turnPts = 22,
@@ -1328,7 +1338,7 @@ object RiftCodex {
         primaryBounces = 0,
         hasBomb = true,
         bombType = "CLOAK_EMP",
-        bombCost = 350f,
+        bombCost = 0f,
         bombCooldown = 0.95f,
         bombDamage = 0f,
         bombBounces = 0,
@@ -1550,6 +1560,46 @@ object RiftCodex {
         category = "BUCKET B: PERMANENT HULL UPGRADE",
         effectSummary = "Permanently increases passive Flux Recharge Rate by +8% per stack (up to +24% at 3/3) until death.",
         tacticalNote = "Tracked in the compact 4-Slot Buff Bar (RCH +X%).",
+      ),
+    )
+
+  val RIFT_ANOMALIES_CODEX: List<PlayfieldRiftCodexEntry> =
+    listOf(
+      PlayfieldRiftCodexEntry(
+        id = "plasma_rift",
+        title = "PLASMA RIFT (LETHAL THERMAL TEAR)",
+        classification = "HAZARD ANOMALY • CRIMSON RADAR BLIP",
+        specBadge = "10% MAX FLUX / 0.6s • 180PX RADIUS",
+        accentHex = "#EF4444",
+        effectSummary = "Unstable crimson-magenta dimensional tear that sears any hull crossing its 180px perimeter for 10% Maximum Flux every 0.6 seconds and can destroy ships outright if Flux drops to 0❖.",
+        tacticalNote = "Use Repel, Gravity pulls, or heavy warhead knockback to force low-Flux enemies into a Plasma Rift for instant arena area denial.",
+      ),
+      PlayfieldRiftCodexEntry(
+        id = "repulsor_rift",
+        title = "REPULSOR RIFT (KINETIC SLINGSHOT DOME)",
+        classification = "KINETIC FIELD • WHITE RADAR BLIP",
+        specBadge = "520PX FIELD • 1.35x BURN SLINGSHOT",
+        accentHex = "#38BDF8",
+        effectSummary = "High-pressure radial shock dome that hurls approaching ships outward up to 1.35x Afterburner velocity across a 520px field while deflecting incoming bullets and warheads away from its core.",
+        tacticalNote = "Skim the outer 520px boundary at an angle to slingshot across sectors at zero Flux cost, or camp behind its core to curve enemy rail shots off-target.",
+      ),
+      PlayfieldRiftCodexEntry(
+        id = "gravity_rift",
+        title = "GRAVITY RIFT (SINGULARITY WELL)",
+        classification = "GRAVITY WELL • VIOLET RADAR BLIP",
+        specBadge = "600PX PULL • CORE FULL STOP (0 PX/S)",
+        accentHex = "#A855F7",
+        effectSummary = "Collapsed violet singularity that drags ships inward across a 600px pull field. Touching the inner event horizon zeroes your velocity (Full Stop) with 1.75s escape immunity and swallows live projectiles.",
+        tacticalNote = "Fire Seeker Torpedoes or Siege Bombs as an enemy gets dragged toward the core, or trigger Phase Dash / Hyper Surge to break free of the pull well.",
+      ),
+      PlayfieldRiftCodexEntry(
+        id = "phase_rift_pair",
+        title = "PAIRED PHASE RIFTS (NODE A ⇄ NODE B)",
+        classification = "LINKED PORTAL PAIR • TEAL/CYAN BLIPS",
+        specBadge = "INSTANT TRANSIT • 1.0s COOLDOWN",
+        accentHex = "#2DD4BF",
+        effectSummary = "Twin entangled spatial portals (Node A & Node B) spawned across distant sectors. Ships, primary bolts, warheads, and aim-guide raycasts entering either gate instantaneously exit the partner gate with full momentum preserved.",
+        tacticalNote = "Thread Bounce Bombs, Siege Bombs, or aim sightlines through Node A to ambush pilots camping near Node B, or dive through to escape HVT hunters.",
       ),
     )
 

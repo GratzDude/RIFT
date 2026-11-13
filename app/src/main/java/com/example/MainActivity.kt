@@ -237,6 +237,9 @@ fun RiftArenaScreen(
   var syndicateStatusBanner by remember { mutableStateOf<String?>(null) }
   var armadaStatusBanner by remember { mutableStateOf<String?>(null) }
   var friendsRefreshKey by remember { mutableIntStateOf(0) }
+  var blockedPilotUids by remember(currentUserId) {
+    mutableStateOf(localPrefs.getBlockedPilotUids())
+  }
   var allTimePeakSnapshot by remember(currentUserId) {
     mutableStateOf(localPrefs.getAllTimePeakBountySnapshot(currentUserId))
   }
@@ -705,17 +708,17 @@ fun RiftArenaScreen(
             if (asGuest) {
               localPrefs.setGuestBypassEnabled(true)
             }
-            callsign = newCallsign
+            val cleanCallsign = localPrefs.setCallsign(newCallsign)
+            callsign = cleanCallsign
             selectedShipId = newShipId
             selectedMode = "FFA"
             syndicateTag = localPrefs.getSyndicateTag()
             syndicateName = localPrefs.getSyndicateName()
 
-            localPrefs.setCallsign(newCallsign)
             localPrefs.setPreferredShipId(newShipId)
             localPrefs.setPreferredMode("FFA")
 
-            engine.localPlayer.callsign = newCallsign
+            engine.localPlayer.callsign = cleanCallsign
             engine.localPlayer.syndicateTag = syndicateTag
             engine.syncLocalArmadaSelfSlot()
             engine.switchLocalPlayerShip(newShipId, forceFromHangar = true)
@@ -864,15 +867,20 @@ fun RiftArenaScreen(
           armadaTierLabel = engine.getCurrentArmadaTierLabel(),
           armadaSlots = engine.activeArmadaSlots.toList(),
           friendsList = friendsList,
+          blockedPilotUids = blockedPilotUids,
           statusBannerMessage = armadaStatusBanner,
           onCreateOrRenameArmada = { newArmadaName ->
-            engine.formOrJoinArmada(
-              newArmadaName,
-              if (engine.activeArmadaSlots.size <= 1) friendsList.take(1) else emptyList(),
-            )
-            armadaStatusBanner =
-              "🛡️ ARMADA [${engine.activeArmadaName}] DEPLOYED (${engine.getCurrentArmadaSize()}/5 PILOTS)"
-            friendsRefreshKey++
+            if (com.example.data.UgcModeration.containsProfanity(newArmadaName)) {
+              armadaStatusBanner = "⚠️ ARMADA TAG REJECTED BY SAFETY FILTER."
+            } else {
+              engine.formOrJoinArmada(
+                newArmadaName,
+                if (engine.activeArmadaSlots.size <= 1) friendsList.take(1) else emptyList(),
+              )
+              armadaStatusBanner =
+                "🛡️ ARMADA [${engine.activeArmadaName}] DEPLOYED (${engine.getCurrentArmadaSize()}/5 PILOTS)"
+              friendsRefreshKey++
+            }
           },
           onInviteFriendToArmada = { friend ->
             val added = engine.addMemberToArmada(friend)
@@ -912,7 +920,18 @@ fun RiftArenaScreen(
               armadaStatusBanner =
                 "✓ ADDED [${added.syndicateTag}] ${added.callsign} TO FRIENDS LIST."
               friendsRefreshKey++
+            } else {
+              armadaStatusBanner = "⚠️ INVALID OR RESTRICTED CALLSIGN."
             }
+          },
+          onBlockPilot = { pilotUid, pilotCallsign ->
+            localPrefs.blockPilot(pilotUid)
+            blockedPilotUids = localPrefs.getBlockedPilotUids()
+            armadaStatusBanner = "🚫 BLOCKED PILOT $pilotCallsign."
+          },
+          onReportPilot = { pilotUid, pilotCallsign ->
+            localPrefs.reportPilot(pilotUid, pilotCallsign, "Armada Roster Report")
+            armadaStatusBanner = "⚑ REPORT SUBMITTED FOR $pilotCallsign."
           },
           onCloseModal = { activeModal = ActiveModal.NONE },
         )
@@ -932,7 +951,21 @@ fun RiftArenaScreen(
           friendsList = drawerFriendsList,
           chatMessages = chatMessages,
           activeShipsInSector = engine.ships.toList(),
+          localPilotUid = currentUserId,
+          blockedPilotUids = blockedPilotUids,
+          onBlockPilot = { pilotUid, pilotCallsign ->
+            localPrefs.blockPilot(pilotUid)
+            blockedPilotUids = localPrefs.getBlockedPilotUids()
+            toastMessage = "🚫 BLOCKED $pilotCallsign"
+            toastVersion++
+          },
+          onReportPilot = { pilotUid, pilotCallsign ->
+            localPrefs.reportPilot(pilotUid, pilotCallsign, "Syndicate Comms Report")
+            toastMessage = "⚑ REPORT SUBMITTED FOR $pilotCallsign"
+            toastVersion++
+          },
           onSendChatMessage = { text ->
+            val safeText = com.example.data.UgcModeration.sanitizeUgcText(text)
             chatMessages.add(
               SyndicateChatMessage(
                 id = "msg_${System.currentTimeMillis()}",
@@ -940,7 +973,7 @@ fun RiftArenaScreen(
                 senderCallsign = callsign,
                 senderSyndicateTag = syndicateTag,
                 timestampLabel = "JUST NOW",
-                messageText = text,
+                messageText = safeText,
               )
             )
           },

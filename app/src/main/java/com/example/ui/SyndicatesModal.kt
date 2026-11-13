@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -280,6 +281,7 @@ fun ArmadaFleetModal(
   armadaTierLabel: String,
   armadaSlots: List<ArmadaMemberSlot>,
   friendsList: List<FriendPilotEntry>,
+  blockedPilotUids: Set<String> = emptySet(),
   statusBannerMessage: String?,
   onCreateOrRenameArmada: (String) -> Unit,
   onInviteFriendToArmada: (FriendPilotEntry) -> Unit,
@@ -288,6 +290,8 @@ fun ArmadaFleetModal(
   onSimulateRosterShift4To2: () -> Unit,
   onLeaveArmadaToSolo: () -> Unit,
   onAddFriendByCallsign: (String) -> Unit,
+  onBlockPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
+  onReportPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
   onCloseModal: () -> Unit,
 ) {
   val isDeployedInArmada = activeArmadaName.isNotEmpty() && armadaSlots.size >= 1
@@ -385,6 +389,7 @@ fun ArmadaFleetModal(
             armadaTierLabel = armadaTierLabel,
             armadaSlots = armadaSlots,
             friendsList = friendsList,
+            blockedPilotUids = blockedPilotUids,
             onCreateOrRenameArmada = onCreateOrRenameArmada,
             onInviteFriendToArmada = onInviteFriendToArmada,
             onRequestJoinFriendArmada = onRequestJoinFriendArmada,
@@ -392,6 +397,8 @@ fun ArmadaFleetModal(
             onSimulateRosterShift4To2 = onSimulateRosterShift4To2,
             onLeaveArmadaToSolo = onLeaveArmadaToSolo,
             onAddFriendByCallsign = onAddFriendByCallsign,
+            onBlockPilot = onBlockPilot,
+            onReportPilot = onReportPilot,
           )
         }
       }
@@ -1011,6 +1018,7 @@ private fun ArmadaAndFriendsTabPane(
   armadaTierLabel: String,
   armadaSlots: List<ArmadaMemberSlot>,
   friendsList: List<FriendPilotEntry>,
+  blockedPilotUids: Set<String> = emptySet(),
   onCreateOrRenameArmada: (String) -> Unit,
   onInviteFriendToArmada: (FriendPilotEntry) -> Unit,
   onRequestJoinFriendArmada: (FriendPilotEntry) -> Unit,
@@ -1018,7 +1026,13 @@ private fun ArmadaAndFriendsTabPane(
   onSimulateRosterShift4To2: () -> Unit,
   onLeaveArmadaToSolo: () -> Unit,
   onAddFriendByCallsign: (String) -> Unit,
+  onBlockPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
+  onReportPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
 ) {
+  val visibleFriends =
+    remember(friendsList, blockedPilotUids) {
+      friendsList.filter { it.uid !in blockedPilotUids }
+    }
   var armadaNameInput by remember(activeArmadaName) {
     mutableStateOf(activeArmadaName.ifEmpty { "APEX_5" })
   }
@@ -1271,7 +1285,7 @@ private fun ArmadaAndFriendsTabPane(
         horizontalArrangement = Arrangement.SpaceBetween,
       ) {
         Text(
-          text = "ONLINE FRIENDS & ARMADA RECRUITMENT (${friendsList.count { it.isOnline }} ONLINE)",
+          text = "ONLINE FRIENDS & ARMADA RECRUITMENT (${visibleFriends.count { it.isOnline }} ONLINE)",
           color = Color.White,
           fontSize = 14.sp,
           fontWeight = FontWeight.Bold,
@@ -1371,7 +1385,7 @@ private fun ArmadaAndFriendsTabPane(
         modifier = Modifier.weight(1f).fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        items(friendsList, key = { it.uid }) { friend ->
+        items(visibleFriends, key = { it.uid }) { friend ->
           val reqKey = "req_${friend.uid}"
           val invKey = "inv_${friend.uid}"
           val reqRem = buttonCooldownSec[reqKey] ?: 0
@@ -1419,8 +1433,8 @@ private fun ArmadaAndFriendsTabPane(
               }
             }
 
-            if (friend.isOnline) {
-              Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+              if (friend.isOnline) {
                 // Phase 4.3 Inbound Join Request ([⇥ REQUEST INVITE]): Deep Indigo background with crisp Cyan border (#38BDF8)
                 if (friend.currentArmadaName.isNotEmpty() && friend.currentArmadaCount < 5) {
                   val reqLocked = reqRem > 0
@@ -1489,6 +1503,34 @@ private fun ArmadaAndFriendsTabPane(
                     fontFamily = FontFamily.SansSerif,
                   )
                 }
+              }
+
+              Button(
+                onClick = { onReportPilot(friend.uid, friend.callsign) },
+                colors =
+                  ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF2B1C08),
+                    contentColor = Color(0xFFF59E0B),
+                  ),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                modifier = Modifier.height(34.dp).testTag("report_armada_friend_${friend.uid}"),
+              ) {
+                Text("⚑", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              }
+
+              Button(
+                onClick = { onBlockPilot(friend.uid, friend.callsign) },
+                colors =
+                  ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF28111B),
+                    contentColor = Color(0xFFEF4444),
+                  ),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                modifier = Modifier.height(34.dp).testTag("block_armada_friend_${friend.uid}"),
+              ) {
+                Text("🚫", fontSize = 11.sp, fontWeight = FontWeight.Bold)
               }
             }
           }

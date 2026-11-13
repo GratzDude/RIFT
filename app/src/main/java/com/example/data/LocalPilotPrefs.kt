@@ -42,13 +42,18 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun setCallsign(rawCallsign: String): String {
-    val cleaned =
+    val sanitizedRaw =
       rawCallsign
         .trim()
         .uppercase()
         .replace(Regex("[^A-Z0-9_\\-]"), "")
         .take(14)
-        .ifEmpty { "COMMANDER" }
+    val cleaned =
+      if (sanitizedRaw.isEmpty() || UgcModeration.containsProfanity(sanitizedRaw)) {
+        "COMMANDER"
+      } else {
+        sanitizedRaw
+      }
     prefs.edit().putString(KEY_CALLSIGN, cleaned).apply()
     return cleaned
   }
@@ -161,7 +166,8 @@ class LocalPilotPrefs(context: Context) {
   fun getActiveArmadaName(): String = prefs.getString(KEY_ARMADA_NAME, "") ?: ""
 
   fun setActiveArmadaName(armadaName: String) {
-    val clean = armadaName.trim().uppercase().replace(Regex("[^A-Z0-9_\\-]"), "").take(12)
+    val rawClean = armadaName.trim().uppercase().replace(Regex("[^A-Z0-9_\\-]"), "").take(12)
+    val clean = if (UgcModeration.containsProfanity(rawClean)) "APEX_5" else rawClean
     prefs.edit().putString(KEY_ARMADA_NAME, clean).apply()
   }
 
@@ -594,7 +600,7 @@ class LocalPilotPrefs(context: Context) {
         .uppercase()
         .replace(Regex("[^A-Z0-9_\\-]"), "")
         .take(14)
-    if (clean.length < 3) return null
+    if (clean.length < 3 || UgcModeration.containsProfanity(clean)) return null
     val existing = getFriendsList()
     if (existing.any { it.callsign.equals(clean, ignoreCase = true) }) {
       return existing.first { it.callsign.equals(clean, ignoreCase = true) }
@@ -725,9 +731,15 @@ class LocalPilotPrefs(context: Context) {
     if (cleanTag.length !in 3..4) {
       return Result.failure(IllegalArgumentException("Syndicate Tag must be 3 to 4 letters/digits."))
     }
+    if (UgcModeration.containsProfanity(cleanTag)) {
+      return Result.failure(IllegalArgumentException("Syndicate Tag contains prohibited language."))
+    }
     val cleanName = name.trim().replace(Regex("[^a-zA-Z0-9 _\\-]"), "").take(26)
     if (cleanName.length < 3) {
       return Result.failure(IllegalArgumentException("Syndicate Name must be at least 3 characters."))
+    }
+    if (UgcModeration.containsProfanity(cleanName)) {
+      return Result.failure(IllegalArgumentException("Syndicate Name contains prohibited language."))
     }
 
     val existing = getAllSyndicates()
@@ -735,13 +747,15 @@ class LocalPilotPrefs(context: Context) {
       return Result.failure(IllegalArgumentException("Tag [$cleanTag] is already registered."))
     }
 
+    val cleanMotto = UgcModeration.sanitizeUgcText(motto.trim().take(60)).ifEmpty { "Forged in the RIFT Convergence" }
+
     val newSyndicate =
       SyndicateInfo(
         id = "syn_custom_$now",
         tag = cleanTag,
         name = cleanName,
         foundryOrigin = "Player Founded Syndicate",
-        motto = motto.trim().take(60).ifEmpty { "Forged in the RIFT Convergence" },
+        motto = cleanMotto,
         memberCount = 1,
         combinedBounty = getAllTimeBountyPeak().coerceAtLeast(250L),
         isCustom = true,
@@ -948,6 +962,42 @@ class LocalPilotPrefs(context: Context) {
     userSettingsPrefs.edit().putFloat(KEY_PLAYFIELD_TEXT_SCALE, clamped).apply()
   }
 
+  fun getBlockedPilotUids(): Set<String> {
+    val raw = prefs.getString(KEY_BLOCKED_PILOT_UIDS, "") ?: ""
+    return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+  }
+
+  fun blockPilot(uid: String) {
+    if (uid.isBlank()) return
+    val next = getBlockedPilotUids() + uid.trim()
+    prefs.edit().putString(KEY_BLOCKED_PILOT_UIDS, next.joinToString(",")).apply()
+  }
+
+  fun unblockPilot(uid: String) {
+    val next = getBlockedPilotUids() - uid.trim()
+    prefs.edit().putString(KEY_BLOCKED_PILOT_UIDS, next.joinToString(",")).apply()
+  }
+
+  fun reportPilot(uid: String, callsign: String, reason: String = "In-Game Comms / Conduct"): Int {
+    val raw = prefs.getString(KEY_REPORTED_PILOTS_JSON, "[]") ?: "[]"
+    val arr =
+      try {
+        JSONArray(raw)
+      } catch (_: Exception) {
+        JSONArray()
+      }
+    arr.put(
+      JSONObject().apply {
+        put("uid", uid)
+        put("callsign", callsign)
+        put("reason", reason)
+        put("timestampMs", System.currentTimeMillis())
+      }
+    )
+    prefs.edit().putString(KEY_REPORTED_PILOTS_JSON, arr.toString()).apply()
+    return arr.length()
+  }
+
   private fun cleanShipNameForId(shipId: Int): String =
     when (shipId) {
       1 -> "Viper"
@@ -964,6 +1014,8 @@ class LocalPilotPrefs(context: Context) {
   companion object {
     private const val PREFS_NAME = "rift_permanent_pilot_prefs"
     private const val USER_SETTINGS_PREFS_NAME = "rift_user_settings"
+    private const val KEY_BLOCKED_PILOT_UIDS = "ugc_blocked_pilot_uids"
+    private const val KEY_REPORTED_PILOTS_JSON = "ugc_reported_pilots_json"
     private const val KEY_DEVICE_UID = "permanent_device_uid"
     private const val KEY_GUEST_BYPASS = "guest_bypass_enabled"
     private const val KEY_CALLSIGN = "pilot_callsign"

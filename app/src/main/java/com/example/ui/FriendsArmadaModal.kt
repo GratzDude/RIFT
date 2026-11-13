@@ -48,6 +48,7 @@ fun FriendsArmadaModal(
   armadaTierLabel: String,
   armadaSlots: List<ArmadaMemberSlot>,
   friendsList: List<FriendPilotEntry>,
+  blockedPilotUids: Set<String> = emptySet(),
   statusBanner: String?,
   onCreateOrRenameArmada: (String) -> Unit,
   onInviteFriendToArmada: (FriendPilotEntry) -> Unit,
@@ -56,8 +57,14 @@ fun FriendsArmadaModal(
   onSimulateRosterShift4To2: () -> Unit,
   onLeaveArmadaToSolo: () -> Unit,
   onAddFriendByCallsign: (String) -> Unit,
+  onBlockPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
+  onReportPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
   onCloseModal: () -> Unit,
 ) {
+  val visibleFriends =
+    remember(friendsList, blockedPilotUids) {
+      friendsList.filter { it.uid !in blockedPilotUids }
+    }
   var armadaNameInput by remember(activeArmadaName) {
     mutableStateOf(activeArmadaName.ifEmpty { "APEX_5" })
   }
@@ -349,7 +356,7 @@ fun FriendsArmadaModal(
               horizontalArrangement = Arrangement.SpaceBetween,
             ) {
               Text(
-                text = "ONLINE FRIENDS & SYNDICATE PRESENCE (${friendsList.count { it.isOnline }} ONLINE)",
+                text = "ONLINE FRIENDS & SYNDICATE PRESENCE (${visibleFriends.count { it.isOnline }} ONLINE)",
                 color = Color(0xFF00F5D4),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.ExtraBold,
@@ -412,7 +419,7 @@ fun FriendsArmadaModal(
               modifier = Modifier.weight(1f).fillMaxWidth(),
               verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-              items(friendsList, key = { it.uid }) { friend ->
+              items(visibleFriends, key = { it.uid }) { friend ->
                 Row(
                   modifier =
                     Modifier.fillMaxWidth()
@@ -455,8 +462,8 @@ fun FriendsArmadaModal(
                     }
                   }
 
-                  if (friend.isOnline) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                  Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (friend.isOnline) {
                       if (friend.currentArmadaName.isNotEmpty() && friend.currentArmadaCount < 5) {
                         Button(
                           onClick = { onRequestJoinFriendArmada(friend) },
@@ -494,6 +501,32 @@ fun FriendsArmadaModal(
                           fontFamily = FontFamily.Monospace,
                         )
                       }
+                    }
+
+                    Button(
+                      onClick = { onReportPilot(friend.uid, friend.callsign) },
+                      colors =
+                        ButtonDefaults.buttonColors(
+                          containerColor = Color(0xFF2B1C08),
+                          contentColor = Color(0xFFF59E0B),
+                        ),
+                      shape = RoundedCornerShape(8.dp),
+                      modifier = Modifier.height(34.dp),
+                    ) {
+                      Text("⚑", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                      onClick = { onBlockPilot(friend.uid, friend.callsign) },
+                      colors =
+                        ButtonDefaults.buttonColors(
+                          containerColor = Color(0xFF28111B),
+                          contentColor = Color(0xFFFF3B4E),
+                        ),
+                      shape = RoundedCornerShape(8.dp),
+                      modifier = Modifier.height(34.dp),
+                    ) {
+                      Text("🚫", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                   }
                 }
