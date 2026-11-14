@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -55,9 +56,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.ArmadaMemberSlot
 import com.example.data.FriendPilotEntry
+import com.example.data.LocalPilotPrefs
 import com.example.data.PilotAchievement
 import com.example.data.SyndicateInfo
 import com.example.data.SyndicateMemberEntry
+import com.example.data.SyndicateWarRecord
 import com.example.engine.RiftCodex
 import com.example.engine.RiftGameEngine
 import com.example.engine.ShipEntity
@@ -414,94 +417,263 @@ private fun DirectoryAndJoinPane(
   directoryList: List<SyndicateInfo>,
   onJoinSyndicate: (SyndicateInfo) -> Unit,
 ) {
-  LazyColumn(
+  val context = LocalContext.current
+  val localPrefs = remember(context) { LocalPilotPrefs(context) }
+  // 0 = SYNDICATE WARS (DIRECT H2H), 1 = COLLECTIVE MEMBER PRESTIGE
+  var rankingMode by remember { mutableIntStateOf(0) }
+
+  val mergedDirectory =
+    remember(directoryList, currentSyndicateTag, rankingMode) {
+      val byTag = linkedMapOf<String, SyndicateInfo>()
+      val officialLadder =
+        listOf(
+          SyndicateInfo(
+            id = "syn_aex",
+            tag = "AEX",
+            name = "Apex Vanguard",
+            foundryOrigin = "Sector Command Syndicate",
+            motto = "First into the Rift, last to yield.",
+            memberCount = 18,
+            combinedBounty = 14850L,
+            isCustom = false,
+          ),
+          SyndicateInfo(
+            id = "syn_obs",
+            tag = "OBS",
+            name = "Obsidian Core",
+            foundryOrigin = "Heavy Siege Syndicate",
+            motto = "Unbreakable containment across the sector.",
+            memberCount = 15,
+            combinedBounty = 12400L,
+            isCustom = false,
+          ),
+          SyndicateInfo(
+            id = "syn_sol",
+            tag = "SOL",
+            name = "Solaris Prime",
+            foundryOrigin = "High-Velocity Strike Fleet",
+            motto = "Velocity is the ultimate shield.",
+            memberCount = 14,
+            combinedBounty = 11650L,
+            isCustom = false,
+          ),
+          SyndicateInfo(
+            id = "syn_rft",
+            tag = "RFT",
+            name = "Rift Sentinels",
+            foundryOrigin = "Stasis Breach Guardians",
+            motto = "Hold the line at x = 4000.",
+            memberCount = 12,
+            combinedBounty = 10900L,
+            isCustom = false,
+          ),
+        )
+      for (item in directoryList) {
+        val clean = item.tag.trim().uppercase()
+        if (clean.isNotEmpty()) {
+          byTag[clean] = item
+        }
+      }
+      for (seed in officialLadder) {
+        if (!byTag.containsKey(seed.tag)) {
+          byTag[seed.tag] = seed
+        }
+      }
+      val mapped =
+        byTag.values.map { syn ->
+          syn to localPrefs.getSyndicateWarRecord(syn.tag)
+        }
+      if (rankingMode == 0) {
+        mapped.sortedWith(
+          compareByDescending<Pair<SyndicateInfo, SyndicateWarRecord>> { it.second.warTrophies }
+            .thenByDescending { it.second.warWins }
+            .thenByDescending { it.first.combinedBounty }
+        )
+      } else {
+        mapped.sortedWith(
+          compareByDescending<Pair<SyndicateInfo, SyndicateWarRecord>> { it.first.combinedBounty }
+            .thenByDescending { it.first.memberCount }
+            .thenByDescending { it.second.warTrophies }
+        )
+      }
+    }
+
+  Column(
     modifier =
       Modifier.fillMaxSize()
         .background(Color(0x99111C2D), RoundedCornerShape(12.dp))
         .padding(10.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    items(directoryList, key = { it.tag }) { syn ->
-      val isMember = syn.tag == currentSyndicateTag
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .background(
-              if (isMember) Color(0xCC142C4C) else Color(0x990D1B30),
-              RoundedCornerShape(10.dp),
-            )
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Column(modifier = Modifier.weight(1f)) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            Text(
-              text = "[${syn.tag}] ${syn.name}",
-              color = if (isMember) Color(0xFFFFD700) else Color(0xFF00F0FF),
-              fontSize = 15.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
-            )
-            Text(
-              text = "${syn.memberCount} PILOTS • ${syn.combinedBounty} TOTAL BOUNTY",
-              color = Color(0xFFFFD700),
-              fontSize = 13.sp,
-              fontWeight = FontWeight.Medium,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-          Spacer(modifier = Modifier.height(3.dp))
+    // Segmented Ranking Mode Toggle: Direct H2H Syndicate Wars vs Collective Member Prestige
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(8.dp))
+              .background(if (rankingMode == 0) Color(0xFFF59E0B) else Color(0xCC0D1B30))
+              .border(
+                1.dp,
+                if (rankingMode == 0) Color(0xFFF59E0B) else Color(0x66F59E0B),
+                RoundedCornerShape(8.dp),
+              )
+              .clickable { rankingMode = 0 }
+              .padding(horizontal = 10.dp, vertical = 6.dp)
+              .testTag("syndicate_rank_mode_direct_h2h"),
+        ) {
           Text(
-            text = syn.motto.uppercase(),
-            color = Color(0xFF8A99AD),
-            fontSize = 11.sp,
+            text = "🏆 SYNDICATE WARS (DIRECT H2H)",
+            color = if (rankingMode == 0) Color(0xFF05080E) else Color(0xFFFBBF24),
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.SansSerif,
           )
         }
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(8.dp))
+              .background(if (rankingMode == 1) Color(0xFF00F0FF) else Color(0xCC0D1B30))
+              .border(
+                1.dp,
+                if (rankingMode == 1) Color(0xFF00F0FF) else Color(0x6600F0FF),
+                RoundedCornerShape(8.dp),
+              )
+              .clickable { rankingMode = 1 }
+              .padding(horizontal = 10.dp, vertical = 6.dp)
+              .testTag("syndicate_rank_mode_collective_prestige"),
+        ) {
+          Text(
+            text = "📊 COLLECTIVE MEMBER PRESTIGE",
+            color = if (rankingMode == 1) Color(0xFF05080E) else Color(0xFF00F0FF),
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.SansSerif,
+          )
+        }
+      }
 
-        if (isMember) {
-          Box(
-            modifier =
-              Modifier.background(Color(0xFF1E3E24), RoundedCornerShape(8.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-          ) {
-            Text(
-              text = "✓ ENLISTED",
-              color = Color(0xFF00E676),
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
-            )
+      Text(
+        text =
+          if (rankingMode == 0) {
+            "RANKED BY DIRECT H2H WAR TROPHIES (1–5 STRIKE FLEET & 10v10 STASIS BREACH)"
+          } else {
+            "RANKED BY COMBINED MEMBER BOUNTY & ROSTER SIZE"
+          },
+        color = Color(0xFF94A3B8),
+        fontSize = 9.5.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+      )
+    }
+
+    LazyColumn(
+      modifier = Modifier.weight(1f).fillMaxWidth(),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      items(mergedDirectory, key = { it.first.tag }) { (syn, warRecord) ->
+        val isMember = syn.tag.equals(currentSyndicateTag, ignoreCase = true)
+        Row(
+          modifier =
+            Modifier.fillMaxWidth()
+              .background(
+                if (isMember) Color(0xCC142C4C) else Color(0x990D1B30),
+                RoundedCornerShape(10.dp),
+              )
+              .border(
+                1.dp,
+                if (isMember) Color(0xFFFFD700) else Color(0x3338BDF8),
+                RoundedCornerShape(10.dp),
+              )
+              .padding(12.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              Text(
+                text = "[${syn.tag}] ${syn.name}",
+                color = if (isMember) Color(0xFFFFD700) else Color(0xFF00F0FF),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+              )
+              Text(
+                text =
+                  "🏆 ${warRecord.warTrophies} WAR TROPHIES • ${warRecord.warWins}W - ${warRecord.warLosses}L • 🔥 ${warRecord.warStreak} STREAK",
+                color = Color(0xFFFBBF24),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+            Spacer(modifier = Modifier.height(3.dp))
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Text(
+                text = "${syn.memberCount} PILOTS • ${syn.combinedBounty} TOTAL BOUNTY",
+                color = Color(0xFF38BDF8),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              )
+              Text(
+                text = "// ${syn.motto.uppercase()}",
+                color = Color(0xFF8A99AD),
+                fontSize = 10.5.sp,
+                fontFamily = FontFamily.SansSerif,
+              )
+            }
           }
-        } else {
-          Button(
-            onClick = { onJoinSyndicate(syn) },
-            enabled = remainingLockDays <= 0,
-            colors =
-              ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF00F0FF),
-                contentColor = Color(0xFF05080E),
-                disabledContainerColor = Color(0xFF1A283B),
-                disabledContentColor = Color(0xFF8A99AD),
-              ),
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.height(38.dp).testTag("join_syndicate_${syn.tag}"),
-          ) {
-            Text(
-              text =
-                if (remainingLockDays > 0) {
-                  "LOCKED ($remainingLockFormatted)"
-                } else {
-                  "JOIN [${syn.tag}]"
-                },
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
-            )
+
+          if (isMember) {
+            Box(
+              modifier =
+                Modifier.background(Color(0xFF1E3E24), RoundedCornerShape(8.dp))
+                  .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+              Text(
+                text = "✓ ENLISTED",
+                color = Color(0xFF00E676),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+              )
+            }
+          } else {
+            Button(
+              onClick = { onJoinSyndicate(syn) },
+              enabled = remainingLockDays <= 0,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = Color(0xFF00F0FF),
+                  contentColor = Color(0xFF05080E),
+                  disabledContainerColor = Color(0xFF1A283B),
+                  disabledContentColor = Color(0xFF8A99AD),
+                ),
+              shape = RoundedCornerShape(8.dp),
+              modifier = Modifier.height(38.dp).testTag("join_syndicate_${syn.tag}"),
+            ) {
+              Text(
+                text =
+                  if (remainingLockDays > 0) {
+                    "LOCKED ($remainingLockFormatted)"
+                  } else {
+                    "JOIN [${syn.tag}]"
+                  },
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+              )
+            }
           }
         }
       }

@@ -239,10 +239,50 @@ class LocalPilotPrefs(context: Context) {
     prefs.edit().putInt(KEY_SHIP_ID, shipId.coerceIn(1, 10)).apply()
   }
 
-  fun getPreferredMode(): String = "FFA"
+  fun getLastShipId(): Int = getPreferredShipId()
+
+  fun setLastShipId(shipId: Int) = setPreferredShipId(shipId)
+
+  /**
+   * Startup Boot Preference:
+   * true (default) = open NEXUS Command Hub on startup.
+   * false = fast-boot straight into the arena with the Changelog popup & Quick-Join bar.
+   */
+  fun getBootToNexusHub(): Boolean {
+    val fallback = prefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, true)
+    return userSettingsPrefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, fallback)
+  }
+
+  fun setBootToNexusHub(enabled: Boolean) {
+    prefs.edit().putBoolean(KEY_BOOT_TO_NEXUS_HUB, enabled).apply()
+    userSettingsPrefs.edit().putBoolean(KEY_BOOT_TO_NEXUS_HUB, enabled).apply()
+  }
+
+  /**
+   * Best Ship Avatar Calculator:
+   * Returns the ship ID (1..10) from the pilot's PvP Peak Bounty Snapshot or All-Time Peak Bounty Snapshot
+   * (whichever has the higher bountyReached), falling back to getLastShipId() / fallbackShipId (1..10).
+   */
+  fun getBestShipId(uid: String? = null, fallbackShipId: Int = getLastShipId()): Int {
+    val pvpSnap = getPvpPeakBountySnapshot(uid)
+    val allSnap = getAllTimePeakBountySnapshot(uid)
+    val bestSnap =
+      when {
+        pvpSnap != null && allSnap != null ->
+          if (pvpSnap.bountyReached >= allSnap.bountyReached) pvpSnap else allSnap
+        pvpSnap != null -> pvpSnap
+        allSnap != null -> allSnap
+        else -> null
+      }
+    val resolvedId = bestSnap?.shipId?.takeIf { it in 1..10 } ?: fallbackShipId.takeIf { it in 1..10 } ?: getLastShipId()
+    return resolvedId.coerceIn(1, 10)
+  }
+
+  fun getPreferredMode(): String = prefs.getString(KEY_MODE, "SECTOR_CONVERGENCE") ?: "SECTOR_CONVERGENCE"
 
   fun setPreferredMode(mode: String) {
-    prefs.edit().putString(KEY_MODE, "FFA").apply()
+    val clean = mode.trim().uppercase(Locale.US).ifEmpty { "SECTOR_CONVERGENCE" }
+    prefs.edit().putString(KEY_MODE, clean).apply()
   }
 
   fun getPvpKills(): Long = prefs.getLong(KEY_PVP_KILLS, 0L)
@@ -930,6 +970,250 @@ class LocalPilotPrefs(context: Context) {
   }
 
   /**
+   * Returns up to 5 private custom channels for [syndicateTag], always starting with "#general" at index 0.
+   * Defaults to listOf("#general", "#tactics", "#war-room").
+   */
+  fun getSyndicateCustomChannels(syndicateTag: String = getSyndicateTag()): List<String> {
+    val cleanTag = syndicateTag.trim().uppercase()
+    if (cleanTag.isEmpty() || cleanTag == "SOLO") {
+      return listOf("#general", "#tactics", "#war-room")
+    }
+    val raw = prefs.getString("${KEY_SYNDICATE_CHANNELS_PREFIX}$cleanTag", null)
+    if (raw.isNullOrBlank()) {
+      return listOf("#general", "#tactics", "#war-room")
+    }
+    val parsed = mutableListOf<String>()
+    try {
+      val arr = JSONArray(raw)
+      for (i in 0 until arr.length()) {
+        val ch = normalizeChannelName(arr.optString(i, ""))
+        if (ch.isNotEmpty() && parsed.none { it.equals(ch, ignoreCase = true) }) {
+          parsed.add(ch)
+        }
+      }
+    } catch (_: Exception) {}
+    parsed.removeAll { it.equals("#general", ignoreCase = true) }
+    parsed.add(0, "#general")
+    return parsed.take(5)
+  }
+
+  /**
+   * Saves up to 5 clean `#channel-name` strings for [syndicateTag], always keeping `"#general"` at index 0.
+   */
+  fun setSyndicateCustomChannels(syndicateTag: String, channels: List<String>) {
+    val cleanTag = syndicateTag.trim().uppercase()
+    if (cleanTag.isEmpty()) return
+    val sanitized = mutableListOf("#general")
+    for (raw in channels) {
+      val norm = normalizeChannelName(raw)
+      if (norm.isNotEmpty() && sanitized.none { it.equals(norm, ignoreCase = true) }) {
+        sanitized.add(norm)
+      }
+      if (sanitized.size >= 5) break
+    }
+    val arr = JSONArray()
+    sanitized.forEach { arr.put(it) }
+    prefs.edit().putString("${KEY_SYNDICATE_CHANNELS_PREFIX}$cleanTag", arr.toString()).apply()
+  }
+
+  private fun normalizeChannelName(raw: String): String {
+    val stripped =
+      raw
+        .trim()
+        .lowercase()
+        .removePrefix("#")
+        .replace(Regex("[^a-z0-9_-]"), "-")
+        .replace(Regex("-+"), "-")
+        .trim('-')
+        .take(18)
+    return if (stripped.isEmpty()) "" else "#$stripped"
+  }
+
+  fun getSyndicateInvitedGuests(syndicateTag: String = getSyndicateTag()): Set<String> {
+    val cleanTag = syndicateTag.trim().uppercase()
+    if (cleanTag.isEmpty() || cleanTag == "SOLO") return emptySet()
+    val raw = prefs.getString("${KEY_SYNDICATE_GUESTS_PREFIX}$cleanTag", "") ?: ""
+    return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+  }
+
+  fun inviteGuestToSyndicateChannels(syndicateTag: String, guestCallsign: String) {
+    val cleanTag = syndicateTag.trim().uppercase()
+    val cleanGuest = guestCallsign.trim().take(20)
+    if (cleanTag.isEmpty() || cleanTag == "SOLO" || cleanGuest.isEmpty()) return
+    val existing = getSyndicateInvitedGuests(cleanTag).toMutableList()
+    if (existing.none { it.equals(cleanGuest, ignoreCase = true) }) {
+      existing.add(cleanGuest)
+      prefs.edit().putString("${KEY_SYNDICATE_GUESTS_PREFIX}$cleanTag", existing.joinToString(",")).apply()
+    }
+  }
+
+  fun revokeGuestFromSyndicateChannels(syndicateTag: String, guestCallsign: String) {
+    val cleanTag = syndicateTag.trim().uppercase()
+    val cleanGuest = guestCallsign.trim()
+    if (cleanTag.isEmpty() || cleanGuest.isEmpty()) return
+    val remaining =
+      getSyndicateInvitedGuests(cleanTag).filterNot { it.equals(cleanGuest, ignoreCase = true) }
+    prefs.edit().putString("${KEY_SYNDICATE_GUESTS_PREFIX}$cleanTag", remaining.joinToString(",")).apply()
+  }
+
+  fun canAccessSyndicateChannels(
+    pilotSyndicateTag: String,
+    pilotCallsign: String,
+    targetSyndicateTag: String,
+  ): Boolean {
+    val targetClean = targetSyndicateTag.trim().uppercase()
+    if (targetClean.isEmpty() || targetClean == "SOLO") return false
+    if (pilotSyndicateTag.trim().equals(targetClean, ignoreCase = true)) return true
+    return getSyndicateInvitedGuests(targetClean).any {
+      it.equals(pilotCallsign.trim(), ignoreCase = true)
+    }
+  }
+
+  fun getSyndicateWarRecord(tag: String = getSyndicateTag()): SyndicateWarRecord {
+    val cleanTag = tag.trim().uppercase().ifEmpty { "SOLO" }
+    val raw = prefs.getString(KEY_SYNDICATE_WAR_RECORDS_JSON, "{}") ?: "{}"
+    try {
+      val root = JSONObject(raw)
+      val obj = root.optJSONObject(cleanTag)
+      if (obj != null) {
+        return SyndicateWarRecord.fromJson(cleanTag, obj)
+      }
+    } catch (_: Exception) {}
+    return when (cleanTag) {
+      "AEX" -> SyndicateWarRecord("AEX", warTrophies = 1480, warWins = 42, warLosses = 14, warStreak = 4)
+      "VTX" -> SyndicateWarRecord("VTX", warTrophies = 1390, warWins = 38, warLosses = 17, warStreak = 2)
+      "KST" -> SyndicateWarRecord("KST", warTrophies = 1315, warWins = 35, warLosses = 19, warStreak = 1)
+      "OBS" -> SyndicateWarRecord("OBS", warTrophies = 1260, warWins = 31, warLosses = 20, warStreak = 3)
+      "SOL" -> SyndicateWarRecord("SOL", warTrophies = 1195, warWins = 29, warLosses = 22, warStreak = 0)
+      "RFT" -> SyndicateWarRecord("RFT", warTrophies = 1140, warWins = 26, warLosses = 21, warStreak = 1)
+      else -> SyndicateWarRecord(cleanTag, warTrophies = 1000, warWins = 0, warLosses = 0, warStreak = 0)
+    }
+  }
+
+  fun recordSyndicateWarOutcome(
+    tag: String = getSyndicateTag(),
+    won: Boolean,
+    trophyDelta: Int = if (won) 25 else -15,
+  ): SyndicateWarRecord {
+    val cleanTag = tag.trim().uppercase().ifEmpty { "SOLO" }
+    val current = getSyndicateWarRecord(cleanTag)
+    val signedDelta = if (won) kotlin.math.abs(trophyDelta) else -kotlin.math.abs(trophyDelta)
+    val updated =
+      SyndicateWarRecord(
+        tag = cleanTag,
+        warTrophies = (current.warTrophies + signedDelta).coerceAtLeast(0),
+        warWins = current.warWins + (if (won) 1 else 0),
+        warLosses = current.warLosses + (if (won) 0 else 1),
+        warStreak = if (won) current.warStreak + 1 else 0,
+      )
+    val raw = prefs.getString(KEY_SYNDICATE_WAR_RECORDS_JSON, "{}") ?: "{}"
+    val root =
+      try {
+        JSONObject(raw)
+      } catch (_: Exception) {
+        JSONObject()
+      }
+    root.put(cleanTag, updated.toJson())
+    prefs.edit().putString(KEY_SYNDICATE_WAR_RECORDS_JSON, root.toString()).apply()
+    return updated
+  }
+
+  /**
+   * Master Fresh-Start Wipe:
+   * Clears all combat stats, 5 XP sources, peak bounty snapshots, Armada tiers, active Armada,
+   * custom friends, custom Syndicates, Syndicate service history, custom Syndicate channels/guests,
+   * Syndicate War H2H records, and custom modular ship slots (Frame A/B/C) while resetting Rift Shards to 150❖.
+   */
+  fun wipeAllStatsArmadasAndSyndicates(uid: String? = null) {
+    val dynamicKeysToRemove =
+      prefs.all.keys.filter { key ->
+        key.startsWith(KEY_SYNDICATE_CHANNELS_PREFIX) ||
+          key.startsWith("syndicate_channels_") ||
+          key.startsWith(KEY_SYNDICATE_GUESTS_PREFIX) ||
+          key.startsWith("syndicate_guests_") ||
+          key.startsWith("syndicate_war_record_") ||
+          key.startsWith(KEY_CUSTOM_SLOT_PREFIX)
+      }
+
+    val editor = prefs.edit()
+    for (k in dynamicKeysToRemove) {
+      editor.remove(k)
+    }
+
+    // Combat stats
+    editor
+      .putLong(KEY_PVP_KILLS, 0L)
+      .putLong(KEY_PVP_DEATHS, 0L)
+      .putLong(KEY_PVP_BOUNTY_PEAK, 100L)
+      .putLong(KEY_ALL_KILLS, 0L)
+      .putLong(KEY_ALL_DEATHS, 0L)
+      .putLong(KEY_ALL_BOUNTY_PEAK, 100L)
+      .putLong(KEY_CONVERGENCES_WON, 0L)
+      .putLong(KEY_HVT_ELIMINATIONS, 0L)
+      .putLong(KEY_GREENS_COLLECTED, 0L)
+
+    // 5 XP sources + progression + Rift Shards (150❖)
+    editor
+      .putLong(KEY_XP_BUFFS, 0L)
+      .putLong(uidKey(KEY_XP_BUFFS, uid), 0L)
+      .putLong(KEY_XP_DAMAGE, 0L)
+      .putLong(uidKey(KEY_XP_DAMAGE, uid), 0L)
+      .putLong(KEY_XP_ACCURACY, 0L)
+      .putLong(uidKey(KEY_XP_ACCURACY, uid), 0L)
+      .putLong(KEY_XP_BOUNTY_EARNED, 0L)
+      .putLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), 0L)
+      .putLong(KEY_XP_BOUNTY_KILLED, 0L)
+      .putLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), 0L)
+      .putLong(KEY_RIFT_SHARDS, 150L)
+      .putLong(uidKey(KEY_RIFT_SHARDS, uid), 150L)
+      .putInt(KEY_HIGHEST_MILESTONE_LVL, 1)
+      .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), 1)
+      .putInt(KEY_SPENT_CUSTOM_POINTS, 0)
+      .putInt(uidKey(KEY_SPENT_CUSTOM_POINTS, uid), 0)
+      .putInt(KEY_UNLOCKED_EXTRA_SLOTS, 0)
+      .putInt(uidKey(KEY_UNLOCKED_EXTRA_SLOTS, uid), 0)
+      .putInt(KEY_AI_DESIGN_TOKENS, 0)
+      .putInt(uidKey(KEY_AI_DESIGN_TOKENS, uid), 0)
+
+    // Peak bounty snapshots
+    editor
+      .remove(KEY_ALL_TIME_PEAK_SNAPSHOT)
+      .remove(uidKey(KEY_ALL_TIME_PEAK_SNAPSHOT, uid))
+      .remove(KEY_PVP_PEAK_SNAPSHOT)
+      .remove(uidKey(KEY_PVP_PEAK_SNAPSHOT, uid))
+
+    // Armada Tier 1..5 kills and bounty peaks
+    for (tier in 1..5) {
+      editor.putLong("armada_tier_${tier}_kills", 0L)
+      editor.putLong("armada_tier_${tier}_bounty", 100L)
+    }
+
+    // Active Armada, custom friends, custom Syndicates, Syndicate history, Syndicate War records
+    editor
+      .putString(KEY_ARMADA_NAME, "")
+      .putString(KEY_CUSTOM_FRIENDS_JSON, "[]")
+      .putString(KEY_CUSTOM_SYNDICATES_JSON, "[]")
+      .putString(KEY_SYNDICATE_HISTORY_JSON, "[]")
+      .putString(uidKey(KEY_SYNDICATE_HISTORY_JSON, uid), "[]")
+      .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, 0L)
+      .putString(KEY_SYNDICATE_TAG, "GUEST")
+      .putString(KEY_SYNDICATE_NAME, "Independent Pilot")
+      .putString(KEY_SYNDICATE_WAR_RECORDS_JSON, "{}")
+      .putBoolean(KEY_SLOT_B_UNLOCKED, false)
+      .putBoolean(uidKey(KEY_SLOT_B_UNLOCKED, uid), false)
+      .putBoolean(KEY_SLOT_C_UNLOCKED, false)
+      .putBoolean(uidKey(KEY_SLOT_C_UNLOCKED, uid), false)
+      .putString(KEY_ACTIVE_CUSTOM_SLOT_ID, "Frame A")
+      .putString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), "Frame A")
+      .apply()
+
+    // Reset Custom Modular Ship Slots (Frame A, Frame B, Frame C) to default unallocated state
+    for (slotId in listOf("Frame A", "Frame B", "Frame C")) {
+      saveCustomShipSlot(com.example.engine.CustomShipLoadoutSlot(slotId = slotId), uid)
+    }
+  }
+
+  /**
    * Resets all local pilot progression, combat stats, Syndicate/Armada affiliation, custom friends,
    * and Rift Shards back to a clean Level 1, 0 XP, 0 Kills, 0 Shards, Solo, Unaffiliated state.
    */
@@ -973,6 +1257,10 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_CUSTOM_FRIENDS_JSON = "custom_friends_json"
     private const val KEY_SHIP_ID = "preferred_ship_id"
     private const val KEY_MODE = "preferred_mode"
+    private const val KEY_BOOT_TO_NEXUS_HUB = "boot_to_nexus_hub"
+    private const val KEY_SYNDICATE_CHANNELS_PREFIX = "syndicate_custom_channels_"
+    private const val KEY_SYNDICATE_GUESTS_PREFIX = "syndicate_invited_guests_"
+    private const val KEY_SYNDICATE_WAR_RECORDS_JSON = "syndicate_war_records_json"
     private const val KEY_PVP_KILLS = "pvp_kills"
     private const val KEY_PVP_DEATHS = "pvp_deaths"
     private const val KEY_PVP_BOUNTY_PEAK = "pvp_bounty_peak"
@@ -1051,3 +1339,32 @@ class LocalPilotPrefs(context: Context) {
     }
   }
 }
+
+data class SyndicateWarRecord(
+  val tag: String,
+  val warTrophies: Int = 1000,
+  val warWins: Int = 0,
+  val warLosses: Int = 0,
+  val warStreak: Int = 0,
+) {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
+      put("tag", tag)
+      put("warTrophies", warTrophies)
+      put("warWins", warWins)
+      put("warLosses", warLosses)
+      put("warStreak", warStreak)
+    }
+
+  companion object {
+    fun fromJson(tag: String, obj: JSONObject): SyndicateWarRecord =
+      SyndicateWarRecord(
+        tag = obj.optString("tag", tag),
+        warTrophies = obj.optInt("warTrophies", 1000),
+        warWins = obj.optInt("warWins", 0),
+        warLosses = obj.optInt("warLosses", 0),
+        warStreak = obj.optInt("warStreak", 0),
+      )
+  }
+}
+

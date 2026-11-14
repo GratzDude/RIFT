@@ -9,8 +9,20 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -23,12 +35,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -44,6 +62,7 @@ import com.example.data.LocalPilotPrefs
 import com.example.data.PilotAchievement
 import com.example.data.RiftRepository
 import com.example.data.SyndicateChatMessage
+import com.example.engine.RankedGameMode
 import com.example.engine.RiftArenaView
 import com.example.engine.RiftGameEngine
 import com.example.engine.RiftNexusKnowledge
@@ -251,7 +270,13 @@ fun RiftArenaScreen(
   var toastVersion by remember { mutableIntStateOf(0) }
   var unreadCommsCount by remember { mutableIntStateOf(0) }
 
-  var activeModal by remember { mutableStateOf(ActiveModal.NONE) }
+  var bootToNexusHub by remember { mutableStateOf(localPrefs.getBootToNexusHub()) }
+  var showStartupChangelogQuickJoin by remember {
+    mutableStateOf(!localPrefs.getBootToNexusHub())
+  }
+  var activeModal by remember {
+    mutableStateOf(if (localPrefs.getBootToNexusHub()) ActiveModal.NEXUS else ActiveModal.NONE)
+  }
   var previousModalBeforeStore by remember { mutableStateOf(ActiveModal.DOSSIER) }
   var previousModalBeforeNexus by remember { mutableStateOf(ActiveModal.NONE) }
   var callsign by remember { mutableStateOf(localPrefs.getCallsign()) }
@@ -278,6 +303,7 @@ fun RiftArenaScreen(
   var syndicateStatusBanner by remember { mutableStateOf<String?>(null) }
   var armadaStatusBanner by remember { mutableStateOf<String?>(null) }
   var friendsRefreshKey by remember { mutableIntStateOf(0) }
+  var syndicateChannelsRefreshKey by remember { mutableIntStateOf(0) }
   var blockedPilotUids by remember(currentUserId) {
     mutableStateOf(localPrefs.getBlockedPilotUids())
   }
@@ -414,6 +440,10 @@ fun RiftArenaScreen(
         uid = currentUserId,
       )
       syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+    }
+    engine.onSyndicateWarFinished = { won, delta ->
+      localPrefs.recordSyndicateWarOutcome(syndicateTag, won, delta)
+      syndicateChannelsRefreshKey++
     }
     onDispose {
       sfx.release()
@@ -1518,6 +1548,61 @@ fun RiftArenaScreen(
           )
         }
 
+        val bestShipId =
+          remember(currentUserId, selectedShipId, allTimePeakSnapshot, pvpPeakSnapshot, frameTick) {
+            localPrefs.getBestShipId(currentUserId, selectedShipId)
+          }
+        val canAccessSyndicate =
+          remember(syndicateTag, callsign, syndicateChannelsRefreshKey) {
+            localPrefs.canAccessSyndicateChannels(syndicateTag, callsign, syndicateTag)
+          }
+        val customSyndicateChannels =
+          remember(syndicateTag, syndicateChannelsRefreshKey) {
+            localPrefs.getSyndicateCustomChannels(syndicateTag)
+          }
+        val invitedSyndicateGuests =
+          remember(syndicateTag, syndicateChannelsRefreshKey) {
+            localPrefs.getSyndicateInvitedGuests(syndicateTag)
+          }
+        val syndicateWarRecord =
+          remember(syndicateTag, syndicateChannelsRefreshKey, frameTick) {
+            localPrefs.getSyndicateWarRecord(syndicateTag)
+          }
+        val syndicateFriends =
+          remember(syndicateTag, frameTick, friendsRefreshKey) {
+            localPrefs.getFriendsList()
+          }
+        val humanPilotsOnline =
+          remember(frameTick) { engine.getHumanPilotCountForMode(engine.activeRankedMode) }
+        val syndicateOnlineCount =
+          remember(syndicateTag, frameTick, friendsRefreshKey) {
+            val cleanSyn = RiftGameEngine.cleanTag(syndicateTag)
+            if (cleanSyn == "GUEST" || cleanSyn == "FREE" || cleanSyn.isEmpty()) {
+              1
+            } else {
+              val inArena =
+                engine.ships.count {
+                  it.isHuman && RiftGameEngine.cleanTag(it.syndicateTag) == cleanSyn
+                }
+              val onlineFriends =
+                syndicateFriends.count {
+                  it.isOnline && RiftGameEngine.cleanTag(it.syndicateTag) == cleanSyn
+                }
+              maxOf(1, inArena + onlineFriends)
+            }
+          }
+        val presetArmadasReadyCount =
+          remember(frameTick, friendsRefreshKey) {
+            val activeArmadaCount = if (engine.activeArmadaName.isNotBlank()) 1 else 0
+            val friendArmadas =
+              syndicateFriends
+                .filter { it.isOnline && it.currentArmadaName.isNotBlank() }
+                .map { it.currentArmadaName }
+                .distinct()
+                .size
+            activeArmadaCount + friendArmadas
+          }
+
         NexusAiConsoleModal(
           messages = nexusMessages,
           streamState = nexusStreamState,
@@ -1545,10 +1630,340 @@ fun RiftArenaScreen(
             previousModalBeforeNexus = ActiveModal.NONE
             activeModal = target
           },
+          callsign = callsign,
+          syndicateTag = syndicateTag,
+          syndicateName = syndicateName,
+          activeShipId = selectedShipId,
+          bestShipId = bestShipId,
+          bootToNexusHub = bootToNexusHub,
+          onToggleBootToNexusHub = { enabled ->
+            bootToNexusHub = enabled
+            localPrefs.setBootToNexusHub(enabled)
+            showStartupChangelogQuickJoin = !enabled
+            toastMessage =
+              if (enabled) {
+                "⚙️ STARTUP PREFERENCE: OPEN NEXUS COMMAND HUB ON LOGIN"
+              } else {
+                "⚡ STARTUP PREFERENCE: FAST-BOOT TO ARENA + QUICK-JOIN BAR"
+              }
+            toastVersion++
+          },
+          totalOnlinePilots = humanPilotsOnline,
+          syndicateOnlineCount = syndicateOnlineCount,
+          presetArmadasReadyCount = presetArmadasReadyCount,
+          activeArmadaName = engine.activeArmadaName,
+          armadaSlots = engine.activeArmadaSlots.toList(),
+          onResolvePilotBestShipId = { uid, fallbackShip ->
+            if (uid == currentUserId || uid == "local_self") {
+              localPrefs.getBestShipId(currentUserId, fallbackShip)
+            } else {
+              localPrefs.getBestShipId(uid, fallbackShip)
+            }
+          },
+          activeRankedMode = engine.activeRankedMode,
+          activeTeamSizeBracket = engine.activeTeamSizeBracket,
+          humanPilotCountByMode = { mode -> engine.getHumanPilotCountForMode(mode) },
+          canQueueSyndicateWars = engine.canQueueSyndicateWars(),
+          syndicateWarRecord = syndicateWarRecord,
+          onDeployToRankedMode = { mode, bracket ->
+            engine.deployToRankedMode(mode, bracket)
+            selectedMode = mode.id
+            showStartupChangelogQuickJoin = false
+            activeModal = ActiveModal.NONE
+          },
+          onOpenArmadaModal = {
+            armadaStatusBanner = null
+            activeModal = ActiveModal.ARMADA
+          },
+          onQuickFormSyndicateArmada = {
+            val synMates =
+              syndicateFriends
+                .filter {
+                  it.isOnline &&
+                    RiftGameEngine.cleanTag(it.syndicateTag) ==
+                      RiftGameEngine.cleanTag(syndicateTag)
+                }
+                .take(4)
+            val prefix =
+              RiftGameEngine.cleanTag(syndicateTag).let {
+                if (it == "GUEST" || it.isEmpty()) callsign.take(6) else it
+              }
+            val fleetTag = "${prefix}_FLEET"
+            engine.formOrJoinArmada(
+              fleetTag,
+              if (synMates.isNotEmpty()) synMates else syndicateFriends.take(2),
+            )
+            friendsRefreshKey++
+            toastMessage =
+              "🛡️ SYNDICATE ARMADA [$fleetTag] STAGED (${engine.getCurrentArmadaSize()}/5 PILOTS)"
+            toastVersion++
+          },
+          onOpenSyndicatesModal = {
+            syndicateStatusBanner = null
+            activeModal = ActiveModal.SYNDICATES
+          },
+          onOpenHangarForShip = { targetShipId ->
+            val clamped = targetShipId.coerceIn(1, 10)
+            selectedShipId = clamped
+            localPrefs.setPreferredShipId(clamped)
+            engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
+            engine.onStatsUpdated()
+            toastMessage = "🚀 EQUIPPED HULL #$clamped FOR SECTOR DEPLOYMENT"
+            toastVersion++
+          },
+          canAccessSyndicateServer = canAccessSyndicate,
+          syndicateCustomChannels = customSyndicateChannels,
+          syndicateInvitedGuests = invitedSyndicateGuests,
+          onAddSyndicateChannel = { rawChannel ->
+            val currentChannels = localPrefs.getSyndicateCustomChannels(syndicateTag)
+            if (currentChannels.size >= 5) {
+              toastMessage = "⚠️ MAXIMUM 5 CHANNELS REACHED FOR [$syndicateTag]"
+              toastVersion++
+            } else {
+              localPrefs.setSyndicateCustomChannels(syndicateTag, currentChannels + rawChannel)
+              syndicateChannelsRefreshKey++
+              toastMessage = "✓ CREATED SYNDICATE CHANNEL IN [$syndicateTag]"
+              toastVersion++
+            }
+          },
+          onDeleteSyndicateChannel = { rawChannel ->
+            val currentChannels = localPrefs.getSyndicateCustomChannels(syndicateTag)
+            val filtered = currentChannels.filterNot { it.equals(rawChannel, ignoreCase = true) }
+            localPrefs.setSyndicateCustomChannels(syndicateTag, filtered)
+            syndicateChannelsRefreshKey++
+            toastMessage = "✕ REMOVED CHANNEL $rawChannel"
+            toastVersion++
+          },
+          onInviteSyndicateGuest = { guestCallsign ->
+            localPrefs.inviteGuestToSyndicateChannels(syndicateTag, guestCallsign)
+            syndicateChannelsRefreshKey++
+            toastMessage = "🎟️ GRANTED [$syndicateTag] SERVER GUEST PASS TO $guestCallsign"
+            toastVersion++
+          },
+          onRevokeSyndicateGuest = { guestCallsign ->
+            localPrefs.revokeGuestFromSyndicateChannels(syndicateTag, guestCallsign)
+            syndicateChannelsRefreshKey++
+            toastMessage = "✕ REVOKED GUEST PASS FOR $guestCallsign"
+            toastVersion++
+          },
+          lobbyMessages = chatMessages,
+          onSendChannelMessage = { channelKey, messageText ->
+            val safeText = com.example.data.UgcModeration.sanitizeUgcText(messageText)
+            val newMsg =
+              SyndicateChatMessage(
+                id = "msg_${System.currentTimeMillis()}",
+                senderUid = currentUserId,
+                senderCallsign = callsign,
+                senderSyndicateTag = syndicateTag,
+                timestampLabel = channelKey.uppercase(Locale.US),
+                messageText = safeText,
+              )
+            chatMessages.add(newMsg)
+            viewModel.sendSectorComm(newMsg)
+          },
+          onSubmitBugReport = { category, description ->
+            val safeDesc = com.example.data.UgcModeration.sanitizeUgcText(description)
+            localPrefs.reportPilot(
+              uid = "BUG_${category.take(10)}",
+              callsign = category,
+              reason = safeDesc,
+            )
+            toastMessage = "🛠️ BUG REPORT LOGGED TO SECTOR TELEMETRY [$category]"
+            toastVersion++
+          },
         )
       }
 
-      ActiveModal.NONE -> Unit
+      ActiveModal.NONE -> {
+        if (showStartupChangelogQuickJoin) {
+          StartupChangelogQuickJoinBar(
+            activeMode = engine.activeRankedMode,
+            onQuickJoinMode = { mode ->
+              val defaultBracket =
+                when (mode) {
+                  RankedGameMode.RIFT_SKIRMISH -> maxOf(2, engine.getCurrentArmadaSize())
+                  RankedGameMode.SYNDICATE_WARS -> 3
+                  else -> engine.getCurrentArmadaSize()
+                }
+              engine.deployToRankedMode(mode, defaultBracket)
+              selectedMode = mode.id
+              showStartupChangelogQuickJoin = false
+            },
+            onOpenNexusHub = {
+              showStartupChangelogQuickJoin = false
+              previousModalBeforeNexus = ActiveModal.NONE
+              activeModal = ActiveModal.NEXUS
+            },
+            onOpenFullChangelog = onOpenChangelog,
+            onDismiss = { showStartupChangelogQuickJoin = false },
+          )
+        }
+      }
     }
+  }
+}
+
+@Composable
+private fun StartupChangelogQuickJoinBar(
+  activeMode: RankedGameMode,
+  onQuickJoinMode: (RankedGameMode) -> Unit,
+  onOpenNexusHub: () -> Unit,
+  onOpenFullChangelog: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .padding(top = 82.dp, start = 16.dp, end = 16.dp),
+    contentAlignment = Alignment.TopCenter,
+  ) {
+    Column(
+      modifier =
+        Modifier.widthIn(max = 820.dp)
+          .fillMaxWidth()
+          .clip(RoundedCornerShape(14.dp))
+          .background(Color(0xEB050B16))
+          .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(14.dp))
+          .padding(horizontal = 14.dp, vertical = 10.dp)
+          .testTag("startup_changelog_quick_join_bar"),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Row(
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = "⚡ FAST-BOOT ARENA // BUILD v39.0 NEXUS COMMAND HUB & 5 RANKED MODES",
+            color = Color(0xFF00F5D4),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(6.dp))
+                .background(Color(0x2238BDF8))
+                .border(0.8.dp, Color(0x8838BDF8), RoundedCornerShape(6.dp))
+                .clickable { onOpenFullChangelog() }
+                .padding(horizontal = 7.dp, vertical = 3.dp)
+                .testTag("startup_quick_join_changelog_btn"),
+          ) {
+            Text(
+              text = "📜 PATCH NOTES",
+              color = Color(0xFF38BDF8),
+              fontSize = 8.5.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+        Row(
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(7.dp))
+                .background(Color(0x2800F5D4))
+                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(7.dp))
+                .clickable { onOpenNexusHub() }
+                .padding(horizontal = 9.dp, vertical = 4.dp)
+                .testTag("startup_quick_join_open_nexus"),
+          ) {
+            Text(
+              text = "🌐 OPEN NEXUS HUB",
+              color = Color(0xFF00F5D4),
+              fontSize = 9.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(7.dp))
+                .background(Color(0x33EF4444))
+                .border(0.9.dp, Color(0xAAEF4444), RoundedCornerShape(7.dp))
+                .clickable { onDismiss() }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .testTag("startup_quick_join_dismiss"),
+          ) {
+            Text(
+              text = "✕ DISMISS",
+              color = Color(0xFFFCA5A5),
+              fontSize = 9.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        QuickJoinModeChip(
+          label = "⚡ QUICK-JOIN SECTOR CONVERGENCE",
+          selected = activeMode == RankedGameMode.SECTOR_CONVERGENCE,
+          accent = Color(0xFF38BDF8),
+          tag = "quick_join_sector_convergence",
+          onClick = { onQuickJoinMode(RankedGameMode.SECTOR_CONVERGENCE) },
+        )
+        QuickJoinModeChip(
+          label = "⚔️ QUICK-JOIN RIFT SKIRMISH",
+          selected = activeMode == RankedGameMode.RIFT_SKIRMISH,
+          accent = Color(0xFFF59E0B),
+          tag = "quick_join_rift_skirmish",
+          onClick = { onQuickJoinMode(RankedGameMode.RIFT_SKIRMISH) },
+        )
+        QuickJoinModeChip(
+          label = "⚡ QUICK-JOIN FLUX CORE",
+          selected = activeMode == RankedGameMode.FLUX_CORE,
+          accent = Color(0xFF00F5D4),
+          tag = "quick_join_flux_core",
+          onClick = { onQuickJoinMode(RankedGameMode.FLUX_CORE) },
+        )
+        QuickJoinModeChip(
+          label = "🔒 QUICK-JOIN STASIS BREACH",
+          selected = activeMode == RankedGameMode.STASIS_BREACH,
+          accent = Color(0xFFA855F7),
+          tag = "quick_join_stasis_breach",
+          onClick = { onQuickJoinMode(RankedGameMode.STASIS_BREACH) },
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun QuickJoinModeChip(
+  label: String,
+  selected: Boolean,
+  accent: Color,
+  tag: String,
+  onClick: () -> Unit,
+) {
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(8.dp))
+        .background(if (selected) accent.copy(alpha = 0.24f) else Color(0xCC0D1829))
+        .border(if (selected) 1.2.dp else 0.9.dp, accent, RoundedCornerShape(8.dp))
+        .clickable { onClick() }
+        .padding(horizontal = 10.dp, vertical = 6.dp)
+        .testTag(tag),
+  ) {
+    Text(
+      text = label,
+      color = if (selected) Color.White else accent,
+      fontSize = 9.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+    )
   }
 }

@@ -299,4 +299,168 @@ class RiftAuditConsistencyTest {
     assertTrue("Ship outside dome must not breach perimeter", distOutsideAfter >= bubble.radius + 35.5f)
     assertTrue("Outside ship velocity must reflect outward", enemy.vx > 0f)
   }
+
+  @Test
+  fun `flux core mode overcharges carrier and ejects at 1650 px per sec`() {
+    engine.deployToRankedMode(com.example.engine.RankedGameMode.FLUX_CORE)
+    val player = engine.localPlayer
+    engine.ships.retainAll { it === player }
+
+    // Position player outside the Safe Zone right on top of the Flux Core Orb
+    player.respawnTimer = 0f
+    player.x = engine.fluxCoreOrb.x
+    player.y = engine.fluxCoreOrb.y
+    player.vx = 0f
+    player.vy = 0f
+    engine.fluxCoreOrb.pickupImmunitySec = 0f
+
+    // Step simulation so player picks up the Flux Core Orb
+    engine.stepSimulation(0.05f)
+    assertEquals(player.id, engine.fluxCoreCarrierEntityId)
+    assertEquals(1, engine.fluxCoreOrb.overchargeTier)
+
+    // Advance holdDurationSec to 25.0s -> Tier 5 (up to Tier 10 at 50s)
+    engine.fluxCoreOrb.holdDurationSec = 25.0f
+    engine.stepSimulation(0.05f)
+    assertEquals(5, engine.fluxCoreOrb.overchargeTier)
+
+    engine.fluxCoreOrb.holdDurationSec = 52.0f
+    engine.stepSimulation(0.05f)
+    assertEquals(10, engine.fluxCoreOrb.overchargeTier)
+
+    // Entering the Safe Zone ejects the Flux Core at 1650 px/s with a 30.0s deceleration timer
+    player.x = engine.safeZone.centerX()
+    player.y = engine.safeZone.centerY()
+    engine.stepSimulation(0.01f)
+
+    assertEquals("", engine.fluxCoreCarrierEntityId)
+    assertEquals(-1, engine.fluxCoreOrb.carrierShipId)
+    assertTrue("Eject deceleration timer must be ~30.0s", engine.fluxCoreOrb.ejectDecelTimerSec >= 29.9f)
+    val ejectSpeed = hypot(engine.fluxCoreOrb.vx, engine.fluxCoreOrb.vy)
+    assertEquals(1650f, ejectSpeed, 25f)
+  }
+
+  @Test
+  fun `stasis breach captures eliminated ships and reactor core breakout releases all prisoners`() {
+    engine.deployToRankedMode(com.example.engine.RankedGameMode.STASIS_BREACH, teamSizeBracket = 10)
+    assertEquals(8000f, engine.westBrigGeneratorHp, 0.1f)
+    assertEquals(8000f, engine.eastBrigGeneratorHp, 0.1f)
+
+    val player = engine.localPlayer // freq = 0 (West Horizon)
+    val eastVictim = engine.ships.first { it.freq == 1 }
+    val eastRescuer = engine.ships.last { it.freq == 1 && it !== eastVictim }
+
+    // Eliminate eastVictim outside the Safe Zone using a bullet from player
+    eastVictim.respawnTimer = 0f
+    eastVictim.phaseShieldTimer = 0f
+    eastVictim.isInStasisBrig = false
+    eastVictim.x = 2000f
+    eastVictim.y = 2000f
+    eastVictim.flux = 10f
+
+    engine.bullets.clear()
+    engine.bullets.add(
+      com.example.engine.BulletEntity(
+        ownerId = player.id,
+        ownerCallsign = player.callsign,
+        ownerSyndicateTag = player.syndicateTag,
+        ownerArmadaName = player.armadaName,
+        ownerIsHuman = true,
+        freq = player.freq,
+        x = 2000f,
+        y = 2000f,
+        vx = 0f,
+        vy = 0f,
+        damage = 250f,
+        bouncesLeft = 0,
+        life = 1.0f,
+        color = 0xFF00F5D4.toInt(),
+      )
+    )
+    engine.stepSimulation(0.02f)
+
+    assertTrue("Eliminated ship in Stasis Breach must be captured in Stasis Brig", eastVictim.isInStasisBrig)
+
+    // Free teammate (eastRescuer) destroys the West Brig Reactor Core (8000f HP) holding East (freq=1) prisoners
+    eastRescuer.isInStasisBrig = false
+    engine.damageBrigReactorCore(targetBrigFreq = 0, attacker = eastRescuer, rawDamage = 8000f)
+
+    assertFalse("Destroyed Brig Reactor Core must release captured prisoner", eastVictim.isInStasisBrig)
+    assertEquals("Brig Reactor Core HP must reset to 8000f after breach", 8000f, engine.westBrigGeneratorHp, 0.1f)
+  }
+
+  @Test
+  fun `canQueueSyndicateWars enforces non guest syndicate membership and same syndicate armada`() {
+    engine.localPlayer.syndicateTag = "GUEST"
+    engine.activeArmadaSlots.clear()
+    assertFalse("GUEST pilot must not be eligible for Syndicate Wars", engine.canQueueSyndicateWars().first)
+
+    engine.localPlayer.syndicateTag = "AEX"
+    engine.activeArmadaSlots.clear()
+    engine.activeArmadaSlots.add(
+      com.example.data.ArmadaMemberSlot(
+        uid = "pilot_1",
+        callsign = "PILOT_1",
+        syndicateTag = "AEX",
+        shipId = 1,
+        isLeader = true,
+      )
+    )
+    engine.activeArmadaSlots.add(
+      com.example.data.ArmadaMemberSlot(
+        uid = "pilot_2",
+        callsign = "WINGMAN_AEX",
+        syndicateTag = "AEX",
+        shipId = 3,
+        isLeader = false,
+      )
+    )
+    assertTrue("All-AEX Armada must be eligible for Syndicate Wars", engine.canQueueSyndicateWars().first)
+
+    // Add a mixed-Syndicate wingman -> must reject
+    engine.activeArmadaSlots.add(
+      com.example.data.ArmadaMemberSlot(
+        uid = "pilot_3",
+        callsign = "RIVAL_VTX",
+        syndicateTag = "VTX",
+        shipId = 5,
+        isLeader = false,
+      )
+    )
+    assertFalse("Mixed-Syndicate Armada must not be eligible for Syndicate Wars", engine.canQueueSyndicateWars().first)
+  }
+
+  @Test
+  fun `performMasterFreshStartWipe resets kills bounties armadas and syndicate tag back to GUEST`() {
+    val prefs = LocalPilotPrefs(context)
+    prefs.savePilotProgression(
+      uid = "test_uid",
+      xpFromBuffs = 5000L,
+      xpFromDamage = 8000L,
+      xpFromAccuracy = 4000L,
+      xpFromBountyEarned = 6000L,
+      xpFromBountyKilled = 7000L,
+      riftShards = 4200L,
+      highestMilestoneLevelClaimed = 15,
+    )
+    prefs.recordSyndicateWarOutcome(tag = "AEX", won = true, trophyDelta = 35)
+
+    engine.allTimeKills = 42L
+    engine.allTimeBountyPeak = 9500L
+    engine.localPlayer.bounty = 1800
+    engine.localPlayer.syndicateTag = "AEX"
+    engine.activeArmadaName = "APEX STRIKE"
+
+    engine.performMasterFreshStartWipe(localPrefs = prefs, uid = "test_uid")
+
+    assertEquals(0L, engine.allTimeKills)
+    assertEquals(100L, engine.allTimeBountyPeak)
+    assertEquals(100, engine.localPlayer.bounty)
+    assertEquals("GUEST", engine.localPlayer.syndicateTag)
+    assertEquals("", engine.activeArmadaName)
+    assertEquals(150L, engine.riftShards)
+    assertEquals(0L, prefs.getAllTimeKills())
+    assertEquals(150L, prefs.getRiftShards("test_uid"))
+  }
 }
+

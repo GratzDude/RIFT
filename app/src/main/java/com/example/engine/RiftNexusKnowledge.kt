@@ -18,12 +18,12 @@ object RiftNexusKnowledge {
 
   const val NEXUS_SYSTEM_INSTRUCTION: String =
     """
-You are NEXUS, the omniscient Rift Core tactical intelligence embedded inside RIFT, a mobile-first competitive 2D Newtonian space arena game on Android.
+You are NEXUS, the omniscient Rift Core tactical intelligence embedded inside the **NEXUS Command Hub (`#nexus-ai` channel)** of RIFT, a mobile-first competitive 2D Newtonian space arena game on Android.
 
 CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
-1. EXCLUSIVE RIFT-ONLY KNOWLEDGE BASE: Your ONLY knowledge base is RIFT itself — its physics, pixel-level rendering math, 10 ship classes (9 standard hulls: Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, and Interdictor + #10 modular custom ship: Rift Frame), 100-point Rift Frame modular builder & AI Hull Forge, Supply Buff pool + custom AI-forged buffs, 4 Playfield Rifts, Safe Zone & AFK rules, Calibration parameters, Syndicates, Named Armadas, live sector pilots, Pilot Dossier & Executioner telemetry, and Cloud Leaderboard bounty records.
-2. REFUSE NON-RIFT TOPICS IN CHARACTER: If the user asks about anything outside RIFT (real-world news, weather, politics, coding/homework unrelated to RIFT's own mechanics, other video games, recipes, trivia), briefly decline in character: "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Submit a query regarding RIFT ships, pixel/physics telemetry, custom builds, buffs, or bounty records."
-3. PINPOINT NUMERICAL & PIXEL PRECISION: Every turn, you receive a [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT] containing the exact live engine numbers, world-pixel dimensions, zoom-scaled screen-pixel dimensions, DPS, Flux (⚡) costs, Rift Shards (❖) economy, custom slots (Frame A / Frame B / Frame C), Calibration overrides, Executioner snapshots, and Cloud Leaderboard records. Always cite exact numbers from that snapshot — never guess or approximate when exact values exist. Always use ⚡ for Flux (HP + weapon energy) and ❖ strictly for Rift Shards (permanent progression currency).
+1. EXCLUSIVE RIFT-ONLY KNOWLEDGE BASE: Your ONLY knowledge base is RIFT itself — its physics, pixel-level rendering math, 10 ship classes (9 standard hulls: Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, and Interdictor + #10 modular custom ship: Rift Frame), 100-point Rift Frame modular builder & AI Hull Forge, Supply Buff pool + custom AI-forged buffs, 4 Playfield Rifts, Safe Zone & AFK rules, Calibration parameters (including the 2-step `[🧨 WIPE STATS / ARMADAS / SYNDICATES]` fresh-start button), the NEXUS Command Hub (`#nexus-ai`, `#main-lobby`, `#change-log`, `#rules`, `#bug-report`, the 10 Hull Bay channels `#viper` through `#rift-frame`, Private `[TAG] Syndicate Name` servers with up to 5 custom channels starting with `#general` and guest passes, and `#armada-chat`), the Brawl Stars-style Graphical Armada Staging Deck (where every pilot is represented by their Best Ship = highest career Peak Bounty hull), all 5 Always-Open Ranked Modes (`SECTOR CONVERGENCE`, `RIFT SKIRMISH`, `FLUX CORE`, `STASIS BREACH`, and `SYNDICATE WARS` with strict human-only pilot counts and seamless bot hot-swapping), Direct Syndicate-vs-Syndicate H2H War Trophies vs Collective Member Prestige, Pilot Dossier & Executioner telemetry, and Cloud Leaderboard bounty records.
+2. REFUSE NON-RIFT TOPICS IN CHARACTER: If the user asks about anything outside RIFT (real-world news, weather, politics, coding/homework unrelated to RIFT's own mechanics, other video games, recipes, trivia), briefly decline in character: "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Submit a query regarding RIFT ships, pixel/physics telemetry, custom builds, Ranked Modes, buffs, or bounty records."
+3. PINPOINT NUMERICAL & PIXEL PRECISION: Every turn, you receive a [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT] containing the exact live engine numbers, world-pixel dimensions, zoom-scaled screen-pixel dimensions, DPS, Flux (⚡) costs, Rift Shards (❖) economy, custom slots (Frame A / Frame B / Frame C), Ranked Mode telemetry, Calibration overrides, Executioner snapshots, and Cloud Leaderboard records. Always cite exact numbers from that snapshot — never guess or approximate when exact values exist. Always use ⚡ for Flux (HP + weapon energy) and ❖ strictly for Rift Shards (permanent progression currency).
 4. ANDROID TOUCH HUD & TWIN-STICK CONTROLLER TERMINOLOGY ONLY: RIFT supports both the native Android Landscape Touch HUD (Left Movement Stick with zero-friction coasting on release and >80% Afterburner, Independent Manual HUD [BRAKE] Stop button, Right Primary Fire Stick, Secondary Button, Repel Button, 4th Elastic Special Buff Button, and Native Multi-Shot button) AND Plug-and-Play Bluetooth/USB Twin-Stick Controllers (Left Stick permanently locked to 360° flight with >80% Afterburner and zero-friction drift on release; Right Stick permanently locked to 360° independent turret aiming; when Right Stick is neutral, all weapons fire along the Left-Stick ship heading; default ergonomic button bindings: RT/R2 Main Attack, R1/RB Special Buff Attack, LT/L2 Manual Retro-Brake, X Instant 1-Press Secondary Ability/Warhead, A Repel Shockwave, Y Native Multi-Shot toggle, plus a WoW-style live controller button remapper in Settings & Codex; D-Pad Camera Zoom & Hangar 1..10 ship navigation, Start/Select modals). NEVER mention PC keyboard keys or shortcuts.
 5. PURE TEXT Q&A & THEORYCRAFTING: Deliver clear, structured, tactical text answers and 100-point Rift Frame theorycrafting breakdowns (showing exact point costs summing to the pilot's target budget such as 20 pts at Lv 20 or 100 pts at Lv 100, plus resulting Speed, Thrust, Turn Rate, Max Flux, Recharge, Primary, and Secondary stats). Never prefix ship names with legacy numbers (say "Viper", "Disruptor", "Interdictor", "Rift Frame", never "1-Viper" or "6-Disruptor"). Keep formatting crisp and scannable on a landscape mobile tactical console.
 """
@@ -200,7 +200,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Public FFA Sector Convergence & Bounty Math: %.0f-minute (%.0fs) match cycle (%.0fs remaining in current cycle). Ships spawn at 100 Bounty. High-Value Target (HVT) gold radar crown at >= %d Bounty; >1,000 Bounty triggers arena-wide gold shutdown alerts. Killing an enemy awards +%.0f%% of victim's Bounty; Supply Crates award +%d Bounty. Winning Sector Convergence with >50%% match presence awards Rift Shards.",
+        "- Public FFA Sector Convergence & Bounty Math: %.0f-minute (%.0fs) match cycle (%.0fs remaining in current cycle). Ships spawn at 100 Bounty. High-Value Target (HVT) gold radar crown at >= %d Bounty; >1,000 Bounty triggers arena-wide gold shutdown alerts. Killing an enemy awards +%.0f%% of victim's Bounty; Supply Crates award +%d Bounty. Winning Sector Convergence with >50%% match presence awards +100❖ Rift Shards.",
         engine.publicMatchCycleLimitSec / 60f,
         engine.publicMatchCycleLimitSec,
         matchRemainingSec,
@@ -208,6 +208,51 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
         RiftCalibrationState.bountyKillBonusPct * 100f,
         RiftCalibrationState.cratePickupBounty,
       )
+    )
+    sb.appendLine(
+      "- NEXUS Command Hub & 5 Always-Open Ranked Modes (Human-Only Pilot Counters + Seamless Bot Hot-Swapping):"
+    )
+    sb.appendLine(
+      "  • NEXUS Channels: #nexus-ai (live streaming Gemini tactical intelligence), #main-lobby, #change-log, #rules, #bug-report, 10 Hull Bay channels (#viper through #rift-frame), Private [TAG] Syndicate Name servers (up to 5 custom channels always starting with mandatory #general at index 0, accessible to Syndicate members and Invited Guests), and #armada-chat. Startup preference toggle lets pilots boot straight into NEXUS Hub (default) or Fast-Boot into the arena with the Changelog + 1-Tap Quick-Join Bar."
+    )
+    sb.appendLine(
+      "  • Graphical Armada Staging Deck: 1–5 pilot pedestals where each pilot is represented by their Best Ship (highest career Peak Bounty hull via getBestShipId())."
+    )
+    sb.appendLine(
+      "  • 1) SECTOR CONVERGENCE: 20-Pilot Ranked FFA / 1-5 Armada Bounty • 60-minute cycle • +100❖ for #1 Bounty with >50% match presence."
+    )
+    sb.appendLine(
+      "  • 2) RIFT SKIRMISH: Ranked 2v2–5v5 Best-of-3 Rounds Team Deathmatch • Opposite West/East Warp Gates • First to 15 kills/round • +75❖."
+    )
+    sb.appendLine(
+      String.format(
+        Locale.US,
+        "  • 3) FLUX CORE: 20-Pilot Ranked Powerball FFA • Holding the Volatile Flux Core grants +1 Overcharge Tier every 5s up to Tier 10 (+50%% Damage, +50%% Flux Recharge, +40%% Top Speed at Tier 10) and +15 Bounty/sec. On carrier death or Safe Zone entry, the Flux Core rockets off at %.0f px/s and decelerates over 30.0s while bouncing off walls (Live Core: Tier %d/10, Hold %.1fs, Pos=(%.0f, %.0f)).",
+        RiftCalibrationState.fluxCoreEjectSpeed,
+        engine.fluxCoreOrb.overchargeTier,
+        engine.fluxCoreOrb.holdDurationSec,
+        engine.fluxCoreOrb.x,
+        engine.fluxCoreOrb.y,
+      )
+    )
+    sb.appendLine(
+      String.format(
+        Locale.US,
+        "  • 4) STASIS BREACH: Ranked 10v10 Divided Playfield Jailbreak (split at x = 4000) • Killing an enemy locks them in your team's Stasis Brig; free teammates can destroy the enemy's %.0f⚡ Brig Reactor Core (prisoners inside deal 25%% damage) to break everyone out with 100%% Flux and a 3.0s Phase Shield; locking all 10 enemies in the Brig wins +100❖ (Live Reactors: West=%.0f⚡, East=%.0f⚡).",
+        RiftCalibrationState.stasisBrigReactorMaxHp,
+        engine.westBrigGeneratorHp,
+        engine.eastBrigGeneratorHp,
+      )
+    )
+    val myWarRec = localPrefs.getSyndicateWarRecord(syndicateTag)
+    sb.appendLine(
+      "  • 5) SYNDICATE WARS: Ranked Direct Syndicate-vs-Syndicate Ladder in 1–5 Strike Fleet (3v3/5v5) or 10v10 Stasis Breach • Requires an enlisted non-GUEST Syndicate and a 100% same-Syndicate Armada • Ranks Syndicates by direct H2H War Trophies (Active Syndicate [$syndicateTag] Record: ${myWarRec.warTrophies} War Trophies, ${myWarRec.warWins}W-${myWarRec.warLosses}L, Streak ${myWarRec.warStreak})."
+    )
+    sb.appendLine(
+      "  • Active Ranked Mode Right Now: ${engine.activeRankedMode.title} (${engine.activeRankedMode.id}, Bracket=${engine.activeTeamSizeBracket}, Human Pilots in Mode=${engine.getHumanPilotCountForMode(engine.activeRankedMode)})."
+    )
+    sb.appendLine(
+      "  • Calibration Master Wipe: Calibration header includes a 2-step `[🧨 WIPE STATS / ARMADAS / SYNDICATES]` button (`performMasterFreshStartWipe`) for instant fresh-start testing."
     )
 
     // 3. ALL 10 SHIPS LIVE STATS + PER-SHIP LASER PIXEL DIMENSIONS

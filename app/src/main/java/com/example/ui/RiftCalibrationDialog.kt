@@ -116,6 +116,7 @@ fun RiftCalibrationDialog(
   var copiedPromptModalText by remember { mutableStateOf<String?>(null) }
   var copiedModCount by remember { mutableIntStateOf(0) }
   var statusBanner by remember { mutableStateOf<String?>(null) }
+  var confirmMasterWipe by remember { mutableStateOf(false) }
 
   // Read revision so Compose recomposes immediately whenever any slider, hide toggle, or forged buff updates
   val rev = RiftCalibrationState.calibrationRevision
@@ -182,7 +183,7 @@ fun RiftCalibrationDialog(
         modifier = Modifier.fillMaxSize().padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        // 1. STICKY HEADER ROW 1: Title, Live Peek Indicator, Reset All, Copy Defaults & Close
+        // 1. STICKY HEADER ROW 1: Title, Live Peek Indicator, Wipe All, Reset All, Copy Defaults & Close
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -215,6 +216,33 @@ fun RiftCalibrationDialog(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
+            // [🧨 WIPE STATS / ARMADAS / SYNDICATES] (2-step confirmation)
+            CalibrationHeaderActionBtn(
+              label =
+                if (!confirmMasterWipe) {
+                  "🧨 WIPE STATS / ARMADAS / SYNDICATES"
+                } else {
+                  "⚠️ TAP AGAIN TO CONFIRM FULL WIPE"
+                },
+              bgColor = if (!confirmMasterWipe) Color(0xFF2D0A14) else Color(0xFF7F1D1D),
+              borderColor = Color(0xFFFF3B4E),
+              textColor = Color(0xFFFF8A98),
+              testTag = "calibration_wipe_all_data_button",
+              onClick = {
+                if (!confirmMasterWipe) {
+                  confirmMasterWipe = true
+                  statusBanner =
+                    "⚠️ TAP [CONFIRM FULL WIPE] AGAIN TO ZERO ALL STATS, DELETE ALL ARMADAS & DELETE ALL SYNDICATES."
+                } else {
+                  val prefs = com.example.data.LocalPilotPrefs(context)
+                  engine?.performMasterFreshStartWipe(prefs) ?: prefs.wipeAllStatsArmadasAndSyndicates()
+                  confirmMasterWipe = false
+                  statusBanner =
+                    "🧨 FRESH START COMPLETE: ALL STATS, ARMADAS, AND SYNDICATES WIPED TO ZERO!"
+                }
+              },
+            )
+
             // [↺ RESET ALL TO DEFAULTS]
             CalibrationHeaderActionBtn(
               label = "↺ RESET TO DEFAULTS",
@@ -223,6 +251,7 @@ fun RiftCalibrationDialog(
               textColor = Color(0xFFFBBF24),
               testTag = "calibration_reset_all_button",
               onClick = {
+                confirmMasterWipe = false
                 RiftCalibrationState.resetAll(context, engine)
                 statusBanner = "↺ RESTORED ALL CALIBRATION SLIDERS & SHIP STATS TO FACTORY DEFAULTS."
                 engine?.onPrizeToast("↺ CALIBRATION RESET TO FACTORY DEFAULTS")
@@ -237,6 +266,7 @@ fun RiftCalibrationDialog(
               textColor = Color(0xFF34D399),
               testTag = "calibration_copy_defaults_button",
               onClick = {
+                confirmMasterWipe = false
                 val (promptText, modCount) = RiftCalibrationState.generateAiStudioDefaultsPrompt()
                 val clipboard =
                   context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager

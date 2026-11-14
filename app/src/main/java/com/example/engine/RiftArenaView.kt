@@ -676,6 +676,16 @@ class RiftArenaView(
       )
     }
 
+    // 4b. STASIS_BREACH (10v10 Jailbreak): Vertical Sector Divider (x = 4000), West/East Stasis Brigs & 8,000⚡ Reactor Cores
+    if (engine.isStasisBreachRulesActive()) {
+      drawStasisBreachPlayfieldStructures(canvas, p, viewLeft, viewRight, viewTop, viewBottom)
+    }
+
+    // 4c. FLUX_CORE: Free/Ejected Singularity Orb & Supersonic Velocity Trail
+    if (engine.isFluxCoreRulesActive() && engine.fluxCoreCarrierEntityId.isEmpty()) {
+      drawFreeFluxCoreOrb(canvas, viewLeft, viewRight, viewTop, viewBottom)
+    }
+
     // 5. Procedural Beveled Industrial Walls
     for (w in engine.walls) {
       if (w.x + w.w < viewLeft || w.x > viewRight || w.y + w.h < viewTop || w.y > viewBottom) {
@@ -1191,6 +1201,30 @@ class RiftArenaView(
         bombRingPaint.color = Color.argb(215, 249, 115, 22)
         canvas.drawCircle(s.x, s.y, 48f * RiftCalibrationState.shipScale, bombRingPaint)
       }
+      if (engine.isFluxCoreRulesActive() && engine.fluxCoreCarrierEntityId == s.id) {
+        val pulse = 0.5f + 0.5f * sin(engine.fluxCoreOrb.pulsePhase * 1.6f)
+        val tier = engine.fluxCoreOrb.overchargeTier.coerceIn(1, 10)
+        val ringR = (54f + 8f * pulse) * RiftCalibrationState.shipScale
+        bombRingPaint.strokeWidth = 3.8f
+        bombRingPaint.color = Color.argb(235, 250, 204, 21)
+        canvas.drawCircle(s.x, s.y, ringR, bombRingPaint)
+        bombRingPaint.strokeWidth = 2.2f
+        bombRingPaint.color = Color.argb(200, 34, 211, 238)
+        canvas.drawCircle(s.x, s.y, ringR + 7f, bombRingPaint)
+        popupPaint.color = Color.parseColor("#FACC15")
+        popupPaint.textSize = 14.5f * RiftCalibrationState.shipScale
+        canvas.drawText(
+          "⚡ FLUX CORE TIER $tier/10",
+          s.x,
+          s.y - ringR - 14f,
+          popupPaint,
+        )
+      }
+      if (engine.isStasisBreachRulesActive() && s.isInStasisBrig) {
+        bombRingPaint.strokeWidth = 2.6f
+        bombRingPaint.color = Color.argb(210, 244, 63, 94)
+        canvas.drawCircle(s.x, s.y, 46f * RiftCalibrationState.shipScale, bombRingPaint)
+      }
 
       // Independent 360-degree turret/rail directional indicator on 2x hull
       if (s.independentAimActive) {
@@ -1438,6 +1472,9 @@ class RiftArenaView(
 
     canvas.restore()
 
+    // 11b. Screen-Space Ranked Mode Banner & Off-Screen Objective Indicator (Flux Core / Stasis Breach / Skirmish)
+    drawRankedModeScreenOverlay(canvas, vw, vh, p, effectiveCamX, effectiveCamY, worldScale)
+
     // 12. Screen-Space Multi-Touch Controls (Always-Visible Left Stick + Strict Dynamic Right Combat Arc)
     drawTouchControlsOverlay(canvas, p)
 
@@ -1448,6 +1485,246 @@ class RiftArenaView(
 
     // Schedule next 60+ FPS frame
     postInvalidateOnAnimation()
+  }
+
+  private fun drawStasisBreachPlayfieldStructures(
+    canvas: Canvas,
+    p: ShipEntity,
+    viewLeft: Float,
+    viewRight: Float,
+    viewTop: Float,
+    viewBottom: Float,
+  ) {
+    // 1. Vertical Sector Frontier Line at x = 4000f
+    if (4000f in (viewLeft - 60f)..(viewRight + 60f)) {
+      safeDashPaint.color = Color.argb(135, 244, 63, 94)
+      safeDashPaint.strokeWidth = 3.2f
+      canvas.drawLine(4000f, max(0f, viewTop), 4000f, min(RiftGameEngine.WORLD_SIZE, viewBottom), safeDashPaint)
+      safeDashPaint.strokeWidth = 2f
+    }
+
+    val maxReactorHp = RiftCalibrationState.stasisBrigReactorMaxHp.coerceAtLeast(1000f)
+    val eastPrisonersInWestBrig = engine.ships.count { it.freq == 1 && it.isInStasisBrig }
+    val westPrisonersInEastBrig = engine.ships.count { it.freq == 0 && it.isInStasisBrig }
+
+    fun drawBrigPenAndReactor(
+      pen: RectF,
+      reactorX: Float,
+      reactorY: Float,
+      reactorHp: Float,
+      brigOwnerFreq: Int,
+      capturedCount: Int,
+      labelPrefix: String,
+    ) {
+      val isFriendlyBrig = p.freq == brigOwnerFreq
+      val borderCol = if (isFriendlyBrig) Color.parseColor("#38BDF8") else Color.parseColor("#F43F5E")
+      if (pen.right >= viewLeft - 80f && pen.left <= viewRight + 80f &&
+        pen.bottom >= viewTop - 80f && pen.top <= viewBottom + 80f
+      ) {
+        safeFillPaint.color =
+          if (isFriendlyBrig) Color.argb(26, 56, 189, 248) else Color.argb(28, 244, 63, 94)
+        canvas.drawRect(pen, safeFillPaint)
+        safeBracketPaint.color = borderCol
+        safeBracketPaint.strokeWidth = 4.2f
+        canvas.drawRect(pen, safeBracketPaint)
+        safeBracketPaint.strokeWidth = 3f
+
+        popupPaint.color = borderCol
+        popupPaint.textSize = 18f
+        canvas.drawText(
+          "🔒 $labelPrefix STASIS BRIG • $capturedCount/10 CAPTURED",
+          pen.centerX(),
+          pen.top - 16f,
+          popupPaint,
+        )
+      }
+
+      if (reactorX in (viewLeft - 140f)..(viewRight + 140f) &&
+        reactorY in (viewTop - 140f)..(viewBottom + 140f)
+      ) {
+        val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 720L) / 720f * (PI.toFloat() * 2f))
+        val coreR = 46f
+        anomalyFillPaint.color =
+          if (isFriendlyBrig) Color.argb(70, 56, 189, 248) else Color.argb(80, 245, 158, 11)
+        canvas.drawCircle(reactorX, reactorY, coreR * (1.25f + 0.15f * pulse), anomalyFillPaint)
+
+        anomalyRingPaint.strokeWidth = 4.5f
+        anomalyRingPaint.color = if (isFriendlyBrig) Color.parseColor("#38BDF8") else Color.parseColor("#F59E0B")
+        canvas.drawCircle(reactorX, reactorY, coreR, anomalyRingPaint)
+
+        anomalyCorePaint.color = Color.parseColor("#FACC15")
+        canvas.drawCircle(reactorX, reactorY, coreR * 0.48f, anomalyCorePaint)
+
+        // Reactor HP Bar above Core
+        val hpFrac = (reactorHp / maxReactorHp).coerceIn(0f, 1f)
+        val barW = 130f
+        val barH = 11f
+        val barLeft = reactorX - barW * 0.5f
+        val barTop = reactorY - coreR - 28f
+        arcRect.set(barLeft, barTop, barLeft + barW, barTop + barH)
+        hudCircleFillPaint.color = Color.argb(210, 15, 23, 42)
+        canvas.drawRoundRect(arcRect, 4f, 4f, hudCircleFillPaint)
+        arcRect.set(barLeft, barTop, barLeft + barW * hpFrac, barTop + barH)
+        hudCircleFillPaint.color =
+          if (hpFrac > 0.5f) Color.parseColor("#22D3EE")
+          else if (hpFrac > 0.25f) Color.parseColor("#F59E0B")
+          else Color.parseColor("#EF4444")
+        canvas.drawRoundRect(arcRect, 4f, 4f, hudCircleFillPaint)
+
+        popupPaint.color = Color.parseColor("#FACC15")
+        popupPaint.textSize = 14.5f
+        canvas.drawText(
+          "⚡ BRIG REACTOR • ${reactorHp.toInt()}⚡",
+          reactorX,
+          barTop - 8f,
+          popupPaint,
+        )
+      }
+    }
+
+    drawBrigPenAndReactor(
+      pen = engine.westBrigRect,
+      reactorX = engine.westBrigReactorX,
+      reactorY = engine.westBrigReactorY,
+      reactorHp = engine.westBrigGeneratorHp,
+      brigOwnerFreq = 0,
+      capturedCount = eastPrisonersInWestBrig,
+      labelPrefix = "WEST",
+    )
+    drawBrigPenAndReactor(
+      pen = engine.eastBrigRect,
+      reactorX = engine.eastBrigReactorX,
+      reactorY = engine.eastBrigReactorY,
+      reactorHp = engine.eastBrigGeneratorHp,
+      brigOwnerFreq = 1,
+      capturedCount = westPrisonersInEastBrig,
+      labelPrefix = "EAST",
+    )
+  }
+
+  private fun drawFreeFluxCoreOrb(
+    canvas: Canvas,
+    viewLeft: Float,
+    viewRight: Float,
+    viewTop: Float,
+    viewBottom: Float,
+  ) {
+    val orb = engine.fluxCoreOrb
+    if (orb.x < viewLeft - 140f || orb.x > viewRight + 140f ||
+      orb.y < viewTop - 140f || orb.y > viewBottom + 140f
+    ) {
+      return
+    }
+    val pulse = 0.5f + 0.5f * sin(orb.pulsePhase)
+    val r = 38f + 6f * pulse
+
+    if (orb.ejectDecelTimerSec > 0f && hypot(orb.vx, orb.vy) > 25f) {
+      val tailX = orb.x - orb.vx * 0.085f
+      val tailY = orb.y - orb.vy * 0.085f
+      bulletPaint.color = Color.argb(190, 250, 204, 21)
+      bulletPaint.strokeWidth = 14f
+      canvas.drawLine(orb.x, orb.y, tailX, tailY, bulletPaint)
+      bulletCorePaint.strokeWidth = 6f
+      canvas.drawLine(orb.x, orb.y, tailX, tailY, bulletCorePaint)
+    }
+
+    anomalyFillPaint.color = Color.argb((75 + (50 * pulse).toInt()).coerceIn(0, 255), 250, 204, 21)
+    canvas.drawCircle(orb.x, orb.y, r * 1.55f, anomalyFillPaint)
+
+    anomalyRingPaint.strokeWidth = 4.2f
+    anomalyRingPaint.color = Color.parseColor("#22D3EE")
+    canvas.drawCircle(orb.x, orb.y, r, anomalyRingPaint)
+
+    anomalyRingPaint.strokeWidth = 3.2f
+    anomalyRingPaint.color = Color.parseColor("#FACC15")
+    canvas.drawCircle(orb.x, orb.y, r * 0.68f, anomalyRingPaint)
+
+    anomalyCorePaint.color = Color.WHITE
+    canvas.drawCircle(orb.x, orb.y, r * 0.34f, anomalyCorePaint)
+
+    popupPaint.color = Color.parseColor("#FACC15")
+    popupPaint.textSize = 15.5f
+    val statusLbl =
+      if (orb.ejectDecelTimerSec > 0f) {
+        "⚡ FLUX CORE EJECTED (${orb.ejectDecelTimerSec.toInt()}s)"
+      } else {
+        "⚡ FLUX CORE SINGULARITY (+15 BOUNTY/S)"
+      }
+    canvas.drawText(statusLbl, orb.x, orb.y - r - 16f, popupPaint)
+  }
+
+  private fun drawRankedModeScreenOverlay(
+    canvas: Canvas,
+    vw: Float,
+    vh: Float,
+    p: ShipEntity,
+    effectiveCamX: Float,
+    effectiveCamY: Float,
+    worldScale: Float,
+  ) {
+    val mode = engine.activeRankedMode
+    if (mode != RankedGameMode.SECTOR_CONVERGENCE) {
+      val bannerText =
+        when (mode) {
+          RankedGameMode.RIFT_SKIRMISH, RankedGameMode.SYNDICATE_WARS -> {
+            val prefix = if (mode == RankedGameMode.SYNDICATE_WARS) "⚔ SYNDICATE WARS" else "⚔ RIFT SKIRMISH"
+            "$prefix (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • R${engine.skirmishCurrentRound} • WEST ${engine.skirmishWestKills}/${RiftCalibrationState.skirmishKillTargetPerRound} — ${engine.skirmishEastKills}/${RiftCalibrationState.skirmishKillTargetPerRound} EAST (ROUNDS ${engine.skirmishWestRoundWins}-${engine.skirmishEastRoundWins})"
+          }
+          RankedGameMode.FLUX_CORE -> {
+            val cid = engine.fluxCoreCarrierEntityId
+            val carrier = if (cid.isNotEmpty()) engine.ships.firstOrNull { it.id == cid } else null
+            if (carrier != null) {
+              "⚡ FLUX CORE CARRIER: ${carrier.callsign} • TIER ${engine.fluxCoreOrb.overchargeTier}/10 • ${carrier.bounty} BOUNTY"
+            } else if (engine.fluxCoreOrb.ejectDecelTimerSec > 0f) {
+              "⚡ FLUX CORE EJECTED • SUPERSONIC RICOCHET (${engine.fluxCoreOrb.ejectDecelTimerSec.toInt()}s)"
+            } else {
+              "⚡ FLUX CORE UNCLAIMED AT (${engine.fluxCoreOrb.x.toInt()}, ${engine.fluxCoreOrb.y.toInt()})"
+            }
+          }
+          RankedGameMode.STASIS_BREACH -> {
+            val eastCaptured = engine.ships.count { it.freq == 1 && it.isInStasisBrig }
+            val westCaptured = engine.ships.count { it.freq == 0 && it.isInStasisBrig }
+            val prisonerBanner = if (p.isInStasisBrig) " • 🔒 JAILED (SHOOT REACTOR CORE AT 25% DMG!)" else ""
+            "🔒 STASIS BREACH • WEST BRIG: $eastCaptured/10 (${engine.westBrigGeneratorHp.toInt()}⚡) | EAST BRIG: $westCaptured/10 (${engine.eastBrigGeneratorHp.toInt()}⚡)$prisonerBanner"
+          }
+          else -> ""
+        }
+      if (bannerText.isNotEmpty()) {
+        val pillW = min(vw * 0.72f, 540f * dpDensity)
+        val pillH = 22f * dpDensity
+        val left = (vw - pillW) * 0.5f
+        val top = 42f * dpDensity
+        arcRect.set(left, top, left + pillW, top + pillH)
+        hudCircleFillPaint.color = Color.argb(195, 6, 13, 26)
+        canvas.drawRoundRect(arcRect, 11f * dpDensity, 11f * dpDensity, hudCircleFillPaint)
+        hudCircleStrokePaint.strokeWidth = 1.5f
+        hudCircleStrokePaint.color = Color.parseColor("#38BDF8")
+        canvas.drawRoundRect(arcRect, 11f * dpDensity, 11f * dpDensity, hudCircleStrokePaint)
+        hudCircleStrokePaint.strokeWidth = 2.6f
+        hudLabelPaint.textSize = 9.2f * dpDensity
+        hudLabelPaint.color = Color.parseColor("#FACC15")
+        canvas.drawText(bannerText, vw * 0.5f, top + 14.5f * dpDensity, hudLabelPaint)
+      }
+    }
+
+    // Off-Screen Directional Indicator for Flux Core Orb
+    if (engine.isFluxCoreRulesActive()) {
+      val tx = engine.fluxCoreOrb.x
+      val ty = engine.fluxCoreOrb.y
+      val sx = (tx - effectiveCamX) * worldScale + vw * 0.5f
+      val sy = (ty - effectiveCamY) * worldScale + vh * 0.5f
+      if (sx < 40f || sx > vw - 40f || sy < 40f || sy > vh - 40f) {
+        val ang = atan2(ty - effectiveCamY, tx - effectiveCamX)
+        val edgeR = min(vw, vh) * 0.38f
+        val ix = vw * 0.5f + cos(ang) * edgeR
+        val iy = vh * 0.5f + sin(ang) * edgeR
+        hudCircleFillPaint.color = Color.argb(215, 250, 204, 21)
+        canvas.drawCircle(ix, iy, 12f * dpDensity, hudCircleFillPaint)
+        hudLabelPaint.textSize = 8.5f * dpDensity
+        hudLabelPaint.color = Color.parseColor("#030712")
+        canvas.drawText("⚡", ix, iy + 3f * dpDensity, hudLabelPaint)
+      }
+    }
   }
 
   private fun drawIndustrialWallSegment(canvas: Canvas, w: WallRect) {

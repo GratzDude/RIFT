@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.engine.AnomalyType
 import com.example.engine.KillFeedEntry
+import com.example.engine.RankedGameMode
 import com.example.engine.RiftCalibrationState
 import com.example.engine.RiftGameEngine
 import com.example.engine.RiftSpriteBaker
@@ -330,6 +331,14 @@ fun RiftHudOverlay(
           onClick = onOpenDossier,
         )
         TopPillAction(
+          label = "🌐 NEXUS",
+          textColor = Color(0xFF00F5D4),
+          borderColor = Color(0xAA00F5D4),
+          textScale = textScale,
+          onClick = onOpenNexus,
+          tag = "hud_pill_nexus",
+        )
+        TopPillAction(
           label = "🚀 HANGAR",
           textColor = Color(0xFF38BDF8),
           borderColor = Color(0x8838BDF8),
@@ -392,6 +401,69 @@ fun RiftHudOverlay(
           textScale = textScale,
           onClick = onCycleCameraZoom,
           tag = "hud_pill_zoom",
+        )
+      }
+    }
+
+    // 1B. Top-Center Active Ranked Mode Telemetry Pill (Skirmish, Flux Core, Stasis Breach, Syndicate Wars)
+    if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE) {
+      val mode = engine.activeRankedMode
+      val modeAccent =
+        when (mode) {
+          RankedGameMode.RIFT_SKIRMISH -> Color(0xFFF59E0B)
+          RankedGameMode.FLUX_CORE -> Color(0xFF00F5D4)
+          RankedGameMode.STASIS_BREACH -> Color(0xFFA855F7)
+          RankedGameMode.SYNDICATE_WARS -> Color(0xFFEF4444)
+          RankedGameMode.SECTOR_CONVERGENCE -> Color(0xFF38BDF8)
+        }
+      val modeSummaryText =
+        when (mode) {
+          RankedGameMode.RIFT_SKIRMISH ->
+            "⚔️ RIFT SKIRMISH (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • RND ${engine.skirmishCurrentRound} • WEST ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} EAST (${engine.skirmishWestKills}-${engine.skirmishEastKills} KILLS)"
+          RankedGameMode.FLUX_CORE -> {
+            val carrierShip =
+              engine.ships.firstOrNull {
+                it.id == engine.fluxCoreCarrierEntityId ||
+                  (engine.fluxCoreOrb.carrierShipId != -1 && it.shipId == engine.fluxCoreOrb.carrierShipId)
+              }
+            val carrierLabel =
+              when {
+                engine.fluxCoreCarrierEntityId == player.id ->
+                  "CARRIER: YOU (TIER ${engine.fluxCoreOrb.overchargeTier}/10)"
+                carrierShip != null ->
+                  "CARRIER: ${carrierShip.callsign} (TIER ${engine.fluxCoreOrb.overchargeTier}/10)"
+                else -> "ORB AT (${engine.fluxCoreOrb.x.toInt()},${engine.fluxCoreOrb.y.toInt()})"
+              }
+            "⚡ FLUX CORE • $carrierLabel • HOLD ${engine.fluxCoreOrb.holdDurationSec.toInt()}s"
+          }
+          RankedGameMode.STASIS_BREACH -> {
+            val jailedCount = engine.ships.count { it.isInStasisBrig }
+            "🔒 STASIS BREACH (10v10) • WEST REACTOR ${engine.westBrigGeneratorHp.toInt()}⚡ | EAST REACTOR ${engine.eastBrigGeneratorHp.toInt()}⚡ • BRIG: $jailedCount"
+          }
+          RankedGameMode.SYNDICATE_WARS ->
+            "🏛️ SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • [${player.syndicateTag}] ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} [${engine.rivalSyndicateWarTag}] (RND ${engine.skirmishCurrentRound})"
+          RankedGameMode.SECTOR_CONVERGENCE -> mode.title
+        }
+
+      Box(
+        modifier =
+          Modifier.align(Alignment.TopCenter)
+            .padding(top = 6.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(Color(0xD9060E1C))
+            .border(1.dp, modeAccent, RoundedCornerShape(9.dp))
+            .clickable { onOpenNexus() }
+            .padding(horizontal = (8f * textScale).dp, vertical = (3.5f * textScale).dp)
+            .testTag("hud_ranked_mode_banner"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = modeSummaryText,
+          color = modeAccent,
+          fontSize = (8.2f * textScale).sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          style = WingTelemetryTextStyle,
         )
       }
     }

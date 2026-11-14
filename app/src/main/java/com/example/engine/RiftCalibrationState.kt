@@ -311,6 +311,10 @@ object RiftCalibrationState {
   var cratePickupBounty by mutableIntStateOf(15)
   var fullChargeCrateBounty by mutableIntStateOf(15)
   var hitStopDurationSec by mutableFloatStateOf(0.032f)
+  var skirmishKillTargetPerRound by mutableIntStateOf(15)
+  var fluxCoreBountyPerSec by mutableIntStateOf(15)
+  var fluxCoreEjectSpeed by mutableFloatStateOf(1650f)
+  var stasisBrigReactorMaxHp by mutableFloatStateOf(8000f)
 
   /**
    * Converts any camelCase or snake_case variable name into a clean Plain-English Title.
@@ -1353,6 +1357,46 @@ object RiftCalibrationState {
       description = "Brief micro-freeze impact frame duration triggered on heavy lethal ship explosions.",
       min = 0.00f, max = 0.12f, step = 0.005f, decimals = 2,
       getter = { hitStopDurationSec }, setter = { hitStopDurationSec = it.coerceIn(0.00f, 0.12f) },
+    )
+    list += CalibrationParamDescriptor(
+      key = "skirmishKillTargetPerRound",
+      tabIndex = 7,
+      title = "Rift Skirmish Kills Per Round",
+      unit = "kills",
+      description = "Team eliminations required to win a single round in Best-of-3 Rift Skirmish and Syndicate Wars TDM.",
+      min = 5f, max = 40f, step = 1f, decimals = 0,
+      getter = { skirmishKillTargetPerRound.toFloat() },
+      setter = { skirmishKillTargetPerRound = it.roundToInt().coerceIn(5, 40) },
+    )
+    list += CalibrationParamDescriptor(
+      key = "fluxCoreBountyPerSec",
+      tabIndex = 7,
+      title = "Flux Core Carrier Bounty Tick",
+      unit = "Bounty/s",
+      description = "Bounty awarded every second to the pilot carrying the Volatile Flux Core singularity.",
+      min = 5f, max = 50f, step = 5f, decimals = 0,
+      getter = { fluxCoreBountyPerSec.toFloat() },
+      setter = { fluxCoreBountyPerSec = it.roundToInt().coerceIn(5, 50) },
+    )
+    list += CalibrationParamDescriptor(
+      key = "fluxCoreEjectSpeed",
+      tabIndex = 7,
+      title = "Flux Core Death Ejection Velocity",
+      unit = "px/s",
+      description = "Initial supersonic velocity when the Flux Core shoots off upon carrier elimination or Safe Zone entry.",
+      min = 800f, max = 2600f, step = 50f, decimals = 0,
+      getter = { fluxCoreEjectSpeed },
+      setter = { fluxCoreEjectSpeed = it.coerceIn(800f, 2600f) },
+    )
+    list += CalibrationParamDescriptor(
+      key = "stasisBrigReactorMaxHp",
+      tabIndex = 7,
+      title = "Stasis Brig Reactor Core Max Flux",
+      unit = "⚡",
+      description = "Maximum Flux integrity of the West and East Stasis Brig Reactor Cores in 10v10 Stasis Breach.",
+      min = 2000f, max = 20000f, step = 500f, decimals = 0,
+      getter = { stasisBrigReactorMaxHp },
+      setter = { stasisBrigReactorMaxHp = it.coerceIn(2000f, 20000f) },
     )
 
     return list

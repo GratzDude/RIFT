@@ -34,14 +34,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.LeaderboardEntry
+import com.example.data.LocalPilotPrefs
 import com.example.data.PeakBountyRunSnapshot
+import com.example.data.SyndicateInfo
 import com.example.data.SyndicateServiceEntry
+import com.example.data.SyndicateWarRecord
 import com.example.engine.RiftCodex
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -628,9 +632,10 @@ fun DossierModal(
           }
 
           2 -> {
-            // DOSSIER UPGRADE 2: SYNDICATE AFFILIATION SERVICE RECORD
+            // DOSSIER UPGRADE 2: SYNDICATE AFFILIATION SERVICE RECORD & DIRECT H2H WAR RANKINGS
             SyndicateServiceRecordSection(
               modifier = Modifier.weight(1f).fillMaxWidth(),
+              activeSyndicateTag = syndicateTag,
               entries = syndicateServiceHistory,
             )
           }
@@ -706,7 +711,7 @@ private fun PeakBountyAndExecutionerSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            ShipSpritePreview(shipId = snapshot.shipId.coerceIn(1, 9), sizeDp = 36)
+            ShipSpritePreview(shipId = snapshot.shipId.coerceIn(1, 10), sizeDp = 36)
             Column {
               Text(
                 text = headerLabel,
@@ -781,13 +786,13 @@ private fun PeakBountyAndExecutionerSection(
           DossierStatBox(
             modifier = Modifier.weight(1f),
             label = "DAMAGE DEALT",
-            value = "${snapshot.damageDealt.toInt()} ❖",
+            value = "${snapshot.damageDealt.toInt()} ⚡",
             color = Color(0xFF00E676),
           )
           DossierStatBox(
             modifier = Modifier.weight(1f),
             label = "DAMAGE TAKEN",
-            value = "${snapshot.damageTaken.toInt()} ❖",
+            value = "${snapshot.damageTaken.toInt()} ⚡",
             color = Color(0xFFF87171),
           )
           DossierStatBox(
@@ -943,7 +948,7 @@ private fun PeakBountyAndExecutionerSection(
         )
         Text(
           text =
-            "BOUNTY: ${currentLifeSnapshot.bountyReached} • SURVIVED: ${currentLifeSnapshot.formattedDuration()} • KILLS: ${currentLifeSnapshot.pvpKills + currentLifeSnapshot.botKills} • DMG: ${currentLifeSnapshot.damageDealt.toInt()}❖ • ACC: ${currentLifeSnapshot.accuracyPercent()}%",
+            "BOUNTY: ${currentLifeSnapshot.bountyReached} • SURVIVED: ${currentLifeSnapshot.formattedDuration()} • KILLS: ${currentLifeSnapshot.pvpKills + currentLifeSnapshot.botKills} • DMG: ${currentLifeSnapshot.damageDealt.toInt()}⚡ • ACC: ${currentLifeSnapshot.accuracyPercent()}%",
           color = Color.White,
           fontSize = 10.5.sp,
           fontWeight = FontWeight.Bold,
@@ -957,11 +962,98 @@ private fun PeakBountyAndExecutionerSection(
 @Composable
 private fun SyndicateServiceRecordSection(
   modifier: Modifier = Modifier,
+  activeSyndicateTag: String = "GUEST",
   entries: List<SyndicateServiceEntry>,
 ) {
+  val context = LocalContext.current
+  val localPrefs = remember(context) { LocalPilotPrefs(context) }
   val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US) }
   val nowMs = System.currentTimeMillis()
   val ordered = remember(entries) { entries.reversed() }
+
+  val cleanActiveTag =
+    remember(activeSyndicateTag) {
+      activeSyndicateTag.trim().uppercase().ifEmpty { "GUEST" }
+    }
+  val myWarRecord =
+    remember(cleanActiveTag, entries) {
+      localPrefs.getSyndicateWarRecord(cleanActiveTag)
+    }
+
+  val (topByWarTrophies, topByCollectiveBounty) =
+    remember(cleanActiveTag, entries) {
+      val byTag = linkedMapOf<String, SyndicateInfo>()
+      val officialLadder =
+        listOf(
+          SyndicateInfo(
+            id = "syn_aex",
+            tag = "AEX",
+            name = "Apex Vanguard",
+            foundryOrigin = "Sector Command Syndicate",
+            motto = "First into the Rift, last to yield.",
+            memberCount = 18,
+            combinedBounty = 14850L,
+            isCustom = false,
+          ),
+          SyndicateInfo(
+            id = "syn_obs",
+            tag = "OBS",
+            name = "Obsidian Core",
+            foundryOrigin = "Heavy Siege Syndicate",
+            motto = "Unbreakable containment across the sector.",
+            memberCount = 15,
+            combinedBounty = 12400L,
+            isCustom = false,
+          ),
+          SyndicateInfo(
+            id = "syn_sol",
+            tag = "SOL",
+            name = "Solaris Prime",
+            foundryOrigin = "High-Velocity Strike Fleet",
+            motto = "Velocity is the ultimate shield.",
+            memberCount = 14,
+            combinedBounty = 11650L,
+            isCustom = false,
+          ),
+          SyndicateInfo(
+            id = "syn_rft",
+            tag = "RFT",
+            name = "Rift Sentinels",
+            foundryOrigin = "Stasis Breach Guardians",
+            motto = "Hold the line at x = 4000.",
+            memberCount = 12,
+            combinedBounty = 10900L,
+            isCustom = false,
+          ),
+        )
+      for (custom in localPrefs.getAllSyndicates()) {
+        byTag[custom.tag.uppercase()] = custom
+      }
+      for (seed in officialLadder) {
+        if (!byTag.containsKey(seed.tag)) {
+          byTag[seed.tag] = seed
+        }
+      }
+      val allPairs =
+        byTag.values.map { syn ->
+          syn to localPrefs.getSyndicateWarRecord(syn.tag)
+        }
+      val warSorted =
+        allPairs
+          .sortedWith(
+            compareByDescending<Pair<SyndicateInfo, SyndicateWarRecord>> { it.second.warTrophies }
+              .thenByDescending { it.second.warWins }
+          )
+          .take(4)
+      val bountySorted =
+        allPairs
+          .sortedWith(
+            compareByDescending<Pair<SyndicateInfo, SyndicateWarRecord>> { it.first.combinedBounty }
+              .thenByDescending { it.first.memberCount }
+          )
+          .take(4)
+      warSorted to bountySorted
+    }
 
   Column(
     modifier =
@@ -971,6 +1063,122 @@ private fun SyndicateServiceRecordSection(
         .testTag("dossier_syndicate_history_section"),
     verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
+    // 1. Syndicate Wars Direct Performance Card + 2-Column Ranking Comparison
+    Column(
+      modifier =
+        Modifier.fillMaxWidth()
+          .background(Color(0xCC0A1829), RoundedCornerShape(10.dp))
+          .border(1.dp, Color(0x88F59E0B), RoundedCornerShape(10.dp))
+          .padding(horizontal = 10.dp, vertical = 7.dp)
+          .testTag("dossier_syndicate_war_performance_card"),
+      verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          text = "🏆 SYNDICATE WARS DIRECT PERFORMANCE // [$cleanActiveTag]",
+          color = Color(0xFFFBBF24),
+          fontSize = 11.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.SansSerif,
+        )
+        Text(
+          text =
+            "🏆 ${myWarRecord.warTrophies} WAR TROPHIES • ${myWarRecord.warWins}W - ${myWarRecord.warLosses}L • 🔥 ${myWarRecord.warStreak} STREAK",
+          color = Color(0xFF00E676),
+          fontSize = 10.5.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        // Column 1: Direct Syndicate War Trophies Ladder
+        Column(
+          modifier =
+            Modifier.weight(1f)
+              .background(Color(0x9906101E), RoundedCornerShape(8.dp))
+              .border(0.8.dp, Color(0x55F59E0B), RoundedCornerShape(8.dp))
+              .padding(6.dp),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          Text(
+            text = "⚔️ DIRECT H2H WAR TROPHIES (TOP 4)",
+            color = Color(0xFFFBBF24),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+          )
+          topByWarTrophies.forEachIndexed { idx, (syn, rec) ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+              Text(
+                text = "#${idx + 1} [${syn.tag}] ${syn.name}",
+                color = if (syn.tag == cleanActiveTag) Color(0xFF00F0FF) else Color.White,
+                fontSize = 8.8.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              )
+              Text(
+                text = "🏆 ${rec.warTrophies} (${rec.warWins}W-${rec.warLosses}L)",
+                color = Color(0xFFFBBF24),
+                fontSize = 8.8.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+        }
+
+        // Column 2: Collective Member Bounty Prestige Ladder
+        Column(
+          modifier =
+            Modifier.weight(1f)
+              .background(Color(0x9906101E), RoundedCornerShape(8.dp))
+              .border(0.8.dp, Color(0x5500F0FF), RoundedCornerShape(8.dp))
+              .padding(6.dp),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          Text(
+            text = "📊 COLLECTIVE MEMBER BOUNTY (TOP 4)",
+            color = Color(0xFF00F0FF),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+          )
+          topByCollectiveBounty.forEachIndexed { idx, (syn, _) ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+              Text(
+                text = "#${idx + 1} [${syn.tag}] ${syn.name}",
+                color = if (syn.tag == cleanActiveTag) Color(0xFFFFD700) else Color.White,
+                fontSize = 8.8.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              )
+              Text(
+                text = "${syn.combinedBounty} BTY (${syn.memberCount}P)",
+                color = Color(0xFF38BDF8),
+                fontSize = 8.8.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+        }
+      }
+    }
+
     Row(
       modifier = Modifier.fillMaxWidth(),
       horizontalArrangement = Arrangement.SpaceBetween,
