@@ -233,10 +233,10 @@ class LocalPilotPrefs(context: Context) {
   ): List<SyndicateMemberEntry> =
     getMySyndicateRoster(currentUid, callsign, shipId, bounty, kills)
 
-  fun getPreferredShipId(): Int = prefs.getInt(KEY_SHIP_ID, 1).coerceIn(1, 9)
+  fun getPreferredShipId(): Int = prefs.getInt(KEY_SHIP_ID, 1).coerceIn(1, 10)
 
   fun setPreferredShipId(shipId: Int) {
-    prefs.edit().putInt(KEY_SHIP_ID, shipId.coerceIn(1, 9)).apply()
+    prefs.edit().putInt(KEY_SHIP_ID, shipId.coerceIn(1, 10)).apply()
   }
 
   fun getPreferredMode(): String = "FFA"
@@ -546,7 +546,7 @@ class LocalPilotPrefs(context: Context) {
         uid = "friend_custom_${System.currentTimeMillis()}",
         callsign = clean,
         syndicateTag = getSyndicateTag(),
-        shipId = ((clean.hashCode().and(0x7FFFFFFF)) % 8) + 1,
+        shipId = ((clean.hashCode().and(0x7FFFFFFF)) % 9) + 1,
         statusText = "In Rift (Sector B4) • [SOLO] Ready for Armada",
         isOnline = true,
         currentArmadaName = "",
@@ -953,6 +953,7 @@ class LocalPilotPrefs(context: Context) {
       6 -> "Disruptor"
       7 -> "Valkyrie"
       8 -> "Manta"
+      9 -> "Interdictor"
       else -> "Rift Frame"
     }
 

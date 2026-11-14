@@ -54,7 +54,7 @@ private fun baselineAnchoredStatFraction(pts: Int): Float =
   0.10f + (pts.coerceIn(0, 30) / 30f) * 0.90f
 
 private fun cleanShipDisplayTitle(ship: ShipSpec): String =
-  if (ship.id == 9 && ship.name.equals("Rift Frame", ignoreCase = true)) {
+  if (ship.id == 10 && ship.name.equals("Rift Frame", ignoreCase = true)) {
     "RIFT FRAME"
   } else {
     ship.name.replace(Regex("^[0-9]+-"), "").uppercase(Locale.US)
@@ -90,7 +90,7 @@ fun HangarModal(
   onCloseModal: () -> Unit,
 ) {
   var callsignInput by remember(initialCallsign) { mutableStateOf(initialCallsign) }
-  var currentShipId by remember(selectedShipId) { mutableIntStateOf(selectedShipId.coerceIn(1, 9)) }
+  var currentShipId by remember(selectedShipId) { mutableIntStateOf(selectedShipId.coerceIn(1, 10)) }
   val currentMode = "FFA"
   var showPilotIdentityBar by remember { mutableStateOf(false) }
 
@@ -149,7 +149,7 @@ fun HangarModal(
 
               KeyEvent.KEYCODE_DPAD_LEFT -> {
                 if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
-                  currentShipId = if (currentShipId > 1) currentShipId - 1 else 9
+                  currentShipId = if (currentShipId > 1) currentShipId - 1 else 10
                   true
                 } else {
                   false
@@ -158,7 +158,7 @@ fun HangarModal(
 
               KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
-                  currentShipId = if (currentShipId < 9) currentShipId + 1 else 1
+                  currentShipId = if (currentShipId < 10) currentShipId + 1 else 1
                   true
                 } else {
                   false
@@ -167,7 +167,12 @@ fun HangarModal(
 
               KeyEvent.KEYCODE_DPAD_UP -> {
                 if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
-                  currentShipId = if (currentShipId > 3) currentShipId - 3 else currentShipId + 6
+                  currentShipId =
+                    when {
+                      currentShipId == 10 -> 8
+                      currentShipId in 4..9 -> currentShipId - 3
+                      else -> 10
+                    }
                   true
                 } else {
                   false
@@ -176,7 +181,12 @@ fun HangarModal(
 
               KeyEvent.KEYCODE_DPAD_DOWN -> {
                 if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
-                  currentShipId = if (currentShipId <= 6) currentShipId + 3 else currentShipId - 6
+                  currentShipId =
+                    when {
+                      currentShipId in 1..6 -> currentShipId + 3
+                      currentShipId in 7..9 -> 10
+                      else -> 2
+                    }
                   true
                 } else {
                   false
@@ -186,7 +196,7 @@ fun HangarModal(
               KeyEvent.KEYCODE_BUTTON_A,
               KeyEvent.KEYCODE_DPAD_CENTER -> {
                 if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
-                  if (currentShipId == 9 && !isNinthUnlocked) {
+                  if (currentShipId == 10 && !isNinthUnlocked) {
                     showFullNinthShipForgeModal = true
                   } else {
                     val cleanCallsign =
@@ -203,7 +213,7 @@ fun HangarModal(
               }
 
               KeyEvent.KEYCODE_BUTTON_X -> {
-                if (!showFullNinthShipForgeModal && currentShipId == 9) {
+                if (!showFullNinthShipForgeModal && currentShipId == 10) {
                   showFullNinthShipForgeModal = true
                   true
                 } else {
@@ -456,7 +466,7 @@ fun HangarModal(
 
         if (showFullNinthShipForgeModal) {
           NinthShipModularForgePanel(
-            spec = allNineShips.last(),
+            spec = allNineShips.first { it.id == 10 },
             activeSlot = activeCustomSlot,
             slot9BUnlocked = slot9BUnlocked || unlockFullNinthShipOverride,
             slot9CUnlocked = slot9CUnlocked || unlockFullNinthShipOverride,
@@ -499,13 +509,13 @@ fun HangarModal(
             },
             onDeployNinthShip = {
               if (isNinthUnlocked) {
-                currentShipId = 9
+                currentShipId = 10
                 val finalCallsign =
                   com.example.data.UgcModeration.sanitizeIdentifier(
                     callsignInput.trim(),
                     "COMMANDER",
                   )
-                onDeployPilot(finalCallsign, 9, currentMode, false)
+                onDeployPilot(finalCallsign, 10, currentMode, false)
               } else {
                 forgeStatusBanner =
                   "🔒 UNLOCKS AT PILOT LEVEL 20 (OR TAP [DEV TEST: TOGGLE LVL 20 / LVL 100] ABOVE)."
@@ -518,7 +528,7 @@ fun HangarModal(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            // LEFT / MAIN: Decluttered 3x3 Ship Comparison Matrix (Clean 3-Bar SPD/THR/FLX Preview & High-Legibility Titles)
+            // LEFT / MAIN: 3x3 Standard Ship Matrix (1..9) + Full-Width Ship #10 Rift Frame Modular Forge Bar
             Column(
               modifier = Modifier.weight(0.62f).fillMaxHeight(),
               verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -533,7 +543,7 @@ fun HangarModal(
                     val ship = allNineShips[shipIndex]
                     val isSelected = currentShipId == ship.id
                     val isEquipped = selectedShipId == ship.id
-                    val isNinthCell = ship.id == 9
+                    val isNinthCell = ship.id == 10
 
                     MatrixShipComparisonCell(
                       modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -550,11 +560,125 @@ fun HangarModal(
                         currentShipId = ship.id
                       },
                       onOpenNinthForge = {
-                        currentShipId = 9
+                        currentShipId = 10
                         showFullNinthShipForgeModal = true
                       },
                     )
                   }
+                }
+              }
+
+              // Ship #10: Full-Width Rift Frame Modular Forge Banner directly beneath the 3x3 standard ship matrix
+              val tenthShip = allNineShips.first { it.id == 10 }
+              val isTenthSelected = currentShipId == 10
+              val isTenthEquipped = selectedShipId == 10
+              val normalizedSlot = CustomShipLoadoutSlot.normalizeSlotId(activeCustomSlot.slotId)
+              Row(
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .height(54.dp)
+                    .testTag("hangar_ship_card_10")
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(if (isTenthSelected) Color(0xFF1B1033) else Color(0xFF140D26))
+                    .border(
+                      if (isTenthSelected || isTenthEquipped) 1.5.dp else 1.dp,
+                      when {
+                        isTenthSelected -> Color(0xFF00F0FF)
+                        isTenthEquipped -> Color(0xFF22C55E)
+                        else -> Color(0xFFC084FC).copy(alpha = 0.75f)
+                      },
+                      RoundedCornerShape(9.dp),
+                    )
+                    .clickable { currentShipId = 10 }
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+              ) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  modifier = Modifier.weight(0.45f),
+                ) {
+                  Box(
+                    modifier =
+                      Modifier.size(40.dp)
+                        .background(Color(0xFF050A14), RoundedCornerShape(7.dp))
+                        .border(1.dp, Color(0xFFC084FC).copy(alpha = 0.7f), RoundedCornerShape(7.dp)),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    ShipSpritePreview(shipId = 10, sizeDp = 36)
+                  }
+                  Column {
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                      Text(
+                        text = "RIFT FRAME",
+                        color = Color.White,
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.SansSerif,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                      )
+                      if (isTenthEquipped) {
+                        Text(
+                          text = "★",
+                          color = Color(0xFF22C55E),
+                          fontSize = 12.sp,
+                          fontWeight = FontWeight.Black,
+                        )
+                      }
+                    }
+                    Text(
+                      text =
+                        if (isNinthUnlocked) {
+                          "$normalizedSlot • $pointsAllocatedInSlot/$effectivePointBudget PTS"
+                        } else {
+                          "🔒 LVL 20 GATE • $normalizedSlot ($pointsAllocatedInSlot/$effectivePointBudget PTS)"
+                        },
+                      color = if (isNinthUnlocked) Color(0xFFC084FC) else Color(0xFFF59E0B),
+                      fontSize = 10.5.sp,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = FontFamily.SansSerif,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                    )
+                  }
+                }
+
+                // Compact 3-Bar (SPD / THR / FLX) Preview
+                Column(
+                  modifier = Modifier.weight(0.32f).padding(horizontal = 6.dp),
+                  verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                  CardMatrixStatBar("SPD", tenthShip.speedPts, tenthShip.topSpeed.roundToInt().toString())
+                  CardMatrixStatBar("THR", tenthShip.thrustPts, tenthShip.thrust.roundToInt().toString())
+                  CardMatrixStatBar("FLX", tenthShip.maxFluxPts, tenthShip.maxFlux.roundToInt().toString())
+                }
+
+                // Direct [🛠️ FORGE & AI HULL] Button
+                Box(
+                  modifier =
+                    Modifier.testTag("btn_matrix_open_9th_forge")
+                      .clip(RoundedCornerShape(6.dp))
+                      .background(Color(0xFF4C1D95))
+                      .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(6.dp))
+                      .clickable {
+                        currentShipId = 10
+                        showFullNinthShipForgeModal = true
+                      }
+                      .padding(horizontal = 8.dp, vertical = 6.dp),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Text(
+                    text = "🛠️ FORGE & AI HULL",
+                    color = Color.White,
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
                 }
               }
             }
@@ -575,7 +699,7 @@ fun HangarModal(
               onOpenNinthShipForge = { showFullNinthShipForgeModal = true },
               onToggleDevLevel20Or100 = onToggleDevLevel20Or100,
               onDeployShip = {
-                if (inspectedShip.id == 9 && !isNinthUnlocked) {
+                if (inspectedShip.id == 10 && !isNinthUnlocked) {
                   showFullNinthShipForgeModal = true
                 } else {
                   val finalCallsign = callsignInput.trim().ifEmpty { "COMMANDER" }
@@ -892,7 +1016,7 @@ private fun ShipComparisonInspectorPanel(
   onToggleDevLevel20Or100: () -> Unit,
   onDeployShip: () -> Unit,
 ) {
-  val isNinth = ship.id == 9
+  val isNinth = ship.id == 10
   val accentColor =
     if (isNinth) Color(0xFFC084FC)
     else Color(ship.accentColorHex)
@@ -1112,6 +1236,8 @@ private fun ShipComparisonInspectorPanel(
           Text(
             text =
               when {
+                ship.bombType == "INTERDICTOR_DOME" ->
+                  "600⚡ FLUX • 290PX TWO-WAY STASIS DOME (15.0S DURATION, 18.0S CD)"
                 ship.bombType == "PHASE_DASH" -> "300⚡ • 2.5s CD • BLINK + I-FRAMES + 35% RAIL"
                 ship.bombType == "CLOAK_EMP" -> "180⚡/s CLOAK • 0⚡ DECLOAK 360° EMP PULSE"
                 ship.supportsNativeMultifire -> "INNATE SPLIT MULTI-SHOT (0⚡ EXTRA COST)"
@@ -1573,13 +1699,12 @@ private fun NinthShipModularForgePanel(
           fontFamily = FontFamily.Monospace,
         )
         val secondaries = CustomShipLoadoutSlot.SECONDARY_OPTIONS
-        for (rowIdx in 0 until 4) {
+        secondaries.chunked(3).forEach { rowOptions ->
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(5.dp),
           ) {
-            for (colIdx in 0 until 3) {
-              val secOpt = secondaries[rowIdx * 3 + colIdx]
+            rowOptions.forEach { secOpt ->
               val secKey = secOpt.id
               val secCost = secOpt.pointCost
               val secLabel = "${secOpt.title} (${secCost}P)"
@@ -1681,12 +1806,12 @@ private fun NinthShipModularForgePanel(
         ) {
           val alliedBmp =
             remember(spriteVersion, recipe) {
-              RiftSpriteBaker.getShipSprite(9, isAllied = true, isHitFlashing = false)
+              RiftSpriteBaker.getShipSprite(10, isAllied = true, isHitFlashing = false)
                 .asImageBitmap()
             }
           val hostileBmp =
             remember(spriteVersion, recipe) {
-              RiftSpriteBaker.getShipSprite(9, isAllied = false, isHitFlashing = false)
+              RiftSpriteBaker.getShipSprite(10, isAllied = false, isHitFlashing = false)
                 .asImageBitmap()
             }
 
@@ -2005,11 +2130,11 @@ fun ShipSpritePreview(
   isAllied: Boolean = true,
 ) {
   val customVer = RiftSpriteBaker.customShip9Version
-  val shipName = remember(shipId) { RiftCodex.getShipById(shipId.coerceIn(1, 9)).name }
+  val shipName = remember(shipId) { RiftCodex.getShipById(shipId.coerceIn(1, 10)).name }
   val bmp =
     remember(shipId, isAllied, customVer) {
       RiftSpriteBaker.getShipSprite(
-          shipId = shipId.coerceIn(1, 9),
+          shipId = shipId.coerceIn(1, 10),
           isAllied = isAllied,
           isHitFlashing = false,
         )

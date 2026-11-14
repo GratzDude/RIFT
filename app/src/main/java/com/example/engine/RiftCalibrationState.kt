@@ -103,6 +103,115 @@ object RiftCalibrationState {
   var gamepadDeadzoneRight by mutableFloatStateOf(0.18f)
   var gamepadIdleTouchOpacity by mutableFloatStateOf(0.28f)
 
+  // Virtual Keycodes & Ergonomic Default Controller Bindings (WoW-Style Live Remapper)
+  const val BIND_LT = 1001 // Left Trigger (AXIS_LTRIGGER / AXIS_BRAKE / KEYCODE_BUTTON_L2)
+  const val BIND_RT = 1002 // Right Trigger (AXIS_RTRIGGER / AXIS_GAS / AXIS_THROTTLE / KEYCODE_BUTTON_R2)
+
+  var bindPrimaryFire by mutableIntStateOf(BIND_RT)
+  var bindSpecialBuff by mutableIntStateOf(android.view.KeyEvent.KEYCODE_BUTTON_R1)
+  var bindRetroBrake by mutableIntStateOf(BIND_LT)
+  var bindSecondaryAbility by mutableIntStateOf(android.view.KeyEvent.KEYCODE_BUTTON_X)
+  var bindRepel by mutableIntStateOf(android.view.KeyEvent.KEYCODE_BUTTON_A)
+  var bindMultiToggle by mutableIntStateOf(android.view.KeyEvent.KEYCODE_BUTTON_Y)
+
+  fun getBindingLabel(code: Int): String {
+    return when (code) {
+      BIND_LT, android.view.KeyEvent.KEYCODE_BUTTON_L2 -> "LT / L2"
+      BIND_RT, android.view.KeyEvent.KEYCODE_BUTTON_R2 -> "RT / R2"
+      android.view.KeyEvent.KEYCODE_BUTTON_R1 -> "R1 / RB"
+      android.view.KeyEvent.KEYCODE_BUTTON_L1 -> "L1 / LB"
+      android.view.KeyEvent.KEYCODE_BUTTON_A -> "A BTN"
+      android.view.KeyEvent.KEYCODE_BUTTON_B -> "B BTN"
+      android.view.KeyEvent.KEYCODE_BUTTON_X -> "X BTN"
+      android.view.KeyEvent.KEYCODE_BUTTON_Y -> "Y BTN"
+      android.view.KeyEvent.KEYCODE_BUTTON_THUMBL -> "L3"
+      android.view.KeyEvent.KEYCODE_BUTTON_THUMBR -> "R3"
+      android.view.KeyEvent.KEYCODE_DPAD_UP -> "D-UP"
+      android.view.KeyEvent.KEYCODE_DPAD_DOWN -> "D-DOWN"
+      android.view.KeyEvent.KEYCODE_DPAD_LEFT -> "D-LEFT"
+      android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> "D-RIGHT"
+      else -> "KEY $code"
+    }
+  }
+
+  fun getActionForBinding(code: Int): String? {
+    val norm =
+      when (code) {
+        android.view.KeyEvent.KEYCODE_BUTTON_L2 -> BIND_LT
+        android.view.KeyEvent.KEYCODE_BUTTON_R2 -> BIND_RT
+        else -> code
+      }
+    return when (norm) {
+      bindPrimaryFire -> "MAIN ATK"
+      bindSpecialBuff -> "BUFF ATK"
+      bindRetroBrake -> "BRAKE"
+      bindSecondaryAbility -> "SECONDARY"
+      bindRepel -> "REPEL"
+      bindMultiToggle -> "MULTI"
+      else -> null
+    }
+  }
+
+  fun getBindingForActionSlot(actionSlot: String): Int {
+    return when (actionSlot) {
+      "PRIMARY_FIRE" -> bindPrimaryFire
+      "SPECIAL_BUFF" -> bindSpecialBuff
+      "RETRO_BRAKE" -> bindRetroBrake
+      "SECONDARY_ABILITY" -> bindSecondaryAbility
+      "REPEL" -> bindRepel
+      "MULTI_TOGGLE" -> bindMultiToggle
+      else -> BIND_RT
+    }
+  }
+
+  fun assignControllerBinding(actionSlot: String, newCode: Int, context: Context? = null) {
+    val normalizedNew =
+      when (newCode) {
+        android.view.KeyEvent.KEYCODE_BUTTON_L2 -> BIND_LT
+        android.view.KeyEvent.KEYCODE_BUTTON_R2 -> BIND_RT
+        else -> newCode
+      }
+    val oldCode = getBindingForActionSlot(actionSlot)
+    if (oldCode == normalizedNew) return
+
+    // Swap if another slot already uses normalizedNew so bindings never duplicate
+    when {
+      actionSlot != "PRIMARY_FIRE" && bindPrimaryFire == normalizedNew -> bindPrimaryFire = oldCode
+      actionSlot != "SPECIAL_BUFF" && bindSpecialBuff == normalizedNew -> bindSpecialBuff = oldCode
+      actionSlot != "RETRO_BRAKE" && bindRetroBrake == normalizedNew -> bindRetroBrake = oldCode
+      actionSlot != "SECONDARY_ABILITY" && bindSecondaryAbility == normalizedNew -> bindSecondaryAbility = oldCode
+      actionSlot != "REPEL" && bindRepel == normalizedNew -> bindRepel = oldCode
+      actionSlot != "MULTI_TOGGLE" && bindMultiToggle == normalizedNew -> bindMultiToggle = oldCode
+    }
+
+    when (actionSlot) {
+      "PRIMARY_FIRE" -> bindPrimaryFire = normalizedNew
+      "SPECIAL_BUFF" -> bindSpecialBuff = normalizedNew
+      "RETRO_BRAKE" -> bindRetroBrake = normalizedNew
+      "SECONDARY_ABILITY" -> bindSecondaryAbility = normalizedNew
+      "REPEL" -> bindRepel = normalizedNew
+      "MULTI_TOGGLE" -> bindMultiToggle = normalizedNew
+    }
+
+    calibrationRevision++
+    if (context != null) {
+      savePersistedLayout(context)
+    }
+  }
+
+  fun resetControllerBindingsToDefault(context: Context? = null) {
+    bindPrimaryFire = BIND_RT
+    bindSpecialBuff = android.view.KeyEvent.KEYCODE_BUTTON_R1
+    bindRetroBrake = BIND_LT
+    bindSecondaryAbility = android.view.KeyEvent.KEYCODE_BUTTON_X
+    bindRepel = android.view.KeyEvent.KEYCODE_BUTTON_A
+    bindMultiToggle = android.view.KeyEvent.KEYCODE_BUTTON_Y
+    calibrationRevision++
+    if (context != null) {
+      savePersistedLayout(context)
+    }
+  }
+
   // Draggable Offsets (in pixels) for every independent on-screen HUD element
   var topBarOffset by mutableStateOf(Offset.Zero)
   var buffBarOffset by mutableStateOf(Offset.Zero)
@@ -144,6 +253,9 @@ object RiftCalibrationState {
   var phaseOverchargeBonusPct by mutableFloatStateOf(0.35f)
   var proxFuseRadius by mutableFloatStateOf(65f)
   var maxMinesPerShip by mutableIntStateOf(6)
+  var interdictorBubbleRadius by mutableFloatStateOf(290f)
+  var interdictorBubbleDuration by mutableFloatStateOf(15.0f)
+  var interdictorBubbleCooldown by mutableFloatStateOf(18.0f)
 
   // 5. Official RIFT Special Buffs & Bucket B Enhancers (Tab 4)
   var seekerFlightTime by mutableFloatStateOf(2.5f)      // Official 2.5s Seeker Torpedo flight time
@@ -480,9 +592,9 @@ object RiftCalibrationState {
     )
 
     // --- TAB 2: PER-SHIP HULL STATS ---
-    for (shipId in 1..9) {
+    for (shipId in 1..10) {
       val spec = RiftCodex.getShipById(shipId)
-      val prefix = if (shipId == 9) "Rift Frame" else spec.name
+      val prefix = if (shipId == 10) "Rift Frame" else spec.name
       list += CalibrationParamDescriptor(
         key = "ship_${shipId}_maxFlux",
         tabIndex = 2,
@@ -626,10 +738,45 @@ object RiftCalibrationState {
       min = 2f, max = 16f, step = 1f, decimals = 0,
       getter = { maxMinesPerShip.toFloat() }, setter = { maxMinesPerShip = it.roundToInt().coerceIn(2, 16) },
     )
+    list += CalibrationParamDescriptor(
+      key = "interdictorBubbleRadius",
+      tabIndex = 3,
+      shipIdFilter = 0,
+      title = "Interdictor Bubble: Dome Radius",
+      unit = "px",
+      description = "Containment radius of Interdictor's two-way stasis bubble (default 290px = 580px diameter).",
+      min = 180f, max = 480f, step = 10f, decimals = 0,
+      getter = { interdictorBubbleRadius }, setter = { interdictorBubbleRadius = it.coerceIn(180f, 480f) },
+    )
+    list += CalibrationParamDescriptor(
+      key = "interdictorBubbleDuration",
+      tabIndex = 3,
+      shipIdFilter = 0,
+      title = "Interdictor Bubble: Active Duration",
+      unit = "s",
+      description = "Seconds an anchored Interdictor Stasis Bubble traps all ships and projectiles inside/outside.",
+      min = 5.0f, max = 30.0f, step = 1.0f, decimals = 1,
+      getter = { interdictorBubbleDuration }, setter = { interdictorBubbleDuration = it.coerceIn(5.0f, 30.0f) },
+    )
+    list += CalibrationParamDescriptor(
+      key = "interdictorBubbleCooldown",
+      tabIndex = 3,
+      shipIdFilter = 0,
+      title = "Interdictor Bubble: Cooldown",
+      unit = "s",
+      description = "Cooldown in seconds between deploying Interdictor Stasis Bubbles.",
+      min = 8.0f, max = 35.0f, step = 1.0f, decimals = 1,
+      getter = { interdictorBubbleCooldown },
+      setter = {
+        val v = it.coerceIn(8.0f, 35.0f)
+        interdictorBubbleCooldown = v
+        RiftCodex.getShipById(9).bombCooldown = v
+      },
+    )
 
-    for (shipId in 1..9) {
+    for (shipId in 1..10) {
       val spec = RiftCodex.getShipById(shipId)
-      val prefix = if (shipId == 9) "Rift Frame" else spec.name
+      val prefix = if (shipId == 10) "Rift Frame" else spec.name
       list += CalibrationParamDescriptor(
         key = "ship_${shipId}_primaryDamage",
         tabIndex = 3,
@@ -695,9 +842,9 @@ object RiftCalibrationState {
           title = "$prefix Secondary Cooldown",
           unit = "s",
           description = "Reload cooldown in seconds for $prefix's secondary (${spec.secondaryShortLabel}).",
-          min = 0.20f, max = 10.0f, step = 0.10f, decimals = 2,
+          min = 0.20f, max = 35.0f, step = 0.10f, decimals = 2,
           getter = { RiftCodex.getShipById(shipId).bombCooldown },
-          setter = { RiftCodex.getShipById(shipId).bombCooldown = it.coerceIn(0.20f, 10.0f) },
+          setter = { RiftCodex.getShipById(shipId).bombCooldown = it.coerceIn(0.20f, 35.0f) },
         )
         if (spec.bombDamage > 0f) {
           list += CalibrationParamDescriptor(
@@ -1270,7 +1417,11 @@ object RiftCalibrationState {
       for (anom in engine.anomalies) {
         anom.physicalRadius = riftPhysicalRadius
       }
+      for (b in engine.interdictorBubbles) {
+        b.radius = interdictorBubbleRadius
+      }
     }
+    RiftCodex.getShipById(9).bombCooldown = interdictorBubbleCooldown
     calibrationRevision++
     if (context != null) {
       savePersistedLayout(context)
@@ -1323,6 +1474,13 @@ object RiftCalibrationState {
     toastContainerOffset = readOffset("toastContainer")
     idleWarningBannerOffset = readOffset("idleWarningBanner")
     unlockFullNinthShipOverride = prefs.getBoolean("unlockFullNinthShipOverride", false)
+
+    bindPrimaryFire = prefs.getInt("bindPrimaryFire", BIND_RT)
+    bindSpecialBuff = prefs.getInt("bindSpecialBuff", android.view.KeyEvent.KEYCODE_BUTTON_R1)
+    bindRetroBrake = prefs.getInt("bindRetroBrake", BIND_LT)
+    bindSecondaryAbility = prefs.getInt("bindSecondaryAbility", android.view.KeyEvent.KEYCODE_BUTTON_X)
+    bindRepel = prefs.getInt("bindRepel", android.view.KeyEvent.KEYCODE_BUTTON_A)
+    bindMultiToggle = prefs.getInt("bindMultiToggle", android.view.KeyEvent.KEYCODE_BUTTON_Y)
 
     val hiddenCsv = prefs.getString(KEY_HIDDEN_SET, "") ?: ""
     hiddenCalibrationKeys =
@@ -1406,6 +1564,12 @@ object RiftCalibrationState {
     writeOffset("toastContainer", toastContainerOffset)
     writeOffset("idleWarningBanner", idleWarningBannerOffset)
     editor.putBoolean("unlockFullNinthShipOverride", unlockFullNinthShipOverride)
+    editor.putInt("bindPrimaryFire", bindPrimaryFire)
+    editor.putInt("bindSpecialBuff", bindSpecialBuff)
+    editor.putInt("bindRetroBrake", bindRetroBrake)
+    editor.putInt("bindSecondaryAbility", bindSecondaryAbility)
+    editor.putInt("bindRepel", bindRepel)
+    editor.putInt("bindMultiToggle", bindMultiToggle)
     editor.putString(KEY_HIDDEN_SET, hiddenCalibrationKeys.joinToString(","))
 
     val forgedArr = JSONArray()
@@ -1486,6 +1650,7 @@ object RiftCalibrationState {
 
     buffModeOverride = "FFA"
     buffTargetCountOverride = null
+    resetControllerBindingsToDefault(null)
 
     applyCalibrationChangesLive(engine, context)
   }

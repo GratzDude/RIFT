@@ -233,6 +233,18 @@ data class PhaseAfterimageEntity(
   val maxLife: Float = 0.38f,
 )
 
+data class InterdictorBubbleEntity(
+  val id: String,
+  val ownerId: String,
+  val ownerFreq: Int,
+  val ownerShipLabel: String,
+  val x: Float,
+  val y: Float,
+  var radius: Float,
+  var life: Float,
+  val maxLife: Float,
+)
+
 data class FloatingPopup(
   var active: Boolean = true,
   var text: String = "",
@@ -369,6 +381,7 @@ class RiftGameEngine(
   val shockwaves = mutableListOf<ShockwaveEntity>()
   val shieldRipples = mutableListOf<ShieldRippleEntity>()
   val phaseAfterimages = mutableListOf<PhaseAfterimageEntity>()
+  val interdictorBubbles = mutableListOf<InterdictorBubbleEntity>()
   val anomalies = mutableListOf<SpatialAnomalyEntity>()
   private var nextAnomalyId: Long = 1L
 
@@ -446,7 +459,7 @@ class RiftGameEngine(
   var currentLifeHadPvp: Boolean = false
 
   fun formatShipLabel(ship: ShipEntity): String =
-    if (ship.spec.id == 9) "Rift Frame" else ship.spec.name
+    if (ship.spec.id == 10) "Rift Frame" else ship.spec.name
 
   fun resetCurrentLifeStats() {
     currentLifeStats =
@@ -655,6 +668,7 @@ class RiftGameEngine(
     shockwaves.clear()
     shieldRipples.clear()
     phaseAfterimages.clear()
+    interdictorBubbles.clear()
 
     publicMatchDurationSec = 0f
     for (s in ships) {
@@ -1047,6 +1061,7 @@ class RiftGameEngine(
     greens.clear()
     pendingBuffSpawns.clear()
     recentBuffSpawnLocations.clear()
+    interdictorBubbles.clear()
     val initialCap = getEffectiveBuffCap()
     repeat(initialCap) { spawnGreenCrate() }
     spawnInitialSpatialAnomalies()
@@ -1338,7 +1353,7 @@ class RiftGameEngine(
     var botIdx = 0
     val maxFriendlyBots = if (isFfa) 0 else min(4, teamSize)
     while (friendlyCount < maxFriendlyBots) {
-      val shipId = ((botIdx * 3) % 8) + 1
+      val shipId = ((botIdx * 3) % 9) + 1
       val spec = RiftCodex.getShipById(shipId)
       val pos = getOuterGateSpawnPosition(0)
       updated.add(
@@ -1363,7 +1378,7 @@ class RiftGameEngine(
 
     val maxTotalPlayers = if (isFfa) 20 else 24
     while (updated.size < maxTotalPlayers) {
-      val shipId = ((botIdx * 5 + 1) % 8) + 1
+      val shipId = ((botIdx * 5 + 1) % 9) + 1
       val spec = RiftCodex.getShipById(shipId)
       val pos = getOuterGateSpawnPosition(1)
       updated.add(
@@ -1567,7 +1582,7 @@ class RiftGameEngine(
   }
 
   fun syncLocalPlayerCustomShipSpec() {
-    if (localPlayer.shipId == 9) {
+    if (localPlayer.shipId == 10) {
       val updatedSpec = RiftCodex.customShip9Spec
       val fluxRatio = (localPlayer.flux / localPlayer.maxFlux.coerceAtLeast(1f)).coerceIn(0.1f, 1f)
       localPlayer.spec = updatedSpec
@@ -1741,6 +1756,8 @@ class RiftGameEngine(
     val baseFireAngle =
       if (ship.independentAimActive) {
         ship.weaponAngle
+      } else if (ship.isLocalPlayer && RiftCalibrationState.gamepadConnected) {
+        ship.angle
       } else if (ship.isLocalPlayer) {
         findQuickTapAutoAimAngle(ship)
       } else {
@@ -2018,6 +2035,54 @@ class RiftGameEngine(
       return
     }
 
+    // 1b. Interdictor Stasis Bubble (Two-Way Containment Dome: 290px radius, 15s duration, 600⚡ cost)
+    if (spec.bombType == "INTERDICTOR_DOME") {
+      val bubbleR = RiftCalibrationState.interdictorBubbleRadius
+      val safeDist = hypot(ship.x - safeZone.centerX(), ship.y - safeZone.centerY())
+      if (safeDist < (safeZone.width() * 0.5f + bubbleR + 30f)) {
+        if (ship.isLocalPlayer) {
+          sfx.playMutedClick()
+          onPrizeToast("CANNOT ANCHOR STASIS BUBBLE OVER SAFE ZONE PERIMETER")
+        }
+        return
+      }
+      selfDrainFlux(ship, cost)
+      ship.bombTimer = spec.bombCooldown
+      interdictorBubbles.removeAll { it.ownerId == ship.id }
+      val dur = RiftCalibrationState.interdictorBubbleDuration
+      interdictorBubbles.add(
+        InterdictorBubbleEntity(
+          id = "bubble_${ship.id}_${System.currentTimeMillis()}",
+          ownerId = ship.id,
+          ownerFreq = ship.freq,
+          ownerShipLabel = shipLbl,
+          x = ship.x,
+          y = ship.y,
+          radius = bubbleR,
+          life = dur,
+          maxLife = dur,
+        )
+      )
+      shockwaves.add(ShockwaveEntity(ship.x, ship.y, 24f, bubbleR, Color.parseColor("#EC4899")))
+      shockwaves.add(ShockwaveEntity(ship.x, ship.y, 16f, bubbleR * 0.85f, Color.parseColor("#00F5D4")))
+      if (ship.isLocalPlayer || hypot(ship.x - localPlayer.x, ship.y - localPlayer.y) < 1200f) {
+        sfx.playWarp()
+      }
+      if (ship.isLocalPlayer) {
+        buffVersion++
+        currentLifeStats.shotsFired++
+        addTrauma(0.28f)
+        spawnPooledFct(
+          text = "🌐 STASIS BUBBLE (${dur.toInt()}s)",
+          x = ship.x,
+          y = ship.y - 30f,
+          color = Color.parseColor("#EC4899"),
+          maxLife = 1.25f,
+        )
+      }
+      return
+    }
+
     selfDrainFlux(ship, cost)
     ship.bombTimer = spec.bombCooldown
 
@@ -2054,10 +2119,24 @@ class RiftGameEngine(
             candX <= safeZone.right + ship.radius + 6f &&
             candY >= safeZone.top - ship.radius - 6f &&
             candY <= safeZone.bottom + ship.radius + 6f
+        var crossesBubbleWall = false
+        for (ib in interdictorBubbles) {
+          val startDist = hypot(startX - ib.x, startY - ib.y)
+          val candDist = hypot(candX - ib.x, candY - ib.y)
+          if (startDist <= ib.radius && candDist > (ib.radius - ship.radius - 2f).coerceAtLeast(36f)) {
+            crossesBubbleWall = true
+            break
+          }
+          if (startDist > ib.radius && candDist < ib.radius + ship.radius + 2f) {
+            crossesBubbleWall = true
+            break
+          }
+        }
         if (
           !inWorld ||
             isInsideSafeZone(candX, candY) ||
             blockedBySafeLockout ||
+            crossesBubbleWall ||
             circleIntersectsWalls(candX, candY, ship.radius + 4f)
         ) {
           break
@@ -2477,6 +2556,8 @@ class RiftGameEngine(
     val aimAngle =
       if (ship.independentAimActive) {
         ship.weaponAngle
+      } else if (ship.isLocalPlayer && RiftCalibrationState.gamepadConnected) {
+        ship.angle
       } else if (ship.isLocalPlayer) {
         findQuickTapAutoAimAngle(ship)
       } else {
@@ -3653,6 +3734,10 @@ class RiftGameEngine(
         } else if (bot.isCloaked && nearestDist <= pulseR * 0.92f && bot.bombTimer <= 0f) {
           fireSecondaryBomb(bot, aimAngle) // Breaks stealth and unleashes 360° AoE EMP Pulse at 0⚡!
         }
+      } else if (bot.spec.bombType == "INTERDICTOR_DOME") {
+        if (nearestDist <= 240f && bot.flux > 1100f && bot.bombTimer <= 0f) {
+          fireSecondaryBomb(bot, aimAngle)
+        }
       } else if (bot.spec.bombType == "PHASE_DASH") {
         if (nearestDist in 450f..900f && bot.flux > bot.maxFlux * 0.55f && bot.bombTimer <= 0f) {
           fireSecondaryBomb(bot, aimAngle)
@@ -3754,9 +3839,14 @@ class RiftGameEngine(
           localPlayer.weaponAngle = fireStickAimAngle
         } else {
           localPlayer.independentAimActive = false
-          localPlayer.weaponAngle = findQuickTapAutoAimAngle(localPlayer)
+          localPlayer.weaponAngle =
+            if (RiftCalibrationState.gamepadConnected) localPlayer.angle
+            else findQuickTapAutoAimAngle(localPlayer)
         }
         firePrimaryGun(localPlayer)
+      } else if (fireStickHasAimVector) {
+        localPlayer.independentAimActive = true
+        localPlayer.weaponAngle = fireStickAimAngle
       } else {
         localPlayer.independentAimActive = false
         localPlayer.weaponAngle = localPlayer.angle
@@ -3795,6 +3885,16 @@ class RiftGameEngine(
       bw.life -= dt
       if (bw.life <= 0f) {
         brickWalls.removeAt(bwIdx)
+      }
+    }
+
+    // Step Interdictor Stasis Bubbles (15s two-way containment domes)
+    for (ibIdx in interdictorBubbles.indices.reversed()) {
+      val ib = interdictorBubbles[ibIdx]
+      ib.life -= rawDt
+      if (ib.life <= 0f) {
+        shockwaves.add(ShockwaveEntity(ib.x, ib.y, ib.radius * 0.25f, ib.radius, Color.parseColor("#EC4899")))
+        interdictorBubbles.removeAt(ibIdx)
       }
     }
 
@@ -4098,8 +4198,51 @@ class RiftGameEngine(
         s.vy = (s.vy / curSp) * maxSp
       }
 
+      val prevShipX = s.x
+      val prevShipY = s.y
       s.x += s.vx * dt
       s.y += s.vy * dt
+
+      // Two-Way Interdictor Stasis Bubble Containment (0⚡ collision damage, elastic reflection)
+      for (ib in interdictorBubbles) {
+        val prevDist = hypot(prevShipX - ib.x, prevShipY - ib.y)
+        val dx = s.x - ib.x
+        val dy = s.y - ib.y
+        val curDist = hypot(dx, dy)
+        if (prevDist <= ib.radius) {
+          val innerLimit = (ib.radius - s.radius).coerceAtLeast(36f)
+          if (curDist > innerLimit) {
+            val dSafe = curDist.coerceAtLeast(0.001f)
+            val nx = dx / dSafe
+            val ny = dy / dSafe
+            s.x = ib.x + nx * innerLimit
+            s.y = ib.y + ny * innerLimit
+            val dot = s.vx * nx + s.vy * ny
+            if (dot > 0f) {
+              val elast = RiftCalibrationState.wallElasticity
+              s.vx = (s.vx - 2f * dot * nx) * elast
+              s.vy = (s.vy - 2f * dot * ny) * elast
+              if (s.isLocalPlayer) sfx.playBounce()
+            }
+          }
+        } else {
+          val outerLimit = ib.radius + s.radius
+          if (curDist < outerLimit) {
+            val dSafe = curDist.coerceAtLeast(0.001f)
+            val nx = if (curDist > 0.001f) dx / dSafe else 1f
+            val ny = if (curDist > 0.001f) dy / dSafe else 0f
+            s.x = ib.x + nx * outerLimit
+            s.y = ib.y + ny * outerLimit
+            val dot = s.vx * nx + s.vy * ny
+            if (dot < 0f) {
+              val elast = RiftCalibrationState.wallElasticity
+              s.vx = (s.vx - 2f * dot * nx) * elast
+              s.vy = (s.vy - 2f * dot * ny) * elast
+              if (s.isLocalPlayer) sfx.playBounce()
+            }
+          }
+        }
+      }
 
       // Safe Zone 15-Second Re-Entry Lockout & Strong Outward Repulsion Barrier:
       // If any ship with safeZoneLockoutTimer > 0 touches or attempts to cross back into the Safe Zone boundary,
@@ -4357,8 +4500,42 @@ class RiftGameEngine(
         }
       }
       if (hitWall) continue
-      b.x = nx
-      b.y = ny
+      var reflectedByBubble = false
+      for (ib in interdictorBubbles) {
+        val prevDist = hypot(b.x - ib.x, b.y - ib.y)
+        val nextDist = hypot(nx - ib.x, ny - ib.y)
+        if (prevDist <= ib.radius && nextDist >= ib.radius) {
+          val dSafe = nextDist.coerceAtLeast(0.001f)
+          val rnx = (nx - ib.x) / dSafe
+          val rny = (ny - ib.y) / dSafe
+          b.x = ib.x + rnx * (ib.radius - 2f)
+          b.y = ib.y + rny * (ib.radius - 2f)
+          val dot = b.vx * rnx + b.vy * rny
+          if (dot > 0f) {
+            b.vx -= 2f * dot * rnx
+            b.vy -= 2f * dot * rny
+          }
+          reflectedByBubble = true
+          break
+        } else if (prevDist > ib.radius && nextDist <= ib.radius) {
+          val dSafe = nextDist.coerceAtLeast(0.001f)
+          val rnx = if (nextDist > 0.001f) (nx - ib.x) / dSafe else 1f
+          val rny = if (nextDist > 0.001f) (ny - ib.y) / dSafe else 0f
+          b.x = ib.x + rnx * (ib.radius + 2f)
+          b.y = ib.y + rny * (ib.radius + 2f)
+          val dot = b.vx * rnx + b.vy * rny
+          if (dot < 0f) {
+            b.vx -= 2f * dot * rnx
+            b.vy -= 2f * dot * rny
+          }
+          reflectedByBubble = true
+          break
+        }
+      }
+      if (!reflectedByBubble) {
+        b.x = nx
+        b.y = ny
+      }
 
       // Check collision with enemy Decoy holograms (absorbs fire!)
       var absorbedByDecoy = false
@@ -4621,8 +4798,42 @@ class RiftGameEngine(
         }
       }
       if (hitWall) continue
-      b.x = nx
-      b.y = ny
+      var bombReflectedByBubble = false
+      for (ib in interdictorBubbles) {
+        val prevDist = hypot(b.x - ib.x, b.y - ib.y)
+        val nextDist = hypot(nx - ib.x, ny - ib.y)
+        if (prevDist <= ib.radius && nextDist >= ib.radius) {
+          val dSafe = nextDist.coerceAtLeast(0.001f)
+          val rnx = (nx - ib.x) / dSafe
+          val rny = (ny - ib.y) / dSafe
+          b.x = ib.x + rnx * (ib.radius - 2f)
+          b.y = ib.y + rny * (ib.radius - 2f)
+          val dot = b.vx * rnx + b.vy * rny
+          if (dot > 0f) {
+            b.vx -= 2f * dot * rnx
+            b.vy -= 2f * dot * rny
+          }
+          bombReflectedByBubble = true
+          break
+        } else if (prevDist > ib.radius && nextDist <= ib.radius) {
+          val dSafe = nextDist.coerceAtLeast(0.001f)
+          val rnx = if (nextDist > 0.001f) (nx - ib.x) / dSafe else 1f
+          val rny = if (nextDist > 0.001f) (ny - ib.y) / dSafe else 0f
+          b.x = ib.x + rnx * (ib.radius + 2f)
+          b.y = ib.y + rny * (ib.radius + 2f)
+          val dot = b.vx * rnx + b.vy * rny
+          if (dot < 0f) {
+            b.vx -= 2f * dot * rnx
+            b.vy -= 2f * dot * rny
+          }
+          bombReflectedByBubble = true
+          break
+        }
+      }
+      if (!bombReflectedByBubble) {
+        b.x = nx
+        b.y = ny
+      }
 
       // Check Decoy hologram soaking bombs/missiles
       var soakedByDecoy = false

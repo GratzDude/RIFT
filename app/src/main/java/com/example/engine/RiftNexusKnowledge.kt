@@ -21,12 +21,37 @@ object RiftNexusKnowledge {
 You are NEXUS, the omniscient Rift Core tactical intelligence embedded inside RIFT, a mobile-first competitive 2D Newtonian space arena game on Android.
 
 CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
-1. EXCLUSIVE RIFT-ONLY KNOWLEDGE BASE: Your ONLY knowledge base is RIFT itself — its physics, pixel-level rendering math, 9 ship classes (Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, and Rift Frame), 100-point Rift Frame modular builder & AI Hull Forge, Supply Buff pool + custom AI-forged buffs, 4 Playfield Rifts, Safe Zone & AFK rules, Calibration parameters, Syndicates, Named Armadas, live sector pilots, Pilot Dossier & Executioner telemetry, and Cloud Leaderboard bounty records.
+1. EXCLUSIVE RIFT-ONLY KNOWLEDGE BASE: Your ONLY knowledge base is RIFT itself — its physics, pixel-level rendering math, 10 ship classes (9 standard hulls: Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, and Interdictor + #10 modular custom ship: Rift Frame), 100-point Rift Frame modular builder & AI Hull Forge, Supply Buff pool + custom AI-forged buffs, 4 Playfield Rifts, Safe Zone & AFK rules, Calibration parameters, Syndicates, Named Armadas, live sector pilots, Pilot Dossier & Executioner telemetry, and Cloud Leaderboard bounty records.
 2. REFUSE NON-RIFT TOPICS IN CHARACTER: If the user asks about anything outside RIFT (real-world news, weather, politics, coding/homework unrelated to RIFT's own mechanics, other video games, recipes, trivia), briefly decline in character: "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Submit a query regarding RIFT ships, pixel/physics telemetry, custom builds, buffs, or bounty records."
 3. PINPOINT NUMERICAL & PIXEL PRECISION: Every turn, you receive a [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT] containing the exact live engine numbers, world-pixel dimensions, zoom-scaled screen-pixel dimensions, DPS, Flux (⚡) costs, Rift Shards (❖) economy, custom slots (Frame A / Frame B / Frame C), Calibration overrides, Executioner snapshots, and Cloud Leaderboard records. Always cite exact numbers from that snapshot — never guess or approximate when exact values exist. Always use ⚡ for Flux (HP + weapon energy) and ❖ strictly for Rift Shards (permanent progression currency).
-4. ANDROID TOUCH HUD & TWIN-STICK CONTROLLER TERMINOLOGY ONLY: RIFT supports both the native Android Landscape Touch HUD (Left Movement Stick with zero-friction coasting on release and >80% Afterburner, Independent Manual HUD [BRAKE] Stop button, Right Primary Fire Stick, Secondary Button, Repel Button, 4th Elastic Special Buff Button, and Native Multi-Shot button) AND Plug-and-Play Bluetooth/USB Twin-Stick Controllers (Left Stick 360° flight with >80% Afterburner and zero-friction drift on release, Right Stick 360° independent aim, RT/R1 Primary Fire, LT Secondary Ability/Warhead, L1/X Special Buff, A/R3 Repel, B/L3 Manual Retro-Brake, Y Native Multi-Shot toggle, D-Pad Camera Zoom & Hangar 3x3 matrix navigation, Start/Select modals). NEVER mention PC keyboard keys or shortcuts.
-5. PURE TEXT Q&A & THEORYCRAFTING: Deliver clear, structured, tactical text answers and 100-point Rift Frame theorycrafting breakdowns (showing exact point costs summing to the pilot's target budget such as 20 pts at Lv 20 or 100 pts at Lv 100, plus resulting Speed, Thrust, Turn Rate, Max Flux, Recharge, Primary, and Secondary stats). Never prefix ship names with legacy numbers (say "Viper", "Disruptor", "Rift Frame", never "1-Viper" or "6-Disruptor"). Keep formatting crisp and scannable on a landscape mobile tactical console.
+4. ANDROID TOUCH HUD & TWIN-STICK CONTROLLER TERMINOLOGY ONLY: RIFT supports both the native Android Landscape Touch HUD (Left Movement Stick with zero-friction coasting on release and >80% Afterburner, Independent Manual HUD [BRAKE] Stop button, Right Primary Fire Stick, Secondary Button, Repel Button, 4th Elastic Special Buff Button, and Native Multi-Shot button) AND Plug-and-Play Bluetooth/USB Twin-Stick Controllers (Left Stick permanently locked to 360° flight with >80% Afterburner and zero-friction drift on release; Right Stick permanently locked to 360° independent turret aiming; when Right Stick is neutral, all weapons fire along the Left-Stick ship heading; default ergonomic button bindings: RT/R2 Main Attack, R1/RB Special Buff Attack, LT/L2 Manual Retro-Brake, X Instant 1-Press Secondary Ability/Warhead, A Repel Shockwave, Y Native Multi-Shot toggle, plus a WoW-style live controller button remapper in Settings & Codex; D-Pad Camera Zoom & Hangar 1..10 ship navigation, Start/Select modals). NEVER mention PC keyboard keys or shortcuts.
+5. PURE TEXT Q&A & THEORYCRAFTING: Deliver clear, structured, tactical text answers and 100-point Rift Frame theorycrafting breakdowns (showing exact point costs summing to the pilot's target budget such as 20 pts at Lv 20 or 100 pts at Lv 100, plus resulting Speed, Thrust, Turn Rate, Max Flux, Recharge, Primary, and Secondary stats). Never prefix ship names with legacy numbers (say "Viper", "Disruptor", "Interdictor", "Rift Frame", never "1-Viper" or "6-Disruptor"). Keep formatting crisp and scannable on a landscape mobile tactical console.
 """
+
+  fun buildLiveSystemPrompt(
+    engine: RiftGameEngine,
+    localPrefs: LocalPilotPrefs,
+    currentUserId: String,
+    callsign: String,
+    syndicateTag: String,
+    syndicateName: String,
+    cloudLeaderboard: List<LeaderboardEntry>,
+    allTimePeakSnapshot: PeakBountyRunSnapshot?,
+    pvpPeakSnapshot: PeakBountyRunSnapshot?,
+    syndicateHistory: List<SyndicateServiceEntry>,
+  ): String =
+    compileLiveSnapshot(
+      engine = engine,
+      localPrefs = localPrefs,
+      currentUserId = currentUserId,
+      callsign = callsign,
+      syndicateTag = syndicateTag,
+      syndicateName = syndicateName,
+      cloudLeaderboard = cloudLeaderboard,
+      allTimePeakSnapshot = allTimePeakSnapshot,
+      pvpPeakSnapshot = pvpPeakSnapshot,
+      syndicateHistory = syndicateHistory,
+    )
 
   fun compileLiveSnapshot(
     engine: RiftGameEngine,
@@ -89,7 +114,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Secondary Warhead & Ability Pixel Radii (scaled by projectileScale %.2fx): Viper Phase Dash = 135 world px wall-safe spatial blink + %.0f px/s supersonic dodge burst (0.42s combat dodge i-frames + 0.65s phase shield + +%.0f%% next-shot rail overcharge, 300⚡ cost, 2.5s CD); Siege Bomb = %.1f world px radius (24px base, 48px dia, 540 px/s + 25%% ship vel); Bounce Bomb & Proximity Flak Bomb = %.1f world px radius (17px base, 34px dia, 640 px/s + 25%% ship vel; Prox Flak fuse trigger = %.0f world px, red sensor ring = %.1f world px, bursts into 8 shrapnel bolts); Disruptor 360° AoE EMP Pulse = %.0f world px radial shockwave centered on Disruptor's hull upon uncloaking (0⚡ decloak EMP cost while Cloak drains %.0f⚡/s; drains %.0f%% Max Flux & disables recharge for %.1fs; forced uncloak from enemy fire or <=150⚡ floor breaks stealth cleanly without firing EMP); Proximity Mine = %.1f world px radius (18px base, 36px dia, stationary, max %d active mines, 30s life); Seeker Torpedo = %.1f world px radius (%.0f px/s, %.1fs flight = %.0f world px max flight path); Stasis Barrier = %.0f world px hard-light span (%.1fs duration).",
+        "- Secondary Warhead & Ability Pixel Radii (scaled by projectileScale %.2fx): Viper Phase Dash = 135 world px wall-safe spatial blink + %.0f px/s supersonic dodge burst (0.42s combat dodge i-frames + 0.65s phase shield + +%.0f%% next-shot rail overcharge, 300⚡ cost, 2.5s CD); Siege Bomb = %.1f world px radius (24px base, 48px dia, 540 px/s + 25%% ship vel); Bounce Bomb & Proximity Flak Bomb = %.1f world px radius (17px base, 34px dia, 640 px/s + 25%% ship vel; Prox Flak fuse trigger = %.0f world px, red sensor ring = %.1f world px, bursts into 8 shrapnel bolts); Disruptor 360° AoE EMP Pulse = %.0f world px radial shockwave centered on Disruptor's hull upon uncloaking (0⚡ decloak EMP cost while Cloak drains %.0f⚡/s; drains %.0f%% Max Flux & disables recharge for %.1fs; forced uncloak from enemy fire or <=150⚡ floor breaks stealth cleanly without firing EMP); Proximity Mine = %.1f world px radius (18px base, 36px dia, stationary, max %d active mines, 30s life); Seeker Torpedo = %.1f world px radius (%.0f px/s, %.1fs flight = %.0f world px max flight path); Stasis Barrier = %.0f world px hard-light span (%.1fs duration); Interdictor Stasis Bubble (INTERDICTOR_DOME) = %.0f world px radius (%.0f world px diameter) two-way hard-light containment sphere active for %.1fs (600⚡ cost, %.1fs CD — nothing can enter or leave; bounces ships with 0⚡ wall collision damage and reflects bullets/bombs both inside and outside).",
         projScale,
         RiftCalibrationState.phaseDashImpulse,
         RiftCalibrationState.phaseOverchargeBonusPct * 100f,
@@ -109,6 +134,10 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
         RiftCalibrationState.seekerSpeed * RiftCalibrationState.seekerFlightTime,
         RiftCalibrationState.stasisBarrierLength,
         RiftCalibrationState.stasisBarrierDuration,
+        RiftCalibrationState.interdictorBubbleRadius,
+        RiftCalibrationState.interdictorBubbleRadius * 2f,
+        RiftCalibrationState.interdictorBubbleDuration,
+        RiftCalibrationState.interdictorBubbleCooldown,
       )
     )
     sb.appendLine(
@@ -130,13 +159,19 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Zero-Friction Newtonian Drift & Dual Touch/Gamepad Controls: Ships coast indefinitely on (vx, vy) with zero friction when releasing the Left Stick (both Touch and Bluetooth/USB Gamepad). Left Stick >80%% radius ignites Afterburners (%.2fx thrust, ~1.32x top speed, drains %.0f⚡/s floored safely at 1⚡). Braking occurs ONLY via the independent manual HUD [BRAKE] button or Gamepad B/L3 button (retro-braking damping %.2f). Gamepad Right Stick provides 360° independent turret aiming (Deadzones: Left %.0f%%, Right %.0f%%; Idle Touch Ring Opacity: %.0f%%), RT/R1 fires Primary, LT triggers instant Phase/Cloak on press or aims/launches warheads on release, L1/X activates Special Buff, A/R3 triggers Repel, Y toggles Native Multi-Shot, D-Pad steps Camera Zoom & navigates the Hangar 3x3 matrix, Start/Select toggle Hangar & Calibration.",
+        "- Zero-Friction Newtonian Drift & Dual Touch/Gamepad Controls: Ships coast indefinitely on (vx, vy) with zero friction when releasing the Left Stick (both Touch and Bluetooth/USB Gamepad). Left Stick >80%% radius ignites Afterburners (%.2fx thrust, ~1.32x top speed, drains %.0f⚡/s floored safely at 1⚡). Braking occurs ONLY via the independent manual HUD [BRAKE] button or mapped Gamepad Retro-Brake trigger/button (retro-braking damping %.2f). On Gamepad, Left Stick is permanently locked to 360° flight & ship heading, and Right Stick is permanently locked to 360° independent turret aiming (when Right Stick is neutral, Main Attack, Secondary Ability, and Special Buff Attack fire straight along the Left-Stick heading; Deadzones: Left %.0f%%, Right %.0f%%; Idle Touch Ring Opacity: %.0f%%). Live Controller Bindings (customizable via WoW-style remapper in Settings & Codex): Main Attack=%s (default RT/R2), Buff Attack=%s (default R1/RB), Manual Retro-Brake=%s (default LT/L2), Instant Secondary Ability=%s (default X BTN), Repel=%s (default A BTN), Multi-Shot Toggle=%s (default Y BTN); D-Pad steps Camera Zoom & navigates Hangar 1..10 ships; Start/Select toggle Hangar & Calibration.",
         RiftCalibrationState.afterburnerThrustMult,
         RiftCalibrationState.afterburnerDrainPerSec,
         RiftCalibrationState.retroBrakeDamping,
         RiftCalibrationState.gamepadDeadzoneLeft * 100f,
         RiftCalibrationState.gamepadDeadzoneRight * 100f,
         RiftCalibrationState.gamepadIdleTouchOpacity * 100f,
+        RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindPrimaryFire),
+        RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindSpecialBuff),
+        RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindRetroBrake),
+        RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindSecondaryAbility),
+        RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindRepel),
+        RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindMultiToggle),
       )
     )
     sb.appendLine(
@@ -175,10 +210,10 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
       )
     )
 
-    // 3. ALL 9 SHIPS LIVE STATS + PER-SHIP LASER PIXEL DIMENSIONS
+    // 3. ALL 10 SHIPS LIVE STATS + PER-SHIP LASER PIXEL DIMENSIONS
     sb.appendLine()
-    sb.appendLine("[3. COMPLETE 9-SHIP ROSTER — LIVE STATS, DPS & EXACT LASER PIXEL DIMENSIONS]")
-    for (spec in RiftCodex.getAllNineShips()) {
+    sb.appendLine("[3. COMPLETE 10-SHIP ROSTER (9 STANDARD HULLS 1..9 + #10 RIFT FRAME) — LIVE STATS, DPS & EXACT LASER PIXEL DIMENSIONS]")
+    for (spec in RiftCodex.getAllTenShips()) {
       val shaftWorldPx = spec.primarySpeed * 0.036f
       val outerWidthWorldPx = 6.4f * projScale
       val coreWidthWorldPx = 2.8f * projScale
@@ -301,11 +336,11 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     for (pri in CustomShipLoadoutSlot.PRIMARY_OPTIONS) {
       sb.appendLine("  • ${pri.id} (${pri.title}) — ${pri.pointCost} Pts: ${pri.summary}")
     }
-    sb.appendLine("- Secondary / Class Abilities (12 choices):")
+    sb.appendLine("- Secondary / Class Abilities (13 choices, including INTERDICTOR_DOME 25 Pts):")
     for (sec in CustomShipLoadoutSlot.SECONDARY_OPTIONS) {
       sb.appendLine("  • ${sec.id} (${sec.title}) — ${sec.pointCost} Pts [${sec.fluxCostLabel}]: ${sec.summary}")
     }
-    sb.appendLine("- Rift Shards Economy & AI Hull Forge: Respec Slot = 50 Shards; Unlock Extra Loadout Frame (Frame B or Frame C) = 300 Shards; AI Hull Forge = 1st procedural hull synthesis per slot is FREE, subsequent re-designs cost 150 Shards (or 1 AI Design Token). Silhouettes: RAZOR_INTERCEPTOR, CRESCENT_SCYTHE, BASTION_DREADNOUGHT, MANTA_STINGRAY, X_VALKYRIE, PINCER_MANDIBLE.")
+    sb.appendLine("- Rift Shards Economy (❖) & AI Hull Forge: Respec Slot = 50❖ Shards; Unlock Extra Loadout Frame (Frame B or Frame C) = 300❖ Shards; AI Hull Forge = 1st procedural hull synthesis per slot is FREE, subsequent re-designs cost 150❖ Shards (or 1 AI Design Token). Silhouettes: RAZOR_INTERCEPTOR, CRESCENT_SCYTHE, BASTION_DREADNOUGHT, MANTA_STINGRAY, X_VALKYRIE, PINCER_MANDIBLE.")
 
     val activeSlotId = localPrefs.getActiveCustomSlotId(currentUserId)
     val frameBUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)

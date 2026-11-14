@@ -257,7 +257,7 @@ fun RiftArenaScreen(
   var callsign by remember { mutableStateOf(localPrefs.getCallsign()) }
   var syndicateTag by remember { mutableStateOf(localPrefs.getSyndicateTag()) }
   var syndicateName by remember { mutableStateOf(localPrefs.getSyndicateName()) }
-  var selectedShipId by remember { mutableIntStateOf(localPrefs.getPreferredShipId()) }
+  var selectedShipId by remember { mutableIntStateOf(localPrefs.getPreferredShipId().coerceIn(1, 10)) }
   var selectedMode by remember { mutableStateOf("FFA") }
   var activeCustomSlotId by remember(currentUserId) {
     mutableStateOf(localPrefs.getActiveCustomSlotId(currentUserId))
@@ -890,19 +890,20 @@ fun RiftArenaScreen(
               localPrefs.setGuestBypassEnabled(true)
             }
             val cleanCallsign = localPrefs.setCallsign(newCallsign)
+            val clampedShipId = newShipId.coerceIn(1, 10)
             callsign = cleanCallsign
-            selectedShipId = newShipId
+            selectedShipId = clampedShipId
             selectedMode = "FFA"
             syndicateTag = localPrefs.getSyndicateTag()
             syndicateName = localPrefs.getSyndicateName()
 
-            localPrefs.setPreferredShipId(newShipId)
+            localPrefs.setPreferredShipId(clampedShipId)
             localPrefs.setPreferredMode("FFA")
 
             engine.localPlayer.callsign = cleanCallsign
             engine.localPlayer.syndicateTag = syndicateTag
             engine.syncLocalArmadaSelfSlot()
-            engine.switchLocalPlayerShip(newShipId, forceFromHangar = true)
+            engine.switchLocalPlayerShip(clampedShipId, forceFromHangar = true)
             engine.onStatsUpdated()
             activeModal = ActiveModal.NONE
           },

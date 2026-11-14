@@ -145,7 +145,7 @@ object RiftSpriteBaker {
   }
 
   fun getShipSprite(shipId: Int, isAllied: Boolean = true, isHitFlashing: Boolean = false): Bitmap {
-    if (shipId == 9) {
+    if (shipId == 10 || shipId > 9) {
       if (isHitFlashing) return customShip9FlashBitmap
       return if (isAllied) customShip9AlliedBitmap else customShip9HostileBitmap
     }
@@ -966,6 +966,14 @@ object RiftSpriteBaker {
     // Hull-specific 5-stop 3D metallic gradient across [-r, r]
     val hullColors =
       when (spec.id) {
+        9 ->
+          intArrayOf(
+            Color.parseColor("#0D0B26"),
+            Color.parseColor("#1E1B4B"),
+            Color.parseColor("#EC4899"),
+            Color.parseColor("#1E1B4B"),
+            Color.parseColor("#0D0B26"),
+          )
         3, 4 ->
           intArrayOf(
             Color.parseColor("#0D0B26"),
@@ -1002,7 +1010,7 @@ object RiftSpriteBaker {
 
     val trimColors =
       when (spec.id) {
-        3, 4 ->
+        3, 4, 9 ->
           intArrayOf(
             Color.parseColor("#FEF08A"),
             Color.parseColor("#F59E0B"),
@@ -1492,7 +1500,7 @@ object RiftSpriteBaker {
         }
       }
 
-      else -> {
+      8 -> {
         // 8-Manta: "Armored pincer hull with gold-beveled mandible plates and a twin-cell V-cyan core."
         // Dual Gauss Barrels inside pincer jaws + Rear Mine-Layer Bay
         c.drawRect(r * 0.32f, -r * 0.26f, r * 0.98f, -r * 0.14f, gunBarrelPaint)
@@ -1548,6 +1556,60 @@ object RiftSpriteBaker {
           close()
         }
       }
+
+      else -> {
+        // 9-Interdictor: "Twin-ringed amethyst gravimetric cruiser with forward containment prongs and a glowing magenta-cyan singularity core."
+        c.drawRect(r * 0.36f, -r * 0.30f, r * 1.12f, -r * 0.18f, gunBarrelPaint)
+        c.drawRect(r * 0.36f, -r * 0.30f, r * 1.12f, -r * 0.18f, gunBarrelStroke)
+        c.drawRect(r * 0.36f, r * 0.18f, r * 1.12f, r * 0.30f, gunBarrelPaint)
+        c.drawRect(r * 0.36f, r * 0.18f, r * 1.12f, r * 0.30f, gunBarrelStroke)
+        c.drawCircle(r * 1.08f, -r * 0.24f, r * 0.06f, muzzleGlowPaint)
+        c.drawCircle(r * 1.08f, r * 0.24f, r * 0.06f, muzzleGlowPaint)
+
+        goldWingPath.apply {
+          moveTo(r * 1.10f, -r * 0.34f)
+          lineTo(r * 0.64f, -r * 0.78f)
+          lineTo(r * 0.08f, -r * 1.04f)
+          lineTo(-r * 0.56f, -r * 0.96f)
+          lineTo(-r * 0.96f, -r * 0.56f)
+          lineTo(-r * 0.78f, 0f)
+          lineTo(-r * 0.96f, r * 0.56f)
+          lineTo(-r * 0.56f, r * 0.96f)
+          lineTo(r * 0.08f, r * 1.04f)
+          lineTo(r * 0.64f, r * 0.78f)
+          lineTo(r * 1.10f, r * 0.34f)
+          lineTo(r * 0.42f, r * 0.18f)
+          lineTo(r * 0.42f, -r * 0.18f)
+          close()
+        }
+        armorHullPath.apply {
+          moveTo(r * 0.96f, -r * 0.28f)
+          lineTo(r * 0.52f, -r * 0.66f)
+          lineTo(r * 0.04f, -r * 0.90f)
+          lineTo(-r * 0.48f, -r * 0.82f)
+          lineTo(-r * 0.82f, -r * 0.46f)
+          lineTo(-r * 0.64f, 0f)
+          lineTo(-r * 0.82f, r * 0.46f)
+          lineTo(-r * 0.48f, r * 0.82f)
+          lineTo(r * 0.04f, r * 0.90f)
+          lineTo(r * 0.52f, r * 0.66f)
+          lineTo(r * 0.96f, r * 0.28f)
+          lineTo(r * 0.30f, r * 0.14f)
+          lineTo(r * 0.30f, -r * 0.14f)
+          close()
+        }
+        upperDeckPath.apply {
+          moveTo(r * 0.58f, -r * 0.22f)
+          lineTo(r * 0.06f, -r * 0.58f)
+          lineTo(-r * 0.52f, -r * 0.42f)
+          lineTo(-r * 0.44f, 0f)
+          lineTo(-r * 0.52f, r * 0.42f)
+          lineTo(r * 0.06f, r * 0.58f)
+          lineTo(r * 0.58f, r * 0.22f)
+          lineTo(r * 0.18f, 0f)
+          close()
+        }
+      }
     }
 
     // Layer 3: Outer Gold/Bronze Wing Trim + Brawl Stars Team Readability Outline
@@ -1564,7 +1626,7 @@ object RiftSpriteBaker {
     c.drawLine(-r * 0.56f, -r * 0.38f, r * 0.38f, -r * 0.14f, seamPaint)
     c.drawLine(-r * 0.56f, r * 0.38f, r * 0.38f, r * 0.14f, seamPaint)
 
-    // Ship-specific accent details (Disruptor EMP coils, Valkyrie X-ribs, Goliath bastion rivets)
+    // Ship-specific accent details (Disruptor EMP coils, Interdictor twin singularity rings, Goliath bastion rivets)
     if (spec.id == 6) {
       val empCoilPaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1575,6 +1637,21 @@ object RiftSpriteBaker {
       c.drawCircle(-r * 0.06f, r * 0.56f, r * 0.11f, empCoilPaint)
       c.drawCircle(-r * 0.06f, -r * 0.56f, r * 0.11f, specularEdgePaint)
       c.drawCircle(-r * 0.06f, r * 0.56f, r * 0.11f, specularEdgePaint)
+    } else if (spec.id == 9) {
+      val ringMagentaPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          style = Paint.Style.STROKE
+          strokeWidth = 2.4f
+          color = Color.parseColor("#EC4899")
+        }
+      val ringCyanPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          style = Paint.Style.STROKE
+          strokeWidth = 1.8f
+          color = Color.parseColor("#00F5D4")
+        }
+      c.drawCircle(-r * 0.06f, 0f, r * 0.46f, ringMagentaPaint)
+      c.drawCircle(-r * 0.06f, 0f, r * 0.30f, ringCyanPaint)
     } else if (spec.id == 4) {
       // Goliath bastion shoulder armor bars
       c.drawLine(-r * 0.35f, -r * 0.72f, r * 0.25f, -r * 0.72f, specularEdgePaint)
@@ -1597,7 +1674,7 @@ object RiftSpriteBaker {
     val cyanGlowPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#38BDF8")
+        color = if (spec.id == 9) Color.parseColor("#00F5D4") else Color.parseColor("#38BDF8")
       }
     val whiteCorePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1625,8 +1702,8 @@ object RiftSpriteBaker {
       }
     c.drawPath(vCoreInner, whiteCorePaint)
 
-    // Twin-cell aft reactor node for Twinfang (5), Goliath (4), and Manta (8)
-    if (spec.id == 4 || spec.id == 5 || spec.id == 8) {
+    // Twin-cell aft reactor node for Twinfang (5), Goliath (4), Manta (8), and Interdictor (9)
+    if (spec.id == 4 || spec.id == 5 || spec.id == 8 || spec.id == 9) {
       c.drawCircle(-r * 0.42f, -r * 0.16f, r * 0.07f, cyanGlowPaint)
       c.drawCircle(-r * 0.42f, r * 0.16f, r * 0.07f, cyanGlowPaint)
       c.drawCircle(-r * 0.42f, -r * 0.16f, r * 0.035f, whiteCorePaint)

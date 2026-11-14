@@ -125,7 +125,7 @@ class RiftAuditConsistencyTest {
     engine.firePrimaryGun(player)
 
     assertFalse(player.isCloaked)
-    // Only primary gun cost is deducted; EMP Pulse itself costs 0❖
+    // Only primary gun cost is deducted; EMP Pulse itself costs 0⚡
     assertEquals(240f - player.spec.primaryCost, player.flux, 0.5f)
     assertTrue(engine.shockwaves.size > shockwavesBefore)
     assertTrue("Enemy Flux should drop by 35% Max Flux", enemy.flux < enemyStartFlux)
@@ -154,7 +154,7 @@ class RiftAuditConsistencyTest {
     enemy.flux = enemy.maxFlux * 0.5f
     val enemyStartFlux = enemy.flux
 
-    // Tick enough cloak drain to cross <= 150❖ threshold
+    // Tick enough cloak drain to cross <= 150⚡ threshold
     engine.stepSimulation(0.05f)
     assertFalse(player.isCloaked)
     assertTrue("Forced uncloak must not drain enemy Flux with EMP", enemy.flux >= enemyStartFlux)
@@ -212,8 +212,8 @@ class RiftAuditConsistencyTest {
 
   @Test
   fun `ship names codex and ugc moderation adhere to clean rift rules`() {
-    val allShips = RiftCodex.getAllNineShips()
-    assertEquals(9, allShips.size)
+    val allShips = RiftCodex.getAllTenShips()
+    assertEquals(10, allShips.size)
     val legacyPrefix = Regex("^[0-9]+-")
     val forbiddenWords = listOf("Energy", "NRG", "Thor", "Wormhole", "Shotgun", "Missile", "Rocket", "Decoy", "Brick")
 
@@ -234,5 +234,69 @@ class RiftAuditConsistencyTest {
     prefs.blockPilot("toxic_1")
     assertTrue("toxic_1" in prefs.getBlockedPilotUids())
     assertEquals(1, prefs.reportPilot("toxic_1", "TOXIC_PILOT", "Abusive Comms"))
+  }
+
+  @Test
+  fun `interdictor ship 9 has 100 point parity and deploys two-way containment bubble`() {
+    val interdictor = RiftCodex.getShipById(9)
+    assertEquals("Interdictor", interdictor.name)
+    assertEquals("INTERDICTOR_DOME", interdictor.bombType)
+    assertEquals(
+      100,
+      interdictor.speedPts +
+        interdictor.thrustPts +
+        interdictor.turnPts +
+        interdictor.maxFluxPts +
+        interdictor.rechargePts +
+        interdictor.primaryPts +
+        interdictor.secondaryPts,
+    )
+    assertEquals(100, interdictor.totalAllocatedPoints)
+
+    val riftFrame = RiftCodex.getShipById(10)
+    assertEquals(10, riftFrame.id)
+
+    engine.walls.clear()
+    engine.anomalies.clear()
+    engine.interdictorBubbles.clear()
+    engine.switchLocalPlayerShip(9, forceFromHangar = true)
+    val player = engine.localPlayer
+    val enemy = engine.ships.first { !it.isLocalPlayer }
+    engine.ships.retainAll { it === player || it === enemy }
+
+    player.x = 2000f
+    player.y = 2000f
+    player.vx = 0f
+    player.vy = 0f
+    player.flux = player.maxFlux
+    player.bombTimer = 0f
+
+    // Deploy Interdictor Stasis Bubble at (2000, 2000)
+    engine.fireSecondaryBomb(player, 0f)
+    assertEquals(1, engine.interdictorBubbles.size)
+    val bubble = engine.interdictorBubbles.first()
+    assertEquals(290f, bubble.radius, 0.1f)
+    assertEquals(15.0f, bubble.life, 0.1f)
+
+    // 1. Inside ship attempting to cross outward beyond (radius - 36f = 254f) is clamped inside and reflected
+    player.x = 2250f
+    player.y = 2000f
+    player.vx = 400f
+    player.vy = 0f
+    engine.stepSimulation(0.05f)
+    val distInsideAfter = hypot(player.x - bubble.x, player.y - bubble.y)
+    assertTrue("Ship inside dome must not escape perimeter", distInsideAfter <= bubble.radius - 35.5f)
+    assertTrue("Ship velocity must reflect inward", player.vx < 0f)
+
+    // 2. Outside ship attempting to enter inward within (radius + 36f = 326f) is clamped outside and reflected
+    enemy.respawnTimer = 0f
+    enemy.x = 2330f
+    enemy.y = 2000f
+    enemy.vx = -400f
+    enemy.vy = 0f
+    engine.stepSimulation(0.05f)
+    val distOutsideAfter = hypot(enemy.x - bubble.x, enemy.y - bubble.y)
+    assertTrue("Ship outside dome must not breach perimeter", distOutsideAfter >= bubble.radius + 35.5f)
+    assertTrue("Outside ship velocity must reflect outward", enemy.vx > 0f)
   }
 }

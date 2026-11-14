@@ -38,7 +38,7 @@ data class ShipSpec(
   var primaryBounces: Int,
   val isParallelTwin: Boolean = false,
   val hasBomb: Boolean,
-  val bombType: String, // "NONE", "PHASE_DASH", "BOUNCE", "SIEGE", "CLOAK_EMP", "PROX", "MINE", "NOVA_RING", "SHATTER_CONE", "SEEKER_TORPEDO"
+  val bombType: String, // "NONE", "PHASE_DASH", "BOUNCE", "SIEGE", "CLOAK_EMP", "PROX", "MINE", "NOVA_RING", "SHATTER_CONE", "SEEKER_TORPEDO", "INTERDICTOR_DOME"
   var bombCost: Float,
   var bombCooldown: Float,
   var bombDamage: Float,
@@ -620,6 +620,8 @@ data class CustomShipLoadoutSlot(
           SecondaryTuple("Tactical Cloak (180⚡/s) + 0⚡ Decloak EMP", "CLOAK", 0f, 0.95f, 0f, 0, 0f)
         "SEEKER_TORPEDO" ->
           SecondaryTuple("Native Seeker Torpedo (600⚡ • 5s CD)", "SEEKER", 600f, 5.0f, 780f, 6, 0f)
+        "INTERDICTOR_DOME" ->
+          SecondaryTuple("Interdictor Stasis Bubble (600⚡ • 15s Dome)", "BUBBLE", 600f, RiftCalibrationState.interdictorBubbleCooldown, 0f, 0, 0f)
         "PASSIVE_GUNFIGHTER" ->
           SecondaryTuple("Pure Gunfighter Passive (+10% Vel, 0 Recoil)", "PASSIVE", 0f, 0f, 0f, 0, 0f)
         else ->
@@ -643,7 +645,7 @@ data class CustomShipLoadoutSlot(
         .ifBlank { "Rift Frame" }
 
     return ShipSpec(
-      id = 9,
+      id = 10,
       name = cleanCustomTitle,
       role = "Custom Modular Rift Frame ($slotId • ${totalAllocatedPoints()} Pts)",
       tacticalLore = "Progressive Level 20–100 modular chassis engineered on the universal Baseline Hull Floor with AI Hull Forge shader geometry.",
@@ -731,6 +733,13 @@ data class CustomShipLoadoutSlot(
         SecondaryAbilityOption("SIEGE", "Siege Bomb", 25, "650⚡", "Massive nuclear dreadnought warhead with heavy backward recoil."),
         SecondaryAbilityOption("CLOAK_EMP", "Tactical Cloak + 0⚡ Decloak EMP", 25, "180⚡/s • 0⚡ EMP", "Tap to Cloak invisibly (180⚡/s); decloaking via EMP PULSE or primary fire unleashes a free 0⚡ 220px 360° AoE EMP (-35% Max Flux, 2.5s recharge lockout)."),
         SecondaryAbilityOption("SEEKER_TORPEDO", "Native Seeker Torpedo", 25, "600⚡", "Fires homing wall-bouncing Seeker Torpedo (2.5s flight, 5s CD)."),
+        SecondaryAbilityOption(
+          "INTERDICTOR_DOME",
+          "Interdictor Stasis Bubble",
+          25,
+          "600⚡ • 18s CD",
+          "Deploys a 290px radius (580px dia) two-way containment bubble for 15.0s. Nothing can enter or leave; forces close-quarters dogfights.",
+        ),
       )
 
     fun getPrimaryPointCost(archetype: String): Int =
@@ -1433,6 +1442,49 @@ object RiftCodex {
         initialRepels = 3, // Starts every life with +1 bonus Repel charge
         accentColorHex = 0xFF66BB6A.toInt(),
       ),
+      // 9. INTERDICTOR — Warp-Bubble Interdictor (100 Pts: 10 Spd + 12 Thr + 8 Turn + 18 Flux + 15 Rch + 12 Pri + 25 Sec)
+      ShipSpec(
+        id = 9,
+        name = "Interdictor",
+        role = "Warp-Bubble Interdictor",
+        tacticalLore = "Heavy gravimetric interdictor that anchors a 290px radius two-way stasis bubble for 15 seconds—nothing enters, nothing leaves.",
+        silhouetteDesc = "Twin-ringed amethyst gravimetric cruiser with forward containment prongs and a glowing magenta-cyan singularity core.",
+        weaponSummary = "PRI: PULSE (20⚡) • CLS: STASIS BUBBLE (600⚡ • 15s Dome)",
+        primaryTitle = "Twin Angled Pulse",
+        secondaryTitle = "Interdictor Stasis Bubble (600⚡ • 15s Dome)",
+        primaryShortLabel = "PULSE",
+        secondaryShortLabel = "BUBBLE",
+        speedPts = 10,
+        thrustPts = 12,
+        turnPts = 8,
+        maxFluxPts = 18,
+        rechargePts = 15,
+        primaryPts = 12,
+        secondaryPts = 25,
+        maxFlux = computeMaxFlux(18), // 3,640⚡
+        rechargeRate = computeRecharge(15), // 360⚡/S
+        topSpeed = computeTopSpeed(10), // 460 PX/S
+        afterburnerSpeed = computeTopSpeed(10) * 1.32f,
+        thrust = computeThrust(12), // 780 PX/S²
+        turnRate = computeTurnRate(8), // 4.0 RAD/S
+        primaryCost = 20f,
+        primaryCooldown = 0.16f,
+        primaryDamage = 195f,
+        primarySpeed = 930f,
+        primaryStreams = 2,
+        primarySpreadRad = 0.045f,
+        primaryBounces = 1,
+        hasBomb = true,
+        bombType = "INTERDICTOR_DOME",
+        bombCost = 600f,
+        bombCooldown = 18.0f,
+        bombDamage = 0f,
+        bombBounces = 0,
+        bombRecoil = 0f,
+        supportsNativeMultifire = false,
+        initialRepels = 2,
+        accentColorHex = 0xFFEC4899.toInt(),
+      ),
     )
 
   /**
@@ -1631,6 +1683,8 @@ object RiftCodex {
 
   fun getAllNineShips(): List<ShipSpec> = SHIPS + listOf(customShip9Spec)
 
+  fun getAllTenShips(): List<ShipSpec> = getAllNineShips()
+
   fun getShipById(id: Int): ShipSpec =
-    if (id == 9) customShip9Spec else (SHIPS.find { it.id == id } ?: SHIPS[0])
+    if (id == 10 || id > 9) customShip9Spec else (SHIPS.find { it.id == id } ?: SHIPS[0])
 }

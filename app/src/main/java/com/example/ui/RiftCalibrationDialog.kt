@@ -477,8 +477,8 @@ fun RiftCalibrationDialog(
               testTag = "calibration_ship_filter_0",
               onClick = { selectedShipFilter = 0 },
             )
-            for (sId in 1..9) {
-              val sName = if (sId == 9) "Rift Frame" else RiftCodex.getShipById(sId).name
+            for (sId in 1..10) {
+              val sName = if (sId == 10) "Rift Frame" else RiftCodex.getShipById(sId).name
               CalibrationToggleChip(
                 label = sName,
                 active = selectedShipFilter == sId,
