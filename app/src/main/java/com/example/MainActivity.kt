@@ -241,10 +241,8 @@ fun RiftArenaScreen(
               checkNotNull(this[APPLICATION_KEY]) {
                 "APPLICATION_KEY missing from CreationExtras"
               }
-            val databaseId = app.getString(R.string.firestore_database_id)
-            val db = FirebaseFirestore.getInstance(databaseId)
             RiftViewModel(
-              repository = RiftRepository(db),
+              repository = RiftRepository(app),
               currentUserId = currentUserId,
               initialCallsign = initialCallsign,
               isGoogleAuthenticated = isGoogleAuthenticated,
@@ -409,22 +407,24 @@ fun RiftArenaScreen(
         allTimePeakSnapshot = localPrefs.getAllTimePeakBountySnapshot(currentUserId)
         pvpPeakSnapshot = localPrefs.getPvpPeakBountySnapshot(currentUserId)
       }
-      viewModel.syncNativePilotStats(
-        callsign = engine.localPlayer.callsign,
-        shipId = engine.localPlayer.shipId,
-        foundry = engine.localPlayer.spec.role,
-        mode = engine.mode,
-        pvpKills = engine.pvpKills,
-        pvpDeaths = engine.pvpDeaths,
-        pvpBountyPeak = engine.pvpBountyPeak,
-        allTimeKills = engine.allTimeKills,
-        allTimeDeaths = engine.allTimeDeaths,
-        allTimeBountyPeak = engine.allTimeBountyPeak,
-        convergencesWon = engine.convergencesWon,
-        syndicateTag = engine.localPlayer.syndicateTag,
-        armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
-        armadaTierSize = engine.getCurrentArmadaSize(),
-      )
+      if (isGoogleAuthenticated) {
+        viewModel.syncNativePilotStats(
+          callsign = engine.localPlayer.callsign,
+          shipId = engine.localPlayer.shipId,
+          foundry = engine.localPlayer.spec.role,
+          mode = engine.mode,
+          pvpKills = engine.pvpKills,
+          pvpDeaths = engine.pvpDeaths,
+          pvpBountyPeak = engine.pvpBountyPeak,
+          allTimeKills = engine.allTimeKills,
+          allTimeDeaths = engine.allTimeDeaths,
+          allTimeBountyPeak = engine.allTimeBountyPeak,
+          convergencesWon = engine.convergencesWon,
+          syndicateTag = engine.localPlayer.syndicateTag,
+          armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
+          armadaTierSize = engine.getCurrentArmadaSize(),
+        )
+      }
       frameTick++
     }
     engine.onLifeRunEnded = { finalizedSnapshot, hadPvp ->

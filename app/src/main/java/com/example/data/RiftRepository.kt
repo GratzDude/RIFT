@@ -8,6 +8,8 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.FirebaseFirestoreSettings
+import com.google.firebase.firestore.MemoryCacheSettings
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -15,19 +17,42 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 
-class RiftRepository(private val db: FirebaseFirestore) {
+class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
 
-  constructor(context: Context) : this(
-    FirebaseFirestore.getInstance(
-      context.applicationContext.getString(R.string.firestore_database_id)
-    )
-  )
+  constructor(db: FirebaseFirestore) : this({ db })
+
+  constructor(context: Context) : this({
+    val appContext = context.applicationContext
+    val db =
+      FirebaseFirestore.getInstance(
+        appContext.getString(R.string.firestore_database_id)
+      )
+    try {
+      db.firestoreSettings =
+        FirebaseFirestoreSettings.Builder()
+          .setLocalCacheSettings(MemoryCacheSettings.newBuilder().build())
+          .build()
+    } catch (_: Exception) {
+      // Settings already applied on this instance
+    }
+    db
+  })
+
+  private val db: FirebaseFirestore by lazy { dbProvider() }
 
   private val auth = Firebase.auth
 
   private fun requireUserId(): String {
-    return auth.currentUser?.uid
-      ?: throw IllegalStateException("User must be signed in with Google before accessing Firestore.")
+    val uid = auth.currentUser?.uid?.trim()
+    if (uid.isNullOrEmpty() || uid.startsWith("dev_")) {
+      throw IllegalStateException("User must be signed in with Google before accessing Firestore.")
+    }
+    return uid
+  }
+
+  private fun isAuthenticatedNonGuest(): Boolean {
+    val uid = auth.currentUser?.uid?.trim()
+    return !uid.isNullOrEmpty() && !uid.startsWith("dev_")
   }
 
   private fun sanitizeCallsign(raw: String): String {
@@ -67,6 +92,9 @@ class RiftRepository(private val db: FirebaseFirestore) {
   suspend fun getPilotDossier(userId: String = requireUserId()): Result<PilotDossier?> = runCatching {
     val callerUid = requireUserId()
     val resolvedUid = userId.trim().ifEmpty { callerUid }
+    if (resolvedUid.startsWith("dev_")) {
+      return@runCatching null
+    }
     val path = "users/$resolvedUid"
     try {
       val snapshot = db.collection("users").document(resolvedUid).get().await()
@@ -78,7 +106,9 @@ class RiftRepository(private val db: FirebaseFirestore) {
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      handleFirestoreError(e, OperationType.GET, path)
+      if (isAuthenticatedNonGuest()) {
+        handleFirestoreError(e, OperationType.GET, path)
+      }
       throw e
     }
   }
@@ -102,7 +132,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
             .firstOrNull()
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
-        if (exceptionToLog != null && auth.currentUser?.uid == userId) {
+        if (exceptionToLog != null && isAuthenticatedNonGuest() && auth.currentUser?.uid == userId) {
           handleFirestoreError(exceptionToLog, OperationType.GET, path)
         }
         throw error
@@ -159,7 +189,9 @@ class RiftRepository(private val db: FirebaseFirestore) {
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      if (isAuthenticatedNonGuest()) {
+        handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      }
       throw e
     }
   }
@@ -221,7 +253,9 @@ class RiftRepository(private val db: FirebaseFirestore) {
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      if (isAuthenticatedNonGuest()) {
+        handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      }
       throw e
     }
   }
@@ -244,7 +278,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
             .firstOrNull()
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
-        if (exceptionToLog != null && auth.currentUser != null) {
+        if (exceptionToLog != null && isAuthenticatedNonGuest()) {
           handleFirestoreError(exceptionToLog, OperationType.LIST, path)
         }
         throw error
@@ -329,7 +363,9 @@ class RiftRepository(private val db: FirebaseFirestore) {
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      if (isAuthenticatedNonGuest()) {
+        handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      }
       throw e
     }
   }
@@ -359,7 +395,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
             .firstOrNull()
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
-        if (exceptionToLog != null && auth.currentUser != null) {
+        if (exceptionToLog != null && isAuthenticatedNonGuest()) {
           handleFirestoreError(exceptionToLog, OperationType.LIST, path)
         }
         throw error
@@ -384,7 +420,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
             .firstOrNull()
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
-        if (exceptionToLog != null && auth.currentUser != null) {
+        if (exceptionToLog != null && isAuthenticatedNonGuest()) {
           handleFirestoreError(exceptionToLog, OperationType.LIST, path)
         }
         throw error
@@ -430,7 +466,9 @@ class RiftRepository(private val db: FirebaseFirestore) {
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      if (isAuthenticatedNonGuest()) {
+        handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      }
       throw e
     }
   }
@@ -456,7 +494,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
             .firstOrNull()
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
-        if (exceptionToLog != null && auth.currentUser != null) {
+        if (exceptionToLog != null && isAuthenticatedNonGuest()) {
           handleFirestoreError(exceptionToLog, OperationType.LIST, path)
         }
         throw error
@@ -490,7 +528,9 @@ class RiftRepository(private val db: FirebaseFirestore) {
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      if (isAuthenticatedNonGuest()) {
+        handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      }
       throw e
     }
   }
