@@ -115,6 +115,46 @@ class RiftRepositoryRuleTest : FirestoreEmulatorTestBase() {
     }
   }
 
+  @Test
+  fun saveAndObserveLivePilotState_authenticatedOwner_succeeds() = runBlocking {
+    val aliceUid = signInTestUser(ALICE_EMAIL)
+    val repo = RiftRepository(firestore)
+
+    val saveResult =
+      withTimeout(DEFAULT_TIMEOUT_MS) {
+        repo.saveLivePilotState(
+          LivePilotState(
+            userId = aliceUid,
+            sectorId = "SECTOR_CONVERGENCE",
+            callsign = "ALICE_ACE",
+            syndicateTag = "AEX",
+            armadaName = "SOLO",
+            shipId = 9L,
+            freq = 0L,
+            x = 2400.0,
+            y = 2100.0,
+            vx = 180.0,
+            vy = -60.0,
+            angle = 1.2,
+            weaponAngle = 1.2,
+            isFiringPrimary = true,
+            isAfterburning = false,
+            isCloaked = false,
+            energy = 2400L,
+            maxEnergy = 2400L,
+            bounty = 350L,
+          )
+        )
+      }
+    assertTrue("Expected live pilot state save to succeed: ${saveResult.exceptionOrNull()}", saveResult.isSuccess)
+
+    val pilots =
+      withTimeout(FLOW_TIMEOUT_MS) {
+        repo.observeSectorPilots("SECTOR_CONVERGENCE").first { list -> list.any { it.id == aliceUid } }
+      }
+    assertTrue(pilots.any { it.callsign == "ALICE_ACE" && it.shipId == 9L })
+  }
+
   private companion object {
     const val ALICE_EMAIL = "alice_rift@test.com"
     const val BOB_EMAIL = "bob_rift@test.com"

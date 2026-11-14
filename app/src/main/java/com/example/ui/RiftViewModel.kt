@@ -9,6 +9,8 @@ import com.example.data.PilotDossier
 import com.example.data.RiftRepository
 import com.example.data.SyndicateChatMessage
 import com.example.data.SyndicateInfo
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -33,120 +36,150 @@ class RiftViewModel(
   private val repository: RiftRepository,
   val currentUserId: String,
   val initialCallsign: String,
+  val isGoogleAuthenticated: Boolean = Firebase.auth.currentUser != null,
 ) : ViewModel() {
 
   private val _activeSectorId = MutableStateFlow("FFA")
   val activeSectorId: StateFlow<String> = _activeSectorId.asStateFlow()
 
+  private fun isCloudSessionReady(): Boolean {
+    return isGoogleAuthenticated && Firebase.auth.currentUser != null
+  }
+
   val dossierState: StateFlow<UiState<PilotDossier?>> =
-    repository
-      .observePilotDossier(currentUserId)
-      .map<PilotDossier?, UiState<PilotDossier?>> { UiState.Success(it) }
-      .catch { error ->
-        val firestoreError =
-          generateSequence(error) { it.cause }
-            .filterIsInstance<FirebaseFirestoreException>()
-            .firstOrNull()
-        if (firestoreError == null && error is CancellationException) throw error
-        val rootError = firestoreError ?: error
-        Log.w(TAG, "Error observing pilot dossier", rootError)
-        emit(UiState.Error(rootError.message ?: "Failed to load pilot dossier"))
-      }
+    (if (isCloudSessionReady()) {
+        repository
+          .observePilotDossier(currentUserId)
+          .map<PilotDossier?, UiState<PilotDossier?>> { UiState.Success(it) }
+          .catch { error ->
+            val firestoreError =
+              generateSequence(error) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreError == null && error is CancellationException) throw error
+            val rootError = firestoreError ?: error
+            Log.w(TAG, "Error observing pilot dossier", rootError)
+            emit(UiState.Error(rootError.message ?: "Failed to load pilot dossier"))
+          }
+      } else {
+        flowOf(UiState.Success(null))
+      })
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
-        initialValue = UiState.Loading,
+        initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(null),
       )
 
   val leaderboardState: StateFlow<UiState<List<LeaderboardEntry>>> =
-    repository
-      .observeLeaderboard()
-      .map<List<LeaderboardEntry>, UiState<List<LeaderboardEntry>>> { UiState.Success(it) }
-      .catch { error ->
-        val firestoreError =
-          generateSequence(error) { it.cause }
-            .filterIsInstance<FirebaseFirestoreException>()
-            .firstOrNull()
-        if (firestoreError == null && error is CancellationException) throw error
-        val rootError = firestoreError ?: error
-        Log.w(TAG, "Error observing leaderboard", rootError)
-        emit(UiState.Error(rootError.message ?: "Failed to load leaderboard"))
-      }
+    (if (isCloudSessionReady()) {
+        repository
+          .observeLeaderboard()
+          .map<List<LeaderboardEntry>, UiState<List<LeaderboardEntry>>> { UiState.Success(it) }
+          .catch { error ->
+            val firestoreError =
+              generateSequence(error) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreError == null && error is CancellationException) throw error
+            val rootError = firestoreError ?: error
+            Log.w(TAG, "Error observing leaderboard", rootError)
+            emit(UiState.Error(rootError.message ?: "Failed to load leaderboard"))
+          }
+      } else {
+        flowOf(UiState.Success(emptyList()))
+      })
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
-        initialValue = UiState.Loading,
+        initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(emptyList()),
       )
 
   @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
   val sectorPilotsState: StateFlow<UiState<List<LivePilotState>>> =
-    _activeSectorId
-      .flatMapLatest { sectorId -> repository.observeSectorPilots(sectorId) }
-      .map<List<LivePilotState>, UiState<List<LivePilotState>>> { UiState.Success(it) }
-      .catch { error ->
-        val firestoreError =
-          generateSequence(error) { it.cause }
-            .filterIsInstance<FirebaseFirestoreException>()
-            .firstOrNull()
-        if (firestoreError == null && error is CancellationException) throw error
-        val rootError = firestoreError ?: error
-        Log.w(TAG, "Error observing sector pilots", rootError)
-        emit(UiState.Error(rootError.message ?: "Failed to observe sector pilots"))
-      }
+    (if (isCloudSessionReady()) {
+        _activeSectorId
+          .flatMapLatest { sectorId -> repository.observeSectorPilots(sectorId) }
+          .map<List<LivePilotState>, UiState<List<LivePilotState>>> { UiState.Success(it) }
+          .catch { error ->
+            val firestoreError =
+              generateSequence(error) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreError == null && error is CancellationException) throw error
+            val rootError = firestoreError ?: error
+            Log.w(TAG, "Error observing sector pilots", rootError)
+            emit(UiState.Error(rootError.message ?: "Failed to observe sector pilots"))
+          }
+      } else {
+        flowOf(UiState.Success(emptyList()))
+      })
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
-        initialValue = UiState.Loading,
+        initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(emptyList()),
       )
 
   val cloudSyndicatesState: StateFlow<UiState<List<SyndicateInfo>>> =
-    repository
-      .observeCloudSyndicates()
-      .map<List<SyndicateInfo>, UiState<List<SyndicateInfo>>> { UiState.Success(it) }
-      .catch { error ->
-        val firestoreError =
-          generateSequence(error) { it.cause }
-            .filterIsInstance<FirebaseFirestoreException>()
-            .firstOrNull()
-        if (firestoreError == null && error is CancellationException) throw error
-        val rootError = firestoreError ?: error
-        Log.w(TAG, "Error observing cloud syndicates", rootError)
-        emit(UiState.Error(rootError.message ?: "Failed to observe cloud syndicates"))
-      }
+    (if (isCloudSessionReady()) {
+        repository
+          .observeCloudSyndicates()
+          .map<List<SyndicateInfo>, UiState<List<SyndicateInfo>>> { UiState.Success(it) }
+          .catch { error ->
+            val firestoreError =
+              generateSequence(error) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreError == null && error is CancellationException) throw error
+            val rootError = firestoreError ?: error
+            Log.w(TAG, "Error observing cloud syndicates", rootError)
+            emit(UiState.Error(rootError.message ?: "Failed to observe cloud syndicates"))
+          }
+      } else {
+        flowOf(UiState.Success(emptyList()))
+      })
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
-        initialValue = UiState.Loading,
+        initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(emptyList()),
       )
 
   val sectorCommsState: StateFlow<UiState<List<SyndicateChatMessage>>> =
-    repository
-      .observeSectorComms()
-      .map<List<SyndicateChatMessage>, UiState<List<SyndicateChatMessage>>> { UiState.Success(it) }
-      .catch { error ->
-        val firestoreError =
-          generateSequence(error) { it.cause }
-            .filterIsInstance<FirebaseFirestoreException>()
-            .firstOrNull()
-        if (firestoreError == null && error is CancellationException) throw error
-        val rootError = firestoreError ?: error
-        Log.w(TAG, "Error observing sector comms", rootError)
-        emit(UiState.Error(rootError.message ?: "Failed to observe sector comms"))
-      }
+    (if (isCloudSessionReady()) {
+        repository
+          .observeSectorComms()
+          .map<List<SyndicateChatMessage>, UiState<List<SyndicateChatMessage>>> { UiState.Success(it) }
+          .catch { error ->
+            val firestoreError =
+              generateSequence(error) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreError == null && error is CancellationException) throw error
+            val rootError = firestoreError ?: error
+            Log.w(TAG, "Error observing sector comms", rootError)
+            emit(UiState.Error(rootError.message ?: "Failed to observe sector comms"))
+          }
+      } else {
+        flowOf(UiState.Success(emptyList()))
+      })
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
-        initialValue = UiState.Loading,
+        initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(emptyList()),
       )
 
   init {
-    ensureInitialProfile()
+    if (isCloudSessionReady()) {
+      ensureInitialProfile()
+    }
   }
 
   private fun ensureInitialProfile() {
+    if (!isCloudSessionReady()) return
     viewModelScope.launch {
       try {
-        val existing = repository.getPilotDossier(currentUserId).getOrNull()
+        val existingResult = repository.getPilotDossier(currentUserId)
+        if (existingResult.isFailure) return@launch
+        val existing = existingResult.getOrNull()
         if (existing == null) {
           val defaultDossier =
             PilotDossier(
@@ -190,6 +223,7 @@ class RiftViewModel(
   }
 
   fun createCloudSyndicate(syndicate: SyndicateInfo) {
+    if (!isCloudSessionReady()) return
     viewModelScope.launch {
       try {
         repository.saveCloudSyndicate(syndicate)
@@ -200,6 +234,7 @@ class RiftViewModel(
   }
 
   fun sendSectorComm(msg: SyndicateChatMessage) {
+    if (!isCloudSessionReady()) return
     viewModelScope.launch {
       try {
         repository.postSectorCommMessage(msg)
@@ -210,6 +245,7 @@ class RiftViewModel(
   }
 
   fun syncFromEngineJson(payloadJson: String) {
+    if (!isCloudSessionReady()) return
     viewModelScope.launch {
       try {
         val obj = JSONObject(payloadJson)
@@ -267,6 +303,7 @@ class RiftViewModel(
   }
 
   fun syncTelemetryFromEngineJson(payloadJson: String) {
+    if (!isCloudSessionReady()) return
     viewModelScope.launch {
       try {
         val obj = JSONObject(payloadJson)
@@ -319,6 +356,7 @@ class RiftViewModel(
     if (_activeSectorId.value != "FFA") {
       _activeSectorId.value = "FFA"
     }
+    if (!isCloudSessionReady()) return
     viewModelScope.launch {
       try {
         repository.savePilotDossier(
@@ -381,6 +419,7 @@ class RiftViewModel(
     maxFlux: Float,
     bounty: Int,
   ) {
+    if (!isCloudSessionReady()) return
     viewModelScope.launch {
       try {
         repository.saveLivePilotState(

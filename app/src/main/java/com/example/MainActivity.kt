@@ -233,7 +233,7 @@ fun RiftArenaScreen(
 
   val viewModel: RiftViewModel =
     viewModel(
-      key = currentUserId,
+      key = "${currentUserId}_$isGoogleAuthenticated",
       factory =
         viewModelFactory {
           initializer {
@@ -243,7 +243,12 @@ fun RiftArenaScreen(
               }
             val databaseId = app.getString(R.string.firestore_database_id)
             val db = FirebaseFirestore.getInstance(databaseId)
-            RiftViewModel(RiftRepository(db), currentUserId, initialCallsign)
+            RiftViewModel(
+              repository = RiftRepository(db),
+              currentUserId = currentUserId,
+              initialCallsign = initialCallsign,
+              isGoogleAuthenticated = isGoogleAuthenticated,
+            )
           }
         },
     )
@@ -508,8 +513,9 @@ fun RiftArenaScreen(
     }
   }
 
-  // High-frequency live telemetry heartbeat for both Guest and Google Authenticated devices
-  LaunchedEffect(currentUserId) {
+  // Live telemetry heartbeat for Google Authenticated sessions
+  LaunchedEffect(currentUserId, isGoogleAuthenticated) {
+    if (!isGoogleAuthenticated) return@LaunchedEffect
     while (true) {
       delay(350L)
       val p = engine.localPlayer

@@ -2,7 +2,7 @@
   "entities": {
     "PilotDossier": {
       "title": "PilotDossier",
-      "description": "Authenticated pilot profile, foundry preferences, and dual-bucket combat statistics.",
+      "description": "Authenticated pilot profile, hull preferences, and dual-bucket combat statistics.",
       "type": "object",
       "properties": {
         "userId": {
@@ -15,16 +15,25 @@
         },
         "preferredShipId": {
           "type": "integer",
-          "description": "Selected hull ID (1-8)."
+          "description": "Selected hull ID (1-10)."
         },
         "preferredFoundry": {
           "type": "string",
-          "enum": ["Kestrel", "Aurelia", "Vortex", "Rustweld"],
-          "description": "Selected ship foundry."
+          "description": "Selected ship role or classification."
         },
         "preferredMode": {
           "type": "string",
-          "enum": ["warzone_10v10", "ranked_3v3", "ranked_5v5"],
+          "enum": [
+            "FFA",
+            "SECTOR_CONVERGENCE",
+            "RIFT_SKIRMISH",
+            "FLUX_CORE",
+            "STASIS_BREACH",
+            "SYNDICATE_WARS",
+            "warzone_10v10",
+            "ranked_3v3",
+            "ranked_5v5"
+          ],
           "description": "Selected combat arena queue."
         },
         "pvpKills": {
@@ -53,7 +62,7 @@
         },
         "convergencesWon": {
           "type": "integer",
-          "description": "Number of hourly Sector Convergence resets won."
+          "description": "Number of Sector Convergence or Ranked match victories."
         },
         "createdAt": {
           "type": "string",
@@ -103,12 +112,23 @@
         },
         "shipId": {
           "type": "integer",
-          "description": "Active hull ID (1-8)."
+          "description": "Active hull ID (1-10)."
+        },
+        "syndicateTag": {
+          "type": "string",
+          "description": "Optional 2-4 char Syndicate tag."
+        },
+        "armadaTag": {
+          "type": "string",
+          "description": "Optional Armada squad tag or SOLO."
+        },
+        "armadaTierSize": {
+          "type": "integer",
+          "description": "Active Armada size bracket (1-5)."
         },
         "foundry": {
           "type": "string",
-          "enum": ["Kestrel", "Aurelia", "Vortex", "Rustweld"],
-          "description": "Active ship foundry."
+          "description": "Active ship role classification."
         },
         "pvpKills": {
           "type": "integer",
@@ -136,7 +156,7 @@
         },
         "convergencesWon": {
           "type": "integer",
-          "description": "Hourly sector convergences won."
+          "description": "Sector convergences and ranked matches won."
         },
         "createdAt": {
           "type": "string",
@@ -177,20 +197,38 @@
         },
         "sectorId": {
           "type": "string",
-          "enum": ["warzone_10v10", "ranked_3v3", "ranked_5v5"],
+          "enum": [
+            "FFA",
+            "SECTOR_CONVERGENCE",
+            "RIFT_SKIRMISH",
+            "FLUX_CORE",
+            "STASIS_BREACH",
+            "SYNDICATE_WARS",
+            "warzone_10v10",
+            "ranked_3v3",
+            "ranked_5v5"
+          ],
           "description": "Sector queue identifier."
         },
         "callsign": {
           "type": "string",
           "description": "Pilot callsign."
         },
+        "syndicateTag": {
+          "type": "string",
+          "description": "Pilot Syndicate tag."
+        },
+        "armadaName": {
+          "type": "string",
+          "description": "Active Armada name."
+        },
         "shipId": {
           "type": "integer",
-          "description": "Active ship hull (1-8)."
+          "description": "Active ship hull (1-10)."
         },
         "freq": {
           "type": "integer",
-          "description": "Team frequency (0 for Yellow, 1 for Red)."
+          "description": "Team frequency (0 for West/Allied, 1 for East/Rival)."
         },
         "x": {
           "type": "number",
@@ -212,13 +250,29 @@
           "type": "number",
           "description": "Ship heading in radians."
         },
+        "weaponAngle": {
+          "type": "number",
+          "description": "Independent turret aim heading in radians."
+        },
+        "isFiringPrimary": {
+          "type": "boolean",
+          "description": "Whether the pilot is actively firing primary weapons."
+        },
+        "isAfterburning": {
+          "type": "boolean",
+          "description": "Whether Afterburners are engaged."
+        },
+        "isCloaked": {
+          "type": "boolean",
+          "description": "Whether stealth cloak is active."
+        },
         "energy": {
           "type": "integer",
-          "description": "Current unified energy capacitor value."
+          "description": "Current unified Flux capacitor value."
         },
         "maxEnergy": {
           "type": "integer",
-          "description": "Maximum energy capacitor capacity."
+          "description": "Maximum unified Flux capacitor capacity."
         },
         "bounty": {
           "type": "integer",
@@ -268,6 +322,148 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "SyndicateInfo": {
+      "title": "SyndicateInfo",
+      "description": "Player-founded Syndicate directory entry.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Founder Firebase Auth UID."
+        },
+        "tag": {
+          "type": "string",
+          "description": "2-4 character Syndicate tag."
+        },
+        "name": {
+          "type": "string",
+          "description": "Syndicate display name."
+        },
+        "foundryOrigin": {
+          "type": "string",
+          "description": "Syndicate origin sector."
+        },
+        "motto": {
+          "type": "string",
+          "description": "Syndicate tactical motto."
+        },
+        "memberCount": {
+          "type": "integer",
+          "description": "Active Syndicate member count."
+        },
+        "combinedBounty": {
+          "type": "integer",
+          "description": "Combined Syndicate bounty."
+        },
+        "isCustom": {
+          "type": "boolean",
+          "description": "True for player-registered Syndicates."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of Syndicate creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last Syndicate update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "tag",
+        "name",
+        "foundryOrigin",
+        "motto",
+        "memberCount",
+        "combinedBounty",
+        "isCustom",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SyndicateChatMessage": {
+      "title": "SyndicateChatMessage",
+      "description": "Sector comms message or Armada recruitment broadcast.",
+      "type": "object",
+      "properties": {
+        "senderUid": {
+          "type": "string",
+          "description": "Sender Firebase Auth UID."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "description": "Visibility scope for query enforcement."
+        },
+        "senderCallsign": {
+          "type": "string",
+          "description": "Sender pilot callsign."
+        },
+        "senderSyndicateTag": {
+          "type": "string",
+          "description": "Sender Syndicate tag."
+        },
+        "timestampLabel": {
+          "type": "string",
+          "description": "Formatted timestamp label."
+        },
+        "messageText": {
+          "type": "string",
+          "description": "Sanitized message text."
+        },
+        "isArmadaRecruitBanner": {
+          "type": "boolean",
+          "description": "Whether this message is an Armada recruitment banner."
+        },
+        "armadaName": {
+          "type": "string",
+          "description": "Armada squad name."
+        },
+        "armadaCurrentSize": {
+          "type": "integer",
+          "description": "Current Armada member count (1-5)."
+        },
+        "armadaMaxSize": {
+          "type": "integer",
+          "description": "Max Armada member count (1-5)."
+        },
+        "armadaObjective": {
+          "type": "string",
+          "description": "Armada tactical objective."
+        },
+        "requestSent": {
+          "type": "boolean",
+          "description": "Request state flag."
+        },
+        "createdAtMs": {
+          "type": "integer",
+          "description": "Client epoch timestamp in ms."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of message creation."
+        }
+      },
+      "required": [
+        "senderUid",
+        "visibility",
+        "senderCallsign",
+        "senderSyndicateTag",
+        "timestampLabel",
+        "messageText",
+        "isArmadaRecruitBanner",
+        "armadaName",
+        "armadaCurrentSize",
+        "armadaMaxSize",
+        "armadaObjective",
+        "requestSent",
+        "createdAtMs",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -288,6 +484,18 @@
         "$ref": "#/entities/LivePilotState"
       },
       "description": "Real-time human pilot telemetry and tactical holo-pings per sector."
+    },
+    "/syndicates/{syndicateTag}": {
+      "schema": {
+        "$ref": "#/entities/SyndicateInfo"
+      },
+      "description": "Player-founded Syndicates directory."
+    },
+    "/sector_comms/{commId}": {
+      "schema": {
+        "$ref": "#/entities/SyndicateChatMessage"
+      },
+      "description": "Real-time Sector Comms and Armada recruitment broadcasts."
     }
   }
 }

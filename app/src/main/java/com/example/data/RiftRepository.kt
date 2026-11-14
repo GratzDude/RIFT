@@ -30,12 +30,6 @@ class RiftRepository(private val db: FirebaseFirestore) {
       ?: throw IllegalStateException("User must be signed in with Google before accessing Firestore.")
   }
 
-  private fun resolveUserId(explicitUserId: String = ""): String {
-    return auth.currentUser?.uid
-      ?: explicitUserId.trim().takeIf { it.isNotEmpty() }
-      ?: requireUserId()
-  }
-
   private fun sanitizeCallsign(raw: String): String {
     val cleaned = raw.trim().replace(Regex("[^a-zA-Z0-9_\\- ]"), "")
     return when {
@@ -55,11 +49,24 @@ class RiftRepository(private val db: FirebaseFirestore) {
   }
 
   private fun sanitizeMode(raw: String): String {
-    return if (raw in listOf("FFA", "warzone_10v10", "ranked_3v3", "ranked_5v5")) raw else "FFA"
+    val allowed =
+      setOf(
+        "FFA",
+        "SECTOR_CONVERGENCE",
+        "RIFT_SKIRMISH",
+        "FLUX_CORE",
+        "STASIS_BREACH",
+        "SYNDICATE_WARS",
+        "warzone_10v10",
+        "ranked_3v3",
+        "ranked_5v5",
+      )
+    return if (raw in allowed) raw else "FFA"
   }
 
   suspend fun getPilotDossier(userId: String = requireUserId()): Result<PilotDossier?> = runCatching {
-    val resolvedUid = resolveUserId(userId)
+    val callerUid = requireUserId()
+    val resolvedUid = userId.trim().ifEmpty { callerUid }
     val path = "users/$resolvedUid"
     try {
       val snapshot = db.collection("users").document(resolvedUid).get().await()
@@ -103,10 +110,10 @@ class RiftRepository(private val db: FirebaseFirestore) {
   }
 
   suspend fun savePilotDossier(dossier: PilotDossier): Result<Unit> = runCatching {
-    val uid = resolveUserId(dossier.userId)
+    val uid = requireUserId()
     val docRef = db.collection("users").document(uid)
     val safeCallsign = sanitizeCallsign(dossier.callsign)
-    val safeShipId = dossier.preferredShipId.coerceIn(1L, 9L)
+    val safeShipId = dossier.preferredShipId.coerceIn(1L, 10L)
     val safeFoundry = sanitizeFoundry(dossier.preferredFoundry)
     val safeMode = sanitizeMode(dossier.preferredMode)
 
@@ -158,10 +165,10 @@ class RiftRepository(private val db: FirebaseFirestore) {
   }
 
   suspend fun saveLeaderboardEntry(entry: LeaderboardEntry): Result<Unit> = runCatching {
-    val uid = resolveUserId(entry.userId)
+    val uid = requireUserId()
     val docRef = db.collection("leaderboard").document(uid)
     val safeCallsign = sanitizeCallsign(entry.callsign)
-    val safeShipId = entry.shipId.coerceIn(1L, 9L)
+    val safeShipId = entry.shipId.coerceIn(1L, 10L)
     val safeFoundry = sanitizeFoundry(entry.foundry)
     val safeSyndicateTag = sanitizeTag(entry.syndicateTag)
     val safeArmadaTag = sanitizeTag(entry.armadaTag).ifEmpty { "SOLO" }
@@ -245,13 +252,13 @@ class RiftRepository(private val db: FirebaseFirestore) {
   }
 
   suspend fun saveLivePilotState(state: LivePilotState): Result<Unit> = runCatching {
-    val uid = resolveUserId(state.userId)
+    val uid = requireUserId()
     val docRef = db.collection("sector_pilots").document(uid)
     val safeCallsign = sanitizeCallsign(state.callsign)
     val safeSyndicateTag = sanitizeTag(state.syndicateTag)
     val safeArmadaName = sanitizeTag(state.armadaName)
     val safeSector = sanitizeMode(state.sectorId)
-    val safeShip = state.shipId.coerceIn(1L, 9L)
+    val safeShip = state.shipId.coerceIn(1L, 10L)
     val safeFreq = state.freq.coerceIn(0L, 99L)
     val safePing =
       if (state.lastPingType in listOf("NONE", "ATTACK", "DEFEND", "CONVERGENCE")) {
@@ -362,6 +369,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
   fun observeCloudSyndicates(): Flow<List<SyndicateInfo>> {
     val path = "syndicates"
     return db.collection(path)
+      .whereEqualTo("isCustom", true)
       .snapshots()
       .map { snapshot ->
         snapshot.toObjects(
@@ -384,24 +392,41 @@ class RiftRepository(private val db: FirebaseFirestore) {
   }
 
   suspend fun saveCloudSyndicate(syndicate: SyndicateInfo): Result<Unit> = runCatching {
+    val uid = requireUserId()
     val cleanTag = sanitizeTag(syndicate.tag).take(4)
     if (cleanTag.length < 2) {
       throw IllegalArgumentException("Syndicate tag must be at least 2 characters.")
     }
     val docRef = db.collection("syndicates").document(cleanTag)
-    val payload =
-      mapOf(
-        "tag" to cleanTag,
-        "name" to syndicate.name.trim().take(36).ifEmpty { "$cleanTag Syndicate" },
-        "foundryOrigin" to sanitizeFoundry(syndicate.foundryOrigin),
-        "motto" to syndicate.motto.trim().take(64).ifEmpty { "Independent Rift Syndicate" },
-        "memberCount" to syndicate.memberCount.coerceAtLeast(1),
-        "combinedBounty" to syndicate.combinedBounty.coerceAtLeast(100L),
-        "isCustom" to true,
-        "updatedAt" to FieldValue.serverTimestamp(),
-      )
     try {
-      docRef.set(payload).await()
+      val existingSnap = docRef.get().await()
+      if (!existingSnap.exists()) {
+        val createPayload =
+          mapOf(
+            "ownerId" to uid,
+            "tag" to cleanTag,
+            "name" to syndicate.name.trim().take(36).ifEmpty { "$cleanTag Syndicate" },
+            "foundryOrigin" to sanitizeFoundry(syndicate.foundryOrigin),
+            "motto" to syndicate.motto.trim().take(64).ifEmpty { "Independent Rift Syndicate" },
+            "memberCount" to syndicate.memberCount.coerceAtLeast(1),
+            "combinedBounty" to syndicate.combinedBounty.coerceAtLeast(100L),
+            "isCustom" to true,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp(),
+          )
+        docRef.set(createPayload).await()
+      } else {
+        val updatePayload =
+          mapOf(
+            "name" to syndicate.name.trim().take(36).ifEmpty { "$cleanTag Syndicate" },
+            "foundryOrigin" to sanitizeFoundry(syndicate.foundryOrigin),
+            "motto" to syndicate.motto.trim().take(64).ifEmpty { "Independent Rift Syndicate" },
+            "memberCount" to syndicate.memberCount.coerceAtLeast(1),
+            "combinedBounty" to syndicate.combinedBounty.coerceAtLeast(100L),
+            "updatedAt" to FieldValue.serverTimestamp(),
+          )
+        docRef.update(updatePayload).await()
+      }
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
@@ -413,6 +438,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
   fun observeSectorComms(): Flow<List<SyndicateChatMessage>> {
     val path = "sector_comms"
     return db.collection(path)
+      .whereEqualTo("visibility", "public")
       .snapshots()
       .map { snapshot ->
         snapshot
@@ -438,11 +464,14 @@ class RiftRepository(private val db: FirebaseFirestore) {
   }
 
   suspend fun postSectorCommMessage(msg: SyndicateChatMessage): Result<Unit> = runCatching {
-    val docId = msg.id.trim().ifEmpty { "comm_${System.currentTimeMillis()}" }
+    val uid = requireUserId()
+    val rawId = msg.id.trim().replace(Regex("[^a-zA-Z0-9_\\-]"), "")
+    val docId = rawId.ifEmpty { "comm_${System.currentTimeMillis()}" }
     val docRef = db.collection("sector_comms").document(docId)
     val payload =
       mapOf(
-        "senderUid" to msg.senderUid.trim().ifEmpty { resolveUserId("") },
+        "senderUid" to uid,
+        "visibility" to "public",
         "senderCallsign" to sanitizeCallsign(msg.senderCallsign),
         "senderSyndicateTag" to sanitizeTag(msg.senderSyndicateTag),
         "timestampLabel" to msg.timestampLabel.trim().take(24).ifEmpty { "JUST NOW" },
@@ -453,7 +482,7 @@ class RiftRepository(private val db: FirebaseFirestore) {
         "armadaMaxSize" to msg.armadaMaxSize.coerceIn(1, 5),
         "armadaObjective" to UgcModeration.sanitizeUgcText(msg.armadaObjective).take(120),
         "requestSent" to msg.requestSent,
-        "createdAtMs" to msg.createdAtMs,
+        "createdAtMs" to msg.createdAtMs.coerceAtLeast(0L),
         "createdAt" to FieldValue.serverTimestamp(),
       )
     try {
