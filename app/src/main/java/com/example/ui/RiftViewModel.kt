@@ -167,6 +167,20 @@ class RiftViewModel(
         initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(emptyList()),
       )
 
+  val latestCalibrationBroadcast: StateFlow<RiftRepository.LiveCalibrationBroadcast?> =
+    repository
+      .observeCustomGameCalibration()
+      .catch { error ->
+        if (error is CancellationException) throw error
+        Log.w(TAG, "Error observing custom game calibration", error)
+        emit(null)
+      }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        initialValue = null,
+      )
+
   init {
     if (isCloudSessionReady()) {
       ensureInitialProfile()
@@ -241,6 +255,26 @@ class RiftViewModel(
       } catch (e: Exception) {
         Log.w(TAG, "Failed to post sector comm message", e)
       }
+    }
+  }
+
+  fun broadcastCalibrationToCustomGame(
+    customGameId: String,
+    authorCallsign: String,
+    payloadJson: String,
+    onResult: (Boolean) -> Unit = {},
+  ) {
+    viewModelScope.launch {
+      val ok =
+        try {
+          repository.broadcastCustomGameCalibration(customGameId, authorCallsign, payloadJson)
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          Log.w(TAG, "Failed to broadcast custom game calibration", e)
+          false
+        }
+      onResult(ok)
     }
   }
 

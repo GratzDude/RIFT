@@ -30,44 +30,183 @@ class LocalPilotPrefs(context: Context) {
 
   fun setGuestBypassEnabled(enabled: Boolean) {
     val editor = prefs.edit().putBoolean(KEY_GUEST_BYPASS, enabled)
-    if (enabled && !prefs.contains(KEY_SYNDICATE_TAG)) {
-      editor.putString(KEY_SYNDICATE_TAG, "")
-      editor.putString(KEY_SYNDICATE_NAME, "Unaffiliated")
+    if (enabled) {
+      editor.putString(KEY_SYNDICATE_TAG, "RFT")
+      editor.putString(KEY_SYNDICATE_NAME, "Rift Drifters")
     }
     editor.apply()
   }
 
-  fun getCallsign(): String {
-    return prefs.getString(KEY_CALLSIGN, "COMMANDER") ?: "COMMANDER"
+  fun isSwornPilot(isGoogleAuthenticated: Boolean): Boolean =
+    isGoogleAuthenticated && !isGuestBypassEnabled()
+
+  fun generateRandomDrifterCallsign(): String = DRIFTER_NAMES.random()
+
+  /**
+   * Starts a brand-new ephemeral Drifter session on launch or guest entry:
+   * assigns a fresh session UID, locks tag to [RFT], resets transient session stats,
+   * and picks a random 5–8 char single-word Drifter callsign.
+   */
+  fun startFreshDrifterSession(): String {
+    val freshUid = "drifter_" + UUID.randomUUID().toString().replace("-", "").take(12)
+    val randomCallsign = generateRandomDrifterCallsign()
+    prefs
+      .edit()
+      .putString(KEY_DEVICE_UID, freshUid)
+      .putBoolean(KEY_GUEST_BYPASS, true)
+      .putString(KEY_CALLSIGN, randomCallsign)
+      .putString("${KEY_CALLSIGN}_$freshUid", randomCallsign)
+      .putString(KEY_SYNDICATE_TAG, "RFT")
+      .putString(KEY_SYNDICATE_NAME, "Rift Drifters")
+      .putString(KEY_ARMADA_NAME, "")
+      .putLong(KEY_PVP_KILLS, 0L)
+      .putLong(KEY_PVP_DEATHS, 0L)
+      .putLong(KEY_PVP_BOUNTY_PEAK, 100L)
+      .putLong(KEY_ALL_KILLS, 0L)
+      .putLong(KEY_ALL_DEATHS, 0L)
+      .putLong(KEY_ALL_BOUNTY_PEAK, 100L)
+      .putLong(KEY_CONVERGENCES_WON, 0L)
+      .putLong(KEY_HVT_ELIMINATIONS, 0L)
+      .putLong(KEY_GREENS_COLLECTED, 0L)
+      .apply()
+    return randomCallsign
   }
 
-  fun setCallsign(rawCallsign: String): String {
+  fun getShortPilotTag(uid: String): String {
+    val clean = uid.trim().ifEmpty { getOrCreatePermanentDeviceUid() }
+    val alphabet = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+    var h = clean.hashCode().toLong() and 0xFFFFFFFFL
+    if (h == 0L) h = 0x5A3C91L
+    val sb = StringBuilder(6)
+    for (i in 0 until 6) {
+      val idx = ((h xor (i * 31L)) % alphabet.length).toInt().let { if (it < 0) -it else it }
+      sb.append(alphabet[idx % alphabet.length])
+      h = (h * 1664525L + 1013904223L) and 0xFFFFFFFFL
+    }
+    return "#RFT-$sb"
+  }
+
+  fun getCallsign(uid: String? = null): String {
+    if (isGuestBypassEnabled()) {
+      val drifterName = prefs.getString(KEY_CALLSIGN, null)
+      if (!drifterName.isNullOrBlank() && drifterName != "COMMANDER") return drifterName
+      return generateRandomDrifterCallsign().also {
+        prefs.edit().putString(KEY_CALLSIGN, it).apply()
+      }
+    }
+    val perUid = if (!uid.isNullOrBlank()) prefs.getString(uidKey(KEY_CALLSIGN, uid), null) else null
+    return perUid?.takeIf { it.isNotBlank() }
+      ?: prefs.getString(KEY_CALLSIGN, "COMMANDER")
+      ?: "COMMANDER"
+  }
+
+  fun setCallsign(rawCallsign: String, uid: String? = null): String {
     val sanitizedRaw =
       rawCallsign
         .trim()
-        .uppercase()
+        .uppercase(Locale.US)
         .replace(Regex("[^A-Z0-9_\\-]"), "")
         .take(14)
     val cleaned =
       if (sanitizedRaw.isEmpty() || UgcModeration.containsProfanity(sanitizedRaw)) {
-        "COMMANDER"
+        if (isGuestBypassEnabled()) generateRandomDrifterCallsign() else "COMMANDER"
       } else {
         sanitizedRaw
       }
-    prefs.edit().putString(KEY_CALLSIGN, cleaned).apply()
+    prefs
+      .edit()
+      .putString(KEY_CALLSIGN, cleaned)
+      .putString(uidKey(KEY_CALLSIGN, uid), cleaned)
+      .apply()
     return cleaned
   }
 
-  fun getSyndicateTag(): String {
-    val raw = (prefs.getString(KEY_SYNDICATE_TAG, "") ?: "").trim().uppercase()
-    return if (raw in setOf("GUEST", "UNAFFILIATED", "NONE", "SOLO", "KSTL", "AURL", "VRTX", "RUST")) {
-      ""
-    } else {
-      raw
+  fun getCallsignChangeCount(uid: String? = null): Int =
+    prefs.getInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), prefs.getInt(KEY_CALLSIGN_CHANGE_COUNT, 0))
+
+  fun incrementCallsignChangeCount(uid: String? = null) {
+    val next = getCallsignChangeCount(uid) + 1
+    prefs
+      .edit()
+      .putInt(KEY_CALLSIGN_CHANGE_COUNT, next)
+      .putInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), next)
+      .apply()
+  }
+
+  fun hasChosenInitialCallsign(uid: String? = null): Boolean =
+    prefs.getBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), prefs.getBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, false))
+
+  fun setHasChosenInitialCallsign(chosen: Boolean, uid: String? = null) {
+    prefs
+      .edit()
+      .putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, chosen)
+      .putBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), chosen)
+      .apply()
+  }
+
+  /**
+   * Changes a Sworn Pilot's callsign:
+   * - 1st change (`getCallsignChangeCount(uid) == 0`) is FREE (0❖).
+   * - Subsequent changes cost 250❖ Rift Shards.
+   * Returns Triple(success, resultCallsignOrErrorMessage, updatedShards).
+   */
+  fun changeSwornPilotCallsign(
+    newCallsign: String,
+    currentShards: Long,
+    uid: String? = null,
+  ): Triple<Boolean, String, Long> {
+    if (isGuestBypassEnabled()) {
+      return Triple(false, "Drifters use temporary [RFT] callsigns. Sign in to claim a permanent name.", currentShards)
     }
+    val sanitized =
+      newCallsign
+        .trim()
+        .uppercase(Locale.US)
+        .replace(Regex("[^A-Z0-9_\\-]"), "")
+        .take(14)
+    if (sanitized.length < 3) {
+      return Triple(false, "Callsign must be 3 to 14 characters.", currentShards)
+    }
+    if (UgcModeration.containsProfanity(sanitized)) {
+      return Triple(false, "Callsign contains blocked words.", currentShards)
+    }
+    val currentName = getCallsign(uid)
+    if (sanitized.equals(currentName, ignoreCase = true) && hasChosenInitialCallsign(uid)) {
+      return Triple(true, sanitized, currentShards)
+    }
+    val changeCount = getCallsignChangeCount(uid)
+    val cost = if (changeCount == 0) 0L else 250L
+    if (currentShards < cost) {
+      return Triple(false, "Need 250❖ Rift Shards to change callsign.", currentShards)
+    }
+    val nextShards = (currentShards - cost).coerceAtLeast(0L)
+    if (cost > 0L) {
+      setRiftShards(nextShards, uid)
+    }
+    val saved = setCallsign(sanitized, uid)
+    incrementCallsignChangeCount(uid)
+    setHasChosenInitialCallsign(true, uid)
+    return Triple(true, saved, nextShards)
+  }
+
+  fun sanitizeSyndicateTag(raw: String): String =
+    raw
+      .trim()
+      .uppercase(Locale.US)
+      .replace(Regex("[\\s\\[\\]\\p{Cntrl}]"), "")
+      .take(3)
+
+  fun getSyndicateTag(): String {
+    if (isGuestBypassEnabled()) return "RFT"
+    val raw = (prefs.getString(KEY_SYNDICATE_TAG, "") ?: "").trim().uppercase(Locale.US)
+    if (raw in setOf("GUEST", "UNAFFILIATED", "NONE", "SOLO", "KSTL", "AURL", "VRTX", "RUST")) {
+      return ""
+    }
+    return sanitizeSyndicateTag(raw)
   }
 
   fun getSyndicateName(): String {
+    if (isGuestBypassEnabled()) return "Rift Drifters"
     val tag = getSyndicateTag()
     if (tag.isBlank()) return "Unaffiliated"
     val raw = (prefs.getString(KEY_SYNDICATE_NAME, "Unaffiliated") ?: "Unaffiliated").trim()
@@ -112,11 +251,12 @@ class LocalPilotPrefs(context: Context) {
     apply15DayLock: Boolean = true,
     role: String = "Pilot",
   ): Boolean {
+    if (isGuestBypassEnabled()) return false
     if (apply15DayLock && getRemainingSyndicateLockDays() > 0) {
       return false
     }
     val now = System.currentTimeMillis()
-    val cleanTag = tag.trim().uppercase().take(4)
+    val cleanTag = sanitizeSyndicateTag(tag)
     val cleanName = name.trim().take(28).ifEmpty { if (cleanTag.isEmpty()) "Unaffiliated" else "$cleanTag Syndicate" }
     val lockUntil =
       if (apply15DayLock) {
@@ -245,11 +385,11 @@ class LocalPilotPrefs(context: Context) {
 
   /**
    * Startup Boot Preference:
-   * true (default) = open NEXUS Command Hub on startup.
-   * false = fast-boot straight into the arena with the Changelog popup & Quick-Join bar.
+   * false (default) = fast-boot straight into the live arena.
+   * true = open NEXUS Command Hub on startup.
    */
   fun getBootToNexusHub(): Boolean {
-    val fallback = prefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, true)
+    val fallback = prefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, false)
     return userSettingsPrefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, fallback)
   }
 
@@ -654,8 +794,8 @@ class LocalPilotPrefs(context: Context) {
       mergedByTag[local.tag.uppercase()] = local
     }
     for (cloud in cloudSyndicates) {
-      val cleanTag = cloud.tag.trim().uppercase()
-      if (cleanTag.length in 2..4) {
+      val cleanTag = sanitizeSyndicateTag(cloud.tag)
+      if (cleanTag.length in 1..3) {
         mergedByTag[cleanTag] =
           cloud.copy(
             id = cloud.id.ifBlank { "syn_cloud_$cleanTag" },
@@ -682,6 +822,9 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun createCustomSyndicate(tag: String, name: String, motto: String): Result<SyndicateInfo> {
+    if (isGuestBypassEnabled()) {
+      return Result.failure(IllegalStateException("Drifters cannot found Syndicates. Sign in to become a Sworn Pilot."))
+    }
     val now = System.currentTimeMillis()
     val remainingDays = getRemainingSyndicateLockDays(now)
     if (remainingDays > 0) {
@@ -692,9 +835,12 @@ class LocalPilotPrefs(context: Context) {
       )
     }
 
-    val cleanTag = tag.trim().uppercase().replace(Regex("[^A-Z0-9]"), "")
-    if (cleanTag.length !in 3..4) {
-      return Result.failure(IllegalArgumentException("Syndicate Tag must be 3 to 4 letters/digits."))
+    val cleanTag = sanitizeSyndicateTag(tag)
+    if (cleanTag.length !in 1..3) {
+      return Result.failure(IllegalArgumentException("Syndicate Tag must be 1 to 3 characters."))
+    }
+    if (cleanTag == "RFT") {
+      return Result.failure(IllegalArgumentException("[RFT] is reserved for Rift Drifters."))
     }
     if (UgcModeration.containsProfanity(cleanTag)) {
       return Result.failure(IllegalArgumentException("Syndicate Tag contains prohibited language."))
@@ -1237,11 +1383,35 @@ class LocalPilotPrefs(context: Context) {
       6 -> "Disruptor"
       7 -> "Valkyrie"
       8 -> "Manta"
-      9 -> "Interdictor"
+      9 -> "Eclipse"
       else -> "Rift Frame"
     }
 
   companion object {
+    val DRIFTER_NAMES: List<String> =
+      listOf(
+        "VORTEX",
+        "DRIFTER",
+        "NOMAD",
+        "PHANTOM",
+        "STRIDER",
+        "SPECTRE",
+        "NOVA",
+        "COMET",
+        "PULSAR",
+        "QUASAR",
+        "KESTREL",
+        "CORSAIR",
+        "RAVEN",
+        "FALCON",
+        "SHADOW",
+        "VECTOR",
+        "ZENITH",
+        "CYPHER",
+        "ASTRAL",
+        "HORIZON",
+      )
+
     private const val PREFS_NAME = "rift_permanent_pilot_prefs"
     private const val USER_SETTINGS_PREFS_NAME = "rift_user_settings"
     private const val KEY_BLOCKED_PILOT_UIDS = "ugc_blocked_pilot_uids"
@@ -1249,6 +1419,8 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_DEVICE_UID = "permanent_device_uid"
     private const val KEY_GUEST_BYPASS = "guest_bypass_enabled"
     private const val KEY_CALLSIGN = "pilot_callsign"
+    private const val KEY_CALLSIGN_CHANGE_COUNT = "pilot_callsign_change_count"
+    private const val KEY_INITIAL_CALLSIGN_CHOSEN = "pilot_initial_callsign_chosen"
     private const val KEY_SYNDICATE_TAG = "syndicate_tag"
     private const val KEY_SYNDICATE_NAME = "syndicate_name"
     private const val KEY_SYNDICATE_LOCK_UNTIL_MS = "syndicate_lock_until_ms"

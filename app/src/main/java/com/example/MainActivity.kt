@@ -76,7 +76,17 @@ import com.example.ui.HangarModal
 import com.example.ui.NexusAiConsoleModal
 import com.example.ui.NexusAiViewModel
 import com.example.ui.NexusStreamState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import com.example.ui.NexusTopModuleSwitcherBar
+import com.example.ui.RiftCalibrationDialog
 import com.example.ui.RiftChangelogModal
 import com.example.ui.RiftHudOverlay
 import com.example.ui.RiftShardsStoreModal
@@ -166,16 +176,17 @@ fun AppNavigation(
       AuthScreen(
         onAuthSuccess = {},
         onPlayAsGuest = {
-          localPrefs.setGuestBypassEnabled(true)
-          if (localPrefs.getCallsign() == "COMMANDER") {
-            localPrefs.setCallsign("GUEST_${(1000..9999).random()}")
-          }
+          localPrefs.startFreshDrifterSession()
           isGuestMode = true
         },
       )
     } else {
+      if (user != null) {
+        localPrefs.setGuestBypassEnabled(false)
+      }
       val uid = user?.uid ?: permanentDeviceUid
-      val initialCallsign = localPrefs.getCallsign()
+      val initialCallsign =
+        if (user != null) localPrefs.getCallsign(user.uid) else localPrefs.getCallsign()
 
       key(uid) {
         RiftArenaScreen(
@@ -226,6 +237,7 @@ fun RiftArenaScreen(
   val sectorPilotsState by viewModel.sectorPilotsState.collectAsStateWithLifecycle()
   val cloudSyndicatesState by viewModel.cloudSyndicatesState.collectAsStateWithLifecycle()
   val sectorCommsState by viewModel.sectorCommsState.collectAsStateWithLifecycle()
+  val latestCalibBroadcast by viewModel.latestCalibrationBroadcast.collectAsStateWithLifecycle()
 
   val nexusViewModel: NexusAiViewModel = viewModel(key = "nexus_$currentUserId")
   val nexusMessages by nexusViewModel.messages.collectAsStateWithLifecycle()
@@ -244,12 +256,18 @@ fun RiftArenaScreen(
   var unreadCommsCount by remember { mutableIntStateOf(0) }
 
   var bootToNexusHub by remember { mutableStateOf(localPrefs.getBootToNexusHub()) }
-  var activeModal by remember {
-    mutableStateOf(if (localPrefs.getBootToNexusHub()) ActiveModal.NEXUS else ActiveModal.NONE)
-  }
+  var activeModal by remember { mutableStateOf(ActiveModal.NONE) }
   var previousModalBeforeStore by remember { mutableStateOf(ActiveModal.DOSSIER) }
   var previousModalBeforeNexus by remember { mutableStateOf(ActiveModal.NONE) }
-  var callsign by remember { mutableStateOf(localPrefs.getCallsign()) }
+  var callsign by remember(currentUserId, isGoogleAuthenticated) {
+    mutableStateOf(
+      if (isGoogleAuthenticated) localPrefs.getCallsign(currentUserId) else localPrefs.getCallsign()
+    )
+  }
+  var needsInitialSwornCallsign by remember(currentUserId, isGoogleAuthenticated) {
+    mutableStateOf(isGoogleAuthenticated && !localPrefs.hasChosenInitialCallsign(currentUserId))
+  }
+  var initialSwornCallsignDraft by remember(callsign) { mutableStateOf(callsign) }
   var syndicateTag by remember { mutableStateOf(localPrefs.getSyndicateTag()) }
   var syndicateName by remember { mutableStateOf(localPrefs.getSyndicateName()) }
   var selectedShipId by remember { mutableIntStateOf(localPrefs.getPreferredShipId().coerceIn(1, 10)) }
@@ -520,6 +538,32 @@ fun RiftArenaScreen(
       ActiveModal.CODEX,
       ActiveModal.SETTINGS,
     )
+  }
+
+  LaunchedEffect(engine.currentCustomGame, engine.activeRankedMode, frameTick) {
+    if (engine.currentCustomGame == null) {
+      com.example.engine.RiftCalibrationState.enforceRankedFactoryDefaultsIfNeeded(engine)
+    }
+  }
+
+  LaunchedEffect(latestCalibBroadcast?.updatedAtMs, engine.currentCustomGame) {
+    val broadcast = latestCalibBroadcast
+    val activeCustom = engine.currentCustomGame
+    if (
+      activeCustom != null &&
+        broadcast != null &&
+        (broadcast.customGameId == activeCustom.instanceId ||
+          broadcast.customGameId == "global_custom" ||
+          broadcast.customGameId == "custom")
+    ) {
+      com.example.engine.RiftCalibrationState.applyRemoteCustomGameSyncPayload(
+        broadcast.payloadJson,
+        engine,
+        context,
+      )
+      toastMessage = "📡 CALIBRATION SYNCED BY ${broadcast.authorCallsign.uppercase()}"
+      toastVersion++
+    }
   }
 
   LaunchedEffect(activeModal, com.example.engine.RiftCalibrationState.isCalibrationModalOpen) {
@@ -1223,6 +1267,18 @@ fun RiftArenaScreen(
             toastMessage = "↺ PILOT DATA RESET TO LEVEL 1 CLEAN SLATE"
             toastVersion++
           },
+          onCallsignChanged = { updatedCallsign ->
+            callsign = updatedCallsign
+            engine.localPlayer.callsign = updatedCallsign
+            engine.onStatsUpdated()
+            toastMessage = "✓ SWORN PILOT CALLSIGN UPDATED TO $updatedCallsign"
+            toastVersion++
+          },
+          onUpdateRiftShards = { remainingShards ->
+            engine.riftShards = remainingShards
+            localPrefs.setRiftShards(remainingShards, currentUserId)
+            engine.onStatsUpdated()
+          },
           onCloseModal = { activeModal = ActiveModal.NONE },
         )
       }
@@ -1644,10 +1700,125 @@ fun RiftArenaScreen(
             toastMessage = "🛠️ BUG REPORT LOGGED TO SECTOR TELEMETRY [$category]"
             toastVersion++
           },
+          engine = engine,
         )
       }
 
       ActiveModal.NONE -> Unit
+        }
+      }
+    }
+
+    if (com.example.engine.RiftCalibrationState.isCalibrationModalOpen) {
+      RiftCalibrationDialog(
+        engine = engine,
+        onDismiss = { com.example.engine.RiftCalibrationState.isCalibrationModalOpen = false },
+        onSyncToAllTesters = {
+          val customGameId = engine.currentCustomGame?.instanceId ?: "global_custom"
+          val json = com.example.engine.RiftCalibrationState.exportGameplaySyncPayloadJson()
+          viewModel.broadcastCalibrationToCustomGame(customGameId, callsign, json)
+          toastMessage = "📡 CUSTOM GAME CALIBRATION SYNCED TO ALL TESTERS"
+          toastVersion++
+        },
+      )
+    }
+
+    if (needsInitialSwornCallsign) {
+      Box(
+        modifier =
+          Modifier.fillMaxSize()
+            .background(Color(0xCC020611))
+            .clickable(enabled = false) {}
+            .padding(24.dp)
+            .testTag("sworn_pilot_initial_callsign_modal"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Surface(
+          modifier =
+            Modifier.widthIn(max = 460.dp)
+              .fillMaxWidth()
+              .border(1.5.dp, Color(0xFF00F5D4), RoundedCornerShape(16.dp)),
+          color = Color(0xF2071120),
+          shape = RoundedCornerShape(16.dp),
+        ) {
+          Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
+            Text(
+              text = "★ CHOOSE YOUR SWORN PILOT CALLSIGN",
+              color = Color(0xFF00F5D4),
+              fontSize = 15.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+            Text(
+              text =
+                "Welcome, Sworn Pilot (${localPrefs.getShortPilotTag(currentUserId)}). Choose your permanent arena callsign (3–14 chars). Your first callsign change in Dossier is also free.",
+              color = Color(0xFFCBD5E1),
+              fontSize = 11.sp,
+            )
+            Box(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .height(40.dp)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(Color(0xFF040A14))
+                  .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
+                  .padding(horizontal = 12.dp),
+              contentAlignment = Alignment.CenterStart,
+            ) {
+              BasicTextField(
+                value = initialSwornCallsignDraft,
+                onValueChange = { raw ->
+                  initialSwornCallsignDraft =
+                    raw.uppercase().filter { it.isLetterOrDigit() || it == '_' || it == '-' }.take(14)
+                },
+                singleLine = true,
+                cursorBrush = SolidColor(Color(0xFF00F5D4)),
+                textStyle =
+                  TextStyle(
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                  ),
+                modifier = Modifier.fillMaxWidth().testTag("sworn_pilot_initial_callsign_input"),
+              )
+            }
+            Button(
+              onClick = {
+                val saved = localPrefs.setCallsign(initialSwornCallsignDraft, currentUserId)
+                localPrefs.setHasChosenInitialCallsign(true, currentUserId)
+                callsign = saved
+                engine.localPlayer.callsign = saved
+                needsInitialSwornCallsign = false
+                engine.onStatsUpdated()
+                toastMessage = "★ SWORN PILOT [$saved] REGISTERED & SYNCED"
+                toastVersion++
+              },
+              enabled = initialSwornCallsignDraft.trim().length in 3..14,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = Color(0xFF0E7490),
+                  contentColor = Color.White,
+                ),
+              border = BorderStroke(1.dp, Color(0xFF00F5D4)),
+              shape = RoundedCornerShape(10.dp),
+              modifier =
+                Modifier.fillMaxWidth()
+                  .height(42.dp)
+                  .testTag("sworn_pilot_initial_callsign_confirm"),
+            ) {
+              Text(
+                text = "✅ CONFIRM SWORN PILOT CALLSIGN",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
         }
       }
     }

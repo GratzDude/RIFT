@@ -254,8 +254,8 @@ object RiftCalibrationState {
   var proxFuseRadius by mutableFloatStateOf(65f)
   var maxMinesPerShip by mutableIntStateOf(6)
   var interdictorBubbleRadius by mutableFloatStateOf(275f)
-  var interdictorBubbleDuration by mutableFloatStateOf(5.0f)
-  var interdictorBubbleCooldown by mutableFloatStateOf(9.0f)
+  var interdictorBubbleDuration by mutableFloatStateOf(8.0f)
+  var interdictorBubbleCooldown by mutableFloatStateOf(12.0f)
 
   // 5. Official RIFT Special Buffs & Bucket B Enhancers (Tab 4)
   var seekerFlightTime by mutableFloatStateOf(2.5f)      // Official 2.5s Seeker Torpedo flight time
@@ -297,6 +297,7 @@ object RiftCalibrationState {
   var buffBaseRespawnDelay by mutableFloatStateOf(2.0f)
 
   // 7. AI Bot Behavior (Tab 6)
+  var botsEnabled by mutableStateOf(true)
   var botRetreatFluxRatio by mutableFloatStateOf(0.40f)
   var botSafeZoneBanMargin by mutableFloatStateOf(400f)
   var botEngageRange by mutableFloatStateOf(1200f)
@@ -314,7 +315,7 @@ object RiftCalibrationState {
   var skirmishKillTargetPerRound by mutableIntStateOf(15)
   var fluxCoreBountyPerSec by mutableIntStateOf(15)
   var fluxCoreEjectSpeed by mutableFloatStateOf(1650f)
-  var stasisBrigReactorMaxHp by mutableFloatStateOf(8000f)
+  var stasisBrigReactorMaxHp by mutableFloatStateOf(4000f)
 
   /**
    * Converts any camelCase or snake_case variable name into a clean Plain-English Title.
@@ -348,121 +349,121 @@ object RiftCalibrationState {
   fun buildAllParameterDescriptors(): List<CalibrationParamDescriptor> {
     val list = mutableListOf<CalibrationParamDescriptor>()
 
-    // --- TAB 0: HUD & ARENA VISUAL SCALES (Camera Zoom & Text Size live exclusively in User Settings) ---
+    // --- TAB 0: HUD & ARENA VISUAL SCALES ---
     list += CalibrationParamDescriptor(
       key = "labelDistanceOffset",
       tabIndex = 0,
-      title = "Ship Label Orbit Spacing",
+      title = "Ship Label Spacing",
       unit = "x",
-      description = "Adjusts radial clearance between a ship's Flux ring and its floating labels.",
+      description = "Gap between a ship and its floating name and bounty.",
       min = 0.60f, max = 2.20f, step = 0.05f, decimals = 2,
       getter = { labelDistanceOffset }, setter = { labelDistanceOffset = it.coerceIn(0.60f, 2.20f) },
     )
     list += CalibrationParamDescriptor(
       key = "shipScale",
       tabIndex = 0,
-      title = "Ship Hull Visual Scale",
+      title = "Ship Size",
       unit = "x",
-      description = "Scales all 3D metallic ship sprites and radial Flux capacitor rings in space.",
+      description = "Scales all ships and their Flux rings.",
       min = 0.50f, max = 2.00f, step = 0.05f, decimals = 2,
       getter = { shipScale }, setter = { shipScale = it.coerceIn(0.50f, 2.00f) },
     )
     list += CalibrationParamDescriptor(
       key = "projectileScale",
       tabIndex = 0,
-      title = "Projectile & Bomb Scale",
+      title = "Bullet & Bomb Size",
       unit = "x",
-      description = "Scales primary plasma bolts, warheads, proximity mines, and seeker torpedoes.",
+      description = "Scales bullets, bombs, mines, and torpedoes.",
       min = 0.50f, max = 2.00f, step = 0.05f, decimals = 2,
       getter = { projectileScale }, setter = { projectileScale = it.coerceIn(0.50f, 2.00f) },
     )
     list += CalibrationParamDescriptor(
       key = "crateScale",
       tabIndex = 0,
-      title = "Supply Crate Visual Scale",
+      title = "Crate Size",
       unit = "x",
-      description = "Scales glowing 11-buff Supply Crate pickups across the arena.",
+      description = "Scales glowing supply crates in space.",
       min = 0.50f, max = 2.00f, step = 0.05f, decimals = 2,
       getter = { crateScale }, setter = { crateScale = it.coerceIn(0.50f, 2.00f) },
     )
     list += CalibrationParamDescriptor(
       key = "anomalyScale",
       tabIndex = 0,
-      title = "Playfield Rift Visual Scale",
+      title = "Rift Vortex Size",
       unit = "x",
-      description = "Scales the visual vortex diameter of the 4 Playfield Rifts.",
+      description = "Scales the visual size of Playfield Rifts.",
       min = 0.40f, max = 2.00f, step = 0.05f, decimals = 2,
       getter = { anomalyScale }, setter = { anomalyScale = it.coerceIn(0.40f, 2.00f) },
     )
     list += CalibrationParamDescriptor(
       key = "aimTelegraphScale",
       tabIndex = 0,
-      title = "Aim Reticle & Bounce Ray Scale",
+      title = "Aim Line Size",
       unit = "x",
-      description = "Scales aiming sightlines and bank-shot trajectory guides while dragging.",
+      description = "Scales aim lines and bounce previews.",
       min = 0.50f, max = 2.00f, step = 0.05f, decimals = 2,
       getter = { aimTelegraphScale }, setter = { aimTelegraphScale = it.coerceIn(0.50f, 2.00f) },
     )
     list += CalibrationParamDescriptor(
       key = "topBarScale",
       tabIndex = 0,
-      title = "Top Command Pill Bar Scale",
+      title = "Top Pill Bar Size",
       unit = "x",
-      description = "Resizes the top-center Hangar, Dossier, Syndicates, and Calibration pill bar.",
+      description = "Resizes the top status pill.",
       min = 0.60f, max = 1.60f, step = 0.05f, decimals = 2,
       getter = { topBarScale }, setter = { topBarScale = it.coerceIn(0.60f, 1.60f) },
     )
     list += CalibrationParamDescriptor(
       key = "buffBarScale",
       tabIndex = 0,
-      title = "4-Slot Buff Bar Scale",
+      title = "Buff Bar Size",
       unit = "x",
-      description = "Resizes the compact 4-slot permanent hull upgrade strip.",
+      description = "Resizes the ship upgrade buff strip.",
       min = 0.60f, max = 1.80f, step = 0.05f, decimals = 2,
       getter = { buffBarScale }, setter = { buffBarScale = it.coerceIn(0.60f, 1.80f) },
     )
     list += CalibrationParamDescriptor(
       key = "killLogScale",
       tabIndex = 0,
-      title = "Borderless Killboard Scale",
+      title = "Kill Feed Size",
       unit = "x",
-      description = "Resizes the floating top-right combat elimination feed.",
+      description = "Resizes the top-right kill feed.",
       min = 0.60f, max = 1.80f, step = 0.05f, decimals = 2,
       getter = { killLogScale }, setter = { killLogScale = it.coerceIn(0.60f, 1.80f) },
     )
     list += CalibrationParamDescriptor(
       key = "bottomConsoleScale",
       tabIndex = 0,
-      title = "Bottom Radar Console Scale",
+      title = "Bottom Radar Size",
       unit = "x",
-      description = "Resizes the bottom-center circular radar minimap and telemetry wings.",
+      description = "Resizes the bottom radar and stat wings.",
       min = 0.60f, max = 1.60f, step = 0.05f, decimals = 2,
       getter = { bottomConsoleScale }, setter = { bottomConsoleScale = it.coerceIn(0.60f, 1.60f) },
     )
     list += CalibrationParamDescriptor(
       key = "combatArcScale",
       tabIndex = 0,
-      title = "Right Combat Arc Buttons Scale",
+      title = "Right Buttons Size",
       unit = "x",
-      description = "Resizes the right-hand Primary Fire stick, Secondary, Repel, and Special Buff buttons.",
+      description = "Resizes the right-hand fire stick and ability buttons.",
       min = 0.60f, max = 1.60f, step = 0.05f, decimals = 2,
       getter = { combatArcScale }, setter = { combatArcScale = it.coerceIn(0.60f, 1.60f) },
     )
     list += CalibrationParamDescriptor(
       key = "leftStickScale",
       tabIndex = 0,
-      title = "Left Movement Stick Scale",
+      title = "Left Stick Size",
       unit = "x",
-      description = "Resizes the left-hand Newtonian flight and afterburner thumbstick.",
+      description = "Resizes the left movement stick.",
       min = 0.60f, max = 1.60f, step = 0.05f, decimals = 2,
       getter = { leftStickScale }, setter = { leftStickScale = it.coerceIn(0.60f, 1.60f) },
     )
     list += CalibrationParamDescriptor(
       key = "gamepadIdleTouchOpacity",
       tabIndex = 0,
-      title = "Gamepad Idle Touch Ring Opacity",
+      title = "Gamepad Touch Ring Opacity",
       unit = "%",
-      description = "Opacity of on-screen touch rings when a physical controller is active and sticks are idle.",
+      description = "Opacity of touch rings while using a controller.",
       min = 0.10f, max = 0.85f, step = 0.05f, decimals = 2,
       getter = { gamepadIdleTouchOpacity }, setter = { gamepadIdleTouchOpacity = it.coerceIn(0.10f, 0.85f) },
     )
@@ -471,126 +472,126 @@ object RiftCalibrationState {
     list += CalibrationParamDescriptor(
       key = "gamepadDeadzoneLeft",
       tabIndex = 1,
-      title = "Gamepad Left Stick Deadzone",
+      title = "Left Stick Deadzone",
       unit = "%",
-      description = "Radial inner deadzone for physical controller Left Stick flight thrust (prevents stick drift).",
+      description = "Controller left stick deadzone.",
       min = 0.05f, max = 0.35f, step = 0.01f, decimals = 2,
       getter = { gamepadDeadzoneLeft }, setter = { gamepadDeadzoneLeft = it.coerceIn(0.05f, 0.35f) },
     )
     list += CalibrationParamDescriptor(
       key = "gamepadDeadzoneRight",
       tabIndex = 1,
-      title = "Gamepad Right Stick Deadzone",
+      title = "Right Stick Deadzone",
       unit = "%",
-      description = "Radial inner deadzone for physical controller Right Stick 360° independent turret aiming.",
+      description = "Controller right stick deadzone.",
       min = 0.05f, max = 0.35f, step = 0.01f, decimals = 2,
       getter = { gamepadDeadzoneRight }, setter = { gamepadDeadzoneRight = it.coerceIn(0.05f, 0.35f) },
     )
     list += CalibrationParamDescriptor(
       key = "wallElasticity",
       tabIndex = 1,
-      title = "Arena Wall Bounce Elasticity",
+      title = "Wall Bounce",
       unit = "x",
-      description = "Fraction of kinetic velocity retained when bouncing off riveted arena walls (0 damage).",
+      description = "Speed kept when bouncing off walls (0⚡ damage).",
       min = 0.20f, max = 1.00f, step = 0.05f, decimals = 2,
       getter = { wallElasticity }, setter = { wallElasticity = it.coerceIn(0.20f, 1.00f) },
     )
     list += CalibrationParamDescriptor(
       key = "afterburnerThrustMult",
       tabIndex = 1,
-      title = "Afterburner Thrust Multiplier",
+      title = "Afterburner Thrust",
       unit = "x",
-      description = "Extra engine acceleration applied when dragging the left stick past 80% radius.",
+      description = "Extra thrust when pushing the left stick past 80%.",
       min = 1.05f, max = 2.50f, step = 0.05f, decimals = 2,
       getter = { afterburnerThrustMult }, setter = { afterburnerThrustMult = it.coerceIn(1.05f, 2.50f) },
     )
     list += CalibrationParamDescriptor(
       key = "afterburnerDrainPerSec",
       tabIndex = 1,
-      title = "Afterburner Flux Drain",
+      title = "Afterburner Drain",
       unit = "⚡/s",
-      description = "Flux consumed per second while burning afterburners (floors safely at 1⚡).",
+      description = "Flux used per second while burning afterburners (stops at 1⚡).",
       min = 0f, max = 600f, step = 15f, decimals = 0,
       getter = { afterburnerDrainPerSec }, setter = { afterburnerDrainPerSec = it.coerceIn(0f, 600f) },
     )
     list += CalibrationParamDescriptor(
       key = "retroBrakeDamping",
       tabIndex = 1,
-      title = "Manual Brake Stop Strength",
+      title = "Brake Strength",
       unit = "x",
-      description = "Smooth retro-thruster deceleration applied when engaging the manual HUD [BRAKE] button (left stick coasts freely on release).",
+      description = "Stopping power when holding [BRAKE].",
       min = 0.05f, max = 0.85f, step = 0.02f, decimals = 2,
       getter = { retroBrakeDamping }, setter = { retroBrakeDamping = it.coerceIn(0.05f, 0.85f) },
     )
     list += CalibrationParamDescriptor(
       key = "safeZoneReentryLockoutTime",
       tabIndex = 1,
-      title = "Safe Zone Re-Entry Lockout",
+      title = "Safe Zone Lockout",
       unit = "s",
-      description = "Duration after exiting the Safe Zone during which the amber barrier repels re-entry.",
+      description = "Seconds you are blocked from re-entering the Safe Zone after leaving.",
       min = 0f, max = 45f, step = 1f, decimals = 1,
       getter = { safeZoneReentryLockoutTime }, setter = { safeZoneReentryLockoutTime = it.coerceIn(0f, 45f) },
     )
     list += CalibrationParamDescriptor(
       key = "safeZoneRepelForce",
       tabIndex = 1,
-      title = "Safe Zone Barrier Repel Force",
+      title = "Safe Zone Pushback",
       unit = "px/s",
-      description = "Outward knockback velocity applied when a locked-out ship touches the Safe Zone perimeter.",
+      description = "Knockback speed when hitting a locked Safe Zone wall.",
       min = 200f, max = 1600f, step = 40f, decimals = 0,
       getter = { safeZoneRepelForce }, setter = { safeZoneRepelForce = it.coerceIn(200f, 1600f) },
     )
     list += CalibrationParamDescriptor(
       key = "safeZoneIdleLimitSec",
       tabIndex = 1,
-      title = "Safe Zone Anti-Camp Eviction Timer",
+      title = "Safe Zone Time Limit",
       unit = "s",
-      description = "Maximum seconds a ship can linger inside the Safe Zone before automatic arena teleport.",
+      description = "Max seconds in the Safe Zone before auto-warp into space.",
       min = 5f, max = 60f, step = 1f, decimals = 0,
       getter = { safeZoneIdleLimitSec }, setter = { safeZoneIdleLimitSec = it.coerceIn(5f, 60f) },
     )
     list += CalibrationParamDescriptor(
       key = "safeZoneRechargeMult",
       tabIndex = 1,
-      title = "Safe Zone Flux Recharge Boost",
+      title = "Safe Zone Recharge Boost",
       unit = "x",
-      description = "Multiplier on passive Flux capacitor regeneration while docked inside the Safe Zone.",
+      description = "Flux recharge multiplier inside the Safe Zone.",
       min = 1.0f, max = 6.0f, step = 0.25f, decimals = 2,
       getter = { safeZoneRechargeMult }, setter = { safeZoneRechargeMult = it.coerceIn(1.0f, 6.0f) },
     )
     list += CalibrationParamDescriptor(
       key = "exitPhaseShieldSec",
       tabIndex = 1,
-      title = "Safe Zone Exit Phase Shield",
+      title = "Spawn Shield Time",
       unit = "s",
-      description = "Brief spawn/exit protection duration upon crossing out of the Safe Zone.",
+      description = "Brief shield after spawning or leaving the Safe Zone.",
       min = 0.5f, max = 8.0f, step = 0.5f, decimals = 1,
       getter = { exitPhaseShieldSec }, setter = { exitPhaseShieldSec = it.coerceIn(0.5f, 8.0f) },
     )
     list += CalibrationParamDescriptor(
       key = "respawnDelaySec",
       tabIndex = 1,
-      title = "Death Camera Respawn Countdown",
+      title = "Respawn Delay",
       unit = "s",
-      description = "Seconds the stationary death camera lingers on wreckage before Safe Zone respawn.",
+      description = "Seconds on the death screen before respawning.",
       min = 1.0f, max = 8.0f, step = 0.5f, decimals = 1,
       getter = { respawnDelaySec }, setter = { respawnDelaySec = it.coerceIn(1.0f, 8.0f) },
     )
     list += CalibrationParamDescriptor(
       key = "playfieldIdleLimitSec",
       tabIndex = 1,
-      title = "Open-Space AFK Grace Timer",
+      title = "AFK Grace Time",
       unit = "s",
-      description = "Seconds of zero input in open space before AFK Flux capacitor overload begins.",
+      description = "Idle seconds in space before AFK Flux drain starts.",
       min = 5f, max = 60f, step = 1f, decimals = 0,
       getter = { playfieldIdleLimitSec }, setter = { playfieldIdleLimitSec = it.coerceIn(5f, 60f) },
     )
     list += CalibrationParamDescriptor(
       key = "playfieldIdleDrainPctPerSec",
       tabIndex = 1,
-      title = "Open-Space AFK Flux Drain Rate",
+      title = "AFK Drain Rate",
       unit = "%",
-      description = "Percentage of Max Flux drained per second once the open-space AFK grace timer expires.",
+      description = "Max Flux drained per second while AFK in space.",
       min = 0.02f, max = 0.50f, step = 0.02f, decimals = 2,
       getter = { playfieldIdleDrainPctPerSec }, setter = { playfieldIdleDrainPctPerSec = it.coerceIn(0.02f, 0.50f) },
     )
@@ -746,9 +747,9 @@ object RiftCalibrationState {
       key = "interdictorBubbleRadius",
       tabIndex = 3,
       shipIdFilter = 0,
-      title = "Interdictor Bubble: Dome Radius",
+      title = "Eclipse Bubble: Radius",
       unit = "px",
-      description = "Containment radius of Interdictor's two-way stasis bubble (default 275px = 550px diameter).",
+      description = "Radius of Eclipse's two-way stasis bubble (default 275px).",
       min = 180f, max = 480f, step = 5f, decimals = 0,
       getter = { interdictorBubbleRadius }, setter = { interdictorBubbleRadius = it.coerceIn(180f, 480f) },
     )
@@ -756,9 +757,9 @@ object RiftCalibrationState {
       key = "interdictorBubbleDuration",
       tabIndex = 3,
       shipIdFilter = 0,
-      title = "Interdictor Bubble: Active Duration",
+      title = "Eclipse Bubble: Duration",
       unit = "s",
-      description = "Seconds an anchored Interdictor Stasis Bubble traps all ships and projectiles inside/outside.",
+      description = "Seconds an Eclipse Stasis Bubble stays active (default 8.0s).",
       min = 2.0f, max = 15.0f, step = 0.5f, decimals = 1,
       getter = { interdictorBubbleDuration }, setter = { interdictorBubbleDuration = it.coerceIn(2.0f, 15.0f) },
     )
@@ -766,9 +767,9 @@ object RiftCalibrationState {
       key = "interdictorBubbleCooldown",
       tabIndex = 3,
       shipIdFilter = 0,
-      title = "Interdictor Bubble: Cooldown",
+      title = "Eclipse Bubble: Cooldown",
       unit = "s",
-      description = "Cooldown in seconds between deploying Interdictor Stasis Bubbles.",
+      description = "Cooldown between Eclipse Stasis Bubbles (default 12.0s).",
       min = 4.0f, max = 25.0f, step = 0.5f, decimals = 1,
       getter = { interdictorBubbleCooldown },
       setter = {
@@ -1391,12 +1392,12 @@ object RiftCalibrationState {
     list += CalibrationParamDescriptor(
       key = "stasisBrigReactorMaxHp",
       tabIndex = 7,
-      title = "Stasis Brig Reactor Core Max Flux",
+      title = "Brig Core HP",
       unit = "⚡",
-      description = "Maximum Flux integrity of the West and East Stasis Brig Reactor Cores in 10v10 Stasis Breach.",
-      min = 2000f, max = 20000f, step = 500f, decimals = 0,
+      description = "Max HP of the West and East Stasis Cores in Stasis Breach (prisoners deal 100% damage).",
+      min = 1500f, max = 20000f, step = 500f, decimals = 0,
       getter = { stasisBrigReactorMaxHp },
-      setter = { stasisBrigReactorMaxHp = it.coerceIn(2000f, 20000f) },
+      setter = { stasisBrigReactorMaxHp = it.coerceIn(1500f, 20000f) },
     )
 
     return list
@@ -1417,12 +1418,72 @@ object RiftCalibrationState {
     DEFAULT_GAME_CONFIG.size
   }
 
+  fun isCustomGameSandboxActive(engine: RiftGameEngine?): Boolean =
+    engine?.currentCustomGame != null
+
+  /**
+   * Guarantees that all 6 Main Ranked Modes ALWAYS run 100% factory default rules,
+   * without overwriting the user's saved custom slider preset in SharedPreferences or HUD layout offsets.
+   */
+  fun enforceRankedFactoryDefaultsIfNeeded(engine: RiftGameEngine?) {
+    if (engine != null && engine.currentCustomGame == null) {
+      ensureBaselineCaptured()
+      RiftCodex.resetShipsToDefaults()
+      RiftCodex.resetBuffRegistryToDefaults(preserveCustomForged = true)
+
+      for (desc in buildAllParameterDescriptors()) {
+        if (desc.tabIndex in 1..7 && !desc.key.startsWith("forged_")) {
+          DEFAULT_GAME_CONFIG[desc.key]?.let { desc.setter(it) }
+        }
+      }
+      shipScale = 1.0f
+      projectileScale = 1.0f
+      anomalyScale = 1.0f
+      botsEnabled = true
+
+      interdictorBubbleRadius = 275f
+      interdictorBubbleDuration = 8.0f
+      interdictorBubbleCooldown = 12.0f
+      RiftCodex.getShipById(9).bombCost = 380f
+      RiftCodex.getShipById(9).bombCooldown = 12.0f
+
+      engine.publicMatchCycleLimitSec = publicMatchCycleLimitSec
+      for (ship in engine.ships) {
+        val updatedSpec = RiftCodex.getShipById(ship.spec.id)
+        ship.spec = updatedSpec
+        val targetMax = updatedSpec.maxFlux
+        if (abs(ship.maxFlux - targetMax) > 0.5f) {
+          val ratio = if (ship.maxFlux > 1f) (ship.flux / ship.maxFlux).coerceIn(0.05f, 1f) else 1f
+          ship.maxFlux = targetMax
+          ship.flux = (targetMax * ratio).coerceIn(1f, targetMax)
+        }
+      }
+      for (anom in engine.anomalies) {
+        anom.physicalRadius = riftPhysicalRadius
+      }
+      for (b in engine.interdictorBubbles) {
+        b.radius = interdictorBubbleRadius
+      }
+      engine.enforceBotsEnabledState()
+      calibrationRevision++
+    }
+  }
+
   /**
    * Immediately propagates any modified Calibration value into active live ships, match timers,
-   * and registry entries so zero sliders require a respawn or restart.
+   * and registry entries when in a Custom Game, or enforces factory defaults in a Main Ranked Game.
    */
   fun applyCalibrationChangesLive(engine: RiftGameEngine?, context: Context? = null) {
     ensureBaselineCaptured()
+    if (context != null) {
+      savePersistedLayout(context)
+    }
+
+    if (engine != null && engine.currentCustomGame == null) {
+      enforceRankedFactoryDefaultsIfNeeded(engine)
+      return
+    }
+
     RiftCodex.BUFF_REGISTRY["SEEKER_TORPEDO"]?.let {
       it.flightDuration = seekerFlightTime
       it.projectileSpeed = seekerSpeed
@@ -1445,8 +1506,9 @@ object RiftCalibrationState {
     RiftCodex.BUFF_REGISTRY["HOLO_PHANTOM"]?.let {
       it.flightDuration = holoPhantomDuration
     }
+    RiftCodex.getShipById(9).bombCooldown = interdictorBubbleCooldown
 
-    if (engine != null) {
+    if (engine != null && engine.currentCustomGame != null) {
       engine.publicMatchCycleLimitSec = publicMatchCycleLimitSec
       for (ship in engine.ships) {
         val updatedSpec = RiftCodex.getShipById(ship.spec.id)
@@ -1464,13 +1526,81 @@ object RiftCalibrationState {
       for (b in engine.interdictorBubbles) {
         b.radius = interdictorBubbleRadius
       }
+      engine.enforceBotsEnabledState()
     }
-    RiftCodex.getShipById(9).bombCooldown = interdictorBubbleCooldown
     calibrationRevision++
-    if (context != null) {
-      savePersistedLayout(context)
+  }
+
+  fun exportForgedBuffsJson(): String {
+    val forgedArr = JSONArray()
+    RiftCodex.getCustomForgedBuffs().forEach { forgedArr.put(it.toJsonObject()) }
+    return forgedArr.toString()
+  }
+
+  fun exportGameplaySyncPayloadJson(): String {
+    ensureBaselineCaptured()
+    val slidersObj = JSONObject()
+    val allowedTab0Keys = setOf("shipScale", "projectileScale", "anomalyScale")
+    for (desc in buildAllParameterDescriptors()) {
+      if (desc.tabIndex in 1..7 || desc.key in allowedTab0Keys) {
+        slidersObj.put(desc.key, desc.getter().toDouble())
+      }
+    }
+    return JSONObject().apply {
+      put("botsEnabled", botsEnabled)
+      put("forgedBuffsJson", exportForgedBuffsJson())
+      put("sliders", slidersObj)
+    }.toString()
+  }
+
+  fun applyRemoteCustomGameSyncPayload(
+    payloadJson: String,
+    engine: RiftGameEngine?,
+    context: Context? = null,
+  ): Boolean {
+    if (engine?.currentCustomGame == null) return false
+    ensureBaselineCaptured()
+    return try {
+      val root = JSONObject(payloadJson)
+      if (root.has("botsEnabled")) {
+        botsEnabled = root.optBoolean("botsEnabled", true)
+      }
+      val forgedRaw = root.optString("forgedBuffsJson", "")
+      if (forgedRaw.isNotBlank()) {
+        try {
+          val arr = JSONArray(forgedRaw)
+          for (i in 0 until arr.length()) {
+            val entry = SpecialBuffRegistryEntry.fromJsonObject(arr.getJSONObject(i))
+            RiftCodex.registerCustomBuff(entry)
+          }
+        } catch (_: Exception) {}
+      }
+      val slidersObj = root.optJSONObject("sliders")
+      if (slidersObj != null) {
+        val descriptorsByKey = buildAllParameterDescriptors().associateBy { it.key }
+        val keys = slidersObj.keys()
+        while (keys.hasNext()) {
+          val k = keys.next()
+          val desc = descriptorsByKey[k]
+          if (desc != null) {
+            val v = slidersObj.optDouble(k, desc.getter().toDouble()).toFloat()
+            desc.setter(v)
+          }
+        }
+      }
+      calibrationRevision++
+      applyCalibrationChangesLive(engine, context)
+      true
+    } catch (_: Exception) {
+      false
     }
   }
+
+  fun generateLocalHullRecipe(prompt: String, variationSalt: Int = 0): CustomHullVisualRecipe =
+    CustomHullVisualRecipe.synthesizeFromPrompt(prompt, variationSalt)
+
+  fun forgeBuffFromPrompt(prompt: String): SpecialBuffRegistryEntry =
+    SpecialBuffRegistryEntry.synthesizeFromPrompt(prompt, RiftCodex.nextCustomBuffTypeIndex())
 
   fun toggleParameterHidden(key: String, hidden: Boolean, context: Context? = null) {
     hiddenCalibrationKeys =
@@ -1518,6 +1648,7 @@ object RiftCalibrationState {
     toastContainerOffset = readOffset("toastContainer")
     idleWarningBannerOffset = readOffset("idleWarningBanner")
     unlockFullNinthShipOverride = prefs.getBoolean("unlockFullNinthShipOverride", false)
+    botsEnabled = prefs.getBoolean("bots_enabled", true)
 
     bindPrimaryFire = prefs.getInt("bindPrimaryFire", BIND_RT)
     bindSpecialBuff = prefs.getInt("bindSpecialBuff", android.view.KeyEvent.KEYCODE_BUTTON_R1)
@@ -1608,6 +1739,7 @@ object RiftCalibrationState {
     writeOffset("toastContainer", toastContainerOffset)
     writeOffset("idleWarningBanner", idleWarningBannerOffset)
     editor.putBoolean("unlockFullNinthShipOverride", unlockFullNinthShipOverride)
+    editor.putBoolean("bots_enabled", botsEnabled)
     editor.putInt("bindPrimaryFire", bindPrimaryFire)
     editor.putInt("bindSpecialBuff", bindSpecialBuff)
     editor.putInt("bindRetroBrake", bindRetroBrake)
@@ -1668,10 +1800,10 @@ object RiftCalibrationState {
     }
 
     interdictorBubbleRadius = 275f
-    interdictorBubbleDuration = 5.0f
-    interdictorBubbleCooldown = 9.0f
+    interdictorBubbleDuration = 8.0f
+    interdictorBubbleCooldown = 12.0f
     RiftCodex.getShipById(9).bombCost = 380f
-    RiftCodex.getShipById(9).bombCooldown = 9.0f
+    RiftCodex.getShipById(9).bombCooldown = 12.0f
 
     bountyPlacement = LabelPlacement.TOP
     tagPlacement = LabelPlacement.BOTTOM
@@ -1680,6 +1812,7 @@ object RiftCalibrationState {
     forceAllButtonsVisible = false
     isUiUnlockedForDragging = false
     unlockFullNinthShipOverride = false
+    botsEnabled = true
 
     topBarOffset = Offset.Zero
     buffBarOffset = Offset.Zero

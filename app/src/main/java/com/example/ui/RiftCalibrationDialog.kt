@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.RiftRepository
 import com.example.engine.BuffAimMode
 import com.example.engine.CalibrationParamDescriptor
 import com.example.engine.CustomBuffEffect
@@ -74,6 +76,7 @@ import com.example.engine.SpecialBuffRegistryEntry
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 private val CALIBRATION_TAB_TITLES =
   listOf(
@@ -92,9 +95,12 @@ private val CALIBRATION_TAB_TITLES =
 fun RiftCalibrationDialog(
   engine: RiftGameEngine? = null,
   onDismiss: () -> Unit,
+  onSyncToAllTesters: (() -> Unit)? = null,
 ) {
   val context = LocalContext.current
   val density = LocalDensity.current
+  val coroutineScope = rememberCoroutineScope()
+  val isCustomGame = engine?.currentCustomGame != null
 
   DisposableEffect(Unit) {
     RiftCalibrationState.ensureBaselineCaptured()
@@ -183,7 +189,7 @@ fun RiftCalibrationDialog(
         modifier = Modifier.fillMaxSize().padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        // 1. STICKY HEADER ROW 1: Title, Live Peek Indicator, Wipe All, Reset All, Copy Defaults & Close
+        // 1. STICKY HEADER ROW 1: Title, Live Peek Indicator, Sync To All, Wipe All, Reset All, Copy Defaults & Close
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -216,6 +222,34 @@ fun RiftCalibrationDialog(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
+            // [📡 SYNC TO ALL]
+            CalibrationHeaderActionBtn(
+              label = "📡 SYNC TO ALL",
+              bgColor = if (isCustomGame) Color(0xFF06283D) else Color(0xFF1E293B),
+              borderColor = if (isCustomGame) Color(0xFF00F5D4) else Color(0xFF475569),
+              textColor = if (isCustomGame) Color(0xFF00F5D4) else Color(0xFF64748B),
+              testTag = "calibration_sync_to_all_button",
+              onClick = {
+                confirmMasterWipe = false
+                if (!isCustomGame) {
+                  statusBanner =
+                    "🔒 MAIN RANKED GAMES USE FACTORY DEFAULTS ONLY. OPEN NEXUS -> JOIN A CUSTOM GAME TO SYNC SETTINGS TO TESTERS."
+                } else {
+                  RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                  onSyncToAllTesters?.invoke()
+                  val payloadJson = RiftCalibrationState.exportGameplaySyncPayloadJson()
+                  val cGameId = engine?.currentCustomGame?.instanceId ?: "custom"
+                  val author = engine?.localPlayer?.callsign ?: "PILOT"
+                  coroutineScope.launch {
+                    RiftRepository().broadcastCustomGameCalibration(cGameId, author, payloadJson)
+                  }
+                  statusBanner =
+                    "📡 SYNCED LIVE CALIBRATION TO ALL PILOTS IN CUSTOM GAME (${engine?.currentCustomGame?.title})!"
+                  engine?.onPrizeToast("📡 CALIBRATION SYNCED TO ALL TESTERS!")
+                }
+              },
+            )
+
             // [🧨 WIPE STATS / ARMADAS / SYNDICATES] (2-step confirmation)
             CalibrationHeaderActionBtn(
               label =
@@ -311,7 +345,37 @@ fun RiftCalibrationDialog(
           }
         }
 
-        // 2. STICKY HEADER ROW 2: Show Hidden Toggle, Unhide All, Reset Tab, Force Convergence & Quick Toggles
+        // MAIN RANKED GAME FACTORY-DEFAULT LOCK vs CUSTOM GAME BANNER
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .background(
+                if (isCustomGame) Color(0xFF052E24) else Color(0xFF291A05),
+                RoundedCornerShape(8.dp),
+              )
+              .border(
+                1.dp,
+                if (isCustomGame) Color(0xFF00F5D4) else Color(0xFFF59E0B),
+                RoundedCornerShape(8.dp),
+              )
+              .padding(horizontal = 10.dp, vertical = 5.dp)
+              .testTag("calibration_mode_lock_banner"),
+        ) {
+          Text(
+            text =
+              if (!isCustomGame) {
+                "🔒 MAIN RANKED GAME: Gameplay stats are locked to factory defaults. Join or create a Custom Game in NEXUS to test & sync live gameplay changes."
+              } else {
+                "🧪 CUSTOM GAME ACTIVE (${engine?.currentCustomGame?.title}): Live Calibration sliders & [📡 SYNC TO ALL] are unlocked!"
+              },
+            color = if (isCustomGame) Color(0xFF00F5D4) else Color(0xFFFBBF24),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+
+        // 2. STICKY HEADER ROW 2: Show Hidden Toggle, Unhide All, Reset Tab, Force Convergence, AI Bots Toggle & Quick Toggles
         Row(
           modifier =
             Modifier.fillMaxWidth()
@@ -371,6 +435,34 @@ fun RiftCalibrationDialog(
             onClick = {
               engine?.concludePublicFfaMatchCycle(forceSimulateWinWithPresence = false)
               statusBanner = "🌀 FORCED NEW PUBLIC FFA SECTOR CONVERGENCE & PROCEDURAL MAP!"
+            },
+          )
+
+          // [🤖 AI BOTS: ON/OFF]
+          CalibrationToggleChip(
+            label =
+              if (RiftCalibrationState.botsEnabled) {
+                "🤖 AI BOTS: ON"
+              } else {
+                "🤖 AI BOTS: OFF"
+              },
+            active = RiftCalibrationState.botsEnabled,
+            activeColor = Color(0xFF10B981),
+            testTag = "calibration_toggle_bots",
+            onClick = {
+              if (!isCustomGame) {
+                statusBanner =
+                  "🔒 AI BOTS ARE ALWAYS ENABLED IN MAIN RANKED GAMES. JOIN A CUSTOM GAME TO TOGGLE BOTS OFF."
+              } else {
+                RiftCalibrationState.botsEnabled = !RiftCalibrationState.botsEnabled
+                RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                statusBanner =
+                  if (RiftCalibrationState.botsEnabled) {
+                    "🤖 AI BOTS ENABLED IN CUSTOM GAME."
+                  } else {
+                    "🤖 AI BOTS REMOVED — HUMAN PILOTS ONLY!"
+                  }
+              }
             },
           )
 

@@ -79,6 +79,8 @@ object RiftSpriteBaker {
     buffs[-10] = bakeBuffIconBitmap(-10, 68) // Speed Overcharge
     buffs[-11] = bakeBuffIconBitmap(-11, 68) // Thrust Overcharge
     buffs[-12] = bakeBuffIconBitmap(-12, 68) // Reactor Overcharge
+    buffs[-13] = bakeBuffIconBitmap(-13, 68) // Turn Radius Overcharge
+    buffs[-14] = bakeBuffIconBitmap(-14, 68) // Max Flux Overcharge
     buffIconBitmaps = buffs
 
     riftAnomalyIconBitmaps =
@@ -163,7 +165,7 @@ object RiftSpriteBaker {
   }
 
   fun getBuffIconBitmap(buffType: Int): Bitmap {
-    if (buffType in 0..10 || buffType in -12..-10) {
+    if (buffType in 0..10 || buffType in -14..-10) {
       return buffIconBitmaps[buffType] ?: buffIconBitmaps[10]!!
     }
     customBuffIconCache[buffType]?.let { return it }
@@ -318,6 +320,8 @@ object RiftSpriteBaker {
         -10 -> Color.parseColor("#38BDF8") // Speed Overcharge (+8% x3)
         -11 -> Color.parseColor("#F59E0B") // Thrust Overcharge (+8% x3)
         -12 -> Color.parseColor("#10B981") // Reactor Overcharge (+8% x3)
+        -13 -> Color.parseColor("#EC4899") // Turn Radius Overcharge (+12% x3)
+        -14 -> Color.parseColor("#00F5D4") // Max Flux Overcharge (+10% x3)
         else -> Color.parseColor("#38BDF8") // Overcharge Surge (+8% x3)
       }
 
@@ -544,6 +548,48 @@ object RiftSpriteBaker {
         c.drawPath(diamond, glyphStrokePaint)
         c.drawCircle(cx, cy, r * 0.18f, glyphFillPaint)
       }
+      -13 -> {
+        // TURN RADIUS OVERCHARGE (+12% x3): Twin rotational thruster arrows (#EC4899 / #38BDF8) around a ship chevron
+        val arcRect = RectF(cx - r * 0.56f, cy - r * 0.56f, cx + r * 0.56f, cy + r * 0.56f)
+        val pinkArcPaint =
+          Paint(glyphStrokePaint).apply {
+            color = Color.parseColor("#EC4899")
+          }
+        val cyanArcPaint =
+          Paint(glyphStrokePaint).apply {
+            color = Color.parseColor("#38BDF8")
+          }
+        c.drawArc(arcRect, -150f, 120f, false, pinkArcPaint)
+        c.drawArc(arcRect, 30f, 120f, false, cyanArcPaint)
+
+        val chev =
+          Path().apply {
+            moveTo(cx, cy - r * 0.34f)
+            lineTo(cx + r * 0.26f, cy + r * 0.28f)
+            lineTo(cx, cy + r * 0.12f)
+            lineTo(cx - r * 0.26f, cy + r * 0.28f)
+            close()
+          }
+        c.drawPath(chev, glyphFillPaint)
+      }
+      -14 -> {
+        // MAX FLUX OVERCHARGE (+10% x3): Glowing #00F5D4 / #FACC15 heavy reactor cell with +⚡ crest
+        val cellRect = RectF(cx - r * 0.46f, cy - r * 0.46f, cx + r * 0.46f, cy + r * 0.46f)
+        c.drawRoundRect(cellRect, 6f, 6f, glyphStrokePaint)
+        val bolt =
+          Path().apply {
+            moveTo(cx + r * 0.08f, cy - r * 0.44f)
+            lineTo(cx - r * 0.28f, cy + r * 0.04f)
+            lineTo(cx - r * 0.02f, cy + r * 0.04f)
+            lineTo(cx - r * 0.12f, cy + r * 0.44f)
+            lineTo(cx + r * 0.28f, cy - r * 0.04f)
+            lineTo(cx + r * 0.02f, cy - r * 0.04f)
+            close()
+          }
+        val goldFill = Paint(glyphFillPaint).apply { color = Color.parseColor("#FACC15") }
+        c.drawPath(bolt, goldFill)
+        c.drawPath(bolt, glyphCoreStroke)
+      }
       else -> {
         // SPEED OVERCHARGE (-10 / 10): Double forward supersonic overdrive chevrons
         for (offset in listOf(-r * 0.22f, r * 0.14f)) {
@@ -582,28 +628,37 @@ object RiftSpriteBaker {
     val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
 
-    // 1. Deep void-obsidian recessed channel base
-    val abyssPaint =
+    // 1. High-Contrast Brushed Gunmetal & Slate Metallic Bulkhead Base (#1E293B)
+    val basePaint =
       Paint().apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#04070D")
+        color = Color.parseColor("#1E293B")
       }
-    c.drawRect(0f, 0f, size.toFloat(), size.toFloat(), abyssPaint)
+    c.drawRect(0f, 0f, size.toFloat(), size.toFloat(), basePaint)
 
-    // 2. Subtle glowing cyan energy conduit seams running along recessed channels
+    // 2. Recessed Dark Panel Grooves (#0F172A) + Bright #00F5D4 Electric Cyan Conduit Seams
+    val groovePaint =
+      Paint().apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#0F172A")
+      }
+    c.drawRect(0f, 30f, 64f, 34f, groovePaint)
+    c.drawRect(30f, 0f, 34f, 32f, groovePaint)
+    c.drawRect(14f, 32f, 18f, 64f, groovePaint)
+    c.drawRect(46f, 32f, 50f, 64f, groovePaint)
+
     val seamGlowPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 3.2f
-        color = Color.argb(46, 0, 240, 255)
+        color = Color.argb(110, 0, 245, 212)
       }
     val seamCorePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.0f
-        color = Color.argb(115, 56, 189, 248)
+        strokeWidth = 1.4f
+        color = Color.parseColor("#00F5D4")
       }
-    // Horizontal & staggered vertical conduit seams in the recessed grooves (seamless across 64x64 edges)
     c.drawLine(0f, 32f, 64f, 32f, seamGlowPaint)
     c.drawLine(0f, 0f, 64f, 0f, seamGlowPaint)
     c.drawLine(0f, 64f, 64f, 64f, seamGlowPaint)
@@ -612,7 +667,7 @@ object RiftSpriteBaker {
     c.drawLine(48f, 32f, 48f, 64f, seamGlowPaint)
 
     c.drawLine(0f, 32f, 64f, 32f, seamCorePaint)
-    c.drawLine(0f, 0.5f, 64f, 0.5f, seamCorePaint)
+    c.drawLine(0f, 0.7f, 64f, 0.7f, seamCorePaint)
     c.drawLine(32f, 0f, 32f, 32f, seamCorePaint)
     c.drawLine(16f, 32f, 16f, 64f, seamCorePaint)
     c.drawLine(48f, 32f, 48f, 64f, seamCorePaint)
@@ -621,49 +676,49 @@ object RiftSpriteBaker {
     val topBevelPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.15f
-        color = Color.parseColor("#223452")
+        strokeWidth = 1.5f
+        color = Color.parseColor("#64748B")
       }
     val bottomShadePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.2f
-        color = Color.parseColor("#020409")
+        strokeWidth = 1.4f
+        color = Color.parseColor("#0F172A")
       }
     val ribGroovePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 0.9f
-        color = Color.parseColor("#060B14")
+        strokeWidth = 1.1f
+        color = Color.parseColor("#1E293B")
       }
     val ribHighlightPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 0.8f
-        color = Color.argb(95, 56, 189, 248)
+        strokeWidth = 1.1f
+        color = Color.parseColor("#00F5D4")
       }
     val boltSocketPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#050912")
+        color = Color.parseColor("#0F172A")
       }
     val boltPinPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#64748B")
+        color = Color.parseColor("#94A3B8")
       }
-    val nodeSparkPaint =
+    val goldAccentPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.argb(145, 0, 240, 255)
+        color = Color.parseColor("#F59E0B")
       }
 
-    fun drawObsidianPlate(left: Float, top: Float, right: Float, bottom: Float, hasCenterNode: Boolean) {
-      val insetL = left + 1.4f
-      val insetT = top + 1.4f
-      val insetR = right - 1.4f
-      val insetB = bottom - 1.4f
-      val ch = 3.0f
+    fun drawGunmetalPlate(left: Float, top: Float, right: Float, bottom: Float, hasCenterNode: Boolean) {
+      val insetL = left + 1.8f
+      val insetT = top + 1.8f
+      val insetR = right - 1.8f
+      val insetB = bottom - 1.8f
+      val ch = 3.2f
 
       val platePath =
         Path().apply {
@@ -685,30 +740,30 @@ object RiftSpriteBaker {
           insetR,
           insetB,
           intArrayOf(
-            Color.parseColor("#162338"),
-            Color.parseColor("#0C1322"),
-            Color.parseColor("#080D17"),
-            Color.parseColor("#101A2C"),
+            Color.parseColor("#475569"),
+            Color.parseColor("#334155"),
+            Color.parseColor("#1E293B"),
+            Color.parseColor("#334155"),
           ),
-          floatArrayOf(0f, 0.45f, 0.82f, 1f),
+          floatArrayOf(0f, 0.42f, 0.80f, 1f),
           Shader.TileMode.CLAMP,
         )
       c.drawPath(platePath, plateFillPaint)
 
-      // Top/left specular armor bevel
+      // Top/left specular armor bevel (#64748B)
       c.drawLine(insetL + ch, insetT, insetR - ch, insetT, topBevelPaint)
       c.drawLine(insetL, insetT + ch, insetL, insetB - ch, topBevelPaint)
-      // Bottom/right recessed shadow bevel
+      // Bottom/right recessed shadow bevel (#0F172A)
       c.drawLine(insetL + ch, insetB, insetR - ch, insetB, bottomShadePaint)
       c.drawLine(insetR, insetT + ch, insetR, insetB - ch, bottomShadePaint)
 
-      // Recessed internal structural rib + subtle cyan micro-trace
+      // Internal brushed structural rib + cyan/gold node
       val midY = (insetT + insetB) * 0.5f
       c.drawLine(insetL + 5f, midY, insetR - 5f, midY, ribGroovePaint)
       if (hasCenterNode) {
-        c.drawLine(insetL + 7f, midY - 0.8f, insetR - 7f, midY - 0.8f, ribHighlightPaint)
+        c.drawLine(insetL + 7f, midY - 1.0f, insetR - 7f, midY - 1.0f, ribHighlightPaint)
         val midX = (insetL + insetR) * 0.5f
-        c.drawCircle(midX, midY, 1.3f, nodeSparkPaint)
+        c.drawRect(midX - 2.2f, midY - 2.2f, midX + 2.2f, midY + 2.2f, goldAccentPaint)
       }
 
       // Corner titanium micro-bolts
@@ -721,18 +776,18 @@ object RiftSpriteBaker {
           insetR - bOff to insetB - bOff,
         )
       for ((bx, by) in corners) {
-        c.drawCircle(bx, by, 1.5f, boltSocketPaint)
-        c.drawCircle(bx - 0.25f, by - 0.25f, 0.9f, boltPinPaint)
+        c.drawCircle(bx, by, 1.6f, boltSocketPaint)
+        c.drawCircle(bx - 0.25f, by - 0.25f, 1.0f, boltPinPaint)
       }
     }
 
-    // Top row: two 32x32 obsidian bulkhead plates
-    drawObsidianPlate(0f, 0f, 32f, 32f, hasCenterNode = true)
-    drawObsidianPlate(32f, 0f, 64f, 32f, hasCenterNode = false)
-    // Bottom row: staggered brick-bond obsidian bulkhead plates (wraps seamlessly at x=0/64)
-    drawObsidianPlate(16f, 32f, 48f, 64f, hasCenterNode = true)
-    drawObsidianPlate(-16f, 32f, 16f, 64f, hasCenterNode = false)
-    drawObsidianPlate(48f, 32f, 80f, 64f, hasCenterNode = false)
+    // Top row: two 32x32 gunmetal bulkhead plates
+    drawGunmetalPlate(0f, 0f, 32f, 32f, hasCenterNode = true)
+    drawGunmetalPlate(32f, 0f, 64f, 32f, hasCenterNode = false)
+    // Bottom row: staggered brick-bond gunmetal bulkhead plates
+    drawGunmetalPlate(16f, 32f, 48f, 64f, hasCenterNode = true)
+    drawGunmetalPlate(-16f, 32f, 16f, 64f, hasCenterNode = false)
+    drawGunmetalPlate(48f, 32f, 80f, 64f, hasCenterNode = false)
 
     return bmp
   }
@@ -743,14 +798,14 @@ object RiftSpriteBaker {
     val bgPaint =
       Paint().apply {
         style = Paint.Style.FILL
-        color = Color.parseColor("#070C16")
+        color = Color.parseColor("#1E293B")
       }
     c.drawRect(0f, 0f, 32f, 32f, bgPaint)
 
     val stripePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.argb(115, 14, 165, 233) // Subtle dark cyan-slate bulkhead chevron trim
+        color = Color.argb(185, 245, 158, 11) // High-contrast Hazard Gold chevron trim (#F59E0B)
       }
 
     val p1 =

@@ -82,8 +82,12 @@ fun SyndicatesModal(
   onCreateCustomSyndicate: (tag: String, name: String, motto: String) -> Unit,
   onCloseModal: () -> Unit,
 ) {
+  val context = LocalContext.current
+  val localPrefs = remember(context) { LocalPilotPrefs(context) }
+  val isDrifter = remember(currentSyndicateTag) { localPrefs.isGuestBypassEnabled() }
   var activeTab by remember { mutableIntStateOf(0) }
-  val isGuestSyndicate = currentSyndicateTag == "GUEST" || currentSyndicateTag == "FREE"
+  val isGuestSyndicate =
+    currentSyndicateTag == "GUEST" || currentSyndicateTag == "FREE" || currentSyndicateTag == "RFT"
 
   Box(
     modifier =
@@ -191,8 +195,27 @@ fun SyndicatesModal(
           )
         }
 
-        // Guest Syndicate Placeholder Notice Banner
-        if (isGuestSyndicate) {
+        // Drifter [RFT] Syndicate Lockout Banner or Guest Syndicate Placeholder Notice Banner
+        if (isDrifter) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .background(Color(0xFF2B1C08), RoundedCornerShape(8.dp))
+                .border(1.5.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp))
+                .padding(horizontal = 12.dp, vertical = 7.dp)
+                .testTag("syndicate_drifter_lock_banner")
+          ) {
+            Text(
+              text =
+                "🔒 DRIFTERS WEAR THE [RFT] TAG. SIGN IN AS A SWORN PILOT TO JOIN OR FOUND A SYNDICATE.",
+              color = Color(0xFFFACC15),
+              fontSize = 11.5.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        } else if (isGuestSyndicate) {
           Spacer(modifier = Modifier.height(6.dp))
           Box(
             modifier =
@@ -458,20 +481,20 @@ private fun DirectoryAndJoinPane(
             isCustom = false,
           ),
           SyndicateInfo(
-            id = "syn_rft",
-            tag = "RFT",
-            name = "Rift Sentinels",
+            id = "syn_vtx",
+            tag = "VTX",
+            name = "Vortex Sentinels",
             foundryOrigin = "Stasis Breach Guardians",
-            motto = "Hold the line at x = 4000.",
+            motto = "Hold the line at the singularity core.",
             memberCount = 12,
             combinedBounty = 10900L,
             isCustom = false,
           ),
         )
       for (item in directoryList) {
-        val clean = item.tag.trim().uppercase()
-        if (clean.isNotEmpty()) {
-          byTag[clean] = item
+        val clean = localPrefs.sanitizeSyndicateTag(item.tag)
+        if (clean.isNotEmpty() && !clean.equals("RFT", ignoreCase = true)) {
+          byTag[clean] = item.copy(tag = clean)
         }
       }
       for (seed in officialLadder) {
@@ -649,9 +672,10 @@ private fun DirectoryAndJoinPane(
               )
             }
           } else {
+            val isDrifterMode = localPrefs.isGuestBypassEnabled()
             Button(
               onClick = { onJoinSyndicate(syn) },
-              enabled = remainingLockDays <= 0,
+              enabled = remainingLockDays <= 0 && !isDrifterMode,
               colors =
                 ButtonDefaults.buttonColors(
                   containerColor = Color(0xFF00F0FF),
@@ -664,7 +688,9 @@ private fun DirectoryAndJoinPane(
             ) {
               Text(
                 text =
-                  if (remainingLockDays > 0) {
+                  if (isDrifterMode) {
+                    "SWORN PILOT ONLY"
+                  } else if (remainingLockDays > 0) {
                     "LOCKED ($remainingLockFormatted)"
                   } else {
                     "JOIN [${syn.tag}]"
@@ -939,11 +965,13 @@ private fun CreateSyndicatePane(
   remainingLockFormatted: String,
   onCreateCustomSyndicate: (tag: String, name: String, motto: String) -> Unit,
 ) {
-  // P0 CRITICAL FIX: Pre-Mount Form Lockout on 15-Day Syndicate Cooldown!
-  // Check remainingLockDays > 0 BEFORE enabling form inputs.
-  val isCooldownLocked = remainingLockDays > 0
+  val context = LocalContext.current
+  val localPrefs = remember(context) { LocalPilotPrefs(context) }
+  val isDrifter = remember { localPrefs.isGuestBypassEnabled() }
+  // P0 CRITICAL FIX: Pre-Mount Form Lockout on 15-Day Syndicate Cooldown or Drifter session!
+  val isCooldownLocked = remainingLockDays > 0 || isDrifter
 
-  var tagInput by remember { mutableStateOf("NOVA") }
+  var tagInput by remember { mutableStateOf("NV!") }
   var nameInput by remember { mutableStateOf("NOVA VANGUARD") }
   var mottoInput by remember { mutableStateOf("Strike from the event horizon.") }
   var anyFieldFocused by remember { mutableStateOf(false) }
@@ -958,7 +986,7 @@ private fun CreateSyndicatePane(
         .padding(14.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    // Prominent Amber Lock Banner at the top of the tab when 15-day cooldown is active
+    // Prominent Amber Lock Banner at the top of the tab when 15-day cooldown or Drifter lock is active
     if (isCooldownLocked) {
       Box(
         modifier =
@@ -969,7 +997,12 @@ private fun CreateSyndicatePane(
             .testTag("syndicate_charter_locked_banner")
       ) {
         Text(
-          text = "🔒 Syndicate chartering locked until 15-day cooldown expiry ($remainingLockFormatted REMAINING)",
+          text =
+            if (isDrifter) {
+              "🔒 DRIFTERS WEAR THE [RFT] TAG. SIGN IN AS A SWORN PILOT TO JOIN OR FOUND A SYNDICATE."
+            } else {
+              "🔒 Syndicate chartering locked until 15-day cooldown expiry ($remainingLockFormatted REMAINING)"
+            },
           color = Color(0xFFF59E0B),
           fontSize = 13.sp,
           fontWeight = FontWeight.Bold,
@@ -993,7 +1026,7 @@ private fun CreateSyndicatePane(
         )
         Text(
           text =
-            "CREATING A SYNDICATE REGISTERS YOUR 3–4 LETTER [TAG] AND LOCKS ALLEGIANCE FOR 15d 00h.",
+            "CREATING A SYNDICATE REGISTERS YOUR 1–3 CHAR [TAG] (A-Z, 0-9, SYMBOLS) AND LOCKS ALLEGIANCE FOR 15d 00h.",
           color = Color(0xFF8A99AD),
           fontSize = 11.sp,
           fontFamily = FontFamily.SansSerif,
@@ -1039,12 +1072,13 @@ private fun CreateSyndicatePane(
           value = tagInput,
           onValueChange = { raw ->
             if (!isCooldownLocked) {
-              tagInput = raw.uppercase().replace(Regex("[^A-Z0-9]"), "").take(4)
+              tagInput = localPrefs.sanitizeSyndicateTag(raw)
             }
           },
           enabled = !isCooldownLocked,
           readOnly = isCooldownLocked,
           singleLine = true,
+          placeholder = { Text("e.g. VX!, Ω7, ★", fontSize = 10.sp, color = Color(0xFF64748B)) },
           keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
           keyboardActions =
             KeyboardActions(
@@ -1053,7 +1087,7 @@ private fun CreateSyndicatePane(
                 keyboardController?.hide()
               }
             ),
-          label = { Text("TAG (3-4 CHARS)", fontSize = 10.sp, fontFamily = FontFamily.SansSerif) },
+          label = { Text("TAG (1–3 CHARS: A-Z, 0-9, SYMBOLS)", fontSize = 9.5.sp, fontFamily = FontFamily.SansSerif) },
           textStyle =
             TextStyle(
               color = Color(0xFFFFD700),
@@ -1070,7 +1104,7 @@ private fun CreateSyndicatePane(
               disabledLabelColor = Color(0xFF8A99AD),
             ),
           modifier =
-            Modifier.width(160.dp)
+            Modifier.width(210.dp)
               .onFocusChanged { anyFieldFocused = it.isFocused }
               .testTag("create_syndicate_tag_input"),
         )
@@ -1157,7 +1191,7 @@ private fun CreateSyndicatePane(
 
       Button(
         onClick = { onCreateCustomSyndicate(tagInput, nameInput, mottoInput) },
-        enabled = !isCooldownLocked && tagInput.length >= 3 && nameInput.length >= 3,
+        enabled = !isCooldownLocked && tagInput.isNotEmpty() && nameInput.length >= 3,
         colors =
           ButtonDefaults.buttonColors(
             containerColor = Color(0xFFFFD700),
@@ -1170,7 +1204,9 @@ private fun CreateSyndicatePane(
       ) {
         Text(
           text =
-            if (isCooldownLocked) {
+            if (isDrifter) {
+              "🔒 SIGN IN AS A SWORN PILOT TO CHARTER A SYNDICATE"
+            } else if (isCooldownLocked) {
               "🔒 SYNDICATE CHARTERING LOCKED: COOLDOWN ACTIVE ($remainingLockFormatted REMAINING)"
             } else {
               "🏛️ CHARTER [$tagInput] ${nameInput.uppercase()} & LOCK FOR 15d 00h"

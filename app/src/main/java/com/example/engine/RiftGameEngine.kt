@@ -69,32 +69,38 @@ enum class RankedGameMode(
   SECTOR_CONVERGENCE(
     "SECTOR_CONVERGENCE",
     "Sector Convergence",
-    "Ranked FFA / 1-5 Armada Bounty",
-    "20-PILOT SECTOR • 60M",
+    "Free-For-All • 1-5 Armada Bounty",
+    "20 PILOTS • 60M",
   ),
   RIFT_SKIRMISH(
     "RIFT_SKIRMISH",
     "Rift Skirmish",
-    "Ranked Best-of-3 Team Deathmatch",
-    "2v2 / 3v3 / 4v4 / 5v5",
+    "Team Deathmatch • 3m Rounds • No Respawn",
+    "2v2 - 5v5 • BO3",
   ),
   FLUX_CORE(
     "FLUX_CORE",
-    "Volatile Flux Core",
-    "Ranked Singularity Carrier Mode",
-    "SOLO / ARMADA • 10 TIERS",
+    "Flux Core",
+    "Hold the Core for +15 Bounty/s & Overcharge",
+    "20 PILOTS • BALL",
   ),
   STASIS_BREACH(
     "STASIS_BREACH",
     "Stasis Breach",
-    "Ranked 10v10 Territory Jailbreak",
-    "10v10 • BRIG REACTOR",
+    "10v10 • Jail Enemy Team or Destroy Core",
+    "10v10 • JAILBREAK",
+  ),
+  RIFT_CONTROL(
+    "RIFT_CONTROL",
+    "Rift Control",
+    "2-Rift Tug-of-War • Hold 30s to Lock",
+    "3v3 - 10v10 • 3M",
   ),
   SYNDICATE_WARS(
     "SYNDICATE_WARS",
     "Syndicate Wars",
-    "Ranked Clan-vs-Clan Head-to-Head",
-    "3v3 / 5v5 / 10v10 CLAN",
+    "Ranked Clan-vs-Clan Battles",
+    "3v3 / 5v5 / 10v10",
   );
 
   companion object {
@@ -106,11 +112,32 @@ enum class RankedGameMode(
           "SKIRMISH", "TDM", "3V3", "5V5" -> RIFT_SKIRMISH
           "CORE", "JUGGERNAUT" -> FLUX_CORE
           "BREACH", "JAILBREAK", "10V10" -> STASIS_BREACH
+          "CONTROL", "RIFT_CONTROL", "TUG", "KOTH" -> RIFT_CONTROL
           "WARS", "CLAN_WARS" -> SYNDICATE_WARS
           else -> SECTOR_CONVERGENCE
         }
     }
   }
+}
+
+data class CustomGameConfig(
+  val instanceId: String,
+  val title: String,
+  val hostCallsign: String,
+  val baseMode: RankedGameMode,
+  val teamSizeBracket: Int = 5,
+  val matchDurationMinutes: Int = 10, // 3..60m
+  val allowArmadasInFfa: Boolean = true,
+  val botsEnabled: Boolean = true,
+  val bulletSizeMult: Float = 1.0f, // 1.0f = Standard, 2.2f = Fat Bullets
+  val damageMult: Float = 1.0f, // 0.5f..2.5f
+  val speedMult: Float = 1.0f, // 0.7f..1.8f
+  val healthMult: Float = 1.0f, // 0.5f..2.5f
+  val rechargeMult: Float = 1.0f, // 0.5f..2.5f
+  val crateSpawnMult: Float = 1.0f, // 0.0f..2.5f
+) {
+  val projectileSizeMult: Float
+    get() = bulletSizeMult
 }
 
 data class FluxCoreOrbState(
@@ -168,6 +195,8 @@ data class ShipEntity(
   var speedOverchargeStacks: Int = 0, // Stacks up to 3x (+8% Top Speed per stack until death)
   var thrustOverchargeStacks: Int = 0, // Stacks up to 3x (+8% Thrust per stack until death)
   var rechargeOverchargeStacks: Int = 0, // Stacks up to 3x (+8% Flux Recharge per stack until death)
+  var turnOverchargeStacks: Int = 0, // Stacks up to 3x (+12% Turn Rate per stack until death)
+  var maxFluxOverchargeStacks: Int = 0, // Stacks up to 3x (+10% Max Flux per stack until death)
   var sniperOverchargeReady: Boolean = false, // Viper / Phase Dash overcharges next rail shot (+35% vel & dmg)
   var isCloaked: Boolean = false, // Disruptor / Cloak+EMP stealth cloak (180⚡/s drain, hides ship & minimap dot)
   var rocketBoostTimer: Float = 0f, // 3.0s Hyper Surge boost (1.65x max speed at 0⚡)
@@ -204,6 +233,7 @@ data class ShipEntity(
 
 data class BulletEntity(
   val ownerId: String,
+  val ownerShipId: Int = 1,
   val ownerCallsign: String,
   val ownerSyndicateTag: String,
   val ownerArmadaName: String,
@@ -428,7 +458,8 @@ class RiftGameEngine(
   var radarBgBitmap: Bitmap? = null
 
   fun getEffectiveBuffCap(): Int {
-    RiftCalibrationState.buffTargetCountOverride?.let { return it.coerceAtLeast(0) }
+    val mult = (currentCustomGame?.crateSpawnMult ?: 1.0f).coerceIn(0f, 3f)
+    RiftCalibrationState.buffTargetCountOverride?.let { return (it * mult).toInt().coerceAtLeast(0) }
     val modeCap =
       when (RiftCalibrationState.buffModeOverride.uppercase()) {
         "3V3" -> 12
@@ -436,16 +467,21 @@ class RiftGameEngine(
         "10V10" -> 20
         else -> RiftCalibrationState.buffCapFfa
       }
-    return modeCap.coerceAtLeast(0)
+    return (modeCap * mult).toInt().coerceAtLeast(0)
   }
 
   var mode: String = "SECTOR_CONVERGENCE"
   var activeRankedMode: RankedGameMode = RankedGameMode.SECTOR_CONVERGENCE
-  var activeTeamSizeBracket: Int = 3 // 2..5 for RIFT_SKIRMISH, 3/5/10 for SYNDICATE_WARS, 10 for STASIS_BREACH
+  var activeTeamSizeBracket: Int = 3 // 2..5 for RIFT_SKIRMISH, 3/5/10 for RIFT_CONTROL & SYNDICATE_WARS, 10 for STASIS_BREACH
   var teamSize: Int = 20
   var buffVersion: Int = 0
+  var isShipLockedForMatch: Boolean = false
 
-  // Mode 2 (RIFT_SKIRMISH) & Syndicate Wars TDM Best-of-3 State
+  // Cloneable Non-Ranked Custom Game Instances
+  val activeCustomGames = mutableListOf<CustomGameConfig>()
+  var currentCustomGame: CustomGameConfig? = null
+
+  // Mode 2 (RIFT_SKIRMISH) & Syndicate Wars TDM Best-of-3 State (3m rounds, no respawn until round end, ally spectate)
   var skirmishRound: Int = 1
   val skirmishCurrentRound: Int
     get() = skirmishRound
@@ -453,6 +489,8 @@ class RiftGameEngine(
   var skirmishEastRoundWins: Int = 0
   var skirmishWestKills: Int = 0
   var skirmishEastKills: Int = 0
+  var skirmishRoundTimerSec: Float = 180f
+  var spectatingTargetShipId: String = ""
   var rivalSyndicateWarTag: String = "VTX"
   var onSyndicateWarFinished: (won: Boolean, trophyDelta: Int) -> Unit = { _, _ -> }
 
@@ -461,16 +499,29 @@ class RiftGameEngine(
   var fluxCoreCarrierEntityId: String = ""
   private var fluxCoreBountyTickAccum: Float = 0f
 
-  // Mode 4 (STASIS_BREACH) 10v10 Territory Jailbreak & Reactor Assault State
-  val westBrigRect = RectF(1100f - 340f, 4000f - 340f, 1100f + 340f, 4000f + 340f)
-  val eastBrigRect = RectF(6900f - 340f, 4000f - 340f, 6900f + 340f, 4000f + 340f)
-  val westBrigReactorX: Float = 1480f
+  // Mode 4 (STASIS_BREACH) 10v10 Circular Stasis Bubble Jail & Center Core State
+  val stasisJailRadius: Float = 360f
+  val westBrigReactorX: Float = 1400f
   val westBrigReactorY: Float = 4000f
-  val eastBrigReactorX: Float = 6520f
+  val eastBrigReactorX: Float = 6600f
   val eastBrigReactorY: Float = 4000f
+  val westBrigRect = RectF(westBrigReactorX - stasisJailRadius, westBrigReactorY - stasisJailRadius, westBrigReactorX + stasisJailRadius, westBrigReactorY + stasisJailRadius)
+  val eastBrigRect = RectF(eastBrigReactorX - stasisJailRadius, eastBrigReactorY - stasisJailRadius, eastBrigReactorX + stasisJailRadius, eastBrigReactorY + stasisJailRadius)
   val brigReactorRadius: Float = 54f
-  var westBrigGeneratorHp: Float = 8000f
-  var eastBrigGeneratorHp: Float = 8000f
+  var westBrigGeneratorHp: Float = 4000f
+  var eastBrigGeneratorHp: Float = 4000f
+
+  // Mode 5 (RIFT_CONTROL) 2-Rift Tug-of-War State
+  val riftAlphaX: Float = 2600f
+  val riftAlphaY: Float = 4000f
+  val riftOmegaX: Float = 5400f
+  val riftOmegaY: Float = 4000f
+  val riftCaptureRadius: Float = 340f
+  var riftAlphaControlSec: Float = 0f // -30f (West Lock) .. +30f (East Lock)
+  var riftOmegaControlSec: Float = 0f // -30f (West Lock) .. +30f (East Lock)
+  var riftAlphaLockedBy: Int = -1 // -1 = unlocked, 0 = West, 1 = East
+  var riftOmegaLockedBy: Int = -1 // -1 = unlocked, 0 = West, 1 = East
+  var riftControlMatchTimerSec: Float = 180f
 
   // Fluid Up-to-5-Man Named Armada State
   var activeArmadaName: String = "" // "" = SOLO
@@ -527,6 +578,15 @@ class RiftGameEngine(
 
   fun effectiveCameraScale(): Float =
     BASE_CAMERA_SCALE * (cameraZoom * RiftCalibrationState.cameraZoomScale).coerceIn(0.2f, 2.5f)
+
+  fun isCustomGameActive(): Boolean = currentCustomGame != null
+
+  fun getEffectiveProjectileScale(): Float =
+    if (currentCustomGame != null) {
+      RiftCalibrationState.projectileScale * currentCustomGame!!.projectileSizeMult
+    } else {
+      1.0f
+    }
 
   // Persistent counters tracked by engine
   var pvpKills: Long = 0L
@@ -849,6 +909,10 @@ class RiftGameEngine(
       s.speedOverchargeStacks = 0
       s.thrustOverchargeStacks = 0
       s.rechargeOverchargeStacks = 0
+      s.turnOverchargeStacks = 0
+      s.maxFluxOverchargeStacks = 0
+      s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
+      s.flux = s.maxFlux
       s.multiShotCharges = 0
       s.hasBouncingBulletsUpgrade = false
       s.safeZoneStayTimer = 0f
@@ -912,6 +976,24 @@ class RiftGameEngine(
         phaseShieldTimer = 3.0f,
       )
     syncLocalArmadaSelfSlot()
+    activeCustomGames.add(
+      CustomGameConfig(
+        instanceId = "custom_fat_bullets_ffa",
+        title = "Fat Bullets 5m FFA",
+        hostCallsign = "NEXUS HOST",
+        baseMode = RankedGameMode.SECTOR_CONVERGENCE,
+        teamSizeBracket = 20,
+        matchDurationMinutes = 5,
+        allowArmadasInFfa = false,
+        botsEnabled = true,
+        bulletSizeMult = 2.2f,
+        damageMult = 1.15f,
+        speedMult = 1.0f,
+        healthMult = 1.0f,
+        rechargeMult = 1.15f,
+        crateSpawnMult = 1.25f,
+      )
+    )
     rebuildRosterForMode("FFA")
   }
 
@@ -1129,24 +1211,88 @@ class RiftGameEngine(
     }
   }
 
+  fun effectiveModeRules(): RankedGameMode = currentCustomGame?.baseMode ?: activeRankedMode
+
   fun isTeamBasedRankedMode(): Boolean =
-    activeRankedMode in
+    effectiveModeRules() in
       setOf(
         RankedGameMode.RIFT_SKIRMISH,
         RankedGameMode.STASIS_BREACH,
+        RankedGameMode.RIFT_CONTROL,
         RankedGameMode.SYNDICATE_WARS,
       )
 
   fun isStasisBreachRulesActive(): Boolean =
-    activeRankedMode == RankedGameMode.STASIS_BREACH ||
-      (activeRankedMode == RankedGameMode.SYNDICATE_WARS && activeTeamSizeBracket >= 10)
+    effectiveModeRules() == RankedGameMode.STASIS_BREACH ||
+      (effectiveModeRules() == RankedGameMode.SYNDICATE_WARS && activeTeamSizeBracket >= 10)
 
   fun isSkirmishRulesActive(): Boolean =
-    activeRankedMode == RankedGameMode.RIFT_SKIRMISH ||
-      (activeRankedMode == RankedGameMode.SYNDICATE_WARS && activeTeamSizeBracket < 10)
+    effectiveModeRules() == RankedGameMode.RIFT_SKIRMISH ||
+      (effectiveModeRules() == RankedGameMode.SYNDICATE_WARS && activeTeamSizeBracket < 10)
 
   fun isFluxCoreRulesActive(): Boolean =
-    activeRankedMode == RankedGameMode.FLUX_CORE
+    effectiveModeRules() == RankedGameMode.FLUX_CORE
+
+  fun isRiftControlRulesActive(): Boolean =
+    effectiveModeRules() == RankedGameMode.RIFT_CONTROL
+
+  fun enforceBotsEnabledState() {
+    val botsAllowed = currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled
+    if (!botsAllowed) {
+      ships.removeAll { !it.isHuman && !it.isLocalPlayer }
+    } else if (ships.none { !it.isHuman && !it.isLocalPlayer }) {
+      rebuildRosterForMode(mode)
+    }
+  }
+
+  fun createAndJoinCustomGame(config: CustomGameConfig) {
+    activeCustomGames.removeAll { it.instanceId == config.instanceId }
+    activeCustomGames.add(0, config)
+    joinCustomGame(config.instanceId)
+  }
+
+  fun joinCustomGame(instanceId: String) {
+    val cfg = activeCustomGames.firstOrNull { it.instanceId == instanceId } ?: return
+    currentCustomGame = cfg
+    activeRankedMode = cfg.baseMode
+    mode = cfg.baseMode.id
+    activeTeamSizeBracket = cfg.teamSizeBracket
+    publicMatchDurationSec = 0f
+    publicMatchCycleLimitSec = (cfg.matchDurationMinutes.coerceIn(1, 120) * 60f)
+    skirmishRound = 1
+    skirmishWestRoundWins = 0
+    skirmishEastRoundWins = 0
+    skirmishWestKills = 0
+    skirmishEastKills = 0
+    skirmishRoundTimerSec = 180f
+    spectatingTargetShipId = ""
+    resetFluxCoreToCenter()
+    westBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
+    eastBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
+    resetRiftControlZones()
+    bullets.clear()
+    bombs.clear()
+    decoys.clear()
+    brickWalls.clear()
+    interdictorBubbles.clear()
+    rebuildRosterForMode(cfg.baseMode.id)
+    for (s in ships) {
+      s.maxFlux = s.spec.maxFlux * cfg.healthMult
+      s.flux = s.maxFlux
+    }
+    isShipLockedForMatch = isTeamBasedRankedMode()
+    sfx.playWarp()
+    onPrizeToast("🎮 JOINED CUSTOM GAME: ${cfg.title.uppercase()} (${cfg.baseMode.title})")
+    onStatsUpdated()
+  }
+
+  private fun resetRiftControlZones() {
+    riftAlphaControlSec = 0f
+    riftOmegaControlSec = 0f
+    riftAlphaLockedBy = -1
+    riftOmegaLockedBy = -1
+    riftControlMatchTimerSec = 180f
+  }
 
   /**
    * Returns the count of HUMAN pilots (isHuman == true, NEVER counting AI bots) in the specified mode.
@@ -1172,7 +1318,7 @@ class RiftGameEngine(
     val cap =
       when (activeRankedMode) {
         RankedGameMode.RIFT_SKIRMISH -> (activeTeamSizeBracket.coerceIn(2, 5) * 2)
-        RankedGameMode.SYNDICATE_WARS -> (activeTeamSizeBracket.coerceIn(3, 10) * 2)
+        RankedGameMode.RIFT_CONTROL, RankedGameMode.SYNDICATE_WARS -> (activeTeamSizeBracket.coerceIn(3, 10) * 2)
         else -> 20
       }
     if (ships.size >= cap) {
@@ -1193,7 +1339,7 @@ class RiftGameEngine(
     val myTag = localPlayer.syndicateTag.trim().uppercase()
     if (
       myTag.isEmpty() ||
-        myTag in setOf("SOLO", "FREE", "GUEST", "BOT", "UNAFFILIATED")
+        myTag in setOf("SOLO", "FREE", "GUEST", "BOT", "UNAFFILIATED", "RFT")
     ) {
       return false to "Join or found a Syndicate first to queue for Ranked Syndicate Wars."
     }
@@ -1208,7 +1354,7 @@ class RiftGameEngine(
   }
 
   /**
-   * Deploys the local pilot (and their active Armada squad on Team 0) into any of the 5 always-open Ranked Modes.
+   * Deploys the local pilot (and their active Armada squad on Team 0) into any of the 6 always-open Ranked Modes.
    */
   fun deployToRankedMode(mode: RankedGameMode, teamSizeBracket: Int = 3) {
     if (mode == RankedGameMode.SYNDICATE_WARS) {
@@ -1219,13 +1365,15 @@ class RiftGameEngine(
         return
       }
     }
+    currentCustomGame = null
+    publicMatchCycleLimitSec = RiftCalibrationState.publicMatchCycleLimitSec
     activeRankedMode = mode
     this.mode = mode.id
     activeTeamSizeBracket =
       when (mode) {
         RankedGameMode.RIFT_SKIRMISH -> teamSizeBracket.coerceIn(2, 5)
         RankedGameMode.STASIS_BREACH -> 10
-        RankedGameMode.SYNDICATE_WARS ->
+        RankedGameMode.RIFT_CONTROL, RankedGameMode.SYNDICATE_WARS ->
           when {
             teamSizeBracket >= 10 -> 10
             teamSizeBracket >= 5 -> 5
@@ -1240,13 +1388,16 @@ class RiftGameEngine(
     skirmishEastRoundWins = 0
     skirmishWestKills = 0
     skirmishEastKills = 0
-    val rivalPool = listOf("VTX", "AEX", "KST", "OBS", "SOL", "RFT")
+    skirmishRoundTimerSec = 180f
+    spectatingTargetShipId = ""
+    val rivalPool = listOf("VTX", "AEX", "KST", "OBS", "SOL", "NXS")
     rivalSyndicateWarTag =
       rivalPool.firstOrNull { !it.equals(localPlayer.syndicateTag, ignoreCase = true) } ?: "VTX"
 
     resetFluxCoreToCenter()
     westBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
     eastBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
+    resetRiftControlZones()
 
     bullets.clear()
     bombs.clear()
@@ -1255,6 +1406,7 @@ class RiftGameEngine(
     interdictorBubbles.clear()
 
     rebuildRosterForMode(mode.id)
+    isShipLockedForMatch = isTeamBasedRankedMode()
     sfx.playWarp()
     val humanCount = getHumanPilotCountForMode(mode)
     val botCount = (ships.size - humanCount).coerceAtLeast(0)
@@ -1335,6 +1487,8 @@ class RiftGameEngine(
   fun areAllied(a: ShipEntity, b: ShipEntity): Boolean {
     if (a.id == b.id) return true
     if (isTeamBasedRankedMode()) return a.freq == b.freq
+    val allowFfaArmadas = currentCustomGame?.allowArmadasInFfa ?: true
+    if (!allowFfaArmadas) return false
     if (a.armadaName.isNotEmpty() && a.armadaName == b.armadaName) return true
     if (
       a.syndicateTag.isNotEmpty() &&
@@ -1342,6 +1496,7 @@ class RiftGameEngine(
         a.syndicateTag != "GUEST" &&
         a.syndicateTag != "BOT" &&
         a.syndicateTag != "UNAFFILIATED" &&
+        a.syndicateTag != "RFT" &&
         a.syndicateTag == b.syndicateTag
     ) {
       return true
@@ -1352,6 +1507,8 @@ class RiftGameEngine(
   fun isBulletAlliedWithShip(b: BulletEntity, s: ShipEntity): Boolean {
     if (b.ownerId == s.id) return true
     if (isTeamBasedRankedMode()) return b.freq == s.freq
+    val allowFfaArmadas = currentCustomGame?.allowArmadasInFfa ?: true
+    if (!allowFfaArmadas) return false
     if (b.ownerArmadaName.isNotEmpty() && b.ownerArmadaName == s.armadaName) return true
     if (
       b.ownerSyndicateTag.isNotEmpty() &&
@@ -1359,6 +1516,7 @@ class RiftGameEngine(
         b.ownerSyndicateTag != "GUEST" &&
         b.ownerSyndicateTag != "BOT" &&
         b.ownerSyndicateTag != "UNAFFILIATED" &&
+        b.ownerSyndicateTag != "RFT" &&
         b.ownerSyndicateTag == s.syndicateTag
     ) {
       return true
@@ -1369,6 +1527,8 @@ class RiftGameEngine(
   fun isBombAlliedWithShip(bm: BombEntity, s: ShipEntity): Boolean {
     if (bm.ownerId == s.id) return true
     if (isTeamBasedRankedMode()) return bm.freq == s.freq
+    val allowFfaArmadas = currentCustomGame?.allowArmadasInFfa ?: true
+    if (!allowFfaArmadas) return false
     if (bm.ownerArmadaName.isNotEmpty() && bm.ownerArmadaName == s.armadaName) return true
     if (
       bm.ownerSyndicateTag.isNotEmpty() &&
@@ -1376,6 +1536,7 @@ class RiftGameEngine(
         bm.ownerSyndicateTag != "GUEST" &&
         bm.ownerSyndicateTag != "BOT" &&
         bm.ownerSyndicateTag != "UNAFFILIATED" &&
+        bm.ownerSyndicateTag != "RFT" &&
         bm.ownerSyndicateTag == s.syndicateTag
     ) {
       return true
@@ -1386,13 +1547,17 @@ class RiftGameEngine(
   private fun rectOverlapsProtectedZone(rx: Float, ry: Float, rw: Float, rh: Float): Boolean {
     val rRight = rx + rw
     val rBottom = ry + rh
-    // Protect West Warp Gate + West Stasis Brig + West Brig Reactor Core (x: 450..1620, y: 3500..4500)
-    val overlapsWestBrig = rRight >= 450f && rx <= 1620f && rBottom >= 3500f && ry <= 4500f
-    // Protect East Warp Gate + East Stasis Brig + East Brig Reactor Core (x: 6380..7550, y: 3500..4500)
-    val overlapsEastBrig = rRight >= 6380f && rx <= 7550f && rBottom >= 3500f && ry <= 4500f
+    // Protect West Warp Gate + West Circular Stasis Jail (x: 450..1820, y: 3450..4550)
+    val overlapsWestBrig = rRight >= 450f && rx <= 1820f && rBottom >= 3450f && ry <= 4550f
+    // Protect East Warp Gate + East Circular Stasis Jail (x: 6180..7550, y: 3450..4550)
+    val overlapsEastBrig = rRight >= 6180f && rx <= 7550f && rBottom >= 3450f && ry <= 4550f
+    // Protect Rift Control Alpha & Omega Zones (x: 2200..3000 & 5000..5800, y: 3600..4400)
+    val overlapsRiftControl =
+      (rRight >= 2200f && rx <= 3000f && rBottom >= 3600f && ry <= 4400f) ||
+        (rRight >= 5000f && rx <= 5800f && rBottom >= 3600f && ry <= 4400f)
     // Protect Flux Core initial spawn north of Safe Zone (x: 3800..4200, y: 3150..3580)
     val overlapsFluxSpawn = rRight >= 3800f && rx <= 4200f && rBottom >= 3150f && ry <= 3580f
-    return overlapsWestBrig || overlapsEastBrig || overlapsFluxSpawn
+    return overlapsWestBrig || overlapsEastBrig || overlapsRiftControl || overlapsFluxSpawn
   }
 
   fun generateSectorArena(seed: Int) {
@@ -1604,10 +1769,12 @@ class RiftGameEngine(
       } else {
         when (val baseRoll = Random.nextInt(11)) {
           10 ->
-            when (Random.nextInt(3)) {
+            when (Random.nextInt(5)) {
               0 -> -10 // Speed Overcharge (+8% Top Speed)
               1 -> -11 // Thrust Overcharge (+8% Thrust)
-              else -> -12 // Reactor Overcharge (+8% Flux Recharge)
+              2 -> -12 // Reactor Overcharge (+8% Flux Recharge)
+              3 -> -13 // Turn Overcharge (+12% Turn Rate)
+              else -> -14 // Capacitor Overcharge (+10% Max Flux)
             }
           else -> baseRoll
         }
@@ -1719,17 +1886,17 @@ class RiftGameEngine(
   }
 
   private fun getStasisBrigPrisonerSpawnPosition(prisonerFreq: Int): Pair<Float, Float> {
-    // West team (freq == 0) prisoners are held inside East Team's Brig (centered at 6900f, 4000f)
-    // East team (freq == 1) prisoners are held inside West Team's Brig (centered at 1100f, 4000f)
-    val brig = if (prisonerFreq == 0) eastBrigRect else westBrigRect
-    val margin = 68f
-    val x = (brig.left + margin) + Random.nextFloat() * (brig.width() - margin * 2f)
-    val y = (brig.top + margin) + Random.nextFloat() * (brig.height() - margin * 2f)
-    return x to y
+    // West team (freq == 0) prisoners are held inside East Team's Circular Jail (6600f, 4000f)
+    // East team (freq == 1) prisoners are held inside West Team's Circular Jail (1400f, 4000f)
+    val cx = if (prisonerFreq == 0) eastBrigReactorX else westBrigReactorX
+    val cy = if (prisonerFreq == 0) eastBrigReactorY else westBrigReactorY
+    val ang = Random.nextFloat() * PI.toFloat() * 2f
+    val dist = 120f + Random.nextFloat() * (stasisJailRadius - 180f)
+    return (cx + cos(ang) * dist) to (cy + sin(ang) * dist)
   }
 
   private fun getOuterGateSpawnPosition(freq: Int): Pair<Float, Float> {
-    if (isSkirmishRulesActive() || isStasisBreachRulesActive()) {
+    if (isSkirmishRulesActive() || isStasisBreachRulesActive() || isRiftControlRulesActive()) {
       return getSkirmishGateSpawnPosition(freq)
     }
     for (i in 0 until 30) {
@@ -1749,17 +1916,19 @@ class RiftGameEngine(
     mode = resolvedMode.id
 
     val isTeamMode = isTeamBasedRankedMode()
+    isShipLockedForMatch = isTeamMode
     val perTeamTarget =
       when (resolvedMode) {
         RankedGameMode.RIFT_SKIRMISH -> activeTeamSizeBracket.coerceIn(2, 5)
         RankedGameMode.STASIS_BREACH -> 10
-        RankedGameMode.SYNDICATE_WARS -> activeTeamSizeBracket.coerceIn(3, 10)
+        RankedGameMode.RIFT_CONTROL, RankedGameMode.SYNDICATE_WARS -> activeTeamSizeBracket.coerceIn(3, 10)
         else -> 20
       }
     teamSize = if (isTeamMode) perTeamTarget else 20
 
     localPlayer.freq = 0
     localPlayer.isInStasisBrig = false
+    spectatingTargetShipId = ""
     if (isTeamMode) {
       val sp = getSkirmishGateSpawnPosition(0)
       localPlayer.x = sp.first
@@ -1794,98 +1963,101 @@ class RiftGameEngine(
       }
     }
 
+    val botsAllowed = currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled
     var botIdx = 0
     val wingSlots = activeArmadaSlots.filter { !it.isLeader }
-    if (isTeamMode) {
-      while (friendlyCount < perTeamTarget) {
-        val wingSlot = wingSlots.getOrNull(friendlyCount - 1)
-        val shipId = wingSlot?.shipId ?: (((botIdx * 3) % 9) + 1)
-        val spec = RiftCodex.getShipById(shipId)
-        val pos = getSkirmishGateSpawnPosition(0)
-        val tag =
-          when {
-            wingSlot != null -> wingSlot.syndicateTag
-            resolvedMode == RankedGameMode.SYNDICATE_WARS ->
-              localPlayer.syndicateTag.ifEmpty { "AEX" }
-            else -> localPlayer.syndicateTag.ifEmpty { "ALLY" }
-          }
-        updated.add(
-          ShipEntity(
-            id = "bot_ally_$botIdx",
-            callsign = wingSlot?.callsign ?: BOT_CALLSIGNS[botIdx % BOT_CALLSIGNS.size],
-            syndicateTag = tag,
-            armadaName = if (wingSlot != null) activeArmadaName else "",
-            shipId = shipId,
-            spec = spec,
-            freq = 0,
-            isHuman = false,
-            isLocalPlayer = false,
-            x = pos.first,
-            y = pos.second,
-            angle = 0f,
-            weaponAngle = 0f,
-            bounty = 100,
-            phaseShieldTimer = 3.0f,
+    if (botsAllowed) {
+      if (isTeamMode) {
+        while (friendlyCount < perTeamTarget) {
+          val wingSlot = wingSlots.getOrNull(friendlyCount - 1)
+          val shipId = wingSlot?.shipId ?: (((botIdx * 3) % 9) + 1)
+          val spec = RiftCodex.getShipById(shipId)
+          val pos = getSkirmishGateSpawnPosition(0)
+          val tag =
+            when {
+              wingSlot != null -> wingSlot.syndicateTag
+              resolvedMode == RankedGameMode.SYNDICATE_WARS ->
+                localPlayer.syndicateTag.ifEmpty { "AEX" }
+              else -> localPlayer.syndicateTag.ifEmpty { "ALLY" }
+            }
+          updated.add(
+            ShipEntity(
+              id = "bot_ally_$botIdx",
+              callsign = wingSlot?.callsign ?: BOT_CALLSIGNS[botIdx % BOT_CALLSIGNS.size],
+              syndicateTag = tag,
+              armadaName = if (wingSlot != null) activeArmadaName else "",
+              shipId = shipId,
+              spec = spec,
+              freq = 0,
+              isHuman = false,
+              isLocalPlayer = false,
+              x = pos.first,
+              y = pos.second,
+              angle = 0f,
+              weaponAngle = 0f,
+              bounty = 100,
+              phaseShieldTimer = 3.0f,
+            )
           )
-        )
-        friendlyCount++
-        botIdx++
-      }
+          friendlyCount++
+          botIdx++
+        }
 
-      while (rivalCount < perTeamTarget) {
-        val shipId = ((botIdx * 5 + 1) % 9) + 1
-        val spec = RiftCodex.getShipById(shipId)
-        val pos = getSkirmishGateSpawnPosition(1)
-        val tag =
-          if (resolvedMode == RankedGameMode.SYNDICATE_WARS) rivalSyndicateWarTag else "RIVL"
-        updated.add(
-          ShipEntity(
-            id = "bot_rival_$botIdx",
-            callsign = BOT_CALLSIGNS[(botIdx + 7) % BOT_CALLSIGNS.size],
-            syndicateTag = tag,
-            armadaName = "",
-            shipId = shipId,
-            spec = spec,
-            freq = 1,
-            isHuman = false,
-            isLocalPlayer = false,
-            x = pos.first,
-            y = pos.second,
-            angle = PI.toFloat(),
-            weaponAngle = PI.toFloat(),
-            bounty = 100,
-            phaseShieldTimer = 3.0f,
+        while (rivalCount < perTeamTarget) {
+          val shipId = ((botIdx * 5 + 1) % 9) + 1
+          val spec = RiftCodex.getShipById(shipId)
+          val pos = getSkirmishGateSpawnPosition(1)
+          val tag =
+            if (resolvedMode == RankedGameMode.SYNDICATE_WARS) rivalSyndicateWarTag else "RIVL"
+          updated.add(
+            ShipEntity(
+              id = "bot_rival_$botIdx",
+              callsign = BOT_CALLSIGNS[(botIdx + 7) % BOT_CALLSIGNS.size],
+              syndicateTag = tag,
+              armadaName = "",
+              shipId = shipId,
+              spec = spec,
+              freq = 1,
+              isHuman = false,
+              isLocalPlayer = false,
+              x = pos.first,
+              y = pos.second,
+              angle = PI.toFloat(),
+              weaponAngle = PI.toFloat(),
+              bounty = 100,
+              phaseShieldTimer = 3.0f,
+            )
           )
-        )
-        rivalCount++
-        botIdx++
-      }
-    } else {
-      val maxTotalPlayers = 20
-      while (updated.size < maxTotalPlayers) {
-        val shipId = ((botIdx * 5 + 1) % 9) + 1
-        val spec = RiftCodex.getShipById(shipId)
-        val pos = getOuterGateSpawnPosition(1)
-        updated.add(
-          ShipEntity(
-            id = "bot_rival_$botIdx",
-            callsign = BOT_CALLSIGNS[(botIdx + 7) % BOT_CALLSIGNS.size],
-            syndicateTag = "BOT",
-            armadaName = "",
-            shipId = shipId,
-            spec = spec,
-            freq = botIdx + 1,
-            isHuman = false,
-            isLocalPlayer = false,
-            x = pos.first,
-            y = pos.second,
-            angle = PI.toFloat(),
-            weaponAngle = PI.toFloat(),
-            bounty = 100,
+          rivalCount++
+          botIdx++
+        }
+      } else {
+        val maxTotalPlayers = 20
+        while (updated.size < maxTotalPlayers) {
+          val shipId = ((botIdx * 5 + 1) % 9) + 1
+          val spec = RiftCodex.getShipById(shipId)
+          val pos = getOuterGateSpawnPosition(1)
+          updated.add(
+            ShipEntity(
+              id = "bot_rival_$botIdx",
+              callsign = BOT_CALLSIGNS[(botIdx + 7) % BOT_CALLSIGNS.size],
+              syndicateTag = "BOT",
+              armadaName = "",
+              shipId = shipId,
+              spec = spec,
+              freq = botIdx + 1,
+              isHuman = false,
+              isLocalPlayer = false,
+              x = pos.first,
+              y = pos.second,
+              angle = PI.toFloat(),
+              weaponAngle = PI.toFloat(),
+              bounty = 100,
+            )
           )
-        )
-        rivalCount++
-        botIdx++
+          rivalCount++
+          botIdx++
+        }
       }
     }
 
@@ -2040,6 +2212,11 @@ class RiftGameEngine(
   }
 
   fun switchLocalPlayerShip(newShipId: Int, forceFromHangar: Boolean = false): Boolean {
+    if (isShipLockedForMatch && isTeamBasedRankedMode()) {
+      sfx.playMutedClick()
+      onPrizeToast("⚠️ Ship is locked during Team Matches. Choose your hull before deploying.")
+      return false
+    }
     val atFullFlux = localPlayer.flux >= localPlayer.maxFlux * 0.98f
     val inSafe = isInsideSafeZone(localPlayer.x, localPlayer.y)
     if (!forceFromHangar && !atFullFlux && !inSafe) {
@@ -2047,10 +2224,11 @@ class RiftGameEngine(
       return false
     }
     val spec = RiftCodex.getShipById(newShipId)
+    val customHealthMult = currentCustomGame?.healthMult ?: 1.0f
     localPlayer.shipId = spec.id
     localPlayer.spec = spec
-    localPlayer.maxFlux = spec.maxFlux
-    localPlayer.flux = spec.maxFlux
+    localPlayer.maxFlux = spec.maxFlux * (1f + localPlayer.maxFluxOverchargeStacks * 0.10f) * customHealthMult
+    localPlayer.flux = localPlayer.maxFlux
     localPlayer.repels = spec.initialRepels
     localPlayer.shotgunWavesRemaining = 0
     localPlayer.shotgunWaveTimer = 0f
@@ -2063,7 +2241,7 @@ class RiftGameEngine(
     currentLifeStats.shipFlown = formatShipLabel(localPlayer)
     buffVersion++
     syncLocalArmadaSelfSlot()
-    onPrizeToast("HULL EQUIPPED: ${formatShipLabel(localPlayer).uppercase(java.util.Locale.US)} (${spec.maxFlux.toInt()}⚡)")
+    onPrizeToast("HULL EQUIPPED: ${formatShipLabel(localPlayer).uppercase(java.util.Locale.US)} (${localPlayer.maxFlux.toInt()}⚡)")
     return true
   }
 
@@ -2270,12 +2448,14 @@ class RiftGameEngine(
       } else {
         0f
       }
-    val overchargeMult = (if (overcharged) (1.0f + bonusPct) else 1.0f) * (1.0f + fluxCoreTierBonus)
+    val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
+    val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+    val overchargeMult = (if (overcharged) (1.0f + bonusPct) else 1.0f) * (1.0f + fluxCoreTierBonus) * customDmgMult
 
     // Permanent-Until-Death Bouncing Bullets Hull Upgrade (+1 wall bounce)
     val bonusBounce = if (ship.hasBouncingBulletsUpgrade) 1 else 0
     val bounces = spec.primaryBounces + bonusBounce
-    val bulletSpeed = spec.primarySpeed * (if (overcharged) (1.0f + bonusPct) else 1.0f)
+    val bulletSpeed = spec.primarySpeed * (if (overcharged) (1.0f + bonusPct) else 1.0f) * customSpdMult
     val isFriendlyToLocal = areAllied(localPlayer, ship)
     val baseColor =
       when {
@@ -2344,6 +2524,7 @@ class RiftGameEngine(
         bullets.add(
           BulletEntity(
             ownerId = ship.id,
+            ownerShipId = ship.spec.id,
             ownerCallsign = ship.callsign,
             ownerSyndicateTag = ship.syndicateTag,
             ownerArmadaName = ship.armadaName,
@@ -2378,6 +2559,7 @@ class RiftGameEngine(
       bullets.add(
         BulletEntity(
           ownerId = ship.id,
+          ownerShipId = ship.spec.id,
           ownerCallsign = ship.callsign,
           ownerSyndicateTag = ship.syndicateTag,
           ownerArmadaName = ship.armadaName,
@@ -2628,12 +2810,18 @@ class RiftGameEngine(
           }
         }
         val crossesBrigWall =
-          if (isStasisBreachRulesActive() && ship.isInStasisBrig) {
-            val brig = if (ship.freq == 0) eastBrigRect else westBrigRect
-            candX < brig.left + ship.radius + 4f ||
-              candX > brig.right - ship.radius - 4f ||
-              candY < brig.top + ship.radius + 4f ||
-              candY > brig.bottom - ship.radius - 4f
+          if (isStasisBreachRulesActive()) {
+            val wDist0 = hypot(startX - westBrigReactorX, startY - westBrigReactorY)
+            val wDist1 = hypot(candX - westBrigReactorX, candY - westBrigReactorY)
+            val eDist0 = hypot(startX - eastBrigReactorX, startY - eastBrigReactorY)
+            val eDist1 = hypot(candX - eastBrigReactorX, candY - eastBrigReactorY)
+            val crossesWest =
+              (wDist0 <= stasisJailRadius && wDist1 > stasisJailRadius - ship.radius - 2f) ||
+                (wDist0 > stasisJailRadius && wDist1 < stasisJailRadius + ship.radius + 2f)
+            val crossesEast =
+              (eDist0 <= stasisJailRadius && eDist1 > stasisJailRadius - ship.radius - 2f) ||
+                (eDist0 > stasisJailRadius && eDist1 < stasisJailRadius + ship.radius + 2f)
+            crossesWest || crossesEast
           } else {
             false
           }
@@ -2850,6 +3038,7 @@ class RiftGameEngine(
       bullets.add(
         BulletEntity(
           ownerId = ship.id,
+          ownerShipId = ship.spec.id,
           ownerCallsign = ship.callsign,
           ownerSyndicateTag = ship.syndicateTag,
           ownerArmadaName = ship.armadaName,
@@ -2896,6 +3085,7 @@ class RiftGameEngine(
       bullets.add(
         BulletEntity(
           ownerId = ship.id,
+          ownerShipId = ship.spec.id,
           ownerCallsign = ship.callsign,
           ownerSyndicateTag = ship.syndicateTag,
           ownerArmadaName = ship.armadaName,
@@ -2983,6 +3173,7 @@ class RiftGameEngine(
       bullets.add(
         BulletEntity(
           ownerId = bomb.ownerId,
+          ownerShipId = 7,
           ownerCallsign = bomb.ownerCallsign,
           ownerSyndicateTag = bomb.ownerSyndicateTag,
           ownerArmadaName = bomb.ownerArmadaName,
@@ -3717,6 +3908,9 @@ class RiftGameEngine(
       target.speedOverchargeStacks = 0
       target.thrustOverchargeStacks = 0
       target.rechargeOverchargeStacks = 0
+      target.turnOverchargeStacks = 0
+      target.maxFluxOverchargeStacks = 0
+      target.maxFlux = target.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
       target.hasBouncingBulletsUpgrade = false
 
       if (target.isLocalPlayer || hypot(target.x - localPlayer.x, target.y - localPlayer.y) < 1100f) {
@@ -3837,26 +4031,39 @@ class RiftGameEngine(
       ejectFluxCoreFromShip(victim, reason = "CARRIER TERMINATED")
     }
 
-    // 2. Mode 2: RIFT_SKIRMISH (or 3v3/5v5 SYNDICATE_WARS) — Best-of-3 Team Deathmatch
+    // 2. Mode 2: RIFT_SKIRMISH (or 3v3/5v5 SYNDICATE_WARS) — 3-Minute Rounds, No Respawn Until Round End, Ally Spectate
     if (isSkirmishRulesActive()) {
+      victim.respawnTimer = 9999f
       if (victim.freq == 1) {
         skirmishWestKills++
       } else {
         skirmishEastKills++
       }
+      if (victim.isLocalPlayer) {
+        val bestAlly =
+          ships
+            .filter { it.freq == localPlayer.freq && it.respawnTimer <= 0f && !it.isLocalPlayer }
+            .maxByOrNull { it.bounty }
+        spectatingTargetShipId = bestAlly?.id ?: ""
+        if (bestAlly != null) {
+          onPrizeToast("🎥 Spectating ${bestAlly.callsign} until round ends...")
+        }
+      }
+      val westAlive = ships.count { it.freq == 0 && it.respawnTimer <= 0f }
+      val eastAlive = ships.count { it.freq == 1 && it.respawnTimer <= 0f }
       val killTarget = RiftCalibrationState.skirmishKillTargetPerRound.coerceAtLeast(1)
-      if (skirmishWestKills >= killTarget) {
+      if (eastAlive == 0 || skirmishWestKills >= killTarget) {
         resolveSkirmishRoundWon(winningFreq = 0)
-      } else if (skirmishEastKills >= killTarget) {
+      } else if (westAlive == 0 || skirmishEastKills >= killTarget) {
         resolveSkirmishRoundWon(winningFreq = 1)
       }
     }
 
-    // 3. Mode 4: STASIS_BREACH (or 10v10 SYNDICATE_WARS) — Send eliminated pilot into enemy Stasis Brig
+    // 3. Mode 4: STASIS_BREACH (or 10v10 SYNDICATE_WARS) — Send eliminated pilot into enemy Circular Stasis Jail
     if (isStasisBreachRulesActive()) {
       victim.isInStasisBrig = true
       if (victim.isLocalPlayer) {
-        onPrizeToast("🔒 CAPTURED! RESPAWNING INSIDE ENEMY STASIS BRIG — ATTACK REACTOR CORE TO BREACH!")
+        onPrizeToast("🔒 Captured in Enemy Stasis Jail! Shoot the center Core to break out!")
       }
       checkStasisLockdownVictory()
     }
@@ -3870,10 +4077,13 @@ class RiftGameEngine(
     }
     skirmishWestKills = 0
     skirmishEastKills = 0
+    skirmishRoundTimerSec = 180f
+    spectatingTargetShipId = ""
 
     // Respawn & heal all ships at their West/East Horizon Warp Gates for the next round
     for (s in ships) {
       s.respawnTimer = 0f
+      s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
       s.flux = s.maxFlux
       s.vx = 0f
       s.vy = 0f
@@ -3951,6 +4161,7 @@ class RiftGameEngine(
     for (s in ships) {
       s.isInStasisBrig = false
       s.respawnTimer = 0f
+      s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
       s.flux = s.maxFlux
       s.vx = 0f
       s.vy = 0f
@@ -3969,7 +4180,7 @@ class RiftGameEngine(
       if (isClanWar) {
         onSyndicateWarFinished(true, 35)
       }
-      val msg = "🏆 TOTAL STASIS LOCKDOWN VICTORY! ALL 10 ENEMY PILOTS CAPTURED (+100❖ RIFT SHARDS)"
+      val msg = "🏆 TOTAL STASIS LOCKDOWN VICTORY! ALL ENEMY PILOTS JAILED (+100❖ RIFT SHARDS)"
       highBountyShutdownBanner = msg
       highBountyShutdownTimer = 5.5f
       sfx.playPrize()
@@ -3979,7 +4190,7 @@ class RiftGameEngine(
       if (isClanWar) {
         onSyndicateWarFinished(false, -20)
       }
-      val msg = "⚠️ TOTAL STASIS LOCKDOWN — EAST HORIZON CAPTURED ALL 10 WEST PILOTS! NEW MATCH STARTING"
+      val msg = "⚠️ TOTAL STASIS LOCKDOWN — EAST HORIZON JAILED ALL WEST PILOTS! NEW MATCH STARTING"
       highBountyShutdownBanner = msg
       highBountyShutdownTimer = 4.8f
       sfx.playWarp()
@@ -3988,13 +4199,14 @@ class RiftGameEngine(
   }
 
   fun damageBrigReactorCore(
-    targetBrigFreq: Int, // 0 = West Brig Reactor (holds East freq=1 prisoners), 1 = East Brig Reactor (holds West freq=0 prisoners)
+    targetBrigFreq: Int, // 0 = West Brig Core (holds East freq=1 prisoners), 1 = East Brig Core (holds West freq=0 prisoners)
     attacker: ShipEntity?,
     rawDamage: Float,
   ) {
     if (!isStasisBreachRulesActive()) return
-    val isPrisoner = attacker?.isInStasisBrig == true
-    val effectiveDmg = if (isPrisoner) rawDamage * 0.25f else rawDamage
+    // Strictly only prisoners inside that jail can damage the center Core (at 100% weapon damage)
+    if (attacker == null || !attacker.isInStasisBrig || attacker.freq == targetBrigFreq) return
+    val effectiveDmg = rawDamage
     if (effectiveDmg <= 0f) return
 
     val rx = if (targetBrigFreq == 0) westBrigReactorX else eastBrigReactorX
@@ -4006,11 +4218,11 @@ class RiftGameEngine(
       eastBrigGeneratorHp = max(0f, eastBrigGeneratorHp - effectiveDmg)
     }
 
-    if (attacker?.isLocalPlayer == true) {
+    if (attacker.isLocalPlayer) {
       currentLifeStats.shotsHit++
       currentLifeStats.damageDealt += effectiveDmg
       spawnPooledFct(
-        text = if (isPrisoner) "⚡ BRIG CORE -${effectiveDmg.toInt()} (25%)" else "⚡ BRIG CORE -${effectiveDmg.toInt()}",
+        text = "⚡ JAIL CORE -${effectiveDmg.toInt()}⚡",
         x = rx,
         y = ry - 36f,
         color = Color.parseColor("#FACC15"),
@@ -4046,16 +4258,47 @@ class RiftGameEngine(
       }
     }
 
-    shockwaves.add(ShockwaveEntity(rx, ry, 24f, 460f, Color.parseColor("#00F5D4")))
-    shockwaves.add(ShockwaveEntity(rx, ry, 16f, 340f, Color.parseColor("#FACC15")))
+    // Outward Core Explosion: damages and blasts away nearby outside enemy ships (s.freq == brigTeamFreq)
+    val blastRadius = 640f
+    for (s in ships) {
+      if (s.freq == brigTeamFreq && s.respawnTimer <= 0f && !isInsideSafeZone(s.x, s.y)) {
+        val dx = s.x - rx
+        val dy = s.y - ry
+        val dist = hypot(dx, dy)
+        if (dist <= blastRadius) {
+          val dSafe = dist.coerceAtLeast(1f)
+          val nx = dx / dSafe
+          val ny = dy / dSafe
+          s.vx += nx * 950f
+          s.vy += ny * 950f
+          val blastDmg = 1200f * (1f - (dist / blastRadius) * 0.45f).coerceIn(0.45f, 1f)
+          applyProjectileDamage(
+            target = s,
+            attackerId = "",
+            attackerIsHuman = false,
+            rawDamage = blastDmg,
+            impactAngle = atan2(ry - s.y, rx - s.x),
+            isHeavyImpact = true,
+            isEmp = false,
+            attackerShipLabel = "Stasis Jail Core",
+            weaponLabel = "Core Detonation",
+          )
+        }
+      }
+    }
+
+    shockwaves.add(ShockwaveEntity(rx, ry, 28f, 640f, Color.parseColor("#00F5D4")))
+    shockwaves.add(ShockwaveEntity(rx, ry, 20f, 480f, Color.parseColor("#FACC15")))
+    shockwaves.add(ShockwaveEntity(rx, ry, 14f, 320f, Color.parseColor("#EC4899")))
     spawnExplosion(rx, ry, Color.parseColor("#00F5D4"))
+    addTrauma(0.65f)
     sfx.playWarp()
 
-    val msg = "🔓 STASIS BRIG BREACHED! ALL PRISONERS RELEASED! ($releasedCount PILOTS FREED)"
+    val msg = "💥 STASIS CORE DETONATED! $releasedCount PRISONERS FREED!"
     highBountyShutdownBanner = msg
     highBountyShutdownTimer = 4.5f
     spawnPooledFct(
-      text = "🔓 STASIS BRIG BREACHED!",
+      text = "💥 CORE DETONATED!",
       x = rx,
       y = ry - 48f,
       color = Color.parseColor("#00F5D4"),
@@ -4096,6 +4339,9 @@ class RiftGameEngine(
     target.speedOverchargeStacks = 0
     target.thrustOverchargeStacks = 0
     target.rechargeOverchargeStacks = 0
+    target.turnOverchargeStacks = 0
+    target.maxFluxOverchargeStacks = 0
+    target.maxFlux = target.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
     target.hasBouncingBulletsUpgrade = false
 
     if (target.isLocalPlayer || hypot(target.x - localPlayer.x, target.y - localPlayer.y) < 1100f) {
@@ -4170,6 +4416,9 @@ class RiftGameEngine(
     target.speedOverchargeStacks = 0
     target.thrustOverchargeStacks = 0
     target.rechargeOverchargeStacks = 0
+    target.turnOverchargeStacks = 0
+    target.maxFluxOverchargeStacks = 0
+    target.maxFlux = target.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
     target.hasBouncingBulletsUpgrade = false
 
     if (target.isLocalPlayer || hypot(target.x - localPlayer.x, target.y - localPlayer.y) < 1100f) {
@@ -4477,22 +4726,18 @@ class RiftGameEngine(
       desiredAngle = atan2(fluxCoreOrb.y - bot.y, fluxCoreOrb.x - bot.x)
       bot.weaponAngle = desiredAngle
       bot.independentAimActive = false
-    } else if (
-      isStasisBreachRulesActive() &&
-        ships.count { it.freq == bot.freq && it.isInStasisBrig } >= 2 &&
-        (nearestEnemy == null || nearestDist > 520f)
-    ) {
-      // Free teammates assault the enemy Brig Reactor Core to trigger a jailbreak!
-      val targetRx = if (bot.freq == 0) eastBrigReactorX else westBrigReactorX
-      val targetRy = if (bot.freq == 0) eastBrigReactorY else westBrigReactorY
-      val distToReactor = hypot(targetRx - bot.x, targetRy - bot.y)
-      val toReactorAng = atan2(targetRy - bot.y, targetRx - bot.x)
-      bot.weaponAngle = toReactorAng
-      bot.independentAimActive = true
-      desiredAngle = if (distToReactor > 340f) toReactorAng else (toReactorAng + PI.toFloat() * 0.5f)
-      if (distToReactor < 780f && bot.flux > bot.maxFlux * 0.28f) {
-        firePrimaryGun(bot)
-      }
+    } else if (isRiftControlRulesActive() && (nearestEnemy == null || nearestDist > 460f)) {
+      // Contest unlocked Control Rifts in RIFT_CONTROL
+      val targetAlpha =
+        riftAlphaLockedBy == -1 &&
+          (riftOmegaLockedBy != -1 || hypot(bot.x - riftAlphaX, bot.y - riftAlphaY) <= hypot(bot.x - riftOmegaX, bot.y - riftOmegaY))
+      val rx = if (targetAlpha) riftAlphaX else riftOmegaX
+      val ry = if (targetAlpha) riftAlphaY else riftOmegaY
+      val distToRift = hypot(rx - bot.x, ry - bot.y)
+      val toRiftAng = atan2(ry - bot.y, rx - bot.x)
+      desiredAngle = if (distToRift > 180f) toRiftAng else (toRiftAng + PI.toFloat() * 0.5f)
+      bot.weaponAngle = desiredAngle
+      bot.independentAimActive = false
     } else if (nearestEnemy != null && nearestDist < RiftCalibrationState.botEngageRange) {
       val leadT = min(0.75f, nearestDist / bot.spec.primarySpeed)
       val tx = nearestEnemy.x + nearestEnemy.vx * leadT
@@ -4551,10 +4796,11 @@ class RiftGameEngine(
       desiredAngle = atan2(steerY, steerX)
     }
 
-    val thrustSurgeMult = 1f + bot.thrustOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack
-    val sideDamp = 0.34.pow(dt.toDouble()).toFloat()
-    bot.vx = bot.vx * sideDamp + cos(desiredAngle) * bot.spec.thrust * thrustSurgeMult * 0.88f * dt
-    bot.vy = bot.vy * sideDamp + sin(desiredAngle) * bot.spec.thrust * thrustSurgeMult * 0.88f * dt
+    val turnMult = 1f + bot.turnOverchargeStacks * 0.12f
+    val thrustSurgeMult = (1f + bot.thrustOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack) * (currentCustomGame?.speedMult ?: 1.0f)
+    val sideDamp = (0.34 / turnMult.coerceAtLeast(1f)).pow(dt.toDouble()).toFloat()
+    bot.vx = bot.vx * sideDamp + cos(desiredAngle) * bot.spec.thrust * thrustSurgeMult * turnMult * 0.88f * dt
+    bot.vy = bot.vy * sideDamp + sin(desiredAngle) * bot.spec.thrust * thrustSurgeMult * turnMult * 0.88f * dt
     if (hypot(bot.vx, bot.vy) > 2f) {
       bot.angle = atan2(bot.vy, bot.vx)
     }
@@ -4590,7 +4836,8 @@ class RiftGameEngine(
       localPlayer.canFire = !localInSafe
       localPlayer.weaponState = if (localInSafe) "DISARMED" else "ARMED"
       localPlayer.afterburning = false
-      val thrustSurgeMult = 1f + localPlayer.thrustOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack
+      val turnMult = 1f + localPlayer.turnOverchargeStacks * 0.12f
+      val thrustSurgeMult = (1f + localPlayer.thrustOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack) * (currentCustomGame?.speedMult ?: 1.0f)
       val rocketMult = if (localPlayer.rocketBoostTimer > 0f) RiftCalibrationState.hyperSurgeSpeedMult else 1.0f
 
       if (leftStickActive && leftStickMag > 0.08f) {
@@ -4599,6 +4846,7 @@ class RiftGameEngine(
         val accel =
           localPlayer.spec.thrust *
             thrustSurgeMult *
+            turnMult *
             rocketMult *
             (if (isAfterburner) RiftCalibrationState.afterburnerThrustMult else leftStickMag)
         localPlayer.vx += cos(leftStickAngle) * accel * dt
@@ -4775,6 +5023,19 @@ class RiftGameEngine(
         s.missileBeepCooldown = max(0f, s.missileBeepCooldown - rawDt)
       }
       if (s.respawnTimer > 0f) {
+        if (isSkirmishRulesActive()) {
+          if (s.isLocalPlayer) {
+            val curTarget = ships.firstOrNull { it.id == spectatingTargetShipId && it.respawnTimer <= 0f }
+            if (curTarget == null) {
+              val nextAlly =
+                ships
+                  .filter { it.freq == localPlayer.freq && it.respawnTimer <= 0f && !it.isLocalPlayer }
+                  .maxByOrNull { it.bounty }
+              spectatingTargetShipId = nextAlly?.id ?: ""
+            }
+          }
+          continue
+        }
         s.respawnTimer -= rawDt
         if (s.respawnTimer <= 0f) {
           s.respawnTimer = 0f
@@ -4790,10 +5051,13 @@ class RiftGameEngine(
           s.vx = 0f
           s.vy = 0f
           s.bounty = 100
-          s.flux = s.maxFlux
           s.speedOverchargeStacks = 0
           s.thrustOverchargeStacks = 0
           s.rechargeOverchargeStacks = 0
+          s.turnOverchargeStacks = 0
+          s.maxFluxOverchargeStacks = 0
+          s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
+          s.flux = s.maxFlux
           s.multiShotCharges = 0
           s.hasBouncingBulletsUpgrade = false
           s.sniperOverchargeReady = false
@@ -4971,7 +5235,9 @@ class RiftGameEngine(
       val fluxCoreRchMult =
         if (isCarrierOfFluxCore) (1f + fluxCoreOrb.overchargeTier.coerceIn(0, 10) * 0.05f) else 1f
       val rechargeSurgeMult =
-        (1f + s.rechargeOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack) * fluxCoreRchMult
+        (1f + s.rechargeOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack) *
+          fluxCoreRchMult *
+          (currentCustomGame?.rechargeMult ?: 1.0f)
       if (s.empTimer > 0f) {
         s.empTimer = max(0f, s.empTimer - dt)
       } else if (!s.isIdleDraining && !s.isCloaked) {
@@ -4986,7 +5252,9 @@ class RiftGameEngine(
       val fluxCoreSpdMult =
         if (isCarrierOfFluxCore) (1f + fluxCoreOrb.overchargeTier.coerceIn(0, 10) * 0.04f) else 1f
       val speedSurgeMult =
-        (1f + s.speedOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack) * fluxCoreSpdMult
+        (1f + s.speedOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack) *
+          fluxCoreSpdMult *
+          (currentCustomGame?.speedMult ?: 1.0f)
       val rocketSpeedMult = if (s.rocketBoostTimer > 0f) RiftCalibrationState.hyperSurgeSpeedMult else 1.0f
       val baseMaxSp =
         (if (s.afterburning) s.spec.afterburnerSpeed else s.spec.topSpeed) * speedSurgeMult * rocketSpeedMult
@@ -5007,27 +5275,47 @@ class RiftGameEngine(
       s.x += s.vx * dt
       s.y += s.vy * dt
 
-      // Mode 4 (STASIS_BREACH): Clamp captured prisoners inside the enemy Stasis Brig pen (340f x 340f half-size)
-      if (isStasisBreachRulesActive() && s.isInStasisBrig) {
-        val brig = if (s.freq == 0) eastBrigRect else westBrigRect
-        val minX = brig.left + s.radius
-        val maxX = brig.right - s.radius
-        val minY = brig.top + s.radius
-        val maxY = brig.bottom - s.radius
-        val elast = RiftCalibrationState.wallElasticity
-        if (s.x < minX) {
-          s.x = minX
-          if (s.vx < 0f) s.vx = -s.vx * elast
-        } else if (s.x > maxX) {
-          s.x = maxX
-          if (s.vx > 0f) s.vx = -s.vx * elast
-        }
-        if (s.y < minY) {
-          s.y = minY
-          if (s.vy < 0f) s.vy = -s.vy * elast
-        } else if (s.y > maxY) {
-          s.y = maxY
-          if (s.vy > 0f) s.vy = -s.vy * elast
+      // Mode 4 (STASIS_BREACH): Two-Way Circular Stasis Bubble Jails at West (1400, 4000) and East (6600, 4000)
+      if (isStasisBreachRulesActive()) {
+        val jails = listOf(Pair(westBrigReactorX, westBrigReactorY), Pair(eastBrigReactorX, eastBrigReactorY))
+        for ((jx, jy) in jails) {
+          val prevDist = hypot(prevShipX - jx, prevShipY - jy)
+          val dx = s.x - jx
+          val dy = s.y - jy
+          val curDist = hypot(dx, dy)
+          if (s.isInStasisBrig && prevDist <= stasisJailRadius + 24f) {
+            val innerLimit = (stasisJailRadius - s.radius).coerceAtLeast(36f)
+            if (curDist > innerLimit) {
+              val dSafe = curDist.coerceAtLeast(0.001f)
+              val nx = dx / dSafe
+              val ny = dy / dSafe
+              s.x = jx + nx * innerLimit
+              s.y = jy + ny * innerLimit
+              val dot = s.vx * nx + s.vy * ny
+              if (dot > 0f) {
+                val elast = RiftCalibrationState.wallElasticity
+                s.vx = (s.vx - 2f * dot * nx) * elast
+                s.vy = (s.vy - 2f * dot * ny) * elast
+                if (s.isLocalPlayer) sfx.playBounce()
+              }
+            }
+          } else if (!s.isInStasisBrig && prevDist > stasisJailRadius - 24f) {
+            val outerLimit = stasisJailRadius + s.radius
+            if (curDist < outerLimit) {
+              val dSafe = curDist.coerceAtLeast(0.001f)
+              val nx = if (curDist > 0.001f) dx / dSafe else 1f
+              val ny = if (curDist > 0.001f) dy / dSafe else 0f
+              s.x = jx + nx * outerLimit
+              s.y = jy + ny * outerLimit
+              val dot = s.vx * nx + s.vy * ny
+              if (dot < 0f) {
+                val elast = RiftCalibrationState.wallElasticity
+                s.vx = (s.vx - 2f * dot * nx) * elast
+                s.vy = (s.vy - 2f * dot * ny) * elast
+                if (s.isLocalPlayer) sfx.playBounce()
+              }
+            }
+          }
         }
       }
 
@@ -5167,6 +5455,15 @@ class RiftGameEngine(
             gr.buffType == -12 -> {
               s.rechargeOverchargeStacks = min(3, s.rechargeOverchargeStacks + 1)
             }
+            gr.buffType == -13 -> {
+              s.turnOverchargeStacks = min(3, s.turnOverchargeStacks + 1)
+            }
+            gr.buffType == -14 -> {
+              s.maxFluxOverchargeStacks = min(3, s.maxFluxOverchargeStacks + 1)
+              val customHealthMult = currentCustomGame?.healthMult ?: 1.0f
+              s.maxFlux = s.spec.maxFlux * (1f + s.maxFluxOverchargeStacks * 0.10f) * customHealthMult
+              s.flux = min(s.maxFlux, s.flux + s.spec.maxFlux * 0.10f * customHealthMult)
+            }
             else -> {
               s.speedOverchargeStacks = min(3, s.speedOverchargeStacks + 1)
             }
@@ -5242,17 +5539,27 @@ class RiftGameEngine(
                 gr.buffType == -11 -> {
                   val pct = (s.thrustOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack * 100f).toInt()
                   spawnPooledFct("🔥 THR +$pct% (${s.thrustOverchargeStacks}/3)", s.x, s.y - 24f, Color.parseColor("#F59E0B"))
-                  "HULL UPGRADE: THRUST OVERCHARGE ${s.thrustOverchargeStacks}/3 (+$pct% THRUST UNTIL DEATH)"
+                  "HULL UPGRADE: THRUST +$pct% (${s.thrustOverchargeStacks}/3)"
                 }
                 gr.buffType == -12 -> {
                   val pct = (s.rechargeOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack * 100f).toInt()
                   spawnPooledFct("⚡ RCH +$pct% (${s.rechargeOverchargeStacks}/3)", s.x, s.y - 24f, Color.parseColor("#10B981"))
-                  "HULL UPGRADE: REACTOR OVERCHARGE ${s.rechargeOverchargeStacks}/3 (+$pct% FLUX RECHARGE UNTIL DEATH)"
+                  "HULL UPGRADE: FLUX RECHARGE +$pct% (${s.rechargeOverchargeStacks}/3)"
+                }
+                gr.buffType == -13 -> {
+                  val pct = s.turnOverchargeStacks * 12
+                  spawnPooledFct("🔄 TURN +$pct% (${s.turnOverchargeStacks}/3)", s.x, s.y - 24f, Color.parseColor("#00F5D4"))
+                  "HULL UPGRADE: TURN RATE +$pct% (${s.turnOverchargeStacks}/3)"
+                }
+                gr.buffType == -14 -> {
+                  val pct = s.maxFluxOverchargeStacks * 10
+                  spawnPooledFct("⚡ MAX FLUX +$pct% (${s.maxFluxOverchargeStacks}/3)", s.x, s.y - 24f, Color.parseColor("#B388FF"))
+                  "HULL UPGRADE: MAX FLUX +$pct% (${s.maxFluxOverchargeStacks}/3)"
                 }
                 else -> {
                   val pct = (s.speedOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack * 100f).toInt()
                   spawnPooledFct("⚡ SPD +$pct% (${s.speedOverchargeStacks}/3)", s.x, s.y - 24f, Color.parseColor("#38BDF8"))
-                  "HULL UPGRADE: SPEED OVERCHARGE ${s.speedOverchargeStacks}/3 (+$pct% TOP SPEED UNTIL DEATH)"
+                  "HULL UPGRADE: TOP SPEED +$pct% (${s.speedOverchargeStacks}/3)"
                 }
               }
             onPrizeToast(msg)
@@ -5362,34 +5669,52 @@ class RiftGameEngine(
         b.y = ny
       }
 
-      // STASIS_BREACH: Check bullet collision with enemy Brig Reactor Core & contain prisoner fire
+      // STASIS_BREACH: Two-Way Circular Stasis Bubble Jail reflection & Center Core damage by prisoners only
       if (isStasisBreachRulesActive()) {
         val shooter = ships.firstOrNull { it.id == b.ownerId }
         val shooterInBrig = shooter?.isInStasisBrig == true
-        val targetBrigFreq = if (b.freq == 0) 1 else 0
-        val rx = if (targetBrigFreq == 0) westBrigReactorX else eastBrigReactorX
-        val ry = if (targetBrigFreq == 0) westBrigReactorY else eastBrigReactorY
-        if (hypot(b.x - rx, b.y - ry) <= 52f) {
-          damageBrigReactorCore(
-            targetBrigFreq = targetBrigFreq,
-            attacker = shooter,
-            rawDamage = b.damage,
-          )
-          bullets.removeAt(i)
-          continue
-        }
-        if (shooterInBrig) {
-          val penRect = if (b.freq == 0) eastBrigRect else westBrigRect
-          val inPenOrCore =
-            (b.x >= penRect.left - 24f && b.x <= penRect.right + 120f &&
-              b.y >= penRect.top - 24f && b.y <= penRect.bottom + 24f) ||
-              (b.x >= penRect.left - 120f && b.x <= penRect.right + 24f &&
-                b.y >= penRect.top - 24f && b.y <= penRect.bottom + 24f)
-          if (!inPenOrCore) {
+        val jails = listOf(Triple(0, westBrigReactorX, westBrigReactorY), Triple(1, eastBrigReactorX, eastBrigReactorY))
+        var jailHandled = false
+        for ((brigFreq, jx, jy) in jails) {
+          val prevDist = hypot(b.x - b.vx * dt - jx, b.y - b.vy * dt - jy)
+          val curDist = hypot(b.x - jx, b.y - jy)
+          // Check center Core hit by prisoner inside this jail
+          if (shooterInBrig && b.freq != brigFreq && curDist <= 54f) {
+            damageBrigReactorCore(
+              targetBrigFreq = brigFreq,
+              attacker = shooter,
+              rawDamage = b.damage,
+            )
             bullets.removeAt(i)
-            continue
+            jailHandled = true
+            break
+          }
+          // Two-way circular boundary reflection
+          if (prevDist <= stasisJailRadius && curDist >= stasisJailRadius) {
+            val dSafe = curDist.coerceAtLeast(0.001f)
+            val rnx = (b.x - jx) / dSafe
+            val rny = (b.y - jy) / dSafe
+            b.x = jx + rnx * (stasisJailRadius - 2f)
+            b.y = jy + rny * (stasisJailRadius - 2f)
+            val dot = b.vx * rnx + b.vy * rny
+            if (dot > 0f) {
+              b.vx -= 2f * dot * rnx
+              b.vy -= 2f * dot * rny
+            }
+          } else if (prevDist > stasisJailRadius && curDist <= stasisJailRadius) {
+            val dSafe = curDist.coerceAtLeast(0.001f)
+            val rnx = if (curDist > 0.001f) (b.x - jx) / dSafe else 1f
+            val rny = if (curDist > 0.001f) (b.y - jy) / dSafe else 0f
+            b.x = jx + rnx * (stasisJailRadius + 2f)
+            b.y = jy + rny * (stasisJailRadius + 2f)
+            val dot = b.vx * rnx + b.vy * rny
+            if (dot < 0f) {
+              b.vx -= 2f * dot * rnx
+              b.vy -= 2f * dot * rny
+            }
           }
         }
+        if (jailHandled) continue
       }
 
       // Check collision with enemy Decoy holograms (absorbs fire!)
@@ -5406,9 +5731,10 @@ class RiftGameEngine(
       }
       if (absorbedByDecoy) continue
 
+      val bulletHitPadding = 8f * (currentCustomGame?.bulletSizeMult ?: 1.0f)
       for (s in ships) {
         if (!isBulletAlliedWithShip(b, s) && s.respawnTimer <= 0f) {
-          if (hypot(s.x - b.x, s.y - b.y) < s.radius + 8f) {
+          if (hypot(s.x - b.x, s.y - b.y) < s.radius + bulletHitPadding) {
             val incAngle = atan2(b.y - s.y, b.x - s.x)
             applyProjectileDamage(
               target = s,
@@ -5690,23 +6016,51 @@ class RiftGameEngine(
         b.y = ny
       }
 
-      // STASIS_BREACH: Check bomb collision with enemy Brig Reactor Core
+      // STASIS_BREACH: Two-Way Circular Stasis Bubble Jail reflection & Center Core bomb damage by prisoners only
       if (isStasisBreachRulesActive()) {
         val shooter = ships.firstOrNull { it.id == b.ownerId }
         val shooterInBrig = shooter?.isInStasisBrig == true
-        val targetBrigFreq = if (b.freq == 0) 1 else 0
-        val rx = if (targetBrigFreq == 0) westBrigReactorX else eastBrigReactorX
-        val ry = if (targetBrigFreq == 0) westBrigReactorY else eastBrigReactorY
-        if (hypot(b.x - rx, b.y - ry) <= b.radius + 54f) {
-          damageBrigReactorCore(
-            targetBrigFreq = targetBrigFreq,
-            attacker = shooter,
-            rawDamage = b.damage,
-          )
-          spawnExplosion(b.x, b.y, Color.parseColor("#F59E0B"))
-          bombs.removeAt(i)
-          continue
+        val jails = listOf(Triple(0, westBrigReactorX, westBrigReactorY), Triple(1, eastBrigReactorX, eastBrigReactorY))
+        var bombJailHandled = false
+        for ((brigFreq, jx, jy) in jails) {
+          val prevDist = hypot(b.x - b.vx * dt - jx, b.y - b.vy * dt - jy)
+          val curDist = hypot(b.x - jx, b.y - jy)
+          if (shooterInBrig && b.freq != brigFreq && curDist <= b.radius + 54f) {
+            damageBrigReactorCore(
+              targetBrigFreq = brigFreq,
+              attacker = shooter,
+              rawDamage = b.damage,
+            )
+            spawnExplosion(b.x, b.y, Color.parseColor("#F59E0B"))
+            bombs.removeAt(i)
+            bombJailHandled = true
+            break
+          }
+          if (prevDist <= stasisJailRadius && curDist >= stasisJailRadius) {
+            val dSafe = curDist.coerceAtLeast(0.001f)
+            val rnx = (b.x - jx) / dSafe
+            val rny = (b.y - jy) / dSafe
+            b.x = jx + rnx * (stasisJailRadius - 2f)
+            b.y = jy + rny * (stasisJailRadius - 2f)
+            val dot = b.vx * rnx + b.vy * rny
+            if (dot > 0f) {
+              b.vx -= 2f * dot * rnx
+              b.vy -= 2f * dot * rny
+            }
+          } else if (prevDist > stasisJailRadius && curDist <= stasisJailRadius) {
+            val dSafe = curDist.coerceAtLeast(0.001f)
+            val rnx = if (curDist > 0.001f) (b.x - jx) / dSafe else 1f
+            val rny = if (curDist > 0.001f) (b.y - jy) / dSafe else 0f
+            b.x = jx + rnx * (stasisJailRadius + 2f)
+            b.y = jy + rny * (stasisJailRadius + 2f)
+            val dot = b.vx * rnx + b.vy * rny
+            if (dot < 0f) {
+              b.vx -= 2f * dot * rnx
+              b.vy -= 2f * dot * rny
+            }
+          }
         }
+        if (bombJailHandled) continue
       }
 
       // Check Decoy hologram soaking bombs/missiles
@@ -5873,6 +6227,125 @@ class RiftGameEngine(
 
     // 8. Step FLUX CORE Singularity Mode (Overcharge Tiers, Bounty Tick, Safe Zone Ejection & 30s Supersonic Deceleration)
     stepFluxCoreMode(dt, rawDt)
+
+    // 9. Step RIFT SKIRMISH 3-Minute Round Timer & Tiebreaker
+    if (isSkirmishRulesActive()) {
+      skirmishRoundTimerSec = max(0f, skirmishRoundTimerSec - rawDt)
+      if (skirmishRoundTimerSec <= 0f) {
+        val westAlive = ships.count { it.freq == 0 && it.respawnTimer <= 0f }
+        val eastAlive = ships.count { it.freq == 1 && it.respawnTimer <= 0f }
+        val winner =
+          when {
+            westAlive > eastAlive -> 0
+            eastAlive > westAlive -> 1
+            skirmishWestKills >= skirmishEastKills -> 0
+            else -> 1
+          }
+        resolveSkirmishRoundWon(winningFreq = winner)
+      }
+    }
+
+    // 10. Step RIFT CONTROL 2-Rift Tug-of-War Mode
+    stepRiftControlMode(dt, rawDt)
+  }
+
+  private fun stepRiftControlMode(dt: Float, rawDt: Float) {
+    if (!isRiftControlRulesActive()) return
+
+    fun updateZone(
+      zx: Float,
+      zy: Float,
+      curControl: Float,
+      curLockedBy: Int,
+      zoneLabel: String,
+    ): Pair<Float, Int> {
+      if (curLockedBy != -1) return curControl to curLockedBy
+      var westInside = 0
+      var eastInside = 0
+      for (s in ships) {
+        if (s.respawnTimer <= 0f && !s.isCloaked && hypot(s.x - zx, s.y - zy) <= riftCaptureRadius) {
+          if (s.freq == 0) westInside++ else if (s.freq == 1) eastInside++
+        }
+      }
+      var nextControl = curControl
+      var nextLocked = -1
+      if (westInside > 0 && eastInside == 0) {
+        val rate = if (curControl > 0f) 1.5f else 1.0f
+        nextControl = max(-30f, curControl - rawDt * rate)
+        if (nextControl <= -30f) {
+          nextLocked = 0
+          shockwaves.add(ShockwaveEntity(zx, zy, 24f, riftCaptureRadius * 1.3f, Color.parseColor("#38BDF8")))
+          sfx.playPrize()
+          onPrizeToast("🔒 $zoneLabel LOCKED BY WEST HORIZON!")
+        }
+      } else if (eastInside > 0 && westInside == 0) {
+        val rate = if (curControl < 0f) 1.5f else 1.0f
+        nextControl = min(30f, curControl + rawDt * rate)
+        if (nextControl >= 30f) {
+          nextLocked = 1
+          shockwaves.add(ShockwaveEntity(zx, zy, 24f, riftCaptureRadius * 1.3f, Color.parseColor("#EF4444")))
+          sfx.playWarp()
+          onPrizeToast("🔒 $zoneLabel LOCKED BY EAST HORIZON!")
+        }
+      }
+      return nextControl to nextLocked
+    }
+
+    val (alphaCtrl, alphaLock) =
+      updateZone(riftAlphaX, riftAlphaY, riftAlphaControlSec, riftAlphaLockedBy, "RIFT ALPHA")
+    riftAlphaControlSec = alphaCtrl
+    riftAlphaLockedBy = alphaLock
+
+    val (omegaCtrl, omegaLock) =
+      updateZone(riftOmegaX, riftOmegaY, riftOmegaControlSec, riftOmegaLockedBy, "RIFT OMEGA")
+    riftOmegaControlSec = omegaCtrl
+    riftOmegaLockedBy = omegaLock
+
+    riftControlMatchTimerSec = max(0f, riftControlMatchTimerSec - rawDt)
+
+    val westDoubleLock = riftAlphaLockedBy == 0 && riftOmegaLockedBy == 0
+    val eastDoubleLock = riftAlphaLockedBy == 1 && riftOmegaLockedBy == 1
+    if (westDoubleLock || eastDoubleLock || riftControlMatchTimerSec <= 0f) {
+      val westLocks = (if (riftAlphaLockedBy == 0) 1 else 0) + (if (riftOmegaLockedBy == 0) 1 else 0)
+      val eastLocks = (if (riftAlphaLockedBy == 1) 1 else 0) + (if (riftOmegaLockedBy == 1) 1 else 0)
+      val westWon =
+        when {
+          westDoubleLock -> true
+          eastDoubleLock -> false
+          westLocks > eastLocks -> true
+          eastLocks > westLocks -> false
+          else -> (-riftAlphaControlSec - riftOmegaControlSec) >= 0f
+        }
+      if (westWon) {
+        riftShards += 85L
+        convergencesWon++
+        onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
+        val msg = "🏆 RIFT CONTROL VICTORY! WEST HORIZON CAPTURED THE RIFTS (+85❖ RIFT SHARDS)"
+        highBountyShutdownBanner = msg
+        highBountyShutdownTimer = 5.0f
+        sfx.playPrize()
+        onPrizeToast(msg)
+        onStatsUpdated()
+      } else {
+        val msg = "⚔️ RIFT CONTROL CONCLUDED — EAST HORIZON CAPTURED THE RIFTS!"
+        highBountyShutdownBanner = msg
+        highBountyShutdownTimer = 4.5f
+        sfx.playWarp()
+        onPrizeToast(msg)
+      }
+      resetRiftControlZones()
+      for (s in ships) {
+        s.respawnTimer = 0f
+        s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
+        s.flux = s.maxFlux
+        s.vx = 0f
+        s.vy = 0f
+        val sp = getSkirmishGateSpawnPosition(s.freq)
+        s.x = sp.first
+        s.y = sp.second
+        s.phaseShieldTimer = 3.0f
+      }
+    }
   }
 
   private fun stepFluxCoreMode(dt: Float, rawDt: Float) {

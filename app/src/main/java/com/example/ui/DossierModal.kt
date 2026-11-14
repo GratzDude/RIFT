@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -20,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,14 +30,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -87,9 +92,22 @@ fun DossierModal(
   syndicateServiceHistory: List<SyndicateServiceEntry> = emptyList(),
   onOpenRiftShardsStore: () -> Unit = {},
   onResetLocalPilotData: (() -> Unit)? = null,
+  onCallsignChanged: (String) -> Unit = {},
+  onUpdateRiftShards: (Long) -> Unit = {},
   onCloseModal: () -> Unit,
 ) {
   BackHandler { onCloseModal() }
+  val context = LocalContext.current
+  val localPrefs = remember(context) { LocalPilotPrefs(context) }
+  val isDrifter = remember(permanentUid, syndicateTag) { localPrefs.isGuestBypassEnabled() }
+  val shortTag = remember(permanentUid) { localPrefs.getShortPilotTag(permanentUid) }
+
+  var showCallsignEditor by remember { mutableStateOf(false) }
+  var newCallsignInput by remember(callsign) { mutableStateOf(callsign) }
+  var callsignStatusMsg by remember { mutableStateOf<String?>(null) }
+  var callsignChangeCount by remember(permanentUid) {
+    mutableIntStateOf(localPrefs.getCallsignChangeCount(permanentUid))
+  }
 
   // Top-level Dossier view: 0 = LEADERBOARD, 1 = PEAK BOUNTY & EXECUTIONER, 2 = SYNDICATE SERVICE RECORD
   var dossierSection by remember { mutableIntStateOf(0) }
@@ -98,6 +116,7 @@ fun DossierModal(
   var sortMode by remember { mutableIntStateOf(0) } // 0 = BOUNTY, 1 = PUBLIC WINS, 2 = K/D
 
   // Deduplicate strictly by permanent userId so editing Callsign never creates ghost rows
+  // and exclude [RFT] Drifters from Official Leaderboards
   val unifiedLeaderboard =
     remember(
       permanentUid,
@@ -117,35 +136,38 @@ fun DossierModal(
       activeTab,
       selectedArmadaTier,
       sortMode,
+      isDrifter,
     ) {
       val byUid = linkedMapOf<String, LeaderboardEntry>()
-      val shipSpec = RiftCodex.getShipById(shipId)
-      val localArmadaBadge = if (activeArmadaName.isNotEmpty()) activeArmadaName else "SOLO"
-      val formattedLocalCallsign =
-        if (syndicateTag.isNotBlank()) {
-          "[$localArmadaBadge] [$syndicateTag] $callsign"
-        } else {
-          "[$localArmadaBadge] $callsign"
-        }
-      val localEntry =
-        LeaderboardEntry(
-          id = permanentUid,
-          userId = permanentUid,
-          callsign = formattedLocalCallsign,
-          syndicateTag = syndicateTag,
-          armadaTag = localArmadaBadge,
-          armadaTierSize = activeArmadaSize.coerceIn(1, 5),
-          shipId = shipId.toLong(),
-          foundry = shipSpec.role,
-          pvpKills = pvpKills,
-          pvpDeaths = pvpDeaths,
-          pvpBounty = pvpBountyPeak,
-          allTimeKills = allTimeKills,
-          allTimeDeaths = allTimeDeaths,
-          allTimeBounty = allTimeBountyPeak,
-          convergencesWon = convergencesWon,
-        )
-      byUid[permanentUid] = localEntry
+      if (!isDrifter && !syndicateTag.equals("RFT", ignoreCase = true)) {
+        val shipSpec = RiftCodex.getShipById(shipId)
+        val localArmadaBadge = if (activeArmadaName.isNotEmpty()) activeArmadaName else "SOLO"
+        val formattedLocalCallsign =
+          if (syndicateTag.isNotBlank()) {
+            "[$localArmadaBadge] [$syndicateTag] $callsign"
+          } else {
+            "[$localArmadaBadge] $callsign"
+          }
+        val localEntry =
+          LeaderboardEntry(
+            id = permanentUid,
+            userId = permanentUid,
+            callsign = formattedLocalCallsign,
+            syndicateTag = syndicateTag,
+            armadaTag = localArmadaBadge,
+            armadaTierSize = activeArmadaSize.coerceIn(1, 5),
+            shipId = shipId.toLong(),
+            foundry = shipSpec.role,
+            pvpKills = pvpKills,
+            pvpDeaths = pvpDeaths,
+            pvpBounty = pvpBountyPeak,
+            allTimeKills = allTimeKills,
+            allTimeDeaths = allTimeDeaths,
+            allTimeBounty = allTimeBountyPeak,
+            convergencesWon = convergencesWon,
+          )
+        byUid[permanentUid] = localEntry
+      }
 
       for (entry in cloudLeaderboardEntries) {
         val uidKey = entry.userId.ifEmpty { entry.id }
@@ -158,7 +180,7 @@ fun DossierModal(
               if (entry.syndicateTag.isNotBlank()) {
                 "[$armBadge] [${entry.syndicateTag}] ${entry.callsign}"
               } else {
-                "[$armBadge] ${entry.callsign}"
+                "[$armBadge] $callsign"
               }
             }
           byUid[uidKey] = entry.copy(callsign = cleanCallsign)
@@ -166,6 +188,11 @@ fun DossierModal(
       }
 
       byUid.values
+        .filter { entry ->
+          !entry.syndicateTag.equals("RFT", ignoreCase = true) &&
+            !entry.callsign.startsWith("DRIFTER", ignoreCase = true) &&
+            !entry.callsign.contains("[RFT]", ignoreCase = true)
+        }
         .filter { entry ->
           val isSelf = entry.userId == permanentUid || entry.id == permanentUid
           isSelf || selectedArmadaTier == 0 || entry.armadaTierSize.toInt() == selectedArmadaTier
@@ -231,7 +258,7 @@ fun DossierModal(
               }
             val syndicatePrefix = if (syndicateTag.isNotBlank()) "[$syndicateTag] " else ""
             Text(
-              text = "UID: $permanentUid • ${syndicatePrefix}$callsign • ACTIVE: $tierDesc • PRESENCE: $matchPresencePct%",
+              text = "PILOT ID: $shortTag • ${syndicatePrefix}$callsign • ACTIVE: $tierDesc • PRESENCE: $matchPresencePct%",
               color = Color(0xFFFFD700),
               fontSize = 10.sp,
               fontWeight = FontWeight.Medium,
@@ -313,6 +340,141 @@ fun DossierModal(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
+              )
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(5.dp))
+
+        // 1B. Sworn Pilot vs [RFT] Drifter Callsign Management Banner
+        if (isDrifter) {
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .background(Color(0xCC1E1408), RoundedCornerShape(8.dp))
+                .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .testTag("dossier_drifter_banner"),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text = "DRIFTER SESSION ([RFT] GUEST) — Ephemeral session. Sign in with Google to become a Sworn Pilot, customize your callsign, and rank on Leaderboards.",
+              color = Color(0xFFFBBF24),
+              fontSize = 9.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        } else {
+          Column(
+            modifier =
+              Modifier.fillMaxWidth()
+                .background(Color(0xCC0A192F), RoundedCornerShape(8.dp))
+                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .testTag("dossier_sworn_pilot_banner"),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                text = "★ SWORN PILOT — Cross-Device Synced • PILOT ID: $shortTag",
+                color = Color(0xFF00F5D4),
+                fontSize = 9.2.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+              val changeLabel =
+                if (callsignChangeCount == 0) "✏️ CHANGE CALLSIGN (1ST FREE)"
+                else "✏️ CHANGE CALLSIGN (250❖)"
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF0E3A5A))
+                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                    .clickable { showCallsignEditor = !showCallsignEditor }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .testTag("dossier_btn_change_callsign"),
+              ) {
+                Text(
+                  text = changeLabel,
+                  color = Color.White,
+                  fontSize = 8.2.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+            if (showCallsignEditor) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Box(
+                  modifier =
+                    Modifier.weight(1f)
+                      .height(30.dp)
+                      .clip(RoundedCornerShape(6.dp))
+                      .background(Color(0xFF060E1E))
+                      .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+                      .padding(horizontal = 8.dp),
+                  contentAlignment = Alignment.CenterStart,
+                ) {
+                  BasicTextField(
+                    value = newCallsignInput,
+                    onValueChange = { raw ->
+                      newCallsignInput =
+                        raw.uppercase().filter { it.isLetterOrDigit() || it == '_' || it == '-' }.take(14)
+                    },
+                    singleLine = true,
+                    cursorBrush = SolidColor(Color(0xFF00F5D4)),
+                    textStyle =
+                      TextStyle(
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                      ),
+                    modifier = Modifier.fillMaxWidth().testTag("dossier_callsign_input"),
+                  )
+                }
+                Button(
+                  onClick = {
+                    val (success, updatedCallsign, remainingShards) =
+                      localPrefs.changeSwornPilotCallsign(newCallsignInput, riftShards, permanentUid)
+                    if (success) {
+                      callsignChangeCount = localPrefs.getCallsignChangeCount(permanentUid)
+                      onCallsignChanged(updatedCallsign)
+                      onUpdateRiftShards(remainingShards)
+                      callsignStatusMsg = "✓ Callsign updated to $updatedCallsign"
+                      showCallsignEditor = false
+                    } else {
+                      callsignStatusMsg = "✕ Requires 3–14 chars & 250❖ after 1st free change"
+                    }
+                  },
+                  contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                  modifier = Modifier.height(30.dp).testTag("dossier_btn_confirm_callsign"),
+                ) {
+                  Text(
+                    text = if (callsignChangeCount == 0) "APPLY (FREE)" else "APPLY (250❖)",
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
+              }
+            }
+            if (callsignStatusMsg != null) {
+              Text(
+                text = callsignStatusMsg!!,
+                color = Color(0xFFFACC15),
+                fontSize = 8.2.sp,
+                fontFamily = FontFamily.Monospace,
               )
             }
           }

@@ -621,7 +621,7 @@ data class CustomShipLoadoutSlot(
         "SEEKER_TORPEDO" ->
           SecondaryTuple("Native Seeker Torpedo (600⚡ • 5s CD)", "SEEKER", 600f, 5.0f, 780f, 6, 0f)
         "INTERDICTOR_DOME" ->
-          SecondaryTuple("Interdictor Stasis Bubble (380⚡ • 5s Dome)", "BUBBLE", 380f, RiftCalibrationState.interdictorBubbleCooldown, 0f, 0, 0f)
+          SecondaryTuple("Eclipse Stasis Bubble (380⚡ • 8s)", "BUBBLE", 380f, RiftCalibrationState.interdictorBubbleCooldown, 0f, 0, 0f)
         "PASSIVE_GUNFIGHTER" ->
           SecondaryTuple("Pure Gunfighter Passive (+10% Vel, 0 Recoil)", "PASSIVE", 0f, 0f, 0f, 0, 0f)
         else ->
@@ -735,10 +735,10 @@ data class CustomShipLoadoutSlot(
         SecondaryAbilityOption("SEEKER_TORPEDO", "Native Seeker Torpedo", 25, "600⚡", "Fires homing wall-bouncing Seeker Torpedo (2.5s flight, 5s CD)."),
         SecondaryAbilityOption(
           "INTERDICTOR_DOME",
-          "Interdictor Stasis Bubble",
+          "Eclipse Stasis Bubble",
           25,
-          "380⚡ • 9s CD",
-          "Deploys a 275px radius (550px dia) two-way containment bubble for 5.0s. Nothing can enter or leave; forces intense close-quarters dogfights.",
+          "380⚡ • 12s CD",
+          "8.0s two-way containment bubble (275px radius). Nothing enters or leaves.",
         ),
       )
 
@@ -1097,12 +1097,12 @@ object RiftCodex {
 
   val SHIPS: List<ShipSpec> =
     listOf(
-      // 1-Viper (Rail Sniper Gunship — 100 Pts Total: 15 Pri + 15 Class + 70 Stats)
+      // 1. Viper (Rail Sniper — 100 Pts: 15 Pri + 15 Class + 70 Stats)
       ShipSpec(
         id = 1,
         name = "Viper",
-        role = "Rail Sniper Gunship",
-        tacticalLore = "High-velocity interceptor built around a twin hyper-rail spine and directional Phase Dash capacitor.",
+        role = "Rail Sniper",
+        tacticalLore = "Fast rail sniper with instant Phase Dash blink and next-shot rail overcharge.",
         silhouetteDesc = "Forward-swept obsidian rail-prongs with bronze wing-tips and a narrow V-cyan reactor spine.",
         weaponSummary = "PRI: RAIL (25⚡) • CLASS: PHASE (300⚡ / 2.5s CD)",
         primaryTitle = "Hyper-Velocity Dual Rail",
@@ -1140,12 +1140,12 @@ object RiftCodex {
         initialRepels = 2,
         accentColorHex = 0xFF00F5D4.toInt(),
       ),
-      // 2-Ricochet (Trick-Shot Bounce Bomber — 100 Pts Total: 12 Pri + 20 Sec + 68 Stats)
+      // 2. Ricochet (Bounce Bomber — 100 Pts: 12 Pri + 20 Sec + 68 Stats)
       ShipSpec(
         id = 2,
         name = "Ricochet",
-        role = "Trick-Shot Bounce Bomber",
-        tacticalLore = "Geometry specialist engineered to bank angled plasma warheads around riveted steel corridors.",
+        role = "Bounce Bomber",
+        tacticalLore = "Banks angled pulse bolts and 3-bounce plasma bombs around walls and corners.",
         silhouetteDesc = "Twin-forked ballistic hull with gold-trimmed deflection vanes and a deep cyan V-core.",
         weaponSummary = "PRI: PULSE (20⚡) • SEC: BOUNCE BOMB (350⚡ + Recoil)",
         primaryTitle = "Twin Angled Pulse",
@@ -1183,12 +1183,12 @@ object RiftCodex {
         initialRepels = 2,
         accentColorHex = 0xFF29B6F6.toInt(),
       ),
-      // 3-Suppressor (Adaptive Rotary Gunship — 100 Pts Total: 15 Pri + 15 Class + 70 Stats)
+      // 3. Suppressor (Rotary Gunship — 100 Pts: 15 Pri + 15 Class + 70 Stats)
       ShipSpec(
         id = 3,
         name = "Suppressor",
-        role = "Adaptive Rotary Gunship",
-        tacticalLore = "High-RPM rotary gunship with native 1x focused punch or 3x 1/3-damage split corridor suppression.",
+        role = "Rotary Gunship",
+        tacticalLore = "Rapid rotary gunship that switches between a focused stream and a 3-way split fan.",
         silhouetteDesc = "Swept crescent wings in dark indigo & gold with an overcharged V-cyan heart.",
         weaponSummary = "PRI: ROTARY (15⚡) • CLASS: SPLIT MULTI ON/OFF (0⚡ Extra)",
         primaryTitle = "High-RPM Rotary Pulse",
@@ -1210,7 +1210,7 @@ object RiftCodex {
         turnRate = computeTurnRate(10), // 4.2 RAD/S
         primaryCost = 15f,
         primaryCooldown = 0.095f,
-        primaryDamage = 240f, // 100% single stream when Multi-Shot OFF; 3 x 80f (33.3%) when Multi-Shot ON
+        primaryDamage = 240f,
         primarySpeed = 980f,
         primaryStreams = 1,
         primarySpreadRad = 0f,
@@ -1226,12 +1226,12 @@ object RiftCodex {
         initialRepels = 2,
         accentColorHex = 0xFFFFD54F.toInt(),
       ),
-      // 4-Goliath (Cathedral Siege Dreadnought — 100 Pts Total: 12 Pri + 25 Sec + 63 Stats)
+      // 4. Goliath (Siege Dreadnought — 100 Pts: 12 Pri + 25 Sec + 63 Stats)
       ShipSpec(
         id = 4,
         name = "Goliath",
-        role = "Cathedral Siege Dreadnought",
-        tacticalLore = "Maximum-capacitor siege dreadnought armed with devastating nuclear warheads and heavy kinetic cannons.",
+        role = "Siege Dreadnought",
+        tacticalLore = "Heavy siege hull with massive Flux capacity, dual cannons, and nuclear Siege Bombs.",
         silhouetteDesc = "Heavy armored dreadnought chassis with bronze bastion shoulders and a massive V-reactor.",
         weaponSummary = "PRI: CANNON (40⚡) • SEC: SIEGE BOMB (650⚡ + Recoil)",
         primaryTitle = "Heavy Dual Cannon",
@@ -1269,12 +1269,12 @@ object RiftCodex {
         initialRepels = 2,
         accentColorHex = 0xFFFFB300.toInt(),
       ),
-      // 5-Twinfang (Dual-Barrel Dogfighter — 100 Pts Total: 15 Pri + 15 Class + 70 Stats)
+      // 5. Twinfang (Dual-Barrel Dogfighter — 100 Pts: 15 Pri + 15 Class + 70 Stats)
       ShipSpec(
         id = 5,
         name = "Twinfang",
-        role = "Dual-Barrel Dogfighter",
-        tacticalLore = "Agile mid-range dogfighter firing parallel twin autocannon streams with native 4-bolt fan split.",
+        role = "Dogfighter",
+        tacticalLore = "Agile dogfighter firing parallel twin autocannons with an optional 4-bolt fan split.",
         silhouetteDesc = "Predatory twin-boom manta frame with bronze fangs and a split electric-cyan core.",
         weaponSummary = "PRI: AUTOCANNON (22⚡) • CLASS: TWIN MULTI ON/OFF",
         primaryTitle = "Parallel Twin-Stream Autocannon",
@@ -1296,7 +1296,7 @@ object RiftCodex {
         turnRate = computeTurnRate(15), // 4.7 RAD/S
         primaryCost = 22f,
         primaryCooldown = 0.13f,
-        primaryDamage = 135f, // 2 parallel bolts x 135f = 270f total; when Multi-Shot ON: 4 bolts x 67.5f = 270f total
+        primaryDamage = 135f,
         primarySpeed = 1000f,
         primaryStreams = 2,
         primarySpreadRad = 0.025f,
@@ -1313,12 +1313,12 @@ object RiftCodex {
         initialRepels = 2,
         accentColorHex = 0xFF00E5FF.toInt(),
       ),
-      // Disruptor (Stealth & EMP Infiltrator — 100 Pts Total: 10 Pri + 25 Class + 65 Stats)
+      // 6. Disruptor (Stealth & EMP — 100 Pts: 10 Pri + 25 Class + 65 Stats)
       ShipSpec(
         id = 6,
         name = "Disruptor",
-        role = "Stealth & EMP Infiltrator",
-        tacticalLore = "Cloak-capable infiltrator that drains Flux while invisible (180⚡/s) and detonates a free 0⚡ 220px 360° AoE EMP pulse upon decloaking (-35% Max Flux, 2.5s recharge lockout).",
+        role = "Stealth & EMP",
+        tacticalLore = "Cloaks invisibly (180⚡/s) and unleashes a free 0⚡ 360° EMP pulse when decloaking (-35% Max Flux, 2.5s recharge freeze).",
         silhouetteDesc = "Wide stingray hydrofoil with gold-plated arc emitters and a pulsing V-cyan capacitor.",
         weaponSummary = "PRI: NEEDLER (18⚡) • CLS: Cloak (180⚡/s) + 0⚡ Decloak AoE EMP",
         primaryTitle = "Twin Ion Needlers",
@@ -1356,12 +1356,12 @@ object RiftCodex {
         initialRepels = 2,
         accentColorHex = 0xFFB388FF.toInt(),
       ),
-      // 7-Valkyrie (Proximity Flak Gunship — 100 Pts Total: 12 Pri + 22 Sec + 66 Stats)
+      // 7. Valkyrie (Proximity Flak — 100 Pts: 12 Pri + 22 Sec + 66 Stats)
       ShipSpec(
         id = 7,
         name = "Valkyrie",
-        role = "Proximity Flak Gunship",
-        tacticalLore = "Heavy X-frame gunship firing 4 converging bolts and 65px proximity-fused shrapnel warheads.",
+        role = "Flak Gunship",
+        tacticalLore = "Fires 4 converging pulse bolts and proximity flak bombs that burst into 8 shrapnel bolts.",
         silhouetteDesc = "Aggressive X-wing skeletal interceptor with bronze thruster pods and V-cyan reactor.",
         weaponSummary = "PRI: QUAD PULSE (24⚡) • SEC: PROX FLAK (450⚡ • 8 Shrapnel)",
         primaryTitle = "Quad-Converging Pulse",
@@ -1399,12 +1399,12 @@ object RiftCodex {
         initialRepels = 2,
         accentColorHex = 0xFFFF7043.toInt(),
       ),
-      // 8-Manta (Area-Denial Mine-Layer — 100 Pts Total: 10 Pri + 18 Sec + 72 Stats)
+      // 8. Manta (Mine-Layer — 100 Pts: 10 Pri + 18 Sec + 72 Stats)
       ShipSpec(
         id = 8,
         name = "Manta",
-        role = "Area-Denial Mine-Layer",
-        tacticalLore = "High-thrust area-denial specialist deploying up to 6 armed proximity mines and +1 innate Repel charge.",
+        role = "Mine-Layer",
+        tacticalLore = "High-thrust area-denial hull that drops up to 6 proximity mines and spawns with +1 extra Repel.",
         silhouetteDesc = "Armored pincer hull with gold-beveled mandible plates and a twin-cell V-cyan core.",
         weaponSummary = "PRI: SCATTER (20⚡) • SEC: PROX MINE (300⚡ • X/6) +1 Repel",
         primaryTitle = "Short-Range Twin Scatter",
@@ -1439,19 +1439,19 @@ object RiftCodex {
         bombBounces = 0,
         bombRecoil = 0f,
         supportsNativeMultifire = false,
-        initialRepels = 3, // Starts every life with +1 bonus Repel charge
+        initialRepels = 3,
         accentColorHex = 0xFF66BB6A.toInt(),
       ),
-      // 9. INTERDICTOR — Warp-Bubble Interdictor (100 Pts: 10 Spd + 12 Thr + 8 Turn + 18 Flux + 15 Rch + 12 Pri + 25 Sec)
+      // 9. ECLIPSE — Zone Lockdown (100 Pts: 10 Spd + 12 Thr + 8 Turn + 18 Flux + 15 Rch + 12 Pri + 25 Sec)
       ShipSpec(
         id = 9,
-        name = "Interdictor",
-        role = "Warp-Bubble Interdictor",
-        tacticalLore = "Heavy gravimetric interdictor that anchors a 275px radius two-way stasis bubble for 5 seconds—nothing enters, nothing leaves.",
+        name = "Eclipse",
+        role = "Zone Lockdown",
+        tacticalLore = "Anchors an 8-second stasis bubble (275px radius). Nothing enters or leaves.",
         silhouetteDesc = "Twin-ringed amethyst gravimetric cruiser with forward containment prongs and a glowing magenta-cyan singularity core.",
-        weaponSummary = "PRI: PULSE (20⚡) • CLS: STASIS BUBBLE (380⚡ • 5s Dome)",
-        primaryTitle = "Twin Angled Pulse",
-        secondaryTitle = "Interdictor Stasis Bubble (380⚡ • 5s Dome)",
+        weaponSummary = "PRI: PULSE (20⚡) • SEC: STASIS BUBBLE (380⚡ • 8s)",
+        primaryTitle = "Twin Pulse",
+        secondaryTitle = "Stasis Bubble (380⚡ • 8s)",
         primaryShortLabel = "PULSE",
         secondaryShortLabel = "BUBBLE",
         speedPts = 10,
@@ -1477,7 +1477,7 @@ object RiftCodex {
         hasBomb = true,
         bombType = "INTERDICTOR_DOME",
         bombCost = 380f,
-        bombCooldown = 9.0f,
+        bombCooldown = 12.0f,
         bombDamage = 0f,
         bombBounces = 0,
         bombRecoil = 0f,
@@ -1488,130 +1488,146 @@ object RiftCodex {
     )
 
   /**
-   * Expanded 11-Buff Playfield Pool (89% Ship Size Glowing Icons, Capped at 40 in 20-player FFA):
-   * - Bucket A (0..5): Official RIFT Special Buff Slot Pickups (4th Right-Hand Button — Charge-Based, 0⚡ Cost)
-   * - Bucket B (6..10): Instant Ship & Weapon Enhancers (Top-Center Expandable Buff Bar)
+   * Supply Crate Buff Pool (89% Ship Size Glowing Icons, Capped at 40 in 20-player FFA):
+   * - Bucket A (0..5): Special Buff Slot Pickups (4th Right-Hand Button — Charge-Based, 0⚡ Cost)
+   * - Bucket B (6..9 & -10..-14): Instant Ship & All-5-Stat Hull Upgrades
    */
   val POWERUP_CODEX: List<PowerUpCodexEntry> =
     listOf(
-      // Bucket A: Official RIFT Special Buff Slot Pickups (0..5) — Charge-Based, 0⚡ Cost
       PowerUpCodexEntry(
         id = "special_nova_ring",
         buffTypeIndex = 0,
         title = "NOVA RING (+1 CHARGE • 0⚡)",
         dropRatePercent = 9,
-        category = "BUCKET A: SPECIAL BUFF SLOT (0⚡ COST)",
-        effectSummary = "Fires a 360° radial ring of 24 high-velocity ricochet plasma bolts.",
-        tacticalNote = "HUD Label: NOVA [X]. Stacks +1 charge if already holding Nova Ring, or overwrites a different Special Buff Slot item.",
+        category = "SPECIAL BUFF SLOT (0⚡)",
+        effectSummary = "Fires a 360° ring of 24 ricochet plasma bolts.",
+        tacticalNote = "HUD: NOVA [X]. Stacks +1 charge if holding Nova Ring.",
       ),
       PowerUpCodexEntry(
         id = "special_shatter_cone",
         buffTypeIndex = 1,
         title = "SHATTER CONE (+2 CHARGES • 0⚡)",
         dropRatePercent = 9,
-        category = "BUCKET A: SPECIAL BUFF SLOT (0⚡ COST)",
-        effectSummary = "Fires 3 rapid waves of bouncing plasma shards in a 60° cone.",
-        tacticalNote = "HUD Label: SHATTER [X]. Massive close-quarters burst damage at zero Flux cost. Same-type pickups stack +2 charges.",
+        category = "SPECIAL BUFF SLOT (0⚡)",
+        effectSummary = "Fires 3 rapid waves of bouncing shards in a 60° cone.",
+        tacticalNote = "HUD: SHATTER [X]. High close-range burst damage.",
       ),
       PowerUpCodexEntry(
         id = "special_seeker_torpedo",
         buffTypeIndex = 2,
         title = "SEEKER TORPEDO (+1 CHARGE • 0⚡)",
         dropRatePercent = 8,
-        category = "BUCKET A: SPECIAL BUFF SLOT (0⚡ COST)",
-        effectSummary = "Locks onto hostile targets, travels at Goliath speed (380 PX/S), bounces off walls, and flies for a full 2.5 seconds before detonating.",
-        tacticalNote = "HUD Label: SEEKER [X]. Forces enemies to burn Repel, Phase Dash, Holo Phantom, or Stasis Barrier.",
+        category = "SPECIAL BUFF SLOT (0⚡)",
+        effectSummary = "Homing torpedo that bounces off walls and flies for 2.5s.",
+        tacticalNote = "HUD: SEEKER [X]. Forces enemies to use Repel or Phase Dash.",
       ),
       PowerUpCodexEntry(
         id = "special_holo_phantom",
         buffTypeIndex = 3,
         title = "HOLO PHANTOM (+1 CHARGE • 0⚡)",
         dropRatePercent = 8,
-        category = "BUCKET A: SPECIAL BUFF SLOT (0⚡ COST)",
-        effectSummary = "Spawns a holographic clone with your [TAG] Callsign and Bounty that mirrors velocity for 8 seconds.",
-        tacticalNote = "HUD Label: PHANTOM [X]. Draws enemy AI fire and breaks active Seeker Torpedo locks.",
+        category = "SPECIAL BUFF SLOT (0⚡)",
+        effectSummary = "Spawns a decoy clone with your callsign for 8s.",
+        tacticalNote = "HUD: PHANTOM [X]. Draws bot fire and breaks Seeker locks.",
       ),
       PowerUpCodexEntry(
         id = "special_stasis_barrier",
         buffTypeIndex = 4,
         title = "STASIS BARRIER (+1 CHARGE • 0⚡)",
         dropRatePercent = 8,
-        category = "BUCKET A: SPECIAL BUFF SLOT (0⚡ COST)",
-        effectSummary = "Deploys a crackling cyan/amber 120px hard-light energy barrier perpendicular to the ship for 10 seconds.",
-        tacticalNote = "HUD Label: BARRIER [X]. Physically blocks ships and bounces projectiles.",
+        category = "SPECIAL BUFF SLOT (0⚡)",
+        effectSummary = "Deploys a 120px energy wall for 10s.",
+        tacticalNote = "HUD: BARRIER [X]. Blocks ships and bounces shots.",
       ),
       PowerUpCodexEntry(
         id = "special_hyper_surge",
         buffTypeIndex = 5,
         title = "HYPER SURGE (+1 CHARGE • 0⚡)",
         dropRatePercent = 8,
-        category = "BUCKET A: SPECIAL BUFF SLOT (0⚡ COST)",
-        effectSummary = "Ignites a 3.0-second 1.65x hyper-thruster speed burn costing 0⚡ Flux with a blazing plasma trail.",
-        tacticalNote = "HUD Label: SURGE [X]. Ultimate escape or high-bounty chase tool when your Flux capacitor is depleted.",
+        category = "SPECIAL BUFF SLOT (0⚡)",
+        effectSummary = "3.0s 1.65x speed boost costing 0⚡.",
+        tacticalNote = "HUD: SURGE [X]. Fast escape or chase boost.",
       ),
-      // Bucket B: Instant Ship & Weapon Enhancers (6..10)
       PowerUpCodexEntry(
         id = "full_charge",
         buffTypeIndex = 6,
         title = "FULL FLUX CHARGE (+100% ⚡)",
         dropRatePercent = 14,
-        category = "BUCKET B: INSTANT ENHANCER",
-        effectSummary = "Instantly restores 100% Maximum Flux (⚡) and grants +15 Bounty.",
-        tacticalNote = "Grab mid-dogfight to invert a low-Flux engagement without retreating to the Safe Zone.",
+        category = "INSTANT ENHANCER",
+        effectSummary = "Restores 100% Max Flux (⚡) and grants +15 Bounty.",
+        tacticalNote = "Instant mid-fight refill.",
       ),
       PowerUpCodexEntry(
         id = "repel_charge",
         buffTypeIndex = 7,
         title = "REPEL CHARGE (+1 REPEL)",
         dropRatePercent = 10,
-        category = "BUCKET B: INSTANT ENHANCER",
-        effectSummary = "Adds +1 Repel to your dedicated Repel button counter.",
-        tacticalNote = "Reflects enemy ships, bullets, bombs, mines, and Supply Crates in a 360° shockwave.",
+        category = "INSTANT ENHANCER",
+        effectSummary = "Adds +1 Repel charge (up to 6).",
+        tacticalNote = "Pushes back enemy ships, shots, bombs, and crates.",
       ),
       PowerUpCodexEntry(
         id = "shot_multishot",
         buffTypeIndex = 8,
         title = "MULTI-SHOT CRATE (+25 SHOTS)",
         dropRatePercent = 9,
-        category = "BUCKET B: PRIMARY TRIGGER AUGMENT",
-        effectSummary = "Modifies the Primary Fire Stick trigger directly for 25 shots (never overwrites your Special Buff Slot).",
-        tacticalNote = "Displays a MULTI [25] badge on the Primary Fire Stick ring and automatically fires multi-stream volleys.",
+        category = "PRIMARY TRIGGER AUGMENT",
+        effectSummary = "Adds 25 multi-stream shots to your primary gun.",
+        tacticalNote = "Shows MULTI [25] on the fire ring.",
       ),
       PowerUpCodexEntry(
         id = "bouncing_bullets",
         buffTypeIndex = 9,
-        title = "BOUNCING BULLETS (PERMANENT LIFE UPGRADE)",
+        title = "BOUNCING BULLETS (+1 BOUNCE)",
         dropRatePercent = 9,
-        category = "BUCKET B: PERMANENT HULL UPGRADE",
-        effectSummary = "Permanently upgrades your primary guns with +1 arena wall bounce for the rest of your current life.",
-        tacticalNote = "Tracked in the compact 4-Slot Buff Bar (BOUNCE ON) until ship destruction or Convergence.",
+        category = "HULL UPGRADE (UNTIL DEATH)",
+        effectSummary = "Adds +1 wall bounce to primary shots until death.",
+        tacticalNote = "Tracked in the buff bar as BOUNCE ON.",
       ),
       PowerUpCodexEntry(
         id = "overcharge_speed",
         buffTypeIndex = 10,
-        title = "SPEED OVERCHARGE (+8% • MAX 3/3)",
-        dropRatePercent = 3,
-        category = "BUCKET B: PERMANENT HULL UPGRADE",
-        effectSummary = "Permanently increases Top Cruise & Afterburner Speed by +8% per stack (up to +24% at 3/3) until death.",
-        tacticalNote = "Shares the Overcharge crate slot evenly with Thrust Overcharge and Reactor Overcharge.",
+        title = "SPEED UPGRADE (+8% • MAX 3/3)",
+        dropRatePercent = 2,
+        category = "HULL STAT UPGRADE (UNTIL DEATH)",
+        effectSummary = "Increases top speed and afterburner speed by +8% per stack (up to +24%) until death.",
+        tacticalNote = "Tracked in the buff bar as SPD +X%.",
       ),
       PowerUpCodexEntry(
         id = "overcharge_thrust",
         buffTypeIndex = -11,
-        title = "THRUST OVERCHARGE (+8% • MAX 3/3)",
-        dropRatePercent = 3,
-        category = "BUCKET B: PERMANENT HULL UPGRADE",
-        effectSummary = "Permanently increases Newtonian Engine Thrust by +8% per stack (up to +24% at 3/3) until death.",
-        tacticalNote = "Tracked in the compact 4-Slot Buff Bar (THR +X%).",
+        title = "THRUST UPGRADE (+8% • MAX 3/3)",
+        dropRatePercent = 2,
+        category = "HULL STAT UPGRADE (UNTIL DEATH)",
+        effectSummary = "Increases ship acceleration by +8% per stack (up to +24%) until death.",
+        tacticalNote = "Tracked in the buff bar as THR +X%.",
       ),
       PowerUpCodexEntry(
         id = "overcharge_recharge",
         buffTypeIndex = -12,
-        title = "REACTOR OVERCHARGE (+8% • MAX 3/3)",
+        title = "RECHARGE UPGRADE (+8% • MAX 3/3)",
         dropRatePercent = 2,
-        category = "BUCKET B: PERMANENT HULL UPGRADE",
-        effectSummary = "Permanently increases passive Flux Recharge Rate by +8% per stack (up to +24% at 3/3) until death.",
-        tacticalNote = "Tracked in the compact 4-Slot Buff Bar (RCH +X%).",
+        category = "HULL STAT UPGRADE (UNTIL DEATH)",
+        effectSummary = "Increases Flux recharge rate by +8% per stack (up to +24%) until death.",
+        tacticalNote = "Tracked in the buff bar as RCH +X%.",
+      ),
+      PowerUpCodexEntry(
+        id = "overcharge_turn",
+        buffTypeIndex = -13,
+        title = "TURN RADIUS UPGRADE (+12% TURN)",
+        dropRatePercent = 1,
+        category = "HULL STAT UPGRADE (UNTIL DEATH)",
+        effectSummary = "Sharpens ship turn rate and handling by +12% per stack (up to +36% at 3/3) until death.",
+        tacticalNote = "Tracked in the buff bar as TRN +X%.",
+      ),
+      PowerUpCodexEntry(
+        id = "overcharge_max_flux",
+        buffTypeIndex = -14,
+        title = "MAX FLUX UPGRADE (+10% MAX ⚡)",
+        dropRatePercent = 1,
+        category = "HULL STAT UPGRADE (UNTIL DEATH)",
+        effectSummary = "Expands Max Flux capacity by +10% per stack (up to +30% at 3/3) and heals the bonus ⚡.",
+        tacticalNote = "Tracked in the buff bar as FLX +X%.",
       ),
     )
 
@@ -1619,39 +1635,39 @@ object RiftCodex {
     listOf(
       PlayfieldRiftCodexEntry(
         id = "plasma_rift",
-        title = "PLASMA RIFT (LETHAL THERMAL TEAR)",
-        classification = "HAZARD ANOMALY • CRIMSON RADAR BLIP",
-        specBadge = "10% MAX FLUX / 0.6s • 180PX RADIUS",
+        title = "PLASMA RIFT (THERMAL HAZARD)",
+        classification = "HAZARD • RED RADAR BLIP",
+        specBadge = "10% MAX FLUX / 0.6s • 180PX",
         accentHex = "#EF4444",
-        effectSummary = "Unstable crimson-magenta dimensional tear that sears any hull crossing its 180px perimeter for 10% Maximum Flux every 0.6 seconds and can destroy ships outright if Flux drops to 0⚡.",
-        tacticalNote = "Use Repel, Gravity pulls, or heavy warhead knockback to force low-Flux enemies into a Plasma Rift for instant arena area denial.",
+        effectSummary = "Burns ships inside its 180px core for 10% Max Flux every 0.6s. Can destroy ships at 0⚡.",
+        tacticalNote = "Repel or knock low-Flux enemies into the tear for an instant kill.",
       ),
       PlayfieldRiftCodexEntry(
         id = "repulsor_rift",
-        title = "REPULSOR RIFT (KINETIC SLINGSHOT DOME)",
-        classification = "KINETIC FIELD • WHITE RADAR BLIP",
-        specBadge = "520PX FIELD • 1.35x BURN SLINGSHOT",
+        title = "REPULSOR RIFT (SLINGSHOT DOME)",
+        classification = "KINETIC • WHITE RADAR BLIP",
+        specBadge = "520PX FIELD • 1.35x SLINGSHOT",
         accentHex = "#38BDF8",
-        effectSummary = "High-pressure radial shock dome that hurls approaching ships outward up to 1.35x Afterburner velocity across a 520px field while deflecting incoming bullets and warheads away from its core.",
-        tacticalNote = "Skim the outer 520px boundary at an angle to slingshot across sectors at zero Flux cost, or camp behind its core to curve enemy rail shots off-target.",
+        effectSummary = "Launches approaching ships outward up to 1.35x afterburner speed and deflects shots.",
+        tacticalNote = "Skim the edge to slingshot across the map for 0⚡.",
       ),
       PlayfieldRiftCodexEntry(
         id = "gravity_rift",
-        title = "GRAVITY RIFT (SINGULARITY WELL)",
-        classification = "GRAVITY WELL • VIOLET RADAR BLIP",
-        specBadge = "600PX PULL • CORE FULL STOP (0 PX/S)",
+        title = "GRAVITY RIFT (PULL WELL)",
+        classification = "GRAVITY • VIOLET RADAR BLIP",
+        specBadge = "600PX PULL • CORE STOP",
         accentHex = "#A855F7",
-        effectSummary = "Collapsed violet singularity that drags ships inward across a 600px pull field. Touching the inner event horizon zeroes your velocity (Full Stop) with 1.75s escape immunity and swallows live projectiles.",
-        tacticalNote = "Fire Seeker Torpedoes or Siege Bombs as an enemy gets dragged toward the core, or trigger Phase Dash / Hyper Surge to break free of the pull well.",
+        effectSummary = "Pulls ships inward across 600px. Touching the center stops your ship for a moment and swallows shots.",
+        tacticalNote = "Fire bombs at enemies pulled toward the center.",
       ),
       PlayfieldRiftCodexEntry(
         id = "phase_rift_pair",
-        title = "PAIRED PHASE RIFTS (NODE A ⇄ NODE B)",
-        classification = "LINKED PORTAL PAIR • TEAL/CYAN BLIPS",
-        specBadge = "INSTANT TRANSIT • 1.0s COOLDOWN",
+        title = "PAIRED PHASE RIFTS (PORTAL A ⇄ B)",
+        classification = "PORTALS • TEAL RADAR BLIPS",
+        specBadge = "INSTANT WARP • 1.0s CD",
         accentHex = "#2DD4BF",
-        effectSummary = "Twin entangled spatial portals (Node A & Node B) spawned across distant sectors. Ships, primary bolts, warheads, and aim-guide raycasts entering either gate instantaneously exit the partner gate with full momentum preserved.",
-        tacticalNote = "Thread Bounce Bombs, Siege Bombs, or aim sightlines through Node A to ambush pilots camping near Node B, or dive through to escape HVT hunters.",
+        effectSummary = "Linked portals across the map. Ships and shots entering one gate exit the other at full speed.",
+        tacticalNote = "Shoot Bounce Bombs through a portal or warp away from hunters.",
       ),
     )
 

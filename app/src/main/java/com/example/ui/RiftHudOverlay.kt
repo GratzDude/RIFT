@@ -28,13 +28,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -210,21 +213,35 @@ fun RiftHudOverlay(
           }
         }
   ) {
-    // 1. Top-Center Active Ranked Mode Telemetry Pill (Skirmish, Flux Core, Stasis Breach, Syndicate Wars)
-    if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE) {
-      val mode = engine.activeRankedMode
+    // 1. Top-Center Active Ranked Mode / Custom Game Telemetry Pill
+    if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE || engine.isCustomGameActive()) {
+      val mode = engine.effectiveModeRules()
       val modeAccent =
         when (mode) {
           RankedGameMode.RIFT_SKIRMISH -> Color(0xFFF59E0B)
           RankedGameMode.FLUX_CORE -> Color(0xFF00F5D4)
           RankedGameMode.STASIS_BREACH -> Color(0xFFA855F7)
+          RankedGameMode.RIFT_CONTROL -> Color(0xFF38BDF8)
           RankedGameMode.SYNDICATE_WARS -> Color(0xFFEF4444)
           RankedGameMode.SECTOR_CONVERGENCE -> Color(0xFF38BDF8)
         }
-      val modeSummaryText =
+      fun formatRiftState(controlSec: Float, lockedBy: Int): String =
+        when (lockedBy) {
+          0 -> "WEST LOCKED"
+          1 -> "EAST LOCKED"
+          else -> {
+            val sec = kotlin.math.abs(controlSec).toInt()
+            when {
+              controlSec < -0.5f -> "W ${sec}s/30s"
+              controlSec > 0.5f -> "E ${sec}s/30s"
+              else -> "0s/30s"
+            }
+          }
+        }
+      val baseModeSummaryText =
         when (mode) {
           RankedGameMode.RIFT_SKIRMISH ->
-            "⚔️ RIFT SKIRMISH (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • RND ${engine.skirmishCurrentRound} • WEST ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} EAST (${engine.skirmishWestKills}-${engine.skirmishEastKills} KILLS)"
+            "⚔️ RIFT SKIRMISH (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • RND ${engine.skirmishCurrentRound} (${engine.skirmishRoundTimerSec.toInt()}s) • WEST ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} EAST"
           RankedGameMode.FLUX_CORE -> {
             val carrierShip =
               engine.ships.firstOrNull {
@@ -241,19 +258,25 @@ fun RiftHudOverlay(
               }
             "⚡ FLUX CORE • $carrierLabel • HOLD ${engine.fluxCoreOrb.holdDurationSec.toInt()}s"
           }
-          RankedGameMode.STASIS_BREACH -> {
-            val jailedCount = engine.ships.count { it.isInStasisBrig }
-            "🔒 STASIS BREACH (10v10) • WEST REACTOR ${engine.westBrigGeneratorHp.toInt()}⚡ | EAST REACTOR ${engine.eastBrigGeneratorHp.toInt()}⚡ • BRIG: $jailedCount"
-          }
+          RankedGameMode.STASIS_BREACH ->
+            "🔒 STASIS BREACH (10v10) • WEST CORE ${engine.westBrigGeneratorHp.toInt()}⚡ | EAST CORE ${engine.eastBrigGeneratorHp.toInt()}⚡"
+          RankedGameMode.RIFT_CONTROL ->
+            "🎯 RIFT CONTROL (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • ${engine.riftControlMatchTimerSec.toInt()}s • ALPHA: ${formatRiftState(engine.riftAlphaControlSec, engine.riftAlphaLockedBy)} | OMEGA: ${formatRiftState(engine.riftOmegaControlSec, engine.riftOmegaLockedBy)}"
           RankedGameMode.SYNDICATE_WARS ->
-            "🏛️ SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • [${player.syndicateTag}] ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} [${engine.rivalSyndicateWarTag}] (RND ${engine.skirmishCurrentRound})"
+            "🏛️ SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • [${player.syndicateTag}] ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} [${engine.rivalSyndicateWarTag}] • ${engine.skirmishRoundTimerSec.toInt()}s"
           RankedGameMode.SECTOR_CONVERGENCE -> mode.title
+        }
+      val modeSummaryText =
+        if (engine.isCustomGameActive()) {
+          "⚙️ CUSTOM: ${engine.currentCustomGame?.title ?: "Custom Match"} • $baseModeSummaryText"
+        } else {
+          baseModeSummaryText
         }
 
       Box(
         modifier =
           Modifier.align(Alignment.TopCenter)
-            .padding(top = 8.dp)
+            .padding(top = 6.dp)
             .clip(RoundedCornerShape(9.dp))
             .background(Color(0xD9060E1C))
             .border(1.dp, modeAccent, RoundedCornerShape(9.dp))
@@ -269,51 +292,10 @@ fun RiftHudOverlay(
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           style = WingTelemetryTextStyle,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
         )
       }
-    }
-
-    // 2. Centered Compact 4-Slot Permanent Hull Upgrade Buff Pill (BOUNCE, SPD, THR, RCH)
-    Box(
-      modifier =
-        Modifier.align(Alignment.TopCenter)
-          .offset {
-            IntOffset(
-              RiftCalibrationState.buffBarOffset.x.roundToInt(),
-              RiftCalibrationState.buffBarOffset.y.roundToInt(),
-            )
-          }
-          .then(
-            if (uiUnlocked) {
-              Modifier.pointerInput(Unit) {
-                detectDragGestures(
-                  onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
-                  onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
-                ) { change, dragAmount ->
-                  change.consume()
-                  RiftCalibrationState.buffBarOffset += dragAmount
-                }
-              }
-            } else {
-              Modifier
-            }
-          )
-          .graphicsLayer {
-            scaleX = RiftCalibrationState.buffBarScale
-            scaleY = RiftCalibrationState.buffBarScale
-            transformOrigin = TransformOrigin(0.5f, 0f)
-          }
-          .padding(top = 42.dp)
-          .testTag("hud_active_powerups_dock"),
-      contentAlignment = Alignment.Center,
-    ) {
-      ActivePowerupsDock(
-        player = player,
-        buffVersion = engine.buffVersion,
-        frameTick = tickRead,
-        textScale = textScale,
-        uiUnlocked = uiUnlocked,
-      )
     }
 
     // 3. Right-Anchored Borderless Killboard (Floats cleanly over raw space with crisp text drop-shadows & >1,000 Bounty gold glow)
@@ -432,7 +414,7 @@ fun RiftHudOverlay(
       Box(
         modifier =
           Modifier.align(Alignment.TopCenter)
-            .padding(top = 74.dp)
+            .padding(top = 38.dp)
             .offset {
               IntOffset(
                 RiftCalibrationState.toastContainerOffset.x.roundToInt(),
@@ -499,7 +481,8 @@ fun RiftHudOverlay(
     // while matching each other 1:1 in width and height alongside the embedded frameless swirling NEXUS vortex!
     // When UI Unlock is active, NO outer rectangular wrapper box is drawn; amber dashed outlines trace
     // directly around the two rounded Wing pills and the circular Radar border!
-    Box(
+    // 5. Bottom-Center Console + Buff Bar Directly Above Circular Radar Minimap
+    Column(
       modifier =
         Modifier.align(Alignment.BottomCenter)
           .offset {
@@ -530,8 +513,51 @@ fun RiftHudOverlay(
           }
           .onSizeChanged { bottomConsoleWidthPx = it.width }
           .padding(bottom = 8.dp)
-          .testTag("hud_bottom_console")
+          .testTag("hud_bottom_console"),
+      horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+      // Buff Bar directly above Center Circular Radar Minimap (BNC, SPD, THR, TURN, MAX⚡, RCH)
+      Box(
+        modifier =
+          Modifier.offset {
+              IntOffset(
+                RiftCalibrationState.buffBarOffset.x.roundToInt(),
+                RiftCalibrationState.buffBarOffset.y.roundToInt(),
+              )
+            }
+            .then(
+              if (uiUnlocked) {
+                Modifier.pointerInput(Unit) {
+                  detectDragGestures(
+                    onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
+                    onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
+                  ) { change, dragAmount ->
+                    change.consume()
+                    RiftCalibrationState.buffBarOffset += dragAmount
+                  }
+                }
+              } else {
+                Modifier
+              }
+            )
+            .graphicsLayer {
+              scaleX = RiftCalibrationState.buffBarScale
+              scaleY = RiftCalibrationState.buffBarScale
+              transformOrigin = TransformOrigin(0.5f, 1f)
+            }
+            .padding(bottom = 4.dp)
+            .testTag("hud_active_powerups_dock"),
+        contentAlignment = Alignment.Center,
+      ) {
+        ActivePowerupsDock(
+          player = player,
+          buffVersion = engine.buffVersion,
+          frameTick = tickRead,
+          textScale = textScale,
+          uiUnlocked = uiUnlocked,
+        )
+      }
+
       SymmetricBottomConsoleLayout(
         engine = engine,
         player = player,
@@ -541,6 +567,7 @@ fun RiftHudOverlay(
         textScale = textScale,
         uiUnlocked = uiUnlocked,
         isNexusStreaming = isNexusStreaming,
+        onOpenHangar = onOpenHangar,
         onOpenNexus = onOpenNexus,
         frameTick = tickRead,
         rootScreenSize = rootScreenSize,
@@ -741,6 +768,7 @@ private fun SymmetricBottomConsoleLayout(
   textScale: Float,
   uiUnlocked: Boolean,
   isNexusStreaming: Boolean,
+  onOpenHangar: () -> Unit,
   onOpenNexus: () -> Unit,
   frameTick: Int,
   rootScreenSize: IntSize,
@@ -753,11 +781,16 @@ private fun SymmetricBottomConsoleLayout(
       else -> Color(0xFFEF4444)
     }
 
-  val padStart = (13f * textScale).dp
-  val padEnd = (11f * textScale).dp
-  val padVert = (8f * textScale).dp
-  val lineGap = (2.5f * textScale).dp
+  val padStart = (10f * textScale).dp
+  val padEnd = (10f * textScale).dp
+  val padVert = (7f * textScale).dp
+  val lineGap = (2.2f * textScale).dp
   val consoleGap = 8.dp
+
+  val shipBmp =
+    remember(player.shipId, RiftSpriteBaker.customShip9Version) {
+      RiftSpriteBaker.getShipSprite(player.shipId, isAllied = true).asImageBitmap()
+    }
 
   @Composable
   fun LeftWingInner(fillEqualSpace: Boolean) {
@@ -767,18 +800,59 @@ private fun SymmetricBottomConsoleLayout(
           .background(Color(0xF6080E18), RoundedCornerShape(50))
           .border(1.dp, Color(0x5938BDF8), RoundedCornerShape(50))
           .wysiwygUnlockOutline(enabled = uiUnlocked && fillEqualSpace, cornerRadius = 28.dp)
-          .padding(start = padStart, end = (6f * textScale).dp, top = padVert, bottom = padVert),
+          .padding(start = (6f * textScale).dp, end = (8f * textScale).dp, top = padVert, bottom = padVert),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement =
-        if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((6f * textScale).dp),
+        if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((7f * textScale).dp),
     ) {
+      // Outer Left: Hangar Ship Quick-Swap Button (38.dp circle with ship sprite + HANGAR / LOCKED badge)
+      Box(
+        modifier =
+          Modifier.size(38.dp)
+            .clip(CircleShape)
+            .background(Color(0xCC0D223B))
+            .border(
+              1.2.dp,
+              if (engine.isShipLockedForMatch) Color(0xFFF59E0B) else Color(0xFF38BDF8),
+              CircleShape,
+            )
+            .clickable(enabled = !uiUnlocked) { onOpenHangar() }
+            .testTag("hud_btn_hangar_ship"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Canvas(modifier = Modifier.size(28.dp)) {
+          drawImage(
+            image = shipBmp,
+            dstOffset = IntOffset.Zero,
+            dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+          )
+        }
+        Box(
+          modifier =
+            Modifier.align(Alignment.BottomCenter)
+              .background(Color(0xD9030712), RoundedCornerShape(3.dp))
+              .padding(horizontal = 2.dp),
+        ) {
+          Text(
+            text = if (engine.isShipLockedForMatch) "LOCKED" else "HANGAR",
+            color = if (engine.isShipLockedForMatch) Color(0xFFFACC15) else Color(0xFF00F5D4),
+            fontSize = 5.4.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+            style = CompactCircleTextStyle,
+            maxLines = 1,
+          )
+        }
+      }
+
+      // Center Left: SPEED & SECTOR Telemetry
       Column(
         verticalArrangement = Arrangement.spacedBy(lineGap),
       ) {
         Text(
           text = "SPEED $speed",
           color = Color(0xFF38BDF8),
-          fontSize = (10.5f * textScale).sp,
+          fontSize = (10.0f * textScale).sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           style = WingTelemetryTextStyle,
@@ -787,43 +861,34 @@ private fun SymmetricBottomConsoleLayout(
         Text(
           text = "SECTOR $sectorCode $armadaBadge".uppercase(Locale.US),
           color = Color(0xFF94A3B8),
-          fontSize = (8.8f * textScale).sp,
+          fontSize = (8.4f * textScale).sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           style = WingTelemetryTextStyle,
           maxLines = 1,
         )
       }
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy((5f * textScale).dp),
+
+      // Inner Left (next to Minimap): Compact [🎮 MODES] Pill Button
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(8.dp))
+            .background(Color(0x800D223B))
+            .border(0.8.dp, Color(0xAA00F0FF), RoundedCornerShape(8.dp))
+            .clickable(enabled = !uiUnlocked) { onOpenNexus() }
+            .padding(horizontal = (5.5f * textScale).dp, vertical = (3.5f * textScale).dp)
+            .testTag("hud_btn_modes"),
+        contentAlignment = Alignment.Center,
       ) {
-        Box(
-          modifier =
-            Modifier.clip(RoundedCornerShape(8.dp))
-              .background(Color(0x800D223B))
-              .border(0.8.dp, Color(0xAA00F0FF), RoundedCornerShape(8.dp))
-              .clickable(enabled = !uiUnlocked) { onOpenNexus() }
-              .padding(horizontal = (6f * textScale).dp, vertical = (3.5f * textScale).dp)
-              .testTag("hud_pilot_level_badge"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = "LVL ${engine.pilotLevel} • ❖${engine.riftShards}",
-            color = Color(0xFF00F0FF),
-            fontSize = (8.0f * textScale).sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-            style = WingTelemetryTextStyle,
-            maxLines = 1,
-          )
-        }
-        Box(modifier = Modifier.testTag("hud_btn_nexus")) {
-          SwirlingRiftHudOrb(
-            isStreaming = isNexusStreaming,
-            onClick = onOpenNexus,
-          )
-        }
+        Text(
+          text = "🎮 MODES",
+          color = Color(0xFF00F0FF),
+          fontSize = (7.6f * textScale).sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+          style = WingTelemetryTextStyle,
+          maxLines = 1,
+        )
       }
     }
   }
@@ -836,16 +901,19 @@ private fun SymmetricBottomConsoleLayout(
           .background(Color(0xF6080E18), RoundedCornerShape(50))
           .border(1.dp, Color(0x5938BDF8), RoundedCornerShape(50))
           .wysiwygUnlockOutline(enabled = uiUnlocked && fillEqualSpace, cornerRadius = 28.dp)
-          .padding(start = padStart, end = padEnd, top = padVert, bottom = padVert),
+          .padding(start = padStart, end = (6f * textScale).dp, top = padVert, bottom = padVert),
       verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement =
+        if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((7f * textScale).dp),
     ) {
+      // Inner Right (next to Minimap): FLUX & BOUNTY • K/D Readout
       Column(
         verticalArrangement = Arrangement.spacedBy(lineGap),
       ) {
         Text(
           text = "FLUX ${player.flux.toInt()}⚡ (${(fluxPct * 100).toInt()}%)",
           color = fluxColor,
-          fontSize = (10.5f * textScale).sp,
+          fontSize = (10.0f * textScale).sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           style = WingTelemetryTextStyle,
@@ -854,7 +922,7 @@ private fun SymmetricBottomConsoleLayout(
         Text(
           text = "BOUNTY ${player.bounty} • K/D ${engine.allTimeKills}/${engine.allTimeDeaths}",
           color = Color(0xFFFACC15),
-          fontSize = (9.5f * textScale).sp,
+          fontSize = (9.0f * textScale).sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           style = WingTelemetryTextStyle,
@@ -862,6 +930,14 @@ private fun SymmetricBottomConsoleLayout(
           modifier =
             Modifier.clickable(enabled = !uiUnlocked) { onOpenNexus() }
               .testTag("hud_bounty_kd_readout"),
+        )
+      }
+
+      // Outer Right: Swirling NEXUS Vortex Orb
+      Box(modifier = Modifier.testTag("hud_btn_nexus")) {
+        SwirlingRiftHudOrb(
+          isStreaming = isNexusStreaming,
+          onClick = onOpenNexus,
         )
       }
     }
@@ -962,7 +1038,12 @@ private fun CircularRadarMinimap(
       else -> normY
     }
 
-  val smoothedPositions = remember { mutableMapOf<String, Offset>() }
+  var continuousFrameNanos by remember { mutableLongStateOf(0L) }
+  LaunchedEffect(Unit) {
+    while (true) {
+      withFrameNanos { continuousFrameNanos = it }
+    }
+  }
 
   Box(
     modifier =
@@ -1022,13 +1103,28 @@ private fun CircularRadarMinimap(
         .testTag("hud_circular_radar"),
   ) {
     Canvas(modifier = Modifier.fillMaxSize()) {
-      val unusedTick = frameTick
+      val unusedTick = frameTick + continuousFrameNanos
       val w = size.width
       val h = size.height
-      val drawSize = w * 0.88f
+      val center = Offset(w * 0.5f, h * 0.5f)
+      val radarRadius = w * 0.5f
+      val maxDotRadius = (radarRadius - 6.dp.toPx()).coerceAtLeast(8f)
+      val drawSize = w * 0.86f
       val ox = (w - drawSize) * 0.5f + panOffsetX
       val oy = (h - drawSize) * 0.5f + panOffsetY
       val scale = drawSize / RiftGameEngine.WORLD_SIZE
+
+      fun clampToRadar(rawX: Float, rawY: Float): Offset {
+        val dx = rawX - center.x
+        val dy = rawY - center.y
+        val dist = hypot(dx, dy)
+        return if (dist <= maxDotRadius || dist < 0.001f) {
+          Offset(rawX, rawY)
+        } else {
+          val ratio = maxDotRadius / dist
+          Offset(center.x + dx * ratio, center.y + dy * ratio)
+        }
+      }
 
       if (radarBmp != null) {
         drawImage(
@@ -1042,35 +1138,35 @@ private fun CircularRadarMinimap(
       drawCircle(
         color = Color(0x2638BDF8),
         radius = w * 0.28f,
-        center = Offset(w * 0.5f, h * 0.5f),
+        center = center,
         style = Stroke(width = 1.0f),
       )
 
-      for ((idx, g) in engine.greens.withIndex()) {
-        val key = "buff_$idx"
-        val targetOffset = Offset(ox + g.x * scale, oy + g.y * scale)
-        val prevOffset = smoothedPositions[key] ?: targetOffset
-        val distJump = hypot(targetOffset.x - prevOffset.x, targetOffset.y - prevOffset.y)
-        val lerped =
-          if (distJump > 18f) {
-            targetOffset
-          } else {
-            Offset(
-              prevOffset.x + (targetOffset.x - prevOffset.x) * 0.35f,
-              prevOffset.y + (targetOffset.y - prevOffset.y) * 0.35f,
-            )
-          }
-        smoothedPositions[key] = lerped
-        drawRect(
-          color = Color(0xFF10B981),
-          topLeft = Offset(lerped.x - 1.3f, lerped.y - 1.3f),
-          size = Size(2.6f, 2.6f),
+      // Discreet Micro-Markers for Supply Crates (1.1f px radius, 0.55f alpha)
+      for (g in engine.greens) {
+        val pt = clampToRadar(ox + g.x * scale, oy + g.y * scale)
+        drawCircle(
+          color = Color(0xFF10B981).copy(alpha = 0.55f),
+          radius = 1.1f,
+          center = pt,
         )
       }
 
+      // Mode-Specific Objectives on Radar (Stasis Jails or Rift Control Zones)
+      if (engine.isStasisBreachRulesActive()) {
+        val wPt = clampToRadar(ox + engine.westBrigReactorX * scale, oy + engine.westBrigReactorY * scale)
+        val ePt = clampToRadar(ox + engine.eastBrigReactorX * scale, oy + engine.eastBrigReactorY * scale)
+        drawCircle(color = Color(0xFF38BDF8), radius = 4.2f, center = wPt, style = Stroke(width = 1.3f))
+        drawCircle(color = Color(0xFFF43F5E), radius = 4.2f, center = ePt, style = Stroke(width = 1.3f))
+      } else if (engine.isRiftControlRulesActive()) {
+        val aPt = clampToRadar(ox + engine.riftAlphaX * scale, oy + engine.riftAlphaY * scale)
+        val oPt = clampToRadar(ox + engine.riftOmegaX * scale, oy + engine.riftOmegaY * scale)
+        drawCircle(color = Color(0xFF00F5D4), radius = 4.2f, center = aPt, style = Stroke(width = 1.4f))
+        drawCircle(color = Color(0xFF00F5D4), radius = 4.2f, center = oPt, style = Stroke(width = 1.4f))
+      }
+
       for (anom in engine.anomalies) {
-        val ax = ox + anom.x * scale
-        val ay = oy + anom.y * scale
+        val pt = clampToRadar(ox + anom.x * scale, oy + anom.y * scale)
         val aColor =
           when (anom.type) {
             AnomalyType.PLASMA_RIFT -> Color(0xFFEF4444)
@@ -1080,15 +1176,9 @@ private fun CircularRadarMinimap(
             AnomalyType.PHASE_RIFT_B -> Color(0xFF38BDF8)
           }
         drawCircle(
-          color = aColor.copy(alpha = 0.85f),
-          radius = 3.6f,
-          center = Offset(ax, ay),
-        )
-        drawCircle(
-          color = Color.White.copy(alpha = 0.5f),
-          radius = 5.2f,
-          center = Offset(ax, ay),
-          style = Stroke(width = 0.8f),
+          color = aColor.copy(alpha = 0.80f),
+          radius = 2.6f,
+          center = pt,
         )
       }
 
@@ -1097,21 +1187,26 @@ private fun CircularRadarMinimap(
       val p = engine.localPlayer
 
       for (bw in engine.brickWalls) {
-        val ax = ox + (if (bw.w >= bw.h) bw.x else bw.x + bw.w * 0.5f) * scale
-        val ay = oy + (if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y) * scale
-        val bx = ox + (if (bw.w >= bw.h) bw.x + bw.w else bw.x + bw.w * 0.5f) * scale
-        val by = oy + (if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y + bw.h) * scale
+        val aPt =
+          clampToRadar(
+            ox + (if (bw.w >= bw.h) bw.x else bw.x + bw.w * 0.5f) * scale,
+            oy + (if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y) * scale,
+          )
+        val bPt =
+          clampToRadar(
+            ox + (if (bw.w >= bw.h) bw.x + bw.w else bw.x + bw.w * 0.5f) * scale,
+            oy + (if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y + bw.h) * scale,
+          )
         drawLine(
           color = Color(0xFF22D3EE),
-          start = Offset(ax, ay),
-          end = Offset(bx, by),
-          strokeWidth = 2.2f,
+          start = aPt,
+          end = bPt,
+          strokeWidth = 1.8f,
         )
       }
 
       for (dc in engine.decoys) {
-        val dx = ox + dc.x * scale
-        val dy = oy + dc.y * scale
+        val pt = clampToRadar(ox + dc.x * scale, oy + dc.y * scale)
         val isFriendlyDecoy =
           dc.ownerId == p.id ||
             (p.armadaName.isNotEmpty() && dc.armadaName == p.armadaName) ||
@@ -1119,56 +1214,34 @@ private fun CircularRadarMinimap(
         val dotFill = if (isFriendlyDecoy) Color(0xFF38BDF8) else Color(0xFFEF4444)
         drawCircle(
           color = dotFill,
-          radius = 3.2f,
-          center = Offset(dx, dy),
-        )
-        drawCircle(
-          color = Color.White,
-          radius = 3.2f,
-          center = Offset(dx, dy),
-          style = Stroke(width = 1.1f),
+          radius = 2.2f,
+          center = pt,
         )
       }
 
       for (s in engine.ships) {
-        if (s.respawnTimer > 0f) {
-          smoothedPositions.remove(s.id)
-          continue
-        }
+        if (s.respawnTimer > 0f) continue
         val isFriendly = engine.areAllied(p, s)
-        if (s.isCloaked && !isFriendly && !s.isLocalPlayer) {
-          smoothedPositions.remove(s.id)
-          continue
-        }
-        val targetPos = Offset(ox + s.x * scale, oy + s.y * scale)
-        val prevPos = smoothedPositions[s.id] ?: targetPos
-        val jump = hypot(targetPos.x - prevPos.x, targetPos.y - prevPos.y)
-        val smoothPos =
-          if (jump > 24f) {
-            targetPos
-          } else {
-            Offset(
-              prevPos.x + (targetPos.x - prevPos.x) * 0.32f,
-              prevPos.y + (targetPos.y - prevPos.y) * 0.32f,
-            )
-          }
-        smoothedPositions[s.id] = smoothPos
+        if (s.isCloaked && !isFriendly && !s.isLocalPlayer) continue
 
-        val sx = smoothPos.x
-        val sy = smoothPos.y
+        val pt = clampToRadar(ox + s.x * scale, oy + s.y * scale)
+        val sx = pt.x
+        val sy = pt.y
 
         if (s.bounty >= RiftGameEngine.HVT_BOUNTY_THRESHOLD) {
-          val pingR = 4.5f + pulsePhase * 10f
-          drawCircle(
-            color = Color(0xFFFFD700).copy(alpha = (1f - pulsePhase).coerceIn(0.20f, 0.95f)),
-            radius = pingR,
-            center = smoothPos,
-            style = Stroke(width = 1.8f),
-          )
+          val pingR = (3.2f + pulsePhase * 6.5f).coerceAtMost(maxDotRadius - hypot(sx - center.x, sy - center.y) + 3.0f)
+          if (pingR > 2.0f) {
+            drawCircle(
+              color = Color(0xFFFFD700).copy(alpha = (1f - pulsePhase).coerceIn(0.20f, 0.90f)),
+              radius = pingR,
+              center = pt,
+              style = Stroke(width = 1.3f),
+            )
+          }
         }
 
         if (s.isLocalPlayer) {
-          val r = 5.4f
+          val r = 4.2f
           val a = s.angle
           trianglePath.reset()
           trianglePath.moveTo(sx + cos(a) * r, sy + sin(a) * r)
@@ -1178,18 +1251,20 @@ private fun CircularRadarMinimap(
           drawPath(path = trianglePath, color = if (s.isCloaked) Color(0xFFD8B4FE) else Color.White)
         } else {
           val dotFill = if (isFriendly) Color(0xFF3B82F6) else Color(0xFFEF4444)
-          val dotRadius = if (s.isHuman) 4.0f else 3.3f
+          val dotRadius = if (s.isHuman) 3.0f else 2.2f
           drawCircle(
             color = dotFill,
             radius = dotRadius,
-            center = smoothPos,
+            center = pt,
           )
-          drawCircle(
-            color = Color.White,
-            radius = dotRadius,
-            center = smoothPos,
-            style = Stroke(width = 1.3f),
-          )
+          if (s.isHuman) {
+            drawCircle(
+              color = Color.White,
+              radius = dotRadius,
+              center = pt,
+              style = Stroke(width = 1.0f),
+            )
+          }
         }
       }
 
@@ -1458,14 +1533,16 @@ private fun ActivePowerupsDock(
   val pctPerStack = RiftCalibrationState.overchargeSurgePctPerStack
   val spdPct = (player.speedOverchargeStacks * pctPerStack * 100f).roundToInt()
   val thrPct = (player.thrustOverchargeStacks * pctPerStack * 100f).roundToInt()
+  val turnPct = player.turnOverchargeStacks * 12
+  val maxFluxPct = player.maxFluxOverchargeStacks * 10
   val rchPct = (player.rechargeOverchargeStacks * pctPerStack * 100f).roundToInt()
 
-  // Strictly 4 Permanent-Until-Death Hull Upgrades ONLY (BOUNCE, SPD, THR, RCH)
+  // All 6 Permanent-Until-Death Hull Upgrades (BNC, SPD, THR, TURN, MAX⚡, RCH)
   val slots =
     listOf(
       PermanentUpgradeSlot(
         iconType = 9,
-        label = "BOUNCE",
+        label = "BNC",
         valueText =
           when {
             player.hasBouncingBulletsUpgrade -> "ON"
@@ -1490,6 +1567,20 @@ private fun ActivePowerupsDock(
         accentColor = Color(0xFFF59E0B),
       ),
       PermanentUpgradeSlot(
+        iconType = -13,
+        label = "TURN",
+        valueText = "+$turnPct%",
+        isActive = player.turnOverchargeStacks > 0,
+        accentColor = Color(0xFFEC4899),
+      ),
+      PermanentUpgradeSlot(
+        iconType = -14,
+        label = "MAX⚡",
+        valueText = "+$maxFluxPct%",
+        isActive = player.maxFluxOverchargeStacks > 0,
+        accentColor = Color(0xFF00F5D4),
+      ),
+      PermanentUpgradeSlot(
         iconType = -12,
         label = "RCH",
         valueText = "+$rchPct%",
@@ -1502,15 +1593,15 @@ private fun ActivePowerupsDock(
     modifier =
       Modifier.wrapContentSize()
         .clip(RoundedCornerShape(9.dp))
-        .background(Color(0x59080E18))
+        .background(Color(0xD9080E18))
         .border(0.85.dp, Color(0x4D38BDF8), RoundedCornerShape(9.dp))
         .wysiwygUnlockOutline(enabled = uiUnlocked, cornerRadius = 9.dp)
         .padding(
-          horizontal = (7.0f * textScale).dp,
-          vertical = (3.0f * textScale).dp,
+          horizontal = (6.0f * textScale).dp,
+          vertical = (2.6f * textScale).dp,
         ),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy((7.0f * textScale).dp),
+    horizontalArrangement = Arrangement.spacedBy((5.5f * textScale).dp),
   ) {
     slots.forEach { slot ->
       PermanentUpgradeBadge(slot = slot, textScale = textScale)

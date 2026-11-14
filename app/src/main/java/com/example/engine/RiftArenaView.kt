@@ -176,24 +176,24 @@ class RiftArenaView(
       color = Color.argb(185, 56, 189, 248)
     }
 
-  // Procedural Dark Obsidian + Cyan Energy Seam Bulkhead Wall Paints
+  // High-Contrast Brushed Gunmetal & Neon Bulkhead Wall Paints
   private val wallBodyPaint =
     Paint(Paint.FILTER_BITMAP_FLAG).apply {
       style = Paint.Style.FILL
-      color = Color.parseColor("#080D17")
+      color = Color.parseColor("#1E293B")
       shader = RiftSpriteBaker.wallShader
     }
 
   private val wallTopBevelPaint =
     Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.FILL
-      color = Color.parseColor("#243B5E")
+      color = Color.parseColor("#64748B")
     }
 
   private val wallBottomBevelPaint =
     Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.FILL
-      color = Color.parseColor("#02040A")
+      color = Color.parseColor("#0F172A")
     }
 
   private val wallHazardPaint =
@@ -206,14 +206,22 @@ class RiftArenaView(
   private val wallCyanSeamPaint =
     Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.STROKE
-      strokeWidth = 1.5f
-      color = Color.argb(96, 0, 240, 255)
+      strokeWidth = 3.2f
+      color = Color.parseColor("#00F5D4")
+    }
+
+  private val wallGoldBracketPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeWidth = 3.4f
+      strokeCap = Paint.Cap.SQUARE
+      color = Color.parseColor("#F59E0B")
     }
 
   private val wallRivetPaint =
     Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.FILL
-      color = Color.parseColor("#64748B")
+      color = Color.parseColor("#94A3B8")
     }
 
   private val phaseEchoPaint =
@@ -544,10 +552,21 @@ class RiftArenaView(
     val p = engine.localPlayer
     rebuildActiveUtilitySlots(p)
 
-    // Stationary Death Camera: anchor at deathX, deathY on death
+    // Stationary Death Camera (or Ally Spectate Camera in Rift Skirmish / Syndicate Wars)
     if (p.respawnTimer > 0f) {
-      camX = p.deathX
-      camY = p.deathY
+      val specTarget =
+        if (engine.isSkirmishRulesActive() && engine.spectatingTargetShipId.isNotEmpty()) {
+          engine.ships.firstOrNull { it.id == engine.spectatingTargetShipId && it.respawnTimer <= 0f }
+        } else {
+          null
+        }
+      if (specTarget != null) {
+        camX = specTarget.x
+        camY = specTarget.y
+      } else {
+        camX = p.deathX
+        camY = p.deathY
+      }
     } else {
       camX = p.x
       camY = p.y
@@ -676,9 +695,14 @@ class RiftArenaView(
       )
     }
 
-    // 4b. STASIS_BREACH (10v10 Jailbreak): Vertical Sector Divider (x = 4000), West/East Stasis Brigs & 8,000⚡ Reactor Cores
+    // 4b. STASIS_BREACH (10v10 Jailbreak): Vertical Sector Divider (x = 4000), Circular Stasis Jails & 4,000⚡ Reactor Cores
     if (engine.isStasisBreachRulesActive()) {
       drawStasisBreachPlayfieldStructures(canvas, p, viewLeft, viewRight, viewTop, viewBottom)
+    }
+
+    // 4b-2. RIFT_CONTROL: 2-Rift Tug-of-War Capture Zones (Rift Alpha & Rift Omega)
+    if (engine.isRiftControlRulesActive()) {
+      drawRiftControlZones(canvas, p, viewLeft, viewRight, viewTop, viewBottom)
     }
 
     // 4c. FLUX_CORE: Free/Ejected Singularity Orb & Supersonic Velocity Trail
@@ -1014,62 +1038,327 @@ class RiftArenaView(
       popupPaint.alpha = 255
     }
 
-    // 8. 2x Bullets scaled by projectileScale
-    val projScale = RiftCalibrationState.projectileScale
+    // 8. Distinct Per-Ship Primary Projectiles (scaled by engine.getEffectiveProjectileScale())
+    val projScale = engine.getEffectiveProjectileScale()
+    val nowSpinRad = ((System.currentTimeMillis() % 900L) / 900f) * (PI.toFloat() * 2f)
     for (b in engine.bullets) {
-      if (b.x < viewLeft || b.x > viewRight || b.y < viewTop || b.y > viewBottom) continue
-      val tailX = b.x - b.vx * 0.036f
-      val tailY = b.y - b.vy * 0.036f
-      bulletPaint.color = b.color
-      bulletPaint.strokeWidth = 6.4f * projScale
-      bulletCorePaint.strokeWidth = 2.8f * projScale
-      canvas.drawLine(b.x, b.y, tailX, tailY, bulletPaint)
-      canvas.drawLine(b.x, b.y, tailX, tailY, bulletCorePaint)
+      if (b.x < viewLeft - 40f || b.x > viewRight + 40f || b.y < viewTop - 40f || b.y > viewBottom + 40f) continue
+      val speed = hypot(b.vx, b.vy).coerceAtLeast(1f)
+      val dirX = b.vx / speed
+      val dirY = b.vy / speed
+      val perpX = -dirY
+      val perpY = dirX
+
+      when (b.ownerShipId) {
+        1 -> {
+          // 1-Viper: Elongated razor-thin cyan/white high-velocity rail beam (34f) + bright white diamond tip
+          val len = 34f * projScale
+          val tailX = b.x - dirX * len
+          val tailY = b.y - dirY * len
+          bulletPaint.color = b.color
+          bulletPaint.strokeWidth = 4.5f * projScale
+          bulletCorePaint.strokeWidth = 2.2f * projScale
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletPaint)
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletCorePaint)
+          val dSize = 4.8f * projScale
+          plumePath.reset()
+          plumePath.moveTo(b.x + dirX * dSize, b.y + dirY * dSize)
+          plumePath.lineTo(b.x + perpX * (dSize * 0.6f), b.y + perpY * (dSize * 0.6f))
+          plumePath.lineTo(b.x - dirX * dSize, b.y - dirY * dSize)
+          plumePath.lineTo(b.x - perpX * (dSize * 0.6f), b.y - perpY * (dSize * 0.6f))
+          plumePath.close()
+          bombPaint.color = Color.WHITE
+          canvas.drawPath(plumePath, bombPaint)
+        }
+        2 -> {
+          // 2-Ricochet: Spinning emerald-cyan plasma disc (6.5f) with outer bounce-energy ring
+          val r = 6.5f * projScale
+          bombRingPaint.strokeWidth = 2.2f * projScale
+          bombRingPaint.color = Color.parseColor("#10B981")
+          canvas.drawCircle(b.x, b.y, r * 1.35f, bombRingPaint)
+          bombPaint.color = b.color
+          canvas.drawCircle(b.x, b.y, r, bombPaint)
+          bombPaint.color = Color.WHITE
+          canvas.drawCircle(b.x, b.y, r * 0.48f, bombPaint)
+        }
+        3 -> {
+          // 3-Suppressor: Sharp golden-amber rapid-fire needle darts (22f)
+          val len = 22f * projScale
+          val tailX = b.x - dirX * len
+          val tailY = b.y - dirY * len
+          bulletPaint.color = Color.parseColor("#F59E0B")
+          bulletPaint.strokeWidth = 4.2f * projScale
+          bulletCorePaint.strokeWidth = 2.0f * projScale
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletPaint)
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletCorePaint)
+        }
+        4 -> {
+          // 4-Goliath: Massive heavy armor-piercing cannon shell (8.5f glowing orange-red plasma slug + wake + white-hot nose)
+          val r = 8.5f * projScale
+          val wakeX = b.x - dirX * (28f * projScale)
+          val wakeY = b.y - dirY * (28f * projScale)
+          bulletPaint.color = Color.argb(185, 234, 88, 12)
+          bulletPaint.strokeWidth = 11.5f * projScale
+          canvas.drawLine(b.x, b.y, wakeX, wakeY, bulletPaint)
+          bombPaint.color = Color.parseColor("#F97316")
+          canvas.drawCircle(b.x, b.y, r, bombPaint)
+          bombPaint.color = Color.parseColor("#FEF08A")
+          canvas.drawCircle(b.x + dirX * (r * 0.28f), b.y + dirY * (r * 0.28f), r * 0.56f, bombPaint)
+        }
+        5 -> {
+          // 5-Twinfang: High-speed dual-tone cyan/violet needle bolts (24f) with trailing spark
+          val len = 24f * projScale
+          val tailX = b.x - dirX * len
+          val tailY = b.y - dirY * len
+          bulletPaint.color = Color.parseColor("#38BDF8")
+          bulletPaint.strokeWidth = 4.0f * projScale
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletPaint)
+          bulletCorePaint.strokeWidth = 1.9f * projScale
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletCorePaint)
+          bombPaint.color = Color.parseColor("#C084FC")
+          canvas.drawCircle(tailX, tailY, 3.0f * projScale, bombPaint)
+        }
+        6 -> {
+          // 6-Disruptor: Violet-magenta EMP crescent arc pulse (6.5f)
+          val r = 6.5f * projScale
+          val tailX = b.x - dirX * (16f * projScale)
+          val tailY = b.y - dirY * (16f * projScale)
+          bulletPaint.color = Color.parseColor("#C084FC")
+          bulletPaint.strokeWidth = 5.0f * projScale
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletPaint)
+          bombRingPaint.strokeWidth = 2.8f * projScale
+          bombRingPaint.color = Color.parseColor("#E879F9")
+          canvas.drawCircle(b.x, b.y, r, bombRingPaint)
+          bombPaint.color = Color.WHITE
+          canvas.drawCircle(b.x, b.y, r * 0.45f, bombPaint)
+        }
+        7 -> {
+          // 7-Valkyrie: Crimson-gold star-shaped flak bolts (6.0f with 4 crossed X-fins)
+          val r = 6.0f * projScale
+          bulletPaint.color = Color.parseColor("#FB7185")
+          bulletPaint.strokeWidth = 3.2f * projScale
+          val c1 = cos(nowSpinRad) * r * 1.35f
+          val s1 = sin(nowSpinRad) * r * 1.35f
+          canvas.drawLine(b.x - c1, b.y - s1, b.x + c1, b.y + s1, bulletPaint)
+          canvas.drawLine(b.x + s1, b.y - c1, b.x - s1, b.y + c1, bulletPaint)
+          bombPaint.color = Color.parseColor("#FACC15")
+          canvas.drawCircle(b.x, b.y, r * 0.65f, bombPaint)
+        }
+        8 -> {
+          // 8-Manta: Bio-luminescent green plasma spheres (6.8f) with soft outer halo
+          val r = 6.8f * projScale
+          bombPaint.color = Color.argb(95, 16, 185, 129)
+          canvas.drawCircle(b.x, b.y, r * 1.55f, bombPaint)
+          bombPaint.color = Color.parseColor("#34D399")
+          canvas.drawCircle(b.x, b.y, r, bombPaint)
+          bombPaint.color = Color.WHITE
+          canvas.drawCircle(b.x, b.y, r * 0.45f, bombPaint)
+        }
+        9 -> {
+          // 9-Eclipse: Heavy amethyst-cyan gravimetric lance bolts (28f, strokeWidth 5.8f)
+          val len = 28f * projScale
+          val tailX = b.x - dirX * len
+          val tailY = b.y - dirY * len
+          bulletPaint.color = Color.parseColor("#EC4899")
+          bulletPaint.strokeWidth = 5.8f * projScale
+          bulletCorePaint.strokeWidth = 2.6f * projScale
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletPaint)
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletCorePaint)
+          bombPaint.color = Color.parseColor("#00F5D4")
+          canvas.drawCircle(b.x, b.y, 4.2f * projScale, bombPaint)
+        }
+        else -> {
+          // 10-Rift Frame: Prismatic cyan-gold modular bolt (26f, strokeWidth 5.2f)
+          val len = 26f * projScale
+          val tailX = b.x - dirX * len
+          val tailY = b.y - dirY * len
+          bulletPaint.color = b.color
+          bulletPaint.strokeWidth = 5.2f * projScale
+          bulletCorePaint.strokeWidth = 2.4f * projScale
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletPaint)
+          canvas.drawLine(b.x, b.y, tailX, tailY, bulletCorePaint)
+          bombPaint.color = Color.parseColor("#FACC15")
+          canvas.drawCircle(b.x, b.y, 3.6f * projScale, bombPaint)
+        }
+      }
     }
 
-    // 9. 2x Bombs, Mines & Lock-On Bouncing Missiles scaled by projectileScale
+    // 9. Distinct Per-Ship Secondary Warheads, Mines & Seeker Torpedoes (scaled by projScale)
     for (bm in engine.bombs) {
-      if (bm.x < viewLeft - 60f || bm.x > viewRight + 60f || bm.y < viewTop - 60f || bm.y > viewBottom + 60f) {
+      if (bm.x < viewLeft - 95f || bm.x > viewRight + 95f || bm.y < viewTop - 95f || bm.y > viewBottom + 95f) {
         continue
       }
-      val c =
-        when (bm.type) {
-          "EMP" -> Color.parseColor("#B388FF")
-          "SIEGE" -> Color.parseColor("#F59E0B")
-          "MINE", "MISSILE" -> Color.parseColor("#EF4444")
-          "CUSTOM_ORB" -> if (bm.customColor != 0) bm.customColor else Color.parseColor("#22D3EE")
-          else -> Color.parseColor("#FBBF24")
-        }
-      if (bm.type == "MISSILE") {
-        val tailX = bm.x - bm.vx * 0.055f
-        val tailY = bm.y - bm.vy * 0.055f
-        bulletPaint.color = Color.parseColor("#FB7185")
-        bulletPaint.strokeWidth = 8.0f * projScale
-        canvas.drawLine(bm.x, bm.y, tailX, tailY, bulletPaint)
-        bombRingPaint.color = Color.argb(190, 239, 68, 68)
-        canvas.drawCircle(bm.x, bm.y, (bm.radius + 10f) * projScale, bombRingPaint)
-      } else if (bm.type == "CUSTOM_ORB") {
-        val tailX = bm.x - bm.vx * 0.05f
-        val tailY = bm.y - bm.vy * 0.05f
-        bulletPaint.color = c
-        bulletPaint.strokeWidth = 7.5f * projScale
-        canvas.drawLine(bm.x, bm.y, tailX, tailY, bulletPaint)
-        bombRingPaint.color = Color.argb(150, Color.red(c), Color.green(c), Color.blue(c))
-        val auraR =
-          if (bm.customEffect != CustomBuffEffect.NONE && bm.customBlastRadius > 0f) {
-            (bm.customBlastRadius * 0.35f).coerceIn(bm.radius + 12f, 110f)
-          } else {
-            bm.radius + 12f
+      when (bm.type) {
+        "SIEGE" -> {
+          // Goliath Siege Bomb: 26px Spiked Nuclear Core with 6 rotating outer reactor spikes & double shock-ring
+          val coreR = 24f * projScale
+          val spikeOuterR = 32f * projScale
+          bombRingPaint.strokeWidth = 3.0f * projScale
+          bombRingPaint.color = Color.argb(195, 249, 115, 22)
+          canvas.drawCircle(bm.x, bm.y, coreR * 1.25f, bombRingPaint)
+          bombRingPaint.strokeWidth = 1.8f * projScale
+          bombRingPaint.color = Color.argb(135, 254, 240, 138)
+          canvas.drawCircle(bm.x, bm.y, coreR * 1.48f, bombRingPaint)
+
+          // 6 rotating outer reactor spikes
+          bulletPaint.color = Color.parseColor("#EA580C")
+          bulletPaint.strokeWidth = 5.2f * projScale
+          for (i in 0 until 6) {
+            val a = nowSpinRad + i * (PI.toFloat() / 3f)
+            val sx0 = bm.x + cos(a) * (coreR * 0.7f)
+            val sy0 = bm.y + sin(a) * (coreR * 0.7f)
+            val sx1 = bm.x + cos(a) * spikeOuterR
+            val sy1 = bm.y + sin(a) * spikeOuterR
+            canvas.drawLine(sx0, sy0, sx1, sy1, bulletPaint)
           }
-        canvas.drawCircle(bm.x, bm.y, auraR * projScale, bombRingPaint)
-      }
-      bombPaint.color = c
-      canvas.drawCircle(bm.x, bm.y, bm.radius * projScale, bombPaint)
-      bombPaint.color = Color.WHITE
-      canvas.drawCircle(bm.x, bm.y, bm.radius * 0.44f * projScale, bombPaint)
-      if (bm.type == "PROX" || bm.type == "MINE") {
-        bombRingPaint.color = Color.argb(145, 239, 68, 68)
-        canvas.drawCircle(bm.x, bm.y, (bm.radius + 28f) * projScale, bombRingPaint)
+
+          // Dark-iron outer shell + solar-orange / molten yellow core
+          bombPaint.color = Color.parseColor("#431407")
+          canvas.drawCircle(bm.x, bm.y, coreR, bombPaint)
+          bombPaint.color = Color.parseColor("#F97316")
+          canvas.drawCircle(bm.x, bm.y, coreR * 0.76f, bombPaint)
+          bombPaint.color = Color.parseColor("#FEF08A")
+          canvas.drawCircle(bm.x, bm.y, coreR * 0.42f, bombPaint)
+        }
+
+        "PROX" -> {
+          // Valkyrie Proximity Flak Bomb: 18px Octagonal Shrapnel Warhead with 8 outward fins + pulsing dashed 95px trigger ring
+          val r = 17f * projScale
+          val proxRingR = 95f * projScale
+          safeDashPaint.color = Color.argb(165, 251, 113, 133)
+          safeDashPaint.strokeWidth = 2.2f
+          canvas.drawCircle(bm.x, bm.y, proxRingR, safeDashPaint)
+
+          // 8 outward shrapnel fins
+          bulletPaint.color = Color.parseColor("#FB7185")
+          bulletPaint.strokeWidth = 3.6f * projScale
+          for (i in 0 until 8) {
+            val a = -nowSpinRad * 0.8f + i * (PI.toFloat() * 0.25f)
+            val fx = bm.x + cos(a) * (r * 1.38f)
+            val fy = bm.y + sin(a) * (r * 1.38f)
+            canvas.drawLine(bm.x, bm.y, fx, fy, bulletPaint)
+          }
+
+          // Octagonal crimson-coral body + white-gold core
+          plumePath.reset()
+          for (i in 0 until 8) {
+            val a = i * (PI.toFloat() * 0.25f)
+            val ox = bm.x + cos(a) * r
+            val oy = bm.y + sin(a) * r
+            if (i == 0) plumePath.moveTo(ox, oy) else plumePath.lineTo(ox, oy)
+          }
+          plumePath.close()
+          bombPaint.color = Color.parseColor("#E11D48")
+          canvas.drawPath(plumePath, bombPaint)
+          bombPaint.color = Color.parseColor("#FDE047")
+          canvas.drawCircle(bm.x, bm.y, r * 0.46f, bombPaint)
+        }
+
+        "BOUNCE" -> {
+          // Ricochet Bounce Bomb: 17px Emerald-Gold Gyro Sphere with dual counter-rotating gyroscopic bounce rings
+          val r = 17f * projScale
+          bombRingPaint.strokeWidth = 2.8f * projScale
+          bombRingPaint.color = Color.parseColor("#10B981")
+          arcRect.set(bm.x - r * 1.32f, bm.y - r * 1.32f, bm.x + r * 1.32f, bm.y + r * 1.32f)
+          val deg = (nowSpinRad * 180f / PI.toFloat())
+          canvas.drawArc(arcRect, deg, 120f, false, bombRingPaint)
+          canvas.drawArc(arcRect, deg + 180f, 120f, false, bombRingPaint)
+
+          bombRingPaint.color = Color.parseColor("#FACC15")
+          arcRect.set(bm.x - r * 1.05f, bm.y - r * 1.05f, bm.x + r * 1.05f, bm.y + r * 1.05f)
+          canvas.drawArc(arcRect, -deg + 45f, 110f, false, bombRingPaint)
+          canvas.drawArc(arcRect, -deg + 225f, 110f, false, bombRingPaint)
+
+          bombPaint.color = Color.parseColor("#10B981")
+          canvas.drawCircle(bm.x, bm.y, r * 0.72f, bombPaint)
+          bombPaint.color = Color.parseColor("#FEF08A")
+          canvas.drawCircle(bm.x, bm.y, r * 0.36f, bombPaint)
+        }
+
+        "MINE" -> {
+          // Manta Proximity Mine: Stationary 6-Pronged Naval Spike Mine (20f) with blinking crimson armed core & 85px dashed trigger ring
+          val r = 20f * projScale
+          safeDashPaint.color = Color.argb(120, 239, 68, 68)
+          safeDashPaint.strokeWidth = 1.8f
+          canvas.drawCircle(bm.x, bm.y, 85f * projScale, safeDashPaint)
+
+          bulletPaint.color = Color.parseColor("#94A3B8")
+          bulletPaint.strokeWidth = 3.8f * projScale
+          for (i in 0 until 6) {
+            val a = i * (PI.toFloat() / 3f)
+            val sx = bm.x + cos(a) * (r * 1.35f)
+            val sy = bm.y + sin(a) * (r * 1.35f)
+            canvas.drawLine(bm.x, bm.y, sx, sy, bulletPaint)
+            bombPaint.color = Color.parseColor("#EF4444")
+            canvas.drawCircle(sx, sy, 2.6f * projScale, bombPaint)
+          }
+
+          bombPaint.color = Color.parseColor("#1E293B")
+          canvas.drawCircle(bm.x, bm.y, r * 0.78f, bombPaint)
+          val blinkOn = ((System.currentTimeMillis() / 220L) % 2L) == 0L
+          bombPaint.color = if (blinkOn) Color.parseColor("#EF4444") else Color.parseColor("#7F1D1D")
+          canvas.drawCircle(bm.x, bm.y, r * 0.42f, bombPaint)
+        }
+
+        "MISSILE" -> {
+          // Seeker Torpedo: Elongated finned homing torpedo fuselage aligned to (bm.vx, bm.vy) + twin exhaust plumes
+          val spd = hypot(bm.vx, bm.vy).coerceAtLeast(1f)
+          val dx = bm.vx / spd
+          val dy = bm.vy / spd
+          val px = -dy
+          val py = dx
+          val len = 24f * projScale
+          val wid = 9f * projScale
+
+          // Twin afterburner exhaust plumes
+          for (side in listOf(-0.45f, 0.45f)) {
+            val ex0 = bm.x - dx * (len * 0.55f) + px * (wid * side)
+            val ey0 = bm.y - dy * (len * 0.55f) + py * (wid * side)
+            val ex1 = ex0 - dx * (22f * projScale)
+            val ey1 = ey0 - dy * (22f * projScale)
+            bulletPaint.color = Color.parseColor("#FB923C")
+            bulletPaint.strokeWidth = 4.2f * projScale
+            canvas.drawLine(ex0, ey0, ex1, ey1, bulletPaint)
+          }
+
+          // Finned torpedo fuselage
+          plumePath.reset()
+          plumePath.moveTo(bm.x + dx * len, bm.y + dy * len)
+          plumePath.lineTo(bm.x - dx * (len * 0.5f) + px * wid, bm.y - dy * (len * 0.5f) + py * wid)
+          plumePath.lineTo(bm.x - dx * (len * 0.3f), bm.y - dy * (len * 0.3f))
+          plumePath.lineTo(bm.x - dx * (len * 0.5f) - px * wid, bm.y - dy * (len * 0.5f) - py * wid)
+          plumePath.close()
+          bombPaint.color = Color.parseColor("#EF4444")
+          canvas.drawPath(plumePath, bombPaint)
+          bombPaint.color = Color.WHITE
+          canvas.drawCircle(bm.x + dx * (len * 0.35f), bm.y + dy * (len * 0.35f), 3.8f * projScale, bombPaint)
+        }
+
+        else -> {
+          val c =
+            when (bm.type) {
+              "EMP" -> Color.parseColor("#B388FF")
+              "CUSTOM_ORB" -> if (bm.customColor != 0) bm.customColor else Color.parseColor("#22D3EE")
+              else -> Color.parseColor("#FBBF24")
+            }
+          val tailX = bm.x - bm.vx * 0.05f
+          val tailY = bm.y - bm.vy * 0.05f
+          bulletPaint.color = c
+          bulletPaint.strokeWidth = 7.5f * projScale
+          canvas.drawLine(bm.x, bm.y, tailX, tailY, bulletPaint)
+          bombRingPaint.color = Color.argb(150, Color.red(c), Color.green(c), Color.blue(c))
+          val auraR =
+            if (bm.customEffect != CustomBuffEffect.NONE && bm.customBlastRadius > 0f) {
+              (bm.customBlastRadius * 0.35f).coerceIn(bm.radius + 12f, 110f)
+            } else {
+              bm.radius + 12f
+            }
+          canvas.drawCircle(bm.x, bm.y, auraR * projScale, bombRingPaint)
+          bombPaint.color = c
+          canvas.drawCircle(bm.x, bm.y, bm.radius * projScale, bombPaint)
+          bombPaint.color = Color.WHITE
+          canvas.drawCircle(bm.x, bm.y, bm.radius * 0.44f * projScale, bombPaint)
+        }
       }
     }
 
@@ -1506,9 +1795,10 @@ class RiftArenaView(
     val maxReactorHp = RiftCalibrationState.stasisBrigReactorMaxHp.coerceAtLeast(1000f)
     val eastPrisonersInWestBrig = engine.ships.count { it.freq == 1 && it.isInStasisBrig }
     val westPrisonersInEastBrig = engine.ships.count { it.freq == 0 && it.isInStasisBrig }
+    val jailR = engine.stasisJailRadius
+    val spinPhase = ((System.currentTimeMillis() % 4800L) / 4800f) * (PI.toFloat() * 2f)
 
-    fun drawBrigPenAndReactor(
-      pen: RectF,
+    fun drawCircularStasisJailAndCore(
       reactorX: Float,
       reactorY: Float,
       reactorHp: Float,
@@ -1516,74 +1806,90 @@ class RiftArenaView(
       capturedCount: Int,
       labelPrefix: String,
     ) {
+      if (reactorX + jailR < viewLeft - 90f || reactorX - jailR > viewRight + 90f ||
+        reactorY + jailR < viewTop - 90f || reactorY - jailR > viewBottom + 90f
+      ) {
+        return
+      }
       val isFriendlyBrig = p.freq == brigOwnerFreq
       val borderCol = if (isFriendlyBrig) Color.parseColor("#38BDF8") else Color.parseColor("#F43F5E")
-      if (pen.right >= viewLeft - 80f && pen.left <= viewRight + 80f &&
-        pen.bottom >= viewTop - 80f && pen.top <= viewBottom + 80f
-      ) {
-        safeFillPaint.color =
-          if (isFriendlyBrig) Color.argb(26, 56, 189, 248) else Color.argb(28, 244, 63, 94)
-        canvas.drawRect(pen, safeFillPaint)
-        safeBracketPaint.color = borderCol
-        safeBracketPaint.strokeWidth = 4.2f
-        canvas.drawRect(pen, safeBracketPaint)
-        safeBracketPaint.strokeWidth = 3f
 
-        popupPaint.color = borderCol
-        popupPaint.textSize = 18f
-        canvas.drawText(
-          "🔒 $labelPrefix STASIS BRIG • $capturedCount/10 CAPTURED",
-          pen.centerX(),
-          pen.top - 16f,
-          popupPaint,
-        )
+      // 1. Translucent Circular Stasis Dome Fill (#2238BDF8 for West, #22F43F5E for East)
+      anomalyFillPaint.color =
+        if (brigOwnerFreq == 0) Color.argb(34, 56, 189, 248) else Color.argb(34, 244, 63, 94)
+      canvas.drawCircle(reactorX, reactorY, jailR, anomalyFillPaint)
+
+      // 2. Rotating Segmented Inner Containment Arcs
+      val innerR = jailR * 0.93f
+      arcRect.set(reactorX - innerR, reactorY - innerR, reactorX + innerR, reactorY + innerR)
+      anomalyRingPaint.strokeWidth = 2.4f
+      anomalyRingPaint.color = Color.argb(165, 0, 245, 212)
+      val degOffset = spinPhase * 180f / PI.toFloat()
+      for (seg in 0 until 8) {
+        canvas.drawArc(arcRect, degOffset + seg * 45f, 26f, false, anomalyRingPaint)
       }
 
-      if (reactorX in (viewLeft - 140f)..(viewRight + 140f) &&
-        reactorY in (viewTop - 140f)..(viewBottom + 140f)
-      ) {
-        val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 720L) / 720f * (PI.toFloat() * 2f))
-        val coreR = 46f
-        anomalyFillPaint.color =
-          if (isFriendlyBrig) Color.argb(70, 56, 189, 248) else Color.argb(80, 245, 158, 11)
-        canvas.drawCircle(reactorX, reactorY, coreR * (1.25f + 0.15f * pulse), anomalyFillPaint)
-
-        anomalyRingPaint.strokeWidth = 4.5f
-        anomalyRingPaint.color = if (isFriendlyBrig) Color.parseColor("#38BDF8") else Color.parseColor("#F59E0B")
-        canvas.drawCircle(reactorX, reactorY, coreR, anomalyRingPaint)
-
-        anomalyCorePaint.color = Color.parseColor("#FACC15")
-        canvas.drawCircle(reactorX, reactorY, coreR * 0.48f, anomalyCorePaint)
-
-        // Reactor HP Bar above Core
-        val hpFrac = (reactorHp / maxReactorHp).coerceIn(0f, 1f)
-        val barW = 130f
-        val barH = 11f
-        val barLeft = reactorX - barW * 0.5f
-        val barTop = reactorY - coreR - 28f
-        arcRect.set(barLeft, barTop, barLeft + barW, barTop + barH)
-        hudCircleFillPaint.color = Color.argb(210, 15, 23, 42)
-        canvas.drawRoundRect(arcRect, 4f, 4f, hudCircleFillPaint)
-        arcRect.set(barLeft, barTop, barLeft + barW * hpFrac, barTop + barH)
-        hudCircleFillPaint.color =
-          if (hpFrac > 0.5f) Color.parseColor("#22D3EE")
-          else if (hpFrac > 0.25f) Color.parseColor("#F59E0B")
-          else Color.parseColor("#EF4444")
-        canvas.drawRoundRect(arcRect, 4f, 4f, hudCircleFillPaint)
-
-        popupPaint.color = Color.parseColor("#FACC15")
-        popupPaint.textSize = 14.5f
-        canvas.drawText(
-          "⚡ BRIG REACTOR • ${reactorHp.toInt()}⚡",
-          reactorX,
-          barTop - 8f,
-          popupPaint,
-        )
+      // 3. Crisp Outer Stasis Perimeter Ring (strokeWidth = 4.5f) + 12 Glowing Anchor Nodes
+      anomalyRingPaint.strokeWidth = 4.5f
+      anomalyRingPaint.color = borderCol
+      canvas.drawCircle(reactorX, reactorY, jailR, anomalyRingPaint)
+      for (i in 0 until 12) {
+        val na = spinPhase * 0.5f + i * (PI.toFloat() * 2f / 12f)
+        val nx = reactorX + cos(na) * jailR
+        val ny = reactorY + sin(na) * jailR
+        anomalyCorePaint.color = Color.parseColor("#00F5D4")
+        canvas.drawCircle(nx, ny, 5.5f, anomalyCorePaint)
       }
+
+      popupPaint.color = borderCol
+      popupPaint.textSize = 17.5f
+      canvas.drawText(
+        "🔒 $labelPrefix STASIS JAIL • $capturedCount/10 CAPTURED",
+        reactorX,
+        reactorY - jailR - 18f,
+        popupPaint,
+      )
+
+      // 4. Center 4,000⚡ Stasis Core (coreR = 46f) with HP Bar & Breakout Instructions
+      val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 720L) / 720f * (PI.toFloat() * 2f))
+      val coreR = 46f
+      anomalyFillPaint.color =
+        if (isFriendlyBrig) Color.argb(75, 56, 189, 248) else Color.argb(85, 245, 158, 11)
+      canvas.drawCircle(reactorX, reactorY, coreR * (1.25f + 0.15f * pulse), anomalyFillPaint)
+
+      anomalyRingPaint.strokeWidth = 4.5f
+      anomalyRingPaint.color = if (isFriendlyBrig) Color.parseColor("#38BDF8") else Color.parseColor("#F59E0B")
+      canvas.drawCircle(reactorX, reactorY, coreR, anomalyRingPaint)
+
+      anomalyCorePaint.color = Color.parseColor("#FACC15")
+      canvas.drawCircle(reactorX, reactorY, coreR * 0.48f, anomalyCorePaint)
+
+      val hpFrac = (reactorHp / maxReactorHp).coerceIn(0f, 1f)
+      val barW = 150f
+      val barH = 11f
+      val barLeft = reactorX - barW * 0.5f
+      val barTop = reactorY - coreR - 28f
+      arcRect.set(barLeft, barTop, barLeft + barW, barTop + barH)
+      hudCircleFillPaint.color = Color.argb(215, 15, 23, 42)
+      canvas.drawRoundRect(arcRect, 4f, 4f, hudCircleFillPaint)
+      arcRect.set(barLeft, barTop, barLeft + barW * hpFrac, barTop + barH)
+      hudCircleFillPaint.color =
+        if (hpFrac > 0.5f) Color.parseColor("#22D3EE")
+        else if (hpFrac > 0.25f) Color.parseColor("#F59E0B")
+        else Color.parseColor("#EF4444")
+      canvas.drawRoundRect(arcRect, 4f, 4f, hudCircleFillPaint)
+
+      popupPaint.color = Color.parseColor("#FACC15")
+      popupPaint.textSize = 13.8f
+      canvas.drawText(
+        "STASIS CORE: ${reactorHp.toInt()}⚡ (PRISONERS SHOOT TO BREAK OUT)",
+        reactorX,
+        barTop - 8f,
+        popupPaint,
+      )
     }
 
-    drawBrigPenAndReactor(
-      pen = engine.westBrigRect,
+    drawCircularStasisJailAndCore(
       reactorX = engine.westBrigReactorX,
       reactorY = engine.westBrigReactorY,
       reactorHp = engine.westBrigGeneratorHp,
@@ -1591,14 +1897,112 @@ class RiftArenaView(
       capturedCount = eastPrisonersInWestBrig,
       labelPrefix = "WEST",
     )
-    drawBrigPenAndReactor(
-      pen = engine.eastBrigRect,
+    drawCircularStasisJailAndCore(
       reactorX = engine.eastBrigReactorX,
       reactorY = engine.eastBrigReactorY,
       reactorHp = engine.eastBrigGeneratorHp,
       brigOwnerFreq = 1,
       capturedCount = westPrisonersInEastBrig,
       labelPrefix = "EAST",
+    )
+  }
+
+  private fun drawRiftControlZones(
+    canvas: Canvas,
+    p: ShipEntity,
+    viewLeft: Float,
+    viewRight: Float,
+    viewTop: Float,
+    viewBottom: Float,
+  ) {
+    val zoneR = engine.riftCaptureRadius
+    val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 900L) / 900f * (PI.toFloat() * 2f))
+
+    fun drawSingleControlZone(
+      cx: Float,
+      cy: Float,
+      controlSec: Float,
+      lockedBy: Int,
+      zoneTitle: String,
+    ) {
+      if (cx + zoneR < viewLeft - 80f || cx - zoneR > viewRight + 80f ||
+        cy + zoneR < viewTop - 80f || cy - zoneR > viewBottom + 80f
+      ) {
+        return
+      }
+
+      val isWestControl = lockedBy == 0 || (lockedBy == -1 && controlSec < -0.1f)
+      val isEastControl = lockedBy == 1 || (lockedBy == -1 && controlSec > 0.1f)
+      val primaryColor =
+        when {
+          lockedBy == 0 -> Color.parseColor("#38BDF8")
+          lockedBy == 1 -> Color.parseColor("#F43F5E")
+          isWestControl -> Color.parseColor("#38BDF8")
+          isEastControl -> Color.parseColor("#F43F5E")
+          else -> Color.parseColor("#00F5D4")
+        }
+
+      // 1. Subtle capture zone fill
+      anomalyFillPaint.color =
+        Color.argb(
+          if (lockedBy != -1) 42 else (22 + (14 * pulse).toInt()),
+          Color.red(primaryColor),
+          Color.green(primaryColor),
+          Color.blue(primaryColor),
+        )
+      canvas.drawCircle(cx, cy, zoneR, anomalyFillPaint)
+
+      // 2. Outer capture boundary ring
+      anomalyRingPaint.strokeWidth = 3.2f
+      anomalyRingPaint.color = Color.argb(145, Color.red(primaryColor), Color.green(primaryColor), Color.blue(primaryColor))
+      canvas.drawCircle(cx, cy, zoneR, anomalyRingPaint)
+
+      // 3. 360-Degree Tug-of-War Progress Arc (sweepAngle = (abs(controlSec) / 30f) * 360f)
+      val progressFrac = if (lockedBy != -1) 1f else (abs(controlSec) / 30f).coerceIn(0f, 1f)
+      if (progressFrac > 0.01f) {
+        arcRect.set(cx - zoneR, cy - zoneR, cx + zoneR, cy + zoneR)
+        anomalyRingPaint.strokeWidth = 6.5f
+        anomalyRingPaint.color = if (lockedBy != -1) Color.parseColor("#FACC15") else primaryColor
+        canvas.drawArc(arcRect, -90f, progressFrac * 360f, false, anomalyRingPaint)
+      }
+
+      // 4. Center Rift Singularity Beacon
+      val beaconR = 42f + 6f * pulse
+      anomalyFillPaint.color = Color.argb(95, Color.red(primaryColor), Color.green(primaryColor), Color.blue(primaryColor))
+      canvas.drawCircle(cx, cy, beaconR * 1.4f, anomalyFillPaint)
+      anomalyRingPaint.strokeWidth = 4.0f
+      anomalyRingPaint.color = primaryColor
+      canvas.drawCircle(cx, cy, beaconR, anomalyRingPaint)
+      anomalyCorePaint.color = if (lockedBy != -1) Color.parseColor("#FACC15") else Color.WHITE
+      canvas.drawCircle(cx, cy, beaconR * 0.42f, anomalyCorePaint)
+
+      // 5. Status Text above Rift Zone
+      val statusText =
+        when {
+          lockedBy == 0 -> "$zoneTitle • LOCKED BY WEST"
+          lockedBy == 1 -> "$zoneTitle • LOCKED BY EAST"
+          controlSec < -0.5f -> "$zoneTitle • WEST ${abs(controlSec).toInt()}s / 30s"
+          controlSec > 0.5f -> "$zoneTitle • EAST ${abs(controlSec).toInt()}s / 30s"
+          else -> "$zoneTitle • UNCLAIMED (HOLD 30s TO LOCK)"
+        }
+      popupPaint.color = if (lockedBy != -1) Color.parseColor("#FACC15") else primaryColor
+      popupPaint.textSize = 17.5f
+      canvas.drawText(statusText, cx, cy - zoneR - 18f, popupPaint)
+    }
+
+    drawSingleControlZone(
+      cx = engine.riftAlphaX,
+      cy = engine.riftAlphaY,
+      controlSec = engine.riftAlphaControlSec,
+      lockedBy = engine.riftAlphaLockedBy,
+      zoneTitle = "RIFT ALPHA",
+    )
+    drawSingleControlZone(
+      cx = engine.riftOmegaX,
+      cy = engine.riftOmegaY,
+      controlSec = engine.riftOmegaControlSec,
+      lockedBy = engine.riftOmegaLockedBy,
+      zoneTitle = "RIFT OMEGA",
     )
   }
 
@@ -1662,53 +2066,8 @@ class RiftArenaView(
     effectiveCamY: Float,
     worldScale: Float,
   ) {
-    val mode = engine.activeRankedMode
-    if (mode != RankedGameMode.SECTOR_CONVERGENCE) {
-      val bannerText =
-        when (mode) {
-          RankedGameMode.RIFT_SKIRMISH, RankedGameMode.SYNDICATE_WARS -> {
-            val prefix = if (mode == RankedGameMode.SYNDICATE_WARS) "⚔ SYNDICATE WARS" else "⚔ RIFT SKIRMISH"
-            "$prefix (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • R${engine.skirmishCurrentRound} • WEST ${engine.skirmishWestKills}/${RiftCalibrationState.skirmishKillTargetPerRound} — ${engine.skirmishEastKills}/${RiftCalibrationState.skirmishKillTargetPerRound} EAST (ROUNDS ${engine.skirmishWestRoundWins}-${engine.skirmishEastRoundWins})"
-          }
-          RankedGameMode.FLUX_CORE -> {
-            val cid = engine.fluxCoreCarrierEntityId
-            val carrier = if (cid.isNotEmpty()) engine.ships.firstOrNull { it.id == cid } else null
-            if (carrier != null) {
-              "⚡ FLUX CORE CARRIER: ${carrier.callsign} • TIER ${engine.fluxCoreOrb.overchargeTier}/10 • ${carrier.bounty} BOUNTY"
-            } else if (engine.fluxCoreOrb.ejectDecelTimerSec > 0f) {
-              "⚡ FLUX CORE EJECTED • SUPERSONIC RICOCHET (${engine.fluxCoreOrb.ejectDecelTimerSec.toInt()}s)"
-            } else {
-              "⚡ FLUX CORE UNCLAIMED AT (${engine.fluxCoreOrb.x.toInt()}, ${engine.fluxCoreOrb.y.toInt()})"
-            }
-          }
-          RankedGameMode.STASIS_BREACH -> {
-            val eastCaptured = engine.ships.count { it.freq == 1 && it.isInStasisBrig }
-            val westCaptured = engine.ships.count { it.freq == 0 && it.isInStasisBrig }
-            val prisonerBanner = if (p.isInStasisBrig) " • 🔒 JAILED (SHOOT REACTOR CORE AT 25% DMG!)" else ""
-            "🔒 STASIS BREACH • WEST BRIG: $eastCaptured/10 (${engine.westBrigGeneratorHp.toInt()}⚡) | EAST BRIG: $westCaptured/10 (${engine.eastBrigGeneratorHp.toInt()}⚡)$prisonerBanner"
-          }
-          else -> ""
-        }
-      if (bannerText.isNotEmpty()) {
-        val pillW = min(vw * 0.72f, 540f * dpDensity)
-        val pillH = 22f * dpDensity
-        val left = (vw - pillW) * 0.5f
-        val top = 42f * dpDensity
-        arcRect.set(left, top, left + pillW, top + pillH)
-        hudCircleFillPaint.color = Color.argb(195, 6, 13, 26)
-        canvas.drawRoundRect(arcRect, 11f * dpDensity, 11f * dpDensity, hudCircleFillPaint)
-        hudCircleStrokePaint.strokeWidth = 1.5f
-        hudCircleStrokePaint.color = Color.parseColor("#38BDF8")
-        canvas.drawRoundRect(arcRect, 11f * dpDensity, 11f * dpDensity, hudCircleStrokePaint)
-        hudCircleStrokePaint.strokeWidth = 2.6f
-        hudLabelPaint.textSize = 9.2f * dpDensity
-        hudLabelPaint.color = Color.parseColor("#FACC15")
-        canvas.drawText(bannerText, vw * 0.5f, top + 14.5f * dpDensity, hudLabelPaint)
-      }
-    }
-
-    // Off-Screen Directional Indicator for Flux Core Orb
-    if (engine.isFluxCoreRulesActive()) {
+    // Off-Screen Directional Indicator for Free/Unclaimed Flux Core Orb ONLY (top banner is rendered cleanly by Compose RiftHudOverlay)
+    if (engine.isFluxCoreRulesActive() && engine.fluxCoreCarrierEntityId.isEmpty()) {
       val tx = engine.fluxCoreOrb.x
       val ty = engine.fluxCoreOrb.y
       val sx = (tx - effectiveCamX) * worldScale + vw * 0.5f
@@ -1733,35 +2092,48 @@ class RiftArenaView(
     val right = w.x + w.w
     val bottom = w.y + w.h
 
-    // 1. Seamless 64x64 Dark Obsidian Armor Plates + Cyan Energy Conduit Seams
+    // 1. Seamless 64x64 Brushed Gunmetal Armor Plates + Electric Cyan Energy Conduit Seams
     canvas.drawRect(left, top, right, bottom, wallBodyPaint)
 
-    // 2. Crisp 3D Mitered Outer Specular & Shadow Bevels
-    canvas.drawRect(left, top, right, top + 4f, wallTopBevelPaint)
-    canvas.drawRect(left, top, left + 4f, bottom, wallTopBevelPaint)
-    canvas.drawRect(left, bottom - 4f, right, bottom, wallBottomBevelPaint)
-    canvas.drawRect(right - 4f, top, right, bottom, wallBottomBevelPaint)
+    // 2. Crisp 3D Mitered Outer Specular & Shadow Bevels (#64748B top/left, #0F172A bottom/right)
+    canvas.drawRect(left, top, right, top + 4.5f, wallTopBevelPaint)
+    canvas.drawRect(left, top, left + 4.5f, bottom, wallTopBevelPaint)
+    canvas.drawRect(left, bottom - 4.5f, right, bottom, wallBottomBevelPaint)
+    canvas.drawRect(right - 4.5f, top, right, bottom, wallBottomBevelPaint)
 
-    // 3. Recessed Tech Trim + Inner Glowing Cyan Energy Seam
-    if (w.w > 18f && w.h > 18f) {
-      canvas.drawRect(left + 5.5f, top + 5.5f, right - 5.5f, bottom - 5.5f, wallHazardPaint)
-      canvas.drawRect(left + 8f, top + 8f, right - 8f, bottom - 8f, wallCyanSeamPaint)
+    // 3. Crisp Outer Electric Cyan Perimeter Border (strokeWidth = 3.2f) + Hazard Gold Corner Brackets
+    canvas.drawRect(left, top, right, bottom, wallCyanSeamPaint)
+    val bLen = min(22f, min(w.w, w.h) * 0.35f)
+    if (bLen >= 8f) {
+      canvas.drawLine(left, top, left + bLen, top, wallGoldBracketPaint)
+      canvas.drawLine(left, top, left, top + bLen, wallGoldBracketPaint)
+      canvas.drawLine(right - bLen, top, right, top, wallGoldBracketPaint)
+      canvas.drawLine(right, top, right, top + bLen, wallGoldBracketPaint)
+      canvas.drawLine(left, bottom - bLen, left, bottom, wallGoldBracketPaint)
+      canvas.drawLine(left, bottom, left + bLen, bottom, wallGoldBracketPaint)
+      canvas.drawLine(right - bLen, bottom, right, bottom, wallGoldBracketPaint)
+      canvas.drawLine(right, bottom - bLen, right, bottom, wallGoldBracketPaint)
     }
 
-    // 4. Perimeter Titanium Micro-Bolts along Horizontal & Vertical Bulkhead Edges
+    // 4. Recessed Hazard Gold Trim
+    if (w.w > 20f && w.h > 20f) {
+      canvas.drawRect(left + 6f, top + 6f, right - 6f, bottom - 6f, wallHazardPaint)
+    }
+
+    // 5. Perimeter Titanium Micro-Bolts along Horizontal & Vertical Bulkhead Edges
     if (w.h >= 24f) {
       var rx = left + 18f
       while (rx <= right - 14f) {
-        canvas.drawCircle(rx, top + 11.5f, 1.9f, wallRivetPaint)
-        canvas.drawCircle(rx, bottom - 11.5f, 1.9f, wallRivetPaint)
+        canvas.drawCircle(rx, top + 11.5f, 2.0f, wallRivetPaint)
+        canvas.drawCircle(rx, bottom - 11.5f, 2.0f, wallRivetPaint)
         rx += 64f
       }
     }
     if (w.w >= 24f && w.h >= 96f) {
       var ry = top + 50f
       while (ry <= bottom - 36f) {
-        canvas.drawCircle(left + 11.5f, ry, 1.9f, wallRivetPaint)
-        canvas.drawCircle(right - 11.5f, ry, 1.9f, wallRivetPaint)
+        canvas.drawCircle(left + 11.5f, ry, 2.0f, wallRivetPaint)
+        canvas.drawCircle(right - 11.5f, ry, 2.0f, wallRivetPaint)
         ry += 64f
       }
     }
@@ -2145,6 +2517,30 @@ class RiftArenaView(
   }
 
   private fun drawStationaryRespawnBanner(canvas: Canvas, vw: Float, vh: Float, timer: Float) {
+    if (engine.isSkirmishRulesActive() && timer > 30f) {
+      val target =
+        engine.ships.firstOrNull { it.id == engine.spectatingTargetShipId && it.respawnTimer <= 0f }
+      val boxW = min(vw * 0.72f, 440f * dpDensity)
+      val boxH = 38f * dpDensity
+      val left = (vw - boxW) * 0.5f
+      val top = 72f * dpDensity
+      arcRect.set(left, top, left + boxW, top + boxH)
+      canvas.drawRoundRect(arcRect, 12f * dpDensity, 12f * dpDensity, respawnOverlayFill)
+      respawnOverlayStroke.color = Color.parseColor("#38BDF8")
+      canvas.drawRoundRect(arcRect, 12f * dpDensity, 12f * dpDensity, respawnOverlayStroke)
+      respawnOverlayStroke.color = Color.parseColor("#EF4444")
+
+      hudLabelPaint.textSize = 11.5f * dpDensity
+      hudLabelPaint.color = Color.parseColor("#38BDF8")
+      canvas.drawText(
+        "SPECTATING ${target?.callsign ?: "TEAMMATE"} (★ ${target?.bounty ?: 100}) — ROUND RESET IN ${engine.skirmishRoundTimerSec.toInt()}s",
+        vw * 0.5f,
+        top + 23.5f * dpDensity,
+        hudLabelPaint,
+      )
+      return
+    }
+
     val boxW = min(vw * 0.64f, 360f * dpDensity)
     val boxH = 82f * dpDensity
     val left = (vw - boxW) * 0.5f

@@ -12,12 +12,25 @@ import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.MemoryCacheSettings
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 
+typealias LiveCalibrationBroadcast = RiftRepository.LiveCalibrationBroadcast
+
 class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
+
+  data class LiveCalibrationBroadcast(
+    val customGameId: String = "",
+    val authorCallsign: String = "",
+    val payloadJson: String = "",
+    val updatedAtMs: Long = 0L,
+  )
+
+  constructor() : this({ FirebaseFirestore.getInstance() })
 
   constructor(db: FirebaseFirestore) : this({ db })
 
@@ -39,6 +52,9 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   })
 
   private val db: FirebaseFirestore by lazy { dbProvider() }
+
+  private val firestore: FirebaseFirestore?
+    get() = runCatching { db }.getOrNull()
 
   private val auth = Firebase.auth
 
@@ -533,5 +549,63 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       }
       throw e
     }
+  }
+
+  suspend fun broadcastCustomGameCalibration(
+    customGameId: String,
+    authorCallsign: String,
+    payloadJson: String,
+  ): Boolean {
+    val fs = firestore ?: return false
+    val safeGameId = customGameId.trim().ifEmpty { "custom" }
+    val safeAuthor = sanitizeCallsign(authorCallsign)
+    val payload =
+      mapOf(
+        "customGameId" to safeGameId,
+        "authorCallsign" to safeAuthor,
+        "payloadJson" to payloadJson,
+        "updatedAtMs" to System.currentTimeMillis(),
+      )
+    return try {
+      fs.collection("global_state")
+        .document("custom_game_calibration")
+        .set(payload)
+        .await()
+      true
+    } catch (e: CancellationException) {
+      throw e
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  fun observeCustomGameCalibration(): Flow<LiveCalibrationBroadcast?> = callbackFlow {
+    val fs = firestore
+    if (fs == null) {
+      trySend(null)
+      close()
+      return@callbackFlow
+    }
+    val reg =
+      fs.collection("global_state")
+        .document("custom_game_calibration")
+        .addSnapshotListener { snapshot, error ->
+          if (error != null) {
+            return@addSnapshotListener
+          }
+          if (snapshot != null && snapshot.exists()) {
+            val broadcast =
+              LiveCalibrationBroadcast(
+                customGameId = snapshot.getString("customGameId") ?: "",
+                authorCallsign = snapshot.getString("authorCallsign") ?: "",
+                payloadJson = snapshot.getString("payloadJson") ?: "",
+                updatedAtMs = snapshot.getLong("updatedAtMs") ?: 0L,
+              )
+            trySend(broadcast)
+          } else {
+            trySend(null)
+          }
+        }
+    awaitClose { reg.remove() }
   }
 }
