@@ -103,8 +103,8 @@ data class ShipEntity(
   var thrustOverchargeStacks: Int = 0, // Stacks up to 3x (+8% Thrust per stack until death)
   var rechargeOverchargeStacks: Int = 0, // Stacks up to 3x (+8% Flux Recharge per stack until death)
   var sniperOverchargeReady: Boolean = false, // Viper / Phase Dash overcharges next rail shot (+35% vel & dmg)
-  var isCloaked: Boolean = false, // Disruptor / Cloak+EMP stealth cloak (180❖/s drain, hides ship & minimap dot)
-  var rocketBoostTimer: Float = 0f, // 3.0s Hyper Surge boost (1.65x max speed at 0❖)
+  var isCloaked: Boolean = false, // Disruptor / Cloak+EMP stealth cloak (180⚡/s drain, hides ship & minimap dot)
+  var rocketBoostTimer: Float = 0f, // 3.0s Hyper Surge boost (1.65x max speed at 0⚡)
   var phaseDashTimer: Float = 0f, // Active Phase Dash supersonic burst + combat dodge i-frame window
   var wasInSafeZone: Boolean = false,
   var inSafeZone: Boolean = false,
@@ -125,6 +125,7 @@ data class ShipEntity(
   var playfieldIdleTimer: Float = 0f,
   var isIdleDraining: Boolean = false,
   var matchPresenceTimeSec: Float = 0f,
+  var remoteFiringPrimary: Boolean = false,
   val aiSeed: Float = Random.nextFloat() * 100f,
 )
 
@@ -429,7 +430,7 @@ class RiftGameEngine(
   var xpFromBountyEarned: Float = 0f
   var xpFromBountyKilled: Float = 0f
   var pilotLevel: Int = 1
-  var riftShards: Long = 150L
+  var riftShards: Long = 0L
   var highestMilestoneLevelClaimed: Int = 0
   var spentCustomizationPoints: Int = 0
   var unlockedExtraSlots: Int = 0
@@ -716,7 +717,7 @@ class RiftGameEngine(
       ShipEntity(
         id = "local_player",
         callsign = "COMMANDER",
-        syndicateTag = "GUEST",
+        syndicateTag = "",
         armadaName = "",
         shipId = initialSpec.id,
         spec = initialSpec,
@@ -961,6 +962,8 @@ class RiftGameEngine(
       a.syndicateTag.isNotEmpty() &&
         a.syndicateTag != "FREE" &&
         a.syndicateTag != "GUEST" &&
+        a.syndicateTag != "BOT" &&
+        a.syndicateTag != "UNAFFILIATED" &&
         a.syndicateTag == b.syndicateTag
     ) {
       return true
@@ -975,6 +978,8 @@ class RiftGameEngine(
       b.ownerSyndicateTag.isNotEmpty() &&
         b.ownerSyndicateTag != "FREE" &&
         b.ownerSyndicateTag != "GUEST" &&
+        b.ownerSyndicateTag != "BOT" &&
+        b.ownerSyndicateTag != "UNAFFILIATED" &&
         b.ownerSyndicateTag == s.syndicateTag
     ) {
       return true
@@ -989,6 +994,8 @@ class RiftGameEngine(
       bm.ownerSyndicateTag.isNotEmpty() &&
         bm.ownerSyndicateTag != "FREE" &&
         bm.ownerSyndicateTag != "GUEST" &&
+        bm.ownerSyndicateTag != "BOT" &&
+        bm.ownerSyndicateTag != "UNAFFILIATED" &&
         bm.ownerSyndicateTag == s.syndicateTag
     ) {
       return true
@@ -1338,8 +1345,8 @@ class RiftGameEngine(
         ShipEntity(
           id = "bot_ally_$botIdx",
           callsign = BOT_CALLSIGNS[botIdx % BOT_CALLSIGNS.size],
-          syndicateTag = if (activeArmadaName.isNotEmpty()) activeArmadaName else cleanTag(localPlayer.syndicateTag),
-          armadaName = if (botIdx == 0 && activeArmadaName.isNotEmpty()) activeArmadaName else "",
+          syndicateTag = "BOT",
+          armadaName = "",
           shipId = shipId,
           spec = spec,
           freq = 0,
@@ -1347,7 +1354,7 @@ class RiftGameEngine(
           isLocalPlayer = false,
           x = pos.first,
           y = pos.second,
-          bounty = if (botIdx == 0) 280 else 100 + (botIdx * 25),
+          bounty = 100,
         )
       )
       friendlyCount++
@@ -1359,14 +1366,12 @@ class RiftGameEngine(
       val shipId = ((botIdx * 5 + 1) % 8) + 1
       val spec = RiftCodex.getShipById(shipId)
       val pos = getOuterGateSpawnPosition(1)
-      val rivalArmada = if (isFfa) "" else RIVAL_ARMADAS[botIdx % RIVAL_ARMADAS.size]
-      val rivalTag = if (rivalArmada.isNotEmpty()) rivalArmada else "GUEST"
       updated.add(
         ShipEntity(
           id = "bot_rival_$botIdx",
           callsign = BOT_CALLSIGNS[(botIdx + 7) % BOT_CALLSIGNS.size],
-          syndicateTag = rivalTag,
-          armadaName = rivalArmada,
+          syndicateTag = "BOT",
+          armadaName = "",
           shipId = shipId,
           spec = spec,
           freq = if (isFfa) (botIdx + 1) else 1,
@@ -1376,7 +1381,7 @@ class RiftGameEngine(
           y = pos.second,
           angle = PI.toFloat(),
           weaponAngle = PI.toFloat(),
-          bounty = if (botIdx == 0) 1150 else if (botIdx % 3 == 0) 310 else 100 + (botIdx * 20),
+          bounty = 100,
         )
       )
       rivalCount++
@@ -1386,65 +1391,6 @@ class RiftGameEngine(
     ships.clear()
     ships.addAll(updated)
     applyArmadaRosterToSectorShips()
-
-    if (killFeed.isEmpty()) {
-      pushKillFeedEntry(
-        killerTag = if (localPlayer.armadaName.isNotEmpty()) localPlayer.armadaName else cleanTag(localPlayer.syndicateTag),
-        killerName = "VORTEX ACE",
-        killerIsLocal = false,
-        killerIsAllied = true,
-        victimTag = "GUEST",
-        victimName = "ZERO DRIFT",
-        victimIsLocal = false,
-        victimIsAllied = false,
-        victimBounty = 160,
-        bountyAwarded = 72,
-        wasHvt = false,
-        triggerAnnouncement = false,
-      )
-      pushKillFeedEntry(
-        killerTag = "VOID 3",
-        killerName = "HYPERION",
-        killerIsLocal = false,
-        killerIsAllied = false,
-        victimTag = "GUEST",
-        victimName = "SOLARIS IX",
-        victimIsLocal = false,
-        victimIsAllied = true,
-        victimBounty = 280,
-        bountyAwarded = 126,
-        wasHvt = true,
-        triggerAnnouncement = false,
-      )
-      pushKillFeedEntry(
-        killerTag = "CRIMSON 4",
-        killerName = "TITAN 04",
-        killerIsLocal = false,
-        killerIsAllied = false,
-        victimTag = "GUEST",
-        victimName = "RAVEN SIX",
-        victimIsLocal = false,
-        victimIsAllied = false,
-        victimBounty = 190,
-        bountyAwarded = 85,
-        wasHvt = false,
-        triggerAnnouncement = false,
-      )
-      pushKillFeedEntry(
-        killerTag = "IRON DUO",
-        killerName = "IRON WOLF",
-        killerIsLocal = false,
-        killerIsAllied = false,
-        victimTag = "GUEST",
-        victimName = "NEXUS 7",
-        victimIsLocal = false,
-        victimIsAllied = false,
-        victimBounty = 1280,
-        bountyAwarded = 576,
-        wasHvt = true,
-        triggerAnnouncement = false,
-      )
-    }
   }
 
   fun pushKillFeedEntry(
@@ -1494,54 +1440,101 @@ class RiftGameEngine(
   }
 
   fun updateRemotePilots(states: List<LivePilotState>, currentUid: String) {
+    val activeRemoteUids = mutableSetOf<String>()
+    var rosterChanged = false
+
     for (st in states) {
       val uid = st.userId.ifEmpty { st.id }
       if (uid.isEmpty() || uid == currentUid) continue
+      activeRemoteUids.add(uid)
+
       val existing = remotePilots[uid]
       val spec = RiftCodex.getShipById(st.shipId.toInt())
+      val targetX = st.x.toFloat()
+      val targetY = st.y.toFloat()
+      val targetVx = st.vx.toFloat()
+      val targetVy = st.vy.toFloat()
+      val targetAngle = st.angle.toFloat()
+      val targetWeaponAngle = st.weaponAngle.toFloat()
+
       if (existing == null) {
         val created =
           ShipEntity(
             id = uid,
             callsign = st.callsign,
-            syndicateTag = "SYNC",
-            armadaName = "",
+            syndicateTag = st.syndicateTag,
+            armadaName = st.armadaName,
             shipId = spec.id,
             spec = spec,
             freq = st.freq.toInt(),
             isHuman = true,
             isLocalPlayer = false,
-            x = st.x.toFloat(),
-            y = st.y.toFloat(),
-            vx = st.vx.toFloat(),
-            vy = st.vy.toFloat(),
-            angle = st.angle.toFloat(),
-            weaponAngle = st.angle.toFloat(),
+            x = targetX,
+            y = targetY,
+            vx = targetVx,
+            vy = targetVy,
+            angle = targetAngle,
+            weaponAngle = targetWeaponAngle,
+            independentAimActive = true,
             flux = st.energy.toFloat(),
             maxFlux = st.maxEnergy.toFloat(),
             bounty = st.bounty.toInt(),
+            afterburning = st.isAfterburning,
+            isCloaked = st.isCloaked,
+            remoteFiringPrimary = st.isFiringPrimary,
           )
         remotePilots[uid] = created
         currentLifeHadPvp = true
-        rebuildRosterForMode(mode)
+        rosterChanged = true
+        if (st.isFiringPrimary && created.gunTimer <= 0f) {
+          firePrimaryWeapon(created)
+        }
       } else {
         currentLifeHadPvp = true
         existing.callsign = st.callsign
+        existing.syndicateTag = st.syndicateTag
+        existing.armadaName = st.armadaName
         if (existing.shipId != spec.id) {
           existing.shipId = spec.id
           existing.spec = spec
         }
-        existing.x = st.x.toFloat()
-        existing.y = st.y.toFloat()
-        existing.vx = st.vx.toFloat()
-        existing.vy = st.vy.toFloat()
+        val posDelta = hypot(targetX - existing.x, targetY - existing.y)
+        if (posDelta < 220f) {
+          existing.x += (targetX - existing.x) * 0.45f
+          existing.y += (targetY - existing.y) * 0.45f
+        } else {
+          existing.x = targetX
+          existing.y = targetY
+        }
+        existing.vx = targetVx
+        existing.vy = targetVy
         val remoteSp = hypot(existing.vx, existing.vy)
-        existing.angle = if (remoteSp > 2f) atan2(existing.vy, existing.vx) else st.angle.toFloat()
-        existing.weaponAngle = existing.angle
+        existing.angle = if (remoteSp > 2f) atan2(existing.vy, existing.vx) else targetAngle
+        existing.weaponAngle = targetWeaponAngle
+        existing.independentAimActive = true
         existing.flux = st.energy.toFloat()
         existing.maxFlux = st.maxEnergy.toFloat()
         existing.bounty = st.bounty.toInt()
+        existing.afterburning = st.isAfterburning
+        existing.isCloaked = st.isCloaked
+        existing.remoteFiringPrimary = st.isFiringPrimary
+
+        if (st.isFiringPrimary && existing.gunTimer <= 0f) {
+          firePrimaryWeapon(existing)
+        }
       }
+    }
+
+    val staleUids = remotePilots.keys.filter { it !in activeRemoteUids }
+    if (staleUids.isNotEmpty()) {
+      for (stale in staleUids) {
+        remotePilots.remove(stale)
+      }
+      rosterChanged = true
+    }
+
+    if (rosterChanged) {
+      rebuildRosterForMode(mode)
     }
   }
 
@@ -1569,7 +1562,7 @@ class RiftGameEngine(
     currentLifeStats.shipFlown = formatShipLabel(localPlayer)
     buffVersion++
     syncLocalArmadaSelfSlot()
-    onPrizeToast("HULL EQUIPPED: ${formatShipLabel(localPlayer).uppercase(java.util.Locale.US)} (${spec.maxFlux.toInt()}❖)")
+    onPrizeToast("HULL EQUIPPED: ${formatShipLabel(localPlayer).uppercase(java.util.Locale.US)} (${spec.maxFlux.toInt()}⚡)")
     return true
   }
 
@@ -1622,7 +1615,7 @@ class RiftGameEngine(
       if (localPlayer.multiShotCharges > 0) {
         "5-STREAM OVERDRIVE (${localPlayer.multiShotCharges} SHOTS)"
       } else {
-        "0❖ EXTRA COST"
+        "0⚡ EXTRA COST"
       }
     onPrizeToast("$modeName: ${if (localPlayer.multifireOn) "ON ($suffix)" else "OFF (FOCUSED)"}")
     return localPlayer.multifireOn
@@ -1698,6 +1691,8 @@ class RiftGameEngine(
       shooter.angle
     }
   }
+
+  fun firePrimaryWeapon(ship: ShipEntity) = firePrimaryGun(ship)
 
   fun firePrimaryGun(ship: ShipEntity) {
     if (ship.respawnTimer > 0f) return
@@ -1801,7 +1796,7 @@ class RiftGameEngine(
           damagePerBolt = (spec.primaryDamage * 0.50f) * overchargeMult
           useParallelTwin = false
         } else {
-          // 3-Suppressor (or 9-Custom Ship Native Split) -> 3 spread streams where each deals exact 1/3 (33.3%) damage at 0❖ extra cost
+          // 3-Suppressor (or 9-Custom Ship Native Split) -> 3 spread streams where each deals exact 1/3 (33.3%) damage at 0⚡ extra cost
           streams = 3
           spread = 0.095f
           damagePerBolt = (spec.primaryDamage / 3.0f) * overchargeMult
@@ -1983,11 +1978,11 @@ class RiftGameEngine(
     ship.weaponAngle = fireAngle
     val shipLbl = formatShipLabel(ship)
 
-    // 1. Disruptor Combined Tactical Cloak + 360° AoE EMP Pulse System (No Bomb Projectile; 0❖ Decloak EMP)
+    // 1. Disruptor Combined Tactical Cloak + 360° AoE EMP Pulse System (No Bomb Projectile; 0⚡ Decloak EMP)
     if (spec.bombType == "CLOAK_EMP") {
       if (!ship.isCloaked) {
         if (ship.flux <= 200f) {
-          if (ship.isLocalPlayer) onPrizeToast("INSUFFICIENT FLUX FOR TACTICAL CLOAK (MIN 200❖)")
+          if (ship.isLocalPlayer) onPrizeToast("INSUFFICIENT FLUX FOR TACTICAL CLOAK (MIN 200⚡)")
           return
         }
         ship.isCloaked = true
@@ -1997,11 +1992,11 @@ class RiftGameEngine(
           buffVersion++
           sfx.playWarp()
           spawnPooledFct("👻 STEALTH CLOAK ENGAGED", ship.x, ship.y - 28f, Color.parseColor("#B388FF"))
-          onPrizeToast("STEALTH CLOAK ACTIVE (${RiftCalibrationState.cloakDrainPerSec.toInt()}❖/s) — TAP EMP PULSE (0❖) OR FIRE TO UNLEASH 360° EMP!")
+          onPrizeToast("STEALTH CLOAK ACTIVE (${RiftCalibrationState.cloakDrainPerSec.toInt()}⚡/s) — TAP EMP PULSE (0⚡) OR FIRE TO UNLEASH 360° EMP!")
         }
         return
       } else {
-        // Already cloaked: tapping EMP PULSE breaks stealth and unleashes a 360° radial AoE EMP centered on Disruptor's hull at 0❖ Flux!
+        // Already cloaked: tapping EMP PULSE breaks stealth and unleashes a 360° radial AoE EMP centered on Disruptor's hull at 0⚡ Flux!
         ship.isCloaked = false
         if (ship.isLocalPlayer) buffVersion++
         if (ship.phaseShieldTimer > 0f) ship.phaseShieldTimer = 0f
@@ -2018,7 +2013,7 @@ class RiftGameEngine(
     val cost = spec.bombCost
     if (ship.flux <= cost + 1f) {
       if (ship.isLocalPlayer) {
-        onPrizeToast("INSUFFICIENT FLUX (${cost.toInt()}❖ REQUIRED)")
+        onPrizeToast("INSUFFICIENT FLUX (${cost.toInt()}⚡ REQUIRED)")
       }
       return
     }
@@ -2240,7 +2235,7 @@ class RiftGameEngine(
   }
 
   /**
-   * Stacking & Overwrite Inventory Rules for Bucket A Special Buff Slot Pickups (Charge-Based, 0❖ Cost).
+   * Stacking & Overwrite Inventory Rules for Bucket A Special Buff Slot Pickups (Charge-Based, 0⚡ Cost).
    */
   fun grantSpecialBuffWeapon(ship: ShipEntity, newType: String, baseGrant: Int) {
     val canonicalType = RiftCodex.normalizeSpecialBuffId(newType)
@@ -2455,7 +2450,7 @@ class RiftGameEngine(
   }
 
   /**
-   * Activates a Bucket A Special Buff Slot charge (0❖ Flux Cost) for any ship (Local Player or AI Bot),
+   * Activates a Bucket A Special Buff Slot charge (0⚡ Flux Cost) for any ship (Local Player or AI Bot),
    * including both the 6 core BUFF_REGISTRY items and live AI-Forged Custom Buffs!
    */
   fun activateShipSpecialBuff(ship: ShipEntity) {
@@ -2713,7 +2708,7 @@ class RiftGameEngine(
       type == "SPECIAL" ||
         RiftCodex.getBuffRegistryEntry(type) != null
     ) {
-      // Bucket A Special Buff Slot Pickups are strictly Charge-Based (0❖ Flux Cost!)
+      // Bucket A Special Buff Slot Pickups are strictly Charge-Based (0⚡ Flux Cost!)
       activateShipSpecialBuff(localPlayer)
       return
     }
@@ -2721,7 +2716,7 @@ class RiftGameEngine(
       if (localPlayer.repels <= 0) return
       val rCost = RiftCalibrationState.repelCost
       if (localPlayer.flux <= rCost) {
-        onPrizeToast("INSUFFICIENT FLUX FOR REPEL (${rCost.toInt()}❖)")
+        onPrizeToast("INSUFFICIENT FLUX FOR REPEL (${rCost.toInt()}⚡)")
         return
       }
       localPlayer.repels--
@@ -3104,7 +3099,7 @@ class RiftGameEngine(
           else -> Color.parseColor("#F1F5F9")
         }
       spawnPooledFct(
-        text = if (isEmp) "⚡ EMP -${effectiveDamage.toInt()}❖" else "-${effectiveDamage.toInt()}",
+        text = if (isEmp) "⚡ EMP -${effectiveDamage.toInt()}⚡" else "-${effectiveDamage.toInt()}",
         x = target.x,
         y = target.y - 18f,
         color = fctColor,
@@ -3656,7 +3651,7 @@ class RiftGameEngine(
         if (!bot.isCloaked && nearestDist in (pulseR * 1.15f)..980f && bot.flux > bot.maxFlux * 0.55f && bot.bombTimer <= 0f) {
           fireSecondaryBomb(bot, aimAngle) // Engages Stealth Cloak
         } else if (bot.isCloaked && nearestDist <= pulseR * 0.92f && bot.bombTimer <= 0f) {
-          fireSecondaryBomb(bot, aimAngle) // Breaks stealth and unleashes 360° AoE EMP Pulse at 0❖!
+          fireSecondaryBomb(bot, aimAngle) // Breaks stealth and unleashes 360° AoE EMP Pulse at 0⚡!
         }
       } else if (bot.spec.bombType == "PHASE_DASH") {
         if (nearestDist in 450f..900f && bot.flux > bot.maxFlux * 0.55f && bot.bombTimer <= 0f) {
@@ -3947,7 +3942,12 @@ class RiftGameEngine(
       if (s.gunTimer > 0f) s.gunTimer = max(0f, s.gunTimer - dt)
       if (s.bombTimer > 0f) s.bombTimer = max(0f, s.bombTimer - dt)
 
-      // Step 3.0-second Rocket Hyper-Thruster Boost (1.65x max speed, 0❖ Flux cost, blazing plasma exhaust trail)
+      if (s.isHuman && !s.isLocalPlayer && s.remoteFiringPrimary && s.gunTimer <= 0f) {
+        s.independentAimActive = true
+        firePrimaryGun(s)
+      }
+
+      // Step 3.0-second Rocket Hyper-Thruster Boost (1.65x max speed, 0⚡ Flux cost, blazing plasma exhaust trail)
       if (s.rocketBoostTimer > 0f) {
         s.rocketBoostTimer = max(0f, s.rocketBoostTimer - dt)
         if (particles.size < 95 && Random.nextFloat() < 0.75f) {
@@ -3968,14 +3968,14 @@ class RiftGameEngine(
         }
       }
 
-      // Step Disruptor Stealth Cloak continuous drain (cloakDrainPerSec; forced uncloak at 150❖ floor without firing EMP)
+      // Step Disruptor Stealth Cloak continuous drain (cloakDrainPerSec; forced uncloak at 150⚡ floor without firing EMP)
       if (s.isCloaked) {
         selfDrainFlux(s, RiftCalibrationState.cloakDrainPerSec * dt)
         if (s.flux <= 150f || isInsideSafeZone(s.x, s.y)) {
           s.isCloaked = false
           if (s.isLocalPlayer) {
             buffVersion++
-            onPrizeToast("STEALTH CLOAK DEACTIVATED (FLUX AT 150❖ SAFETY FLOOR)")
+            onPrizeToast("STEALTH CLOAK DEACTIVATED (FLUX AT 150⚡ SAFETY FLOOR)")
           }
         }
       }
@@ -4214,7 +4214,7 @@ class RiftGameEngine(
               when {
                 customForgedEntry != null -> {
                   spawnPooledFct(
-                    "🧪 ${customForgedEntry.shortLabel} [${s.specialWeaponCharges}] (0❖)",
+                    "🧪 ${customForgedEntry.shortLabel} [${s.specialWeaponCharges}] (0⚡)",
                     s.x,
                     s.y - 24f,
                     customForgedEntry.strokeColorInt,
@@ -4222,31 +4222,31 @@ class RiftGameEngine(
                   "FORGED BUFF: ${customForgedEntry.officialName} (+${customForgedEntry.chargesPerPickup} CHARGES • ${s.specialWeaponCharges} TOTAL)"
                 }
                 gr.buffType == 0 -> {
-                  spawnPooledFct("💥 NOVA [${s.specialWeaponCharges}] (0❖)", s.x, s.y - 24f, Color.parseColor("#F97316"))
-                  "SPECIAL BUFF: NOVA RING (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0❖)"
+                  spawnPooledFct("💥 NOVA [${s.specialWeaponCharges}] (0⚡)", s.x, s.y - 24f, Color.parseColor("#F97316"))
+                  "SPECIAL BUFF: NOVA RING (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0⚡)"
                 }
                 gr.buffType == 1 -> {
-                  spawnPooledFct("🔥 SHATTER [${s.specialWeaponCharges}] (0❖)", s.x, s.y - 24f, Color.parseColor("#FB7185"))
-                  "SPECIAL BUFF: SHATTER CONE (+2 CHARGES • ${s.specialWeaponCharges} TOTAL • 0❖)"
+                  spawnPooledFct("🔥 SHATTER [${s.specialWeaponCharges}] (0⚡)", s.x, s.y - 24f, Color.parseColor("#FB7185"))
+                  "SPECIAL BUFF: SHATTER CONE (+2 CHARGES • ${s.specialWeaponCharges} TOTAL • 0⚡)"
                 }
                 gr.buffType == 2 -> {
-                  spawnPooledFct("🎯 SEEKER [${s.specialWeaponCharges}] (0❖)", s.x, s.y - 24f, Color.parseColor("#EF4444"))
-                  "SPECIAL BUFF: SEEKER TORPEDO (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0❖)"
+                  spawnPooledFct("🎯 SEEKER [${s.specialWeaponCharges}] (0⚡)", s.x, s.y - 24f, Color.parseColor("#EF4444"))
+                  "SPECIAL BUFF: SEEKER TORPEDO (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0⚡)"
                 }
                 gr.buffType == 3 -> {
-                  spawnPooledFct("👥 PHANTOM [${s.specialWeaponCharges}] (0❖)", s.x, s.y - 24f, Color.parseColor("#2DD4BF"))
-                  "SPECIAL BUFF: HOLO PHANTOM (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0❖)"
+                  spawnPooledFct("👥 PHANTOM [${s.specialWeaponCharges}] (0⚡)", s.x, s.y - 24f, Color.parseColor("#2DD4BF"))
+                  "SPECIAL BUFF: HOLO PHANTOM (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0⚡)"
                 }
                 gr.buffType == 4 -> {
-                  spawnPooledFct("🧱 BARRIER [${s.specialWeaponCharges}] (0❖)", s.x, s.y - 24f, Color.parseColor("#38BDF8"))
-                  "SPECIAL BUFF: STASIS BARRIER (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0❖)"
+                  spawnPooledFct("🧱 BARRIER [${s.specialWeaponCharges}] (0⚡)", s.x, s.y - 24f, Color.parseColor("#38BDF8"))
+                  "SPECIAL BUFF: STASIS BARRIER (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0⚡)"
                 }
                 gr.buffType == 5 -> {
-                  spawnPooledFct("🚀 SURGE [${s.specialWeaponCharges}] (0❖)", s.x, s.y - 24f, Color.parseColor("#F43F5E"))
-                  "SPECIAL BUFF: HYPER SURGE (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0❖)"
+                  spawnPooledFct("🚀 SURGE [${s.specialWeaponCharges}] (0⚡)", s.x, s.y - 24f, Color.parseColor("#F43F5E"))
+                  "SPECIAL BUFF: HYPER SURGE (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0⚡)"
                 }
                 gr.buffType == 6 -> {
-                  spawnPooledFct("❖ FULL FLUX +$pickupBty BTY", s.x, s.y - 24f, Color.parseColor("#10B981"))
+                  spawnPooledFct("⚡ FULL FLUX +$pickupBty BTY", s.x, s.y - 24f, Color.parseColor("#10B981"))
                   "INSTANT BUFF: 100% FULL FLUX CHARGE +$pickupBty BOUNTY"
                 }
                 gr.buffType == 7 -> {
@@ -4278,7 +4278,7 @@ class RiftGameEngine(
                 }
                 gr.buffType == -12 -> {
                   val pct = (s.rechargeOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack * 100f).toInt()
-                  spawnPooledFct("❖ RCH +$pct% (${s.rechargeOverchargeStacks}/3)", s.x, s.y - 24f, Color.parseColor("#10B981"))
+                  spawnPooledFct("⚡ RCH +$pct% (${s.rechargeOverchargeStacks}/3)", s.x, s.y - 24f, Color.parseColor("#10B981"))
                   "HULL UPGRADE: REACTOR OVERCHARGE ${s.rechargeOverchargeStacks}/3 (+$pct% FLUX RECHARGE UNTIL DEATH)"
                 }
                 else -> {
@@ -4895,7 +4895,7 @@ class RiftGameEngine(
                 sfx.playBounce()
                 addTrauma(0.24f)
                 spawnPooledFct(
-                  text = "☢ PLASMA RIFT -${dmg.toInt()}❖ (${(dmgPct * 100f).toInt()}%)",
+                  text = "☢ PLASMA RIFT -${dmg.toInt()}⚡ (${(dmgPct * 100f).toInt()}%)",
                   x = s.x,
                   y = s.y - 28f,
                   color = Color.parseColor("#EF4444"),

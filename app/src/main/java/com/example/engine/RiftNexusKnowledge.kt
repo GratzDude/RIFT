@@ -23,7 +23,7 @@ You are NEXUS, the omniscient Rift Core tactical intelligence embedded inside RI
 CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
 1. EXCLUSIVE RIFT-ONLY KNOWLEDGE BASE: Your ONLY knowledge base is RIFT itself — its physics, pixel-level rendering math, 9 ship classes (Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, and Rift Frame), 100-point Rift Frame modular builder & AI Hull Forge, Supply Buff pool + custom AI-forged buffs, 4 Playfield Rifts, Safe Zone & AFK rules, Calibration parameters, Syndicates, Named Armadas, live sector pilots, Pilot Dossier & Executioner telemetry, and Cloud Leaderboard bounty records.
 2. REFUSE NON-RIFT TOPICS IN CHARACTER: If the user asks about anything outside RIFT (real-world news, weather, politics, coding/homework unrelated to RIFT's own mechanics, other video games, recipes, trivia), briefly decline in character: "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Submit a query regarding RIFT ships, pixel/physics telemetry, custom builds, buffs, or bounty records."
-3. PINPOINT NUMERICAL & PIXEL PRECISION: Every turn, you receive a [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT] containing the exact live engine numbers, world-pixel dimensions, zoom-scaled screen-pixel dimensions, DPS, Flux (❖) costs, custom slots (Frame A / Frame B / Frame C), Calibration overrides, Executioner snapshots, and Cloud Leaderboard records. Always cite exact numbers from that snapshot — never guess or approximate when exact values exist.
+3. PINPOINT NUMERICAL & PIXEL PRECISION: Every turn, you receive a [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT] containing the exact live engine numbers, world-pixel dimensions, zoom-scaled screen-pixel dimensions, DPS, Flux (⚡) costs, Rift Shards (❖) economy, custom slots (Frame A / Frame B / Frame C), Calibration overrides, Executioner snapshots, and Cloud Leaderboard records. Always cite exact numbers from that snapshot — never guess or approximate when exact values exist. Always use ⚡ for Flux (HP + weapon energy) and ❖ strictly for Rift Shards (permanent progression currency).
 4. ANDROID TOUCH HUD & TWIN-STICK CONTROLLER TERMINOLOGY ONLY: RIFT supports both the native Android Landscape Touch HUD (Left Movement Stick with zero-friction coasting on release and >80% Afterburner, Independent Manual HUD [BRAKE] Stop button, Right Primary Fire Stick, Secondary Button, Repel Button, 4th Elastic Special Buff Button, and Native Multi-Shot button) AND Plug-and-Play Bluetooth/USB Twin-Stick Controllers (Left Stick 360° flight with >80% Afterburner and zero-friction drift on release, Right Stick 360° independent aim, RT/R1 Primary Fire, LT Secondary Ability/Warhead, L1/X Special Buff, A/R3 Repel, B/L3 Manual Retro-Brake, Y Native Multi-Shot toggle, D-Pad Camera Zoom & Hangar 3x3 matrix navigation, Start/Select modals). NEVER mention PC keyboard keys or shortcuts.
 5. PURE TEXT Q&A & THEORYCRAFTING: Deliver clear, structured, tactical text answers and 100-point Rift Frame theorycrafting breakdowns (showing exact point costs summing to the pilot's target budget such as 20 pts at Lv 20 or 100 pts at Lv 100, plus resulting Speed, Thrust, Turn Rate, Max Flux, Recharge, Primary, and Secondary stats). Never prefix ship names with legacy numbers (say "Viper", "Disruptor", "Rift Frame", never "1-Viper" or "6-Disruptor"). Keep formatting crisp and scannable on a landscape mobile tactical console.
 """
@@ -89,7 +89,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Secondary Warhead & Ability Pixel Radii (scaled by projectileScale %.2fx): Viper Phase Dash = 135 world px wall-safe spatial blink + %.0f px/s supersonic dodge burst (0.42s combat dodge i-frames + 0.65s phase shield + +%.0f%% next-shot rail overcharge, 300❖ cost, 2.5s CD); Siege Bomb = %.1f world px radius (24px base, 48px dia, 540 px/s + 25%% ship vel); Bounce Bomb & Proximity Flak Bomb = %.1f world px radius (17px base, 34px dia, 640 px/s + 25%% ship vel; Prox Flak fuse trigger = %.0f world px, red sensor ring = %.1f world px, bursts into 8 shrapnel bolts); Disruptor 360° AoE EMP Pulse = %.0f world px radial shockwave centered on Disruptor's hull upon uncloaking (0❖ decloak EMP cost while Cloak drains %.0f❖/s; drains %.0f%% Max Flux & disables recharge for %.1fs; forced uncloak from enemy fire or <=150❖ floor breaks stealth cleanly without firing EMP); Proximity Mine = %.1f world px radius (18px base, 36px dia, stationary, max %d active mines, 30s life); Seeker Torpedo = %.1f world px radius (%.0f px/s, %.1fs flight = %.0f world px max flight path); Stasis Barrier = %.0f world px hard-light span (%.1fs duration).",
+        "- Secondary Warhead & Ability Pixel Radii (scaled by projectileScale %.2fx): Viper Phase Dash = 135 world px wall-safe spatial blink + %.0f px/s supersonic dodge burst (0.42s combat dodge i-frames + 0.65s phase shield + +%.0f%% next-shot rail overcharge, 300⚡ cost, 2.5s CD); Siege Bomb = %.1f world px radius (24px base, 48px dia, 540 px/s + 25%% ship vel); Bounce Bomb & Proximity Flak Bomb = %.1f world px radius (17px base, 34px dia, 640 px/s + 25%% ship vel; Prox Flak fuse trigger = %.0f world px, red sensor ring = %.1f world px, bursts into 8 shrapnel bolts); Disruptor 360° AoE EMP Pulse = %.0f world px radial shockwave centered on Disruptor's hull upon uncloaking (0⚡ decloak EMP cost while Cloak drains %.0f⚡/s; drains %.0f%% Max Flux & disables recharge for %.1fs; forced uncloak from enemy fire or <=150⚡ floor breaks stealth cleanly without firing EMP); Proximity Mine = %.1f world px radius (18px base, 36px dia, stationary, max %d active mines, 30s life); Seeker Torpedo = %.1f world px radius (%.0f px/s, %.1fs flight = %.0f world px max flight path); Stasis Barrier = %.0f world px hard-light span (%.1fs duration).",
         projScale,
         RiftCalibrationState.phaseDashImpulse,
         RiftCalibrationState.phaseOverchargeBonusPct * 100f,
@@ -130,7 +130,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Zero-Friction Newtonian Drift & Dual Touch/Gamepad Controls: Ships coast indefinitely on (vx, vy) with zero friction when releasing the Left Stick (both Touch and Bluetooth/USB Gamepad). Left Stick >80%% radius ignites Afterburners (%.2fx thrust, ~1.32x top speed, drains %.0f❖/s floored safely at 1❖). Braking occurs ONLY via the independent manual HUD [BRAKE] button or Gamepad B/L3 button (retro-braking damping %.2f). Gamepad Right Stick provides 360° independent turret aiming (Deadzones: Left %.0f%%, Right %.0f%%; Idle Touch Ring Opacity: %.0f%%), RT/R1 fires Primary, LT triggers instant Phase/Cloak on press or aims/launches warheads on release, L1/X activates Special Buff, A/R3 triggers Repel, Y toggles Native Multi-Shot, D-Pad steps Camera Zoom & navigates the Hangar 3x3 matrix, Start/Select toggle Hangar & Calibration.",
+        "- Zero-Friction Newtonian Drift & Dual Touch/Gamepad Controls: Ships coast indefinitely on (vx, vy) with zero friction when releasing the Left Stick (both Touch and Bluetooth/USB Gamepad). Left Stick >80%% radius ignites Afterburners (%.2fx thrust, ~1.32x top speed, drains %.0f⚡/s floored safely at 1⚡). Braking occurs ONLY via the independent manual HUD [BRAKE] button or Gamepad B/L3 button (retro-braking damping %.2f). Gamepad Right Stick provides 360° independent turret aiming (Deadzones: Left %.0f%%, Right %.0f%%; Idle Touch Ring Opacity: %.0f%%), RT/R1 fires Primary, LT triggers instant Phase/Cloak on press or aims/launches warheads on release, L1/X activates Special Buff, A/R3 triggers Repel, Y toggles Native Multi-Shot, D-Pad steps Camera Zoom & navigates the Hangar 3x3 matrix, Start/Select toggle Hangar & Calibration.",
         RiftCalibrationState.afterburnerThrustMult,
         RiftCalibrationState.afterburnerDrainPerSec,
         RiftCalibrationState.retroBrakeDamping,
@@ -142,7 +142,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Collisions & Unified Flux (❖ = HP + Ammo): Wall bounce elasticity = %.2f with ZERO wall collision damage. Ships pass through other ships without hull-to-hull collision (Stasis Barriers physically block ships & bounce shots). Firing weapons/afterburners/cloak/repel drains Flux but floors at 1❖ (cannot self-kill). Enemy damage reducing Flux <= 0❖ destroys the ship, anchoring a stationary %.1fs death camera at death coordinates before Safe Zone respawn (%.2fs hit-stop freeze on lethal blasts).",
+        "- Collisions & Unified Flux (⚡ = HP + Ammo): Wall bounce elasticity = %.2f with ZERO wall collision damage. Ships pass through other ships without hull-to-hull collision (Stasis Barriers physically block ships & bounce shots). Firing weapons/afterburners/cloak/repel drains Flux but floors at 1⚡ (cannot self-kill). Enemy damage reducing Flux <= 0⚡ destroys the ship, anchoring a stationary %.1fs death camera at death coordinates before Safe Zone respawn (%.2fs hit-stop freeze on lethal blasts).",
         RiftCalibrationState.wallElasticity,
         RiftCalibrationState.respawnDelaySec,
         RiftCalibrationState.hitStopDurationSec,
@@ -213,7 +213,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
       sb.appendLine(
         String.format(
           Locale.US,
-          "  - Hull: MaxFlux=%.0f❖, Recharge=%.0f❖/s, TopSpeed=%.0f px/s (Afterburner=%.0f px/s), Thrust=%.0f px/s², TurnRate=%.2f rad/s, InitialRepels=%d.",
+          "  - Hull: MaxFlux=%.0f⚡, Recharge=%.0f⚡/s, TopSpeed=%.0f px/s (Afterburner=%.0f px/s), Thrust=%.0f px/s², TurnRate=%.2f rad/s, InitialRepels=%d.",
           spec.maxFlux,
           spec.rechargeRate,
           spec.topSpeed,
@@ -226,7 +226,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
       sb.appendLine(
         String.format(
           Locale.US,
-          "  - Primary [%s]: %d stream(s)%s, %.0f❖/stream (%.0f❖/volley), Cost=%.0f❖/shot, Cooldown=%.3fs (%.2f shots/s), Speed=%.0f px/s, Spread=%.3f rad, WallBounces=%d | Raw DPS=%.0f❖/s, Drain=%.0f❖/s (Net Sustain=%.0f❖/s)%s.",
+          "  - Primary [%s]: %d stream(s)%s, %.0f⚡/stream (%.0f⚡/volley), Cost=%.0f⚡/shot, Cooldown=%.3fs (%.2f shots/s), Speed=%.0f px/s, Spread=%.3f rad, WallBounces=%d | Raw DPS=%.0f⚡/s, Drain=%.0f⚡/s (Net Sustain=%.0f⚡/s)%s.",
           spec.primaryTitle,
           spec.primaryStreams,
           if (spec.isParallelTwin) " parallel-twin" else "",
@@ -242,8 +242,8 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
           fluxPerSec,
           spec.rechargeRate - fluxPerSec,
           if (spec.supportsNativeMultifire) {
-            if (spec.id == 5 || spec.isParallelTwin) " [Native Twin Multi-Shot Toggle: 0❖ extra cost, splits 2x135❖ into 4x67.5❖ fan = 270❖ total]"
-            else " [Native Split Multi-Shot Toggle: 0❖ extra cost, toggles 1x100% focused beam vs 3x33.3% (80❖ each) split streams]"
+            if (spec.id == 5 || spec.isParallelTwin) " [Native Twin Multi-Shot Toggle: 0⚡ extra cost, splits 2x135⚡ into 4x67.5⚡ fan = 270⚡ total]"
+            else " [Native Split Multi-Shot Toggle: 0⚡ extra cost, toggles 1x100% focused beam vs 3x33.3% (80⚡ each) split streams]"
           } else "",
         )
       )
@@ -271,7 +271,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
         sb.appendLine(
           String.format(
             Locale.US,
-            "  - Secondary [%s | type=%s]: Cost=%.0f❖, Cooldown=%.2fs, Damage=%.0f❖, WallBounces=%d, Recoil=%.0f px/s.",
+            "  - Secondary [%s | type=%s]: Cost=%.0f⚡, Cooldown=%.2fs, Damage=%.0f⚡, WallBounces=%d, Recoil=%.0f px/s.",
             spec.secondaryTitle,
             spec.bombType,
             spec.bombCost,
@@ -295,8 +295,8 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine("  • Top Speed = 380 + 8 * pts px/s (0 pts = 380 px/s -> 30 pts = 620 px/s; Afterburner = TopSpeed * 1.32)")
     sb.appendLine("  • Thrust = 600 + 15 * pts px/s² (0 pts = 600 -> 30 pts = 1,050 px/s²)")
     sb.appendLine("  • Turn Rate = 3.20 + 0.10 * pts rad/s (0 pts = 3.20 -> 30 pts = 6.20 rad/s)")
-    sb.appendLine("  • Max Flux = 2200 + 80 * pts ❖ (0 pts = 2,200❖ -> 30 pts = 4,600❖)")
-    sb.appendLine("  • Flux Recharge = 240 + 8 * pts ❖/s (0 pts = 240❖/s -> 30 pts = 480❖/s)")
+    sb.appendLine("  • Max Flux = 2200 + 80 * pts ⚡ (0 pts = 2,200⚡ -> 30 pts = 4,600⚡)")
+    sb.appendLine("  • Flux Recharge = 240 + 8 * pts ⚡/s (0 pts = 240⚡/s -> 30 pts = 480⚡/s)")
     sb.appendLine("- Primary Weapon Archetypes (9 choices):")
     for (pri in CustomShipLoadoutSlot.PRIMARY_OPTIONS) {
       sb.appendLine("  • ${pri.id} (${pri.title}) — ${pri.pointCost} Pts: ${pri.summary}")
@@ -328,7 +328,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine()
     sb.appendLine("[5. OFFICIAL SUPPLY BUFF POOL (BUCKET A & BUCKET B), AI-FORGED BUFFS & 4 PLAYFIELD RIFTS]")
     sb.appendLine(
-      "- Supply Crate Cap in 20-Pilot FFA: ${engine.getEffectiveBuffCap()} crates active (${engine.greens.size} currently spawned on map). Repel Cost=${RiftCalibrationState.repelCost.toInt()}❖, Radius=${RiftCalibrationState.repelRadius.toInt()}px, Push=${RiftCalibrationState.repelPushForce.toInt()} px/s."
+      "- Supply Crate Cap in 20-Pilot FFA: ${engine.getEffectiveBuffCap()} crates active (${engine.greens.size} currently spawned on map). Repel Cost=${RiftCalibrationState.repelCost.toInt()}⚡, Radius=${RiftCalibrationState.repelRadius.toInt()}px, Push=${RiftCalibrationState.repelPushForce.toInt()} px/s."
     )
     for (entry in RiftCodex.POWERUP_CODEX) {
       sb.appendLine("  • [#${entry.buffTypeIndex}] ${entry.title} (${entry.dropRatePercent}% drop | ${entry.category}): ${entry.effectSummary} ${entry.tacticalNote}")
@@ -339,7 +339,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     } else {
       for (cb in customForged) {
         sb.appendLine(
-          "  • [CUSTOM FORGED #${cb.buffTypeIndex}] ${cb.officialName} (HUD: ${cb.shortLabel} [X]): ${cb.chargesPerPickup} charges, aim=${cb.aimMode.name}, effect=${cb.specialEffect.label}, speed=${cb.projectileSpeed.toInt()} px/s, duration=${cb.flightDuration}s, dmg=${cb.damage.toInt()}❖, radius=${cb.blastRadius.toInt()}px, bounces=${cb.wallBounces}."
+          "  • [CUSTOM FORGED #${cb.buffTypeIndex}] ${cb.officialName} (HUD: ${cb.shortLabel} [X]): ${cb.chargesPerPickup} charges, aim=${cb.aimMode.name}, effect=${cb.specialEffect.label}, speed=${cb.projectileSpeed.toInt()} px/s, duration=${cb.flightDuration}s, dmg=${cb.damage.toInt()}⚡, radius=${cb.blastRadius.toInt()}px, bounces=${cb.wallBounces}."
         )
       }
     }
@@ -355,7 +355,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "  1) PLASMA RIFT (Crimson): Burns %.0f%% Max Flux per 0.6s tick on contact and can destroy ships if Flux drops <= 0❖.",
+        "  1) PLASMA RIFT (Crimson): Burns %.0f%% Max Flux per 0.6s tick on contact and can destroy ships if Flux drops <= 0⚡.",
         RiftCalibrationState.plasmaRiftDamagePct * 100f,
       )
     )
@@ -473,7 +473,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
       "- Career Combat Record: All-Time Peak Bounty=${engine.allTimeBountyPeak}, All-Time K/D=${engine.allTimeKills}/${engine.allTimeDeaths}, PVP Peak Bounty=${engine.pvpBountyPeak}, PVP K/D=${engine.pvpKills}/${engine.pvpDeaths}, HVT Eliminations=${engine.hvtEliminations}, Supply Crates=${engine.greensCollected}, Sector Convergences Won=${engine.convergencesWon}."
     )
     sb.appendLine(
-      "- Live Ship Right Now: Flying ${engine.formatShipLabel(p)} in Sector $sectorStr (${p.x.toInt()}, ${p.y.toInt()}), Speed=$pSpeed px/s, Flux=${p.flux.toInt()}/${p.maxFlux.toInt()}❖, Current Bounty=${p.bounty}, Repels=${p.repels}, SpecialSlot=${p.specialWeaponType}(${p.specialWeaponCharges}), MultiShotCrateShots=${p.multiShotCharges}, BouncingBulletsUpgrade=${p.hasBouncingBulletsUpgrade}, SpeedOvercharge=${p.speedOverchargeStacks}/3, ThrustOvercharge=${p.thrustOverchargeStacks}/3, ReactorOvercharge=${p.rechargeOverchargeStacks}/3."
+      "- Live Ship Right Now: Flying ${engine.formatShipLabel(p)} in Sector $sectorStr (${p.x.toInt()}, ${p.y.toInt()}), Speed=$pSpeed px/s, Flux=${p.flux.toInt()}/${p.maxFlux.toInt()}⚡, Current Bounty=${p.bounty}, Repels=${p.repels}, SpecialSlot=${p.specialWeaponType}(${p.specialWeaponCharges}), MultiShotCrateShots=${p.multiShotCharges}, BouncingBulletsUpgrade=${p.hasBouncingBulletsUpgrade}, SpeedOvercharge=${p.speedOverchargeStacks}/3, ThrustOvercharge=${p.thrustOverchargeStacks}/3, ReactorOvercharge=${p.rechargeOverchargeStacks}/3."
     )
 
     fun formatSnapshot(label: String, snap: PeakBountyRunSnapshot?) {
@@ -490,7 +490,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
           else -> "Run still active or unrecorded termination"
         }
       sb.appendLine(
-        "- $label: Peak Bounty=${snap.bountyReached} in ${snap.shipFlown}, Survived=${snap.formattedDuration()}, Kills=${snap.pvpKills} PVP / ${snap.botKills} Bot (${snap.hvtShutdowns} HVT shutdowns), Damage=${snap.damageDealt.toInt()}❖ dealt / ${snap.damageTaken.toInt()}❖ taken, Accuracy=${snap.accuracyPercent()}% (${snap.shotsHit}/${snap.shotsFired}), Buffs=${snap.buffsCollected} | Executioner: $execStr."
+        "- $label: Peak Bounty=${snap.bountyReached} in ${snap.shipFlown}, Survived=${snap.formattedDuration()}, Kills=${snap.pvpKills} PVP / ${snap.botKills} Bot (${snap.hvtShutdowns} HVT shutdowns), Damage=${snap.damageDealt.toInt()}⚡ dealt / ${snap.damageTaken.toInt()}⚡ taken, Accuracy=${snap.accuracyPercent()}% (${snap.shotsHit}/${snap.shotsFired}), Buffs=${snap.buffsCollected} | Executioner: $execStr."
       )
     }
     formatSnapshot("All-Time Peak Bounty Run Snapshot", allTimePeakSnapshot)
@@ -518,7 +518,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
       val sTag = if (s.armadaName.isNotEmpty()) "[${s.armadaName}]" else "[${RiftGameEngine.cleanTag(s.syndicateTag)}]"
       val hvtFlag = if (s.bounty >= RiftCalibrationState.hvtBountyThreshold) " [👑 HVT]" else ""
       sb.appendLine(
-        "  #${idx + 1}: $sTag ${s.callsign} (${if (s.isLocalPlayer) "YOU" else if (s.isHuman) "HUMAN" else "AI BOT"}) — ${s.bounty} BTY$hvtFlag | ${engine.formatShipLabel(s)} | ${s.flux.toInt()}/${s.maxFlux.toInt()}❖"
+        "  #${idx + 1}: $sTag ${s.callsign} (${if (s.isLocalPlayer) "YOU" else if (s.isHuman) "HUMAN" else "AI BOT"}) — ${s.bounty} BTY$hvtFlag | ${engine.formatShipLabel(s)} | ${s.flux.toInt()}/${s.maxFlux.toInt()}⚡"
       )
     }
 

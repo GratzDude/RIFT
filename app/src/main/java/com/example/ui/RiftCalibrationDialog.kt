@@ -1056,7 +1056,7 @@ private fun AiBuffAndMechanicForgeTab(
       ForgeMiniSlider("Flight / Effect Duration", String.format(Locale.US, "%.1f s", flightDuration), flightDuration, 0.5f, 12.0f) {
         flightDuration = it
       }
-      ForgeMiniSlider("Flux Damage", "${damage.roundToInt()} ❖", damage, 0f, 2000f) {
+      ForgeMiniSlider("Flux Damage", "${damage.roundToInt()} ⚡", damage, 0f, 2000f) {
         damage = it
       }
       ForgeMiniSlider("Blast / Field Radius", "${blastRadius.roundToInt()} px", blastRadius, 60f, 550f) {
@@ -1073,7 +1073,7 @@ private fun AiBuffAndMechanicForgeTab(
               cleanTitle.replace(Regex("[^A-Z0-9]"), "_").trim('_').ifEmpty { "BUFF" } +
               "_$nextIdx"
           val summary =
-            "${specialEffect.label} • ${charges}x Charges • ${String.format(Locale.US, "%.1fs", flightDuration)} • ${damage.toInt()}❖ DMG (${blastRadius.toInt()}px)."
+            "${specialEffect.label} • ${charges}x Charges • ${String.format(Locale.US, "%.1fs", flightDuration)} • ${damage.toInt()}⚡ DMG (${blastRadius.toInt()}px)."
           val entry =
             SpecialBuffRegistryEntry(
               id = idSlug,

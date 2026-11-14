@@ -475,7 +475,7 @@ class RiftArenaView(
         UtilityButtonSlot(
           type = "SPECIAL",
           title = "${reg.shortLabel} [$count]",
-          sub = "0❖",
+          sub = "0⚡",
           cx = baseArcX + cos(rad) * scaledDist + RiftCalibrationState.burstBtnOffset.x,
           cy = baseArcY + sin(rad) * scaledDist + RiftCalibrationState.burstBtnOffset.y,
           r = scaledR,
@@ -490,17 +490,18 @@ class RiftArenaView(
     if (p.repels > 0 || showAll) {
       val rad = ((startDeg + slotIndex * stepDeg) * PI / 180.0).toFloat()
       val count = if (p.repels > 0) p.repels else 3
+      val rCost = RiftCalibrationState.repelCost
       activeUtilitySlots.add(
         UtilityButtonSlot(
           type = "REPEL",
           title = "REPEL [$count]",
-          sub = "320❖",
+          sub = "${rCost.toInt()}⚡",
           cx = baseArcX + cos(rad) * scaledDist + RiftCalibrationState.repelBtnOffset.x,
           cy = baseArcY + sin(rad) * scaledDist + RiftCalibrationState.repelBtnOffset.y,
           r = scaledR,
           strokeColor = Color.parseColor("#38BDF8"),
           fillColor = Color.argb(155, 10, 48, 82),
-          enabled = p.canFire && p.repels > 0 && (p.flux - 320f >= 1f),
+          enabled = p.canFire && p.repels > 0 && (p.flux - rCost >= 1f),
         )
       )
       slotIndex++
@@ -1545,7 +1546,7 @@ class RiftArenaView(
     val gunCost = p.spec.primaryCost.toInt()
     val arcScale = RiftCalibrationState.combatArcScale
 
-    // 2. Primary Right [FIRE] Stick with exact Per-Ship Primary Weapon Label & Flux Cost (❖) + 32dp Cancel Deadzone Ring
+    // 2. Primary Right [FIRE] Stick with exact Per-Ship Primary Weapon Label & Flux Cost (⚡) + 32dp Cancel Deadzone Ring
     val fX = effFireBtnX()
     val fY = effFireBtnY()
     val fR = effFireRadius()
@@ -1613,7 +1614,7 @@ class RiftArenaView(
       when {
         engine.isCancelActive -> "CANCEL"
         !p.canFire -> "SAFE"
-        else -> "(${gunCost}❖)"
+        else -> "${gunCost}⚡"
       },
       fkX,
       fkY + 10.0f * dpDensity * arcScale,
@@ -1715,10 +1716,10 @@ class RiftArenaView(
         when {
           engine.isBombCancelActive -> "CANCEL"
           p.bombTimer > 0.1f -> String.format(java.util.Locale.US, "%.1fs", p.bombTimer)
-          isCloakToggleReady -> "(${RiftCalibrationState.cloakDrainPerSec.toInt()}❖/s)"
-          isCloakEmpPulseReady -> "(0❖)"
-          p.spec.bombType == "MINE" -> "(${bombCost.toInt()}❖ • $activeMineCount/6)"
-          else -> "(${bombCost.toInt()}❖)"
+          isCloakToggleReady -> "${RiftCalibrationState.cloakDrainPerSec.toInt()}⚡/S"
+          isCloakEmpPulseReady -> "0⚡ EMP"
+          p.spec.bombType == "MINE" -> "${bombCost.toInt()}⚡ • $activeMineCount/6"
+          else -> "${bombCost.toInt()}⚡"
         }
       hudLabelPaint.textSize = (if (bLabel.length >= 9) 7.4f else 8.8f) * dpDensity * arcScale
       hudLabelPaint.color = Color.argb(bombAlpha, 255, 255, 255)

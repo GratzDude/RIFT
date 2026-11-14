@@ -232,6 +232,8 @@ fun RiftArenaScreen(
   val dossierState by viewModel.dossierState.collectAsStateWithLifecycle()
   val leaderboardState by viewModel.leaderboardState.collectAsStateWithLifecycle()
   val sectorPilotsState by viewModel.sectorPilotsState.collectAsStateWithLifecycle()
+  val cloudSyndicatesState by viewModel.cloudSyndicatesState.collectAsStateWithLifecycle()
+  val sectorCommsState by viewModel.sectorCommsState.collectAsStateWithLifecycle()
 
   val nexusViewModel: NexusAiViewModel = viewModel(key = "nexus_$currentUserId")
   val nexusMessages by nexusViewModel.messages.collectAsStateWithLifecycle()
@@ -247,7 +249,7 @@ fun RiftArenaScreen(
     mutableStateOf<String?>("⚡ RIFT FFA ARENA ONLINE // 360° AIM & NAMED ARMADAS ACTIVE")
   }
   var toastVersion by remember { mutableIntStateOf(0) }
-  var unreadCommsCount by remember { mutableIntStateOf(2) }
+  var unreadCommsCount by remember { mutableIntStateOf(0) }
 
   var activeModal by remember { mutableStateOf(ActiveModal.NONE) }
   var previousModalBeforeStore by remember { mutableStateOf(ActiveModal.DOSSIER) }
@@ -289,45 +291,8 @@ fun RiftArenaScreen(
     mutableStateOf(localPrefs.getSyndicateServiceHistory(currentUserId))
   }
 
-  // Syndicate Chat Messages State (including interactive [ARMADA RECRUIT: UP TO 5-MAN] banners)
-  val chatMessages = remember {
-    mutableStateListOf(
-      SyndicateChatMessage(
-        id = "msg_1",
-        senderUid = "friend_vortex_ace",
-        senderCallsign = "VORTEX_ACE",
-        senderSyndicateTag = syndicateTag,
-        timestampLabel = "NOW",
-        messageText = "Center trench is hot! Forming up a 5-man strike Armada for HVT hunting.",
-      ),
-      SyndicateChatMessage(
-        id = "msg_banner_apex",
-        senderUid = "friend_viper_ace",
-        senderCallsign = "VIPER_ACE",
-        senderSyndicateTag = syndicateTag,
-        timestampLabel = "LIVE RECRUIT",
-        messageText = "",
-        isArmadaRecruitBanner = true,
-        armadaName = "APEX_4",
-        armadaCurrentSize = 3,
-        armadaMaxSize = 5,
-        armadaObjective = "Center Trench Control & HVT Bounty Sweep (Friendly Fire OFF)",
-      ),
-      SyndicateChatMessage(
-        id = "msg_banner_gold",
-        senderUid = "friend_solaris_prime",
-        senderCallsign = "SOLARIS_PRIME",
-        senderSyndicateTag = "SOLR",
-        timestampLabel = "LIVE RECRUIT",
-        messageText = "",
-        isArmadaRecruitBanner = true,
-        armadaName = "GOLD_WING",
-        armadaCurrentSize = 2,
-        armadaMaxSize = 5,
-        armadaObjective = "Heavy Goliath & Ricochet Siege Wing — Open Slots!",
-      ),
-    )
-  }
+  // Syndicate Chat Messages State (starts clean; populated by real player Comms & Armada Recruit banners)
+  val chatMessages = remember { mutableStateListOf<SyndicateChatMessage>() }
 
   val engine = remember {
     RiftGameEngine(
@@ -425,6 +390,9 @@ fun RiftArenaScreen(
         allTimeDeaths = engine.allTimeDeaths,
         allTimeBountyPeak = engine.allTimeBountyPeak,
         convergencesWon = engine.convergencesWon,
+        syndicateTag = engine.localPlayer.syndicateTag,
+        armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
+        armadaTierSize = engine.getCurrentArmadaSize(),
       )
       frameTick++
     }
@@ -486,15 +454,40 @@ fun RiftArenaScreen(
     engine.updateRemotePilots(remoteList, currentUserId)
   }
 
-  // Periodic live telemetry heartbeat when authenticated
-  LaunchedEffect(isGoogleAuthenticated, currentUserId) {
-    if (!isGoogleAuthenticated) return@LaunchedEffect
+  // Merge cloud-registered Syndicates across devices
+  LaunchedEffect(cloudSyndicatesState) {
+    val cloudList = (cloudSyndicatesState as? UiState.Success)?.data ?: return@LaunchedEffect
+    localPrefs.mergeCloudSyndicates(cloudList)
+  }
+
+  // Merge live Sector Comms & Armada Recruit Banners across devices
+  LaunchedEffect(sectorCommsState) {
+    val remoteComms = (sectorCommsState as? UiState.Success)?.data ?: return@LaunchedEffect
+    val existingIds = chatMessages.map { it.id }.toSet()
+    var newIncomingCount = 0
+    for (msg in remoteComms) {
+      if (msg.id.isNotEmpty() && msg.id !in existingIds) {
+        chatMessages.add(msg)
+        if (msg.senderUid != currentUserId && activeModal != ActiveModal.CHAT) {
+          newIncomingCount++
+        }
+      }
+    }
+    if (newIncomingCount > 0) {
+      unreadCommsCount += newIncomingCount
+    }
+  }
+
+  // High-frequency live telemetry heartbeat for both Guest and Google Authenticated devices
+  LaunchedEffect(currentUserId) {
     while (true) {
-      delay(2000L)
+      delay(350L)
       val p = engine.localPlayer
       viewModel.syncNativeLiveState(
         sectorId = engine.mode,
         callsign = p.callsign,
+        syndicateTag = p.syndicateTag,
+        armadaName = p.armadaName,
         shipId = p.shipId,
         freq = p.freq,
         x = p.x,
@@ -502,6 +495,10 @@ fun RiftArenaScreen(
         vx = p.vx,
         vy = p.vy,
         angle = p.angle,
+        weaponAngle = p.weaponAngle,
+        isFiringPrimary = engine.fireStickActive && !engine.isCancelActive && p.canFire,
+        isAfterburning = p.afterburning,
+        isCloaked = p.isCloaked,
         flux = p.flux,
         maxFlux = p.maxFlux,
         bounty = p.bounty,
@@ -925,7 +922,12 @@ fun RiftArenaScreen(
       }
 
       ActiveModal.SYNDICATES -> {
-        val directoryList = remember(syndicateTag, frameTick) { localPrefs.getAllSyndicates() }
+        val directoryList =
+          remember(syndicateTag, frameTick, cloudSyndicatesState) {
+            val cloudList = (cloudSyndicatesState as? UiState.Success)?.data ?: emptyList()
+            localPrefs.mergeCloudSyndicates(cloudList)
+            localPrefs.getAllSyndicates()
+          }
         val rosterMembers =
           remember(syndicateTag, callsign, selectedShipId, frameTick) {
             localPrefs.getMySyndicateRoster(
@@ -937,7 +939,7 @@ fun RiftArenaScreen(
             )
           }
         val achievements =
-          remember(frameTick) {
+          remember(frameTick, syndicateTag) {
             listOf(
               PilotAchievement(
                 id = "apex_hunter",
@@ -970,12 +972,12 @@ fun RiftArenaScreen(
               PilotAchievement(
                 id = "phase_striker",
                 title = "SYNDICATE VANGUARD",
-                description = "Break free from [GUEST] and pledge allegiance to an active Syndicate.",
+                description = "Charter or pledge allegiance to an active Syndicate.",
                 unlocked =
                   syndicateTag.isNotEmpty() &&
                     syndicateTag != "GUEST" &&
                     syndicateTag != "FREE",
-                progressText = "[$syndicateTag] ACTIVE",
+                progressText = if (syndicateTag.isNotBlank()) "[$syndicateTag] ACTIVE" else "UNAFFILIATED",
               ),
             )
           }
@@ -1015,7 +1017,7 @@ fun RiftArenaScreen(
               engine.localPlayer.syndicateTag = syndicateTag
               engine.syncLocalArmadaSelfSlot()
               syndicateStatusBanner =
-                "⚡ LEFT SYNDICATE -> ASSIGNED TO [GUEST] PLACEHOLDER. 15-DAY LOCK COOLDOWN TRIGGERED."
+                "⚡ LEFT SYNDICATE -> STATUS: UNAFFILIATED. 15-DAY LOCK COOLDOWN TRIGGERED."
               engine.onStatsUpdated()
             } else {
               syndicateStatusBanner =
@@ -1030,6 +1032,7 @@ fun RiftArenaScreen(
               syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
               engine.localPlayer.syndicateTag = syndicateTag
               engine.syncLocalArmadaSelfSlot()
+              viewModel.createCloudSyndicate(created)
               syndicateStatusBanner =
                 "🏛️ CHARTERED [${created.tag}] ${created.name}! LOCKED FOR 15d 00h."
               engine.onStatsUpdated()
@@ -1150,7 +1153,7 @@ fun RiftArenaScreen(
           },
           onSendChatMessage = { text ->
             val safeText = com.example.data.UgcModeration.sanitizeUgcText(text)
-            chatMessages.add(
+            val newMsg =
               SyndicateChatMessage(
                 id = "msg_${System.currentTimeMillis()}",
                 senderUid = currentUserId,
@@ -1159,15 +1162,17 @@ fun RiftArenaScreen(
                 timestampLabel = "JUST NOW",
                 messageText = safeText,
               )
-            )
+            chatMessages.add(newMsg)
+            viewModel.sendSectorComm(newMsg)
           },
           onPostArmadaRecruitBanner = {
             if (engine.activeArmadaName.isEmpty()) {
-              engine.formOrJoinArmada("${syndicateTag}_5", emptyList())
+              val prefix = syndicateTag.ifBlank { callsign.take(6) }
+              engine.formOrJoinArmada("${prefix}_5", emptyList())
             }
             val armName = engine.activeArmadaName
             val curSize = engine.getCurrentArmadaSize()
-            chatMessages.add(
+            val bannerMsg =
               SyndicateChatMessage(
                 id = "banner_${System.currentTimeMillis()}",
                 senderUid = currentUserId,
@@ -1181,7 +1186,8 @@ fun RiftArenaScreen(
                 armadaMaxSize = 5,
                 armadaObjective = "Forming up to 5-Man Armada in Sector — Tap [⇥ REQUEST INVITE]!",
               )
-            )
+            chatMessages.add(bannerMsg)
+            viewModel.sendSectorComm(bannerMsg)
             toastMessage = "📢 POSTED [ARMADA RECRUIT: UP TO 5-MAN] FOR [$armName]"
             toastVersion++
           },
@@ -1293,6 +1299,46 @@ fun RiftArenaScreen(
           onOpenRiftShardsStore = {
             previousModalBeforeStore = ActiveModal.DOSSIER
             activeModal = ActiveModal.RIFT_SHARDS_STORE
+          },
+          onResetLocalPilotData = {
+            localPrefs.resetAllLocalPilotData()
+            callsign = localPrefs.getCallsign()
+            syndicateTag = localPrefs.getSyndicateTag()
+            syndicateName = localPrefs.getSyndicateName()
+            selectedShipId = localPrefs.getPreferredShipId()
+            engine.pvpKills = 0L
+            engine.pvpDeaths = 0L
+            engine.pvpBountyPeak = 100L
+            engine.allTimeKills = 0L
+            engine.allTimeDeaths = 0L
+            engine.allTimeBountyPeak = 100L
+            engine.convergencesWon = 0L
+            engine.hvtEliminations = 0L
+            engine.greensCollected = 0L
+            engine.xpFromBuffs = 0f
+            engine.xpFromDamage = 0f
+            engine.xpFromAccuracy = 0f
+            engine.xpFromBountyEarned = 0f
+            engine.xpFromBountyKilled = 0f
+            engine.pilotLevel = 1
+            engine.riftShards = 0L
+            engine.highestMilestoneLevelClaimed = 0
+            engine.spentCustomizationPoints = 0
+            engine.unlockedExtraSlots = 0
+            engine.aiShipDesignTokens = 0
+            engine.localPlayer.callsign = callsign
+            engine.localPlayer.syndicateTag = syndicateTag
+            engine.localPlayer.bounty = 100
+            engine.leaveArmadaToSolo()
+            engine.switchLocalPlayerShip(1, forceFromHangar = true)
+            engine.resetCurrentLifeStats()
+            allTimePeakSnapshot = null
+            pvpPeakSnapshot = null
+            syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+            friendsRefreshKey++
+            engine.onStatsUpdated()
+            toastMessage = "↺ PILOT DATA RESET TO LEVEL 1 CLEAN SLATE"
+            toastVersion++
           },
           onCloseModal = { activeModal = ActiveModal.NONE },
         )

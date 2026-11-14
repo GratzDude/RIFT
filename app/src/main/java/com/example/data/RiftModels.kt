@@ -54,6 +54,8 @@ data class LivePilotState(
   val userId: String = "",
   val sectorId: String = "warzone_10v10",
   val callsign: String = "COMMANDER",
+  val syndicateTag: String = "",
+  val armadaName: String = "",
   val shipId: Long = 1L,
   val freq: Long = 0L,
   val x: Double = 2000.0,
@@ -61,6 +63,10 @@ data class LivePilotState(
   val vx: Double = 0.0,
   val vy: Double = 0.0,
   val angle: Double = 0.0,
+  val weaponAngle: Double = 0.0,
+  val isFiringPrimary: Boolean = false,
+  val isAfterburning: Boolean = false,
+  val isCloaked: Boolean = false,
   val energy: Long = 2400L,
   val maxEnergy: Long = 2400L,
   val bounty: Long = 100L,
@@ -71,15 +77,18 @@ data class LivePilotState(
   @ServerTimestamp val updatedAt: Timestamp? = null,
 )
 
+@IgnoreExtraProperties
 data class SyndicateInfo(
-  val id: String,
-  val tag: String,
-  val name: String,
-  val foundryOrigin: String,
-  val motto: String,
-  val memberCount: Int,
-  val combinedBounty: Long,
+  @DocumentId val id: String = "",
+  val tag: String = "",
+  val name: String = "",
+  val foundryOrigin: String = "Independent",
+  val motto: String = "",
+  val memberCount: Int = 1,
+  val combinedBounty: Long = 100L,
   val isCustom: Boolean = false,
+  @ServerTimestamp val createdAt: Timestamp? = null,
+  @ServerTimestamp val updatedAt: Timestamp? = null,
 )
 
 data class SyndicateMemberEntry(
@@ -123,19 +132,22 @@ data class ArmadaMemberSlot(
   val isLeader: Boolean = false,
 )
 
+@IgnoreExtraProperties
 data class SyndicateChatMessage(
-  val id: String,
-  val senderUid: String,
-  val senderCallsign: String,
-  val senderSyndicateTag: String,
-  val timestampLabel: String,
-  val messageText: String,
+  @DocumentId val id: String = "",
+  val senderUid: String = "",
+  val senderCallsign: String = "PILOT",
+  val senderSyndicateTag: String = "",
+  val timestampLabel: String = "JUST NOW",
+  val messageText: String = "",
   val isArmadaRecruitBanner: Boolean = false,
   val armadaName: String = "",
   val armadaCurrentSize: Int = 1,
   val armadaMaxSize: Int = 5,
   val armadaObjective: String = "",
   val requestSent: Boolean = false,
+  val createdAtMs: Long = System.currentTimeMillis(),
+  @ServerTimestamp val createdAt: Timestamp? = null,
 )
 
 data class ExecutionerTelemetry(

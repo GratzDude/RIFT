@@ -31,8 +31,8 @@ class LocalPilotPrefs(context: Context) {
   fun setGuestBypassEnabled(enabled: Boolean) {
     val editor = prefs.edit().putBoolean(KEY_GUEST_BYPASS, enabled)
     if (enabled && !prefs.contains(KEY_SYNDICATE_TAG)) {
-      editor.putString(KEY_SYNDICATE_TAG, "GUEST")
-      editor.putString(KEY_SYNDICATE_NAME, "Guest Tracking Framework")
+      editor.putString(KEY_SYNDICATE_TAG, "")
+      editor.putString(KEY_SYNDICATE_NAME, "Unaffiliated")
     }
     editor.apply()
   }
@@ -59,19 +59,27 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getSyndicateTag(): String {
-    val raw = prefs.getString(KEY_SYNDICATE_TAG, "GUEST") ?: "GUEST"
-    return if (raw.uppercase() in setOf("KSTL", "AURL", "VRTX", "RUST")) "GUEST" else raw
+    val raw = (prefs.getString(KEY_SYNDICATE_TAG, "") ?: "").trim().uppercase()
+    return if (raw in setOf("GUEST", "UNAFFILIATED", "NONE", "SOLO", "KSTL", "AURL", "VRTX", "RUST")) {
+      ""
+    } else {
+      raw
+    }
   }
 
   fun getSyndicateName(): String {
-    val raw = prefs.getString(KEY_SYNDICATE_NAME, "Guest Tracking Framework") ?: "Guest Tracking Framework"
+    val tag = getSyndicateTag()
+    if (tag.isBlank()) return "Unaffiliated"
+    val raw = (prefs.getString(KEY_SYNDICATE_NAME, "Unaffiliated") ?: "Unaffiliated").trim()
     return if (
-      raw.contains("Kestrel", ignoreCase = true) ||
+      raw.isEmpty() ||
+        raw.equals("Guest Tracking Framework", ignoreCase = true) ||
+        raw.contains("Kestrel", ignoreCase = true) ||
         raw.contains("Aurelia", ignoreCase = true) ||
         raw.contains("Vortex", ignoreCase = true) ||
         raw.contains("Rustweld", ignoreCase = true)
     ) {
-      "Guest Tracking Framework"
+      "Unaffiliated"
     } else {
       raw
     }
@@ -108,8 +116,8 @@ class LocalPilotPrefs(context: Context) {
       return false
     }
     val now = System.currentTimeMillis()
-    val cleanTag = tag.uppercase().take(4).ifEmpty { "GUEST" }
-    val cleanName = name.take(28).ifEmpty { "Guest Tracking Framework" }
+    val cleanTag = tag.trim().uppercase().take(4)
+    val cleanName = name.trim().take(28).ifEmpty { if (cleanTag.isEmpty()) "Unaffiliated" else "$cleanTag Syndicate" }
     val lockUntil =
       if (apply15DayLock) {
         now + FIFTEEN_DAYS_MS
@@ -123,7 +131,7 @@ class LocalPilotPrefs(context: Context) {
       .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
       .apply()
     appendSyndicateServiceTransition(
-      newTag = cleanTag,
+      newTag = cleanTag.ifEmpty { "UNAFFILIATED" },
       newName = cleanName,
       newRole = role,
       nowMs = now,
@@ -139,13 +147,13 @@ class LocalPilotPrefs(context: Context) {
     val lockUntil = now + FIFTEEN_DAYS_MS
     prefs
       .edit()
-      .putString(KEY_SYNDICATE_TAG, "GUEST")
-      .putString(KEY_SYNDICATE_NAME, "Guest Tracking Framework")
+      .putString(KEY_SYNDICATE_TAG, "")
+      .putString(KEY_SYNDICATE_NAME, "Unaffiliated")
       .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
       .apply()
     appendSyndicateServiceTransition(
-      newTag = "GUEST",
-      newName = "Guest Tracking Framework",
+      newTag = "UNAFFILIATED",
+      newName = "Unaffiliated",
       newRole = "Pilot",
       nowMs = now,
     )
@@ -179,7 +187,8 @@ class LocalPilotPrefs(context: Context) {
     kills: Long,
   ): List<SyndicateMemberEntry> {
     val tag = getSyndicateTag()
-    return listOf(
+    if (tag.isBlank()) return emptyList()
+    val localEntry =
       SyndicateMemberEntry(
         uid = currentUid,
         callsign = callsign,
@@ -191,53 +200,38 @@ class LocalPilotPrefs(context: Context) {
         kills = kills,
         isOnline = true,
         isLocalPlayer = true,
-      ),
-      SyndicateMemberEntry(
-        uid = "${tag}_wing_1",
-        callsign = "VANGUARD_01",
-        tag = tag,
-        shipId = ((shipId % 8) + 1),
-        shipName = cleanShipNameForId((shipId % 8) + 1),
-        role = "STRIKE WINGMAN",
-        bountyContribution = 340L,
-        kills = 14L,
-        isOnline = true,
-      ),
-      SyndicateMemberEntry(
-        uid = "${tag}_wing_2",
-        callsign = "TRENCH_GUARD",
-        tag = tag,
-        shipId = 4,
-        shipName = "Goliath",
-        role = "HEAVY SIEGE",
-        bountyContribution = 290L,
-        kills = 11L,
-        isOnline = true,
-      ),
-      SyndicateMemberEntry(
-        uid = "${tag}_wing_3",
-        callsign = "PHASE_RUNNER",
-        tag = tag,
-        shipId = 6,
-        shipName = "Disruptor",
-        role = "EMP INTERCEPTOR",
-        bountyContribution = 245L,
-        kills = 9L,
-        isOnline = true,
-      ),
-      SyndicateMemberEntry(
-        uid = "${tag}_wing_4",
-        callsign = "SOLARIS_IX",
-        tag = tag,
-        shipId = 2,
-        shipName = "Ricochet",
-        role = "BOUNCE BOMBER",
-        bountyContribution = 215L,
-        kills = 7L,
-        isOnline = false,
-      ),
-    )
+      )
+    val realSyndicateFriends =
+      getFriendsList()
+        .filter {
+          it.syndicateTag.equals(tag, ignoreCase = true) &&
+            !it.callsign.equals(callsign, ignoreCase = true)
+        }
+        .map { friend ->
+          SyndicateMemberEntry(
+            uid = friend.uid,
+            callsign = friend.callsign,
+            tag = tag,
+            shipId = friend.shipId,
+            shipName = cleanShipNameForId(friend.shipId),
+            role = "SYNDICATE WINGMAN",
+            bountyContribution = friend.bounty.toLong(),
+            kills = 0L,
+            isOnline = friend.isOnline,
+            isLocalPlayer = false,
+          )
+        }
+    return listOf(localEntry) + realSyndicateFriends
   }
+
+  fun getSyndicateMembers(
+    currentUid: String,
+    callsign: String,
+    shipId: Int,
+    bounty: Long,
+    kills: Long,
+  ): List<SyndicateMemberEntry> =
+    getMySyndicateRoster(currentUid, callsign, shipId, bounty, kills)
 
   fun getPreferredShipId(): Int = prefs.getInt(KEY_SHIP_ID, 1).coerceIn(1, 9)
 
@@ -310,7 +304,7 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getRiftShards(uid: String? = null): Long =
-    prefs.getLong(uidKey(KEY_RIFT_SHARDS, uid), prefs.getLong(KEY_RIFT_SHARDS, 150L))
+    prefs.getLong(uidKey(KEY_RIFT_SHARDS, uid), prefs.getLong(KEY_RIFT_SHARDS, 0L))
 
   fun setRiftShards(shards: Long, uid: String? = null) {
     val clean = shards.coerceAtLeast(0L)
@@ -509,65 +503,6 @@ class LocalPilotPrefs(context: Context) {
 
   fun getFriendsList(): List<FriendPilotEntry> {
     val tag = getSyndicateTag()
-    val defaults =
-      listOf(
-        FriendPilotEntry(
-          uid = "friend_viper_ace",
-          callsign = "VIPER_ACE",
-          syndicateTag = tag,
-          shipId = 1,
-          statusText = "In Rift (Sector D4) • Flying [APEX_4] Armada",
-          isOnline = true,
-          currentArmadaName = "APEX_4",
-          currentArmadaCount = 4,
-          bounty = 320,
-        ),
-        FriendPilotEntry(
-          uid = "friend_solaris_prime",
-          callsign = "SOLARIS_PRIME",
-          syndicateTag = "SOLR",
-          shipId = 4,
-          statusText = "In Rift (Sector C3) • Flying [GOLD_WING] Armada",
-          isOnline = true,
-          currentArmadaName = "GOLD_WING",
-          currentArmadaCount = 2,
-          bounty = 275,
-        ),
-        FriendPilotEntry(
-          uid = "friend_chrono_x",
-          callsign = "CHRONO_X",
-          syndicateTag = tag,
-          shipId = 6,
-          statusText = "In Rift (Safe Zone) • [SOLO] Available for Armada",
-          isOnline = true,
-          currentArmadaName = "",
-          currentArmadaCount = 1,
-          bounty = 190,
-        ),
-        FriendPilotEntry(
-          uid = "friend_valkyrie_z",
-          callsign = "VALKYRIE_Z",
-          syndicateTag = "VOID",
-          shipId = 7,
-          statusText = "In Hangar • Tuning Valkyrie Loadout",
-          isOnline = true,
-          currentArmadaName = "",
-          currentArmadaCount = 1,
-          bounty = 150,
-        ),
-        FriendPilotEntry(
-          uid = "friend_manta_ray",
-          callsign = "MANTA_RAY",
-          syndicateTag = tag,
-          shipId = 8,
-          statusText = "Offline • Last seen 2h ago",
-          isOnline = false,
-          currentArmadaName = "",
-          currentArmadaCount = 1,
-          bounty = 100,
-        ),
-      )
-
     val customRaw = prefs.getString(KEY_CUSTOM_FRIENDS_JSON, "[]") ?: "[]"
     val customList = mutableListOf<FriendPilotEntry>()
     try {
@@ -590,7 +525,7 @@ class LocalPilotPrefs(context: Context) {
       }
     } catch (_: Exception) {}
 
-    return customList + defaults
+    return customList
   }
 
   fun addFriendByCallsign(rawCallsign: String): FriendPilotEntry? {
@@ -643,77 +578,67 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getAllSyndicates(): List<SyndicateInfo> {
-    val defaults =
-      listOf(
-        SyndicateInfo(
-          id = "syn_apex",
-          tag = "APEX",
-          name = "Apex Strike Vanguard",
-          foundryOrigin = "Core Sector Coalition",
-          motto = "Precision Rail Dominance & Ballistic Angles",
-          memberCount = 142,
-          combinedBounty = 48_900L,
-        ),
-        SyndicateInfo(
-          id = "syn_solaris",
-          tag = "SOLR",
-          name = "Solaris Heavy Guard",
-          foundryOrigin = "Outer Rim Bastion",
-          motto = "Heavy Siege Dreadnoughts & Trench Breakers",
-          memberCount = 118,
-          combinedBounty = 44_250L,
-        ),
-        SyndicateInfo(
-          id = "syn_eclipse",
-          tag = "ECLP",
-          name = "Eclipse Stealth Collective",
-          foundryOrigin = "Deep Rift Enclave",
-          motto = "Tactical Cloak, EMP Disruption & Interceptor Swarms",
-          memberCount = 131,
-          combinedBounty = 46_100L,
-        ),
-        SyndicateInfo(
-          id = "syn_void",
-          tag = "VOID",
-          name = "Void Horizon Ironworks",
-          foundryOrigin = "Frontier Mining Guild",
-          motto = "Proximity Flak Barrages & Chokepoint Minefields",
-          memberCount = 96,
-          combinedBounty = 39_800L,
-        ),
-        SyndicateInfo(
-          id = "syn_nova",
-          tag = "NOVA",
-          name = "Nova Core Raiders",
-          foundryOrigin = "Independent Sector Fleet",
-          motto = "Zero-Friction Drift & Center Trench Control",
-          memberCount = 84,
-          combinedBounty = 35_400L,
-        ),
-      )
-
     val customRaw = prefs.getString(KEY_CUSTOM_SYNDICATES_JSON, "[]") ?: "[]"
     val customList = mutableListOf<SyndicateInfo>()
     try {
       val arr = JSONArray(customRaw)
       for (i in 0 until arr.length()) {
         val obj = arr.getJSONObject(i)
-        customList.add(
-          SyndicateInfo(
-            id = obj.optString("id", "syn_custom_$i"),
-            tag = obj.optString("tag", "NOVA"),
-            name = obj.optString("name", "Custom Syndicate"),
-            foundryOrigin = obj.optString("foundryOrigin", "Player Registered Syndicate"),
-            motto = obj.optString("motto", "Forged in the Convergence"),
-            memberCount = obj.optInt("memberCount", 1),
-            combinedBounty = obj.optLong("combinedBounty", 1000L),
-            isCustom = true,
+        val parsedTag = obj.optString("tag", "").trim().uppercase()
+        if (parsedTag.isNotEmpty()) {
+          customList.add(
+            SyndicateInfo(
+              id = obj.optString("id", "syn_custom_$i"),
+              tag = parsedTag,
+              name = obj.optString("name", "$parsedTag Syndicate"),
+              foundryOrigin = obj.optString("foundryOrigin", "Player Registered Syndicate"),
+              motto = obj.optString("motto", "Forged in the Convergence"),
+              memberCount = obj.optInt("memberCount", 1),
+              combinedBounty = obj.optLong("combinedBounty", 1000L),
+              isCustom = true,
+            )
           )
-        )
+        }
       }
     } catch (_: Exception) {}
 
-    return customList + defaults
+    return customList
+  }
+
+  fun getSyndicatesList(): List<SyndicateInfo> = getAllSyndicates()
+
+  fun mergeCloudSyndicates(cloudSyndicates: List<SyndicateInfo>) {
+    if (cloudSyndicates.isEmpty()) return
+    val mergedByTag = linkedMapOf<String, SyndicateInfo>()
+    for (local in getAllSyndicates()) {
+      mergedByTag[local.tag.uppercase()] = local
+    }
+    for (cloud in cloudSyndicates) {
+      val cleanTag = cloud.tag.trim().uppercase()
+      if (cleanTag.length in 2..4) {
+        mergedByTag[cleanTag] =
+          cloud.copy(
+            id = cloud.id.ifBlank { "syn_cloud_$cleanTag" },
+            tag = cleanTag,
+            isCustom = true,
+          )
+      }
+    }
+    val arr = JSONArray()
+    for (syn in mergedByTag.values) {
+      arr.put(
+        JSONObject().apply {
+          put("id", syn.id)
+          put("tag", syn.tag)
+          put("name", syn.name)
+          put("foundryOrigin", syn.foundryOrigin)
+          put("motto", syn.motto)
+          put("memberCount", syn.memberCount)
+          put("combinedBounty", syn.combinedBounty)
+        }
+      )
+    }
+    prefs.edit().putString(KEY_CUSTOM_SYNDICATES_JSON, arr.toString()).apply()
   }
 
   fun createCustomSyndicate(tag: String, name: String, motto: String): Result<SyndicateInfo> {
@@ -1002,6 +927,20 @@ class LocalPilotPrefs(context: Context) {
     )
     prefs.edit().putString(KEY_REPORTED_PILOTS_JSON, arr.toString()).apply()
     return arr.length()
+  }
+
+  /**
+   * Resets all local pilot progression, combat stats, Syndicate/Armada affiliation, custom friends,
+   * and Rift Shards back to a clean Level 1, 0 XP, 0 Kills, 0 Shards, Solo, Unaffiliated state.
+   */
+  fun resetAllLocalPilotData() {
+    val seenBuild = getLastSeenChangelogBuild()
+    val guestBypass = isGuestBypassEnabled()
+    prefs.edit().clear().apply()
+    userSettingsPrefs.edit().clear().apply()
+    setLastSeenChangelogBuild(seenBuild)
+    setGuestBypassEnabled(guestBypass)
+    getOrCreatePermanentDeviceUid()
   }
 
   private fun cleanShipNameForId(shipId: Int): String =

@@ -1080,7 +1080,7 @@ private fun ShipComparisonInspectorPanel(
             fontFamily = FontFamily.SansSerif,
           )
           Text(
-            text = "${ship.primaryDamage.toInt()} DMG • ${ship.primaryCost.toInt()}❖ FLUX",
+            text = "${ship.primaryDamage.toInt()} DMG • ${ship.primaryCost.toInt()}⚡ FLUX",
             color = Color(0xFF94A3B8),
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
@@ -1112,10 +1112,10 @@ private fun ShipComparisonInspectorPanel(
           Text(
             text =
               when {
-                ship.bombType == "PHASE_DASH" -> "300❖ • 2.5s CD • BLINK + I-FRAMES + 35% RAIL"
-                ship.bombType == "CLOAK_EMP" -> "180❖/s CLOAK • 0❖ DECLOAK 360° EMP PULSE"
-                ship.supportsNativeMultifire -> "INNATE SPLIT MULTI-SHOT (0❖ EXTRA COST)"
-                ship.hasBomb -> "${ship.bombDamage.toInt()} DMG • ${ship.bombCost.toInt()}❖ FLUX"
+                ship.bombType == "PHASE_DASH" -> "300⚡ • 2.5s CD • BLINK + I-FRAMES + 35% RAIL"
+                ship.bombType == "CLOAK_EMP" -> "180⚡/s CLOAK • 0⚡ DECLOAK 360° EMP PULSE"
+                ship.supportsNativeMultifire -> "INNATE SPLIT MULTI-SHOT (0⚡ EXTRA COST)"
+                ship.hasBomb -> "${ship.bombDamage.toInt()} DMG • ${ship.bombCost.toInt()}⚡ FLUX"
                 else -> "STARTING REPEL CHARGES: ${ship.initialRepels}"
               },
             color = Color(0xFF94A3B8),
@@ -1478,7 +1478,7 @@ private fun NinthShipModularForgePanel(
         AttributePointRow(
           label = "MAX FLUX",
           pts = activeSlot.maxFluxPts,
-          statReadout = "${spec.maxFlux.toInt()} ❖ (2200 + 80/pt)",
+          statReadout = "${spec.maxFlux.toInt()} ⚡ (2200 + 80/pt)",
           tagPrefix = "stat_flux",
           onDelta = { d ->
             adjustStatPoints(activeSlot.maxFluxPts, d) { activeSlot.copy(maxFluxPts = it) }
@@ -1487,7 +1487,7 @@ private fun NinthShipModularForgePanel(
         AttributePointRow(
           label = "FLUX RECHARGE",
           pts = activeSlot.rechargePts,
-          statReadout = "${spec.rechargeRate.toInt()} ❖/S (240 + 8/pt)",
+          statReadout = "${spec.rechargeRate.toInt()} ⚡/S (240 + 8/pt)",
           tagPrefix = "stat_recharge",
           onDelta = { d ->
             adjustStatPoints(activeSlot.rechargePts, d) { activeSlot.copy(rechargePts = it) }

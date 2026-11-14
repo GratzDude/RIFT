@@ -7,6 +7,8 @@ import com.example.data.LeaderboardEntry
 import com.example.data.LivePilotState
 import com.example.data.PilotDossier
 import com.example.data.RiftRepository
+import com.example.data.SyndicateChatMessage
+import com.example.data.SyndicateInfo
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -97,46 +99,112 @@ class RiftViewModel(
         initialValue = UiState.Loading,
       )
 
+  val cloudSyndicatesState: StateFlow<UiState<List<SyndicateInfo>>> =
+    repository
+      .observeCloudSyndicates()
+      .map<List<SyndicateInfo>, UiState<List<SyndicateInfo>>> { UiState.Success(it) }
+      .catch { error ->
+        val firestoreError =
+          generateSequence(error) { it.cause }
+            .filterIsInstance<FirebaseFirestoreException>()
+            .firstOrNull()
+        if (firestoreError == null && error is CancellationException) throw error
+        val rootError = firestoreError ?: error
+        Log.w(TAG, "Error observing cloud syndicates", rootError)
+        emit(UiState.Error(rootError.message ?: "Failed to observe cloud syndicates"))
+      }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        initialValue = UiState.Loading,
+      )
+
+  val sectorCommsState: StateFlow<UiState<List<SyndicateChatMessage>>> =
+    repository
+      .observeSectorComms()
+      .map<List<SyndicateChatMessage>, UiState<List<SyndicateChatMessage>>> { UiState.Success(it) }
+      .catch { error ->
+        val firestoreError =
+          generateSequence(error) { it.cause }
+            .filterIsInstance<FirebaseFirestoreException>()
+            .firstOrNull()
+        if (firestoreError == null && error is CancellationException) throw error
+        val rootError = firestoreError ?: error
+        Log.w(TAG, "Error observing sector comms", rootError)
+        emit(UiState.Error(rootError.message ?: "Failed to observe sector comms"))
+      }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        initialValue = UiState.Loading,
+      )
+
   init {
     ensureInitialProfile()
   }
 
   private fun ensureInitialProfile() {
-    if (currentUserId.startsWith("guest_") || currentUserId.startsWith("dev_")) return
     viewModelScope.launch {
-      val existing = repository.getPilotDossier(currentUserId).getOrNull()
-      if (existing == null) {
-        val defaultDossier =
-          PilotDossier(
-            userId = currentUserId,
-            callsign = initialCallsign,
-            preferredShipId = 1L,
-            preferredFoundry = "Independent",
-            preferredMode = "FFA",
-            pvpKills = 0L,
-            pvpDeaths = 0L,
-            pvpBountyPeak = 100L,
-            allTimeKills = 0L,
-            allTimeDeaths = 0L,
-            allTimeBountyPeak = 100L,
-            convergencesWon = 0L,
+      try {
+        val existing = repository.getPilotDossier(currentUserId).getOrNull()
+        if (existing == null) {
+          val defaultDossier =
+            PilotDossier(
+              userId = currentUserId,
+              callsign = initialCallsign,
+              preferredShipId = 1L,
+              preferredFoundry = "Independent",
+              preferredMode = "FFA",
+              pvpKills = 0L,
+              pvpDeaths = 0L,
+              pvpBountyPeak = 100L,
+              allTimeKills = 0L,
+              allTimeDeaths = 0L,
+              allTimeBountyPeak = 100L,
+              convergencesWon = 0L,
+            )
+          repository.savePilotDossier(defaultDossier)
+          repository.saveLeaderboardEntry(
+            LeaderboardEntry(
+              userId = currentUserId,
+              callsign = initialCallsign,
+              shipId = 1L,
+              syndicateTag = "",
+              armadaTag = "SOLO",
+              armadaTierSize = 1,
+              foundry = "Independent",
+              pvpKills = 0L,
+              pvpDeaths = 0L,
+              pvpBounty = 100L,
+              allTimeKills = 0L,
+              allTimeDeaths = 0L,
+              allTimeBounty = 100L,
+              convergencesWon = 0L,
+            )
           )
-        repository.savePilotDossier(defaultDossier)
-        repository.saveLeaderboardEntry(
-          LeaderboardEntry(
-            userId = currentUserId,
-            callsign = initialCallsign,
-            shipId = 1L,
-            foundry = "Independent",
-            pvpKills = 0L,
-            pvpDeaths = 0L,
-            pvpBounty = 100L,
-            allTimeKills = 0L,
-            allTimeDeaths = 0L,
-            allTimeBounty = 100L,
-            convergencesWon = 0L,
-          )
-        )
+        }
+      } catch (e: Exception) {
+        Log.w(TAG, "Initial profile check skipped or offline", e)
+      }
+    }
+  }
+
+  fun createCloudSyndicate(syndicate: SyndicateInfo) {
+    viewModelScope.launch {
+      try {
+        repository.saveCloudSyndicate(syndicate)
+      } catch (e: Exception) {
+        Log.w(TAG, "Failed to save cloud syndicate", e)
+      }
+    }
+  }
+
+  fun sendSectorComm(msg: SyndicateChatMessage) {
+    viewModelScope.launch {
+      try {
+        repository.postSectorCommMessage(msg)
+      } catch (e: Exception) {
+        Log.w(TAG, "Failed to post sector comm message", e)
       }
     }
   }
@@ -244,11 +312,13 @@ class RiftViewModel(
     allTimeDeaths: Long,
     allTimeBountyPeak: Long,
     convergencesWon: Long,
+    syndicateTag: String = "",
+    armadaTag: String = "SOLO",
+    armadaTierSize: Int = 1,
   ) {
     if (_activeSectorId.value != "FFA") {
       _activeSectorId.value = "FFA"
     }
-    if (currentUserId.startsWith("guest_") || currentUserId.startsWith("dev_")) return
     viewModelScope.launch {
       try {
         repository.savePilotDossier(
@@ -272,6 +342,9 @@ class RiftViewModel(
             userId = currentUserId,
             callsign = callsign,
             shipId = shipId.toLong(),
+            syndicateTag = syndicateTag,
+            armadaTag = armadaTag.ifBlank { "SOLO" },
+            armadaTierSize = armadaTierSize.coerceIn(1, 5),
             foundry = foundry,
             pvpKills = pvpKills,
             pvpDeaths = pvpDeaths,
@@ -291,6 +364,8 @@ class RiftViewModel(
   fun syncNativeLiveState(
     sectorId: String,
     callsign: String,
+    syndicateTag: String = "",
+    armadaName: String = "",
     shipId: Int,
     freq: Int,
     x: Float,
@@ -298,11 +373,14 @@ class RiftViewModel(
     vx: Float,
     vy: Float,
     angle: Float,
+    weaponAngle: Float = angle,
+    isFiringPrimary: Boolean = false,
+    isAfterburning: Boolean = false,
+    isCloaked: Boolean = false,
     flux: Float,
     maxFlux: Float,
     bounty: Int,
   ) {
-    if (currentUserId.startsWith("guest_") || currentUserId.startsWith("dev_")) return
     viewModelScope.launch {
       try {
         repository.saveLivePilotState(
@@ -310,6 +388,8 @@ class RiftViewModel(
             userId = currentUserId,
             sectorId = sectorId,
             callsign = callsign,
+            syndicateTag = syndicateTag,
+            armadaName = armadaName,
             shipId = shipId.toLong(),
             freq = freq.toLong(),
             x = x.toDouble(),
@@ -317,6 +397,10 @@ class RiftViewModel(
             vx = vx.toDouble(),
             vy = vy.toDouble(),
             angle = angle.toDouble(),
+            weaponAngle = weaponAngle.toDouble(),
+            isFiringPrimary = isFiringPrimary,
+            isAfterburning = isAfterburning,
+            isCloaked = isCloaked,
             energy = flux.toLong().coerceIn(0L, 10000L),
             maxEnergy = maxFlux.toLong().coerceIn(100L, 10000L),
             bounty = bounty.toLong(),

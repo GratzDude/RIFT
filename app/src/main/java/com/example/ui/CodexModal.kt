@@ -160,8 +160,8 @@ fun CodexModal(
           ) {
             CodexHighlightCard(
               modifier = Modifier.weight(1f),
-              title = "🎯 BUCKET A: SPECIAL BUFF SLOT (0❖)",
-              body = "Nova Ring, Shatter Cone, Seeker Torpedo, Holo Phantom, Stasis Barrier & Hyper Surge equip to the 4th button at 0❖ Flux cost. Same-type stacks; new type overwrites.",
+              title = "🎯 BUCKET A: SPECIAL BUFF SLOT (0⚡)",
+              body = "Nova Ring, Shatter Cone, Seeker Torpedo, Holo Phantom, Stasis Barrier & Hyper Surge equip to the 4th button at 0⚡ Flux cost. Same-type stacks; new type overwrites.",
               bgColor = Color(0xFF092318),
               borderColor = Color(0xFF10B981),
               bodyColor = Color(0xFFD1FAE5),

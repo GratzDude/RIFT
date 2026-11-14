@@ -82,6 +82,7 @@ fun DossierModal(
   currentLifeSnapshot: PeakBountyRunSnapshot? = null,
   syndicateServiceHistory: List<SyndicateServiceEntry> = emptyList(),
   onOpenRiftShardsStore: () -> Unit = {},
+  onResetLocalPilotData: (() -> Unit)? = null,
   onCloseModal: () -> Unit,
 ) {
   BackHandler { onCloseModal() }
@@ -116,11 +117,17 @@ fun DossierModal(
       val byUid = linkedMapOf<String, LeaderboardEntry>()
       val shipSpec = RiftCodex.getShipById(shipId)
       val localArmadaBadge = if (activeArmadaName.isNotEmpty()) activeArmadaName else "SOLO"
+      val formattedLocalCallsign =
+        if (syndicateTag.isNotBlank()) {
+          "[$localArmadaBadge] [$syndicateTag] $callsign"
+        } else {
+          "[$localArmadaBadge] $callsign"
+        }
       val localEntry =
         LeaderboardEntry(
           id = permanentUid,
           userId = permanentUid,
-          callsign = "[$localArmadaBadge] [$syndicateTag] $callsign",
+          callsign = formattedLocalCallsign,
           syndicateTag = syndicateTag,
           armadaTag = localArmadaBadge,
           armadaTierSize = activeArmadaSize.coerceIn(1, 5),
@@ -139,108 +146,25 @@ fun DossierModal(
       for (entry in cloudLeaderboardEntries) {
         val uidKey = entry.userId.ifEmpty { entry.id }
         if (uidKey.isNotEmpty() && uidKey != permanentUid) {
-          byUid[uidKey] = entry
-        }
-      }
-
-      val sectorAces =
-        listOf(
-          LeaderboardEntry(
-            id = "ace_viper_1",
-            userId = "ace_viper_1",
-            callsign = "VIPER ACE",
-            syndicateTag = "APEX 4",
-            armadaTag = "APEX 4",
-            armadaTierSize = 4,
-            shipId = 1L,
-            foundry = "Rail Sniper Gunship",
-            pvpKills = 18L,
-            pvpDeaths = 4L,
-            pvpBounty = 480L,
-            allTimeKills = 64L,
-            allTimeDeaths = 12L,
-            allTimeBounty = 690L,
-            convergencesWon = 5L,
-          ),
-          LeaderboardEntry(
-            id = "ace_goliath_4",
-            userId = "ace_goliath_4",
-            callsign = "SOLARIS PRIME",
-            syndicateTag = "GOLD WING",
-            armadaTag = "GOLD WING",
-            armadaTierSize = 2,
-            shipId = 4L,
-            foundry = "Heavy Siege Dreadnought",
-            pvpKills = 14L,
-            pvpDeaths = 5L,
-            pvpBounty = 410L,
-            allTimeKills = 52L,
-            allTimeDeaths = 15L,
-            allTimeBounty = 540L,
-            convergencesWon = 4L,
-          ),
-          LeaderboardEntry(
-            id = "ace_disruptor_6",
-            userId = "ace_disruptor_6",
-            callsign = "CHRONO X",
-            syndicateTag = "GUEST",
-            armadaTag = "SOLO",
-            armadaTierSize = 1,
-            shipId = 6L,
-            foundry = "Stealth EMP Interceptor",
-            pvpKills = 11L,
-            pvpDeaths = 6L,
-            pvpBounty = 340L,
-            allTimeKills = 41L,
-            allTimeDeaths = 14L,
-            allTimeBounty = 460L,
-            convergencesWon = 3L,
-          ),
-          LeaderboardEntry(
-            id = "ace_valkyrie_7",
-            userId = "ace_valkyrie_7",
-            callsign = "VALKYRIE Z",
-            syndicateTag = "VOID 3",
-            armadaTag = "VOID 3",
-            armadaTierSize = 3,
-            shipId = 7L,
-            foundry = "Proximity Flak Striker",
-            pvpKills = 9L,
-            pvpDeaths = 5L,
-            pvpBounty = 290L,
-            allTimeKills = 36L,
-            allTimeDeaths = 11L,
-            allTimeBounty = 390L,
-            convergencesWon = 2L,
-          ),
-          LeaderboardEntry(
-            id = "ace_nova_5",
-            userId = "ace_nova_5",
-            callsign = "[NOVA_5] [NOVA] HYPERION",
-            syndicateTag = "NOVA",
-            armadaTag = "NOVA_5",
-            armadaTierSize = 5,
-            shipId = 5L,
-            foundry = "Parallel Twin-Stream Gunship",
-            pvpKills = 16L,
-            pvpDeaths = 5L,
-            pvpBounty = 440L,
-            allTimeKills = 58L,
-            allTimeDeaths = 13L,
-            allTimeBounty = 610L,
-            convergencesWon = 4L,
-          ),
-        )
-      for (ace in sectorAces) {
-        if (!byUid.containsKey(ace.userId)) {
-          byUid[ace.userId] = ace
+          val cleanCallsign =
+            if (entry.callsign.startsWith("[")) {
+              entry.callsign
+            } else {
+              val armBadge = entry.armadaTag.ifBlank { "SOLO" }
+              if (entry.syndicateTag.isNotBlank()) {
+                "[$armBadge] [${entry.syndicateTag}] ${entry.callsign}"
+              } else {
+                "[$armBadge] ${entry.callsign}"
+              }
+            }
+          byUid[uidKey] = entry.copy(callsign = cleanCallsign)
         }
       }
 
       byUid.values
         .filter { entry ->
           val isSelf = entry.userId == permanentUid || entry.id == permanentUid
-          isSelf || selectedArmadaTier == 0 || entry.armadaTierSize == selectedArmadaTier
+          isSelf || selectedArmadaTier == 0 || entry.armadaTierSize.toInt() == selectedArmadaTier
         }
         .sortedByDescending { entry ->
           val k = if (activeTab == 0) entry.pvpKills else entry.allTimeKills
@@ -301,8 +225,9 @@ fun DossierModal(
               } else {
                 "${activeArmadaSize}-MAN ARMADA [$activeArmadaName] TIER"
               }
+            val syndicatePrefix = if (syndicateTag.isNotBlank()) "[$syndicateTag] " else ""
             Text(
-              text = "UID: $permanentUid • [$syndicateTag] $callsign • ACTIVE: $tierDesc • PRESENCE: $matchPresencePct%",
+              text = "UID: $permanentUid • ${syndicatePrefix}$callsign • ACTIVE: $tierDesc • PRESENCE: $matchPresencePct%",
               color = Color(0xFFFFD700),
               fontSize = 10.sp,
               fontWeight = FontWeight.Medium,
@@ -314,6 +239,27 @@ fun DossierModal(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
+            if (onResetLocalPilotData != null) {
+              Button(
+                onClick = onResetLocalPilotData,
+                colors =
+                  ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1E293B),
+                    contentColor = Color(0xFFF59E0B),
+                  ),
+                border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.height(36.dp).testTag("dossier_reset_pilot_button"),
+              ) {
+                Text(
+                  text = "↺ RESET PILOT",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.SansSerif,
+                )
+              }
+            }
+
             Row(
               modifier =
                 Modifier.clip(RoundedCornerShape(8.dp))
