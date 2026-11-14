@@ -621,7 +621,7 @@ data class CustomShipLoadoutSlot(
         "SEEKER_TORPEDO" ->
           SecondaryTuple("Native Seeker Torpedo (600⚡ • 5s CD)", "SEEKER", 600f, 5.0f, 780f, 6, 0f)
         "INTERDICTOR_DOME" ->
-          SecondaryTuple("Interdictor Stasis Bubble (600⚡ • 15s Dome)", "BUBBLE", 600f, RiftCalibrationState.interdictorBubbleCooldown, 0f, 0, 0f)
+          SecondaryTuple("Interdictor Stasis Bubble (380⚡ • 5s Dome)", "BUBBLE", 380f, RiftCalibrationState.interdictorBubbleCooldown, 0f, 0, 0f)
         "PASSIVE_GUNFIGHTER" ->
           SecondaryTuple("Pure Gunfighter Passive (+10% Vel, 0 Recoil)", "PASSIVE", 0f, 0f, 0f, 0, 0f)
         else ->
@@ -737,8 +737,8 @@ data class CustomShipLoadoutSlot(
           "INTERDICTOR_DOME",
           "Interdictor Stasis Bubble",
           25,
-          "600⚡ • 18s CD",
-          "Deploys a 290px radius (580px dia) two-way containment bubble for 15.0s. Nothing can enter or leave; forces close-quarters dogfights.",
+          "380⚡ • 9s CD",
+          "Deploys a 275px radius (550px dia) two-way containment bubble for 5.0s. Nothing can enter or leave; forces intense close-quarters dogfights.",
         ),
       )
 
@@ -1447,11 +1447,11 @@ object RiftCodex {
         id = 9,
         name = "Interdictor",
         role = "Warp-Bubble Interdictor",
-        tacticalLore = "Heavy gravimetric interdictor that anchors a 290px radius two-way stasis bubble for 15 seconds—nothing enters, nothing leaves.",
+        tacticalLore = "Heavy gravimetric interdictor that anchors a 275px radius two-way stasis bubble for 5 seconds—nothing enters, nothing leaves.",
         silhouetteDesc = "Twin-ringed amethyst gravimetric cruiser with forward containment prongs and a glowing magenta-cyan singularity core.",
-        weaponSummary = "PRI: PULSE (20⚡) • CLS: STASIS BUBBLE (600⚡ • 15s Dome)",
+        weaponSummary = "PRI: PULSE (20⚡) • CLS: STASIS BUBBLE (380⚡ • 5s Dome)",
         primaryTitle = "Twin Angled Pulse",
-        secondaryTitle = "Interdictor Stasis Bubble (600⚡ • 15s Dome)",
+        secondaryTitle = "Interdictor Stasis Bubble (380⚡ • 5s Dome)",
         primaryShortLabel = "PULSE",
         secondaryShortLabel = "BUBBLE",
         speedPts = 10,
@@ -1476,8 +1476,8 @@ object RiftCodex {
         primaryBounces = 1,
         hasBomb = true,
         bombType = "INTERDICTOR_DOME",
-        bombCost = 600f,
-        bombCooldown = 18.0f,
+        bombCost = 380f,
+        bombCooldown = 9.0f,
         bombDamage = 0f,
         bombBounces = 0,
         bombRecoil = 0f,

@@ -210,202 +210,7 @@ fun RiftHudOverlay(
           }
         }
   ) {
-    // 0. Middle-Left Auto-Scaling [⚙ CALIBRATION] Glass Pill (1:1 WYSIWYG Unlock Outline)
-    val calPadH = (8.0f * textScale).dp
-    val calPadV = (5.5f * textScale).dp
-    Box(
-      modifier =
-        Modifier.align(Alignment.CenterStart)
-          .offset {
-            IntOffset(
-              RiftCalibrationState.calibrationBtnOffset.x.roundToInt(),
-              RiftCalibrationState.calibrationBtnOffset.y.roundToInt(),
-            )
-          }
-          .then(
-            if (uiUnlocked) {
-              Modifier.pointerInput(Unit) {
-                detectDragGestures(
-                  onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
-                  onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
-                ) { change, dragAmount ->
-                  change.consume()
-                  RiftCalibrationState.calibrationBtnOffset += dragAmount
-                }
-              }
-            } else {
-              Modifier
-            }
-          )
-          .padding(start = 6.dp)
-          .wrapContentSize()
-          .clip(RoundedCornerShape(11.dp))
-          .background(Color(0xCC0B192C))
-          .border(
-            width = 1.1.dp,
-            color = Color(0xFF38BDF8),
-            shape = RoundedCornerShape(11.dp),
-          )
-          .wysiwygUnlockOutline(enabled = uiUnlocked, cornerRadius = 11.dp)
-          .clickable { RiftCalibrationState.isCalibrationModalOpen = true }
-          .padding(horizontal = calPadH, vertical = calPadV)
-          .testTag("hud_btn_calibration_anchor"),
-      contentAlignment = Alignment.Center,
-    ) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy((4.5f * textScale).dp),
-      ) {
-        Text("⚙", color = Color(0xFF38BDF8), fontSize = (11.5f * textScale).sp)
-        Column(verticalArrangement = Arrangement.spacedBy((1.2f * textScale).dp)) {
-          Text(
-            text = "CALIBRATION",
-            color = Color.White,
-            fontSize = (7.5f * textScale).sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-            style = WingTelemetryTextStyle,
-          )
-          Text(
-            text = if (uiUnlocked) "UNLOCKED" else "LOCKED",
-            color = if (uiUnlocked) Color(0xFFFACC15) else Color(0xFF38BDF8),
-            fontSize = (6.5f * textScale).sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            style = WingTelemetryTextStyle,
-          )
-        }
-      }
-    }
-
-    // 1. Left-Anchored Auto-Scaling Top Navigation Bar (Strictly Constrained Left of Killboard)
-    Box(
-      modifier =
-        Modifier.align(Alignment.TopStart)
-          .padding(start = 6.dp, top = 6.dp, end = 256.dp)
-          .offset {
-            IntOffset(
-              RiftCalibrationState.topBarOffset.x.roundToInt(),
-              RiftCalibrationState.topBarOffset.y.roundToInt(),
-            )
-          }
-          .clipToBounds()
-    ) {
-      Row(
-        modifier =
-          Modifier.wrapContentSize()
-            .then(
-              if (uiUnlocked) {
-                Modifier.pointerInput(Unit) {
-                  detectDragGestures(
-                    onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
-                    onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
-                  ) { change, dragAmount ->
-                    change.consume()
-                    RiftCalibrationState.topBarOffset += dragAmount
-                  }
-                }
-              } else {
-                Modifier.horizontalScroll(rememberScrollState())
-              }
-            )
-            .graphicsLayer {
-              scaleX = RiftCalibrationState.topBarScale
-              scaleY = RiftCalibrationState.topBarScale
-              transformOrigin = TransformOrigin(0f, 0f)
-            }
-            .background(Color(0x47080E18), RoundedCornerShape(10.5.dp))
-            .border(0.85.dp, Color(0x5238BDF8), RoundedCornerShape(10.5.dp))
-            .wysiwygUnlockOutline(enabled = uiUnlocked, cornerRadius = 10.5.dp)
-            .padding(horizontal = (4.5f * textScale).dp, vertical = (3.5f * textScale).dp)
-            .testTag("hud_top_nav_bar"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy((2.8f * textScale).dp),
-      ) {
-        val (_, _, lvlFrac) = engine.getXpProgressInCurrentLevel()
-        TopPilotLevelBadge(
-          pilotLevel = engine.pilotLevel,
-          xpProgressFraction = lvlFrac,
-          riftShards = engine.riftShards,
-          textScale = textScale,
-          onClick = onOpenDossier,
-        )
-        TopPillAction(
-          label = "🌐 NEXUS",
-          textColor = Color(0xFF00F5D4),
-          borderColor = Color(0xAA00F5D4),
-          textScale = textScale,
-          onClick = onOpenNexus,
-          tag = "hud_pill_nexus",
-        )
-        TopPillAction(
-          label = "🚀 HANGAR",
-          textColor = Color(0xFF38BDF8),
-          borderColor = Color(0x8838BDF8),
-          textScale = textScale,
-          onClick = onOpenHangar,
-          tag = "hud_pill_hangar",
-        )
-        TopPillAction(
-          label = "📖 CODEX",
-          textColor = Color(0xFF34D399),
-          borderColor = Color(0x8834D399),
-          textScale = textScale,
-          onClick = onOpenCodex,
-          tag = "hud_pill_codex",
-        )
-        TopPillAction(
-          label = "🏛️ SYNDICATE",
-          textColor = Color(0xFFF59E0B),
-          borderColor = Color(0x88F59E0B),
-          textScale = textScale,
-          onClick = onOpenSyndicateCommand,
-          tag = "hud_pill_syndicates",
-        )
-        TopPillAction(
-          label = "👥 ARMADA",
-          textColor = Color(0xFF60A5FA),
-          borderColor = Color(0x883B82F6),
-          textScale = textScale,
-          onClick = onOpenArmadaFleet,
-          tag = "hud_pill_armada",
-        )
-        TopPillAction(
-          label = if (unreadCommsCount > 0) "💬 COMMS ($unreadCommsCount)" else "💬 COMMS",
-          textColor = if (unreadCommsCount > 0) Color(0xFF10B981) else Color(0xFF80D8FF),
-          borderColor = if (unreadCommsCount > 0) Color(0xAA10B981) else Color(0x6680D8FF),
-          textScale = textScale,
-          onClick = onOpenComms,
-          tag = "hud_pill_chat",
-        )
-        TopPillAction(
-          label = "📋 DOSSIER",
-          textColor = Color(0xFFFFD700),
-          borderColor = Color(0x88FFD700),
-          textScale = textScale,
-          onClick = onOpenDossier,
-          tag = "hud_pill_dossier",
-        )
-        TopPillAction(
-          label = "⚙️ SETTINGS",
-          textColor = Color(0xFFE2E8F0),
-          borderColor = Color(0x668A99AD),
-          textScale = textScale,
-          onClick = onOpenSettings,
-          tag = "hud_pill_settings",
-        )
-        TopPillAction(
-          label = "🔍 $zoomFormatted",
-          textColor = Color(0xFF94A3B8),
-          borderColor = Color(0x4438BDF8),
-          textScale = textScale,
-          onClick = onCycleCameraZoom,
-          tag = "hud_pill_zoom",
-        )
-      }
-    }
-
-    // 1B. Top-Center Active Ranked Mode Telemetry Pill (Skirmish, Flux Core, Stasis Breach, Syndicate Wars)
+    // 1. Top-Center Active Ranked Mode Telemetry Pill (Skirmish, Flux Core, Stasis Breach, Syndicate Wars)
     if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE) {
       val mode = engine.activeRankedMode
       val modeAccent =
@@ -448,7 +253,7 @@ fun RiftHudOverlay(
       Box(
         modifier =
           Modifier.align(Alignment.TopCenter)
-            .padding(top = 6.dp)
+            .padding(top = 8.dp)
             .clip(RoundedCornerShape(9.dp))
             .background(Color(0xD9060E1C))
             .border(1.dp, modeAccent, RoundedCornerShape(9.dp))
@@ -725,6 +530,7 @@ fun RiftHudOverlay(
           }
           .onSizeChanged { bottomConsoleWidthPx = it.width }
           .padding(bottom = 8.dp)
+          .testTag("hud_bottom_console")
     ) {
       SymmetricBottomConsoleLayout(
         engine = engine,
@@ -899,7 +705,7 @@ fun RiftHudOverlay(
           val subLabel =
             when {
               isNativeMulti && multiCharges > 0 -> "${if (player.multifireOn) "ON" else "OFF"}•[$multiCharges]"
-              isNativeMulti -> if (player.multifireOn) "ON (0❖)" else "OFF"
+              isNativeMulti -> if (player.multifireOn) "ON (0⚡)" else "OFF"
               else -> "OFF"
             }
           Text(
@@ -988,10 +794,37 @@ private fun SymmetricBottomConsoleLayout(
           maxLines = 1,
         )
       }
-      SwirlingRiftHudOrb(
-        isStreaming = isNexusStreaming,
-        onClick = onOpenNexus,
-      )
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy((5f * textScale).dp),
+      ) {
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(8.dp))
+              .background(Color(0x800D223B))
+              .border(0.8.dp, Color(0xAA00F0FF), RoundedCornerShape(8.dp))
+              .clickable(enabled = !uiUnlocked) { onOpenNexus() }
+              .padding(horizontal = (6f * textScale).dp, vertical = (3.5f * textScale).dp)
+              .testTag("hud_pilot_level_badge"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = "LVL ${engine.pilotLevel} • ❖${engine.riftShards}",
+            color = Color(0xFF00F0FF),
+            fontSize = (8.0f * textScale).sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+            style = WingTelemetryTextStyle,
+            maxLines = 1,
+          )
+        }
+        Box(modifier = Modifier.testTag("hud_btn_nexus")) {
+          SwirlingRiftHudOrb(
+            isStreaming = isNexusStreaming,
+            onClick = onOpenNexus,
+          )
+        }
+      }
     }
   }
 
@@ -1019,13 +852,16 @@ private fun SymmetricBottomConsoleLayout(
           maxLines = 1,
         )
         Text(
-          text = "BOUNTY ${player.bounty}",
+          text = "BOUNTY ${player.bounty} • K/D ${engine.allTimeKills}/${engine.allTimeDeaths}",
           color = Color(0xFFFACC15),
           fontSize = (9.5f * textScale).sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           style = WingTelemetryTextStyle,
           maxLines = 1,
+          modifier =
+            Modifier.clickable(enabled = !uiUnlocked) { onOpenNexus() }
+              .testTag("hud_bounty_kd_readout"),
         )
       }
     }

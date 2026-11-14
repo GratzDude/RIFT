@@ -76,6 +76,7 @@ import com.example.ui.HangarModal
 import com.example.ui.NexusAiConsoleModal
 import com.example.ui.NexusAiViewModel
 import com.example.ui.NexusStreamState
+import com.example.ui.NexusTopModuleSwitcherBar
 import com.example.ui.RiftChangelogModal
 import com.example.ui.RiftHudOverlay
 import com.example.ui.RiftShardsStoreModal
@@ -158,61 +159,30 @@ fun AppNavigation(
 
   val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
   var isGuestMode by remember { mutableStateOf(localPrefs.isGuestBypassEnabled()) }
-  var lastSeenBuild by remember { mutableIntStateOf(localPrefs.getLastSeenChangelogBuild()) }
-  var showChangelogBeforeAuth by remember {
-    mutableStateOf(lastSeenBuild < CURRENT_RIFT_BUILD_VERSION)
-  }
-  var manualChangelogOpen by remember { mutableStateOf(false) }
   val user = currentUser
 
-  if (showChangelogBeforeAuth) {
-    RiftChangelogModal(
-      lastSeenBuild = lastSeenBuild,
-      onAcknowledgeAndContinue = {
-        localPrefs.setLastSeenChangelogBuild(CURRENT_RIFT_BUILD_VERSION)
-        lastSeenBuild = CURRENT_RIFT_BUILD_VERSION
-        showChangelogBeforeAuth = false
-        manualChangelogOpen = false
-      },
-    )
-  } else {
-    Box(modifier = Modifier.fillMaxSize()) {
-      if (user == null && !isGuestMode) {
-        AuthScreen(
-          onAuthSuccess = {},
-          onPlayAsGuest = {
-            localPrefs.setGuestBypassEnabled(true)
-            if (localPrefs.getCallsign() == "COMMANDER") {
-              localPrefs.setCallsign("GUEST_${(1000..9999).random()}")
-            }
-            isGuestMode = true
-          },
-          onOpenChangelog = { manualChangelogOpen = true },
-        )
-      } else {
-        val uid = user?.uid ?: permanentDeviceUid
-        val initialCallsign = localPrefs.getCallsign()
+  Box(modifier = Modifier.fillMaxSize()) {
+    if (user == null && !isGuestMode) {
+      AuthScreen(
+        onAuthSuccess = {},
+        onPlayAsGuest = {
+          localPrefs.setGuestBypassEnabled(true)
+          if (localPrefs.getCallsign() == "COMMANDER") {
+            localPrefs.setCallsign("GUEST_${(1000..9999).random()}")
+          }
+          isGuestMode = true
+        },
+      )
+    } else {
+      val uid = user?.uid ?: permanentDeviceUid
+      val initialCallsign = localPrefs.getCallsign()
 
-        key(uid) {
-          RiftArenaScreen(
-            currentUserId = uid,
-            initialCallsign = initialCallsign,
-            isGoogleAuthenticated = user != null,
-            localPrefs = localPrefs,
-            onOpenChangelog = { manualChangelogOpen = true },
-          )
-        }
-      }
-
-      if (manualChangelogOpen) {
-        RiftChangelogModal(
-          lastSeenBuild = lastSeenBuild,
-          onAcknowledgeAndContinue = {
-            localPrefs.setLastSeenChangelogBuild(CURRENT_RIFT_BUILD_VERSION)
-            lastSeenBuild = CURRENT_RIFT_BUILD_VERSION
-            showChangelogBeforeAuth = false
-            manualChangelogOpen = false
-          },
+      key(uid) {
+        RiftArenaScreen(
+          currentUserId = uid,
+          initialCallsign = initialCallsign,
+          isGoogleAuthenticated = user != null,
+          localPrefs = localPrefs,
         )
       }
     }
@@ -274,9 +244,6 @@ fun RiftArenaScreen(
   var unreadCommsCount by remember { mutableIntStateOf(0) }
 
   var bootToNexusHub by remember { mutableStateOf(localPrefs.getBootToNexusHub()) }
-  var showStartupChangelogQuickJoin by remember {
-    mutableStateOf(!localPrefs.getBootToNexusHub())
-  }
   var activeModal by remember {
     mutableStateOf(if (localPrefs.getBootToNexusHub()) ActiveModal.NEXUS else ActiveModal.NONE)
   }
@@ -503,7 +470,7 @@ fun RiftArenaScreen(
     for (msg in remoteComms) {
       if (msg.id.isNotEmpty() && msg.id !in existingIds) {
         chatMessages.add(msg)
-        if (msg.senderUid != currentUserId && activeModal != ActiveModal.CHAT) {
+        if (msg.senderUid != currentUserId && activeModal != ActiveModal.NEXUS) {
           newIncomingCount++
         }
       }
@@ -543,14 +510,14 @@ fun RiftArenaScreen(
   }
 
   var arenaViewRef by remember { mutableStateOf<RiftArenaView?>(null) }
-  val topNavModals = remember {
+  val nexusHubModals = remember {
     listOf(
+      ActiveModal.NEXUS,
       ActiveModal.HANGAR,
-      ActiveModal.CODEX,
-      ActiveModal.SYNDICATES,
       ActiveModal.ARMADA,
-      ActiveModal.CHAT,
+      ActiveModal.SYNDICATES,
       ActiveModal.DOSSIER,
+      ActiveModal.CODEX,
       ActiveModal.SETTINGS,
     )
   }
@@ -604,11 +571,11 @@ fun RiftArenaScreen(
               KeyEvent.KEYCODE_BUTTON_L1 -> {
                 if (activeModal != ActiveModal.NONE) {
                   com.example.engine.RiftCalibrationState.gamepadConnected = true
-                  val curIdx = topNavModals.indexOf(activeModal)
+                  val curIdx = nexusHubModals.indexOf(activeModal)
                   val nextIdx =
-                    if (curIdx <= 0) topNavModals.lastIndex else curIdx - 1
-                  val nextModal = topNavModals[nextIdx]
-                  if (nextModal == ActiveModal.CHAT) unreadCommsCount = 0
+                    if (curIdx <= 0) nexusHubModals.lastIndex else curIdx - 1
+                  val nextModal = nexusHubModals[nextIdx]
+                  if (nextModal == ActiveModal.NEXUS) unreadCommsCount = 0
                   activeModal = nextModal
                   sfx.playMutedClick()
                   true
@@ -620,37 +587,12 @@ fun RiftArenaScreen(
               KeyEvent.KEYCODE_BUTTON_R1 -> {
                 if (activeModal != ActiveModal.NONE) {
                   com.example.engine.RiftCalibrationState.gamepadConnected = true
-                  val curIdx = topNavModals.indexOf(activeModal)
+                  val curIdx = nexusHubModals.indexOf(activeModal)
                   val nextIdx =
-                    if (curIdx < 0 || curIdx >= topNavModals.lastIndex) 0 else curIdx + 1
-                  val nextModal = topNavModals[nextIdx]
-                  if (nextModal == ActiveModal.CHAT) unreadCommsCount = 0
+                    if (curIdx < 0 || curIdx >= nexusHubModals.lastIndex) 0 else curIdx + 1
+                  val nextModal = nexusHubModals[nextIdx]
+                  if (nextModal == ActiveModal.NEXUS) unreadCommsCount = 0
                   activeModal = nextModal
-                  sfx.playMutedClick()
-                  true
-                } else {
-                  false
-                }
-              }
-
-              KeyEvent.KEYCODE_BUTTON_B -> {
-                if (com.example.engine.RiftCalibrationState.isCalibrationModalOpen) {
-                  com.example.engine.RiftCalibrationState.gamepadConnected = true
-                  com.example.engine.RiftCalibrationState.isCalibrationModalOpen = false
-                  sfx.playMutedClick()
-                  true
-                } else if (
-                  activeModal != ActiveModal.NONE && activeModal != ActiveModal.HANGAR
-                ) {
-                  com.example.engine.RiftCalibrationState.gamepadConnected = true
-                  if (activeModal == ActiveModal.NEXUS) {
-                    activeModal = previousModalBeforeNexus
-                    previousModalBeforeNexus = ActiveModal.NONE
-                  } else if (activeModal == ActiveModal.RIFT_SHARDS_STORE) {
-                    activeModal = previousModalBeforeStore
-                  } else {
-                    activeModal = ActiveModal.NONE
-                  }
                   sfx.playMutedClick()
                   true
                 } else {
@@ -660,22 +602,6 @@ fun RiftArenaScreen(
 
               else -> false
             }
-          } else {
-            false
-          }
-        }
-        .onKeyEvent { keyEvent ->
-          val native = keyEvent.nativeKeyEvent
-          if (
-            native.action == KeyEvent.ACTION_DOWN &&
-              native.repeatCount == 0 &&
-              native.keyCode == KeyEvent.KEYCODE_BUTTON_B &&
-              activeModal != ActiveModal.NONE
-          ) {
-            com.example.engine.RiftCalibrationState.gamepadConnected = true
-            activeModal = ActiveModal.NONE
-            sfx.playMutedClick()
-            true
           } else {
             false
           }
@@ -746,7 +672,8 @@ fun RiftArenaScreen(
       },
       onOpenComms = {
         unreadCommsCount = 0
-        activeModal = ActiveModal.CHAT
+        previousModalBeforeNexus = ActiveModal.NONE
+        activeModal = ActiveModal.NEXUS
       },
       onOpenDossier = { activeModal = ActiveModal.DOSSIER },
       onOpenSettings = { activeModal = ActiveModal.SETTINGS },
@@ -780,8 +707,48 @@ fun RiftArenaScreen(
       },
     )
 
-    // 3. Dedicated Windows (Hangar, Codex, Syndicate Command, Armada Fleet Deck, Comms Drawer, Dossier, Settings)
-    when (activeModal) {
+    // 3. Dedicated Windows Consolidated Under Unified NEXUS Master Hub
+    val isSubModuleModal =
+      activeModal in
+        setOf(
+          ActiveModal.HANGAR,
+          ActiveModal.ARMADA,
+          ActiveModal.SYNDICATES,
+          ActiveModal.DOSSIER,
+          ActiveModal.CODEX,
+          ActiveModal.SETTINGS,
+        )
+
+    Column(modifier = Modifier.fillMaxSize()) {
+      if (isSubModuleModal) {
+        NexusTopModuleSwitcherBar(
+          activeModuleKey = activeModal.name,
+          onSelectNexusLobby = {
+            previousModalBeforeNexus = ActiveModal.NONE
+            activeModal = ActiveModal.NEXUS
+          },
+          onOpenHangar = { activeModal = ActiveModal.HANGAR },
+          onOpenArmadaModal = {
+            armadaStatusBanner = null
+            activeModal = ActiveModal.ARMADA
+          },
+          onOpenSyndicateDirectory = {
+            syndicateStatusBanner = null
+            activeModal = ActiveModal.SYNDICATES
+          },
+          onOpenDossier = { activeModal = ActiveModal.DOSSIER },
+          onOpenCodex = { activeModal = ActiveModal.CODEX },
+          onOpenSettings = { activeModal = ActiveModal.SETTINGS },
+          onOpenCalibration = {
+            activeModal = ActiveModal.NONE
+            com.example.engine.RiftCalibrationState.isCalibrationModalOpen = true
+          },
+          onReturnToArena = { activeModal = ActiveModal.NONE },
+        )
+      }
+
+      Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        when (activeModal) {
       ActiveModal.HANGAR -> {
         val (_, _, hangarLvlFrac) = remember(frameTick) { engine.getXpProgressInCurrentLevel() }
         HangarModal(
@@ -1162,131 +1129,10 @@ fun RiftArenaScreen(
       }
 
       ActiveModal.CHAT -> {
-        val drawerFriendsList =
-          remember(syndicateTag, frameTick, friendsRefreshKey) { localPrefs.getFriendsList() }
-
-        SyndicateChatModal(
-          syndicateTag = syndicateTag,
-          syndicateName = syndicateName,
-          activeArmadaName = engine.activeArmadaName,
-          activeArmadaCount = engine.getCurrentArmadaSize(),
-          armadaTierLabel = engine.getCurrentArmadaTierLabel(),
-          armadaSlots = engine.activeArmadaSlots.toList(),
-          friendsList = drawerFriendsList,
-          chatMessages = chatMessages,
-          activeShipsInSector = engine.ships.toList(),
-          localPilotUid = currentUserId,
-          blockedPilotUids = blockedPilotUids,
-          onBlockPilot = { pilotUid, pilotCallsign ->
-            localPrefs.blockPilot(pilotUid)
-            blockedPilotUids = localPrefs.getBlockedPilotUids()
-            toastMessage = "🚫 BLOCKED $pilotCallsign"
-            toastVersion++
-          },
-          onReportPilot = { pilotUid, pilotCallsign ->
-            localPrefs.reportPilot(pilotUid, pilotCallsign, "Syndicate Comms Report")
-            toastMessage = "⚑ REPORT SUBMITTED FOR $pilotCallsign"
-            toastVersion++
-          },
-          onSendChatMessage = { text ->
-            val safeText = com.example.data.UgcModeration.sanitizeUgcText(text)
-            val newMsg =
-              SyndicateChatMessage(
-                id = "msg_${System.currentTimeMillis()}",
-                senderUid = currentUserId,
-                senderCallsign = callsign,
-                senderSyndicateTag = syndicateTag,
-                timestampLabel = "JUST NOW",
-                messageText = safeText,
-              )
-            chatMessages.add(newMsg)
-            viewModel.sendSectorComm(newMsg)
-          },
-          onPostArmadaRecruitBanner = {
-            if (engine.activeArmadaName.isEmpty()) {
-              val prefix = syndicateTag.ifBlank { callsign.take(6) }
-              engine.formOrJoinArmada("${prefix}_5", emptyList())
-            }
-            val armName = engine.activeArmadaName
-            val curSize = engine.getCurrentArmadaSize()
-            val bannerMsg =
-              SyndicateChatMessage(
-                id = "banner_${System.currentTimeMillis()}",
-                senderUid = currentUserId,
-                senderCallsign = callsign,
-                senderSyndicateTag = syndicateTag,
-                timestampLabel = "LIVE RECRUIT",
-                messageText = "",
-                isArmadaRecruitBanner = true,
-                armadaName = armName,
-                armadaCurrentSize = curSize,
-                armadaMaxSize = 5,
-                armadaObjective = "Forming up to 5-Man Armada in Sector — Tap [⇥ REQUEST INVITE]!",
-              )
-            chatMessages.add(bannerMsg)
-            viewModel.sendSectorComm(bannerMsg)
-            toastMessage = "📢 POSTED [ARMADA RECRUIT: UP TO 5-MAN] FOR [$armName]"
-            toastVersion++
-          },
-          onRequestInviteToArmada = { targetArmadaName, leaderCallsign ->
-            val wingman =
-              FriendPilotEntry(
-                uid = "leader_$leaderCallsign",
-                callsign = leaderCallsign,
-                syndicateTag = syndicateTag,
-                shipId = 1,
-                statusText = "Armada Commander",
-                isOnline = true,
-                currentArmadaName = targetArmadaName,
-                currentArmadaCount = 3,
-                bounty = 280,
-              )
-            engine.formOrJoinArmada(targetArmadaName, listOf(wingman))
-            for (idx in chatMessages.indices) {
-              val item = chatMessages[idx]
-              if (item.isArmadaRecruitBanner && item.armadaName == targetArmadaName) {
-                chatMessages[idx] =
-                  item.copy(
-                    armadaCurrentSize = engine.getCurrentArmadaSize(),
-                    requestSent = true,
-                  )
-              }
-            }
-            toastMessage =
-              "✓ REQUEST INVITE ACCEPTED BY $leaderCallsign! JOINED ARMADA [$targetArmadaName]"
-            toastVersion++
-          },
-          onInviteFriendToArmada = { friend ->
-            val added = engine.addMemberToArmada(friend)
-            if (added) {
-              toastMessage =
-                "✓ ${friend.callsign} JOINED ARMADA [${engine.activeArmadaName}] (${engine.getCurrentArmadaSize()}/5)!"
-              toastVersion++
-            }
-            friendsRefreshKey++
-          },
-          onRequestJoinFriendArmada = { friend ->
-            val targetArmada = friend.currentArmadaName.ifEmpty { "${friend.syndicateTag}_FLEET" }
-            engine.formOrJoinArmada(targetArmada, listOf(friend))
-            toastMessage =
-              "✓ JOINED [$targetArmada] (${engine.getCurrentArmadaSize()}/5)!"
-            toastVersion++
-            friendsRefreshKey++
-          },
-          onSimulateRosterShift4To2 = {
-            engine.simulateArmadaDropoutToDuo()
-            toastMessage = "⚡ ROSTER SHIFT: 4-MAN ARMADA REDUCED TO 2-MAN DUO TIER!"
-            toastVersion++
-            friendsRefreshKey++
-          },
-          onLeaveArmadaToSolo = {
-            engine.leaveArmadaToSolo()
-            toastMessage = "⚡ LEFT ARMADA -> FLYING [SOLO] IN THE FFA RIFT."
-            toastVersion++
-            friendsRefreshKey++
-          },
-          onCloseModal = { activeModal = ActiveModal.NONE },
-        )
+        LaunchedEffect(Unit) {
+          unreadCommsCount = 0
+          activeModal = ActiveModal.NEXUS
+        }
       }
 
       ActiveModal.DOSSIER -> {
@@ -1508,7 +1354,10 @@ fun RiftArenaScreen(
             signOut(credentialManager = credentialManager, scope = scope)
           },
           onCloseModal = { activeModal = ActiveModal.NONE },
-          onOpenChangelog = onOpenChangelog,
+          onOpenChangelog = {
+            previousModalBeforeNexus = ActiveModal.SETTINGS
+            activeModal = ActiveModal.NEXUS
+          },
         )
       }
 
@@ -1645,12 +1494,11 @@ fun RiftArenaScreen(
           onToggleBootToNexusHub = { enabled ->
             bootToNexusHub = enabled
             localPrefs.setBootToNexusHub(enabled)
-            showStartupChangelogQuickJoin = !enabled
             toastMessage =
               if (enabled) {
                 "⚙️ STARTUP PREFERENCE: OPEN NEXUS COMMAND HUB ON LOGIN"
               } else {
-                "⚡ STARTUP PREFERENCE: FAST-BOOT TO ARENA + QUICK-JOIN BAR"
+                "⚡ STARTUP PREFERENCE: FAST-BOOT DIRECTLY INTO ARENA"
               }
             toastVersion++
           },
@@ -1674,7 +1522,6 @@ fun RiftArenaScreen(
           onDeployToRankedMode = { mode, bracket ->
             engine.deployToRankedMode(mode, bracket)
             selectedMode = mode.id
-            showStartupChangelogQuickJoin = false
             activeModal = ActiveModal.NONE
           },
           onOpenArmadaModal = {
@@ -1707,6 +1554,26 @@ fun RiftArenaScreen(
           onOpenSyndicatesModal = {
             syndicateStatusBanner = null
             activeModal = ActiveModal.SYNDICATES
+          },
+          onOpenSyndicateDirectory = {
+            syndicateStatusBanner = null
+            activeModal = ActiveModal.SYNDICATES
+          },
+          onOpenHangar = {
+            activeModal = ActiveModal.HANGAR
+          },
+          onOpenDossier = {
+            activeModal = ActiveModal.DOSSIER
+          },
+          onOpenCodex = {
+            activeModal = ActiveModal.CODEX
+          },
+          onOpenSettings = {
+            activeModal = ActiveModal.SETTINGS
+          },
+          onOpenCalibration = {
+            activeModal = ActiveModal.NONE
+            com.example.engine.RiftCalibrationState.isCalibrationModalOpen = true
           },
           onOpenHangarForShip = { targetShipId ->
             val clamped = targetShipId.coerceIn(1, 10)
@@ -1780,196 +1647,9 @@ fun RiftArenaScreen(
         )
       }
 
-      ActiveModal.NONE -> {
-        if (showStartupChangelogQuickJoin) {
-          StartupChangelogQuickJoinBar(
-            activeMode = engine.activeRankedMode,
-            onQuickJoinMode = { mode ->
-              val defaultBracket =
-                when (mode) {
-                  RankedGameMode.RIFT_SKIRMISH -> maxOf(2, engine.getCurrentArmadaSize())
-                  RankedGameMode.SYNDICATE_WARS -> 3
-                  else -> engine.getCurrentArmadaSize()
-                }
-              engine.deployToRankedMode(mode, defaultBracket)
-              selectedMode = mode.id
-              showStartupChangelogQuickJoin = false
-            },
-            onOpenNexusHub = {
-              showStartupChangelogQuickJoin = false
-              previousModalBeforeNexus = ActiveModal.NONE
-              activeModal = ActiveModal.NEXUS
-            },
-            onOpenFullChangelog = onOpenChangelog,
-            onDismiss = { showStartupChangelogQuickJoin = false },
-          )
+      ActiveModal.NONE -> Unit
         }
       }
     }
-  }
-}
-
-@Composable
-private fun StartupChangelogQuickJoinBar(
-  activeMode: RankedGameMode,
-  onQuickJoinMode: (RankedGameMode) -> Unit,
-  onOpenNexusHub: () -> Unit,
-  onOpenFullChangelog: () -> Unit,
-  onDismiss: () -> Unit,
-) {
-  Box(
-    modifier =
-      Modifier.fillMaxSize()
-        .padding(top = 82.dp, start = 16.dp, end = 16.dp),
-    contentAlignment = Alignment.TopCenter,
-  ) {
-    Column(
-      modifier =
-        Modifier.widthIn(max = 820.dp)
-          .fillMaxWidth()
-          .clip(RoundedCornerShape(14.dp))
-          .background(Color(0xEB050B16))
-          .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(14.dp))
-          .padding(horizontal = 14.dp, vertical = 10.dp)
-          .testTag("startup_changelog_quick_join_bar"),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Row(
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Text(
-            text = "⚡ FAST-BOOT ARENA // BUILD v39.0 NEXUS COMMAND HUB & 5 RANKED MODES",
-            color = Color(0xFF00F5D4),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(6.dp))
-                .background(Color(0x2238BDF8))
-                .border(0.8.dp, Color(0x8838BDF8), RoundedCornerShape(6.dp))
-                .clickable { onOpenFullChangelog() }
-                .padding(horizontal = 7.dp, vertical = 3.dp)
-                .testTag("startup_quick_join_changelog_btn"),
-          ) {
-            Text(
-              text = "📜 PATCH NOTES",
-              color = Color(0xFF38BDF8),
-              fontSize = 8.5.sp,
-              fontWeight = FontWeight.ExtraBold,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-        }
-        Row(
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(7.dp))
-                .background(Color(0x2800F5D4))
-                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(7.dp))
-                .clickable { onOpenNexusHub() }
-                .padding(horizontal = 9.dp, vertical = 4.dp)
-                .testTag("startup_quick_join_open_nexus"),
-          ) {
-            Text(
-              text = "🌐 OPEN NEXUS HUB",
-              color = Color(0xFF00F5D4),
-              fontSize = 9.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(7.dp))
-                .background(Color(0x33EF4444))
-                .border(0.9.dp, Color(0xAAEF4444), RoundedCornerShape(7.dp))
-                .clickable { onDismiss() }
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .testTag("startup_quick_join_dismiss"),
-          ) {
-            Text(
-              text = "✕ DISMISS",
-              color = Color(0xFFFCA5A5),
-              fontSize = 9.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-        }
-      }
-
-      Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        QuickJoinModeChip(
-          label = "⚡ QUICK-JOIN SECTOR CONVERGENCE",
-          selected = activeMode == RankedGameMode.SECTOR_CONVERGENCE,
-          accent = Color(0xFF38BDF8),
-          tag = "quick_join_sector_convergence",
-          onClick = { onQuickJoinMode(RankedGameMode.SECTOR_CONVERGENCE) },
-        )
-        QuickJoinModeChip(
-          label = "⚔️ QUICK-JOIN RIFT SKIRMISH",
-          selected = activeMode == RankedGameMode.RIFT_SKIRMISH,
-          accent = Color(0xFFF59E0B),
-          tag = "quick_join_rift_skirmish",
-          onClick = { onQuickJoinMode(RankedGameMode.RIFT_SKIRMISH) },
-        )
-        QuickJoinModeChip(
-          label = "⚡ QUICK-JOIN FLUX CORE",
-          selected = activeMode == RankedGameMode.FLUX_CORE,
-          accent = Color(0xFF00F5D4),
-          tag = "quick_join_flux_core",
-          onClick = { onQuickJoinMode(RankedGameMode.FLUX_CORE) },
-        )
-        QuickJoinModeChip(
-          label = "🔒 QUICK-JOIN STASIS BREACH",
-          selected = activeMode == RankedGameMode.STASIS_BREACH,
-          accent = Color(0xFFA855F7),
-          tag = "quick_join_stasis_breach",
-          onClick = { onQuickJoinMode(RankedGameMode.STASIS_BREACH) },
-        )
-      }
-    }
-  }
-}
-
-@Composable
-private fun QuickJoinModeChip(
-  label: String,
-  selected: Boolean,
-  accent: Color,
-  tag: String,
-  onClick: () -> Unit,
-) {
-  Box(
-    modifier =
-      Modifier.clip(RoundedCornerShape(8.dp))
-        .background(if (selected) accent.copy(alpha = 0.24f) else Color(0xCC0D1829))
-        .border(if (selected) 1.2.dp else 0.9.dp, accent, RoundedCornerShape(8.dp))
-        .clickable { onClick() }
-        .padding(horizontal = 10.dp, vertical = 6.dp)
-        .testTag(tag),
-  ) {
-    Text(
-      text = label,
-      color = if (selected) Color.White else accent,
-      fontSize = 9.sp,
-      fontWeight = FontWeight.Black,
-      fontFamily = FontFamily.Monospace,
-    )
   }
 }

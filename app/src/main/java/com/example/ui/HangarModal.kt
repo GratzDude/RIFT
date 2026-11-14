@@ -138,7 +138,8 @@ fun HangarModal(
           if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
             RiftCalibrationState.gamepadConnected = true
             when (native.keyCode) {
-              KeyEvent.KEYCODE_BUTTON_B -> {
+              KeyEvent.KEYCODE_BUTTON_START,
+              KeyEvent.KEYCODE_BACK -> {
                 if (showFullNinthShipForgeModal) {
                   showFullNinthShipForgeModal = false
                 } else {
@@ -1237,7 +1238,7 @@ private fun ShipComparisonInspectorPanel(
             text =
               when {
                 ship.bombType == "INTERDICTOR_DOME" ->
-                  "600⚡ FLUX • 290PX TWO-WAY STASIS DOME (15.0S DURATION, 18.0S CD)"
+                  "380⚡ FLUX • 275PX TWO-WAY STASIS DOME (5.0S DURATION, 9.0S CD)"
                 ship.bombType == "PHASE_DASH" -> "300⚡ • 2.5s CD • BLINK + I-FRAMES + 35% RAIL"
                 ship.bombType == "CLOAK_EMP" -> "180⚡/s CLOAK • 0⚡ DECLOAK 360° EMP PULSE"
                 ship.supportsNativeMultifire -> "INNATE SPLIT MULTI-SHOT (0⚡ EXTRA COST)"

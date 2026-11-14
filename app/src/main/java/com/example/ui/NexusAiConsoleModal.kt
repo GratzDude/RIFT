@@ -19,11 +19,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -362,6 +364,12 @@ fun NexusAiConsoleModal(
   onOpenArmadaModal: () -> Unit = {},
   onQuickFormSyndicateArmada: () -> Unit = {},
   onOpenSyndicatesModal: () -> Unit = {},
+  onOpenSyndicateDirectory: () -> Unit = onOpenSyndicatesModal,
+  onOpenHangar: () -> Unit = {},
+  onOpenDossier: () -> Unit = {},
+  onOpenCodex: () -> Unit = {},
+  onOpenSettings: () -> Unit = {},
+  onOpenCalibration: () -> Unit = {},
   onOpenHangarForShip: (Int) -> Unit = {},
   canAccessSyndicateServer: Boolean = false,
   syndicateCustomChannels: List<String> = listOf("#general"),
@@ -638,6 +646,23 @@ fun NexusAiConsoleModal(
             }
           }
         }
+
+        // =========================================================================
+        // 1B. NEXUS MASTER MODULE NAVIGATION RIBBON (CONSOLIDATED HUB ACCESS)
+        // =========================================================================
+        NexusMasterModuleNavigationRibbon(
+          activeModuleKey = "NEXUS",
+          onSelectNexusLobby = {},
+          onOpenHangar = onOpenHangar,
+          onOpenArmadaModal = onOpenArmadaModal,
+          onOpenSyndicateDirectory = onOpenSyndicateDirectory,
+          onOpenDossier = onOpenDossier,
+          onOpenCodex = onOpenCodex,
+          onOpenSettings = onOpenSettings,
+          onOpenCalibration = onOpenCalibration,
+          showReturnToArenaButton = false,
+          onReturnToArena = onCloseModal,
+        )
 
         // Sub-view mode bar (Split Command View vs Full Channels vs Full Armada & Ranked Queues)
         Row(
@@ -1105,7 +1130,7 @@ fun NexusAiConsoleModal(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
-                      onClick = onOpenSyndicatesModal,
+                      onClick = onOpenSyndicateDirectory,
                       colors =
                         ButtonDefaults.buttonColors(
                           containerColor = Color(0xFF78350F),
@@ -1188,6 +1213,13 @@ fun NexusAiConsoleModal(
                       )
                       channelChatInput = ""
                       keyboardController?.hide()
+                    },
+                    onQuickPing = { pingText ->
+                      postToChannel(
+                        selectedChannelKey,
+                        pingText,
+                        if (isSyndicateCh) Color(0xFFF59E0B) else Color(0xFF38BDF8),
+                      )
                     },
                   )
                 }
@@ -1276,6 +1308,169 @@ fun NexusAiConsoleModal(
         }
       }
     }
+  }
+}
+
+@Composable
+fun NexusTopModuleSwitcherBar(
+  activeModuleKey: String,
+  onSelectNexusLobby: () -> Unit,
+  onOpenHangar: () -> Unit,
+  onOpenArmadaModal: () -> Unit,
+  onOpenSyndicateDirectory: () -> Unit,
+  onOpenDossier: () -> Unit,
+  onOpenCodex: () -> Unit,
+  onOpenSettings: () -> Unit,
+  onOpenCalibration: () -> Unit,
+  onReturnToArena: () -> Unit,
+) {
+  Box(
+    modifier =
+      Modifier.fillMaxWidth()
+        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+        .padding(horizontal = 10.dp, vertical = 4.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    NexusMasterModuleNavigationRibbon(
+      activeModuleKey = activeModuleKey,
+      onSelectNexusLobby = onSelectNexusLobby,
+      onOpenHangar = onOpenHangar,
+      onOpenArmadaModal = onOpenArmadaModal,
+      onOpenSyndicateDirectory = onOpenSyndicateDirectory,
+      onOpenDossier = onOpenDossier,
+      onOpenCodex = onOpenCodex,
+      onOpenSettings = onOpenSettings,
+      onOpenCalibration = onOpenCalibration,
+      showReturnToArenaButton = true,
+      onReturnToArena = onReturnToArena,
+    )
+  }
+}
+
+@Composable
+fun NexusMasterModuleNavigationRibbon(
+  activeModuleKey: String,
+  onSelectNexusLobby: () -> Unit,
+  onOpenHangar: () -> Unit,
+  onOpenArmadaModal: () -> Unit,
+  onOpenSyndicateDirectory: () -> Unit,
+  onOpenDossier: () -> Unit,
+  onOpenCodex: () -> Unit,
+  onOpenSettings: () -> Unit,
+  onOpenCalibration: () -> Unit,
+  showReturnToArenaButton: Boolean = false,
+  onReturnToArena: () -> Unit = {},
+) {
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(10.dp))
+        .background(Color(0xE6060D1A))
+        .border(1.dp, Color(0x7700F5D4), RoundedCornerShape(10.dp))
+        .padding(horizontal = 8.dp, vertical = 5.dp)
+        .horizontalScroll(rememberScrollState())
+        .testTag("nexus_master_module_bar"),
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    NexusMasterModulePill(
+      label = if (showReturnToArenaButton) "🌐 NEXUS LOBBY" else "🌐 COMMAND & LOBBY",
+      selected = activeModuleKey == "NEXUS",
+      accentColor = Color(0xFF00F5D4),
+      testTag = "nexus_module_pill_lobby",
+      onClick = onSelectNexusLobby,
+    )
+    NexusMasterModulePill(
+      label = "🚀 HANGAR",
+      selected = activeModuleKey == "HANGAR",
+      accentColor = Color(0xFF38BDF8),
+      testTag = "nexus_module_pill_hangar",
+      onClick = onOpenHangar,
+    )
+    NexusMasterModulePill(
+      label = if (showReturnToArenaButton) "🛡️ ARMADA" else "🛡️ ARMADA FLEET",
+      selected = activeModuleKey == "ARMADA",
+      accentColor = Color(0xFF60A5FA),
+      testTag = "nexus_module_pill_armada",
+      onClick = onOpenArmadaModal,
+    )
+    NexusMasterModulePill(
+      label = "🏛️ SYNDICATES",
+      selected = activeModuleKey == "SYNDICATES",
+      accentColor = Color(0xFFF59E0B),
+      testTag = "nexus_module_pill_syndicates",
+      onClick = onOpenSyndicateDirectory,
+    )
+    NexusMasterModulePill(
+      label = "📊 DOSSIER",
+      selected = activeModuleKey == "DOSSIER",
+      accentColor = Color(0xFFA78BFA),
+      testTag = "nexus_module_pill_dossier",
+      onClick = onOpenDossier,
+    )
+    NexusMasterModulePill(
+      label = "📖 CODEX",
+      selected = activeModuleKey == "CODEX",
+      accentColor = Color(0xFF34D399),
+      testTag = "nexus_module_pill_codex",
+      onClick = onOpenCodex,
+    )
+    NexusMasterModulePill(
+      label = "⚙️ SETTINGS",
+      selected = activeModuleKey == "SETTINGS",
+      accentColor = Color(0xFF94A3B8),
+      testTag = "nexus_module_pill_settings",
+      onClick = onOpenSettings,
+    )
+    NexusMasterModulePill(
+      label = "🔧 CALIBRATE",
+      selected = activeModuleKey == "CALIBRATE",
+      accentColor = Color(0xFFFACC15),
+      testTag = "nexus_module_pill_calibrate",
+      onClick = onOpenCalibration,
+    )
+    if (showReturnToArenaButton) {
+      NexusMasterModulePill(
+        label = "✕ RETURN TO ARENA",
+        selected = false,
+        accentColor = Color(0xFFFF3B4E),
+        testTag = "nexus_module_pill_return_arena",
+        onClick = onReturnToArena,
+      )
+    }
+  }
+}
+
+@Composable
+private fun NexusMasterModulePill(
+  label: String,
+  selected: Boolean,
+  accentColor: Color,
+  testTag: String,
+  onClick: () -> Unit,
+) {
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(8.dp))
+        .background(if (selected) accentColor.copy(alpha = 0.24f) else Color(0xAA0B1528))
+        .border(
+          width = if (selected) 1.3.dp else 0.9.dp,
+          color = if (selected) accentColor else accentColor.copy(alpha = 0.45f),
+          shape = RoundedCornerShape(8.dp),
+        )
+        .clickable { onClick() }
+        .padding(horizontal = 10.dp, vertical = 5.dp)
+        .testTag(testTag),
+    contentAlignment = Alignment.Center,
+  ) {
+    Text(
+      text = label,
+      color = if (selected) Color.White else accentColor,
+      fontSize = 9.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+      maxLines = 1,
+    )
   }
 }
 
@@ -2180,6 +2375,7 @@ private fun NexusTextChannelFeedView(
   chatInput: String,
   onChatInputChange: (String) -> Unit,
   onSend: () -> Unit,
+  onQuickPing: (String) -> Unit = {},
 ) {
   Column(
     modifier = Modifier.fillMaxSize(),
@@ -2247,11 +2443,63 @@ private fun NexusTextChannelFeedView(
       }
     }
 
+    // One-Tap Tactical Quick-Ping Chips
+    Row(
+      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      TacticalQuickPingChip(
+        label = "🔴 ATTACK HVT",
+        accent = Color(0xFFFB7185),
+        tag = "nexus_quick_ping_attack_hvt",
+        onClick = { onQuickPing("🔴 [TACTICAL PING] CONVERGE ON SECTOR HVT NOW!") },
+      )
+      TacticalQuickPingChip(
+        label = "🛡️ FORM ON ME",
+        accent = Color(0xFF38BDF8),
+        tag = "nexus_quick_ping_form_on_me",
+        onClick = { onQuickPing("🛡️ [TACTICAL PING] FORM UP ON MY WING!") },
+      )
+      TacticalQuickPingChip(
+        label = "⚡ LOW FLUX",
+        accent = Color(0xFFFACC15),
+        tag = "nexus_quick_ping_low_flux",
+        onClick = { onQuickPing("⚡ [TACTICAL PING] LOW FLUX — NEED COVER!") },
+      )
+    }
+
     ChannelInputComposer(
       placeholder = "Transmit message to $channelTitle…",
       value = chatInput,
       onValueChange = onChatInputChange,
       onSend = onSend,
+    )
+  }
+}
+
+@Composable
+private fun TacticalQuickPingChip(
+  label: String,
+  accent: Color,
+  tag: String,
+  onClick: () -> Unit,
+) {
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(7.dp))
+        .background(accent.copy(alpha = 0.16f))
+        .border(1.dp, accent.copy(alpha = 0.7f), RoundedCornerShape(7.dp))
+        .clickable { onClick() }
+        .padding(horizontal = 8.dp, vertical = 4.dp)
+        .testTag(tag),
+  ) {
+    Text(
+      text = label,
+      color = accent,
+      fontSize = 8.5.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
     )
   }
 }
@@ -2363,7 +2611,7 @@ private fun NexusChangelogChannelView() {
         "⚡ MODE 3 — VOLATILE FLUX CORE (Powerball FFA): Hold the center Singularity Orb for +15 Bounty/s and +1 Overcharge Tier every 5s (up to +50% Dmg/Recharge & +40% Speed). Safe Zone entry or death ejects the Core at 1,650 px/s!",
         "🔒 MODE 4 — STASIS BREACH (10v10 Territory Jailbreak): Divided West/East playfield. Eliminations imprison victims in the enemy Stasis Brig. Destroy the 8,000⚡ Brig Reactor Core (100% outside / 25% prisoner damage) to trigger a mass jailbreak!",
         "🏴‍☠️ MODE 5 — SYNDICATE WARS: Ranked Clan-vs-Clan matchmaking with persistent War Trophies and Win/Loss records.",
-        "🚀 10-SHIP ROSTER: Standard Hull #9 Interdictor (600⚡ • 18s CD • 15.0s Two-Way Stasis Bubble) + Modular Ship #10 Rift Frame.",
+        "🚀 10-SHIP ROSTER: Standard Hull #9 Interdictor (380⚡ • 9s CD • 5.0s Two-Way Stasis Bubble) + Modular Ship #10 Rift Frame.",
       )
     notes.forEach { line ->
       Text(

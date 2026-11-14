@@ -253,9 +253,9 @@ object RiftCalibrationState {
   var phaseOverchargeBonusPct by mutableFloatStateOf(0.35f)
   var proxFuseRadius by mutableFloatStateOf(65f)
   var maxMinesPerShip by mutableIntStateOf(6)
-  var interdictorBubbleRadius by mutableFloatStateOf(290f)
-  var interdictorBubbleDuration by mutableFloatStateOf(15.0f)
-  var interdictorBubbleCooldown by mutableFloatStateOf(18.0f)
+  var interdictorBubbleRadius by mutableFloatStateOf(275f)
+  var interdictorBubbleDuration by mutableFloatStateOf(5.0f)
+  var interdictorBubbleCooldown by mutableFloatStateOf(9.0f)
 
   // 5. Official RIFT Special Buffs & Bucket B Enhancers (Tab 4)
   var seekerFlightTime by mutableFloatStateOf(2.5f)      // Official 2.5s Seeker Torpedo flight time
@@ -748,8 +748,8 @@ object RiftCalibrationState {
       shipIdFilter = 0,
       title = "Interdictor Bubble: Dome Radius",
       unit = "px",
-      description = "Containment radius of Interdictor's two-way stasis bubble (default 290px = 580px diameter).",
-      min = 180f, max = 480f, step = 10f, decimals = 0,
+      description = "Containment radius of Interdictor's two-way stasis bubble (default 275px = 550px diameter).",
+      min = 180f, max = 480f, step = 5f, decimals = 0,
       getter = { interdictorBubbleRadius }, setter = { interdictorBubbleRadius = it.coerceIn(180f, 480f) },
     )
     list += CalibrationParamDescriptor(
@@ -759,8 +759,8 @@ object RiftCalibrationState {
       title = "Interdictor Bubble: Active Duration",
       unit = "s",
       description = "Seconds an anchored Interdictor Stasis Bubble traps all ships and projectiles inside/outside.",
-      min = 5.0f, max = 30.0f, step = 1.0f, decimals = 1,
-      getter = { interdictorBubbleDuration }, setter = { interdictorBubbleDuration = it.coerceIn(5.0f, 30.0f) },
+      min = 2.0f, max = 15.0f, step = 0.5f, decimals = 1,
+      getter = { interdictorBubbleDuration }, setter = { interdictorBubbleDuration = it.coerceIn(2.0f, 15.0f) },
     )
     list += CalibrationParamDescriptor(
       key = "interdictorBubbleCooldown",
@@ -769,10 +769,10 @@ object RiftCalibrationState {
       title = "Interdictor Bubble: Cooldown",
       unit = "s",
       description = "Cooldown in seconds between deploying Interdictor Stasis Bubbles.",
-      min = 8.0f, max = 35.0f, step = 1.0f, decimals = 1,
+      min = 4.0f, max = 25.0f, step = 0.5f, decimals = 1,
       getter = { interdictorBubbleCooldown },
       setter = {
-        val v = it.coerceIn(8.0f, 35.0f)
+        val v = it.coerceIn(4.0f, 25.0f)
         interdictorBubbleCooldown = v
         RiftCodex.getShipById(9).bombCooldown = v
       },
@@ -1666,6 +1666,12 @@ object RiftCalibrationState {
     for (desc in buildAllParameterDescriptors()) {
       DEFAULT_GAME_CONFIG[desc.key]?.let { desc.setter(it) }
     }
+
+    interdictorBubbleRadius = 275f
+    interdictorBubbleDuration = 5.0f
+    interdictorBubbleCooldown = 9.0f
+    RiftCodex.getShipById(9).bombCost = 380f
+    RiftCodex.getShipById(9).bombCooldown = 9.0f
 
     bountyPlacement = LabelPlacement.TOP
     tagPlacement = LabelPlacement.BOTTOM

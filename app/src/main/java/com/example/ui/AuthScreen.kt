@@ -364,31 +364,6 @@ fun AuthScreen(
             fontFamily = FontFamily.Monospace,
           )
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-          onClick = onOpenChangelog,
-          enabled = !isLoading,
-          colors =
-            ButtonDefaults.buttonColors(
-              containerColor = Color(0xFF0A1628),
-              contentColor = Color(0xFF00F5D4),
-            ),
-          border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x8800F5D4)),
-          shape = RoundedCornerShape(10.dp),
-          modifier =
-            Modifier.fillMaxWidth()
-              .height(44.dp)
-              .testTag("auth_btn_open_changelog"),
-        ) {
-          Text(
-            text = "📜 VIEW FULL CHANGELOG (v1.20)",
-            fontSize = 11.5.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
       }
     }
   }

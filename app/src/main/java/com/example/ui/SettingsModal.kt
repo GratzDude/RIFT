@@ -926,7 +926,7 @@ private fun TwinStickControllerSchematicCanvas(
     }
   val bAction =
     remember(revision) {
-      RiftCalibrationState.getActionForBinding(KeyEvent.KEYCODE_BUTTON_B) ?: "BACK / CLOSE"
+      RiftCalibrationState.getActionForBinding(KeyEvent.KEYCODE_BUTTON_B) ?: "UNBOUND"
     }
 
   val labelPaint =
@@ -1129,16 +1129,17 @@ private fun TwinStickControllerSchematicCanvas(
     for ((code, pos, colAndLetter) in faceButtons) {
       val (col, letter) = colAndLetter
       val isHi = highlightedCode == code
+      val isBound = RiftCalibrationState.getActionForBinding(code) != null
       drawCircle(
         color = if (isHi) Color(0xFF422806) else Color(0xFF0A1424),
         radius = btnR,
         center = pos,
       )
       drawCircle(
-        color = strokeForCode(code, col),
+        color = strokeForCode(code, if (isBound) col else col.copy(alpha = 0.65f)),
         radius = btnR,
         center = pos,
-        style = Stroke(width = if (isHi) 3.0f else 1.8f),
+        style = Stroke(width = if (isHi) 3.0f else if (isBound) 2.2f else 1.6f),
       )
       drawContext.canvas.nativeCanvas.apply {
         labelPaint.color = android.graphics.Color.WHITE
@@ -1207,42 +1208,49 @@ private fun TwinStickControllerSchematicCanvas(
     // Right Side Callouts
     drawCalloutLabel(
       anchor = rtCenter,
-      calloutPos = Offset(w * 0.75f, h * 0.13f),
+      calloutPos = Offset(w * 0.75f, h * 0.12f),
       text = "RT: $rtAction",
       argbColor = android.graphics.Color.parseColor("#F87171"),
       alignLeft = true,
     )
     drawCalloutLabel(
       anchor = r1Center,
-      calloutPos = Offset(w * 0.75f, h * 0.25f),
+      calloutPos = Offset(w * 0.75f, h * 0.23f),
       text = "R1: $r1Action",
       argbColor = android.graphics.Color.parseColor("#34D399"),
       alignLeft = true,
     )
     drawCalloutLabel(
       anchor = yPos,
-      calloutPos = Offset(w * 0.76f, h * 0.39f),
+      calloutPos = Offset(w * 0.76f, h * 0.35f),
       text = "Y: $yAction",
       argbColor = android.graphics.Color.parseColor("#FACC15"),
       alignLeft = true,
     )
     drawCalloutLabel(
       anchor = xPos,
-      calloutPos = Offset(w * 0.76f, h * 0.51f),
+      calloutPos = Offset(w * 0.76f, h * 0.46f),
       text = "X: $xAction",
       argbColor = android.graphics.Color.parseColor("#F59E0B"),
       alignLeft = true,
     )
     drawCalloutLabel(
+      anchor = bPos,
+      calloutPos = Offset(w * 0.76f, h * 0.57f),
+      text = "B: $bAction",
+      argbColor = android.graphics.Color.parseColor("#EF4444"),
+      alignLeft = true,
+    )
+    drawCalloutLabel(
       anchor = aPos,
-      calloutPos = Offset(w * 0.76f, h * 0.63f),
-      text = "A: $aAction ($bAction = B)",
+      calloutPos = Offset(w * 0.76f, h * 0.68f),
+      text = "A: $aAction",
       argbColor = android.graphics.Color.parseColor("#60A5FA"),
       alignLeft = true,
     )
     drawCalloutLabel(
       anchor = rStickCenter,
-      calloutPos = Offset(w * 0.75f, h * 0.80f),
+      calloutPos = Offset(w * 0.75f, h * 0.82f),
       text = "R-STICK: 360° TURRET AIM",
       argbColor = android.graphics.Color.parseColor("#C084FC"),
       alignLeft = true,

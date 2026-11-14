@@ -2530,7 +2530,7 @@ class RiftGameEngine(
       return
     }
 
-    // 1b. Interdictor Stasis Bubble (Two-Way Containment Dome: 290px radius, 15s duration, 600⚡ cost)
+    // 1b. Interdictor Stasis Bubble (Two-Way Containment Dome: 275px radius, 5s duration, 380⚡ cost)
     if (spec.bombType == "INTERDICTOR_DOME") {
       val bubbleR = RiftCalibrationState.interdictorBubbleRadius
       val safeDist = hypot(ship.x - safeZone.centerX(), ship.y - safeZone.centerY())
@@ -4521,7 +4521,7 @@ class RiftGameEngine(
           fireSecondaryBomb(bot, aimAngle) // Breaks stealth and unleashes 360° AoE EMP Pulse at 0⚡!
         }
       } else if (bot.spec.bombType == "INTERDICTOR_DOME") {
-        if (nearestDist <= 240f && bot.flux > 1100f && bot.bombTimer <= 0f) {
+        if (nearestDist < 230f && bot.flux > 800f && bot.bombTimer <= 0f) {
           fireSecondaryBomb(bot, aimAngle)
         }
       } else if (bot.spec.bombType == "PHASE_DASH") {

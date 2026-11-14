@@ -36,6 +36,7 @@ class RiftAuditConsistencyTest {
     engine = RiftGameEngine(sfx = RiftSoundSynthesizer())
     engine.rebuildRosterForMode("FFA")
     engine.anomalies.clear()
+    engine.walls.clear()
   }
 
   @After
@@ -241,6 +242,10 @@ class RiftAuditConsistencyTest {
     val interdictor = RiftCodex.getShipById(9)
     assertEquals("Interdictor", interdictor.name)
     assertEquals("INTERDICTOR_DOME", interdictor.bombType)
+    assertEquals(380f, interdictor.bombCost, 0.1f)
+    assertEquals(9.0f, interdictor.bombCooldown, 0.1f)
+    assertEquals(5.0f, RiftCalibrationState.interdictorBubbleDuration, 0.1f)
+    assertEquals(275f, RiftCalibrationState.interdictorBubbleRadius, 0.1f)
     assertEquals(
       100,
       interdictor.speedPts +
@@ -275,11 +280,11 @@ class RiftAuditConsistencyTest {
     engine.fireSecondaryBomb(player, 0f)
     assertEquals(1, engine.interdictorBubbles.size)
     val bubble = engine.interdictorBubbles.first()
-    assertEquals(290f, bubble.radius, 0.1f)
-    assertEquals(15.0f, bubble.life, 0.1f)
+    assertEquals(275f, bubble.radius, 0.1f)
+    assertEquals(5.0f, bubble.life, 0.1f)
 
-    // 1. Inside ship attempting to cross outward beyond (radius - 36f = 254f) is clamped inside and reflected
-    player.x = 2250f
+    // 1. Inside ship attempting to cross outward beyond (radius - 36f = 239f) is clamped inside and reflected
+    player.x = 2235f
     player.y = 2000f
     player.vx = 400f
     player.vy = 0f
@@ -288,9 +293,9 @@ class RiftAuditConsistencyTest {
     assertTrue("Ship inside dome must not escape perimeter", distInsideAfter <= bubble.radius - 35.5f)
     assertTrue("Ship velocity must reflect inward", player.vx < 0f)
 
-    // 2. Outside ship attempting to enter inward within (radius + 36f = 326f) is clamped outside and reflected
+    // 2. Outside ship attempting to enter inward within (radius + 36f = 311f) is clamped outside and reflected
     enemy.respawnTimer = 0f
-    enemy.x = 2330f
+    enemy.x = 2315f
     enemy.y = 2000f
     enemy.vx = -400f
     enemy.vy = 0f

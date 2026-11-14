@@ -18,4 +18,5 @@ local.properties
 debug.keystore
 *-debug.log
 .build-outputs/
-
+*.apk
+*.aab
