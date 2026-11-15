@@ -24,7 +24,10 @@ enum class SpaceObstacleStyle {
   ASTEROID_STATION,
   CRYSTAL_ASTEROID,
   FLOATING_DEBRIS,
+  PERMANENT_BARRIER,
 }
+
+typealias SpaceObstacleType = SpaceObstacleStyle
 
 data class WallRect(
   val x: Float,
@@ -33,7 +36,12 @@ data class WallRect(
   val h: Float,
   val style: SpaceObstacleStyle = SpaceObstacleStyle.ORBITAL_STATION,
   val variantSeed: Int = 0,
-)
+) {
+  val type: SpaceObstacleType
+    get() = style
+  val seed: Int
+    get() = variantSeed
+}
 
 data class GreenCrate(
   var x: Float,
@@ -240,9 +248,26 @@ data class ShipEntity(
   val aiSeed: Float = Random.nextFloat() * 100f,
   var visualBankRoll: Float = 0f,
   var barrelRollTimer: Float = 0f,
+  var barrelRollDuration: Float = 0.48f,
   var barrelRollDir: Float = 1f,
+  var lastBarrelRollCooldown: Float = 0f,
+  var hullImpactJoltTimer: Float = 0f,
+  var hullImpactNormalX: Float = 0f,
+  var hullImpactNormalY: Float = 0f,
+  var hullImpactType: Int = 0,
+  var equippedKillFinisher: Int = 0,
+  var equippedWarpStyle: Int = 0,
+  var equippedHvtHaloStyle: Int = 0,
+  var warpInAnimTimer: Float = 0.65f,
+  var deathLingerTimer: Float = 0f,
   var prevHeadingForBank: Float = angle,
 ) {
+  var empDisableTimer: Float
+    get() = empTimer
+    set(value) {
+      empTimer = value
+    }
+
   var spawnShieldTimer: Float
     get() = phaseShieldTimer
     set(value) {
@@ -308,6 +333,7 @@ data class BombEntity(
   val customColor: Int = 0,
   val customEffect: CustomBuffEffect = CustomBuffEffect.NONE,
   val customBlastRadius: Float = 0f,
+  var armTimer: Float = 0.35f,
 )
 
 enum class AnomalyType {
@@ -348,6 +374,20 @@ data class ShockwaveEntity(
   var r: Float,
   val maxR: Float,
   val color: Int,
+)
+
+data class ShipDebrisChunk(
+  var x: Float,
+  var y: Float,
+  var vx: Float,
+  var vy: Float,
+  var angle: Float,
+  var angVel: Float,
+  val size: Float,
+  var life: Float,
+  val maxLife: Float,
+  val trimColor: Int,
+  var emberTimer: Float = 0f,
 )
 
 data class ShieldRippleEntity(
@@ -468,7 +508,6 @@ class RiftGameEngine(
         "SOLAR FLARE",
       )
     val LEGACY_FOUNDRY_TAGS = setOf("KSTL", "AURL", "VRTX", "RUST")
-    private val RIVAL_ARMADAS = listOf("", "VOID 3", "CRIMSON 4", "", "IRON DUO", "")
 
     fun cleanTag(rawTag: String): String {
       val t = rawTag.trim().removeSurrounding("[", "]").trim()
@@ -546,10 +585,15 @@ class RiftGameEngine(
   val westBrigRect = RectF(westBrigReactorX - stasisJailRadius, westBrigReactorY - stasisJailRadius, westBrigReactorX + stasisJailRadius, westBrigReactorY + stasisJailRadius)
   val eastBrigRect = RectF(eastBrigReactorX - stasisJailRadius, eastBrigReactorY - stasisJailRadius, eastBrigReactorX + stasisJailRadius, eastBrigReactorY + stasisJailRadius)
   val brigReactorRadius: Float = 54f
-  var westBrigGeneratorHp: Float = 40000f
-  var eastBrigGeneratorHp: Float = 40000f
+  var westBrigGeneratorHp: Float = 8000f
+  var eastBrigGeneratorHp: Float = 8000f
 
-  // Mode 5 (RIFT_CONTROL) 2-Rift Tug-of-War State
+  fun getEffectiveBrigReactorMaxHp(): Float {
+    val cal = RiftCalibrationState.stasisBrigReactorMaxHp
+    return if (cal >= 39000f) 8000f else cal.coerceAtLeast(1000f)
+  }
+
+  // Mode 5 (RIFT_CONTROL) 2-Rift Tug-of-War & 1,000-Pt Score Race State
   var riftAlphaX: Float = 2600f
   val riftAlphaY: Float = 4000f
   var riftOmegaX: Float = 5400f
@@ -563,9 +607,11 @@ class RiftGameEngine(
   var riftAlphaEastCount: Int = 0
   var riftOmegaWestCount: Int = 0
   var riftOmegaEastCount: Int = 0
+  var riftControlWestScore: Float = 0f
+  var riftControlEastScore: Float = 0f
   var riftControlMatchTimerSec: Float = 180f
 
-  // Fluid Up-to-5-Man Named Armada State
+  // Fluid Up-to-5-Man Named Armada State (Strictly Real Human Players Only)
   var activeArmadaName: String = "" // "" = SOLO
   val activeArmadaSlots = mutableListOf<ArmadaMemberSlot>()
   val armadaMemberSlots: MutableList<ArmadaMemberSlot>
@@ -576,11 +622,19 @@ class RiftGameEngine(
   val bombs = mutableListOf<BombEntity>()
   val particles = mutableListOf<ParticleEntity>()
   val shockwaves = mutableListOf<ShockwaveEntity>()
+  val shipDebrisChunks = mutableListOf<ShipDebrisChunk>()
   val shieldRipples = mutableListOf<ShieldRippleEntity>()
   val phaseAfterimages = mutableListOf<PhaseAfterimageEntity>()
   val interdictorBubbles = mutableListOf<InterdictorBubbleEntity>()
   val anomalies = mutableListOf<SpatialAnomalyEntity>()
   private var nextAnomalyId: Long = 1L
+
+  // Executioner Callcard Telemetry (populated on local pilot death)
+  var lastKillerCallsign: String = ""
+  var lastKillerShipId: Int = 1
+  var lastKillerRankTitle: String = "CADET"
+  var lastKillerWeaponLabel: String = ""
+  var lastKillerFinisherStyle: Int = 0
 
   // Phase 3.4 Object-Pooled Floating Combat Text (FCT)
   private val fctPool = Array(48) { FloatingPopup(active = false) }
@@ -680,6 +734,9 @@ class RiftGameEngine(
     localPlayer.vy = 0f
     localPlayer.visualBankRoll = 0f
     localPlayer.barrelRollTimer = 0f
+    localPlayer.hullImpactJoltTimer = 0f
+    localPlayer.deathLingerTimer = 0f
+    localPlayer.warpInAnimTimer = 0.65f
     localPlayer.afterburning = false
     if (isTeamBasedRankedMode()) {
       val sp = getSkirmishGateSpawnPosition(localPlayer.freq)
@@ -805,7 +862,7 @@ class RiftGameEngine(
     for (s in ships) {
       if (!s.isLocalPlayer && !s.isHuman) {
         s.armadaName = ""
-        s.syndicateTag = "GUEST"
+        s.syndicateTag = "BOT"
         s.bounty = 100
         s.isInStasisBrig = false
       }
@@ -1013,6 +1070,7 @@ class RiftGameEngine(
     decoys.clear()
     brickWalls.clear()
     shockwaves.clear()
+    shipDebrisChunks.clear()
     shieldRipples.clear()
     phaseAfterimages.clear()
     interdictorBubbles.clear()
@@ -1277,14 +1335,8 @@ class RiftGameEngine(
 
   fun simulateArmadaDropoutToDuo() {
     if (activeArmadaName.isEmpty() || activeArmadaSlots.size <= 2) {
-      formOrJoinArmada(
-        "APEX_4",
-        listOf(
-          FriendPilotEntry("f1", "VORTEX_ACE", localPlayer.syndicateTag, 1, "", true, "APEX_4", 4, 320),
-          FriendPilotEntry("f2", "CHRONO_X", localPlayer.syndicateTag, 6, "", true, "APEX_4", 4, 210),
-          FriendPilotEntry("f3", "VALKYRIE_Z", localPlayer.syndicateTag, 7, "", true, "APEX_4", 4, 180),
-        ),
-      )
+      onPrizeToast("Invite 2+ real pilots to your Armada first to test squad size reduction.")
+      return
     }
     val before = activeArmadaSlots.size
     while (activeArmadaSlots.size > 2) {
@@ -1292,7 +1344,7 @@ class RiftGameEngine(
     }
     applyArmadaRosterToSectorShips()
     onPrizeToast(
-      "⚡ ROSTER SHIFT DETECTED: [$activeArmadaName] DROPPED ${before}-MAN ➔ 2-MAN DUO TIER!"
+      "ARMADA [$activeArmadaName] TRIMMED ${before}-MAN -> 2-MAN DUO TIER"
     )
     onStatsUpdated()
   }
@@ -1304,7 +1356,7 @@ class RiftGameEngine(
     localPlayer.armadaName = ""
     applyArmadaRosterToSectorShips()
     if (old.isNotEmpty()) {
-      onPrizeToast("⚡ LEFT ARMADA [$old] ➔ FLYING [SOLO] IN THE RIFT")
+      onPrizeToast("LEFT ARMADA [$old] -> FLYING [SOLO]")
     }
     onStatsUpdated()
   }
@@ -1314,23 +1366,15 @@ class RiftGameEngine(
     val wingCallsigns = activeArmadaSlots.filter { !it.isLeader }.map { it.callsign }.toSet()
     for (s in ships) {
       if (s.isLocalPlayer) continue
+      if (!s.isHuman) {
+        s.syndicateTag = "BOT"
+        s.armadaName = ""
+        continue
+      }
       if (s.callsign in wingCallsigns) {
         s.armadaName = activeArmadaName
       } else if (s.armadaName == activeArmadaName) {
         s.armadaName = ""
-      }
-    }
-    for (slot in activeArmadaSlots) {
-      if (slot.isLeader) continue
-      if (ships.none { it.callsign == slot.callsign }) {
-        val candidate = ships.firstOrNull { !it.isLocalPlayer && it.armadaName != activeArmadaName }
-        if (candidate != null) {
-          candidate.callsign = slot.callsign
-          candidate.syndicateTag = slot.syndicateTag
-          candidate.armadaName = activeArmadaName
-          candidate.shipId = slot.shipId
-          candidate.spec = RiftCodex.getShipById(slot.shipId)
-        }
       }
     }
   }
@@ -1397,13 +1441,14 @@ class RiftGameEngine(
     skirmishRoundTimerSec = 180f
     spectatingTargetShipId = ""
     resetFluxCoreToCenter()
-    westBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
-    eastBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
+    westBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
+    eastBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
     resetRiftControlZones()
     bullets.clear()
     bombs.clear()
     decoys.clear()
     brickWalls.clear()
+    shipDebrisChunks.clear()
     interdictorBubbles.clear()
     rebuildRosterForMode(cfg.baseMode.id)
     for (s in ships) {
@@ -1413,7 +1458,7 @@ class RiftGameEngine(
     spawnLocalPlayerCleanly()
     isShipLockedForMatch = isTeamBasedRankedMode()
     sfx.playWarp()
-    onPrizeToast("🎮 JOINED CUSTOM GAME: ${cfg.title.uppercase()} (${cfg.baseMode.title})")
+    onPrizeToast("JOINED CUSTOM GAME: ${cfg.title.uppercase()} (${cfg.baseMode.title})")
     onStatsUpdated()
   }
 
@@ -1426,6 +1471,8 @@ class RiftGameEngine(
     riftAlphaEastCount = 0
     riftOmegaWestCount = 0
     riftOmegaEastCount = 0
+    riftControlWestScore = 0f
+    riftControlEastScore = 0f
     riftControlMatchTimerSec = 180f
   }
 
@@ -1599,14 +1646,15 @@ class RiftGameEngine(
       rivalPool.firstOrNull { !it.equals(localPlayer.syndicateTag, ignoreCase = true) } ?: "VTX"
 
     resetFluxCoreToCenter()
-    westBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
-    eastBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
+    westBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
+    eastBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
     resetRiftControlZones()
 
     bullets.clear()
     bombs.clear()
     decoys.clear()
     brickWalls.clear()
+    shipDebrisChunks.clear()
     interdictorBubbles.clear()
 
     rebuildRosterForMode(mode.id)
@@ -1786,18 +1834,18 @@ class RiftGameEngine(
     currentArenaSeed = seed
     walls.clear()
 
-    // Center Safe Zone Orbital Station Dock Pylons around (4000, 4000)
+    // Center Safe Zone Shield Emitter Forcefield Barriers around (4000, 4000)
     val cx = arenaCenterX
     val cy = arenaCenterY
-    walls.add(WallRect(cx - 448f, cy - 448f, 256f, 68f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 101))
-    walls.add(WallRect(cx + 192f, cy - 448f, 256f, 68f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 102))
-    walls.add(WallRect(cx - 448f, cy + 380f, 256f, 68f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 103))
-    walls.add(WallRect(cx + 192f, cy + 380f, 256f, 68f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 104))
+    walls.add(WallRect(cx - 448f, cy - 448f, 256f, 68f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 101))
+    walls.add(WallRect(cx + 192f, cy - 448f, 256f, 68f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 102))
+    walls.add(WallRect(cx - 448f, cy + 380f, 256f, 68f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 103))
+    walls.add(WallRect(cx + 192f, cy + 380f, 256f, 68f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 104))
 
-    walls.add(WallRect(cx - 448f, cy - 380f, 68f, 192f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 105))
-    walls.add(WallRect(cx - 448f, cy + 188f, 68f, 192f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 106))
-    walls.add(WallRect(cx + 380f, cy - 380f, 68f, 192f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 107))
-    walls.add(WallRect(cx + 380f, cy + 188f, 68f, 192f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 108))
+    walls.add(WallRect(cx - 448f, cy - 380f, 68f, 192f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 105))
+    walls.add(WallRect(cx - 448f, cy + 188f, 68f, 192f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 106))
+    walls.add(WallRect(cx + 380f, cy - 380f, 68f, 192f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 107))
+    walls.add(WallRect(cx + 380f, cy + 188f, 68f, 192f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 108))
 
     var rng = seed
     fun nextRand(): Float {
@@ -1805,25 +1853,26 @@ class RiftGameEngine(
       return ((rng ushr 8) and 0xFFFFFF).toFloat() / 0x1000000.toFloat()
     }
 
-    val styles = SpaceObstacleStyle.entries
+    val openStyles =
+      listOf(
+        SpaceObstacleStyle.ORBITAL_STATION,
+        SpaceObstacleStyle.ASTEROID_STATION,
+        SpaceObstacleStyle.CRYSTAL_ASTEROID,
+        SpaceObstacleStyle.FLOATING_DEBRIS,
+      )
     val clusterCount = ((arenaRadius / 3800f) * 18f).toInt().coerceIn(9, 18)
     for (i in 0 until clusterCount) {
       val radialMin = 680f
       val radialMax = (arenaRadius - 320f).coerceAtLeast(radialMin + 220f)
       val dist = radialMin + nextRand() * (radialMax - radialMin)
       val theta = nextRand() * (PI.toFloat() * 0.46f) + 0.04f
-      val stylePick = styles[(i + (nextRand() * 4f).toInt()) % styles.size]
-      val horizontal = nextRand() > 0.5f
+      val stylePick = openStyles[(i + (nextRand() * 4f).toInt()) % openStyles.size]
       val (w, h) =
         when (stylePick) {
-          SpaceObstacleStyle.ORBITAL_STATION ->
-            if (horizontal) 288f to 84f else 84f to 288f
-          SpaceObstacleStyle.ASTEROID_STATION ->
-            if (horizontal) 224f to 160f else 160f to 224f
-          SpaceObstacleStyle.CRYSTAL_ASTEROID ->
-            168f to 168f
-          SpaceObstacleStyle.FLOATING_DEBRIS ->
-            if (horizontal) 256f to 72f else 72f to 256f
+          SpaceObstacleStyle.ORBITAL_STATION -> 168f to 168f
+          SpaceObstacleStyle.ASTEROID_STATION -> 168f to 168f
+          SpaceObstacleStyle.CRYSTAL_ASTEROID -> 164f to 164f
+          else -> 160f to 160f
         }
 
       val offX = ((cos(theta) * dist).toInt() / 32) * 32f
@@ -2245,27 +2294,18 @@ class RiftGameEngine(
 
     val botsAllowed = currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled
     var botIdx = 0
-    val wingSlots = activeArmadaSlots.filter { !it.isLeader }
     if (botsAllowed) {
       if (isTeamMode) {
         while (friendlyCount < perTeamTarget) {
-          val wingSlot = wingSlots.getOrNull(friendlyCount - 1)
-          val shipId = wingSlot?.shipId ?: (((botIdx * 3) % 9) + 1)
+          val shipId = ((botIdx * 3) % 9) + 1
           val spec = RiftCodex.getShipById(shipId)
           val pos = getSkirmishGateSpawnPosition(0)
-          val tag =
-            when {
-              wingSlot != null -> wingSlot.syndicateTag
-              resolvedMode == RankedGameMode.SYNDICATE_WARS ->
-                localPlayer.syndicateTag.ifEmpty { "AEX" }
-              else -> localPlayer.syndicateTag.ifEmpty { "ALLY" }
-            }
           updated.add(
             ShipEntity(
               id = "bot_ally_$botIdx",
-              callsign = wingSlot?.callsign ?: BOT_CALLSIGNS[botIdx % BOT_CALLSIGNS.size],
-              syndicateTag = tag,
-              armadaName = if (wingSlot != null) activeArmadaName else "",
+              callsign = BOT_CALLSIGNS[botIdx % BOT_CALLSIGNS.size],
+              syndicateTag = "BOT",
+              armadaName = "",
               shipId = shipId,
               spec = spec,
               freq = 0,
@@ -2277,6 +2317,7 @@ class RiftGameEngine(
               weaponAngle = 0f,
               bounty = 100,
               phaseShieldTimer = 3.0f,
+              warpInAnimTimer = 0.65f,
             )
           )
           friendlyCount++
@@ -2287,13 +2328,11 @@ class RiftGameEngine(
           val shipId = ((botIdx * 5 + 1) % 9) + 1
           val spec = RiftCodex.getShipById(shipId)
           val pos = getSkirmishGateSpawnPosition(1)
-          val tag =
-            if (resolvedMode == RankedGameMode.SYNDICATE_WARS) rivalSyndicateWarTag else "RIVL"
           updated.add(
             ShipEntity(
               id = "bot_rival_$botIdx",
               callsign = BOT_CALLSIGNS[(botIdx + 7) % BOT_CALLSIGNS.size],
-              syndicateTag = tag,
+              syndicateTag = "BOT",
               armadaName = "",
               shipId = shipId,
               spec = spec,
@@ -2306,6 +2345,7 @@ class RiftGameEngine(
               weaponAngle = PI.toFloat(),
               bounty = 100,
               phaseShieldTimer = 3.0f,
+              warpInAnimTimer = 0.65f,
             )
           )
           rivalCount++
@@ -2333,6 +2373,7 @@ class RiftGameEngine(
               angle = PI.toFloat(),
               weaponAngle = PI.toFloat(),
               bounty = 100,
+              warpInAnimTimer = 0.65f,
             )
           )
           rivalCount++
@@ -2965,12 +3006,80 @@ class RiftGameEngine(
     }
   }
 
+  fun fireSecondaryAbility(ship: ShipEntity, aimAngle: Float? = null) {
+    fireSecondaryBomb(ship, aimAngle)
+  }
+
+  private fun detonateActiveBombAtIndex(index: Int) {
+    if (index !in bombs.indices) return
+    val b = bombs[index]
+    val isMissile = b.type == "MISSILE"
+    val isCustomOrb = b.type == "CUSTOM_ORB"
+    val expRadius =
+      when (b.type) {
+        "CUSTOM_ORB" -> if (b.customBlastRadius > 0f) b.customBlastRadius else 190f
+        "MISSILE" -> 155f
+        "SIEGE" -> 235f
+        "EMP" -> 240f
+        "PROX", "MINE" -> (b.radius + RiftCalibrationState.proxFuseRadius) * 1.35f
+        else -> b.radius * 3.8f
+      }
+    val expDmg = if (b.type == "SIEGE" || isMissile || isCustomOrb) b.damage else b.damage * 0.65f
+    if (b.type == "PROX") {
+      spawnProximityFlakShrapnel(b)
+    }
+    for (s in ships) {
+      if (!(isInLobbyStaging && s.isLocalPlayer) && !isBombAlliedWithShip(b, s) && s.respawnTimer <= 0f && !isInsideSafeZone(s.x, s.y)) {
+        val dist = hypot(s.x - b.x, s.y - b.y)
+        if (dist < s.radius + expRadius) {
+          val falloff = (1f - (dist / (s.radius + expRadius)) * 0.35f).coerceIn(0.55f, 1f)
+          val incAngle = atan2(b.y - s.y, b.x - s.x)
+          applyProjectileDamage(
+            target = s,
+            attackerId = b.ownerId,
+            attackerIsHuman = b.ownerIsHuman,
+            rawDamage = expDmg * falloff,
+            impactAngle = incAngle,
+            isHeavyImpact = true,
+            isEmp = b.type == "EMP" || (isCustomOrb && b.customEffect == CustomBuffEffect.EMP),
+            attackerShipLabel = b.ownerShipLabel,
+            weaponLabel = if (b.type == "SIEGE") "Mid-Air Siege Detonation" else b.weaponLabel,
+          )
+        }
+      }
+    }
+    shockwaves.add(ShockwaveEntity(b.x, b.y, 18f, expRadius, Color.parseColor("#F97316")))
+    shockwaves.add(ShockwaveEntity(b.x, b.y, 10f, expRadius * 0.72f, Color.parseColor("#FACC15")))
+    if (hypot(b.x - localPlayer.x, b.y - localPlayer.y) < 1200f) {
+      sfx.playExplosion()
+    }
+    if (b.ownerId == localPlayer.id) {
+      addTrauma(0.32f)
+      spawnPooledFct("SIEGE DETONATED", b.x, b.y - 26f, Color.parseColor("#F97316"), maxLife = 1.0f)
+    }
+    spawnExplosion(b.x, b.y, Color.parseColor("#F97316"))
+    bombs.removeAt(index)
+  }
+
   /**
    * Handles the Contextual Class / Secondary Ability Button for all ships.
    */
   fun fireSecondaryBomb(ship: ShipEntity, aimAngle: Float? = null) {
     if (ship.respawnTimer > 0f) return
     if (ship.isLocalPlayer && isBombCancelActive) return
+
+    // Goliath (#4) Manual Mid-Air Siege Bomb Detonation at 0 extra Flux
+    if (ship.spec.id == 4 || ship.spec.bombType == "SIEGE") {
+      val activeSiegeIdx = bombs.indexOfFirst { it.ownerId == ship.id && it.type == "SIEGE" }
+      if (activeSiegeIdx >= 0) {
+        detonateActiveBombAtIndex(activeSiegeIdx)
+        if (ship.isLocalPlayer) {
+          buffVersion++
+        }
+        return
+      }
+    }
+
     if (isInsideSafeZone(ship.x, ship.y)) {
       triggerSafeZoneWeaponLockout(ship)
       return
@@ -4096,12 +4205,126 @@ class RiftGameEngine(
     return pts
   }
 
-  private fun triggerVisualBarrelRoll(ship: ShipEntity, nx: Float, ny: Float) {
-    if (ship.barrelRollTimer <= 0.08f && hypot(ship.vx, ship.vy) > 38f) {
-      ship.barrelRollTimer = 0.48f
-      val cross = cos(ship.angle) * ny - sin(ship.angle) * nx
-      ship.barrelRollDir = if (cross >= 0f) 1f else -1f
+  private fun computePilotRankTitleForBounty(bounty: Int, isHuman: Boolean): String {
+    if (!isHuman) return "AI BOT"
+    return when {
+      bounty >= 1000 -> "SOVEREIGN"
+      bounty >= 600 -> "APEX WARLORD"
+      bounty >= 350 -> "ACE COMMANDER"
+      bounty >= 200 -> "VANGUARD"
+      else -> "PILOT"
     }
+  }
+
+  private fun triggerWallBounceReaction(
+    ship: ShipEntity,
+    nx: Float,
+    ny: Float,
+    preVx: Float,
+    preVy: Float,
+  ) {
+    val totalSpeed = hypot(preVx, preVy)
+    if (totalSpeed < 22f) return
+    val impactSpeed = kotlin.math.abs(preVx * nx + preVy * ny)
+    val tangentDot = preVx * (-ny) + preVy * nx
+    val glancingCos = kotlin.math.abs(tangentDot) / totalSpeed.coerceAtLeast(1f)
+    val cross = cos(ship.angle) * ny - sin(ship.angle) * nx
+
+    // Reaction 1: Rare High-Speed Glancing Stunt Barrel Roll (35% roll chance, 3.5s cooldown)
+    if (
+      totalSpeed > 360f &&
+        glancingCos > 0.58f &&
+        ship.lastBarrelRollCooldown <= 0f &&
+        ship.barrelRollTimer <= 0f &&
+        Random.nextFloat() < 0.35f
+    ) {
+      ship.barrelRollDuration = 0.48f
+      ship.barrelRollTimer = 0.48f
+      ship.barrelRollDir = if (cross >= 0f) 1f else -1f
+      ship.lastBarrelRollCooldown = 3.5f
+      ship.hullImpactType = 1
+      return
+    }
+
+    // Reaction 2: Hard Direct Impact (> 200 px/s normal component)
+    if (impactSpeed > 200f) {
+      ship.hullImpactType = 2
+      ship.hullImpactJoltTimer = 0.22f
+      ship.hullImpactNormalX = nx
+      ship.hullImpactNormalY = ny
+      shieldRipples.add(
+        ShieldRippleEntity(
+          shipId = ship.id,
+          impactAngle = atan2(-ny, -nx),
+          intensity = 1.0f,
+          life = 0.30f,
+        )
+      )
+      if (particles.size < 160) {
+        val baseAng = atan2(ny, nx)
+        for (i in 0 until 10) {
+          val sp = 95f + Random.nextFloat() * 190f
+          val a = baseAng + (Random.nextFloat() - 0.5f) * 1.45f
+          particles.add(
+            ParticleEntity(
+              x = ship.x - nx * (ship.radius * 0.85f),
+              y = ship.y - ny * (ship.radius * 0.85f),
+              vx = cos(a) * sp,
+              vy = sin(a) * sp,
+              life = 0.28f + Random.nextFloat() * 0.16f,
+              maxLife = 0.44f,
+              size = 3.8f + Random.nextFloat() * 2.4f,
+              color = if (i % 2 == 0) Color.parseColor("#00F5D4") else Color.parseColor("#FACC15"),
+            )
+          )
+        }
+      }
+      if (ship.isLocalPlayer) {
+        addTrauma(0.18f)
+      }
+      return
+    }
+
+    // Reaction 3: Medium Scrape (105..200 px/s)
+    if (impactSpeed >= 105f) {
+      ship.hullImpactType = 3
+      ship.hullImpactJoltTimer = 0.14f
+      ship.hullImpactNormalX = nx
+      ship.hullImpactNormalY = ny
+      val rollSnap = if (cross >= 0f) 0.55f else -0.55f
+      ship.visualBankRoll = (ship.visualBankRoll + rollSnap).coerceIn(-1f, 1f)
+      if (particles.size < 160) {
+        val baseAng = atan2(ny, nx)
+        for (i in 0 until 5) {
+          val sp = 65f + Random.nextFloat() * 130f
+          val a = baseAng + (Random.nextFloat() - 0.5f) * 1.6f
+          particles.add(
+            ParticleEntity(
+              x = ship.x - nx * (ship.radius * 0.85f),
+              y = ship.y - ny * (ship.radius * 0.85f),
+              vx = cos(a) * sp,
+              vy = sin(a) * sp,
+              life = 0.22f,
+              maxLife = 0.22f,
+              size = 3.2f,
+              color = Color.parseColor("#38BDF8"),
+            )
+          )
+        }
+      }
+      return
+    }
+
+    // Reaction 4: Light Graze (< 105 px/s)
+    ship.hullImpactType = 4
+    shieldRipples.add(
+      ShieldRippleEntity(
+        shipId = ship.id,
+        impactAngle = atan2(-ny, -nx),
+        intensity = 0.45f,
+        life = 0.18f,
+      )
+    )
   }
 
   private fun bounceCircleAgainstRect(
@@ -4124,12 +4347,14 @@ class RiftGameEngine(
       ship.x += nx * (pen + 0.5f)
       ship.y += ny * (pen + 0.5f)
 
-      val dot = ship.vx * nx + ship.vy * ny
+      val preVx = ship.vx
+      val preVy = ship.vy
+      val dot = preVx * nx + preVy * ny
       if (dot < 0f) {
         val elast = RiftCalibrationState.wallElasticity
-        ship.vx = (ship.vx - 2f * dot * nx) * elast
-        ship.vy = (ship.vy - 2f * dot * ny) * elast
-        triggerVisualBarrelRoll(ship, nx, ny)
+        ship.vx = (preVx - 2f * dot * nx) * elast
+        ship.vy = (preVy - 2f * dot * ny) * elast
+        triggerWallBounceReaction(ship, nx, ny, preVx, preVy)
         if (ship.isLocalPlayer && hypot(ship.vx, ship.vy) > 45f) {
           sfx.playBounce()
         }
@@ -4144,7 +4369,7 @@ class RiftGameEngine(
     for (bw in brickWalls) {
       bounceCircleAgainstRect(ship, bw.x, bw.y, bw.w, bw.h)
     }
-    // True Circular Sector Containment Ring Elastic Bounce (0⚡ damage, triggers 360° visual barrel roll)
+    // Circular Sector Containment Ring Elastic Bounce
     val dxC = ship.x - arenaCenterX
     val dyC = ship.y - arenaCenterY
     val distC = hypot(dxC, dyC)
@@ -4154,12 +4379,14 @@ class RiftGameEngine(
       val outNy = dyC / distC.coerceAtLeast(0.001f)
       ship.x = arenaCenterX + outNx * maxShipR
       ship.y = arenaCenterY + outNy * maxShipR
-      val dotOut = ship.vx * outNx + ship.vy * outNy
+      val preVx = ship.vx
+      val preVy = ship.vy
+      val dotOut = preVx * outNx + preVy * outNy
       if (dotOut > 0f) {
         val elast = RiftCalibrationState.wallElasticity
-        ship.vx = (ship.vx - 2f * dotOut * outNx) * elast
-        ship.vy = (ship.vy - 2f * dotOut * outNy) * elast
-        triggerVisualBarrelRoll(ship, -outNx, -outNy)
+        ship.vx = (preVx - 2f * dotOut * outNx) * elast
+        ship.vy = (preVy - 2f * dotOut * outNy) * elast
+        triggerWallBounceReaction(ship, -outNx, -outNy, preVx, preVy)
         if (ship.isLocalPlayer && hypot(ship.vx, ship.vy) > 45f) {
           sfx.playBounce()
         }
@@ -4169,7 +4396,7 @@ class RiftGameEngine(
 
   private fun spawnExplosion(x: Float, y: Float, color: Int) {
     shockwaves.add(ShockwaveEntity(x, y, 16f, 290f, color))
-    if (particles.size > 80) {
+    if (particles.size > 150) {
       repeat(20) { if (particles.isNotEmpty()) particles.removeAt(0) }
     }
     for (i in 0 until 18) {
@@ -4187,6 +4414,93 @@ class RiftGameEngine(
           color = if (i % 2 == 0) color else Color.parseColor("#F59E0B"),
         )
       )
+    }
+  }
+
+  private fun triggerMultiStageShipExplosion(
+    target: ShipEntity,
+    attacker: ShipEntity?,
+    weaponLabel: String,
+    fallbackKillerName: String = "ORDNANCE",
+  ) {
+    target.deathLingerTimer = 1.0f
+    target.respawnTimer = max(target.respawnTimer, 1.35f)
+    val finisher = attacker?.equippedKillFinisher ?: 0
+    val (primaryCol, secondaryCol, trimCol) =
+      when (finisher) {
+        1 -> Triple(Color.parseColor("#A855F7"), Color.parseColor("#00F5D4"), Color.parseColor("#C084FC"))
+        2 -> Triple(Color.parseColor("#FACC15"), Color.parseColor("#FEF08A"), Color.parseColor("#F59E0B"))
+        3 -> Triple(Color.parseColor("#38BDF8"), Color.parseColor("#00F5D4"), Color.parseColor("#7DD3FC"))
+        else -> Triple(Color.parseColor("#F97316"), Color.parseColor("#FACC15"), Color.parseColor("#FB923C"))
+      }
+
+    // 3 staggered concentric shockwave rings
+    shockwaves.add(ShockwaveEntity(target.x, target.y, 12f, 155f, Color.WHITE))
+    shockwaves.add(ShockwaveEntity(target.x, target.y, 24f, 360f, primaryCol))
+    shockwaves.add(ShockwaveEntity(target.x, target.y, 6f, 480f, secondaryCol))
+
+    // 7 spinning metallic hull debris chunks with glowing ember trails
+    while (shipDebrisChunks.size > 35) {
+      shipDebrisChunks.removeAt(0)
+    }
+    for (i in 0 until 7) {
+      val ang = (i / 7f) * (PI.toFloat() * 2f) + (Random.nextFloat() - 0.5f) * 0.55f
+      val sp = 95f + Random.nextFloat() * 195f
+      val spin = (if (i % 2 == 0) 1f else -1f) * (4.2f + Random.nextFloat() * 6.8f)
+      val life = 1.05f + Random.nextFloat() * 0.25f
+      shipDebrisChunks.add(
+        ShipDebrisChunk(
+          x = target.x + cos(ang) * 10f,
+          y = target.y + sin(ang) * 10f,
+          vx = cos(ang) * sp,
+          vy = sin(ang) * sp,
+          angle = Random.nextFloat() * PI.toFloat() * 2f,
+          angVel = spin,
+          size = 11f + Random.nextFloat() * 8f,
+          life = life,
+          maxLife = life,
+          trimColor = trimCol,
+        )
+      )
+    }
+
+    // 48 high-velocity plasma & reactor fire particles
+    while (particles.size > 140) {
+      particles.removeAt(0)
+    }
+    for (i in 0 until 48) {
+      val a = Random.nextFloat() * PI.toFloat() * 2f
+      val sp = 75f + Random.nextFloat() * 420f
+      val pLife = 0.42f + Random.nextFloat() * 0.62f
+      val pCol =
+        when (i % 4) {
+          0 -> Color.WHITE
+          1 -> primaryCol
+          2 -> secondaryCol
+          else -> Color.parseColor("#EF4444")
+        }
+      particles.add(
+        ParticleEntity(
+          x = target.x,
+          y = target.y,
+          vx = cos(a) * sp,
+          vy = sin(a) * sp,
+          life = pLife,
+          maxLife = pLife,
+          size = 4.2f + Random.nextFloat() * 5.6f,
+          color = pCol,
+        )
+      )
+    }
+
+    if (target.isLocalPlayer) {
+      lastKillerCallsign = attacker?.callsign ?: fallbackKillerName
+      lastKillerShipId = attacker?.shipId ?: target.shipId
+      lastKillerRankTitle =
+        if (attacker == null) "SECTOR HAZARD"
+        else computePilotRankTitleForBounty(attacker.bounty, attacker.isHuman)
+      lastKillerWeaponLabel = weaponLabel.ifBlank { "Primary Blaster" }
+      lastKillerFinisherStyle = finisher
     }
   }
 
@@ -4210,13 +4524,14 @@ class RiftGameEngine(
       target.isCloaked = false
       if (target.isLocalPlayer) {
         buffVersion++
-        onPrizeToast("⚠ STEALTH CLOAK BROKEN BY INCOMING FIRE!")
+        onPrizeToast("STEALTH CLOAK BROKEN BY INCOMING FIRE")
       }
     }
 
     val phaseDodged = target.phaseDashTimer > 0f && !isEmp
     val shieldAbsorbed = target.phaseShieldTimer > 0f
-    val empFluxDrain = if (isEmp) target.maxFlux * RiftCalibrationState.empFluxDrainPct else 0f
+    // Disruptor (#6) EMP Cap: max 25% of target maxFlux, capped at 850 Flux, 2.0s recharge lock
+    val empFluxDrain = if (isEmp) min(850f, target.maxFlux * 0.25f) else 0f
     val baseCombined = max(rawDamage, empFluxDrain)
     val effectiveDamage =
       when {
@@ -4236,7 +4551,7 @@ class RiftGameEngine(
       )
       if (attackerId == localPlayer.id || target.isLocalPlayer) {
         spawnPooledFct(
-          text = "⚡ PHASE EVADED",
+          text = "PHASE EVADED",
           x = target.x,
           y = target.y - 20f,
           color = Color.parseColor("#00F5D4"),
@@ -4246,9 +4561,9 @@ class RiftGameEngine(
     }
 
     if (isEmp) {
-      target.empTimer = RiftCalibrationState.empFreezeSec
+      target.empTimer = max(target.empTimer, 2.0f)
       if (target.isLocalPlayer) {
-        onPrizeToast("⚡ HIT BY 360° EMP PULSE! -${(RiftCalibrationState.empFluxDrainPct * 100f).toInt()}% FLUX & RECHARGE DISABLED FOR ${String.format(java.util.Locale.US, "%.1fs", RiftCalibrationState.empFreezeSec)}!")
+        onPrizeToast("HIT BY EMP PULSE! -${effectiveDamage.toInt()} FLUX & 2.0s RECHARGE LOCK")
       }
     }
 
@@ -4287,7 +4602,7 @@ class RiftGameEngine(
           else -> Color.parseColor("#F1F5F9")
         }
       spawnPooledFct(
-        text = if (isEmp) "⚡ EMP -${effectiveDamage.toInt()}⚡" else "-${effectiveDamage.toInt()}",
+        text = if (isEmp) "EMP -${effectiveDamage.toInt()}" else "-${effectiveDamage.toInt()}",
         x = target.x,
         y = target.y - 18f,
         color = fctColor,
@@ -4309,7 +4624,7 @@ class RiftGameEngine(
       target.flux = 0f
       target.deathX = target.x
       target.deathY = target.y
-      target.respawnTimer = RiftCalibrationState.respawnDelaySec
+      target.respawnTimer = max(1.35f, RiftCalibrationState.respawnDelaySec)
       target.deaths++
       target.isCloaked = false
       target.sniperOverchargeReady = false
@@ -4328,12 +4643,22 @@ class RiftGameEngine(
       }
       if (attackerId == localPlayer.id || target.isLocalPlayer) {
         triggerHitStop(2)
-        addTrauma(0.45f)
+        addTrauma(0.55f)
       }
-      spawnExplosion(
-        target.x,
-        target.y,
-        if (areAllied(localPlayer, target)) Color.parseColor("#38BDF8") else Color.parseColor("#EF4444"),
+
+      val victimPreDeathBounty = target.bounty
+      val attacker = ships.find { it.id == attackerId }
+      val attackerPreKillBounty = attacker?.bounty ?: 100
+      if (attacker != null) {
+        attacker.kills++
+        attacker.bounty += bountyAward
+      }
+
+      triggerMultiStageShipExplosion(
+        target = target,
+        attacker = attacker,
+        weaponLabel = weaponLabel,
+        fallbackKillerName = "ORDNANCE",
       )
 
       spawnPooledFct(
@@ -4343,14 +4668,6 @@ class RiftGameEngine(
         color = if (wasHvt) Color.parseColor("#F59E0B") else Color.parseColor("#10B981"),
         maxLife = 1.15f,
       )
-
-      val victimPreDeathBounty = target.bounty
-      val attacker = ships.find { it.id == attackerId }
-      val attackerPreKillBounty = attacker?.bounty ?: 100
-      if (attacker != null) {
-        attacker.kills++
-        attacker.bounty += bountyAward
-      }
 
       pushKillFeedEntry(
         killerTag =
@@ -4441,7 +4758,7 @@ class RiftGameEngine(
       ejectFluxCoreFromShip(victim, reason = "CARRIER TERMINATED")
     }
 
-    // 2. Mode 2: RIFT_SKIRMISH (or 3v3/5v5 SYNDICATE_WARS) — 3-Minute Rounds, No Respawn Until Round End, Ally Spectate
+    // 2. Mode 2: RIFT_SKIRMISH (or 3v3/5v5 SYNDICATE_WARS) — 3-Minute Rounds, No Respawn Until Round End, Ally Spectate after 1.0s death linger
     if (isSkirmishRulesActive()) {
       victim.respawnTimer = 9999f
       if (victim.freq == 1) {
@@ -4455,9 +4772,6 @@ class RiftGameEngine(
             .filter { it.freq == localPlayer.freq && it.respawnTimer <= 0f && !it.isLocalPlayer }
             .maxByOrNull { it.bounty }
         spectatingTargetShipId = bestAlly?.id ?: ""
-        if (bestAlly != null) {
-          onPrizeToast("🎥 Spectating ${bestAlly.callsign} until round ends...")
-        }
       }
       val westAlive = ships.count { it.freq == 0 && it.respawnTimer <= 0f }
       val eastAlive = ships.count { it.freq == 1 && it.respawnTimer <= 0f }
@@ -4473,7 +4787,7 @@ class RiftGameEngine(
     if (isStasisBreachRulesActive()) {
       victim.isInStasisBrig = true
       if (victim.isLocalPlayer) {
-        onPrizeToast("🔒 Captured in Enemy Stasis Jail! Shoot the center Core to break out!")
+        onPrizeToast("Captured in Enemy Stasis Jail! Shoot the center Core to break out!")
       }
       checkStasisLockdownVictory()
     }
@@ -4493,6 +4807,8 @@ class RiftGameEngine(
     // Respawn & heal all ships at their West/East Horizon Warp Gates for the next round
     for (s in ships) {
       s.respawnTimer = 0f
+      s.deathLingerTimer = 0f
+      s.warpInAnimTimer = 0.65f
       s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
       s.flux = s.maxFlux
       s.vx = 0f
@@ -4506,6 +4822,7 @@ class RiftGameEngine(
     bullets.clear()
     bombs.clear()
     brickWalls.clear()
+    shipDebrisChunks.clear()
     interdictorBubbles.clear()
     bakeStaticRadarBitmap()
 
@@ -4573,6 +4890,8 @@ class RiftGameEngine(
     for (s in ships) {
       s.isInStasisBrig = false
       s.respawnTimer = 0f
+      s.deathLingerTimer = 0f
+      s.warpInAnimTimer = 0.65f
       s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
       s.flux = s.maxFlux
       s.vx = 0f
@@ -4583,9 +4902,10 @@ class RiftGameEngine(
       s.phaseShieldTimer = 3.0f
     }
     brickWalls.clear()
+    shipDebrisChunks.clear()
     bakeStaticRadarBitmap()
-    westBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
-    eastBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
+    westBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
+    eastBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
 
     if (westWon) {
       riftShards += 100L
@@ -4594,7 +4914,7 @@ class RiftGameEngine(
       if (isClanWar) {
         onSyndicateWarFinished(true, 35)
       }
-      val msg = "🏆 TOTAL STASIS LOCKDOWN VICTORY! ALL ENEMY PILOTS JAILED (+100❖ RIFT SHARDS)"
+      val msg = "TOTAL STASIS LOCKDOWN VICTORY! ALL ENEMY PILOTS JAILED (+100 RIFT SHARDS)"
       highBountyShutdownBanner = msg
       highBountyShutdownTimer = 5.5f
       sfx.playPrize()
@@ -4604,7 +4924,7 @@ class RiftGameEngine(
       if (isClanWar) {
         onSyndicateWarFinished(false, -20)
       }
-      val msg = "⚠️ TOTAL STASIS LOCKDOWN — EAST HORIZON JAILED ALL WEST PILOTS! NEW MATCH STARTING"
+      val msg = "TOTAL STASIS LOCKDOWN — EAST HORIZON JAILED ALL WEST PILOTS! NEW MATCH STARTING"
       highBountyShutdownBanner = msg
       highBountyShutdownTimer = 4.8f
       sfx.playWarp()
@@ -4618,9 +4938,9 @@ class RiftGameEngine(
     rawDamage: Float,
   ) {
     if (!isStasisBreachRulesActive()) return
-    // Strictly only prisoners inside that jail can damage the center Core (at 100% weapon damage)
+    // Prisoners inside that jail deal 40% weapon damage against the 8,000 HP center Core
     if (attacker == null || !attacker.isInStasisBrig || attacker.freq == targetBrigFreq) return
-    val effectiveDmg = rawDamage
+    val effectiveDmg = rawDamage * 0.40f
     if (effectiveDmg <= 0f) return
 
     val rx = if (targetBrigFreq == 0) westBrigReactorX else eastBrigReactorX
@@ -4636,7 +4956,7 @@ class RiftGameEngine(
       currentLifeStats.shotsHit++
       currentLifeStats.damageDealt += effectiveDmg
       spawnPooledFct(
-        text = "⚡ JAIL CORE -${effectiveDmg.toInt()}⚡",
+        text = "JAIL CORE -${effectiveDmg.toInt()}",
         x = rx,
         y = ry - 36f,
         color = Color.parseColor("#FACC15"),
@@ -4651,7 +4971,7 @@ class RiftGameEngine(
   }
 
   private fun breachStasisBrig(brigTeamFreq: Int) {
-    val maxHp = RiftCalibrationState.stasisBrigReactorMaxHp
+    val maxHp = getEffectiveBrigReactorMaxHp()
     val rx = if (brigTeamFreq == 0) westBrigReactorX else eastBrigReactorX
     val ry = if (brigTeamFreq == 0) westBrigReactorY else eastBrigReactorY
     val releasedPrisonerFreq = if (brigTeamFreq == 0) 1 else 0
@@ -4785,13 +5105,14 @@ class RiftGameEngine(
       onStatsUpdated()
       onPrizeToast("SHIP DESTROYED — IDLE FLUX DRAIN DEPLETED")
     }
-    spawnExplosion(
-      target.x,
-      target.y,
-      Color.parseColor("#EF4444"),
+    triggerMultiStageShipExplosion(
+      target = target,
+      attacker = null,
+      weaponLabel = "Open-Space Idle Drain",
+      fallbackKillerName = "IDLE DRAIN",
     )
     spawnPooledFct(
-      text = "⚠ IDLE FLUX OVERLOAD",
+      text = "IDLE FLUX OVERLOAD",
       x = target.x,
       y = target.y - 26f,
       color = Color.parseColor("#EF4444"),
@@ -4819,7 +5140,7 @@ class RiftGameEngine(
     target.flux = 0f
     target.deathX = target.x
     target.deathY = target.y
-    target.respawnTimer = RiftCalibrationState.respawnDelaySec
+    target.respawnTimer = max(1.35f, RiftCalibrationState.respawnDelaySec)
     target.deaths++
     target.playfieldIdleTimer = 0f
     target.safeZoneStayTimer = 0f
@@ -4842,7 +5163,7 @@ class RiftGameEngine(
     }
     if (target.isLocalPlayer) {
       triggerHitStop(2)
-      addTrauma(0.45f)
+      addTrauma(0.55f)
       allTimeDeaths++
       currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, victimPreDeathBounty)
       val finalized =
@@ -4862,13 +5183,14 @@ class RiftGameEngine(
       onStatsUpdated()
       onPrizeToast("SHIP DESTROYED — PLASMA RIFT SHEAR OVERLOAD")
     }
-    spawnExplosion(
-      target.x,
-      target.y,
-      Color.parseColor("#EF4444"),
+    triggerMultiStageShipExplosion(
+      target = target,
+      attacker = null,
+      weaponLabel = "Plasma Shear Overload",
+      fallbackKillerName = "PLASMA RIFT",
     )
     spawnPooledFct(
-      text = "☢ PLASMA RIFT OVERLOAD",
+      text = "PLASMA RIFT OVERLOAD",
       x = target.x,
       y = target.y - 26f,
       color = Color.parseColor("#EF4444"),
@@ -5852,9 +6174,21 @@ class RiftGameEngine(
       if (s.missileBeepCooldown > 0f) {
         s.missileBeepCooldown = max(0f, s.missileBeepCooldown - rawDt)
       }
+      if (s.warpInAnimTimer > 0f) {
+        s.warpInAnimTimer = max(0f, s.warpInAnimTimer - rawDt)
+      }
+      if (s.lastBarrelRollCooldown > 0f) {
+        s.lastBarrelRollCooldown = max(0f, s.lastBarrelRollCooldown - rawDt)
+      }
+      if (s.hullImpactJoltTimer > 0f) {
+        s.hullImpactJoltTimer = max(0f, s.hullImpactJoltTimer - rawDt)
+      }
       if (s.respawnTimer > 0f) {
+        if (s.deathLingerTimer > 0f) {
+          s.deathLingerTimer = max(0f, s.deathLingerTimer - rawDt)
+        }
         if (isSkirmishRulesActive()) {
-          if (s.isLocalPlayer) {
+          if (s.isLocalPlayer && s.deathLingerTimer <= 0f) {
             val curTarget = ships.firstOrNull { it.id == spectatingTargetShipId && it.respawnTimer <= 0f }
             if (curTarget == null) {
               val nextAlly =
@@ -5869,6 +6203,10 @@ class RiftGameEngine(
         s.respawnTimer -= rawDt
         if (s.respawnTimer <= 0f) {
           s.respawnTimer = 0f
+          s.deathLingerTimer = 0f
+          s.warpInAnimTimer = 0.65f
+          s.hullImpactJoltTimer = 0f
+          s.lastBarrelRollCooldown = 0f
           val pos =
             when {
               isStasisBreachRulesActive() && s.isInStasisBrig -> getStasisBrigPrisonerSpawnPosition(s.freq)
@@ -6048,15 +6386,6 @@ class RiftGameEngine(
           s.wasInSafeZone = false
           s.phaseShieldTimer = RiftCalibrationState.exitPhaseShieldSec
           s.safeZoneLockoutTimer = RiftCalibrationState.safeZoneReentryLockoutTime
-          if (s.isLocalPlayer && s.safeZoneLockoutTimer > 0f) {
-            onPrizeToast(
-              String.format(
-                java.util.Locale.US,
-                "SAFE ZONE EXITED — %.1fs RE-ENTRY REPULSION LOCKOUT ACTIVE",
-                s.safeZoneLockoutTimer,
-              )
-            )
-          }
         } else if (s.phaseShieldTimer > 0f) {
           s.phaseShieldTimer = max(0f, s.phaseShieldTimer - dt)
         }
@@ -6124,12 +6453,14 @@ class RiftGameEngine(
               val ny = dy / dSafe
               s.x = jx + nx * innerLimit
               s.y = jy + ny * innerLimit
-              val dot = s.vx * nx + s.vy * ny
+              val preVx = s.vx
+              val preVy = s.vy
+              val dot = preVx * nx + preVy * ny
               if (dot > 0f) {
                 val elast = RiftCalibrationState.wallElasticity
-                s.vx = (s.vx - 2f * dot * nx) * elast
-                s.vy = (s.vy - 2f * dot * ny) * elast
-                triggerVisualBarrelRoll(s, -nx, -ny)
+                s.vx = (preVx - 2f * dot * nx) * elast
+                s.vy = (preVy - 2f * dot * ny) * elast
+                triggerWallBounceReaction(s, -nx, -ny, preVx, preVy)
                 if (s.isLocalPlayer) sfx.playBounce()
               }
             }
@@ -6141,12 +6472,14 @@ class RiftGameEngine(
               val ny = if (curDist > 0.001f) dy / dSafe else 0f
               s.x = jx + nx * outerLimit
               s.y = jy + ny * outerLimit
-              val dot = s.vx * nx + s.vy * ny
+              val preVx = s.vx
+              val preVy = s.vy
+              val dot = preVx * nx + preVy * ny
               if (dot < 0f) {
                 val elast = RiftCalibrationState.wallElasticity
-                s.vx = (s.vx - 2f * dot * nx) * elast
-                s.vy = (s.vy - 2f * dot * ny) * elast
-                triggerVisualBarrelRoll(s, nx, ny)
+                s.vx = (preVx - 2f * dot * nx) * elast
+                s.vy = (preVy - 2f * dot * ny) * elast
+                triggerWallBounceReaction(s, nx, ny, preVx, preVy)
                 if (s.isLocalPlayer) sfx.playBounce()
               }
             }
@@ -6154,7 +6487,7 @@ class RiftGameEngine(
         }
       }
 
-      // Two-Way Interdictor Stasis Bubble Containment (0⚡ collision damage, elastic reflection)
+      // Two-Way Interdictor Stasis Bubble Containment (0 collision damage, elastic reflection)
       for (ib in interdictorBubbles) {
         val prevDist = hypot(prevShipX - ib.x, prevShipY - ib.y)
         val dx = s.x - ib.x
@@ -6168,12 +6501,14 @@ class RiftGameEngine(
             val ny = dy / dSafe
             s.x = ib.x + nx * innerLimit
             s.y = ib.y + ny * innerLimit
-            val dot = s.vx * nx + s.vy * ny
+            val preVx = s.vx
+            val preVy = s.vy
+            val dot = preVx * nx + preVy * ny
             if (dot > 0f) {
               val elast = RiftCalibrationState.wallElasticity
-              s.vx = (s.vx - 2f * dot * nx) * elast
-              s.vy = (s.vy - 2f * dot * ny) * elast
-              triggerVisualBarrelRoll(s, -nx, -ny)
+              s.vx = (preVx - 2f * dot * nx) * elast
+              s.vy = (preVy - 2f * dot * ny) * elast
+              triggerWallBounceReaction(s, -nx, -ny, preVx, preVy)
               if (s.isLocalPlayer) sfx.playBounce()
             }
           }
@@ -6185,12 +6520,14 @@ class RiftGameEngine(
             val ny = if (curDist > 0.001f) dy / dSafe else 0f
             s.x = ib.x + nx * outerLimit
             s.y = ib.y + ny * outerLimit
-            val dot = s.vx * nx + s.vy * ny
+            val preVx = s.vx
+            val preVy = s.vy
+            val dot = preVx * nx + preVy * ny
             if (dot < 0f) {
               val elast = RiftCalibrationState.wallElasticity
-              s.vx = (s.vx - 2f * dot * nx) * elast
-              s.vy = (s.vy - 2f * dot * ny) * elast
-              triggerVisualBarrelRoll(s, nx, ny)
+              s.vx = (preVx - 2f * dot * nx) * elast
+              s.vy = (preVy - 2f * dot * ny) * elast
+              triggerWallBounceReaction(s, nx, ny, preVx, preVy)
               if (s.isLocalPlayer) sfx.playBounce()
             }
           }
@@ -6212,6 +6549,8 @@ class RiftGameEngine(
         val dist = hypot(dx, dy).coerceAtLeast(0.001f)
         val nx = dx / dist
         val ny = dy / dist
+        val preVx = s.vx
+        val preVy = s.vy
 
         // Clamp ship cleanly outside the closest Safe Zone perimeter axis
         val halfW = safeZone.width() * 0.5f + s.radius + 4f
@@ -6225,16 +6564,16 @@ class RiftGameEngine(
         val repelForce = RiftCalibrationState.safeZoneRepelForce
         s.vx = nx * repelForce
         s.vy = ny * repelForce
-        triggerVisualBarrelRoll(s, nx, ny)
+        triggerWallBounceReaction(s, nx, ny, preVx, preVy)
         s.inSafeZone = false
         s.wasInSafeZone = false
 
         shockwaves.add(ShockwaveEntity(s.x, s.y, 16f, 165f, Color.parseColor("#EF4444")))
         if (s.isLocalPlayer) {
           sfx.playBounce()
-          addTrauma(0.25f)
+          addTrauma(0.22f)
           spawnPooledFct(
-            text = "⛔ SAFE ZONE LOCKED (${String.format(java.util.Locale.US, "%.1fs", s.safeZoneLockoutTimer)})",
+            text = "SAFE ZONE LOCKED (${String.format(java.util.Locale.US, "%.1fs", s.safeZoneLockoutTimer)})",
             x = s.x,
             y = s.y - 28f,
             color = Color.parseColor("#EF4444"),
@@ -6718,6 +7057,45 @@ class RiftGameEngine(
         continue
       }
 
+      if (b.armTimer > 0f) {
+        b.armTimer = max(0f, b.armTimer - dt)
+      } else if (b.type == "MINE") {
+        // Manta (#8) Short-Range Magnetic Mine Lunge (165px detection, 420 px/s^2 pull)
+        var nearestEnemy: ShipEntity? = null
+        var nearestDist = 165f
+        for (cand in ships) {
+          if (
+            !(isInLobbyStaging && cand.isLocalPlayer) &&
+              !isBombAlliedWithShip(b, cand) &&
+              cand.respawnTimer <= 0f &&
+              !cand.isCloaked &&
+              !isInsideSafeZone(cand.x, cand.y)
+          ) {
+            val d = hypot(cand.x - b.x, cand.y - b.y)
+            if (d < nearestDist) {
+              nearestDist = d
+              nearestEnemy = cand
+            }
+          }
+        }
+        if (nearestEnemy != null) {
+          val dx = nearestEnemy.x - b.x
+          val dy = nearestEnemy.y - b.y
+          val dSafe = hypot(dx, dy).coerceAtLeast(1f)
+          b.vx += (dx / dSafe) * 420f * dt
+          b.vy += (dy / dSafe) * 420f * dt
+          val sp = hypot(b.vx, b.vy)
+          if (sp > 340f) {
+            b.vx = (b.vx / sp) * 340f
+            b.vy = (b.vy / sp) * 340f
+          }
+        } else {
+          val damp = 0.25.pow(dt.toDouble()).toFloat()
+          b.vx *= damp
+          b.vy *= damp
+        }
+      }
+
       // Continuous field physics for Custom AI-Forged Orbs (Gravity Pull, Repulse Push, Cryo Slow)
       if (b.type == "CUSTOM_ORB" && b.customEffect in setOf(CustomBuffEffect.PULL, CustomBuffEffect.PUSH, CustomBuffEffect.SLOW)) {
         val fieldR = b.customBlastRadius.coerceAtLeast(120f)
@@ -7096,6 +7474,38 @@ class RiftGameEngine(
       if (sw.r >= sw.maxR) shockwaves.removeAt(i)
     }
 
+    // Step spinning 3D metallic ship debris chunks & glowing ember trails
+    for (i in shipDebrisChunks.indices.reversed()) {
+      val dc = shipDebrisChunks[i]
+      dc.life -= rawDt
+      if (dc.life <= 0f) {
+        shipDebrisChunks.removeAt(i)
+        continue
+      }
+      dc.x += dc.vx * dt
+      dc.y += dc.vy * dt
+      val drag = 0.42.pow(dt.toDouble()).toFloat()
+      dc.vx *= drag
+      dc.vy *= drag
+      dc.angle += dc.angVel * dt
+      dc.emberTimer += rawDt
+      if (dc.emberTimer >= 0.06f && particles.size < 165) {
+        dc.emberTimer = 0f
+        particles.add(
+          ParticleEntity(
+            x = dc.x + (Random.nextFloat() - 0.5f) * dc.size * 0.5f,
+            y = dc.y + (Random.nextFloat() - 0.5f) * dc.size * 0.5f,
+            vx = (Random.nextFloat() - 0.5f) * 35f,
+            vy = (Random.nextFloat() - 0.5f) * 35f,
+            life = 0.26f,
+            maxLife = 0.26f,
+            size = 3.2f,
+            color = if (Random.nextBoolean()) Color.parseColor("#F97316") else dc.trimColor,
+          )
+        )
+      }
+    }
+
     for (i in shieldRipples.indices.reversed()) {
       val sr = shieldRipples[i]
       sr.life -= rawDt
@@ -7256,15 +7666,30 @@ class RiftGameEngine(
 
     riftControlMatchTimerSec = max(0f, riftControlMatchTimerSec - rawDt)
 
-    val westDoubleLock = riftAlphaLockedBy == 0 && riftOmegaLockedBy == 0
-    val eastDoubleLock = riftAlphaLockedBy == 1 && riftOmegaLockedBy == 1
-    if (westDoubleLock || eastDoubleLock || riftControlMatchTimerSec <= 0f) {
-      val westLocks = (if (riftAlphaLockedBy == 0) 1 else 0) + (if (riftOmegaLockedBy == 0) 1 else 0)
-      val eastLocks = (if (riftAlphaLockedBy == 1) 1 else 0) + (if (riftOmegaLockedBy == 1) 1 else 0)
+    val westLocks = (if (riftAlphaLockedBy == 0) 1 else 0) + (if (riftOmegaLockedBy == 0) 1 else 0)
+    val eastLocks = (if (riftAlphaLockedBy == 1) 1 else 0) + (if (riftOmegaLockedBy == 1) 1 else 0)
+    val westRate =
+      when (westLocks) {
+        2 -> 10.0f
+        1 -> 4.0f
+        else -> 0f
+      }
+    val eastRate =
+      when (eastLocks) {
+        2 -> 10.0f
+        1 -> 4.0f
+        else -> 0f
+      }
+    riftControlWestScore = (riftControlWestScore + westRate * rawDt).coerceAtMost(1000f)
+    riftControlEastScore = (riftControlEastScore + eastRate * rawDt).coerceAtMost(1000f)
+
+    if (riftControlWestScore >= 1000f || riftControlEastScore >= 1000f || riftControlMatchTimerSec <= 0f) {
       val westWon =
         when {
-          westDoubleLock -> true
-          eastDoubleLock -> false
+          riftControlWestScore >= 1000f && riftControlWestScore >= riftControlEastScore -> true
+          riftControlEastScore >= 1000f -> false
+          riftControlWestScore > riftControlEastScore + 0.5f -> true
+          riftControlEastScore > riftControlWestScore + 0.5f -> false
           westLocks > eastLocks -> true
           eastLocks > westLocks -> false
           else -> (-riftAlphaControlSec - riftOmegaControlSec) >= 0f
@@ -7273,24 +7698,29 @@ class RiftGameEngine(
         riftShards += 85L
         convergencesWon++
         onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
-        val msg = "🏆 RIFT CONTROL VICTORY! WEST HORIZON CAPTURED THE RIFTS (+85❖ RIFT SHARDS)"
+        val msg =
+          "RIFT CONTROL VICTORY! WEST HORIZON ${riftControlWestScore.toInt()}-${riftControlEastScore.toInt()} (+85 RIFT SHARDS)"
         highBountyShutdownBanner = msg
         highBountyShutdownTimer = 5.0f
         sfx.playPrize()
         onPrizeToast(msg)
         onStatsUpdated()
       } else {
-        val msg = "⚔️ RIFT CONTROL CONCLUDED — EAST HORIZON CAPTURED THE RIFTS!"
+        val msg =
+          "RIFT CONTROL CONCLUDED — EAST HORIZON WON ${riftControlEastScore.toInt()}-${riftControlWestScore.toInt()}"
         highBountyShutdownBanner = msg
         highBountyShutdownTimer = 4.5f
         sfx.playWarp()
         onPrizeToast(msg)
       }
       brickWalls.clear()
+      shipDebrisChunks.clear()
       bakeStaticRadarBitmap()
       resetRiftControlZones()
       for (s in ships) {
         s.respawnTimer = 0f
+        s.deathLingerTimer = 0f
+        s.warpInAnimTimer = 0.65f
         s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
         s.flux = s.maxFlux
         s.vx = 0f

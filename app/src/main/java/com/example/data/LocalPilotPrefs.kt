@@ -174,8 +174,8 @@ class LocalPilotPrefs(context: Context) {
 
   /**
    * Changes a Sworn Pilot's callsign:
-   * - 1st change (`getCallsignChangeCount(uid) == 0`) is FREE (0❖).
-   * - Subsequent changes cost 250❖ Rift Shards.
+   * - 1st change (`getCallsignChangeCount(uid) == 0`) is FREE (0 Rift Shards).
+   * - Subsequent changes cost 250 Rift Shards.
    * Returns Triple(success, resultCallsignOrErrorMessage, updatedShards).
    */
   fun changeSwornPilotCallsign(
@@ -205,7 +205,7 @@ class LocalPilotPrefs(context: Context) {
     val changeCount = getCallsignChangeCount(uid)
     val cost = if (changeCount == 0) 0L else 250L
     if (currentShards < cost) {
-      return Triple(false, "Need 250❖ Rift Shards to change callsign.", currentShards)
+      return Triple(false, "Need 250 Rift Shards to change callsign.", currentShards)
     }
     val nextShards = (currentShards - cost).coerceAtLeast(0L)
     if (cost > 0L) {
@@ -426,6 +426,12 @@ class LocalPilotPrefs(context: Context) {
     userSettingsPrefs.edit().putBoolean(KEY_BOOT_TO_NEXUS_HUB, enabled).apply()
   }
 
+  fun getSfxEnabled(): Boolean = userSettingsPrefs.getBoolean(KEY_SFX_ENABLED, true)
+
+  fun setSfxEnabled(enabled: Boolean) {
+    userSettingsPrefs.edit().putBoolean(KEY_SFX_ENABLED, enabled).apply()
+  }
+
   fun getMusicEnabled(): Boolean {
     val fallback = prefs.getBoolean(KEY_MUSIC_ENABLED, true)
     return userSettingsPrefs.getBoolean(KEY_MUSIC_ENABLED, fallback)
@@ -434,6 +440,44 @@ class LocalPilotPrefs(context: Context) {
   fun setMusicEnabled(enabled: Boolean) {
     prefs.edit().putBoolean(KEY_MUSIC_ENABLED, enabled).apply()
     userSettingsPrefs.edit().putBoolean(KEY_MUSIC_ENABLED, enabled).apply()
+  }
+
+  fun getMusicBpm(): Int =
+    userSettingsPrefs.getInt(KEY_MUSIC_BPM, 118).coerceIn(60, 180)
+
+  fun setMusicBpm(bpm: Int) {
+    userSettingsPrefs.edit().putInt(KEY_MUSIC_BPM, bpm.coerceIn(60, 180)).apply()
+  }
+
+  fun getMusicVolume(): Float =
+    userSettingsPrefs.getFloat(KEY_MUSIC_VOLUME, 0.70f).coerceIn(0f, 1f)
+
+  fun setMusicVolume(vol: Float) {
+    userSettingsPrefs.edit().putFloat(KEY_MUSIC_VOLUME, vol.coerceIn(0f, 1f)).apply()
+  }
+
+  fun getSfxVolume(): Float =
+    userSettingsPrefs.getFloat(KEY_SFX_VOLUME, 0.85f).coerceIn(0f, 1f)
+
+  fun setSfxVolume(vol: Float) {
+    userSettingsPrefs.edit().putFloat(KEY_SFX_VOLUME, vol.coerceIn(0f, 1f)).apply()
+  }
+
+  fun getMusicArchetypeId(): String =
+    (userSettingsPrefs.getString(KEY_MUSIC_ARCHETYPE_ID, "DARK_SYNTHWAVE") ?: "DARK_SYNTHWAVE")
+      .trim()
+      .ifEmpty { "DARK_SYNTHWAVE" }
+
+  fun setMusicArchetypeId(id: String) {
+    val clean = id.trim().uppercase(Locale.US).ifEmpty { "DARK_SYNTHWAVE" }
+    userSettingsPrefs.edit().putString(KEY_MUSIC_ARCHETYPE_ID, clean).apply()
+  }
+
+  fun getMusicForgePrompt(): String =
+    userSettingsPrefs.getString(KEY_MUSIC_FORGE_PROMPT, "") ?: ""
+
+  fun setMusicForgePrompt(prompt: String) {
+    userSettingsPrefs.edit().putString(KEY_MUSIC_FORGE_PROMPT, prompt.trim().take(180)).apply()
   }
 
   /**
@@ -474,7 +518,7 @@ class LocalPilotPrefs(context: Context) {
   fun getHvtEliminations(): Long = prefs.getLong(KEY_HVT_ELIMINATIONS, 0L)
   fun getGreensCollected(): Long = prefs.getLong(KEY_GREENS_COLLECTED, 0L)
 
-  // Phase 3: 5 XP Earning Sources & Pilot Level Progression (Levels 1..100) persisted per UID
+  // 5 XP Earning Sources & Pilot Level Progression (Levels 1..100) persisted per UID
   private fun uidKey(baseKey: String, uid: String? = null): String {
     val activeUid = uid?.takeIf { it.isNotBlank() } ?: getOrCreatePermanentDeviceUid()
     return "${baseKey}_$activeUid"
@@ -655,20 +699,20 @@ class LocalPilotPrefs(context: Context) {
     val cleanShards = riftShards.coerceAtLeast(0L)
     prefs
       .edit()
-      .putLong(KEY_XP_BUFFS, xpFromBuffs)
-      .putLong(uidKey(KEY_XP_BUFFS, uid), xpFromBuffs)
-      .putLong(KEY_XP_DAMAGE, xpFromDamage)
-      .putLong(uidKey(KEY_XP_DAMAGE, uid), xpFromDamage)
-      .putLong(KEY_XP_ACCURACY, xpFromAccuracy)
-      .putLong(uidKey(KEY_XP_ACCURACY, uid), xpFromAccuracy)
-      .putLong(KEY_XP_BOUNTY_EARNED, xpFromBountyEarned)
-      .putLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), xpFromBountyEarned)
-      .putLong(KEY_XP_BOUNTY_KILLED, xpFromBountyKilled)
-      .putLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), xpFromBountyKilled)
+      .putLong(KEY_XP_BUFFS, kotlin.math.max(getXpFromBuffs(uid), xpFromBuffs))
+      .putLong(uidKey(KEY_XP_BUFFS, uid), kotlin.math.max(getXpFromBuffs(uid), xpFromBuffs))
+      .putLong(KEY_XP_DAMAGE, kotlin.math.max(getXpFromDamage(uid), xpFromDamage))
+      .putLong(uidKey(KEY_XP_DAMAGE, uid), kotlin.math.max(getXpFromDamage(uid), xpFromDamage))
+      .putLong(KEY_XP_ACCURACY, kotlin.math.max(getXpFromAccuracy(uid), xpFromAccuracy))
+      .putLong(uidKey(KEY_XP_ACCURACY, uid), kotlin.math.max(getXpFromAccuracy(uid), xpFromAccuracy))
+      .putLong(KEY_XP_BOUNTY_EARNED, kotlin.math.max(getXpFromBountyEarned(uid), xpFromBountyEarned))
+      .putLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), kotlin.math.max(getXpFromBountyEarned(uid), xpFromBountyEarned))
+      .putLong(KEY_XP_BOUNTY_KILLED, kotlin.math.max(getXpFromBountyKilled(uid), xpFromBountyKilled))
+      .putLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), kotlin.math.max(getXpFromBountyKilled(uid), xpFromBountyKilled))
       .putLong(KEY_RIFT_SHARDS, cleanShards)
       .putLong(uidKey(KEY_RIFT_SHARDS, uid), cleanShards)
-      .putInt(KEY_HIGHEST_MILESTONE_LVL, highestMilestoneLevelClaimed)
-      .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), highestMilestoneLevelClaimed)
+      .putInt(KEY_HIGHEST_MILESTONE_LVL, kotlin.math.max(getHighestMilestoneLevelClaimed(uid), highestMilestoneLevelClaimed))
+      .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), kotlin.math.max(getHighestMilestoneLevelClaimed(uid), highestMilestoneLevelClaimed))
       .apply()
   }
 
@@ -803,7 +847,7 @@ class LocalPilotPrefs(context: Context) {
       for (i in 0 until arr.length()) {
         val obj = arr.getJSONObject(i)
         val parsedTag = obj.optString("tag", "").trim().uppercase()
-        if (parsedTag.isNotEmpty()) {
+        if (parsedTag.isNotEmpty() && parsedTag != "BOT" && parsedTag != "RFT") {
           customList.add(
             SyndicateInfo(
               id = obj.optString("id", "syn_custom_$i"),
@@ -833,7 +877,7 @@ class LocalPilotPrefs(context: Context) {
     }
     for (cloud in cloudSyndicates) {
       val cleanTag = sanitizeSyndicateTag(cloud.tag)
-      if (cleanTag.length in 1..3) {
+      if (cleanTag.length in 1..3 && cleanTag != "BOT" && cleanTag != "RFT") {
         mergedByTag[cleanTag] =
           cloud.copy(
             id = cloud.id.ifBlank { "syn_cloud_$cleanTag" },
@@ -877,8 +921,8 @@ class LocalPilotPrefs(context: Context) {
     if (cleanTag.length !in 1..3) {
       return Result.failure(IllegalArgumentException("Syndicate Tag must be 1 to 3 characters."))
     }
-    if (cleanTag == "RFT") {
-      return Result.failure(IllegalArgumentException("[RFT] is reserved for Rift Drifters."))
+    if (cleanTag == "RFT" || cleanTag == "BOT") {
+      return Result.failure(IllegalArgumentException("[$cleanTag] is a reserved system tag."))
     }
     if (UgcModeration.containsProfanity(cleanTag)) {
       return Result.failure(IllegalArgumentException("Syndicate Tag contains prohibited language."))
@@ -1103,11 +1147,11 @@ class LocalPilotPrefs(context: Context) {
 
   fun getPlayfieldTextScale(): Float {
     val fallback = prefs.getFloat(KEY_PLAYFIELD_TEXT_SCALE, 1.0f)
-    return userSettingsPrefs.getFloat(KEY_PLAYFIELD_TEXT_SCALE, fallback).coerceIn(0.75f, 2.0f)
+    return userSettingsPrefs.getFloat(KEY_PLAYFIELD_TEXT_SCALE, fallback).coerceIn(0.75f, 1.75f)
   }
 
   fun setPlayfieldTextScale(scale: Float) {
-    val clamped = scale.coerceIn(0.75f, 2.0f)
+    val clamped = scale.coerceIn(0.75f, 1.75f)
     userSettingsPrefs.edit().putFloat(KEY_PLAYFIELD_TEXT_SCALE, clamped).apply()
   }
 
@@ -1263,15 +1307,7 @@ class LocalPilotPrefs(context: Context) {
         return SyndicateWarRecord.fromJson(cleanTag, obj)
       }
     } catch (_: Exception) {}
-    return when (cleanTag) {
-      "AEX" -> SyndicateWarRecord("AEX", warTrophies = 1480, warWins = 42, warLosses = 14, warStreak = 4)
-      "VTX" -> SyndicateWarRecord("VTX", warTrophies = 1390, warWins = 38, warLosses = 17, warStreak = 2)
-      "KST" -> SyndicateWarRecord("KST", warTrophies = 1315, warWins = 35, warLosses = 19, warStreak = 1)
-      "OBS" -> SyndicateWarRecord("OBS", warTrophies = 1260, warWins = 31, warLosses = 20, warStreak = 3)
-      "SOL" -> SyndicateWarRecord("SOL", warTrophies = 1195, warWins = 29, warLosses = 22, warStreak = 0)
-      "RFT" -> SyndicateWarRecord("RFT", warTrophies = 1140, warWins = 26, warLosses = 21, warStreak = 1)
-      else -> SyndicateWarRecord(cleanTag, warTrophies = 1000, warWins = 0, warLosses = 0, warStreak = 0)
-    }
+    return SyndicateWarRecord(cleanTag, warTrophies = 1000, warWins = 0, warLosses = 0, warStreak = 0)
   }
 
   fun recordSyndicateWarOutcome(
@@ -1306,7 +1342,8 @@ class LocalPilotPrefs(context: Context) {
    * Master Fresh-Start Wipe:
    * Clears all combat stats, 5 XP sources, peak bounty snapshots, Armada tiers, active Armada,
    * custom friends, custom Syndicates, Syndicate service history, custom Syndicate channels/guests,
-   * Syndicate War H2H records, and custom modular ship slots (Frame A/B/C) while resetting Rift Shards to 150❖.
+   * Syndicate War Trophy records, and custom modular ship slots (Frame A/B/C) while resetting Rift Shards to 150.
+   * Preserves Sworn Pilot callsigns and all user audio/BPM/Music Forge preferences in userSettingsPrefs.
    */
   fun wipeAllStatsArmadasAndSyndicates(uid: String? = null) {
     val preservedCallsign = if (!isGuestBypassEnabled()) getCallsign(uid) else null
@@ -1340,7 +1377,7 @@ class LocalPilotPrefs(context: Context) {
       .putLong(KEY_HVT_ELIMINATIONS, 0L)
       .putLong(KEY_GREENS_COLLECTED, 0L)
 
-    // 5 XP sources + progression + Rift Shards (150❖)
+    // 5 XP sources + progression + Rift Shards (150)
     editor
       .putLong(KEY_XP_BUFFS, 0L)
       .putLong(uidKey(KEY_XP_BUFFS, uid), 0L)
@@ -1384,8 +1421,8 @@ class LocalPilotPrefs(context: Context) {
       .putString(KEY_SYNDICATE_HISTORY_JSON, "[]")
       .putString(uidKey(KEY_SYNDICATE_HISTORY_JSON, uid), "[]")
       .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, 0L)
-      .putString(KEY_SYNDICATE_TAG, "GUEST")
-      .putString(KEY_SYNDICATE_NAME, "Independent Pilot")
+      .putString(KEY_SYNDICATE_TAG, "")
+      .putString(KEY_SYNDICATE_NAME, "Unaffiliated")
       .putString(KEY_SYNDICATE_WAR_RECORDS_JSON, "{}")
       .putBoolean(KEY_SLOT_B_UNLOCKED, false)
       .putBoolean(uidKey(KEY_SLOT_B_UNLOCKED, uid), false)
@@ -1417,14 +1454,25 @@ class LocalPilotPrefs(context: Context) {
   /**
    * Resets all local pilot progression, combat stats, Syndicate/Armada affiliation, custom friends,
    * and Rift Shards back to a clean Level 1, 0 XP, 0 Kills, 0 Shards, Solo, Unaffiliated state,
-   * while preserving the Sworn Pilot's permanent callsign and rename counter.
+   * while preserving the Sworn Pilot's permanent callsign, rename counter, and user audio/BPM/visual settings.
    */
   fun resetAllLocalPilotData(uid: String? = null) {
-    val seenBuild = getLastSeenChangelogBuild()
     val guestBypass = isGuestBypassEnabled()
     val preservedCallsign = if (!guestBypass) getCallsign(uid) else null
     val preservedChangeCount = getCallsignChangeCount(uid)
     val preservedChosenFlag = if (!guestBypass) hasChosenInitialCallsign(uid) else false
+    val preservedBootNexus = getBootToNexusHub()
+    val preservedMusicEnabled = getMusicEnabled()
+    val preservedSfxEnabled = getSfxEnabled()
+    val preservedMusicBpm = getMusicBpm()
+    val preservedMusicVol = getMusicVolume()
+    val preservedSfxVol = getSfxVolume()
+    val preservedMusicArch = getMusicArchetypeId()
+    val preservedMusicPrompt = getMusicForgePrompt()
+    val preservedZoom = getCameraZoom()
+    val preservedTextScale = getPlayfieldTextScale()
+    val seenBuild = getLastSeenChangelogBuild()
+
     val allCallsignEntries =
       if (!guestBypass) {
         prefs.all.filter { (k, v) ->
@@ -1440,8 +1488,17 @@ class LocalPilotPrefs(context: Context) {
       }
 
     prefs.edit().clear().apply()
-    userSettingsPrefs.edit().clear().apply()
     setLastSeenChangelogBuild(seenBuild)
+    setBootToNexusHub(preservedBootNexus)
+    setMusicEnabled(preservedMusicEnabled)
+    setSfxEnabled(preservedSfxEnabled)
+    setMusicBpm(preservedMusicBpm)
+    setMusicVolume(preservedMusicVol)
+    setSfxVolume(preservedSfxVol)
+    setMusicArchetypeId(preservedMusicArch)
+    setMusicForgePrompt(preservedMusicPrompt)
+    setCameraZoom(preservedZoom)
+    setPlayfieldTextScale(preservedTextScale)
     setGuestBypassEnabled(guestBypass)
     getOrCreatePermanentDeviceUid()
 
@@ -1527,7 +1584,13 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_SHIP_ID = "preferred_ship_id"
     private const val KEY_MODE = "preferred_mode"
     private const val KEY_BOOT_TO_NEXUS_HUB = "boot_to_nexus_hub_v30"
+    private const val KEY_SFX_ENABLED = "sfx_enabled"
     private const val KEY_MUSIC_ENABLED = "music_enabled"
+    private const val KEY_MUSIC_BPM = "music_bpm"
+    private const val KEY_MUSIC_VOLUME = "music_volume"
+    private const val KEY_SFX_VOLUME = "sfx_volume"
+    private const val KEY_MUSIC_ARCHETYPE_ID = "music_archetype_id"
+    private const val KEY_MUSIC_FORGE_PROMPT = "music_forge_prompt"
     private const val KEY_SYNDICATE_CHANNELS_PREFIX = "syndicate_custom_channels_"
     private const val KEY_SYNDICATE_GUESTS_PREFIX = "syndicate_invited_guests_"
     private const val KEY_SYNDICATE_WAR_RECORDS_JSON = "syndicate_war_records_json"
@@ -1544,7 +1607,7 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_PLAYFIELD_TEXT_SCALE = "playfield_text_scale"
     private const val KEY_LAST_SEEN_CHANGELOG_BUILD = "last_seen_changelog_build"
 
-    // Phase 3: Pilot Level (1..100), 5 XP Sources & Rift Shards Currency Keys
+    // Pilot Level (1..100), 5 XP Sources & Rift Shards Currency Keys
     private const val KEY_XP_BUFFS = "xp_source_buffs"
     private const val KEY_XP_DAMAGE = "xp_source_damage"
     private const val KEY_XP_ACCURACY = "xp_source_accuracy"
@@ -1637,4 +1700,3 @@ data class SyndicateWarRecord(
       )
   }
 }
-

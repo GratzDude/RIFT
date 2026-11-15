@@ -9,8 +9,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,18 +21,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -54,19 +51,24 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.LocalPilotPrefs
+import com.example.engine.MusicSynthArchetype
 import com.example.engine.RiftCalibrationState
+import com.example.engine.RiftSpriteBaker
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -146,7 +148,7 @@ private fun SettingsBeveledButton(
   Box(
     modifier =
       modifier
-        .height(if (isCompactPhone) 28.dp else 36.dp)
+        .height(if (isCompactPhone) 28.dp else 34.dp)
         .clip(RoundedCornerShape(8.dp))
         .background(Brush.verticalGradient(listOf(topColor, bottomColor)))
         .border(1.dp, borderColor, RoundedCornerShape(8.dp))
@@ -158,7 +160,7 @@ private fun SettingsBeveledButton(
     Text(
       text = label,
       color = textColor,
-      fontSize = if (isCompactPhone) 9.5.sp else 11.sp,
+      fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
       fontWeight = FontWeight.ExtraBold,
       fontFamily = FontFamily.SansSerif,
       maxLines = 1,
@@ -171,11 +173,22 @@ fun SettingsModal(
   fps: Int,
   sfxEnabled: Boolean,
   musicEnabled: Boolean = true,
+  musicBpm: Int = 118,
+  musicVolume: Float = 0.70f,
+  sfxVolume: Float = 0.85f,
+  activeMusicArchetypeId: String = "DARK_SYNTHWAVE",
+  activeMusicSummary: String = "Dark Synthwave • 118 BPM",
+  initialMusicPrompt: String = "",
   cameraZoom: Float,
   playfieldTextScale: Float,
   isGoogleAuthenticated: Boolean,
   onToggleSfx: () -> Unit,
   onToggleMusic: () -> Unit = {},
+  onChangeMusicBpm: (Int) -> Unit = {},
+  onChangeMusicVolume: (Float) -> Unit = {},
+  onChangeSfxVolume: (Float) -> Unit = {},
+  onSelectMusicArchetype: (MusicSynthArchetype) -> Unit = {},
+  onForgeCustomMusicPrompt: (String) -> Unit = {},
   onChangeCameraZoom: (Float) -> Unit,
   onChangePlayfieldTextScale: (Float) -> Unit,
   onRequestGoogleSignIn: () -> Unit,
@@ -189,13 +202,11 @@ fun SettingsModal(
   val pilotPrefs = remember(context) { LocalPilotPrefs(context) }
   val riftShardsBalance = remember(isGoogleAuthenticated) { pilotPrefs.getRiftShards() }
   val activeCallsign = remember(isGoogleAuthenticated) { pilotPrefs.getCallsign() }
+  val riftShardImage = remember { RiftSpriteBaker.riftShardIconBitmap.asImageBitmap() }
+  var forgePromptDraft by remember(initialMusicPrompt) { mutableStateOf(initialMusicPrompt) }
 
-  val outerPadding =
-    if (isCompactPhone) {
-      PaddingValues(start = 8.dp, end = 8.dp, top = 40.dp, bottom = 4.dp)
-    } else {
-      PaddingValues(horizontal = 24.dp, vertical = 12.dp)
-    }
+  // Clean Top-Bar Clearance across phones & tablets (leaves exact space for top module switcher bar)
+  val outerPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 42.dp, bottom = 6.dp)
 
   Box(
     modifier =
@@ -215,10 +226,10 @@ fun SettingsModal(
       Column(
         modifier =
           Modifier.fillMaxSize()
-            .padding(if (isCompactPhone) 8.dp else 16.dp),
+            .padding(if (isCompactPhone) 8.dp else 14.dp),
         verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 10.dp),
       ) {
-        // Pinned Single-Row Header (30.dp on phone landscape so Close & Changelog are always reachable)
+        // Pinned Single-Row Header (Close & Changelog always reachable)
         Row(
           modifier =
             Modifier.fillMaxWidth()
@@ -228,9 +239,11 @@ fun SettingsModal(
         ) {
           Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
             Text(
-              text = if (isCompactPhone) "⚙️ COCKPIT SETTINGS ($fps FPS)" else "⚙️ ARENA COCKPIT SETTINGS",
+              text =
+                if (isCompactPhone) "⚙️ COCKPIT SETTINGS ($fps FPS)"
+                else "⚙️ ARENA COCKPIT SETTINGS ($fps FPS)",
               color = Color.White,
-              fontSize = if (isCompactPhone) 13.5.sp else 18.sp,
+              fontSize = if (isCompactPhone) 13.5.sp else 17.sp,
               fontWeight = FontWeight.ExtraBold,
               fontFamily = FontFamily.SansSerif,
               letterSpacing = 0.8.sp,
@@ -239,9 +252,10 @@ fun SettingsModal(
             )
             if (!isCompactPhone) {
               Text(
-                text = "AUDIO & MUSIC • TWIN-STICK CONTROLLER REMAPPER • CAMERA FOV • PLAYFIELD TEXT • SWORN PILOT CLOUD",
+                text =
+                  "60–180 BPM SYNTH & MUSIC FORGE • TWIN-STICK CONTROLLER REMAPPER • PLAYFIELD TEXT • CAMERA FOV",
                 color = Color(0xFF00F5D4),
-                fontSize = 10.5.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Medium,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
@@ -255,7 +269,7 @@ fun SettingsModal(
             verticalAlignment = Alignment.CenterVertically,
           ) {
             SettingsBeveledButton(
-              label = if (isCompactPhone) "📜 CHANGELOG" else "📜 FULL VERSION CHANGELOG",
+              label = if (isCompactPhone) "📜 CHANGELOG" else "📜 VERSION CHANGELOG",
               topColor = Color(0xFF102A45),
               bottomColor = Color(0xFF081728),
               borderColor = Color(0xFF00F5D4),
@@ -278,116 +292,457 @@ fun SettingsModal(
           }
         }
 
-        // Scrollable Body: Audio & Sworn Pilot / Rift Shards + Sliders + Twin-Stick Controller Remapper
+        // Scrollable Body: Synth Audio & NEXUS Music Forge + Controller Remapper + Sliders
         Column(
           modifier =
             Modifier.weight(1f)
               .fillMaxWidth()
               .verticalScroll(scrollState),
-          verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 8.dp else 12.dp),
+          verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 8.dp else 11.dp),
         ) {
-          // Section 1: Audio, Sworn Pilot Cloud Account & Rift Shards Readout
-          Row(
+          // Section 1: SYNTH AUDIO, 60-180 BPM SLIDER, VOLUME SLIDERS & NEXUS MUSIC FORGE
+          Column(
             modifier =
               Modifier.fillMaxWidth()
                 .background(Color(0xFF0B182B), RoundedCornerShape(10.dp))
                 .border(1.dp, Color(0xFF1B3454), RoundedCornerShape(10.dp))
-                .padding(if (isCompactPhone) 8.dp else 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(if (isCompactPhone) 8.dp else 12.dp)
+                .testTag("settings_synth_music_forge_card"),
+            verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 7.dp else 10.dp),
           ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            // 1A. Top Row: Title + Active Soundtrack Badge + Sworn Pilot / Single 3D Shard Icon + Toggles + Cloud Auth
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Column(
+                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
               ) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                  Text(
+                    text = "🎵 SYNTH AUDIO & NEXUS MUSIC FORGE",
+                    color = Color(0xFF00F5D4),
+                    fontSize = if (isCompactPhone) 11.sp else 12.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.SansSerif,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                  Box(
+                    modifier =
+                      Modifier.background(Color(0xFF071324), RoundedCornerShape(5.dp))
+                        .border(1.dp, Color(0x6600F5D4), RoundedCornerShape(5.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                  ) {
+                    Text(
+                      text = activeMusicSummary,
+                      color = Color(0xFF7DD3FC),
+                      fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = FontFamily.Monospace,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                    )
+                  }
+                }
+
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                  Text(
+                    text =
+                      if (isGoogleAuthenticated) "SWORN PILOT: $activeCallsign"
+                      else "PILOT: $activeCallsign (UNLINKED)",
+                    color = if (isGoogleAuthenticated) Color(0xFF34D399) else Color(0xFF94A3B8),
+                    fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.SansSerif,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+
+                  // Single 3D Faceted Amethyst Crystal Icon + Balance (Zero duplicate text glyph)
+                  Row(
+                    modifier =
+                      Modifier.background(Color(0xFF1A1030), RoundedCornerShape(5.dp))
+                        .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(5.dp))
+                        .padding(horizontal = 6.dp, vertical = 1.5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                  ) {
+                    Image(
+                      bitmap = riftShardImage,
+                      contentDescription = "Rift Shards",
+                      modifier = Modifier.size(if (isCompactPhone) 11.dp else 13.dp),
+                    )
+                    Text(
+                      text = "$riftShardsBalance",
+                      color = Color(0xFFE9D5FF),
+                      fontSize = if (isCompactPhone) 9.sp else 10.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                    )
+                  }
+                }
+              }
+
+              Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                SettingsBeveledButton(
+                  label = if (musicEnabled) "🎵 MUSIC: ON" else "🔇 MUSIC: OFF",
+                  topColor = if (musicEnabled) Color(0xFF0F2D46) else Color(0xFF361620),
+                  bottomColor = if (musicEnabled) Color(0xFF081A2A) else Color(0xFF1F0B11),
+                  borderColor = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFFFF3B4E),
+                  textColor = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFFFF6B7A),
+                  isCompactPhone = isCompactPhone,
+                  testTag = "settings_music_toggle_button",
+                  onClick = onToggleMusic,
+                )
+
+                SettingsBeveledButton(
+                  label = if (sfxEnabled) "🔊 SFX: ON" else "🔇 SFX: MUTE",
+                  topColor = if (sfxEnabled) Color(0xFF103328) else Color(0xFF361620),
+                  bottomColor = if (sfxEnabled) Color(0xFF081C16) else Color(0xFF1F0B11),
+                  borderColor = if (sfxEnabled) Color(0xFF00E676) else Color(0xFFFF3B4E),
+                  textColor = if (sfxEnabled) Color(0xFF00E676) else Color(0xFFFF6B7A),
+                  isCompactPhone = isCompactPhone,
+                  testTag = "settings_sfx_toggle_button",
+                  onClick = onToggleSfx,
+                )
+
+                if (isGoogleAuthenticated) {
+                  SettingsBeveledButton(
+                    label = if (isCompactPhone) "SIGN OUT" else "SIGN OUT CLOUD",
+                    topColor = Color(0xFF1E2D45),
+                    bottomColor = Color(0xFF111B2B),
+                    borderColor = Color(0xFF475569),
+                    textColor = Color(0xFFCBD5E1),
+                    isCompactPhone = isCompactPhone,
+                    onClick = onRequestSignOut,
+                  )
+                } else {
+                  SettingsBeveledButton(
+                    label = if (isCompactPhone) "☁️ SIGN IN" else "☁️ LINK GOOGLE",
+                    topColor = Color(0xFF143D34),
+                    bottomColor = Color(0xFF0A211C),
+                    borderColor = Color(0xFF00F5D4),
+                    textColor = Color(0xFF00F5D4),
+                    isCompactPhone = isCompactPhone,
+                    onClick = onRequestGoogleSignIn,
+                  )
+                }
+              }
+            }
+
+            // 1B. Sliders Row (2-Column Split on Landscape): Left = Real-Time 60-180 BPM | Right = Music & SFX Volumes
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(if (isCompactPhone) 8.dp else 12.dp),
+              verticalAlignment = Alignment.Top,
+            ) {
+              // Left Column: Real-Time Tempo (60 - 180 BPM)
+              Column(
+                modifier =
+                  Modifier.weight(1f)
+                    .background(Color(0xFF071120), RoundedCornerShape(8.dp))
+                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 6.dp else 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Text(
+                    text = "TEMPO: $musicBpm BPM",
+                    color = Color(0xFFFBBF24),
+                    fontSize = if (isCompactPhone) 10.sp else 11.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+
+                  Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(90, 118, 135, 155).forEach { bpmPreset ->
+                      val isPresetActive = kotlin.math.abs(musicBpm - bpmPreset) <= 1
+                      Box(
+                        modifier =
+                          Modifier.clip(RoundedCornerShape(5.dp))
+                            .background(
+                              if (isPresetActive) Color(0xFFF59E0B) else Color(0xFF132642)
+                            )
+                            .border(
+                              1.dp,
+                              if (isPresetActive) Color(0xFFFBBF24) else Color(0x44F59E0B),
+                              RoundedCornerShape(5.dp),
+                            )
+                            .clickable { onChangeMusicBpm(bpmPreset) }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                      ) {
+                        Text(
+                          text = "$bpmPreset",
+                          color = if (isPresetActive) Color(0xFF030712) else Color.White,
+                          fontSize = 8.5.sp,
+                          fontWeight = FontWeight.Bold,
+                          fontFamily = FontFamily.Monospace,
+                        )
+                      }
+                    }
+                  }
+                }
+
+                Slider(
+                  value = musicBpm.coerceIn(60, 180).toFloat(),
+                  onValueChange = { raw ->
+                    onChangeMusicBpm(raw.roundToInt().coerceIn(60, 180))
+                  },
+                  valueRange = 60f..180f,
+                  colors =
+                    SliderDefaults.colors(
+                      thumbColor = Color(0xFFF59E0B),
+                      activeTrackColor = Color(0xFFF59E0B),
+                      inactiveTrackColor = Color(0xFF132642),
+                    ),
+                  modifier =
+                    Modifier.fillMaxWidth()
+                      .height(if (isCompactPhone) 24.dp else 30.dp)
+                      .testTag("settings_music_bpm_slider"),
+                )
+
                 Text(
-                  text =
-                    if (isGoogleAuthenticated) "SWORN PILOT: $activeCallsign"
-                    else "[RFT] DRIFTER: $activeCallsign",
-                  color = if (isGoogleAuthenticated) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-                  fontSize = if (isCompactPhone) 11.sp else 13.sp,
-                  fontWeight = FontWeight.ExtraBold,
+                  text = "60 BPM Ambient Drift  ◀──▶  180 BPM Overdrive (Phase-Continuous)",
+                  color = Color(0xFF8A99AD),
+                  fontSize = 8.5.sp,
                   fontFamily = FontFamily.SansSerif,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
                 )
-                Box(
-                  modifier =
-                    Modifier.background(Color(0xFF1E1436), RoundedCornerShape(5.dp))
-                      .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(5.dp))
-                      .padding(horizontal = 6.dp, vertical = 1.5.dp)
+              }
+
+              // Right Column: Music Volume & SFX Volume Sliders
+              Column(
+                modifier =
+                  Modifier.weight(1f)
+                    .background(Color(0xFF071120), RoundedCornerShape(8.dp))
+                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 6.dp else 8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
                 ) {
                   Text(
-                    text = "❖ $riftShardsBalance",
-                    color = Color(0xFFE9D5FF),
-                    fontSize = if (isCompactPhone) 9.sp else 10.sp,
+                    text = "MUSIC VOL: ${(musicVolume * 100f).roundToInt()}%",
+                    color = Color(0xFF00F5D4),
+                    fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                   )
+                  Text(
+                    text = if (musicEnabled) "LIVE STREAM" else "MUTED",
+                    color = if (musicEnabled) Color(0xFF34D399) else Color(0xFFF87171),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                  )
                 }
+
+                Slider(
+                  value = musicVolume.coerceIn(0f, 1f),
+                  onValueChange = { onChangeMusicVolume(it.coerceIn(0f, 1f)) },
+                  valueRange = 0f..1f,
+                  colors =
+                    SliderDefaults.colors(
+                      thumbColor = Color(0xFF00F5D4),
+                      activeTrackColor = Color(0xFF00F5D4),
+                      inactiveTrackColor = Color(0xFF132642),
+                    ),
+                  modifier =
+                    Modifier.fillMaxWidth()
+                      .height(if (isCompactPhone) 22.dp else 26.dp)
+                      .testTag("settings_music_volume_slider"),
+                )
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Text(
+                    text = "SFX VOL: ${(sfxVolume * 100f).roundToInt()}%",
+                    color = Color(0xFF38BDF8),
+                    fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Text(
+                    text = if (sfxEnabled) "WEAPONS & THRUSTERS" else "MUTED",
+                    color = if (sfxEnabled) Color(0xFF94A3B8) else Color(0xFFF87171),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
+
+                Slider(
+                  value = sfxVolume.coerceIn(0f, 1f),
+                  onValueChange = { onChangeSfxVolume(it.coerceIn(0f, 1f)) },
+                  valueRange = 0f..1f,
+                  colors =
+                    SliderDefaults.colors(
+                      thumbColor = Color(0xFF38BDF8),
+                      activeTrackColor = Color(0xFF38BDF8),
+                      inactiveTrackColor = Color(0xFF132642),
+                    ),
+                  modifier =
+                    Modifier.fillMaxWidth()
+                      .height(if (isCompactPhone) 22.dp else 26.dp)
+                      .testTag("settings_sfx_volume_slider"),
+                )
               }
-              Text(
-                text =
-                  if (isGoogleAuthenticated) {
-                    "Cloud sync active • Ranked leaderboards unlocked • $fps FPS simulation"
-                  } else {
-                    "Link Google Cloud to lock your callsign & appear on Ranked Leaderboards"
-                  },
-                color = Color(0xFF94A3B8),
-                fontSize = if (isCompactPhone) 9.5.sp else 11.sp,
-                fontFamily = FontFamily.SansSerif,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
             }
 
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(6.dp),
-              verticalAlignment = Alignment.CenterVertically,
+            // 1C. NEXUS Music Forge Workbench (100% Local On-Device Procedural Synthesizer)
+            Column(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .background(Color(0xFF060E1B), RoundedCornerShape(8.dp))
+                  .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(8.dp))
+                  .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 6.dp else 8.dp),
+              verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-              SettingsBeveledButton(
-                label = if (musicEnabled) "🎵 MUSIC: ON" else "🔇 MUSIC: OFF",
-                topColor = if (musicEnabled) Color(0xFF0F2D46) else Color(0xFF361620),
-                bottomColor = if (musicEnabled) Color(0xFF081A2A) else Color(0xFF1F0B11),
-                borderColor = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFFFF3B4E),
-                textColor = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFFFF6B7A),
-                isCompactPhone = isCompactPhone,
-                testTag = "settings_music_toggle_button",
-                onClick = onToggleMusic,
-              )
-
-              SettingsBeveledButton(
-                label = if (sfxEnabled) "🔊 SFX: ON" else "🔇 SFX: MUTE",
-                topColor = if (sfxEnabled) Color(0xFF103328) else Color(0xFF361620),
-                bottomColor = if (sfxEnabled) Color(0xFF081C16) else Color(0xFF1F0B11),
-                borderColor = if (sfxEnabled) Color(0xFF00E676) else Color(0xFFFF3B4E),
-                textColor = if (sfxEnabled) Color(0xFF00E676) else Color(0xFFFF6B7A),
-                isCompactPhone = isCompactPhone,
-                testTag = "settings_sfx_toggle_button",
-                onClick = onToggleSfx,
-              )
-
-              if (isGoogleAuthenticated) {
-                SettingsBeveledButton(
-                  label = if (isCompactPhone) "SIGN OUT" else "SIGN OUT CLOUD",
-                  topColor = Color(0xFF1E2D45),
-                  bottomColor = Color(0xFF111B2B),
-                  borderColor = Color(0xFF475569),
-                  textColor = Color(0xFFCBD5E1),
-                  isCompactPhone = isCompactPhone,
-                  onClick = onRequestSignOut,
+              // 5 Beveled Genre Archetype Chips
+              Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Text(
+                  text = "SYNTH PRESETS:",
+                  color = Color(0xFF94A3B8),
+                  fontSize = 8.5.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
                 )
-              } else {
-                SettingsBeveledButton(
-                  label = if (isCompactPhone) "☁️ SIGN IN" else "☁️ LINK GOOGLE CLOUD",
-                  topColor = Color(0xFF143D34),
-                  bottomColor = Color(0xFF0A211C),
-                  borderColor = Color(0xFF00F5D4),
-                  textColor = Color(0xFF00F5D4),
-                  isCompactPhone = isCompactPhone,
-                  onClick = onRequestGoogleSignIn,
-                )
+
+                MusicSynthArchetype.entries.forEach { archetype ->
+                  val isSelected =
+                    activeMusicArchetypeId.equals(archetype.id, ignoreCase = true) &&
+                      forgePromptDraft.isBlank()
+                  Box(
+                    modifier =
+                      Modifier.clip(RoundedCornerShape(6.dp))
+                        .background(
+                          if (isSelected) {
+                            Brush.verticalGradient(listOf(Color(0xFF0E4F5C), Color(0xFF072B36)))
+                          } else {
+                            Brush.verticalGradient(listOf(Color(0xFF102038), Color(0xFF091324)))
+                          }
+                        )
+                        .border(
+                          1.dp,
+                          if (isSelected) Color(0xFF00F5D4) else Color(0xFF334155),
+                          RoundedCornerShape(6.dp),
+                        )
+                        .clickable {
+                          forgePromptDraft = ""
+                          onSelectMusicArchetype(archetype)
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .testTag("settings_music_archetype_${archetype.id}"),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Text(
+                      text = "${archetype.label} (${archetype.defaultBpm})",
+                      color = if (isSelected) Color(0xFF00F5D4) else Color(0xFFE2E8F0),
+                      fontSize = 9.sp,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = FontFamily.SansSerif,
+                      maxLines = 1,
+                    )
+                  }
+                }
+              }
+
+              // Unclipped 36.dp Custom Prompt Input + [🎶 FORGE TRACK] Button
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Box(
+                  modifier =
+                    Modifier.weight(1f)
+                      .height(36.dp)
+                      .clip(RoundedCornerShape(8.dp))
+                      .background(Color(0xFF040914))
+                      .border(1.dp, Color(0xFF284B73), RoundedCornerShape(8.dp))
+                      .padding(horizontal = 10.dp),
+                  contentAlignment = Alignment.CenterStart,
+                ) {
+                  if (forgePromptDraft.isEmpty()) {
+                    Text(
+                      text =
+                        "Describe custom battle music (e.g. fast dark acid bassline, calm cosmic pad, retro 8-bit boss)...",
+                      color = Color(0xFF64748B),
+                      fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
+                      fontFamily = FontFamily.SansSerif,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                    )
+                  }
+                  BasicTextField(
+                    value = forgePromptDraft,
+                    onValueChange = { forgePromptDraft = it.take(120) },
+                    singleLine = true,
+                    cursorBrush = SolidColor(Color(0xFF00F5D4)),
+                    textStyle =
+                      TextStyle(
+                        color = Color.White,
+                        fontSize = if (isCompactPhone) 10.5.sp else 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontFamily = FontFamily.SansSerif,
+                      ),
+                    modifier =
+                      Modifier.fillMaxWidth()
+                        .testTag("settings_music_forge_input"),
+                  )
+                }
+
+                Box(
+                  modifier =
+                    Modifier.height(36.dp)
+                      .clip(RoundedCornerShape(8.dp))
+                      .background(
+                        Brush.verticalGradient(listOf(Color(0xFF4C1D95), Color(0xFF2E1065)))
+                      )
+                      .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(8.dp))
+                      .clickable {
+                        onForgeCustomMusicPrompt(forgePromptDraft)
+                      }
+                      .padding(horizontal = 12.dp)
+                      .testTag("settings_music_forge_btn"),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Text(
+                    text = "🎶 FORGE TRACK",
+                    color = Color(0xFFF3E8FF),
+                    fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.SansSerif,
+                    maxLines = 1,
+                  )
+                }
               }
             }
           }
@@ -395,7 +750,7 @@ fun SettingsModal(
           // Section 2: Interactive Twin-Stick Controller Schematic & Live Button Remapper
           ControllerDiagramAndMapperCard(context = context)
 
-          // Section 3: Playfield Text Scale Slider (0.75x to 2.0x)
+          // Section 3: Playfield Text Scale Slider (0.75x to 1.75x — 75% to 175%)
           Column(
             modifier =
               Modifier.fillMaxWidth()
@@ -410,9 +765,9 @@ fun SettingsModal(
               verticalAlignment = Alignment.CenterVertically,
             ) {
               Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                val formattedScale = String.format(Locale.US, "%.2fx", playfieldTextScale)
+                val pct = (playfieldTextScale * 100f).roundToInt()
                 Text(
-                  text = "🔤 PLAYFIELD TEXT SIZE: $formattedScale",
+                  text = "🔤 PLAYFIELD TEXT SIZE: $pct%",
                   color = Color(0xFF00F5D4),
                   fontSize = if (isCompactPhone) 11.5.sp else 13.sp,
                   fontWeight = FontWeight.Bold,
@@ -420,7 +775,8 @@ fun SettingsModal(
                 )
                 if (!isCompactPhone) {
                   Text(
-                    text = "Scales bounty and callsign labels above and below ships on the space playfield",
+                    text =
+                      "Scales ship callsigns, bounties, rift anomaly labels, and stasis timers on the space playfield",
                     color = Color(0xFF8A99AD),
                     fontSize = 11.sp,
                     fontFamily = FontFamily.SansSerif,
@@ -428,38 +784,47 @@ fun SettingsModal(
                 }
               }
 
-              // Quick Preset Chips
+              // Quick Preset Chips (75% .. 175%)
               Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { preset ->
-                  val isSelected = (playfieldTextScale - preset).let { it >= -0.05f && it <= 0.05f }
-                  Box(
-                    modifier =
-                      Modifier.clip(RoundedCornerShape(6.dp))
-                        .background(if (isSelected) Color(0xFF00F5D4) else Color(0xFF132642))
-                        .border(
-                          1.dp,
-                          if (isSelected) Color(0xFF00F5D4) else Color(0x4400F5D4),
-                          RoundedCornerShape(6.dp),
-                        )
-                        .clickable { onChangePlayfieldTextScale(preset) }
-                        .padding(horizontal = 7.dp, vertical = 3.5.dp),
-                  ) {
-                    Text(
-                      text = "${preset}x",
-                      color = if (isSelected) Color(0xFF030712) else Color.White,
-                      fontSize = 9.5.sp,
-                      fontWeight = FontWeight.Bold,
-                      fontFamily = FontFamily.Monospace,
-                    )
+                listOf(
+                    0.75f to "75%",
+                    1.0f to "100%",
+                    1.25f to "125%",
+                    1.5f to "150%",
+                    1.75f to "175%",
+                  )
+                  .forEach { (preset, label) ->
+                    val isSelected = kotlin.math.abs(playfieldTextScale - preset) <= 0.04f
+                    Box(
+                      modifier =
+                        Modifier.clip(RoundedCornerShape(6.dp))
+                          .background(if (isSelected) Color(0xFF00F5D4) else Color(0xFF132642))
+                          .border(
+                            1.dp,
+                            if (isSelected) Color(0xFF00F5D4) else Color(0x4400F5D4),
+                            RoundedCornerShape(6.dp),
+                          )
+                          .clickable { onChangePlayfieldTextScale(preset) }
+                          .padding(horizontal = 7.dp, vertical = 3.5.dp),
+                    ) {
+                      Text(
+                        text = label,
+                        color = if (isSelected) Color(0xFF030712) else Color.White,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                      )
+                    }
                   }
-                }
               }
             }
 
             Slider(
-              value = playfieldTextScale,
-              onValueChange = { onChangePlayfieldTextScale(((it * 20f).roundToInt() / 20f).coerceIn(0.75f, 2.0f)) },
-              valueRange = 0.75f..2.0f,
+              value = playfieldTextScale.coerceIn(0.75f, 1.75f),
+              onValueChange = {
+                onChangePlayfieldTextScale(((it * 20f).roundToInt() / 20f).coerceIn(0.75f, 1.75f))
+              },
+              valueRange = 0.75f..1.75f,
               colors =
                 SliderDefaults.colors(
                   thumbColor = Color(0xFF00F5D4),
@@ -482,9 +847,9 @@ fun SettingsModal(
               contentAlignment = Alignment.Center,
             ) {
               Text(
-                text = "[RFT] VIPER ACE • ★ 320",
+                text = "[AEX] VIPER ACE • ★ 320",
                 color = Color(0xFF38BDF8),
-                fontSize = (13f * playfieldTextScale).sp,
+                fontSize = (13f * playfieldTextScale.coerceIn(0.75f, 1.75f)).sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
               )
@@ -560,7 +925,9 @@ fun SettingsModal(
 
             Slider(
               value = cameraZoom,
-              onValueChange = { onChangeCameraZoom(((it * 20f).roundToInt() / 20f).coerceIn(0.5f, 1.5f)) },
+              onValueChange = {
+                onChangeCameraZoom(((it * 20f).roundToInt() / 20f).coerceIn(0.5f, 1.5f))
+              },
               valueRange = 0.5f..1.5f,
               colors =
                 SliderDefaults.colors(

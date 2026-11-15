@@ -2827,7 +2827,8 @@ class RiftArenaView(
         canvas.drawCircle(tCx + ex * 0.25f, tCy + ey * 0.25f, 10f, obstacleBeaconPaint)
       }
 
-      SpaceObstacleStyle.FLOATING_DEBRIS -> {
+      SpaceObstacleStyle.FLOATING_DEBRIS,
+      SpaceObstacleStyle.PERMANENT_BARRIER -> {
         drawExtrudedBox3D(
           canvas = canvas,
           left = left + 4f,

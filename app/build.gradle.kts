@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.riftarena.vxpqzm"
     minSdk = 24
     targetSdk = 36
-    versionCode = 51
-    versionName = "51.0"
+    versionCode = 52
+    versionName = "52.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
