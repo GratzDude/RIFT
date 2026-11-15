@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -19,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -31,6 +33,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -94,6 +97,7 @@ fun HangarModal(
   onDeployPilot: (callsign: String, shipId: Int, mode: String, asGuest: Boolean) -> Unit,
   onCloseModal: () -> Unit,
 ) {
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   var callsignInput by remember(initialCallsign) { mutableStateOf(initialCallsign) }
   var currentShipId by remember(selectedShipId) { mutableIntStateOf(selectedShipId.coerceIn(1, 10)) }
   val currentMode = "FFA"
@@ -234,21 +238,25 @@ fun HangarModal(
           }
         }
         .clickable(enabled = true, onClick = {})
-        .padding(horizontal = 10.dp, vertical = 6.dp),
+        .padding(
+          if (isCompactPhone) PaddingValues(start = 8.dp, end = 8.dp, top = 40.dp, bottom = 4.dp)
+          else PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+        ),
     contentAlignment = Alignment.Center,
   ) {
     Surface(
       modifier =
-        Modifier.fillMaxWidth(0.99f)
-          .fillMaxHeight(0.97f)
-          .border(1.5.dp, Color(0xFF00F0FF), RoundedCornerShape(14.dp)),
-      color = Color(0xFF070E1A),
-      shape = RoundedCornerShape(14.dp),
+        Modifier.fillMaxSize()
+          .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(12.dp)),
+      color = Color(0xF2060D1A),
+      shape = RoundedCornerShape(12.dp),
     ) {
-      Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        // Compact Top Hangar Header Bar
+      Column(
+        modifier = Modifier.fillMaxSize().padding(if (isCompactPhone) 8.dp else 14.dp)
+      ) {
+        // Unified Single 30.dp Top Hangar Header Bar
         Row(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().height(30.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -257,30 +265,33 @@ fun HangarModal(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             Text(
-              text = "🚀 HANGAR // 3x3 SHIP MATRIX",
-              color = Color(0xFF00F0FF),
-              fontSize = 13.sp,
+              text = if (isCompactPhone) "🚀 HANGAR // 3x3 MATRIX" else "🚀 HANGAR // 3x3 SHIP MATRIX",
+              color = Color(0xFF00F5D4),
+              fontSize = if (isCompactPhone) 11.5.sp else 13.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
+              maxLines = 1,
             )
 
             Box(
               modifier =
                 Modifier.testTag("btn_toggle_pilot_identity")
-                  .clip(RoundedCornerShape(6.dp))
+                  .shadow(2.dp, RoundedCornerShape(8.dp))
+                  .clip(RoundedCornerShape(8.dp))
                   .background(
                     if (showPilotIdentityBar) Color(0xFF1E293B) else Color(0xFF0D182A)
                   )
-                  .border(1.dp, HangarElectricCyan, RoundedCornerShape(6.dp))
+                  .border(1.2.dp, HangarElectricCyan, RoundedCornerShape(8.dp))
                   .clickable { showPilotIdentityBar = !showPilotIdentityBar }
                   .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
               Text(
-                text = "🪪 [$syndicateTag] $callsignInput • PUBLIC FFA ▾",
+                text = "🪪 [$syndicateTag] $callsignInput ▾",
                 color = HangarElectricCyan,
-                fontSize = 9.5.sp,
+                fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
+                maxLines = 1,
               )
             }
           }
@@ -295,66 +306,49 @@ fun HangarModal(
               isStreaming = isNexusStreaming,
             )
 
-            Column(
+            Row(
               modifier =
-                Modifier.background(Color(0xFF0E1B2E), RoundedCornerShape(6.dp))
-                  .border(1.dp, Color(0xFF00F0FF), RoundedCornerShape(6.dp))
-                  .padding(horizontal = 7.dp, vertical = 2.dp),
-              horizontalAlignment = Alignment.CenterHorizontally,
+                Modifier.background(Color(0xFF0E1B2E), RoundedCornerShape(8.dp))
+                  .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                  .padding(horizontal = 7.dp, vertical = 3.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-              ) {
-                Text(
-                  text =
-                    if (unlockFullNinthShipOverride) "LVL $pilotLevel (100 PT OVERRIDE)"
-                    else "LVL $pilotLevel",
-                  color = Color(0xFF00F0FF),
-                  fontSize = 9.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-                Text(
-                  text = "$pointsRemainingInSlot/$effectivePointBudget PTS",
-                  color = Color(0xFF22C55E),
-                  fontSize = 8.5.sp,
-                  fontWeight = FontWeight.Bold,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
-              Box(
-                modifier =
-                  Modifier.width(86.dp)
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(Color(0xFF1E293B))
-              ) {
-                Box(
-                  modifier =
-                    Modifier.fillMaxHeight()
-                      .fillMaxWidth(xpProgressFraction.coerceIn(0.04f, 1f))
-                      .background(Color(0xFF00F0FF))
-                )
-              }
+              Text(
+                text =
+                  if (unlockFullNinthShipOverride) "LVL $pilotLevel (100P)"
+                  else "LVL $pilotLevel",
+                color = Color(0xFF00F5D4),
+                fontSize = 8.8.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+              Text(
+                text = "$pointsRemainingInSlot/$effectivePointBudget PTS",
+                color = Color(0xFF22C55E),
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              )
             }
 
             Box(
               modifier =
                 Modifier.testTag("btn_hangar_get_rift_shards")
-                  .clip(RoundedCornerShape(6.dp))
+                  .shadow(2.dp, RoundedCornerShape(8.dp))
+                  .clip(RoundedCornerShape(8.dp))
                   .background(
                     Brush.horizontalGradient(
                       listOf(Color(0xFF3B0764), Color(0xFF6D28D9))
                     )
                   )
-                  .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(6.dp))
+                  .border(1.2.dp, Color(0xFFC084FC), RoundedCornerShape(8.dp))
                   .clickable { onOpenRiftShardsStore() }
                   .padding(horizontal = 8.dp, vertical = 4.dp),
               contentAlignment = Alignment.Center,
             ) {
               Text(
-                text = "❖ $riftShards [+ GET RIFT SHARDS]",
+                text = if (isCompactPhone) "❖ $riftShards [+]" else "❖ $riftShards [+ GET RIFT SHARDS]",
                 color = Color(0xFFF3E8FF),
                 fontSize = 8.5.sp,
                 fontWeight = FontWeight.Black,
@@ -365,8 +359,13 @@ fun HangarModal(
             Button(
               onClick = onCloseModal,
               colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+              border = BorderStroke(1.2.dp, Color(0xFF38BDF8)),
+              shape = RoundedCornerShape(8.dp),
               contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-              modifier = Modifier.height(26.dp).testTag("btn_close_hangar"),
+              modifier =
+                Modifier.height(28.dp)
+                  .shadow(2.dp, RoundedCornerShape(8.dp))
+                  .testTag("btn_close_hangar"),
             ) {
               Text(
                 "✕ RESUME",
@@ -386,7 +385,7 @@ fun HangarModal(
               Modifier.fillMaxWidth()
                 .background(Color(0xFF0B1526), RoundedCornerShape(8.dp))
                 .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(8.dp))
-                .padding(horizontal = 8.dp, vertical = 5.dp),
+                .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
@@ -399,10 +398,12 @@ fun HangarModal(
             )
             Box(
               modifier =
-                Modifier.width(124.dp)
-                  .background(Color(0xFF050A14), RoundedCornerShape(5.dp))
-                  .border(1.dp, Color(0xFF334155), RoundedCornerShape(5.dp))
-                  .padding(horizontal = 6.dp, vertical = 4.dp)
+                Modifier.width(136.dp)
+                  .height(if (isCompactPhone) 34.dp else 38.dp)
+                  .background(Color(0xFF050B14), RoundedCornerShape(8.dp))
+                  .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                  .padding(horizontal = 10.dp),
+              contentAlignment = Alignment.CenterStart,
             ) {
               BasicTextField(
                 value = callsignInput,
@@ -419,7 +420,7 @@ fun HangarModal(
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                   ),
-                cursorBrush = SolidColor(Color(0xFF00F0FF)),
+                cursorBrush = SolidColor(Color(0xFF00F5D4)),
                 modifier = Modifier.fillMaxWidth().testTag("input_pilot_callsign"),
               )
             }
@@ -427,11 +428,12 @@ fun HangarModal(
             Box(
               modifier =
                 Modifier.testTag("btn_hangar_manage_syndicate")
-                  .clip(RoundedCornerShape(5.dp))
+                  .shadow(2.dp, RoundedCornerShape(8.dp))
+                  .clip(RoundedCornerShape(8.dp))
                   .background(Color(0xFF1E1035))
-                  .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(5.dp))
+                  .border(1.2.dp, Color(0xFFA855F7), RoundedCornerShape(8.dp))
                   .clickable { onOpenSyndicatesModal() }
-                  .padding(horizontal = 7.dp, vertical = 4.dp)
+                  .padding(horizontal = 8.dp, vertical = 5.dp)
             ) {
               Text(
                 text = "🏛️ [$syndicateTag] SYNDICATE",
@@ -452,13 +454,13 @@ fun HangarModal(
             Box(
               modifier =
                 Modifier.testTag("mode_chip_FFA")
-                  .clip(RoundedCornerShape(5.dp))
+                  .clip(RoundedCornerShape(8.dp))
                   .background(Color(0xFF0284C7))
-                  .border(1.dp, HangarElectricCyan, RoundedCornerShape(5.dp))
-                  .padding(horizontal = 8.dp, vertical = 3.dp)
+                  .border(1.2.dp, HangarElectricCyan, RoundedCornerShape(8.dp))
+                  .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
               Text(
-                text = "PUBLIC FFA (60M SECTOR CONVERGENCE)",
+                text = "PUBLIC FFA (SECTOR CONVERGENCE)",
                 color = Color.White,
                 fontSize = 8.sp,
                 fontWeight = FontWeight.Black,
@@ -468,7 +470,7 @@ fun HangarModal(
           }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(if (isCompactPhone) 4.dp else 6.dp))
 
         if (showFullNinthShipForgeModal) {
           NinthShipModularForgePanel(
@@ -559,6 +561,7 @@ fun HangarModal(
                       isEquipped = isEquipped,
                       isNinthCell = isNinthCell,
                       isNinthUnlocked = isNinthUnlocked,
+                      isCompactPhone = isCompactPhone,
                       activeSlotId = CustomShipLoadoutSlot.normalizeSlotId(activeCustomSlot.slotId),
                       pointsAllocated = pointsAllocatedInSlot,
                       pointBudget = effectivePointBudget,
@@ -808,6 +811,7 @@ private fun MatrixShipComparisonCell(
   isEquipped: Boolean,
   isNinthCell: Boolean,
   isNinthUnlocked: Boolean,
+  isCompactPhone: Boolean = false,
   activeSlotId: String,
   pointsAllocated: Int,
   pointBudget: Int,
@@ -841,12 +845,13 @@ private fun MatrixShipComparisonCell(
     modifier =
       modifier
         .testTag("hangar_ship_card_${ship.id}")
-        .clip(RoundedCornerShape(9.dp))
+        .shadow(2.dp, RoundedCornerShape(8.dp))
+        .clip(RoundedCornerShape(8.dp))
         .background(bgColor)
         .border(
-          if (isSelected || isEquipped) 1.5.dp else 1.dp,
+          if (isSelected || isEquipped) 1.5.dp else 1.2.dp,
           borderColor,
-          RoundedCornerShape(9.dp),
+          RoundedCornerShape(8.dp),
         )
         .clickable { onSelect() }
   ) {
@@ -877,8 +882,10 @@ private fun MatrixShipComparisonCell(
     }
 
     Column(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
-      verticalArrangement = Arrangement.SpaceBetween,
+      modifier =
+        Modifier.fillMaxSize()
+          .padding(horizontal = if (isCompactPhone) 6.dp else 8.dp, vertical = if (isCompactPhone) 4.dp else 6.dp),
+      verticalArrangement = if (isCompactPhone) Arrangement.Center else Arrangement.SpaceBetween,
     ) {
       // Top Row: Centered/Framed 128x128 3D Ship Sprite with Radial Under-Glow + Name + Top-Right Status Badge
       Row(
@@ -888,7 +895,7 @@ private fun MatrixShipComparisonCell(
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(7.dp),
+          horizontalArrangement = Arrangement.spacedBy(if (isCompactPhone) 5.dp else 7.dp),
           modifier = Modifier.weight(1f),
         ) {
           val spriteBitmap =
@@ -902,7 +909,7 @@ private fun MatrixShipComparisonCell(
             }
           Box(
             modifier =
-              Modifier.size(36.dp)
+              Modifier.size(if (isCompactPhone) 34.dp else 36.dp)
                 .background(Color(0xFF050A14), RoundedCornerShape(7.dp))
                 .border(1.dp, accentColor.copy(alpha = 0.55f), RoundedCornerShape(7.dp)),
             contentAlignment = Alignment.Center,
@@ -920,7 +927,7 @@ private fun MatrixShipComparisonCell(
               bitmap = spriteBitmap,
               contentDescription = cleanName,
               filterQuality = FilterQuality.High,
-              modifier = Modifier.size(30.dp),
+              modifier = Modifier.size(if (isCompactPhone) 28.dp else 30.dp),
             )
           }
 
@@ -928,10 +935,10 @@ private fun MatrixShipComparisonCell(
             Text(
               text = cleanName,
               color = Color.White,
-              fontSize = 14.sp,
+              fontSize = if (isCompactPhone) 11.sp else 14.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.SansSerif,
-              lineHeight = 15.sp,
+              lineHeight = if (isCompactPhone) 12.sp else 15.sp,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
@@ -944,10 +951,10 @@ private fun MatrixShipComparisonCell(
                   ship.role.uppercase(Locale.US)
                 },
               color = if (isNinthCell && !isNinthUnlocked) Color(0xFFF59E0B) else accentColor,
-              fontSize = 10.sp,
+              fontSize = if (isCompactPhone) 8.5.sp else 10.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.SansSerif,
-              lineHeight = 11.sp,
+              lineHeight = if (isCompactPhone) 10.sp else 11.sp,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
@@ -998,14 +1005,16 @@ private fun MatrixShipComparisonCell(
         }
       }
 
-      // Decluttered 3-Bar Core Hull Preview (SPD / THR / FLX) — Monochrome Cyan, Anchored at Baseline Floor (0 pts = 10%)
-      Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-      ) {
-        CardMatrixStatBar("SPD", ship.speedPts, ship.topSpeed.roundToInt().toString())
-        CardMatrixStatBar("THR", ship.thrustPts, ship.thrust.roundToInt().toString())
-        CardMatrixStatBar("FLX", ship.maxFluxPts, ship.maxFlux.roundToInt().toString())
+      // Decluttered 3-Bar Core Hull Preview on Tablet (!isCompactPhone); Icon-First Tile on Phone Landscape
+      if (!isCompactPhone) {
+        Column(
+          modifier = Modifier.fillMaxWidth(),
+          verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+          CardMatrixStatBar("SPD", ship.speedPts, ship.topSpeed.roundToInt().toString())
+          CardMatrixStatBar("THR", ship.thrustPts, ship.thrust.roundToInt().toString())
+          CardMatrixStatBar("FLX", ship.maxFluxPts, ship.maxFlux.roundToInt().toString())
+        }
       }
     }
   }
@@ -1436,7 +1445,7 @@ private fun ShipComparisonInspectorPanel(
             text =
               when {
                 ship.bombType == "INTERDICTOR_DOME" ->
-                  "380⚡ FLUX • 275PX TWO-WAY STASIS DOME (5.0S DURATION, 9.0S CD)"
+                  "380⚡ FLUX • 275PX TWO-WAY STASIS DOME (8.0S DURATION, 12.0S CD)"
                 ship.bombType == "PHASE_DASH" -> "300⚡ • 2.5s CD • BLINK + I-FRAMES + 35% RAIL"
                 ship.bombType == "CLOAK_EMP" -> "180⚡/s CLOAK • 0⚡ DECLOAK 360° EMP PULSE"
                 ship.supportsNativeMultifire -> "INNATE SPLIT MULTI-SHOT (0⚡ EXTRA COST)"
@@ -1490,8 +1499,21 @@ private fun ShipComparisonInspectorPanel(
               else -> Color(0xFF0284C7)
             }
         ),
+      border =
+        BorderStroke(
+          1.2.dp,
+          when {
+            isNinth && !isNinthUnlocked -> Color(0xFF94A3B8)
+            isCurrentShip -> Color(0xFF4ADE80)
+            else -> Color(0xFF00F5D4)
+          },
+        ),
       shape = RoundedCornerShape(8.dp),
-      modifier = Modifier.fillMaxWidth().height(38.dp).testTag("btn_deploy_pilot"),
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(36.dp)
+          .shadow(2.dp, RoundedCornerShape(8.dp))
+          .testTag("btn_deploy_pilot"),
     ) {
       Text(
         text =
@@ -1501,7 +1523,7 @@ private fun ShipComparisonInspectorPanel(
             else -> "⚡ DEPLOY $cleanTitle"
           },
         color = Color.White,
-        fontSize = 12.sp,
+        fontSize = 11.5.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
       )
@@ -2110,9 +2132,11 @@ private fun NinthShipModularForgePanel(
           Box(
             modifier =
               Modifier.weight(1f)
-                .background(Color(0xFF06040D), RoundedCornerShape(6.dp))
-                .border(1.dp, Color(0xFF4C1D95), RoundedCornerShape(6.dp))
-                .padding(horizontal = 8.dp, vertical = 5.dp)
+                .height(34.dp)
+                .background(Color(0xFF050B14), RoundedCornerShape(8.dp))
+                .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
           ) {
             BasicTextField(
               value = hullNameInput,
@@ -2142,9 +2166,10 @@ private fun NinthShipModularForgePanel(
           modifier =
             Modifier.fillMaxWidth()
               .height(44.dp)
-              .background(Color(0xFF06040D), RoundedCornerShape(6.dp))
-              .border(1.dp, Color(0xFF6D28D9), RoundedCornerShape(6.dp))
-              .padding(horizontal = 8.dp, vertical = 5.dp)
+              .background(Color(0xFF050B14), RoundedCornerShape(8.dp))
+              .border(1.dp, Color(0xFF6D28D9), RoundedCornerShape(8.dp))
+              .padding(horizontal = 10.dp, vertical = 6.dp),
+          contentAlignment = Alignment.CenterStart,
         ) {
           if (aiPromptInput.isEmpty()) {
             Text(
@@ -2187,9 +2212,9 @@ private fun NinthShipModularForgePanel(
             Box(
               modifier =
                 Modifier.testTag("chip_ai_prompt_$idx")
-                  .clip(RoundedCornerShape(5.dp))
+                  .clip(RoundedCornerShape(8.dp))
                   .background(Color(0xFF1E1035))
-                  .border(1.dp, Color(0xFF7C3AED), RoundedCornerShape(5.dp))
+                  .border(1.dp, Color(0xFF7C3AED), RoundedCornerShape(8.dp))
                   .clickable {
                     hullNameInput = chipTitle.take(18).uppercase(Locale.US)
                     aiPromptInput = chipPrompt
@@ -2213,8 +2238,13 @@ private fun NinthShipModularForgePanel(
             ButtonDefaults.buttonColors(
               containerColor = Color(0xFF7C3AED)
             ),
+          border = BorderStroke(1.2.dp, Color(0xFFC084FC)),
           shape = RoundedCornerShape(8.dp),
-          modifier = Modifier.fillMaxWidth().height(34.dp).testTag("btn_forge_ai_ship_design"),
+          modifier =
+            Modifier.fillMaxWidth()
+              .height(34.dp)
+              .shadow(2.dp, RoundedCornerShape(8.dp))
+              .testTag("btn_forge_ai_ship_design"),
         ) {
           Text(
             text =

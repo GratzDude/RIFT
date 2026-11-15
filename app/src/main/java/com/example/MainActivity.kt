@@ -276,9 +276,7 @@ fun RiftArenaScreen(
   var unreadCommsCount by remember { mutableIntStateOf(0) }
 
   var bootToNexusHub by remember { mutableStateOf(localPrefs.getBootToNexusHub()) }
-  var activeModal by remember {
-    mutableStateOf(if (localPrefs.getBootToNexusHub()) ActiveModal.NEXUS else ActiveModal.NONE)
-  }
+  var activeModal by remember { mutableStateOf(ActiveModal.NEXUS) }
   var nexusInitialLayoutMode by remember { mutableStateOf(NexusHubLayoutMode.DECK_ONLY) }
   var showFullChangelogModal by remember { mutableStateOf(false) }
   var previousModalBeforeStore by remember { mutableStateOf(ActiveModal.DOSSIER) }
@@ -591,10 +589,16 @@ fun RiftArenaScreen(
   }
 
   LaunchedEffect(activeModal, com.example.engine.RiftCalibrationState.isCalibrationModalOpen) {
-    if (
-      activeModal == ActiveModal.NONE &&
-        !com.example.engine.RiftCalibrationState.isCalibrationModalOpen
-    ) {
+    val isInMenu =
+      activeModal != ActiveModal.NONE ||
+        com.example.engine.RiftCalibrationState.isCalibrationModalOpen
+    engine.isInLobbyStaging = isInMenu
+    if (isInMenu) {
+      engine.localPlayer.isIdleDraining = false
+      engine.localPlayer.playfieldIdleTimer = 0f
+      engine.localPlayer.safeZoneStayTimer = 0f
+      engine.localPlayer.safeZoneLockoutTimer = 0f
+    } else {
       arenaViewRef?.requestFocus()
     }
   }
@@ -796,30 +800,38 @@ fun RiftArenaScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
       if (isSubModuleModal) {
-        NexusTopModuleSwitcherBar(
-          activeModuleKey = activeModal.name,
-          onSelectNexusLobby = {
-            previousModalBeforeNexus = ActiveModal.NONE
-            activeModal = ActiveModal.NEXUS
-          },
-          onOpenHangar = { activeModal = ActiveModal.HANGAR },
-          onOpenArmadaModal = {
-            armadaStatusBanner = null
-            activeModal = ActiveModal.ARMADA
-          },
-          onOpenSyndicateDirectory = {
-            syndicateStatusBanner = null
-            activeModal = ActiveModal.SYNDICATES
-          },
-          onOpenDossier = { activeModal = ActiveModal.DOSSIER },
-          onOpenCodex = { activeModal = ActiveModal.CODEX },
-          onOpenSettings = { activeModal = ActiveModal.SETTINGS },
-          onOpenCalibration = {
-            activeModal = ActiveModal.NONE
-            com.example.engine.RiftCalibrationState.isCalibrationModalOpen = true
-          },
-          onReturnToArena = { activeModal = ActiveModal.NONE },
-        )
+        Box(
+          modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(36.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          NexusTopModuleSwitcherBar(
+            activeModuleKey = activeModal.name,
+            onSelectNexusLobby = {
+              previousModalBeforeNexus = ActiveModal.NONE
+              activeModal = ActiveModal.NEXUS
+            },
+            onOpenHangar = { activeModal = ActiveModal.HANGAR },
+            onOpenArmadaModal = {
+              armadaStatusBanner = null
+              activeModal = ActiveModal.ARMADA
+            },
+            onOpenSyndicateDirectory = {
+              syndicateStatusBanner = null
+              activeModal = ActiveModal.SYNDICATES
+            },
+            onOpenDossier = { activeModal = ActiveModal.DOSSIER },
+            onOpenCodex = { activeModal = ActiveModal.CODEX },
+            onOpenSettings = { activeModal = ActiveModal.SETTINGS },
+            onOpenCalibration = {
+              activeModal = ActiveModal.NONE
+              com.example.engine.RiftCalibrationState.isCalibrationModalOpen = true
+            },
+            onReturnToArena = {
+              engine.isInLobbyStaging = false
+              activeModal = ActiveModal.NONE
+            },
+          )
+        }
       }
 
       Box(modifier = Modifier.weight(1f).fillMaxWidth()) {

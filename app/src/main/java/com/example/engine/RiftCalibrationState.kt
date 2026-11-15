@@ -255,7 +255,7 @@ object RiftCalibrationState {
   var maxMinesPerShip by mutableIntStateOf(6)
   var interdictorBubbleRadius by mutableFloatStateOf(275f)
   var interdictorBubbleDuration by mutableFloatStateOf(8.0f)
-  var interdictorBubbleCooldown by mutableFloatStateOf(12.0f)
+  var interdictorBubbleCooldown by mutableFloatStateOf(10.0f)
 
   // 5. Official RIFT Special Buffs & Bucket B Enhancers (Tab 4)
   var seekerFlightTime by mutableFloatStateOf(2.5f)      // Official 2.5s Seeker Torpedo flight time
@@ -769,7 +769,7 @@ object RiftCalibrationState {
       shipIdFilter = 0,
       title = "Eclipse Bubble: Cooldown",
       unit = "s",
-      description = "Cooldown between Eclipse Stasis Bubbles (default 12.0s).",
+      description = "Cooldown between Eclipse Stasis Bubbles (default 10.0s).",
       min = 4.0f, max = 25.0f, step = 0.5f, decimals = 1,
       getter = { interdictorBubbleCooldown },
       setter = {
@@ -1443,9 +1443,9 @@ object RiftCalibrationState {
 
       interdictorBubbleRadius = 275f
       interdictorBubbleDuration = 8.0f
-      interdictorBubbleCooldown = 12.0f
-      RiftCodex.getShipById(9).bombCost = 380f
-      RiftCodex.getShipById(9).bombCooldown = 12.0f
+      interdictorBubbleCooldown = 10.0f
+      RiftCodex.getShipById(9).bombCost = 360f
+      RiftCodex.getShipById(9).bombCooldown = 10.0f
 
       engine.publicMatchCycleLimitSec = publicMatchCycleLimitSec
       for (ship in engine.ships) {
@@ -1803,9 +1803,9 @@ object RiftCalibrationState {
 
     interdictorBubbleRadius = 275f
     interdictorBubbleDuration = 8.0f
-    interdictorBubbleCooldown = 12.0f
-    RiftCodex.getShipById(9).bombCost = 380f
-    RiftCodex.getShipById(9).bombCooldown = 12.0f
+    interdictorBubbleCooldown = 10.0f
+    RiftCodex.getShipById(9).bombCost = 360f
+    RiftCodex.getShipById(9).bombCooldown = 10.0f
 
     bountyPlacement = LabelPlacement.TOP
     tagPlacement = LabelPlacement.BOTTOM

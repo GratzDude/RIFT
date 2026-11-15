@@ -621,7 +621,7 @@ data class CustomShipLoadoutSlot(
         "SEEKER_TORPEDO" ->
           SecondaryTuple("Native Seeker Torpedo (600⚡ • 5s CD)", "SEEKER", 600f, 5.0f, 780f, 6, 0f)
         "INTERDICTOR_DOME" ->
-          SecondaryTuple("Eclipse Stasis Bubble (380⚡ • 8s)", "BUBBLE", 380f, RiftCalibrationState.interdictorBubbleCooldown, 0f, 0, 0f)
+          SecondaryTuple("Stasis Bubble (360⚡ • 8s)", "BUBBLE", 360f, RiftCalibrationState.interdictorBubbleCooldown, 0f, 0, 0f)
         "PASSIVE_GUNFIGHTER" ->
           SecondaryTuple("Pure Gunfighter Passive (+10% Vel, 0 Recoil)", "PASSIVE", 0f, 0f, 0f, 0, 0f)
         else ->
@@ -737,7 +737,7 @@ data class CustomShipLoadoutSlot(
           "INTERDICTOR_DOME",
           "Eclipse Stasis Bubble",
           25,
-          "380⚡ • 12s CD",
+          "360⚡ • 10s CD",
           "8.0s two-way containment bubble (275px radius). Nothing enters or leaves.",
         ),
       )
@@ -1442,42 +1442,42 @@ object RiftCodex {
         initialRepels = 3,
         accentColorHex = 0xFF66BB6A.toInt(),
       ),
-      // 9. ECLIPSE — Zone Lockdown (100 Pts: 10 Spd + 12 Thr + 8 Turn + 18 Flux + 15 Rch + 12 Pri + 25 Sec)
+      // 9. ECLIPSE — Zone Lockdown (100 Pts: 11 Spd + 12 Thr + 9 Turn + 18 Flux + 13 Rch + 12 Pri + 25 Sec)
       ShipSpec(
         id = 9,
         name = "Eclipse",
         role = "Zone Lockdown",
         tacticalLore = "Anchors an 8-second stasis bubble (275px radius). Nothing enters or leaves.",
         silhouetteDesc = "Twin-ringed amethyst gravimetric cruiser with forward containment prongs and a glowing magenta-cyan singularity core.",
-        weaponSummary = "PRI: PULSE (20⚡) • SEC: STASIS BUBBLE (380⚡ • 8s)",
+        weaponSummary = "PRI: PULSE (20⚡) • SEC: STASIS BUBBLE (360⚡ • 8s)",
         primaryTitle = "Twin Pulse",
-        secondaryTitle = "Stasis Bubble (380⚡ • 8s)",
+        secondaryTitle = "Stasis Bubble (360⚡ • 8s)",
         primaryShortLabel = "PULSE",
         secondaryShortLabel = "BUBBLE",
-        speedPts = 10,
+        speedPts = 11,
         thrustPts = 12,
-        turnPts = 8,
+        turnPts = 9,
         maxFluxPts = 18,
-        rechargePts = 15,
+        rechargePts = 13,
         primaryPts = 12,
         secondaryPts = 25,
         maxFlux = computeMaxFlux(18), // 3,640⚡
-        rechargeRate = computeRecharge(15), // 360⚡/S
-        topSpeed = computeTopSpeed(10), // 460 PX/S
-        afterburnerSpeed = computeTopSpeed(10) * 1.32f,
+        rechargeRate = computeRecharge(13), // 344⚡/S
+        topSpeed = computeTopSpeed(11), // 468 PX/S
+        afterburnerSpeed = computeTopSpeed(11) * 1.32f,
         thrust = computeThrust(12), // 780 PX/S²
-        turnRate = computeTurnRate(8), // 4.0 RAD/S
+        turnRate = computeTurnRate(9), // 4.1 RAD/S
         primaryCost = 20f,
         primaryCooldown = 0.16f,
-        primaryDamage = 195f,
+        primaryDamage = 112f,
         primarySpeed = 930f,
         primaryStreams = 2,
         primarySpreadRad = 0.045f,
         primaryBounces = 1,
         hasBomb = true,
         bombType = "INTERDICTOR_DOME",
-        bombCost = 380f,
-        bombCooldown = 12.0f,
+        bombCost = 360f,
+        bombCooldown = 10.0f,
         bombDamage = 0f,
         bombBounces = 0,
         bombRecoil = 0f,

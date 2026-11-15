@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -54,6 +56,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -517,9 +520,29 @@ fun RiftHudOverlay(
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
       // Buff Bar directly above Center Circular Radar Minimap (BNC, SPD, THR, TURN, MAX⚡, RCH)
+      var buffBarBoostTrigger by remember { mutableIntStateOf(0) }
+      var isBuffBarEnlarged by remember { mutableStateOf(false) }
+      LaunchedEffect(buffBarBoostTrigger) {
+        if (buffBarBoostTrigger > 0) {
+          isBuffBarEnlarged = true
+          delay(1250L)
+          isBuffBarEnlarged = false
+        }
+      }
+      val buffBarTapScale by animateFloatAsState(
+        targetValue = if (isBuffBarEnlarged) 1.48f else 1.0f,
+        animationSpec =
+          spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+          ),
+        label = "buff_bar_tap_enlarge",
+      )
+
       Box(
         modifier =
-          Modifier.offset {
+          Modifier.zIndex(if (isBuffBarEnlarged || buffBarTapScale > 1.02f) 18f else 4f)
+            .offset {
               IntOffset(
                 RiftCalibrationState.buffBarOffset.x.roundToInt(),
                 RiftCalibrationState.buffBarOffset.y.roundToInt(),
@@ -537,12 +560,17 @@ fun RiftHudOverlay(
                   }
                 }
               } else {
-                Modifier
+                Modifier.clickable(
+                  interactionSource = remember { MutableInteractionSource() },
+                  indication = null,
+                ) {
+                  buffBarBoostTrigger++
+                }
               }
             )
             .graphicsLayer {
-              scaleX = RiftCalibrationState.buffBarScale
-              scaleY = RiftCalibrationState.buffBarScale
+              scaleX = RiftCalibrationState.buffBarScale * buffBarTapScale
+              scaleY = RiftCalibrationState.buffBarScale * buffBarTapScale
               transformOrigin = TransformOrigin(0.5f, 1f)
             }
             .padding(bottom = 4.dp)
@@ -575,9 +603,15 @@ fun RiftHudOverlay(
       )
     }
 
-    // 5b. Independent Floating [BRAKE] Button (1:1 WYSIWYG labels & circle size in UI Unlock Mode)
+    // 5b. Independent Floating [BRAKE] Button — Unified 3-Ring Tactile Cockpit Button (1:1 WYSIWYG labels & circle size in UI Unlock Mode)
     val brakingActive = engine.autoBraking && speed > 0
-    Box(
+    UnifiedThreeRingCockpitButton(
+      title = "BRAKE",
+      sub = if (brakingActive) "ACTIVE" else "STOP",
+      strokeColor = if (brakingActive) Color(0xFFF59E0B) else Color(0xFF38BDF8),
+      fillColor = if (brakingActive) Color(0xFF78350F) else Color(0xFF0C4A6E),
+      subColor = if (brakingActive) Color(0xFFFDE047) else Color(0xFFE0F2FE),
+      sizeDp = 50.dp,
       modifier =
         Modifier.align(Alignment.BottomCenter)
           .padding(bottom = 14.dp, end = bottomConsoleSpreadDp)
@@ -607,45 +641,12 @@ fun RiftHudOverlay(
               Modifier
             }
           )
-          .size(48.dp)
           .wysiwygUnlockOutline(enabled = uiUnlocked, isCircle = true)
-          .clip(CircleShape)
-          .background(if (brakingActive) Color(0xCC3B1D0A) else Color(0xCC0E2947))
-          .border(
-            width = 1.4.dp,
-            color = if (brakingActive) Color(0xFFF59E0B) else Color(0xFF38BDF8),
-            shape = CircleShape,
-          )
           .clickable(enabled = !uiUnlocked) { onEngageBrake() }
           .testTag("hud_brake_button"),
-      contentAlignment = Alignment.Center,
-    ) {
-      Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-      ) {
-        Text(
-          text = "BRAKE",
-          color = if (brakingActive) Color(0xFFFACC15) else Color(0xFF38BDF8),
-          fontSize = 8.2.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.SansSerif,
-          style = CompactCircleTextStyle,
-          maxLines = 1,
-        )
-        Text(
-          text = if (brakingActive) "ACTIVE" else "STOP",
-          color = Color.White,
-          fontSize = 7.2.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
-          style = CompactCircleTextStyle,
-          maxLines = 1,
-        )
-      }
-    }
+    )
 
-    // 5c. Independent Floating [MULTI ON/OFF] Button — Strictly visible ONLY on Native Multi-Shot Hulls (Suppressor, Twinfang, or Rift Frame with Native Multi-Shot)
+    // 5c. Independent Floating [MULTI ON/OFF] Button — Unified 3-Ring Tactile Cockpit Button (Strictly visible ONLY on Native Multi-Shot Hulls)
     val isNativeMulti = player.spec.supportsNativeMultifire
     val showMultiButton =
       isNativeMulti ||
@@ -655,10 +656,37 @@ fun RiftHudOverlay(
       val multiCharges = player.multiShotCharges
       val topMultiLabel =
         when {
-          player.spec.isParallelTwin -> "TWIN MULTI"
-          else -> "SPLIT MULTI"
+          player.spec.isParallelTwin -> "TWIN"
+          else -> "MULTI"
         }
-      Box(
+      val subLabel =
+        when {
+          isNativeMulti && multiCharges > 0 -> "${if (player.multifireOn) "ON" else "OFF"}•[$multiCharges]"
+          isNativeMulti -> if (player.multifireOn) "ON" else "OFF"
+          else -> "OFF"
+        }
+      UnifiedThreeRingCockpitButton(
+        title = topMultiLabel,
+        sub = subLabel,
+        strokeColor =
+          when {
+            player.multifireOn && isNativeMulti -> Color(0xFFFACC15)
+            isNativeMulti -> Color(0xFF38BDF8)
+            else -> Color(0xFF475569)
+          },
+        fillColor =
+          when {
+            player.multifireOn && isNativeMulti -> Color(0xFF713F12)
+            isNativeMulti -> Color(0xFF0C4A6E)
+            else -> Color(0xFF1E293B)
+          },
+        subColor =
+          when {
+            player.multifireOn && isNativeMulti -> Color(0xFFFEF08A)
+            isNativeMulti -> Color.White
+            else -> Color(0xFF94A3B8)
+          },
+        sizeDp = 50.dp,
         modifier =
           Modifier.align(Alignment.BottomCenter)
             .padding(bottom = 14.dp, start = bottomConsoleSpreadDp)
@@ -688,65 +716,10 @@ fun RiftHudOverlay(
                 Modifier
               }
             )
-            .size(50.dp)
             .wysiwygUnlockOutline(enabled = uiUnlocked, isCircle = true)
-            .clip(CircleShape)
-            .background(
-              when {
-                player.multifireOn && isNativeMulti -> Color(0xCC2E2608)
-                isNativeMulti -> Color(0xCC0E223B)
-                else -> Color(0x88091322)
-              }
-            )
-            .border(
-              width = 1.4.dp,
-              color =
-                when {
-                  player.multifireOn && isNativeMulti -> Color(0xFFFACC15)
-                  isNativeMulti -> Color(0xFF38BDF8)
-                  else -> Color(0xFF334155)
-                },
-              shape = CircleShape,
-            )
             .clickable(enabled = !uiUnlocked) { onToggleMultifire() }
             .testTag("hud_multifire_button"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Column(
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.Center,
-        ) {
-          Text(
-            text = topMultiLabel,
-            color =
-              when {
-                player.multifireOn && isNativeMulti -> Color(0xFFFACC15)
-                isNativeMulti -> Color(0xFF38BDF8)
-                else -> Color(0xFF64748B)
-              },
-            fontSize = 6.6.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.SansSerif,
-            style = CompactCircleTextStyle,
-            maxLines = 1,
-          )
-          val subLabel =
-            when {
-              isNativeMulti && multiCharges > 0 -> "${if (player.multifireOn) "ON" else "OFF"}•[$multiCharges]"
-              isNativeMulti -> if (player.multifireOn) "ON (0⚡)" else "OFF"
-              else -> "OFF"
-            }
-          Text(
-            text = subLabel,
-            color = if (isNativeMulti) Color.White else Color(0xFF64748B),
-            fontSize = 7.0.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            style = CompactCircleTextStyle,
-            maxLines = 1,
-          )
-        }
-      }
+      )
     }
 
     // Centered Calibration Modal
@@ -973,19 +946,25 @@ private fun SymmetricBottomConsoleLayout(
       horizontalArrangement =
         if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((5.5f * textScale).dp),
     ) {
-      // Inner Right (next to Minimap): Compact 2-Line FLUX & BTY • K/D Readout
+      // Inner Right (next to Minimap): Compact 2-Line FLUX & BTY • K/D Readout with custom FluxCrystalIcon
       Column(
         verticalArrangement = Arrangement.spacedBy(lineGap),
       ) {
-        Text(
-          text = "⚡ ${player.flux.toInt()} (${(fluxPct * 100).toInt()}%)",
-          color = fluxColor,
-          fontSize = (8.8f * textScale).sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          style = WingTelemetryTextStyle,
-          maxLines = 1,
-        )
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+          FluxCrystalIcon(sizeDp = (12.5f * textScale).dp)
+          Text(
+            text = "⚡ ${player.flux.toInt()} (${(fluxPct * 100).toInt()}%)",
+            color = fluxColor,
+            fontSize = (8.8f * textScale).sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            style = WingTelemetryTextStyle,
+            maxLines = 1,
+          )
+        }
         Text(
           text = "BTY ${player.bounty} • K/D ${engine.allTimeKills}/${engine.allTimeDeaths}",
           color = Color(0xFFFACC15),
@@ -1112,10 +1091,12 @@ private fun CircularRadarMinimap(
     }
   }
 
+  val innerClipPath = remember { Path() }
+
   Box(
     modifier =
       Modifier.zIndex(if (isExpanded || expandScale > 1.02f) 15f else 2f)
-        .size(122.dp)
+        .size(128.dp)
         .onGloballyPositioned { coords ->
           val pos = coords.positionInRoot()
           radarCenterOnScreen =
@@ -1130,8 +1111,6 @@ private fun CircularRadarMinimap(
           transformOrigin = TransformOrigin(intelligentPivotX, intelligentPivotY)
         }
         .wysiwygUnlockOutline(enabled = uiUnlocked, isCircle = true)
-        .clip(CircleShape)
-        .background(if (isExpanded) Color(0xE6040B16) else Color(0x99040B16))
         .then(
           if (!uiUnlocked) {
             Modifier.pointerInput(Unit) {
@@ -1175,41 +1154,69 @@ private fun CircularRadarMinimap(
       val h = size.height
       val center = Offset(w * 0.5f, h * 0.5f)
       val radarRadius = w * 0.5f
-      val maxDotRadius = (radarRadius - 6.dp.toPx()).coerceAtLeast(8f)
-      val drawSize = w * 0.86f
-      val ox = (w - drawSize) * 0.5f + panOffsetX
-      val oy = (h - drawSize) * 0.5f + panOffsetY
+      val playfieldRadius = (radarRadius - 12.dp.toPx()).coerceAtLeast(16f)
+      val maxBlipRadius = (playfieldRadius - 3.5.dp.toPx()).coerceAtLeast(8f)
+      val drawSize = playfieldRadius * 2f
+      val ox = center.x - playfieldRadius + panOffsetX
+      val oy = center.y - playfieldRadius + panOffsetY
       val scale = drawSize / RiftGameEngine.WORLD_SIZE
 
       fun clampToRadar(rawX: Float, rawY: Float): Offset {
         val dx = rawX - center.x
         val dy = rawY - center.y
         val dist = hypot(dx, dy)
-        return if (dist <= maxDotRadius || dist < 0.001f) {
+        return if (dist <= maxBlipRadius || dist < 0.001f) {
           Offset(rawX, rawY)
         } else {
-          val ratio = maxDotRadius / dist
+          val ratio = maxBlipRadius / dist
           Offset(center.x + dx * ratio, center.y + dy * ratio)
         }
       }
 
-      if (radarBmp != null) {
-        drawImage(
-          image = radarBmp,
-          dstOffset = IntOffset(ox.toInt(), oy.toInt()),
-          dstSize = IntSize(drawSize.toInt(), drawSize.toInt()),
-          alpha = 0.55f,
+      // Draw circular playfield background and clipped world map strictly inside playfieldRadius
+      drawCircle(
+        color = if (isExpanded) Color(0xE6040B16) else Color(0xB3040B16),
+        radius = playfieldRadius,
+        center = center,
+      )
+
+      innerClipPath.reset()
+      innerClipPath.addOval(
+        Rect(
+          left = center.x - playfieldRadius,
+          top = center.y - playfieldRadius,
+          right = center.x + playfieldRadius,
+          bottom = center.y + playfieldRadius,
+        )
+      )
+
+      clipPath(innerClipPath) {
+        if (radarBmp != null) {
+          drawImage(
+            image = radarBmp,
+            dstOffset = IntOffset(ox.toInt(), oy.toInt()),
+            dstSize = IntSize(drawSize.toInt(), drawSize.toInt()),
+            alpha = 0.58f,
+          )
+        }
+
+        drawCircle(
+          color = Color(0x2638BDF8),
+          radius = playfieldRadius * 0.55f,
+          center = center,
+          style = Stroke(width = 1.0f),
         )
       }
 
+      // Inner radar border rim
       drawCircle(
-        color = Color(0x2638BDF8),
-        radius = w * 0.28f,
+        color = Color(0x5538BDF8),
+        radius = playfieldRadius,
         center = center,
-        style = Stroke(width = 1.0f),
+        style = Stroke(width = 1.1.dp.toPx()),
       )
 
-      // Discreet Micro-Markers for Supply Crates (1.1f px radius, 0.55f alpha)
+      // Discreet Micro-Markers for Supply Crates (strictly clamped inside playfieldRadius)
       for (g in engine.greens) {
         val pt = clampToRadar(ox + g.x * scale, oy + g.y * scale)
         drawCircle(
@@ -1286,17 +1293,74 @@ private fun CircularRadarMinimap(
         )
       }
 
+      // Free Flux Core Orb on Minimap when unclaimed
+      val goldPulse = 0.5f + 0.5f * sin(((nowMs % 640L) / 640f) * 6.28318f)
+      if (engine.isFluxCoreRulesActive() && engine.fluxCoreCarrierEntityId.isEmpty()) {
+        val orbPt = clampToRadar(ox + engine.fluxCoreOrb.x * scale, oy + engine.fluxCoreOrb.y * scale)
+        val orbHaloR = (4.2f + 4.8f * goldPulse).coerceAtMost(maxBlipRadius - hypot(orbPt.x - center.x, orbPt.y - center.y) + 2.5f)
+        if (orbHaloR > 2.0f) {
+          drawCircle(
+            color = Color(0xFFFACC15).copy(alpha = (0.85f - 0.50f * goldPulse).coerceIn(0.25f, 0.90f)),
+            radius = orbHaloR,
+            center = orbPt,
+            style = Stroke(width = 1.5f),
+          )
+        }
+        drawCircle(
+          color = Color(0xFFFFD700),
+          radius = 4.2f,
+          center = orbPt,
+        )
+        drawCircle(
+          color = Color.White,
+          radius = 4.2f,
+          center = orbPt,
+          style = Stroke(width = 1.1f),
+        )
+      }
+
       for (s in engine.ships) {
         if (s.respawnTimer > 0f) continue
         val isFriendly = engine.areAllied(p, s)
-        if (s.isCloaked && !isFriendly && !s.isLocalPlayer) continue
+        val isBallCarrier =
+          engine.isFluxCoreRulesActive() &&
+            (s.id == engine.fluxCoreCarrierEntityId ||
+              (engine.fluxCoreOrb.carrierShipId != -1 && s.shipId == engine.fluxCoreOrb.carrierShipId))
+        if (s.isCloaked && !isFriendly && !s.isLocalPlayer && !isBallCarrier) continue
 
         val pt = clampToRadar(ox + s.x * scale, oy + s.y * scale)
         val sx = pt.x
         val sy = pt.y
 
+        if (isBallCarrier) {
+          // 2x Normal Ship Size (radius = 6.0f vs 3.0f normal) Pulsing Gold Flux Core Carrier Beacon
+          val carrierHaloR =
+            (6.0f + 5.5f * goldPulse).coerceAtMost(maxBlipRadius - hypot(sx - center.x, sy - center.y) + 3.0f)
+          if (carrierHaloR > 3.0f) {
+            drawCircle(
+              color = Color(0xFFFACC15).copy(alpha = (0.92f - 0.52f * goldPulse).coerceIn(0.30f, 0.95f)),
+              radius = carrierHaloR,
+              center = pt,
+              style = Stroke(width = 1.8f),
+            )
+          }
+          val carrierFill = lerp(Color(0xFFFFD700), Color(0xFFFACC15), goldPulse)
+          drawCircle(
+            color = carrierFill,
+            radius = 6.0f,
+            center = pt,
+          )
+          drawCircle(
+            color = Color.White,
+            radius = 6.0f,
+            center = pt,
+            style = Stroke(width = 1.2f),
+          )
+          continue
+        }
+
         if (s.bounty >= RiftGameEngine.HVT_BOUNTY_THRESHOLD) {
-          val pingR = (3.2f + pulsePhase * 6.5f).coerceAtMost(maxDotRadius - hypot(sx - center.x, sy - center.y) + 3.0f)
+          val pingR = (3.2f + pulsePhase * 6.5f).coerceAtMost(maxBlipRadius - hypot(sx - center.x, sy - center.y) + 2.5f)
           if (pingR > 2.0f) {
             drawCircle(
               color = Color(0xFFFFD700).copy(alpha = (1f - pulsePhase).coerceIn(0.20f, 0.90f)),
@@ -1335,117 +1399,269 @@ private fun CircularRadarMinimap(
         }
       }
 
-      val fluxPct = (p.flux / p.maxFlux).coerceIn(0f, 1f)
+      // High-precision Unclipped Flux Ring at fluxRingRadius = radarRadius - 5.5.dp.toPx()
+      val fluxPct = (p.flux / p.maxFlux.coerceAtLeast(1f)).coerceIn(0f, 1f)
       val critFlash =
-        if (fluxPct < 0.25f || p.isIdleDraining) {
+        if (fluxPct < 0.20f || p.isIdleDraining) {
           0.35f + 0.65f * (0.5f + 0.5f * sin((nowMs % 320L) / 320f * 6.28318f))
         } else {
           1.0f
         }
       val ringColor =
         when {
-          p.isIdleDraining -> Color(0xFFEF4444).copy(alpha = critFlash)
+          p.isIdleDraining || fluxPct < 0.20f -> Color(0xFFEF4444).copy(alpha = critFlash)
           fluxPct >= 0.75f -> {
             val t = ((fluxPct - 0.75f) / 0.25f).coerceIn(0f, 1f)
-            lerp(Color(0xFF34D399), Color(0xFF00E676), t)
+            lerp(Color(0xFF10B981), Color(0xFF00F5D4), t)
           }
-          fluxPct >= 0.25f -> {
-            val t = ((fluxPct - 0.25f) / 0.50f).coerceIn(0f, 1f)
+          fluxPct >= 0.40f -> {
+            val t = ((fluxPct - 0.40f) / 0.35f).coerceIn(0f, 1f)
+            lerp(Color(0xFF10B981), Color(0xFF34D399), t)
+          }
+          else -> {
+            val t = ((fluxPct - 0.20f) / 0.20f).coerceIn(0f, 1f)
             lerp(Color(0xFFF59E0B), Color(0xFF10B981), t)
           }
-          else -> Color(0xFFEF4444).copy(alpha = critFlash)
         }
 
-      val strokeW = 4.5.dp.toPx()
-      val inset = strokeW * 0.65f
-      val arcRadius = (w - inset * 2f) * 0.5f
-      val arcTopLeft = Offset(inset, inset)
-      val arcSize = Size(w - inset * 2f, h - inset * 2f)
+      val fluxRingRadius = (radarRadius - 5.5.dp.toPx()).coerceAtLeast(24f)
+      val trackStrokeW = 4.5.dp.toPx()
+      val arcStrokeW = 4.2.dp.toPx()
+      val arcTopLeft = Offset(center.x - fluxRingRadius, center.y - fluxRingRadius)
+      val arcSize = Size(fluxRingRadius * 2f, fluxRingRadius * 2f)
 
-      // Subtle outer glow behind active Flux capacitor arc
-      if (fluxPct > 0.01f) {
+      // 1. Subtle dark recessed track circle (#99091322, stroke 4.5.dp)
+      drawCircle(
+        color = Color(0x99091322),
+        radius = fluxRingRadius,
+        center = center,
+        style = Stroke(width = trackStrokeW),
+      )
+
+      // 12 subtle 30-degree micro-tick marks along the Flux track
+      for (tick in 0 until 12) {
+        val tickRad = Math.toRadians(-90.0 + tick * 30.0)
+        val rIn = fluxRingRadius - trackStrokeW * 0.45f
+        val rOut = fluxRingRadius + trackStrokeW * 0.45f
+        drawLine(
+          color = Color(0x6638BDF8),
+          start = Offset(center.x + rIn * cos(tickRad).toFloat(), center.y + rIn * sin(tickRad).toFloat()),
+          end = Offset(center.x + rOut * cos(tickRad).toFloat(), center.y + rOut * sin(tickRad).toFloat()),
+          strokeWidth = 1.0.dp.toPx(),
+        )
+      }
+
+      // 2. Smooth continuous glowing Flux arc (strokeWidth = 4.2.dp, StrokeCap.Round)
+      if (fluxPct > 0.005f) {
+        val sweepDeg = 360f * fluxPct
         drawArc(
-          color = ringColor.copy(alpha = 0.25f),
+          color = ringColor.copy(alpha = 0.28f),
           startAngle = -90f,
-          sweepAngle = (360f * fluxPct).coerceAtLeast(14f),
+          sweepAngle = sweepDeg,
           useCenter = false,
           topLeft = arcTopLeft,
           size = arcSize,
-          style = Stroke(width = strokeW * 1.85f, cap = StrokeCap.Round),
+          style = Stroke(width = arcStrokeW * 1.9f, cap = StrokeCap.Round),
         )
-      }
-
-      // 20-Segment Circular Flux Capacitor Ring
-      val totalSegments = 20
-      val stepDeg = 360f / totalSegments
-      val segSweep = 14.2f
-      val activeFloatSegs = fluxPct.coerceIn(0f, 1f) * totalSegments
-      for (seg in 0 until totalSegments) {
-        val segStart = -90f + seg * stepDeg + 1.9f
-        val segFill = (activeFloatSegs - seg).coerceIn(0f, 1f)
         drawArc(
-          color = Color(0xFF102036),
-          startAngle = segStart,
-          sweepAngle = segSweep,
+          color = ringColor,
+          startAngle = -90f,
+          sweepAngle = sweepDeg,
           useCenter = false,
           topLeft = arcTopLeft,
           size = arcSize,
-          style = Stroke(width = strokeW, cap = StrokeCap.Butt),
+          style = Stroke(width = arcStrokeW, cap = StrokeCap.Round),
         )
-        if (segFill > 0.02f) {
-          drawArc(
-            color = ringColor,
-            startAngle = segStart,
-            sweepAngle = segSweep * segFill,
-            useCenter = false,
-            topLeft = arcTopLeft,
-            size = arcSize,
-            style = Stroke(width = strokeW, cap = StrokeCap.Butt),
-          )
-        }
-      }
 
-      // Glowing plasma tip at the leading edge of the Flux arc
-      if (fluxPct > 0.02f) {
-        val tipRad = Math.toRadians(-90.0 + 360.0 * fluxPct.coerceIn(0f, 1f))
-        val tipX = center.x + arcRadius * cos(tipRad).toFloat()
-        val tipY = center.y + arcRadius * sin(tipRad).toFloat()
+        // 3. Crisp 2-layer glowing beacon dot at the moving tip (never clips because fluxRingRadius is inset by 5.5.dp!)
+        val tipRad = Math.toRadians(-90.0 + sweepDeg.toDouble())
+        val tipCenter =
+          Offset(
+            center.x + fluxRingRadius * cos(tipRad).toFloat(),
+            center.y + fluxRingRadius * sin(tipRad).toFloat(),
+          )
         drawCircle(
-          color = ringColor.copy(alpha = 0.65f),
-          radius = strokeW * 1.35f,
-          center = Offset(tipX, tipY),
+          color = ringColor.copy(alpha = 0.35f),
+          radius = 5.5.dp.toPx(),
+          center = tipCenter,
+        )
+        drawCircle(
+          color = Color(0xFF040B16),
+          radius = 4.2.dp.toPx(),
+          center = tipCenter,
         )
         drawCircle(
           color = Color.White,
-          radius = strokeW * 0.55f,
-          center = Offset(tipX, tipY),
+          radius = 3.2.dp.toPx(),
+          center = tipCenter,
+        )
+        drawCircle(
+          color = ringColor,
+          radius = 3.2.dp.toPx(),
+          center = tipCenter,
+          style = Stroke(width = 1.0.dp.toPx()),
         )
       }
     }
 
-    // Compact "⚡ FLUX XX%" Badge at the bottom rim of the circular minimap
-    val playerFluxPct = (engine.localPlayer.flux / engine.localPlayer.maxFlux).coerceIn(0f, 1f)
+    // 4. Compact non-overlapping "⚡ XX%" micro-badge cleanly docked at the bottom rim
+    val playerFluxPct = (engine.localPlayer.flux / engine.localPlayer.maxFlux.coerceAtLeast(1f)).coerceIn(0f, 1f)
     val badgeColor =
       when {
-        engine.localPlayer.isIdleDraining || playerFluxPct < 0.25f -> Color(0xFFEF4444)
-        playerFluxPct >= 0.75f -> Color(0xFF00E676)
+        engine.localPlayer.isIdleDraining || playerFluxPct < 0.20f -> Color(0xFFEF4444)
+        playerFluxPct >= 0.75f -> Color(0xFF00F5D4)
+        playerFluxPct >= 0.40f -> Color(0xFF10B981)
         else -> Color(0xFFF59E0B)
       }
     Box(
       modifier =
         Modifier.align(Alignment.BottomCenter)
-          .padding(bottom = 2.dp)
+          .padding(bottom = 1.dp)
           .clip(RoundedCornerShape(6.dp))
           .background(Color(0xEE040B16))
           .border(1.dp, badgeColor.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
+          .padding(horizontal = 4.5.dp, vertical = 1.dp),
+      contentAlignment = Alignment.Center,
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        FluxCrystalIcon(sizeDp = 9.dp)
+        Text(
+          text = "⚡ ${(playerFluxPct * 100f).roundToInt()}%",
+          color = badgeColor,
+          fontSize = 6.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          style = CompactCircleTextStyle,
+          maxLines = 1,
+        )
+      }
+    }
+  }
+}
+
+/**
+ * Renders the custom RIFT Flux Reactor Crystal Icon (`RiftSpriteBaker.fluxIconBitmap`) in Compose HUD elements.
+ */
+@Composable
+fun FluxCrystalIcon(
+  sizeDp: Dp = 13.dp,
+  modifier: Modifier = Modifier,
+) {
+  val bmp = remember { RiftSpriteBaker.fluxIconBitmap.asImageBitmap() }
+  Canvas(modifier = modifier.size(sizeDp)) {
+    drawImage(
+      image = bmp,
+      dstSize = IntSize(size.width.roundToInt().coerceAtLeast(1), size.height.roundToInt().coerceAtLeast(1)),
+    )
+  }
+}
+
+/**
+ * Unified 3-Ring Tactile Cockpit Button for `[BRAKE]` and `[MULTI]`, matching the right-hand combat arc:
+ * - Outer Ring 1: Dark-obsidian 3D bezel ring with 4 cardinal ticks
+ * - Inner Ring 2: Recessed inner tech ring
+ * - Inner Ring 3: Glowing filled inner button cap with top specular highlight
+ * - Bold centered white title + docked bottom pill badge
+ */
+@Composable
+private fun UnifiedThreeRingCockpitButton(
+  title: String,
+  sub: String,
+  strokeColor: Color,
+  fillColor: Color,
+  subColor: Color,
+  sizeDp: Dp = 50.dp,
+  modifier: Modifier = Modifier,
+) {
+  Box(
+    modifier = modifier.size(sizeDp),
+    contentAlignment = Alignment.Center,
+  ) {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+      val cx = size.width * 0.5f
+      val cy = size.height * 0.5f
+      val r = size.minDimension * 0.47f
+
+      // 1. Outer Ring 1: Dark-obsidian 3D bezel ring with 4 cardinal ticks
+      drawCircle(
+        color = Color(0xEB070F1E),
+        radius = r * 1.05f,
+        center = Offset(cx, cy),
+      )
+      drawCircle(
+        color = strokeColor,
+        radius = r,
+        center = Offset(cx, cy),
+        style = Stroke(width = 2.0.dp.toPx()),
+      )
+      for (tick in 0 until 4) {
+        val a = tick * (Math.PI.toFloat() * 0.5f)
+        drawLine(
+          color = strokeColor,
+          start = Offset(cx + cos(a) * (r * 0.88f), cy + sin(a) * (r * 0.88f)),
+          end = Offset(cx + cos(a) * (r * 1.03f), cy + sin(a) * (r * 1.03f)),
+          strokeWidth = 1.3.dp.toPx(),
+          cap = StrokeCap.Round,
+        )
+      }
+
+      // 2. Inner Ring 2: Recessed inner tech ring + filled cap
+      drawCircle(
+        color = fillColor.copy(alpha = 0.82f),
+        radius = r * 0.86f,
+        center = Offset(cx, cy),
+      )
+      drawCircle(
+        color = Color.White.copy(alpha = 0.55f),
+        radius = r * 0.82f,
+        center = Offset(cx, cy),
+        style = Stroke(width = 1.0.dp.toPx()),
+      )
+
+      // 3. Inner Ring 3: Top specular highlight arc
+      val specR = r * 0.74f
+      drawArc(
+        color = Color.White.copy(alpha = 0.45f),
+        startAngle = 205f,
+        sweepAngle = 130f,
+        useCenter = false,
+        topLeft = Offset(cx - specR, cy - specR),
+        size = Size(specR * 2f, specR * 2f),
+        style = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round),
+      )
+    }
+
+    // Upper-center bold white title
+    Text(
+      text = title,
+      color = Color.White,
+      fontSize = 8.0.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.SansSerif,
+      style = CompactCircleTextStyle,
+      maxLines = 1,
+      modifier = Modifier.offset(y = (-6).dp),
+    )
+
+    // Docked bottom pill badge
+    Box(
+      modifier =
+        Modifier.align(Alignment.BottomCenter)
+          .offset(y = (-2).dp)
+          .clip(RoundedCornerShape(5.dp))
+          .background(Color(0xF0040A16))
+          .border(1.dp, strokeColor, RoundedCornerShape(5.dp))
           .padding(horizontal = 5.dp, vertical = 1.dp),
       contentAlignment = Alignment.Center,
     ) {
       Text(
-        text = "⚡ FLUX ${(playerFluxPct * 100f).roundToInt()}%",
-        color = badgeColor,
-        fontSize = 6.5.sp,
-        fontWeight = FontWeight.Black,
+        text = sub,
+        color = subColor,
+        fontSize = 6.8.sp,
+        fontWeight = FontWeight.ExtraBold,
         fontFamily = FontFamily.Monospace,
         style = CompactCircleTextStyle,
         maxLines = 1,

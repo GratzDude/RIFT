@@ -16,6 +16,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
@@ -31,12 +32,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -53,14 +53,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.RiftRepository
@@ -99,6 +104,7 @@ fun RiftCalibrationDialog(
 ) {
   val context = LocalContext.current
   val density = LocalDensity.current
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val coroutineScope = rememberCoroutineScope()
   val isCustomGame = engine?.currentCustomGame != null
 
@@ -164,6 +170,13 @@ fun RiftCalibrationDialog(
       }
     }
 
+  val outerPadding =
+    if (isCompactPhone) {
+      PaddingValues(start = 8.dp, end = 8.dp, top = 40.dp, bottom = 4.dp)
+    } else {
+      PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+    }
+
   Box(
     modifier =
       Modifier.fillMaxSize()
@@ -173,7 +186,7 @@ fun RiftCalibrationDialog(
           RiftCalibrationState.activeDraggingParamKey = null
           onDismiss()
         }
-        .padding(horizontal = 14.dp, vertical = 8.dp)
+        .padding(outerPadding)
         .testTag("full_screen_calibration_panel"),
     contentAlignment = Alignment.Center,
   ) {
@@ -181,163 +194,185 @@ fun RiftCalibrationDialog(
       modifier =
         Modifier.fillMaxSize()
           .clickable(enabled = false) {}
-          .border(1.dp, Color(0x8838BDF8), RoundedCornerShape(14.dp)),
-      color = Color(0xFF0A0F1A).copy(alpha = surfaceBgAlpha),
-      shape = RoundedCornerShape(14.dp),
+          .border(1.2.dp, Color(0x9900F5D4), RoundedCornerShape(12.dp)),
+      color = Color(0xFF060D1A).copy(alpha = surfaceBgAlpha),
+      shape = RoundedCornerShape(12.dp),
     ) {
       Column(
-        modifier = Modifier.fillMaxSize().padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxSize().padding(if (isCompactPhone) 8.dp else 10.dp),
+        verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 4.dp else 6.dp),
       ) {
-        // 1. STICKY HEADER ROW 1: Title, Live Peek Indicator, Sync To All, Wipe All, Reset All, Copy Defaults & Close
+        // 1. STICKY HEADER ROW 1: Compact 28.dp strip on phone landscape
         Row(
-          modifier = Modifier.fillMaxWidth(),
+          modifier =
+            Modifier.fillMaxWidth()
+              .then(if (isCompactPhone) Modifier.height(28.dp) else Modifier),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = "⚙️ RIFT LIVE CALIBRATION & AI BUFF FORGE",
-              color = Color.White,
-              fontSize = 14.5.sp,
-              fontWeight = FontWeight.ExtraBold,
-              fontFamily = FontFamily.SansSerif,
-              letterSpacing = 0.8.sp,
-            )
+          Column(modifier = Modifier.weight(1f, fill = false).padding(end = 6.dp)) {
             Text(
               text =
-                if (isLivePeeking) {
-                  "👁 LIVE PEEK ACTIVE — ACTIVE SLIDER 100% READABLE • ARENA VISIBLE THROUGH GLASS"
-                } else {
-                  "100% LIVE-WIRED BALANCE TUNING • ZOOM & TEXT SIZE LIVE EXCLUSIVELY IN ⚙ SETTINGS"
-                },
-              color = if (isLivePeeking) Color(0xFF00E676) else Color(0xFF38BDF8),
-              fontSize = 9.5.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
+                if (isCompactPhone) "⚙️ LIVE CALIBRATION & FORGE"
+                else "⚙️ RIFT LIVE CALIBRATION & AI BUFF FORGE",
+              color = Color.White,
+              fontSize = if (isCompactPhone) 12.5.sp else 14.5.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.SansSerif,
+              letterSpacing = 0.6.sp,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
             )
+            if (!isCompactPhone || isLivePeeking) {
+              Text(
+                text =
+                  if (isLivePeeking) {
+                    "👁 LIVE PEEK ACTIVE — ARENA VISIBLE THROUGH GLASS"
+                  } else {
+                    "100% LIVE-WIRED BALANCE TUNING • ZOOM & TEXT SIZE LIVE EXCLUSIVELY IN ⚙ SETTINGS"
+                  },
+                color = if (isLivePeeking) Color(0xFF00E676) else Color(0xFF00F5D4),
+                fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
           }
 
           Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
-            // [📡 SYNC TO ALL]
-            CalibrationHeaderActionBtn(
-              label = "📡 SYNC TO ALL",
-              bgColor = if (isCustomGame) Color(0xFF06283D) else Color(0xFF1E293B),
-              borderColor = if (isCustomGame) Color(0xFF00F5D4) else Color(0xFF475569),
-              textColor = if (isCustomGame) Color(0xFF00F5D4) else Color(0xFF64748B),
-              testTag = "calibration_sync_to_all_button",
-              onClick = {
-                confirmMasterWipe = false
-                if (!isCustomGame) {
-                  statusBanner =
-                    "🔒 MAIN RANKED GAMES USE FACTORY DEFAULTS ONLY. OPEN NEXUS -> JOIN A CUSTOM GAME TO SYNC SETTINGS TO TESTERS."
-                } else {
-                  RiftCalibrationState.applyCalibrationChangesLive(engine, context)
-                  onSyncToAllTesters?.invoke()
-                  val payloadJson = RiftCalibrationState.exportGameplaySyncPayloadJson()
-                  val cGameId = engine?.currentCustomGame?.instanceId ?: "custom"
-                  val author = engine?.localPlayer?.callsign ?: "PILOT"
-                  coroutineScope.launch {
-                    RiftRepository().broadcastCustomGameCalibration(cGameId, author, payloadJson)
-                  }
-                  statusBanner =
-                    "📡 SYNCED LIVE CALIBRATION TO ALL PILOTS IN CUSTOM GAME (${engine?.currentCustomGame?.title})!"
-                  engine?.onPrizeToast("📡 CALIBRATION SYNCED TO ALL TESTERS!")
-                }
-              },
-            )
-
-            // [🧨 WIPE STATS / ARMADAS / SYNDICATES] (2-step confirmation)
-            CalibrationHeaderActionBtn(
-              label =
-                if (!confirmMasterWipe) {
-                  "🧨 WIPE STATS / ARMADAS / SYNDICATES"
-                } else {
-                  "⚠️ TAP AGAIN TO CONFIRM FULL WIPE"
-                },
-              bgColor = if (!confirmMasterWipe) Color(0xFF2D0A14) else Color(0xFF7F1D1D),
-              borderColor = Color(0xFFFF3B4E),
-              textColor = Color(0xFFFF8A98),
-              testTag = "calibration_wipe_all_data_button",
-              onClick = {
-                if (!confirmMasterWipe) {
-                  confirmMasterWipe = true
-                  statusBanner =
-                    "⚠️ TAP [CONFIRM FULL WIPE] AGAIN TO ZERO ALL STATS, DELETE ALL ARMADAS & DELETE ALL SYNDICATES."
-                } else {
-                  val prefs = com.example.data.LocalPilotPrefs(context)
-                  engine?.performMasterFreshStartWipe(prefs) ?: prefs.wipeAllStatsArmadasAndSyndicates()
+            Row(
+              modifier = Modifier.weight(1f, fill = false).horizontalScroll(rememberScrollState()),
+              horizontalArrangement = Arrangement.spacedBy(5.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              // [📡 SYNC TO ALL]
+              CalibrationHeaderActionBtn(
+                label = "📡 SYNC TO ALL",
+                bgColor = if (isCustomGame) Color(0xFF06283D) else Color(0xFF1E293B),
+                borderColor = if (isCustomGame) Color(0xFF00F5D4) else Color(0xFF475569),
+                textColor = if (isCustomGame) Color(0xFF00F5D4) else Color(0xFF64748B),
+                isCompactPhone = isCompactPhone,
+                testTag = "calibration_sync_to_all_button",
+                onClick = {
                   confirmMasterWipe = false
-                  statusBanner =
-                    "🧨 FRESH START COMPLETE: ALL STATS, ARMADAS, AND SYNDICATES WIPED TO ZERO!"
-                }
-              },
-            )
+                  if (!isCustomGame) {
+                    statusBanner =
+                      "🔒 MAIN RANKED GAMES USE FACTORY DEFAULTS ONLY. OPEN NEXUS -> JOIN A CUSTOM GAME TO SYNC SETTINGS TO TESTERS."
+                  } else {
+                    RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                    onSyncToAllTesters?.invoke()
+                    val payloadJson = RiftCalibrationState.exportGameplaySyncPayloadJson()
+                    val cGameId = engine?.currentCustomGame?.instanceId ?: "custom"
+                    val author = engine?.localPlayer?.callsign ?: "PILOT"
+                    coroutineScope.launch {
+                      RiftRepository().broadcastCustomGameCalibration(cGameId, author, payloadJson)
+                    }
+                    statusBanner =
+                      "📡 SYNCED LIVE CALIBRATION TO ALL PILOTS IN CUSTOM GAME (${engine?.currentCustomGame?.title})!"
+                    engine?.onPrizeToast("📡 CALIBRATION SYNCED TO ALL TESTERS!")
+                  }
+                },
+              )
 
-            // [↺ RESET ALL TO DEFAULTS]
-            CalibrationHeaderActionBtn(
-              label = "↺ RESET TO DEFAULTS",
-              bgColor = Color(0xFF2B1810),
-              borderColor = Color(0xFFF59E0B),
-              textColor = Color(0xFFFBBF24),
-              testTag = "calibration_reset_all_button",
-              onClick = {
-                confirmMasterWipe = false
-                RiftCalibrationState.resetAll(context, engine)
-                statusBanner = "↺ RESTORED ALL CALIBRATION SLIDERS & SHIP STATS TO FACTORY DEFAULTS."
-                engine?.onPrizeToast("↺ CALIBRATION RESET TO FACTORY DEFAULTS")
-              },
-            )
+              // [🧨 WIPE STATS / ARMADAS / SYNDICATES] (2-step confirmation)
+              CalibrationHeaderActionBtn(
+                label =
+                  if (!confirmMasterWipe) {
+                    if (isCompactPhone) "🧨 WIPE DATA" else "🧨 WIPE STATS / ARMADAS / SYNDICATES"
+                  } else {
+                    "⚠️ CONFIRM WIPE"
+                  },
+                bgColor = if (!confirmMasterWipe) Color(0xFF2D0A14) else Color(0xFF7F1D1D),
+                borderColor = Color(0xFFFF3B4E),
+                textColor = Color(0xFFFF8A98),
+                isCompactPhone = isCompactPhone,
+                testTag = "calibration_wipe_all_data_button",
+                onClick = {
+                  if (!confirmMasterWipe) {
+                    confirmMasterWipe = true
+                    statusBanner =
+                      "⚠️ TAP [CONFIRM WIPE] AGAIN TO ZERO ALL STATS, DELETE ALL ARMADAS & DELETE ALL SYNDICATES."
+                  } else {
+                    val prefs = com.example.data.LocalPilotPrefs(context)
+                    engine?.performMasterFreshStartWipe(prefs) ?: prefs.wipeAllStatsArmadasAndSyndicates()
+                    confirmMasterWipe = false
+                    statusBanner =
+                      "🧨 FRESH START COMPLETE: ALL STATS, ARMADAS, AND SYNDICATES WIPED TO ZERO!"
+                  }
+                },
+              )
 
-            // [📋 COPY AS AI STUDIO DEFAULTS]
-            CalibrationHeaderActionBtn(
-              label = "📋 COPY AS AI STUDIO DEFAULTS",
-              bgColor = Color(0xFF092A22),
-              borderColor = Color(0xFF10B981),
-              textColor = Color(0xFF34D399),
-              testTag = "calibration_copy_defaults_button",
-              onClick = {
-                confirmMasterWipe = false
-                val (promptText, modCount) = RiftCalibrationState.generateAiStudioDefaultsPrompt()
-                val clipboard =
-                  context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                clipboard?.setPrimaryClip(
-                  ClipData.newPlainText("RIFT AI Studio Defaults", promptText)
-                )
-                val toastMsg =
-                  "✅ Copied AI Studio Default Prompt to Clipboard! ($modCount settings modified)"
-                Toast.makeText(context, toastMsg, Toast.LENGTH_LONG).show()
-                engine?.onPrizeToast(toastMsg)
-                copiedModCount = modCount
-                copiedPromptModalText = promptText
-                statusBanner = toastMsg
-              },
-            )
+              // [↺ RESET ALL TO DEFAULTS]
+              CalibrationHeaderActionBtn(
+                label = if (isCompactPhone) "↺ RESET ALL" else "↺ RESET TO DEFAULTS",
+                bgColor = Color(0xFF2B1810),
+                borderColor = Color(0xFFF59E0B),
+                textColor = Color(0xFFFBBF24),
+                isCompactPhone = isCompactPhone,
+                testTag = "calibration_reset_all_button",
+                onClick = {
+                  confirmMasterWipe = false
+                  RiftCalibrationState.resetAll(context, engine)
+                  statusBanner = "↺ RESTORED ALL CALIBRATION SLIDERS & SHIP STATS TO FACTORY DEFAULTS."
+                  engine?.onPrizeToast("↺ CALIBRATION RESET TO FACTORY DEFAULTS")
+                },
+              )
 
-            // [✕ CLOSE] (Minimum 48dp touch target)
-            Button(
-              onClick = {
-                RiftCalibrationState.isDraggingAnySlider = false
-                RiftCalibrationState.activeDraggingParamKey = null
-                onDismiss()
-              },
-              colors =
-                ButtonDefaults.buttonColors(
-                  containerColor = Color(0xFF2D1019),
-                  contentColor = Color(0xFFFF3B4E),
-                ),
-              border = BorderStroke(1.dp, Color(0xFFFF3B4E)),
-              shape = RoundedCornerShape(8.dp),
+              // [📋 COPY AS AI STUDIO DEFAULTS]
+              CalibrationHeaderActionBtn(
+                label = if (isCompactPhone) "📋 COPY DEFAULTS" else "📋 COPY AS AI STUDIO DEFAULTS",
+                bgColor = Color(0xFF092A22),
+                borderColor = Color(0xFF10B981),
+                textColor = Color(0xFF34D399),
+                isCompactPhone = isCompactPhone,
+                testTag = "calibration_copy_defaults_button",
+                onClick = {
+                  confirmMasterWipe = false
+                  val (promptText, modCount) = RiftCalibrationState.generateAiStudioDefaultsPrompt()
+                  val clipboard =
+                    context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                  clipboard?.setPrimaryClip(
+                    ClipData.newPlainText("RIFT AI Studio Defaults", promptText)
+                  )
+                  val toastMsg =
+                    "✅ Copied AI Studio Default Prompt to Clipboard! ($modCount settings modified)"
+                  Toast.makeText(context, toastMsg, Toast.LENGTH_LONG).show()
+                  engine?.onPrizeToast(toastMsg)
+                  copiedModCount = modCount
+                  copiedPromptModalText = promptText
+                  statusBanner = toastMsg
+                },
+              )
+            }
+
+            // [✕ CLOSE]
+            Box(
               modifier =
-                Modifier.defaultMinSize(minWidth = 86.dp, minHeight = 40.dp)
+                Modifier.defaultMinSize(minWidth = if (isCompactPhone) 66.dp else 86.dp)
+                  .height(if (isCompactPhone) 28.dp else 38.dp)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(
+                    Brush.verticalGradient(listOf(Color(0xFF3D1422), Color(0xFF220A12)))
+                  )
+                  .border(1.dp, Color(0xFFFF3B4E), RoundedCornerShape(8.dp))
+                  .clickable {
+                    RiftCalibrationState.isDraggingAnySlider = false
+                    RiftCalibrationState.activeDraggingParamKey = null
+                    onDismiss()
+                  }
+                  .padding(horizontal = if (isCompactPhone) 8.dp else 10.dp)
                   .testTag("calibration_close_button"),
+              contentAlignment = Alignment.Center,
             ) {
               Text(
                 text = "✕ CLOSE",
-                fontSize = 11.sp,
+                color = Color(0xFFFF6B7A),
+                fontSize = if (isCompactPhone) 10.sp else 11.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.SansSerif,
               )
@@ -351,36 +386,42 @@ fun RiftCalibrationDialog(
             Modifier.fillMaxWidth()
               .background(
                 if (isCustomGame) Color(0xFF052E24) else Color(0xFF291A05),
-                RoundedCornerShape(8.dp),
+                RoundedCornerShape(7.dp),
               )
               .border(
                 1.dp,
                 if (isCustomGame) Color(0xFF00F5D4) else Color(0xFFF59E0B),
-                RoundedCornerShape(8.dp),
+                RoundedCornerShape(7.dp),
               )
-              .padding(horizontal = 10.dp, vertical = 5.dp)
+              .padding(
+                horizontal = if (isCompactPhone) 8.dp else 10.dp,
+                vertical = if (isCompactPhone) 2.5.dp else 5.dp,
+              )
               .testTag("calibration_mode_lock_banner"),
         ) {
           Text(
             text =
               if (!isCustomGame) {
-                "🔒 MAIN RANKED GAME: Gameplay stats are locked to factory defaults. Join or create a Custom Game in NEXUS to test & sync live gameplay changes."
+                "🔒 MAIN RANKED GAME: Gameplay stats locked to factory defaults. Join/create a Custom Game in NEXUS to test live changes."
               } else {
-                "🧪 CUSTOM GAME ACTIVE (${engine?.currentCustomGame?.title}): Live Calibration sliders & [📡 SYNC TO ALL] are unlocked!"
+                "🧪 CUSTOM GAME ACTIVE (${engine?.currentCustomGame?.title}): Live Calibration sliders & [📡 SYNC TO ALL] unlocked!"
               },
             color = if (isCustomGame) Color(0xFF00F5D4) else Color(0xFFFBBF24),
-            fontSize = 10.sp,
+            fontSize = if (isCompactPhone) 8.8.sp else 10.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
+            maxLines = if (isCompactPhone) 1 else 2,
+            overflow = TextOverflow.Ellipsis,
           )
         }
 
-        // 2. STICKY HEADER ROW 2: Show Hidden Toggle, Unhide All, Reset Tab, Force Convergence, AI Bots Toggle & Quick Toggles
+        // 2. STICKY HEADER ROW 2: Compact 28.dp Quick Toggles Strip
         Row(
           modifier =
             Modifier.fillMaxWidth()
+              .then(if (isCompactPhone) Modifier.height(28.dp) else Modifier)
               .horizontalScroll(rememberScrollState()),
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           val hiddenCount = hiddenKeys.size
@@ -393,6 +434,7 @@ fun RiftCalibrationDialog(
               },
             active = showHidden,
             activeColor = Color(0xFFF59E0B),
+            isCompactPhone = isCompactPhone,
             testTag = "calibration_toggle_show_hidden",
             onClick = {
               RiftCalibrationState.showHiddenParameters = !showHidden
@@ -405,6 +447,7 @@ fun RiftCalibrationDialog(
               label = "👁 UNHIDE ALL ($hiddenCount)",
               active = false,
               activeColor = Color(0xFF38BDF8),
+              isCompactPhone = isCompactPhone,
               testTag = "calibration_btn_unhide_all",
               onClick = {
                 RiftCalibrationState.unhideAllParameters(context)
@@ -418,6 +461,7 @@ fun RiftCalibrationDialog(
               label = "↺ RESET THIS TAB",
               active = false,
               activeColor = Color(0xFFF59E0B),
+              isCompactPhone = isCompactPhone,
               testTag = "calibration_btn_reset_tab",
               onClick = {
                 RiftCalibrationState.resetTab(activeTab, context, engine)
@@ -431,6 +475,7 @@ fun RiftCalibrationDialog(
             label = "🌀 FORCE CONVERGENCE",
             active = false,
             activeColor = Color(0xFF00F5D4),
+            isCompactPhone = isCompactPhone,
             testTag = "calibration_btn_force_convergence",
             onClick = {
               engine?.concludePublicFfaMatchCycle(forceSimulateWinWithPresence = false)
@@ -448,6 +493,7 @@ fun RiftCalibrationDialog(
               },
             active = RiftCalibrationState.botsEnabled,
             activeColor = Color(0xFF10B981),
+            isCompactPhone = isCompactPhone,
             testTag = "calibration_toggle_bots",
             onClick = {
               if (!isCustomGame) {
@@ -475,6 +521,7 @@ fun RiftCalibrationDialog(
               },
             active = RiftCalibrationState.isUiUnlockedForDragging,
             activeColor = Color(0xFF00E676),
+            isCompactPhone = isCompactPhone,
             testTag = "calibration_toggle_hud_drag",
             onClick = {
               RiftCalibrationState.isUiUnlockedForDragging =
@@ -492,6 +539,7 @@ fun RiftCalibrationDialog(
               },
             active = RiftCalibrationState.forceAllButtonsVisible,
             activeColor = Color(0xFF38BDF8),
+            isCompactPhone = isCompactPhone,
             testTag = "calibration_toggle_all_buttons",
             onClick = {
               RiftCalibrationState.forceAllButtonsVisible =
@@ -509,6 +557,7 @@ fun RiftCalibrationDialog(
               },
             active = RiftCalibrationState.unlockFullNinthShipOverride,
             activeColor = Color(0xFFC084FC),
+            isCompactPhone = isCompactPhone,
             testTag = "calibration_toggle_ninth_ship",
             onClick = {
               RiftCalibrationState.unlockFullNinthShipOverride =
@@ -523,46 +572,56 @@ fun RiftCalibrationDialog(
           Box(
             modifier =
               Modifier.fillMaxWidth()
-                .background(Color(0xFF0B2538), RoundedCornerShape(8.dp))
-                .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 4.dp),
+                .background(Color(0xFF0B2538), RoundedCornerShape(7.dp))
+                .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(7.dp))
+                .padding(horizontal = 8.dp, vertical = 3.dp),
           ) {
             Text(
               text = statusBanner ?: "",
               color = Color(0xFF7DD3FC),
-              fontSize = 10.sp,
+              fontSize = if (isCompactPhone) 9.sp else 10.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
             )
           }
         }
 
-        // 3. 9 ORGANIZED CATEGORY TABS
+        // 3. 9 ORGANIZED CATEGORY TABS (28.dp strip on phone landscape)
         Row(
           modifier =
             Modifier.fillMaxWidth()
+              .then(if (isCompactPhone) Modifier.height(28.dp) else Modifier)
               .horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(5.dp),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
           CALIBRATION_TAB_TITLES.forEachIndexed { idx, title ->
             val isForgeTab = idx == 8
             val selected = activeTab == idx
-            val accent = if (isForgeTab) Color(0xFFC084FC) else Color(0xFF38BDF8)
+            val accent = if (isForgeTab) Color(0xFFC084FC) else Color(0xFF00F5D4)
             Box(
               modifier =
-                Modifier.clip(RoundedCornerShape(8.dp))
-                  .background(if (selected) accent else Color(0xCC0D1B2E))
-                  .border(1.dp, if (selected) accent else accent.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                Modifier.height(if (isCompactPhone) 26.dp else 32.dp)
+                  .clip(RoundedCornerShape(7.dp))
+                  .background(
+                    if (selected) Brush.verticalGradient(listOf(accent, accent))
+                    else Brush.verticalGradient(listOf(Color(0xFF102038), Color(0xFF091324)))
+                  )
+                  .border(1.dp, if (selected) accent else accent.copy(alpha = 0.45f), RoundedCornerShape(7.dp))
                   .clickable { activeTab = idx }
-                  .padding(horizontal = 10.dp, vertical = 6.dp)
+                  .padding(horizontal = if (isCompactPhone) 8.dp else 10.dp)
                   .testTag("calibration_tab_$idx"),
+              contentAlignment = Alignment.Center,
             ) {
               Text(
                 text = title,
                 color = if (selected) Color(0xFF040914) else Color.White,
-                fontSize = 10.sp,
+                fontSize = if (isCompactPhone) 9.2.sp else 10.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.SansSerif,
+                maxLines = 1,
               )
             }
           }
@@ -571,6 +630,7 @@ fun RiftCalibrationDialog(
         // 4. OPTIONAL SUB-BAR FOR TABS 0, 2 & 3
         if (activeTab == 0) {
           ShipLabelClockPlacementBar(
+            isCompactPhone = isCompactPhone,
             onPlacementChanged = {
               RiftCalibrationState.applyCalibrationChangesLive(engine, context)
             },
@@ -579,6 +639,7 @@ fun RiftCalibrationDialog(
           Row(
             modifier =
               Modifier.fillMaxWidth()
+                .then(if (isCompactPhone) Modifier.height(26.dp) else Modifier)
                 .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -588,6 +649,7 @@ fun RiftCalibrationDialog(
                 label = if (showGlobalWeaponsInTab3) "☑ CLASS MECHANICS" else "☐ CLASS MECHANICS",
                 active = showGlobalWeaponsInTab3,
                 activeColor = Color(0xFF34D399),
+                isCompactPhone = isCompactPhone,
                 testTag = "calibration_toggle_global_weapons",
                 onClick = { showGlobalWeaponsInTab3 = !showGlobalWeaponsInTab3 },
               )
@@ -596,6 +658,7 @@ fun RiftCalibrationDialog(
               label = "ALL SHIPS",
               active = selectedShipFilter == 0,
               activeColor = Color(0xFFFFD700),
+              isCompactPhone = isCompactPhone,
               testTag = "calibration_ship_filter_0",
               onClick = { selectedShipFilter = 0 },
             )
@@ -604,7 +667,8 @@ fun RiftCalibrationDialog(
               CalibrationToggleChip(
                 label = sName,
                 active = selectedShipFilter == sId,
-                activeColor = Color(0xFF00F0FF),
+                activeColor = Color(0xFF00F5D4),
+                isCompactPhone = isCompactPhone,
                 testTag = "calibration_ship_filter_$sId",
                 onClick = { selectedShipFilter = sId },
               )
@@ -706,23 +770,31 @@ fun RiftCalibrationDialog(
 
 @Composable
 private fun ShipLabelClockPlacementBar(
+  isCompactPhone: Boolean = false,
   onPlacementChanged: () -> Unit,
 ) {
   Row(
     modifier =
       Modifier.fillMaxWidth()
-        .background(Color(0xCC060E1A), RoundedCornerShape(9.dp))
-        .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(9.dp))
-        .padding(horizontal = 10.dp, vertical = 6.dp),
+        .background(Color(0xCC060E1A), RoundedCornerShape(8.dp))
+        .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(8.dp))
+        .padding(
+          horizontal = if (isCompactPhone) 8.dp else 10.dp,
+          vertical = if (isCompactPhone) 3.dp else 6.dp,
+        )
+        .horizontalScroll(rememberScrollState()),
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
     Text(
-      text = "IN-SPACE LABEL CLOCK ORIENTATION (Camera Zoom & Text Size live in ⚙ SETTINGS):",
+      text =
+        if (isCompactPhone) "SHIP LABEL POS:"
+        else "IN-SPACE LABEL CLOCK ORIENTATION (Camera Zoom & Text Size live in ⚙ SETTINGS):",
       color = Color(0xFF94A3B8),
-      fontSize = 9.5.sp,
+      fontSize = if (isCompactPhone) 8.8.sp else 9.5.sp,
       fontWeight = FontWeight.ExtraBold,
       fontFamily = FontFamily.Monospace,
+      modifier = Modifier.padding(end = 8.dp),
     )
 
     Row(
@@ -734,6 +806,7 @@ private fun ShipLabelClockPlacementBar(
         label = "BOUNTY POS: ${RiftCalibrationState.bountyPlacement.label}",
         active = false,
         activeColor = Color(0xFFFFD700),
+        isCompactPhone = isCompactPhone,
         testTag = "calibration_cycle_bounty_pos",
         onClick = {
           val nextIdx = (placements.indexOf(RiftCalibrationState.bountyPlacement) + 1) % placements.size
@@ -745,6 +818,7 @@ private fun ShipLabelClockPlacementBar(
         label = "CALLSIGN POS: ${RiftCalibrationState.namePlacement.label}",
         active = false,
         activeColor = Color(0xFF38BDF8),
+        isCompactPhone = isCompactPhone,
         testTag = "calibration_cycle_name_pos",
         onClick = {
           val nextIdx = (placements.indexOf(RiftCalibrationState.namePlacement) + 1) % placements.size
@@ -982,14 +1056,15 @@ private fun AiBuffAndMechanicForgeTab(
     wallBounces = entry.wallBounces
   }
 
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val swatchColors = listOf("#C084FC", "#22D3EE", "#34D399", "#FB7185", "#FACC15", "#FB923C")
 
   Row(
     modifier =
       modifier
         .background(Color(0x88091424), RoundedCornerShape(10.dp))
-        .padding(8.dp),
-    horizontalArrangement = Arrangement.spacedBy(10.dp),
+        .padding(if (isCompactPhone) 6.dp else 8.dp),
+    horizontalArrangement = Arrangement.spacedBy(if (isCompactPhone) 8.dp else 10.dp),
   ) {
     // Left Column: Natural-Language Prompt + Parametric Controls + [⚡ GENERATE & INJECT INTO GAME]
     Column(
@@ -997,20 +1072,22 @@ private fun AiBuffAndMechanicForgeTab(
         Modifier.weight(1.35f)
           .fillMaxHeight()
           .verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(7.dp),
+      verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 5.dp else 7.dp),
     ) {
       Text(
         text = "🧪 IN-GAME AI BUFF & MECHANIC FORGE",
         color = Color(0xFFC084FC),
-        fontSize = 12.5.sp,
+        fontSize = if (isCompactPhone) 11.5.sp else 12.5.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = FontFamily.SansSerif,
       )
-      Text(
-        text = "Describe any custom Special Buff in plain English or fine-tune its physics below. Clicking [⚡ GENERATE & INJECT INTO GAME] registers it into BUFF_REGISTRY, adds it to Supply Crates, exposes sliders in Tab 5, and equips it immediately into your 4th Right-Hand Special Buff Slot!",
-        color = Color(0xFF94A3B8),
-        fontSize = 9.5.sp,
-      )
+      if (!isCompactPhone) {
+        Text(
+          text = "Describe any custom Special Buff in plain English or fine-tune its physics below. Clicking [⚡ GENERATE & INJECT INTO GAME] registers it into BUFF_REGISTRY, adds it to Supply Crates, exposes sliders in Tab 5, and equips it immediately into your 4th Right-Hand Special Buff Slot!",
+          color = Color(0xFF94A3B8),
+          fontSize = 9.5.sp,
+        )
+      }
 
       // Quick Preset Chips
       Row(
@@ -1029,6 +1106,7 @@ private fun AiBuffAndMechanicForgeTab(
             label = chipTitle,
             active = false,
             activeColor = Color(0xFFC084FC),
+            isCompactPhone = isCompactPhone,
             testTag = "forge_preset_${chipTitle.hashCode()}",
             onClick = {
               promptText = chipPrompt
@@ -1043,33 +1121,61 @@ private fun AiBuffAndMechanicForgeTab(
         }
       }
 
-      OutlinedTextField(
-        value = promptText,
-        onValueChange = { promptText = it },
-        label = { Text("Natural-Language Buff Mechanic Prompt", fontSize = 10.sp) },
-        colors =
-          OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
-            focusedBorderColor = Color(0xFFC084FC),
-            unfocusedBorderColor = Color(0x55C084FC),
-            focusedLabelColor = Color(0xFFC084FC),
-            unfocusedLabelColor = Color(0xFF94A3B8),
-          ),
-        modifier = Modifier.fillMaxWidth().testTag("forge_prompt_input"),
-        maxLines = 2,
-      )
+      // Unclipped Custom BasicTextField 1: AI Buff Prompt (34.dp height)
+      Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+          text = "AI BUFF PROMPT:",
+          color = Color(0xFFC084FC),
+          fontSize = 8.5.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+        )
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .height(34.dp)
+              .clip(RoundedCornerShape(8.dp))
+              .background(Color(0xFF050C18))
+              .border(1.dp, Color(0x99C084FC), RoundedCornerShape(8.dp))
+              .padding(horizontal = 10.dp),
+          contentAlignment = Alignment.CenterStart,
+        ) {
+          if (promptText.isEmpty()) {
+            Text(
+              text = "Describe custom Special Buff mechanic...",
+              color = Color(0xFF64748B),
+              fontSize = 11.sp,
+              fontFamily = FontFamily.SansSerif,
+              maxLines = 1,
+            )
+          }
+          BasicTextField(
+            value = promptText,
+            onValueChange = { promptText = it },
+            singleLine = true,
+            textStyle =
+              TextStyle(
+                color = Color.White,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.SansSerif,
+              ),
+            cursorBrush = SolidColor(Color(0xFF00F5D4)),
+            modifier = Modifier.fillMaxWidth().testTag("forge_prompt_input"),
+          )
+        }
+      }
 
       Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.Bottom,
       ) {
         CalibrationHeaderActionBtn(
-          label = "✨ PARSE PROMPT → STATS",
+          label = if (isCompactPhone) "✨ PARSE" else "✨ PARSE PROMPT → STATS",
           bgColor = Color(0xFF23123A),
           borderColor = Color(0xFFC084FC),
           textColor = Color(0xFFE9D5FF),
+          isCompactPhone = isCompactPhone,
           testTag = "forge_parse_prompt_button",
           onClick = {
             val syn =
@@ -1082,35 +1188,101 @@ private fun AiBuffAndMechanicForgeTab(
           },
         )
 
-        OutlinedTextField(
-          value = buffName,
-          onValueChange = { buffName = it.uppercase(Locale.US).take(20) },
-          label = { Text("Buff Name", fontSize = 9.5.sp) },
-          singleLine = true,
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedTextColor = Color.White,
-              unfocusedTextColor = Color.White,
-              focusedBorderColor = Color(0xFF38BDF8),
-              unfocusedBorderColor = Color(0x4438BDF8),
-            ),
+        // Unclipped Custom BasicTextField 2: Buff Name (34.dp height)
+        Column(
           modifier = Modifier.weight(1f),
-        )
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          Text(
+            text = "BUFF NAME:",
+            color = Color(0xFF94A3B8),
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+          )
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(34.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF050C18))
+                .border(1.dp, Color(0x7738BDF8), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+          ) {
+            if (buffName.isEmpty()) {
+              Text(
+                text = "GRAVITY WELL",
+                color = Color(0xFF64748B),
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+            }
+            BasicTextField(
+              value = buffName,
+              onValueChange = { buffName = it.uppercase(Locale.US).take(20) },
+              singleLine = true,
+              textStyle =
+                TextStyle(
+                  color = Color.White,
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                ),
+              cursorBrush = SolidColor(Color(0xFF00F5D4)),
+              modifier = Modifier.fillMaxWidth(),
+            )
+          }
+        }
 
-        OutlinedTextField(
-          value = shortLabel,
-          onValueChange = { shortLabel = it.uppercase(Locale.US).take(8) },
-          label = { Text("HUD Label", fontSize = 9.5.sp) },
-          singleLine = true,
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedTextColor = Color.White,
-              unfocusedTextColor = Color.White,
-              focusedBorderColor = Color(0xFF38BDF8),
-              unfocusedBorderColor = Color(0x4438BDF8),
-            ),
-          modifier = Modifier.width(108.dp),
-        )
+        // Unclipped Custom BasicTextField 3: HUD Label (34.dp height)
+        Column(
+          modifier = Modifier.width(if (isCompactPhone) 92.dp else 108.dp),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          Text(
+            text = "HUD LABEL:",
+            color = Color(0xFF94A3B8),
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+          )
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(34.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF050C18))
+                .border(1.dp, Color(0x7738BDF8), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+          ) {
+            if (shortLabel.isEmpty()) {
+              Text(
+                text = "GRAVITY",
+                color = Color(0xFF64748B),
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+            }
+            BasicTextField(
+              value = shortLabel,
+              onValueChange = { shortLabel = it.uppercase(Locale.US).take(8) },
+              singleLine = true,
+              textStyle =
+                TextStyle(
+                  color = Color(0xFF00F5D4),
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                ),
+              cursorBrush = SolidColor(Color(0xFF00F5D4)),
+              modifier = Modifier.fillMaxWidth(),
+            )
+          }
+        }
       }
 
       // Color Swatches + Aim Mode + Special Effect Row
@@ -1514,26 +1686,32 @@ private fun CalibrationHeaderActionBtn(
   bgColor: Color,
   borderColor: Color,
   textColor: Color,
+  isCompactPhone: Boolean = false,
   testTag: String,
   onClick: () -> Unit,
 ) {
   Box(
     modifier =
-      Modifier.defaultMinSize(minHeight = 38.dp)
+      Modifier.height(if (isCompactPhone) 28.dp else 38.dp)
         .clip(RoundedCornerShape(8.dp))
-        .background(bgColor)
+        .background(
+          Brush.verticalGradient(
+            listOf(bgColor, bgColor.copy(alpha = 0.72f))
+          )
+        )
         .border(1.dp, borderColor, RoundedCornerShape(8.dp))
         .clickable { onClick() }
-        .padding(horizontal = 10.dp, vertical = 7.dp)
+        .padding(horizontal = if (isCompactPhone) 8.dp else 10.dp)
         .testTag(testTag),
     contentAlignment = Alignment.Center,
   ) {
     Text(
       text = label,
       color = textColor,
-      fontSize = 10.sp,
+      fontSize = if (isCompactPhone) 9.2.sp else 10.sp,
       fontWeight = FontWeight.ExtraBold,
       fontFamily = FontFamily.SansSerif,
+      maxLines = 1,
     )
   }
 }
@@ -1543,28 +1721,40 @@ private fun CalibrationToggleChip(
   label: String,
   active: Boolean,
   activeColor: Color,
+  isCompactPhone: Boolean = false,
   testTag: String,
   onClick: () -> Unit,
 ) {
   Box(
     modifier =
-      Modifier.clip(RoundedCornerShape(7.dp))
-        .background(if (active) activeColor.copy(alpha = 0.22f) else Color(0xCC0D1B2E))
+      Modifier.height(if (isCompactPhone) 24.dp else 28.dp)
+        .clip(RoundedCornerShape(7.dp))
+        .background(
+          if (active) {
+            Brush.verticalGradient(
+              listOf(activeColor.copy(alpha = 0.30f), activeColor.copy(alpha = 0.16f))
+            )
+          } else {
+            Brush.verticalGradient(listOf(Color(0xFF102038), Color(0xFF091324)))
+          }
+        )
         .border(
           1.dp,
           if (active) activeColor else activeColor.copy(alpha = 0.45f),
           RoundedCornerShape(7.dp),
         )
         .clickable { onClick() }
-        .padding(horizontal = 9.dp, vertical = 5.dp)
+        .padding(horizontal = if (isCompactPhone) 7.dp else 9.dp)
         .testTag(testTag),
+    contentAlignment = Alignment.Center,
   ) {
     Text(
       text = label,
       color = if (active) activeColor else Color(0xFFE2E8F0),
-      fontSize = 9.5.sp,
+      fontSize = if (isCompactPhone) 8.8.sp else 9.5.sp,
       fontWeight = FontWeight.ExtraBold,
       fontFamily = FontFamily.Monospace,
+      maxLines = 1,
     )
   }
 }

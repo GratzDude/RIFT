@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,20 +15,22 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,8 +45,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -52,6 +58,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.ArmadaMemberSlot
@@ -82,6 +89,7 @@ fun SyndicatesModal(
   onCreateCustomSyndicate: (tag: String, name: String, motto: String) -> Unit,
   onCloseModal: () -> Unit,
 ) {
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val context = LocalContext.current
   val localPrefs = remember(context) { LocalPilotPrefs(context) }
   val isDrifter = remember(currentSyndicateTag) { localPrefs.isGuestBypassEnabled() }
@@ -89,57 +97,90 @@ fun SyndicatesModal(
   val isGuestSyndicate =
     currentSyndicateTag == "GUEST" || currentSyndicateTag == "FREE" || currentSyndicateTag == "RFT"
 
+  val outerPadding =
+    if (isCompactPhone) {
+      PaddingValues(start = 8.dp, end = 8.dp, top = 40.dp, bottom = 4.dp)
+    } else {
+      PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+    }
+  val innerPadding = if (isCompactPhone) 8.dp else 14.dp
+
   Box(
     modifier =
       Modifier.fillMaxSize()
         .background(Color(0xB3000000))
         .imePadding()
-        .padding(horizontal = 20.dp, vertical = 10.dp)
+        .padding(outerPadding)
         .testTag("syndicates_modal"),
     contentAlignment = Alignment.Center,
   ) {
     Surface(
       modifier =
         Modifier.fillMaxSize()
-          .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(16.dp)),
-      color = Color(0xE60A0F18), // #0A0F18 with 90% opacity glassmorphism
-      shape = RoundedCornerShape(16.dp),
+          .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(12.dp)),
+      color = Color(0xF2060D1A),
+      shape = RoundedCornerShape(12.dp),
     ) {
-      Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
-        // 1. Header — Dedicated exclusively to Official Syndicate Allegiance & Standings
+      Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+        // 1. Unified 30.dp Compact Header Row
         Row(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 30.dp else 36.dp),
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-          Column {
-            Text(
-              text = "🏛️ SYNDICATE COMMAND // [$currentSyndicateTag] $currentSyndicateName",
-              color = Color.White,
-              fontSize = 18.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
-              letterSpacing = 1.2.sp,
-            )
+          Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
             Text(
               text =
-                if (remainingLockDays > 0) {
-                  "🔒 15-DAY SYNDICATE ALLEGIANCE LOCK ACTIVE: $remainingLockFormatted REMAINING"
-                } else if (isGuestSyndicate) {
-                  "⚠️ PLACEHOLDER [GUEST] SYNDICATE (ZERO PERKS / ZERO VAULT) • JOIN OR CHARTER TO UNLOCK"
-                } else {
-                  "🟢 ALLEGIANCE UNLOCKED (15d 00h COOLDOWN ON SWITCH)"
-                },
-              color =
-                if (remainingLockDays > 0 || isGuestSyndicate) {
-                  Color(0xFFF59E0B)
-                } else {
-                  Color(0xFF38BDF8)
-                },
-              fontSize = 11.5.sp,
-              fontWeight = FontWeight.Medium,
+                if (isCompactPhone) "🏛️ SYNDICATE // [$currentSyndicateTag] $currentSyndicateName"
+                else "🏛️ SYNDICATE COMMAND // [$currentSyndicateTag] $currentSyndicateName",
+              color = Color.White,
+              fontSize = if (isCompactPhone) 12.5.sp else 16.sp,
+              fontWeight = FontWeight.Black,
               fontFamily = FontFamily.SansSerif,
+              letterSpacing = 0.8.sp,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
             )
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(6.dp))
+                  .background(
+                    if (remainingLockDays > 0 || isGuestSyndicate) Color(0xFF2B1C08)
+                    else Color(0xFF0A192F)
+                  )
+                  .border(
+                    1.dp,
+                    if (remainingLockDays > 0 || isGuestSyndicate) Color(0xFFF59E0B)
+                    else Color(0xFF38BDF8),
+                    RoundedCornerShape(6.dp),
+                  )
+                  .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+              Text(
+                text =
+                  if (remainingLockDays > 0) {
+                    "🔒 LOCK: $remainingLockFormatted"
+                  } else if (isGuestSyndicate) {
+                    "⚠️ [GUEST] ZERO PERKS"
+                  } else {
+                    "🟢 UNLOCKED (15d LOCK)"
+                  },
+                color =
+                  if (remainingLockDays > 0 || isGuestSyndicate) {
+                    Color(0xFFF59E0B)
+                  } else {
+                    Color(0xFF38BDF8)
+                  },
+                fontSize = if (isCompactPhone) 8.2.sp else 9.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+            }
           }
 
           Button(
@@ -149,40 +190,44 @@ fun SyndicatesModal(
                 containerColor = Color(0xFF28111B),
                 contentColor = Color(0xFFEF4444),
               ),
-            border = BorderStroke(1.dp, Color(0xFFEF4444)),
+            border = BorderStroke(1.2.dp, Color(0xFFEF4444)),
             shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.height(36.dp).testTag("syndicates_close_button"),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            modifier =
+              Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
+                .shadow(2.dp, RoundedCornerShape(8.dp))
+                .testTag("syndicates_close_button"),
           ) {
             Text(
               text = "✕ CLOSE",
-              fontSize = 11.sp,
+              fontSize = 9.5.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.SansSerif,
             )
           }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(if (isCompactPhone) 4.dp else 7.dp))
 
         // 4 Dedicated Syndicate Command Tabs (Decoupled from Armada Fleet Deck)
         Row(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
           SyndicateTabButton(
-            label = "1. DIRECTORY & JOIN",
+            label = if (isCompactPhone) "1. DIRECTORY & JOIN" else "1. DIRECTORY & JOIN",
             selected = activeTab == 0,
             onClick = { activeTab = 0 },
             tag = "syndicate_tab_directory",
           )
           SyndicateTabButton(
-            label = "2. MY SYNDICATE ROSTER",
+            label = if (isCompactPhone) "2. ROSTER" else "2. MY SYNDICATE ROSTER",
             selected = activeTab == 1,
             onClick = { activeTab = 1 },
             tag = "syndicate_tab_roster",
           )
           SyndicateTabButton(
-            label = "3. SYNDICATE BOUNTIES & MEDALS",
+            label = if (isCompactPhone) "3. BOUNTIES & MEDALS" else "3. SYNDICATE BOUNTIES & MEDALS",
             selected = activeTab == 2,
             onClick = { activeTab = 2 },
             tag = "syndicate_tab_bounties",
@@ -197,38 +242,40 @@ fun SyndicatesModal(
 
         // Drifter [RFT] Syndicate Lockout Banner or Guest Syndicate Placeholder Notice Banner
         if (isDrifter) {
-          Spacer(modifier = Modifier.height(6.dp))
+          Spacer(modifier = Modifier.height(if (isCompactPhone) 4.dp else 6.dp))
           Box(
             modifier =
               Modifier.fillMaxWidth()
                 .background(Color(0xFF2B1C08), RoundedCornerShape(8.dp))
-                .border(1.5.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp))
-                .padding(horizontal = 12.dp, vertical = 7.dp)
+                .border(1.2.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 4.dp else 6.dp)
                 .testTag("syndicate_drifter_lock_banner")
           ) {
             Text(
               text =
                 "🔒 DRIFTERS WEAR THE [RFT] TAG. SIGN IN AS A SWORN PILOT TO JOIN OR FOUND A SYNDICATE.",
               color = Color(0xFFFACC15),
-              fontSize = 11.5.sp,
+              fontSize = if (isCompactPhone) 9.sp else 10.5.sp,
               fontWeight = FontWeight.ExtraBold,
               fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
             )
           }
-        } else if (isGuestSyndicate) {
-          Spacer(modifier = Modifier.height(6.dp))
+        } else if (isGuestSyndicate && !isCompactPhone) {
+          Spacer(modifier = Modifier.height(5.dp))
           Box(
             modifier =
               Modifier.fillMaxWidth()
                 .background(Color(0xFF1F1608), RoundedCornerShape(8.dp))
                 .border(1.dp, Color(0x88F59E0B), RoundedCornerShape(8.dp))
-                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .padding(horizontal = 10.dp, vertical = 5.dp)
           ) {
             Text(
               text =
                 "ℹ️ [GUEST] SYNDICATE FRAMEWORK: Offers zero perks or shared vault benefits. Join or charter an active player Syndicate below to break free from [GUEST] (subject to 15-day allegiance lock).",
               color = Color(0xFFFDE68A),
-              fontSize = 11.sp,
+              fontSize = 10.sp,
               fontWeight = FontWeight.Medium,
               fontFamily = FontFamily.SansSerif,
             )
@@ -236,25 +283,27 @@ fun SyndicatesModal(
         }
 
         if (!statusBannerMessage.isNullOrBlank()) {
-          Spacer(modifier = Modifier.height(6.dp))
+          Spacer(modifier = Modifier.height(4.dp))
           Box(
             modifier =
               Modifier.fillMaxWidth()
                 .background(Color(0xFF102338), RoundedCornerShape(8.dp))
                 .border(1.dp, Color(0x5538BDF8), RoundedCornerShape(8.dp))
-                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .padding(horizontal = 10.dp, vertical = 4.dp)
           ) {
             Text(
               text = statusBannerMessage,
               color = Color(0xFF38BDF8),
-              fontSize = 12.sp,
+              fontSize = if (isCompactPhone) 9.5.sp else 11.sp,
               fontWeight = FontWeight.Medium,
               fontFamily = FontFamily.SansSerif,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
             )
           }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(if (isCompactPhone) 4.dp else 7.dp))
 
         // Tab Body
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -295,7 +344,7 @@ fun SyndicatesModal(
 }
 
 /**
- * Requirement 1: Dedicated [👥 ARMADA FLEET] Modal
+ * Dedicated [👥 ARMADA FLEET] Modal
  * Completely separated from Syndicate Command, dedicated exclusively to managing your 1-to-5-player strike team (Armada)
  * with explicit status indicators ([STATUS: DEPLOYED IN ARMADA: NOVA_STRIKE] vs. [STATUS: OPERATING INDEPENDENTLY])
  * and unambiguous [CREATE ARMADA], [JOIN ARMADA], [LEAVE ARMADA], and [REQUEST INVITE] actions.
@@ -320,52 +369,82 @@ fun ArmadaFleetModal(
   onReportPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
   onCloseModal: () -> Unit,
 ) {
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val isDeployedInArmada = activeArmadaName.isNotEmpty() && armadaSlots.size >= 1
+
+  val outerPadding =
+    if (isCompactPhone) {
+      PaddingValues(start = 8.dp, end = 8.dp, top = 40.dp, bottom = 4.dp)
+    } else {
+      PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+    }
+  val innerPadding = if (isCompactPhone) 8.dp else 14.dp
 
   Box(
     modifier =
       Modifier.fillMaxSize()
         .background(Color(0xB3000000))
         .imePadding()
-        .padding(horizontal = 20.dp, vertical = 10.dp)
+        .padding(outerPadding)
         .testTag("armada_fleet_modal"),
     contentAlignment = Alignment.Center,
   ) {
     Surface(
       modifier =
         Modifier.fillMaxSize()
-          .border(1.dp, Color(0x663B82F6), RoundedCornerShape(16.dp)),
-      color = Color(0xE60A0F18),
-      shape = RoundedCornerShape(16.dp),
+          .border(1.2.dp, Color(0xFF38BDF8), RoundedCornerShape(12.dp)),
+      color = Color(0xF2060D1A),
+      shape = RoundedCornerShape(12.dp),
     ) {
-      Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
-        // 1. Header with Explicit Armada Membership Status Indicator
+      Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+        // 1. Unified 30.dp Compact Header Row with Explicit Armada Membership Status Badge
         Row(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 30.dp else 36.dp),
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = "👥 ARMADA FLEET DECK // 1-TO-5-PLAYER STRIKE TEAM COMMAND",
-              color = Color.White,
-              fontSize = 18.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
-              letterSpacing = 1.2.sp,
-            )
+          Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
             Text(
               text =
-                if (isDeployedInArmada) {
-                  "🟢 [STATUS: DEPLOYED IN ARMADA: $activeArmadaName] (${armadaSlots.size}/5 PILOTS • $armadaTierLabel)"
-                } else {
-                  "⚡ [STATUS: OPERATING INDEPENDENTLY] (SOLO RIFT • FRIENDLY FIRE ACTIVE AGAINST NON-ALLIES)"
-                },
-              color = if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF60A5FA),
-              fontSize = 12.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
+                if (isCompactPhone) "👥 ARMADA FLEET DECK"
+                else "👥 ARMADA FLEET DECK // 1-TO-5-PLAYER STRIKE TEAM COMMAND",
+              color = Color.White,
+              fontSize = if (isCompactPhone) 12.5.sp else 16.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.SansSerif,
+              letterSpacing = 0.8.sp,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
             )
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(6.dp))
+                  .background(if (isDeployedInArmada) Color(0xFF06281E) else Color(0xFF0A192F))
+                  .border(
+                    1.dp,
+                    if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF38BDF8),
+                    RoundedCornerShape(6.dp),
+                  )
+                  .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+              Text(
+                text =
+                  if (isDeployedInArmada) {
+                    "🟢 [$activeArmadaName] (${armadaSlots.size}/5 • $armadaTierLabel)"
+                  } else {
+                    "⚡ [SOLO] INDEPENDENT"
+                  },
+                color = if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF60A5FA),
+                fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+            }
           }
 
           Button(
@@ -375,13 +454,17 @@ fun ArmadaFleetModal(
                 containerColor = Color(0xFF28111B),
                 contentColor = Color(0xFFEF4444),
               ),
-            border = BorderStroke(1.dp, Color(0xFFEF4444)),
+            border = BorderStroke(1.2.dp, Color(0xFFEF4444)),
             shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.height(36.dp).testTag("armada_modal_close_button"),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            modifier =
+              Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
+                .shadow(2.dp, RoundedCornerShape(8.dp))
+                .testTag("armada_modal_close_button"),
           ) {
             Text(
               text = "✕ CLOSE",
-              fontSize = 11.sp,
+              fontSize = 9.5.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.SansSerif,
             )
@@ -389,25 +472,27 @@ fun ArmadaFleetModal(
         }
 
         if (!statusBannerMessage.isNullOrBlank()) {
-          Spacer(modifier = Modifier.height(6.dp))
+          Spacer(modifier = Modifier.height(4.dp))
           Box(
             modifier =
               Modifier.fillMaxWidth()
                 .background(Color(0xFF102338), RoundedCornerShape(8.dp))
                 .border(1.dp, Color(0x553B82F6), RoundedCornerShape(8.dp))
-                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .padding(horizontal = 10.dp, vertical = 4.dp)
           ) {
             Text(
               text = statusBannerMessage,
               color = Color(0xFF60A5FA),
-              fontSize = 12.sp,
+              fontSize = if (isCompactPhone) 9.5.sp else 11.sp,
               fontWeight = FontWeight.Medium,
               fontFamily = FontFamily.SansSerif,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
             )
           }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(if (isCompactPhone) 4.dp else 8.dp))
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
           ArmadaAndFriendsTabPane(
@@ -965,10 +1050,10 @@ private fun CreateSyndicatePane(
   remainingLockFormatted: String,
   onCreateCustomSyndicate: (tag: String, name: String, motto: String) -> Unit,
 ) {
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val context = LocalContext.current
   val localPrefs = remember(context) { LocalPilotPrefs(context) }
   val isDrifter = remember { localPrefs.isGuestBypassEnabled() }
-  // P0 CRITICAL FIX: Pre-Mount Form Lockout on 15-Day Syndicate Cooldown or Drifter session!
   val isCooldownLocked = remainingLockDays > 0 || isDrifter
 
   var tagInput by remember { mutableStateOf("NV!") }
@@ -978,22 +1063,23 @@ private fun CreateSyndicatePane(
 
   val focusManager = LocalFocusManager.current
   val keyboardController = LocalSoftwareKeyboardController.current
+  val inputBoxHeight = if (isCompactPhone) 34.dp else 38.dp
 
   Column(
     modifier =
       Modifier.fillMaxSize()
-        .background(Color(0x99111C2D), RoundedCornerShape(12.dp))
-        .padding(14.dp),
-    verticalArrangement = Arrangement.spacedBy(8.dp),
+        .background(Color(0x99111C2D), RoundedCornerShape(10.dp))
+        .padding(if (isCompactPhone) 8.dp else 12.dp)
+        .verticalScroll(rememberScrollState()),
+    verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
   ) {
-    // Prominent Amber Lock Banner at the top of the tab when 15-day cooldown or Drifter lock is active
     if (isCooldownLocked) {
       Box(
         modifier =
           Modifier.fillMaxWidth()
-            .background(Color(0xFF2B1C08), RoundedCornerShape(10.dp))
-            .border(1.5.dp, Color(0xFFF59E0B), RoundedCornerShape(10.dp))
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .background(Color(0xFF2B1C08), RoundedCornerShape(8.dp))
+            .border(1.2.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 5.dp else 8.dp)
             .testTag("syndicate_charter_locked_banner")
       ) {
         Text(
@@ -1004,7 +1090,7 @@ private fun CreateSyndicatePane(
               "🔒 Syndicate chartering locked until 15-day cooldown expiry ($remainingLockFormatted REMAINING)"
             },
           color = Color(0xFFF59E0B),
-          fontSize = 13.sp,
+          fontSize = if (isCompactPhone) 10.sp else 12.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.SansSerif,
         )
@@ -1020,7 +1106,7 @@ private fun CreateSyndicatePane(
         Text(
           text = "CHARTER NEW OFFICIAL SYNDICATE (STRICT 15d 00h ALLEGIANCE LOCK)",
           color = Color.White,
-          fontSize = 16.sp,
+          fontSize = if (isCompactPhone) 12.sp else 15.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.SansSerif,
         )
@@ -1028,7 +1114,7 @@ private fun CreateSyndicatePane(
           text =
             "CREATING A SYNDICATE REGISTERS YOUR 1–3 CHAR [TAG] (A-Z, 0-9, SYMBOLS) AND LOCKS ALLEGIANCE FOR 15d 00h.",
           color = Color(0xFF8A99AD),
-          fontSize = 11.sp,
+          fontSize = if (isCompactPhone) 9.sp else 10.5.sp,
           fontFamily = FontFamily.SansSerif,
         )
       }
@@ -1044,12 +1130,17 @@ private fun CreateSyndicatePane(
               containerColor = Color(0xFF00E676),
               contentColor = Color(0xFF05080E),
             ),
+          border = BorderStroke(1.2.dp, Color(0xFF00E676)),
           shape = RoundedCornerShape(8.dp),
-          modifier = Modifier.height(38.dp).testTag("create_syndicate_done_button"),
+          contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+          modifier =
+            Modifier.height(if (isCompactPhone) 30.dp else 34.dp)
+              .shadow(2.dp, RoundedCornerShape(8.dp))
+              .testTag("create_syndicate_done_button"),
         ) {
           Text(
             text = "✓ DONE",
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.SansSerif,
           )
@@ -1057,137 +1148,204 @@ private fun CreateSyndicatePane(
       }
     }
 
-    // Form container drops opacity to 0.4f and disables all inputs when locked so soft keyboard never opens on tap
     Column(
       modifier =
         Modifier.fillMaxWidth()
           .alpha(if (isCooldownLocked) 0.4f else 1.0f),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
+      verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        OutlinedTextField(
-          value = tagInput,
-          onValueChange = { raw ->
-            if (!isCooldownLocked) {
-              tagInput = localPrefs.sanitizeSyndicateTag(raw)
+        Column(
+          modifier = Modifier.width(if (isCompactPhone) 185.dp else 210.dp),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          Text(
+            text = "TAG (1–3 CHARS: A-Z, 0-9, SYMBOLS)",
+            color = Color(0xFFFACC15),
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+          )
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(inputBoxHeight)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF050B14))
+                .border(1.dp, Color(0xFFFFD700), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+          ) {
+            if (tagInput.isEmpty()) {
+              Text(
+                text = "e.g. VX!, Ω7, ★",
+                fontSize = 10.sp,
+                color = Color(0xFF64748B),
+                fontFamily = FontFamily.Monospace,
+              )
             }
-          },
-          enabled = !isCooldownLocked,
-          readOnly = isCooldownLocked,
-          singleLine = true,
-          placeholder = { Text("e.g. VX!, Ω7, ★", fontSize = 10.sp, color = Color(0xFF64748B)) },
-          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-          keyboardActions =
-            KeyboardActions(
-              onDone = {
-                focusManager.clearFocus()
-                keyboardController?.hide()
-              }
-            ),
-          label = { Text("TAG (1–3 CHARS: A-Z, 0-9, SYMBOLS)", fontSize = 9.5.sp, fontFamily = FontFamily.SansSerif) },
-          textStyle =
-            TextStyle(
-              color = Color(0xFFFFD700),
-              fontSize = 14.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-            ),
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedBorderColor = Color(0xFFFFD700),
-              unfocusedBorderColor = Color(0xFF2B4C73),
-              disabledBorderColor = Color(0xFF1E2D42),
-              disabledTextColor = Color(0xFF8A99AD),
-              disabledLabelColor = Color(0xFF8A99AD),
-            ),
-          modifier =
-            Modifier.width(210.dp)
-              .onFocusChanged { anyFieldFocused = it.isFocused }
-              .testTag("create_syndicate_tag_input"),
-        )
+            BasicTextField(
+              value = tagInput,
+              onValueChange = { raw ->
+                if (!isCooldownLocked) {
+                  tagInput = localPrefs.sanitizeSyndicateTag(raw)
+                }
+              },
+              enabled = !isCooldownLocked,
+              readOnly = isCooldownLocked,
+              singleLine = true,
+              cursorBrush = SolidColor(Color(0xFFFFD700)),
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+              keyboardActions =
+                KeyboardActions(
+                  onDone = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                  }
+                ),
+              textStyle =
+                TextStyle(
+                  color = Color(0xFFFFD700),
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                ),
+              modifier =
+                Modifier.fillMaxWidth()
+                  .onFocusChanged { anyFieldFocused = it.isFocused }
+                  .testTag("create_syndicate_tag_input"),
+            )
+          }
+        }
 
-        OutlinedTextField(
-          value = nameInput,
-          onValueChange = { raw ->
-            if (!isCooldownLocked) {
-              nameInput = raw.take(24)
+        Column(
+          modifier = Modifier.weight(1f),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          Text(
+            text = "SYNDICATE NAME",
+            color = Color(0xFF00F5D4),
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+          )
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(inputBoxHeight)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF050B14))
+                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+          ) {
+            if (nameInput.isEmpty()) {
+              Text(
+                text = "Enter Syndicate Name…",
+                fontSize = 10.sp,
+                color = Color(0xFF64748B),
+                fontFamily = FontFamily.SansSerif,
+              )
             }
-          },
-          enabled = !isCooldownLocked,
-          readOnly = isCooldownLocked,
-          singleLine = true,
-          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-          keyboardActions =
-            KeyboardActions(
-              onDone = {
-                focusManager.clearFocus()
-                keyboardController?.hide()
-              }
-            ),
-          label = { Text("SYNDICATE NAME", fontSize = 10.sp, fontFamily = FontFamily.SansSerif) },
-          textStyle =
-            TextStyle(
-              color = Color.White,
-              fontSize = 14.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
-            ),
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedBorderColor = Color(0xFF00F0FF),
-              unfocusedBorderColor = Color(0xFF2B4C73),
-              disabledBorderColor = Color(0xFF1E2D42),
-              disabledTextColor = Color(0xFF8A99AD),
-              disabledLabelColor = Color(0xFF8A99AD),
-            ),
-          modifier =
-            Modifier.weight(1f)
-              .onFocusChanged { anyFieldFocused = it.isFocused }
-              .testTag("create_syndicate_name_input"),
-        )
+            BasicTextField(
+              value = nameInput,
+              onValueChange = { raw ->
+                if (!isCooldownLocked) {
+                  nameInput = raw.take(24)
+                }
+              },
+              enabled = !isCooldownLocked,
+              readOnly = isCooldownLocked,
+              singleLine = true,
+              cursorBrush = SolidColor(Color(0xFF00F5D4)),
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+              keyboardActions =
+                KeyboardActions(
+                  onDone = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                  }
+                ),
+              textStyle =
+                TextStyle(
+                  color = Color.White,
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.SansSerif,
+                ),
+              modifier =
+                Modifier.fillMaxWidth()
+                  .onFocusChanged { anyFieldFocused = it.isFocused }
+                  .testTag("create_syndicate_name_input"),
+            )
+          }
+        }
       }
 
-      OutlinedTextField(
-        value = mottoInput,
-        onValueChange = { raw ->
-          if (!isCooldownLocked) {
-            mottoInput = raw.take(60)
+      Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        Text(
+          text = "SYNDICATE DOCTRINE / MOTTO",
+          color = Color(0xFF38BDF8),
+          fontSize = 8.5.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+        )
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .height(inputBoxHeight)
+              .clip(RoundedCornerShape(8.dp))
+              .background(Color(0xFF050B14))
+              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
+              .padding(horizontal = 10.dp),
+          contentAlignment = Alignment.CenterStart,
+        ) {
+          if (mottoInput.isEmpty()) {
+            Text(
+              text = "Enter Syndicate Doctrine or Motto…",
+              fontSize = 10.sp,
+              color = Color(0xFF64748B),
+              fontFamily = FontFamily.SansSerif,
+            )
           }
-        },
-        enabled = !isCooldownLocked,
-        readOnly = isCooldownLocked,
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        keyboardActions =
-          KeyboardActions(
-            onDone = {
-              focusManager.clearFocus()
-              keyboardController?.hide()
-            }
-          ),
-        label = { Text("SYNDICATE DOCTRINE / MOTTO", fontSize = 10.sp, fontFamily = FontFamily.SansSerif) },
-        textStyle =
-          TextStyle(
-            color = Color(0xFFD6E4F0),
-            fontSize = 12.sp,
-            fontFamily = FontFamily.SansSerif,
-          ),
-        colors =
-          OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Color(0xFF00F0FF),
-            unfocusedBorderColor = Color(0xFF2B4C73),
-            disabledBorderColor = Color(0xFF1E2D42),
-            disabledTextColor = Color(0xFF8A99AD),
-            disabledLabelColor = Color(0xFF8A99AD),
-          ),
-        modifier =
-          Modifier.fillMaxWidth()
-            .onFocusChanged { anyFieldFocused = it.isFocused }
-            .testTag("create_syndicate_motto_input"),
-      )
+          BasicTextField(
+            value = mottoInput,
+            onValueChange = { raw ->
+              if (!isCooldownLocked) {
+                mottoInput = raw.take(60)
+              }
+            },
+            enabled = !isCooldownLocked,
+            readOnly = isCooldownLocked,
+            singleLine = true,
+            cursorBrush = SolidColor(Color(0xFF38BDF8)),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions =
+              KeyboardActions(
+                onDone = {
+                  focusManager.clearFocus()
+                  keyboardController?.hide()
+                }
+              ),
+            textStyle =
+              TextStyle(
+                color = Color(0xFFD6E4F0),
+                fontSize = 11.5.sp,
+                fontFamily = FontFamily.SansSerif,
+              ),
+            modifier =
+              Modifier.fillMaxWidth()
+                .onFocusChanged { anyFieldFocused = it.isFocused }
+                .testTag("create_syndicate_motto_input"),
+          )
+        }
+      }
 
       Button(
         onClick = { onCreateCustomSyndicate(tagInput, nameInput, mottoInput) },
@@ -1199,8 +1357,18 @@ private fun CreateSyndicatePane(
             disabledContainerColor = Color(0xFF1A283B),
             disabledContentColor = Color(0xFF8A99AD),
           ),
-        shape = RoundedCornerShape(10.dp),
-        modifier = Modifier.height(46.dp).fillMaxWidth().testTag("create_syndicate_submit_button"),
+        border =
+          BorderStroke(
+            1.2.dp,
+            if (!isCooldownLocked && tagInput.isNotEmpty() && nameInput.length >= 3) Color(0xFFFFD700)
+            else Color(0xFF334155),
+          ),
+        shape = RoundedCornerShape(8.dp),
+        modifier =
+          Modifier.height(if (isCompactPhone) 38.dp else 44.dp)
+            .fillMaxWidth()
+            .shadow(2.dp, RoundedCornerShape(8.dp))
+            .testTag("create_syndicate_submit_button"),
       ) {
         Text(
           text =
@@ -1211,7 +1379,7 @@ private fun CreateSyndicatePane(
             } else {
               "🏛️ CHARTER [$tagInput] ${nameInput.uppercase()} & LOCK FOR 15d 00h"
             },
-          fontSize = 12.sp,
+          fontSize = if (isCompactPhone) 10.5.sp else 12.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.SansSerif,
         )
@@ -1237,6 +1405,7 @@ private fun ArmadaAndFriendsTabPane(
   onBlockPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
   onReportPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
 ) {
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val visibleFriends =
     remember(friendsList, blockedPilotUids) {
       friendsList.filter { it.uid !in blockedPilotUids }
@@ -1247,7 +1416,6 @@ private fun ArmadaAndFriendsTabPane(
   var newFriendInput by remember { mutableStateOf("") }
   var inputFocused by remember { mutableStateOf(false) }
 
-  // P3: 10-second anti-spam cooldown state map for Semantic Invite & Request buttons
   val buttonCooldownSec = remember { mutableStateMapOf<String, Int>() }
 
   LaunchedEffect(buttonCooldownSec.keys.toList()) {
@@ -1267,19 +1435,21 @@ private fun ArmadaAndFriendsTabPane(
 
   val focusManager = LocalFocusManager.current
   val keyboardController = LocalSoftwareKeyboardController.current
+  val inputBoxHeight = if (isCompactPhone) 34.dp else 38.dp
 
   Row(
     modifier = Modifier.fillMaxSize(),
-    horizontalArrangement = Arrangement.spacedBy(12.dp),
+    horizontalArrangement = Arrangement.spacedBy(if (isCompactPhone) 8.dp else 12.dp),
   ) {
-    // Left Column: Active Named Armada Roster (2 to 5 Players or [SOLO])
+    // Left Column: Active Named Armada Roster (2 to 5 Players or [SOLO]) — Scrollable on Phone Landscape
     Column(
       modifier =
-        Modifier.width(305.dp)
+        Modifier.width(if (isCompactPhone) 268.dp else 305.dp)
           .fillMaxHeight()
-          .background(Color(0x99111C2D), RoundedCornerShape(12.dp))
-          .padding(12.dp),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
+          .background(Color(0x99111C2D), RoundedCornerShape(10.dp))
+          .padding(if (isCompactPhone) 8.dp else 12.dp)
+          .verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
     ) {
       Text(
         text =
@@ -1289,9 +1459,17 @@ private fun ArmadaAndFriendsTabPane(
             "🛡️ [STATUS: DEPLOYED IN ARMADA: $activeArmadaName] (${armadaSlots.size}/5)"
           },
         color = if (activeArmadaName.isEmpty()) Color(0xFF60A5FA) else Color(0xFF10B981),
-        fontSize = 12.sp,
+        fontSize = if (isCompactPhone) 10.sp else 11.5.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.SansSerif,
+      )
+
+      Text(
+        text = "ARMADA TAG",
+        color = Color(0xFF38BDF8),
+        fontSize = 8.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
       )
 
       Row(
@@ -1299,38 +1477,52 @@ private fun ArmadaAndFriendsTabPane(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        OutlinedTextField(
-          value = armadaNameInput,
-          onValueChange = { raw ->
-            armadaNameInput = raw.uppercase().replace(Regex("[^A-Z0-9_-]"), "").take(10)
-          },
-          singleLine = true,
-          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-          keyboardActions =
-            KeyboardActions(
-              onDone = {
-                focusManager.clearFocus()
-                keyboardController?.hide()
-              }
-            ),
-          label = { Text("ARMADA TAG", fontSize = 9.sp, fontFamily = FontFamily.SansSerif) },
-          textStyle =
-            TextStyle(
-              color = Color.White,
-              fontSize = 12.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-            ),
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedBorderColor = Color(0xFF38BDF8),
-              unfocusedBorderColor = Color(0xFF223B59),
-            ),
+        Box(
           modifier =
             Modifier.weight(1f)
-              .onFocusChanged { inputFocused = it.isFocused }
-              .testTag("armada_name_input"),
-        )
+              .height(inputBoxHeight)
+              .clip(RoundedCornerShape(8.dp))
+              .background(Color(0xFF050B14))
+              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
+              .padding(horizontal = 10.dp),
+          contentAlignment = Alignment.CenterStart,
+        ) {
+          if (armadaNameInput.isEmpty()) {
+            Text(
+              text = "ARMADA TAG",
+              fontSize = 9.5.sp,
+              color = Color(0xFF64748B),
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+          BasicTextField(
+            value = armadaNameInput,
+            onValueChange = { raw ->
+              armadaNameInput = raw.uppercase().replace(Regex("[^A-Z0-9_-]"), "").take(10)
+            },
+            singleLine = true,
+            cursorBrush = SolidColor(Color(0xFF00F5D4)),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions =
+              KeyboardActions(
+                onDone = {
+                  focusManager.clearFocus()
+                  keyboardController?.hide()
+                }
+              ),
+            textStyle =
+              TextStyle(
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              ),
+            modifier =
+              Modifier.fillMaxWidth()
+                .onFocusChanged { inputFocused = it.isFocused }
+                .testTag("armada_name_input"),
+          )
+        }
 
         Button(
           onClick = {
@@ -1343,46 +1535,49 @@ private fun ArmadaAndFriendsTabPane(
               containerColor = Color(0xFF10B981),
               contentColor = Color(0xFF05080E),
             ),
+          border = BorderStroke(1.2.dp, Color(0xFF34D399)),
           shape = RoundedCornerShape(8.dp),
-          modifier = Modifier.height(44.dp).testTag("form_armada_button"),
+          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+          modifier =
+            Modifier.height(inputBoxHeight)
+              .shadow(2.dp, RoundedCornerShape(8.dp))
+              .testTag("form_armada_button"),
         ) {
           Text(
             text = if (activeArmadaName.isEmpty()) "CREATE ARMADA" else "JOIN / RENAME",
-            fontSize = 9.5.sp,
+            fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.SansSerif,
           )
         }
       }
 
-      LazyColumn(
-        modifier = Modifier.weight(1f).fillMaxWidth(),
+      Column(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         if (armadaSlots.isEmpty()) {
-          item {
-            Box(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .background(Color(0x660B1524), RoundedCornerShape(8.dp))
-                  .padding(10.dp)
-            ) {
-              Text(
-                text =
-                  "FLYING [SOLO] IN THE FFA RIFT.\nINVITE FRIENDS ON THE RIGHT TO FORM A 2-TO-5-MAN NAMED ARMADA.",
-                color = Color(0xFF8A99AD),
-                fontSize = 10.5.sp,
-                fontFamily = FontFamily.SansSerif,
-              )
-            }
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .background(Color(0x660B1524), RoundedCornerShape(8.dp))
+                .padding(8.dp)
+          ) {
+            Text(
+              text =
+                "FLYING [SOLO] IN THE FFA RIFT.\nINVITE FRIENDS ON THE RIGHT TO FORM A 2-TO-5-MAN NAMED ARMADA.",
+              color = Color(0xFF8A99AD),
+              fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
+              fontFamily = FontFamily.SansSerif,
+            )
           }
         } else {
-          items(armadaSlots, key = { it.uid }) { slot ->
+          armadaSlots.forEach { slot ->
             Row(
               modifier =
                 Modifier.fillMaxWidth()
                   .background(Color(0x990D1B30), RoundedCornerShape(8.dp))
-                  .padding(horizontal = 10.dp, vertical = 7.dp),
+                  .padding(horizontal = 8.dp, vertical = 6.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -1395,14 +1590,14 @@ private fun ArmadaAndFriendsTabPane(
                   Text(
                     text = "[${slot.syndicateTag}] ${slot.callsign}",
                     color = if (slot.isLeader) Color(0xFFFFD700) else Color.White,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.SansSerif,
                   )
                   Text(
                     text = if (slot.isLeader) "ARMADA COMMANDER" else "WINGMAN ACTIVE",
                     color = Color(0xFF00F0FF),
-                    fontSize = 9.5.sp,
+                    fontSize = 8.8.sp,
                     fontFamily = FontFamily.SansSerif,
                   )
                 }
@@ -1416,12 +1611,14 @@ private fun ArmadaAndFriendsTabPane(
                       containerColor = Color(0xFF2D1420),
                       contentColor = Color(0xFFFF3B4E),
                     ),
-                  shape = RoundedCornerShape(6.dp),
-                  modifier = Modifier.height(30.dp),
+                  border = BorderStroke(1.2.dp, Color(0xFFFF3B4E)),
+                  shape = RoundedCornerShape(8.dp),
+                  contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                  modifier = Modifier.height(28.dp).shadow(2.dp, RoundedCornerShape(8.dp)),
                 ) {
                   Text(
                     text = "DROP",
-                    fontSize = 9.sp,
+                    fontSize = 8.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.SansSerif,
                   )
@@ -1444,12 +1641,18 @@ private fun ArmadaAndFriendsTabPane(
               containerColor = Color(0xFF162B46),
               contentColor = Color(0xFFFFD700),
             ),
+          border = BorderStroke(1.2.dp, Color(0xFFFFD700)),
           shape = RoundedCornerShape(8.dp),
-          modifier = Modifier.weight(1f).height(38.dp).testTag("simulate_roster_shift_button"),
+          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+          modifier =
+            Modifier.weight(1f)
+              .height(if (isCompactPhone) 32.dp else 36.dp)
+              .shadow(2.dp, RoundedCornerShape(8.dp))
+              .testTag("simulate_roster_shift_button"),
         ) {
           Text(
             text = "⚡ SHIFT 4➔2 TIER",
-            fontSize = 9.5.sp,
+            fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.SansSerif,
           )
@@ -1463,13 +1666,17 @@ private fun ArmadaAndFriendsTabPane(
                 containerColor = Color(0xFF281520),
                 contentColor = Color(0xFFEF4444),
               ),
-            border = BorderStroke(1.dp, Color(0xFFEF4444)),
+            border = BorderStroke(1.2.dp, Color(0xFFEF4444)),
             shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.height(38.dp).testTag("leave_armada_solo_button"),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            modifier =
+              Modifier.height(if (isCompactPhone) 32.dp else 36.dp)
+                .shadow(2.dp, RoundedCornerShape(8.dp))
+                .testTag("leave_armada_solo_button"),
           ) {
             Text(
               text = "LEAVE ARMADA",
-              fontSize = 9.5.sp,
+              fontSize = 9.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.SansSerif,
             )
@@ -1483,9 +1690,9 @@ private fun ArmadaAndFriendsTabPane(
       modifier =
         Modifier.weight(1f)
           .fillMaxHeight()
-          .background(Color(0x99111C2D), RoundedCornerShape(12.dp))
-          .padding(12.dp),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
+          .background(Color(0x99111C2D), RoundedCornerShape(10.dp))
+          .padding(if (isCompactPhone) 8.dp else 12.dp),
+      verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1493,51 +1700,69 @@ private fun ArmadaAndFriendsTabPane(
         horizontalArrangement = Arrangement.SpaceBetween,
       ) {
         Text(
-          text = "ONLINE FRIENDS & ARMADA RECRUITMENT (${visibleFriends.count { it.isOnline }} ONLINE)",
+          text =
+            if (isCompactPhone) "FRIENDS & RECRUITMENT (${visibleFriends.count { it.isOnline }} ONLINE)"
+            else "ONLINE FRIENDS & ARMADA RECRUITMENT (${visibleFriends.count { it.isOnline }} ONLINE)",
           color = Color.White,
-          fontSize = 14.sp,
+          fontSize = if (isCompactPhone) 11.5.sp else 13.5.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.SansSerif,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.weight(1f),
         )
 
         Row(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-          OutlinedTextField(
-            value = newFriendInput,
-            onValueChange = { raw ->
-              newFriendInput = raw.uppercase().replace(Regex("[^A-Z0-9_-]"), "").take(14)
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions =
-              KeyboardActions(
-                onDone = {
-                  focusManager.clearFocus()
-                  keyboardController?.hide()
-                }
-              ),
-            placeholder = {
-              Text("SEARCH / ADD CALLSIGN", fontSize = 9.sp, fontFamily = FontFamily.SansSerif)
-            },
-            textStyle =
-              TextStyle(
-                color = Color.White,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-              ),
-            colors =
-              OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFF00F0FF),
-                unfocusedBorderColor = Color(0xFF223B59),
-              ),
+          Box(
             modifier =
-              Modifier.width(155.dp)
-                .height(46.dp)
-                .onFocusChanged { inputFocused = it.isFocused }
-                .testTag("friend_search_input"),
-          )
+              Modifier.width(if (isCompactPhone) 145.dp else 165.dp)
+                .height(inputBoxHeight)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF050B14))
+                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+          ) {
+            if (newFriendInput.isEmpty()) {
+              Text(
+                text = "SEARCH / ADD CALLSIGN",
+                fontSize = 8.5.sp,
+                color = Color(0xFF64748B),
+                fontFamily = FontFamily.SansSerif,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+            BasicTextField(
+              value = newFriendInput,
+              onValueChange = { raw ->
+                newFriendInput = raw.uppercase().replace(Regex("[^A-Z0-9_-]"), "").take(14)
+              },
+              singleLine = true,
+              cursorBrush = SolidColor(Color(0xFF00F5D4)),
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+              keyboardActions =
+                KeyboardActions(
+                  onDone = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                  }
+                ),
+              textStyle =
+                TextStyle(
+                  color = Color.White,
+                  fontSize = 10.5.sp,
+                  fontFamily = FontFamily.Monospace,
+                ),
+              modifier =
+                Modifier.fillMaxWidth()
+                  .onFocusChanged { inputFocused = it.isFocused }
+                  .testTag("friend_search_input"),
+            )
+          }
 
           Button(
             onClick = {
@@ -1553,12 +1778,16 @@ private fun ArmadaAndFriendsTabPane(
                 containerColor = Color(0xFF00F0FF),
                 contentColor = Color(0xFF05080E),
               ),
+            border = BorderStroke(1.2.dp, Color(0xFF00F5D4)),
             shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.height(40.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            modifier =
+              Modifier.height(inputBoxHeight)
+                .shadow(2.dp, RoundedCornerShape(8.dp)),
           ) {
             Text(
               text = "+ ADD",
-              fontSize = 10.sp,
+              fontSize = 9.5.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.SansSerif,
             )
@@ -1575,12 +1804,17 @@ private fun ArmadaAndFriendsTabPane(
                   containerColor = Color(0xFF00E676),
                   contentColor = Color(0xFF05080E),
                 ),
+              border = BorderStroke(1.2.dp, Color(0xFF00E676)),
               shape = RoundedCornerShape(8.dp),
-              modifier = Modifier.height(40.dp).testTag("friend_input_done_button"),
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+              modifier =
+                Modifier.height(inputBoxHeight)
+                  .shadow(2.dp, RoundedCornerShape(8.dp))
+                  .testTag("friend_input_done_button"),
             ) {
               Text(
                 text = "✓ DONE",
-                fontSize = 10.sp,
+                fontSize = 9.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
               )
@@ -1591,7 +1825,7 @@ private fun ArmadaAndFriendsTabPane(
 
       LazyColumn(
         modifier = Modifier.weight(1f).fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
       ) {
         items(visibleFriends, key = { it.uid }) { friend ->
           val reqKey = "req_${friend.uid}"
@@ -1602,23 +1836,23 @@ private fun ArmadaAndFriendsTabPane(
           Row(
             modifier =
               Modifier.fillMaxWidth()
-                .background(Color(0x990D1B30), RoundedCornerShape(10.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .background(Color(0x990D1B30), RoundedCornerShape(9.dp))
+                .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 6.dp else 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
           ) {
             Row(
               verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(10.dp),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
               modifier = Modifier.weight(1f),
             ) {
               Box(
                 modifier =
-                  Modifier.size(10.dp)
+                  Modifier.size(9.dp)
                     .clip(CircleShape)
                     .background(if (friend.isOnline) Color(0xFF00E676) else Color(0xFF546E7A))
               )
-              ShipSpritePreview(shipId = friend.shipId, sizeDp = 28)
+              ShipSpritePreview(shipId = friend.shipId, sizeDp = 26)
               Column {
                 Text(
                   text =
@@ -1628,14 +1862,14 @@ private fun ArmadaAndFriendsTabPane(
                       "[SOLO] [${friend.syndicateTag}] ${friend.callsign}"
                     },
                   color = Color.White,
-                  fontSize = 13.sp,
+                  fontSize = if (isCompactPhone) 11.5.sp else 13.sp,
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.SansSerif,
                 )
                 Text(
                   text = friend.statusText.uppercase(),
                   color = if (friend.isOnline) Color(0xFF8A99AD) else Color(0xFF607D8B),
-                  fontSize = 10.5.sp,
+                  fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
                   fontFamily = FontFamily.SansSerif,
                 )
               }
@@ -1643,7 +1877,6 @@ private fun ArmadaAndFriendsTabPane(
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
               if (friend.isOnline) {
-                // Phase 4.3 Inbound Join Request ([⇥ REQUEST INVITE]): Deep Indigo background with crisp Cyan border (#38BDF8)
                 if (friend.currentArmadaName.isNotEmpty() && friend.currentArmadaCount < 5) {
                   val reqLocked = reqRem > 0
                   Button(
@@ -1661,11 +1894,15 @@ private fun ArmadaAndFriendsTabPane(
                       ),
                     border =
                       BorderStroke(
-                        1.dp,
+                        1.2.dp,
                         if (reqLocked) Color(0xFFF59E0B) else Color(0xFF38BDF8),
                       ),
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.height(34.dp).testTag("request_join_friend_${friend.callsign}"),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier =
+                      Modifier.height(if (isCompactPhone) 30.dp else 34.dp)
+                        .shadow(2.dp, RoundedCornerShape(8.dp))
+                        .testTag("request_join_friend_${friend.callsign}"),
                   ) {
                     Text(
                       text =
@@ -1674,14 +1911,13 @@ private fun ArmadaAndFriendsTabPane(
                         } else {
                           "⇥ REQUEST INVITE"
                         },
-                      fontSize = 9.5.sp,
+                      fontSize = 9.sp,
                       fontWeight = FontWeight.Bold,
                       fontFamily = FontFamily.SansSerif,
                     )
                   }
                 }
 
-                // Phase 4.3 Outbound Recruit ([+ INVITE TO ARMADA]): Bright Emerald Green fill (#10B981, dark text #05080E)
                 val invLocked = invRem > 0
                 Button(
                   onClick = {
@@ -1696,8 +1932,17 @@ private fun ArmadaAndFriendsTabPane(
                       disabledContainerColor = Color(0xFF332409),
                       disabledContentColor = Color(0xFFF59E0B),
                     ),
+                  border =
+                    BorderStroke(
+                      1.2.dp,
+                      if (invLocked) Color(0xFFF59E0B) else Color(0xFF34D399),
+                    ),
                   shape = RoundedCornerShape(8.dp),
-                  modifier = Modifier.height(34.dp).testTag("invite_friend_${friend.callsign}"),
+                  contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                  modifier =
+                    Modifier.height(if (isCompactPhone) 30.dp else 34.dp)
+                      .shadow(2.dp, RoundedCornerShape(8.dp))
+                      .testTag("invite_friend_${friend.callsign}"),
                 ) {
                   Text(
                     text =
@@ -1706,7 +1951,7 @@ private fun ArmadaAndFriendsTabPane(
                       } else {
                         "+ INVITE TO ARMADA"
                       },
-                    fontSize = 9.5.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.SansSerif,
                   )
@@ -1720,11 +1965,15 @@ private fun ArmadaAndFriendsTabPane(
                     containerColor = Color(0xFF2B1C08),
                     contentColor = Color(0xFFF59E0B),
                   ),
+                border = BorderStroke(1.2.dp, Color(0xFFF59E0B)),
                 shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp),
-                modifier = Modifier.height(34.dp).testTag("report_armada_friend_${friend.uid}"),
+                modifier =
+                  Modifier.height(if (isCompactPhone) 30.dp else 34.dp)
+                    .shadow(2.dp, RoundedCornerShape(8.dp))
+                    .testTag("report_armada_friend_${friend.uid}"),
               ) {
-                Text("⚑", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("⚑", fontSize = 10.sp, fontWeight = FontWeight.Bold)
               }
 
               Button(
@@ -1734,11 +1983,15 @@ private fun ArmadaAndFriendsTabPane(
                     containerColor = Color(0xFF28111B),
                     contentColor = Color(0xFFEF4444),
                   ),
+                border = BorderStroke(1.2.dp, Color(0xFFEF4444)),
                 shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp),
-                modifier = Modifier.height(34.dp).testTag("block_armada_friend_${friend.uid}"),
+                modifier =
+                  Modifier.height(if (isCompactPhone) 30.dp else 34.dp)
+                    .shadow(2.dp, RoundedCornerShape(8.dp))
+                    .testTag("block_armada_friend_${friend.uid}"),
               ) {
-                Text("🚫", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("🚫", fontSize = 10.sp, fontWeight = FontWeight.Bold)
               }
             }
           }
@@ -1755,25 +2008,31 @@ private fun SyndicateTabButton(
   onClick: () -> Unit,
   tag: String,
 ) {
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   Box(
     modifier =
-      Modifier.clip(RoundedCornerShape(8.dp))
+      Modifier.shadow(2.dp, RoundedCornerShape(8.dp))
+        .clip(RoundedCornerShape(8.dp))
         .background(if (selected) Color(0xFFFFD700) else Color(0x99111C2D))
         .border(
-          1.dp,
-          if (selected) Color(0xFFFFD700) else Color(0x33FFFFFF),
+          1.2.dp,
+          if (selected) Color(0xFFFFD700) else Color(0x4438BDF8),
           RoundedCornerShape(8.dp),
         )
         .clickable { onClick() }
-        .padding(horizontal = 10.dp, vertical = 7.dp)
+        .padding(
+          horizontal = if (isCompactPhone) 8.dp else 10.dp,
+          vertical = if (isCompactPhone) 4.dp else 7.dp,
+        )
         .testTag(tag),
   ) {
     Text(
       text = label,
       color = if (selected) Color(0xFF05080E) else Color.White,
-      fontSize = 10.sp,
+      fontSize = if (isCompactPhone) 9.sp else 10.sp,
       fontWeight = FontWeight.Bold,
       fontFamily = FontFamily.SansSerif,
+      maxLines = 1,
     )
   }
 }

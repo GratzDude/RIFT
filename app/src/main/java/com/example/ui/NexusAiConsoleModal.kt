@@ -60,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -68,6 +69,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -516,6 +518,7 @@ fun NexusAiConsoleModal(
     )
   }
 
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val cleanSyndicateTag =
     if (syndicateTag.isBlank() || syndicateTag in setOf("FREE", "SOLO", "UNAFFILIATED")) "GUEST"
     else syndicateTag
@@ -526,39 +529,45 @@ fun NexusAiConsoleModal(
         .background(Color(0x78020611))
         .windowInsetsPadding(WindowInsets.safeDrawing)
         .imePadding()
-        .padding(horizontal = 10.dp, vertical = 6.dp)
+        .padding(
+          if (isCompactPhone) PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+          else PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+        )
         .testTag("nexus_ai_console_modal"),
     contentAlignment = Alignment.Center,
   ) {
     Surface(
       modifier =
-        Modifier.fillMaxWidth(0.98f)
-          .fillMaxHeight(0.95f)
+        Modifier.fillMaxSize()
           .border(
-            width = 1.4.dp,
+            width = 1.2.dp,
             brush =
               Brush.linearGradient(
                 colors =
                   listOf(
-                    Color(0xDD00F5D4),
+                    Color(0xFF00F5D4),
                     Color(0xCCB388FF),
-                    Color(0xAA38BDF8),
+                    Color(0xFF38BDF8),
                   )
               ),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(12.dp),
           ),
-      color = Color(0xD9050B16),
-      shape = RoundedCornerShape(16.dp),
+      color = Color(0xF2060D1A),
+      shape = RoundedCornerShape(12.dp),
     ) {
       Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier =
+          Modifier.fillMaxSize()
+            .padding(if (isCompactPhone) 8.dp else 14.dp),
+        verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 4.dp else 6.dp),
       ) {
         // =========================================================================
         // 1. TOP TELEMETRY, HUMAN-ONLY COUNTERS & STARTUP BOOT PREFERENCE BAR
         // =========================================================================
         Row(
-          modifier = Modifier.fillMaxWidth(),
+          modifier =
+            Modifier.fillMaxWidth()
+              .then(if (isCompactPhone) Modifier.height(30.dp) else Modifier),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -568,53 +577,81 @@ fun NexusAiConsoleModal(
             modifier = Modifier.weight(1f),
           ) {
             SwirlingRiftVortexGlyph(
-              modifier = Modifier.size(32.dp),
+              modifier = Modifier.size(if (isCompactPhone) 24.dp else 32.dp),
               isStreaming = isStreaming,
             )
-            Column {
+            if (isCompactPhone) {
               Text(
-                text = "NEXUS // SECTOR COMMAND HUB & MATCHMAKING",
+                text = "NEXUS // COMMAND HUB",
                 color = Color(0xFF00F5D4),
-                fontSize = 13.sp,
+                fontSize = 11.5.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
-                letterSpacing = 0.6.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
-              Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF081A2C))
+                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
               ) {
                 Text(
-                  text = "🟢 $totalOnlinePilots PILOTS ONLINE",
+                  text = "🟢 $totalOnlinePilots ONLINE • [$cleanSyndicateTag] • LVL $pilotLevel",
                   color = Color(0xFF34D399),
-                  fontSize = 9.sp,
+                  fontSize = 8.2.sp,
                   fontWeight = FontWeight.ExtraBold,
                   fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
                 )
+              }
+            } else {
+              Column {
                 Text(
-                  text = "🏛️ $syndicateOnlineCount [$cleanSyndicateTag] MEMBERS ONLINE",
-                  color = Color(0xFFFBBF24),
-                  fontSize = 9.sp,
-                  fontWeight = FontWeight.ExtraBold,
+                  text = "NEXUS // SECTOR COMMAND HUB & MATCHMAKING",
+                  color = Color(0xFF00F5D4),
+                  fontSize = 13.sp,
+                  fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
+                  letterSpacing = 0.6.sp,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                  text = "🛡️ $presetArmadasReadyCount PRESET ARMADAS READY",
-                  color = Color(0xFF60A5FA),
-                  fontSize = 9.sp,
-                  fontWeight = FontWeight.ExtraBold,
-                  fontFamily = FontFamily.Monospace,
-                )
-                Text(
-                  text = "• LVL $pilotLevel ($pointBudget PTS) • TOP: $highestBountySummary",
-                  color = Color(0xFF94A3B8),
-                  fontSize = 8.8.sp,
-                  fontWeight = FontWeight.SemiBold,
-                  fontFamily = FontFamily.Monospace,
-                )
+                Row(
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  modifier = Modifier.horizontalScroll(rememberScrollState()),
+                ) {
+                  Text(
+                    text = "🟢 $totalOnlinePilots PILOTS ONLINE",
+                    color = Color(0xFF34D399),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Text(
+                    text = "🏛️ $syndicateOnlineCount [$cleanSyndicateTag] MEMBERS ONLINE",
+                    color = Color(0xFFFBBF24),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Text(
+                    text = "🛡️ $presetArmadasReadyCount PRESET ARMADAS READY",
+                    color = Color(0xFF60A5FA),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Text(
+                    text = "• LVL $pilotLevel ($pointBudget PTS) • TOP: $highestBountySummary",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 8.8.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
               }
             }
           }
@@ -626,25 +663,27 @@ fun NexusAiConsoleModal(
             // Startup Boot Mode Preference Toggle Chip
             Box(
               modifier =
-                Modifier.clip(RoundedCornerShape(8.dp))
+                Modifier.shadow(2.dp, RoundedCornerShape(8.dp))
+                  .clip(RoundedCornerShape(8.dp))
                   .background(if (bootToNexusHub) Color(0xFF092238) else Color(0xFF231808))
                   .border(
-                    1.dp,
+                    1.2.dp,
                     if (bootToNexusHub) Color(0xFF00F5D4) else Color(0xFFF59E0B),
                     RoundedCornerShape(8.dp),
                   )
                   .clickable { onToggleBootToNexusHub(!bootToNexusHub) }
-                  .padding(horizontal = 8.dp, vertical = 6.dp)
+                  .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 4.dp else 6.dp)
                   .testTag("nexus_boot_mode_toggle"),
             ) {
               Text(
                 text =
                   if (bootToNexusHub) "⚙️ STARTUP: NEXUS HUB"
-                  else "⚡ STARTUP: CHANGELOG + QUICK-JOIN",
+                  else "⚡ STARTUP: QUICK-JOIN",
                 color = if (bootToNexusHub) Color(0xFF00F5D4) else Color(0xFFFACC15),
-                fontSize = 8.8.sp,
+                fontSize = 8.5.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.Monospace,
+                maxLines = 1,
               )
             }
 
@@ -656,17 +695,17 @@ fun NexusAiConsoleModal(
                     containerColor = Color(0xAA0F172A),
                     contentColor = Color(0xFF94A3B8),
                   ),
-                border = BorderStroke(1.dp, Color(0x66475569)),
+                border = BorderStroke(1.2.dp, Color(0x66475569)),
                 shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                 modifier =
-                  Modifier.minimumInteractiveComponentSize()
-                    .height(32.dp)
+                  Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
+                    .shadow(2.dp, RoundedCornerShape(8.dp))
                     .testTag("nexus_clear_button"),
               ) {
                 Text(
                   text = "↺ CLEAR",
-                  fontSize = 9.sp,
+                  fontSize = 8.8.sp,
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -680,19 +719,20 @@ fun NexusAiConsoleModal(
                   containerColor = Color(0xCC28111B),
                   contentColor = Color(0xFFFF3B4E),
                 ),
-              border = BorderStroke(1.dp, Color(0xFFFF3B4E)),
+              border = BorderStroke(1.2.dp, Color(0xFFFF3B4E)),
               shape = RoundedCornerShape(8.dp),
-              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
               modifier =
-                Modifier.minimumInteractiveComponentSize()
-                  .height(32.dp)
+                Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
+                  .shadow(2.dp, RoundedCornerShape(8.dp))
                   .testTag("nexus_close_button"),
             ) {
               Text(
                 text = "✕ RETURN TO ARENA",
-                fontSize = 9.5.sp,
+                fontSize = 9.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.Monospace,
+                maxLines = 1,
               )
             }
           }
@@ -1044,13 +1084,13 @@ fun NexusAiConsoleModal(
                     Box(
                       modifier =
                         Modifier.weight(1f)
-                          .height(40.dp)
-                          .clip(RoundedCornerShape(10.dp))
-                          .background(Color(0xCC091324))
+                          .height(if (isCompactPhone) 34.dp else 38.dp)
+                          .clip(RoundedCornerShape(8.dp))
+                          .background(Color(0xFF050B14))
                           .border(
                             width = 1.dp,
-                            color = if (isStreaming) Color(0x55475569) else Color(0x9900F5D4),
-                            shape = RoundedCornerShape(10.dp),
+                            color = if (isStreaming) Color(0x55475569) else Color(0xFF00F5D4),
+                            shape = RoundedCornerShape(8.dp),
                           )
                           .padding(horizontal = 10.dp)
                           .testTag("nexus_query_input_box"),
@@ -1060,7 +1100,7 @@ fun NexusAiConsoleModal(
                         Text(
                           text = stringResource(R.string.nexus_input_placeholder),
                           color = Color(0xFF64748B),
-                          fontSize = 10.5.sp,
+                          fontSize = 10.sp,
                           fontFamily = FontFamily.SansSerif,
                           maxLines = 1,
                           overflow = TextOverflow.Ellipsis,
@@ -1075,7 +1115,7 @@ fun NexusAiConsoleModal(
                         textStyle =
                           TextStyle(
                             color = Color.White,
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontFamily = FontFamily.SansSerif,
                           ),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -1096,19 +1136,19 @@ fun NexusAiConsoleModal(
                         ),
                       border =
                         BorderStroke(
-                          1.dp,
+                          1.2.dp,
                           if (inputQuery.isNotBlank() && !isStreaming) Color(0xFF00F5D4) else Color(0x44475569),
                         ),
-                      shape = RoundedCornerShape(10.dp),
+                      shape = RoundedCornerShape(8.dp),
                       contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                       modifier =
-                        Modifier.minimumInteractiveComponentSize()
-                          .height(40.dp)
+                        Modifier.height(if (isCompactPhone) 34.dp else 38.dp)
+                          .shadow(2.dp, RoundedCornerShape(8.dp))
                           .testTag("nexus_send_button"),
                     ) {
                       Text(
                         text = if (isStreaming) "SYNCING…" else "${stringResource(R.string.nexus_transmit)} ➢",
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                       )
@@ -1485,7 +1525,11 @@ fun NexusAiConsoleModal(
                   }
                 }
 
-                RankedGameMode.entries.chunked(2).forEach { rowModes ->
+                val modeChunks =
+                  if (isCompactPhone) RankedGameMode.entries.map { listOf(it) }
+                  else RankedGameMode.entries.chunked(2)
+
+                modeChunks.forEach { rowModes ->
                   Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1755,11 +1799,12 @@ fun NexusTopModuleSwitcherBar(
   onOpenCalibration: () -> Unit,
   onReturnToArena: () -> Unit,
 ) {
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   Box(
     modifier =
       Modifier.fillMaxWidth()
         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-        .padding(horizontal = 10.dp, vertical = 4.dp),
+        .padding(horizontal = if (isCompactPhone) 8.dp else 10.dp, vertical = if (isCompactPhone) 2.dp else 4.dp),
     contentAlignment = Alignment.Center,
   ) {
     NexusMasterModuleNavigationRibbon(
@@ -1792,13 +1837,14 @@ fun NexusMasterModuleNavigationRibbon(
   showReturnToArenaButton: Boolean = false,
   onReturnToArena: () -> Unit = {},
 ) {
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   Row(
     modifier =
       Modifier.fillMaxWidth()
         .clip(RoundedCornerShape(10.dp))
-        .background(Color(0xE6060D1A))
-        .border(1.dp, Color(0x7700F5D4), RoundedCornerShape(10.dp))
-        .padding(horizontal = 8.dp, vertical = 5.dp)
+        .background(Color(0xF2060D1A))
+        .border(1.2.dp, Color(0x9900F5D4), RoundedCornerShape(10.dp))
+        .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 3.dp else 5.dp)
         .horizontalScroll(rememberScrollState())
         .testTag("nexus_master_module_bar"),
     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1880,24 +1926,26 @@ private fun NexusMasterModulePill(
   testTag: String,
   onClick: () -> Unit,
 ) {
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   Box(
     modifier =
-      Modifier.clip(RoundedCornerShape(8.dp))
-        .background(if (selected) accentColor.copy(alpha = 0.24f) else Color(0xAA0B1528))
+      Modifier.shadow(2.dp, RoundedCornerShape(8.dp))
+        .clip(RoundedCornerShape(8.dp))
+        .background(if (selected) accentColor.copy(alpha = 0.24f) else Color(0xCC0B1528))
         .border(
-          width = if (selected) 1.3.dp else 0.9.dp,
-          color = if (selected) accentColor else accentColor.copy(alpha = 0.45f),
+          width = if (selected) 1.3.dp else 1.dp,
+          color = if (selected) accentColor else accentColor.copy(alpha = 0.5f),
           shape = RoundedCornerShape(8.dp),
         )
         .clickable { onClick() }
-        .padding(horizontal = 10.dp, vertical = 5.dp)
+        .padding(horizontal = if (isCompactPhone) 8.dp else 10.dp, vertical = if (isCompactPhone) 3.dp else 5.dp)
         .testTag(testTag),
     contentAlignment = Alignment.Center,
   ) {
     Text(
       text = label,
       color = if (selected) Color.White else accentColor,
-      fontSize = 9.sp,
+      fontSize = if (isCompactPhone) 8.5.sp else 9.sp,
       fontWeight = FontWeight.Black,
       fontFamily = FontFamily.Monospace,
       maxLines = 1,
@@ -2427,6 +2475,8 @@ private fun RankedModeDeploymentCard(
             fontSize = 10.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
           Box(
             modifier =
@@ -2440,6 +2490,7 @@ private fun RankedModeDeploymentCard(
               fontSize = 7.5.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
+              maxLines = 1,
             )
           }
         }
@@ -2458,6 +2509,7 @@ private fun RankedModeDeploymentCard(
             fontSize = 8.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
+            maxLines = 1,
           )
         }
       }
@@ -2618,11 +2670,12 @@ private fun RankedModeDeploymentCard(
               disabledContainerColor = Color(0x551E293B),
               disabledContentColor = Color(0xFF64748B),
             ),
-          border = BorderStroke(1.dp, if (isSyndicateWarsLocked) Color(0xFF475569) else modeAccent),
+          border = BorderStroke(1.2.dp, if (isSyndicateWarsLocked) Color(0xFF475569) else modeAccent),
           shape = RoundedCornerShape(8.dp),
           contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
           modifier =
             Modifier.height(30.dp)
+              .shadow(2.dp, RoundedCornerShape(8.dp))
               .testTag("nexus_deploy_${mode.id}"),
         ) {
           Text(
@@ -2633,6 +2686,7 @@ private fun RankedModeDeploymentCard(
             fontSize = 8.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
+            maxLines = 1,
           )
         }
       }
@@ -3211,11 +3265,11 @@ private fun SyndicateChannelManagerCard(
         Box(
           modifier =
             Modifier.weight(1f)
-              .height(30.dp)
-              .clip(RoundedCornerShape(6.dp))
-              .background(Color(0xFF060D1A))
-              .border(1.dp, Color(0x66F59E0B), RoundedCornerShape(6.dp))
-              .padding(horizontal = 8.dp),
+              .height(34.dp)
+              .clip(RoundedCornerShape(8.dp))
+              .background(Color(0xFF050B14))
+              .border(1.dp, Color(0x66F59E0B), RoundedCornerShape(8.dp))
+              .padding(horizontal = 10.dp),
           contentAlignment = Alignment.CenterStart,
         ) {
           if (newChannelDraft.isEmpty()) {
@@ -3236,8 +3290,10 @@ private fun SyndicateChannelManagerCard(
         }
         Button(
           onClick = onAddChannel,
+          border = BorderStroke(1.2.dp, Color(0xFFF59E0B)),
+          shape = RoundedCornerShape(8.dp),
           contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-          modifier = Modifier.height(30.dp),
+          modifier = Modifier.height(34.dp).shadow(2.dp, RoundedCornerShape(8.dp)),
         ) {
           Text("ADD", fontSize = 8.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
         }
@@ -3318,11 +3374,11 @@ private fun SyndicateGuestPassManagerCard(
       Box(
         modifier =
           Modifier.weight(1f)
-            .height(30.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF060D1A))
-            .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp),
+            .height(34.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF050B14))
+            .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp),
         contentAlignment = Alignment.CenterStart,
       ) {
         if (guestDraft.isEmpty()) {
@@ -3343,8 +3399,10 @@ private fun SyndicateGuestPassManagerCard(
       }
       Button(
         onClick = onInvite,
+        border = BorderStroke(1.2.dp, Color(0xFF38BDF8)),
+        shape = RoundedCornerShape(8.dp),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-        modifier = Modifier.height(30.dp),
+        modifier = Modifier.height(34.dp).shadow(2.dp, RoundedCornerShape(8.dp)),
       ) {
         Text("INVITE", fontSize = 8.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
       }
@@ -3643,6 +3701,7 @@ private fun ChannelInputComposer(
   onValueChange: (String) -> Unit,
   onSend: () -> Unit,
 ) {
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   Row(
     modifier = Modifier.fillMaxWidth(),
     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -3651,10 +3710,10 @@ private fun ChannelInputComposer(
     Box(
       modifier =
         Modifier.weight(1f)
-          .height(36.dp)
+          .height(if (isCompactPhone) 34.dp else 38.dp)
           .clip(RoundedCornerShape(8.dp))
-          .background(Color(0xCC091324))
-          .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(8.dp))
+          .background(Color(0xFF050B14))
+          .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
           .padding(horizontal = 10.dp),
       contentAlignment = Alignment.CenterStart,
     ) {
@@ -3681,8 +3740,12 @@ private fun ChannelInputComposer(
     Button(
       onClick = onSend,
       enabled = value.isNotBlank(),
+      border = BorderStroke(1.2.dp, Color(0xFF00F5D4)),
+      shape = RoundedCornerShape(8.dp),
       contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-      modifier = Modifier.height(36.dp),
+      modifier =
+        Modifier.height(if (isCompactPhone) 34.dp else 38.dp)
+          .shadow(2.dp, RoundedCornerShape(8.dp)),
     ) {
       Text("SEND ➢", fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
     }

@@ -1439,7 +1439,7 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_CUSTOM_FRIENDS_JSON = "custom_friends_json"
     private const val KEY_SHIP_ID = "preferred_ship_id"
     private const val KEY_MODE = "preferred_mode"
-    private const val KEY_BOOT_TO_NEXUS_HUB = "boot_to_nexus_hub"
+    private const val KEY_BOOT_TO_NEXUS_HUB = "boot_to_nexus_hub_v30"
     private const val KEY_MUSIC_ENABLED = "music_enabled"
     private const val KEY_SYNDICATE_CHANNELS_PREFIX = "syndicate_custom_channels_"
     private const val KEY_SYNDICATE_GUESTS_PREFIX = "syndicate_invited_guests_"

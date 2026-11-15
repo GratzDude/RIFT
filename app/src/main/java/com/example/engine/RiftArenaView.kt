@@ -769,6 +769,16 @@ class RiftArenaView(
             darkVoidCenter = false,
             inwardSpiral = false,
           )
+          drawWorldOverheadBanner(
+            canvas = canvas,
+            text = "🔥 PLASMA RIFT • ${anom.life.toInt()}s",
+            worldX = anom.x,
+            worldY = anom.y - r - 18f,
+            fillColor = Color.parseColor("#FB7185"),
+            worldScale = worldScale,
+            sizeMultiplier = 1.15f,
+            alpha = baseAlphaInt,
+          )
         }
 
         AnomalyType.REPULSOR_RIFT -> {
@@ -784,6 +794,16 @@ class RiftArenaView(
             coreColor = Color.rgb(255, 255, 255),
             darkVoidCenter = false,
             inwardSpiral = false,
+          )
+          drawWorldOverheadBanner(
+            canvas = canvas,
+            text = "🛡️ REPULSOR RIFT • ${anom.life.toInt()}s",
+            worldX = anom.x,
+            worldY = anom.y - r - 18f,
+            fillColor = Color.parseColor("#38BDF8"),
+            worldScale = worldScale,
+            sizeMultiplier = 1.15f,
+            alpha = baseAlphaInt,
           )
         }
 
@@ -801,15 +821,29 @@ class RiftArenaView(
             darkVoidCenter = true,
             inwardSpiral = true,
           )
+          val safeScale = worldScale.coerceAtLeast(0.15f)
+          val baseOffset = 18f / safeScale
+          drawWorldOverheadBanner(
+            canvas = canvas,
+            text = "🌀 GRAVITY RIFT • ${anom.life.toInt()}s",
+            worldX = anom.x,
+            worldY = anom.y - r - baseOffset,
+            fillColor = Color.parseColor("#C084FC"),
+            worldScale = worldScale,
+            sizeMultiplier = 1.15f,
+            alpha = baseAlphaInt,
+          )
           if (anom.absorbedWeaponCount > 0) {
-            popupPaint.color = Color.argb(baseAlphaInt, 216, 180, 254)
-            popupPaint.textSize = 13.5f
             val growthPct = ((anom.physicalRadius / RiftCalibrationState.riftPhysicalRadius.coerceAtLeast(120f)) * 100f).toInt()
-            canvas.drawText(
-              "⚫ MASS ${growthPct}% (+${anom.absorbedWeaponCount} ABSORBED)",
-              anom.x,
-              anom.y - r - 14f,
-              popupPaint,
+            drawWorldOverheadBanner(
+              canvas = canvas,
+              text = "⚫ MASS ${growthPct}% (+${anom.absorbedWeaponCount} ABSORBED)",
+              worldX = anom.x,
+              worldY = anom.y - r - baseOffset - (22f / safeScale),
+              fillColor = Color.parseColor("#E9D5FF"),
+              worldScale = worldScale,
+              sizeMultiplier = 1.05f,
+              alpha = baseAlphaInt,
             )
           }
         }
@@ -830,6 +864,16 @@ class RiftArenaView(
             coreColor = Color.rgb(240, 253, 250),
             darkVoidCenter = true,
             inwardSpiral = false,
+          )
+          drawWorldOverheadBanner(
+            canvas = canvas,
+            text = "🌌 PHASE RIFT ${if (isNodeA) "A" else "B"} • ${anom.life.toInt()}s",
+            worldX = anom.x,
+            worldY = anom.y - r * 0.85f - 18f,
+            fillColor = Color.parseColor("#2DD4BF"),
+            worldScale = worldScale,
+            sizeMultiplier = 1.15f,
+            alpha = baseAlphaInt,
           )
         }
       }
@@ -959,16 +1003,17 @@ class RiftArenaView(
         canvas.drawCircle(nx, ny, 5.2f, anomalyCorePaint)
       }
 
-      popupPaint.color = Color.parseColor("#F472B6")
-      popupPaint.alpha = (230 * fadeAlpha).toInt().coerceIn(0, 255)
-      popupPaint.textSize = 15f
-      canvas.drawText(
-        "STASIS DOME • ${String.format(java.util.Locale.US, "%.1fs", ib.life)}",
-        ib.x,
-        ib.y - r - 10f,
-        popupPaint,
+      val safeScale = worldScale.coerceAtLeast(0.15f)
+      drawWorldOverheadBanner(
+        canvas = canvas,
+        text = "🌐 STASIS BUBBLE • ${String.format(java.util.Locale.US, "%.1fs", ib.life)}",
+        worldX = ib.x,
+        worldY = ib.y - r - (16f / safeScale),
+        fillColor = Color.parseColor("#F472B6"),
+        worldScale = worldScale,
+        sizeMultiplier = 1.20f,
+        alpha = (240 * fadeAlpha).toInt().coerceIn(0, 255),
       )
-      popupPaint.alpha = 255
     }
 
     // 8. Distinct Per-Ship Primary Projectiles (scaled by engine.getEffectiveProjectileScale())
@@ -1433,13 +1478,14 @@ class RiftArenaView(
         bombRingPaint.strokeWidth = 2.2f
         bombRingPaint.color = Color.argb(200, 34, 211, 238)
         canvas.drawCircle(s.x, s.y, ringR + 7f, bombRingPaint)
-        popupPaint.color = Color.parseColor("#FACC15")
-        popupPaint.textSize = 14.5f * RiftCalibrationState.shipScale
-        canvas.drawText(
-          "⚡ FLUX CORE TIER $tier/10",
-          s.x,
-          s.y - ringR - 14f,
-          popupPaint,
+        drawWorldOverheadBanner(
+          canvas = canvas,
+          text = "FLUX CORE TIER $tier/10",
+          worldX = s.x,
+          worldY = s.y - ringR - 16f,
+          fillColor = Color.parseColor("#FACC15"),
+          worldScale = worldScale,
+          sizeMultiplier = 1.18f,
         )
       }
       if (engine.isStasisBreachRulesActive() && s.isInStasisBrig) {
@@ -1805,13 +1851,15 @@ class RiftArenaView(
         canvas.drawCircle(nx, ny, 3.2f, anomalyCorePaint)
       }
 
-      popupPaint.color = borderCol
-      popupPaint.textSize = 17.5f
-      canvas.drawText(
-        "🔒 $labelPrefix STASIS RIFT JAIL • $capturedCount/10 CAPTURED",
-        reactorX,
-        reactorY - jailR - 18f,
-        popupPaint,
+      val curWorldScale = engine.effectiveCameraScale()
+      drawWorldOverheadBanner(
+        canvas = canvas,
+        text = "🔒 $labelPrefix STASIS RIFT JAIL • $capturedCount/10 CAPTURED",
+        worldX = reactorX,
+        worldY = reactorY - jailR - 20f,
+        fillColor = borderCol,
+        worldScale = curWorldScale,
+        sizeMultiplier = 1.20f,
       )
 
       // 5. Center 40,000⚡ 3D Stasis Singularity Core (coreR = 54f) with HP Bar & Breakout Instructions
@@ -1845,13 +1893,14 @@ class RiftArenaView(
         else Color.parseColor("#EF4444")
       canvas.drawRoundRect(arcRect, 5f, 5f, hudCircleFillPaint)
 
-      popupPaint.color = Color.parseColor("#FACC15")
-      popupPaint.textSize = 13.8f
-      canvas.drawText(
-        "STASIS RIFT CORE: ${reactorHp.toInt()}⚡ / ${maxReactorHp.toInt()}⚡ (SHOOT TO BREAK OUT)",
-        reactorX,
-        barTop - 8f,
-        popupPaint,
+      drawWorldOverheadBanner(
+        canvas = canvas,
+        text = "STASIS RIFT CORE: ${reactorHp.toInt()}⚡ / ${maxReactorHp.toInt()}⚡ (SHOOT TO BREAK OUT)",
+        worldX = reactorX,
+        worldY = barTop - 10f,
+        fillColor = Color.parseColor("#FACC15"),
+        worldScale = curWorldScale,
+        sizeMultiplier = 1.08f,
       )
     }
 
@@ -1996,19 +2045,33 @@ class RiftArenaView(
           controlSec > 0.2f -> "🎯 $zoneTitle • EAST CAPTURING $pct% (${abs(controlSec).toInt()}s / 30s)"
           else -> "🎯 $zoneTitle • OPEN OBJECTIVE (FLY INSIDE RING TO CAPTURE)"
         }
-      popupPaint.color =
+      val statusCol =
         when {
           isContested -> Color.parseColor("#FACC15")
           lockedBy != -1 -> Color.parseColor("#FACC15")
           else -> primaryColor
         }
-      popupPaint.textSize = 17.5f
-      canvas.drawText(statusText, cx, cy - zoneR - 18f, popupPaint)
+      val curWorldScale = engine.effectiveCameraScale()
+      drawWorldOverheadBanner(
+        canvas = canvas,
+        text = statusText,
+        worldX = cx,
+        worldY = cy - zoneR - 20f,
+        fillColor = statusCol,
+        worldScale = curWorldScale,
+        sizeMultiplier = 1.20f,
+      )
 
       // 7. Live Ship Count Sub-Label below Center 3D Rift Beacon
-      popupPaint.color = Color.parseColor("#E2E8F0")
-      popupPaint.textSize = 14.0f
-      canvas.drawText("WEST: $westCount  |  EAST: $eastCount", cx, cy + beaconR + 24f, popupPaint)
+      drawWorldOverheadBanner(
+        canvas = canvas,
+        text = "WEST: $westCount  |  EAST: $eastCount",
+        worldX = cx,
+        worldY = cy + beaconR + 28f,
+        fillColor = Color.parseColor("#E2E8F0"),
+        worldScale = curWorldScale,
+        sizeMultiplier = 1.05f,
+      )
     }
 
     drawSingleControlZone(
@@ -2219,15 +2282,55 @@ class RiftArenaView(
     anomalyCorePaint.color = Color.WHITE
     canvas.drawCircle(orb.x, orb.y, r * 0.34f, anomalyCorePaint)
 
-    popupPaint.color = Color.parseColor("#FACC15")
-    popupPaint.textSize = 15.5f
     val statusLbl =
       if (orb.ejectDecelTimerSec > 0f) {
-        "⚡ FLUX CORE EJECTED (${orb.ejectDecelTimerSec.toInt()}s)"
+        "FLUX CORE EJECTED (${orb.ejectDecelTimerSec.toInt()}s)"
       } else {
-        "⚡ FLUX CORE SINGULARITY (+15 BOUNTY/S)"
+        "FLUX CORE SINGULARITY (+15 BOUNTY/S)"
       }
-    canvas.drawText(statusLbl, orb.x, orb.y - r - 16f, popupPaint)
+    drawWorldOverheadBanner(
+      canvas = canvas,
+      text = statusLbl,
+      worldX = orb.x,
+      worldY = orb.y - r - 18f,
+      fillColor = Color.parseColor("#FACC15"),
+      worldScale = engine.effectiveCameraScale(),
+      sizeMultiplier = 1.18f,
+    )
+  }
+
+  /**
+   * Renders enlarged, zoom-compensated world overhead text banners above Playfield Rifts,
+   * Stasis Bubbles, Flux Core Carriers, Rift Control Zones, and Stasis Breach Jails.
+   */
+  private fun drawWorldOverheadBanner(
+    canvas: Canvas,
+    text: String,
+    worldX: Float,
+    worldY: Float,
+    fillColor: Int,
+    worldScale: Float,
+    sizeMultiplier: Float = 1.0f,
+    alpha: Int = 255,
+  ) {
+    val safeScale = worldScale.coerceAtLeast(0.15f)
+    val baseTextScale = engine.playfieldTextScale * RiftCalibrationState.labelTextScale
+    val effectiveSizePx =
+      (RiftCalibrationState.nametagFontSizePx * 0.68f * dpDensity * baseTextScale * sizeMultiplier) / safeScale
+    val clampedAlpha = alpha.coerceIn(0, 255)
+
+    shipLabelStrokePaint.strokeWidth = (2.4f * dpDensity * baseTextScale) / safeScale
+    shipLabelStrokePaint.textSize = effectiveSizePx
+    shipLabelStrokePaint.alpha = clampedAlpha
+    shipLabelStrokePaint.textAlign = Paint.Align.CENTER
+
+    shipLabelFillPaint.textSize = effectiveSizePx
+    shipLabelFillPaint.color = fillColor
+    shipLabelFillPaint.alpha = clampedAlpha
+    shipLabelFillPaint.textAlign = Paint.Align.CENTER
+
+    canvas.drawText(text, worldX, worldY, shipLabelStrokePaint)
+    canvas.drawText(text, worldX, worldY, shipLabelFillPaint)
   }
 
   private fun drawRankedModeScreenOverlay(
@@ -2458,6 +2561,21 @@ class RiftArenaView(
     canvas.drawCircle(lx, ly, effLeftR * 0.80f, hudCircleStrokePaint)
     hudCircleStrokePaint.strokeWidth = 2.6f
 
+    // 70-Degree Directional Thrust Arc along the outer rim when Left Stick is deflected (leftStickMag > 0.08f)
+    if (engine.leftStickMag > 0.08f && !unlocked) {
+      arcRect.set(lx - effLeftR, ly - effLeftR, lx + effLeftR, ly + effLeftR)
+      hudCircleStrokePaint.strokeWidth = 3.5f * dpDensity
+      hudCircleStrokePaint.color =
+        if (p.afterburning) {
+          Color.parseColor("#F59E0B")
+        } else {
+          Color.parseColor("#00F5D4")
+        }
+      val centerDeg = (engine.leftStickAngle * 180f / PI.toFloat())
+      canvas.drawArc(arcRect, centerDeg - 35f, 70f, false, hudCircleStrokePaint)
+      hudCircleStrokePaint.strokeWidth = 2.6f
+    }
+
     val knobR = effLeftR * 0.42f
     hudCircleFillPaint.color =
       if (p.afterburning) {
@@ -2609,27 +2727,66 @@ class RiftArenaView(
         }
       val bombAvailable =
         (p.canFire && p.bombTimer <= 0f && hasEnoughFluxForSecondary) || unlocked
-      val bombAlpha = if (bombAvailable) 255 else 110
-      hudCircleFillPaint.color =
-        if (engine.isBombCancelActive) {
-          Color.argb(195, 127, 29, 29)
-        } else if (p.isCloaked && p.spec.bombType == "CLOAK_EMP") {
-          Color.argb(215, 109, 40, 217)
-        } else if (engine.bombStickActive && bombAvailable) {
-          Color.argb(215, 245, 158, 11)
-        } else {
-          Color.argb(if (bombAvailable) 155 else 85, 95, 62, 8)
-        }
-      canvas.drawCircle(bX, bY, bR, hudCircleFillPaint)
-      hudCircleStrokePaint.color =
+      val bombAlpha = if (bombAvailable) 255 else 115
+      val strokeCol =
         when {
           engine.isBombCancelActive -> Color.parseColor("#EF4444")
-          p.spec.bombType == "PHASE_DASH" -> Color.argb(bombAlpha, 56, 189, 248)
-          p.spec.bombType == "CLOAK_EMP" -> Color.argb(bombAlpha, 179, 136, 255)
-          p.spec.bombType == "INTERDICTOR_DOME" -> Color.argb(bombAlpha, 236, 72, 153)
-          else -> Color.argb(bombAlpha, 245, 158, 11)
+          p.spec.bombType == "PHASE_DASH" -> Color.parseColor("#38BDF8")
+          p.spec.bombType == "CLOAK_EMP" -> Color.parseColor("#B388FF")
+          p.spec.bombType == "INTERDICTOR_DOME" -> Color.parseColor("#EC4899")
+          else -> Color.parseColor("#F59E0B")
         }
+      val fillCol =
+        when {
+          engine.isBombCancelActive -> Color.rgb(127, 29, 29)
+          p.isCloaked && p.spec.bombType == "CLOAK_EMP" -> Color.rgb(109, 40, 217)
+          p.spec.bombType == "PHASE_DASH" -> Color.rgb(12, 74, 110)
+          p.spec.bombType == "CLOAK_EMP" -> Color.rgb(76, 29, 149)
+          p.spec.bombType == "INTERDICTOR_DOME" -> Color.rgb(131, 24, 67)
+          else -> Color.rgb(113, 63, 18)
+        }
+      val sR = Color.red(strokeCol)
+      val sG = Color.green(strokeCol)
+      val sB = Color.blue(strokeCol)
+
+      // 1. Unified 3-Ring Tactile Cockpit Button Housing
+      // Outer Ring 1: Dark-obsidian 3D bezel ring (bR * 1.06f) with 4 cardinal ticks
+      hudCircleFillPaint.color = Color.argb(if (bombAvailable) 230 else 150, 7, 15, 30)
+      canvas.drawCircle(bX, bY, bR * 1.06f, hudCircleFillPaint)
+      hudCircleStrokePaint.strokeWidth = 2.4f * dpDensity * arcScale
+      hudCircleStrokePaint.color = Color.argb(bombAlpha, sR, sG, sB)
       canvas.drawCircle(bX, bY, bR, hudCircleStrokePaint)
+      hudCircleStrokePaint.strokeWidth = 1.4f * dpDensity * arcScale
+      for (tick in 0 until 4) {
+        val ta = tick * (PI.toFloat() * 0.5f)
+        canvas.drawLine(
+          bX + cos(ta) * (bR * 0.90f),
+          bY + sin(ta) * (bR * 0.90f),
+          bX + cos(ta) * (bR * 1.04f),
+          bY + sin(ta) * (bR * 1.04f),
+          hudCircleStrokePaint,
+        )
+      }
+
+      // Inner Ring 2: Recessed tech ring (bR * 0.88f)
+      hudCircleFillPaint.color =
+        Color.argb(
+          if (engine.bombStickActive && bombAvailable) 220 else if (bombAvailable) 175 else 75,
+          Color.red(fillCol),
+          Color.green(fillCol),
+          Color.blue(fillCol),
+        )
+      canvas.drawCircle(bX, bY, bR * 0.88f, hudCircleFillPaint)
+      hudCircleStrokePaint.strokeWidth = 1.1f * dpDensity * arcScale
+      hudCircleStrokePaint.color = Color.argb((bombAlpha * 0.65f).toInt(), 255, 255, 255)
+      canvas.drawCircle(bX, bY, bR * 0.84f, hudCircleStrokePaint)
+
+      // Inner Ring 3: Top specular highlight arc
+      arcRect.set(bX - bR * 0.78f, bY - bR * 0.78f, bX + bR * 0.78f, bY + bR * 0.78f)
+      hudCircleStrokePaint.strokeWidth = 1.6f * dpDensity * arcScale
+      hudCircleStrokePaint.color = Color.argb((bombAlpha * 0.50f).toInt(), 255, 255, 255)
+      canvas.drawArc(arcRect, 205f, 130f, false, hudCircleStrokePaint)
+      hudCircleStrokePaint.strokeWidth = 2.6f
 
       val activeMineCount =
         if (p.spec.bombType == "MINE") {
@@ -2659,16 +2816,45 @@ class RiftArenaView(
           p.bombTimer > 0.1f -> String.format(java.util.Locale.US, "%.1fs", p.bombTimer)
           isCloakToggleReady -> "${RiftCalibrationState.cloakDrainPerSec.toInt()}⚡/S"
           isCloakEmpPulseReady -> "0⚡ EMP"
-          p.spec.bombType == "INTERDICTOR_DOME" -> "${bombCost.toInt()}⚡ • ${p.spec.bombCooldown.toInt()}s"
+          p.spec.bombType == "INTERDICTOR_DOME" -> "${bombCost.toInt()}⚡ • ${RiftCalibrationState.interdictorBubbleDuration.toInt()}s"
           p.spec.bombType == "MINE" -> "${bombCost.toInt()}⚡ • $activeMineCount/6"
           else -> "${bombCost.toInt()}⚡"
         }
+
+      // Upper Center Bold Title
       hudLabelPaint.textSize = (if (bLabel.length >= 9) 7.4f else 8.8f) * dpDensity * arcScale
       hudLabelPaint.color = Color.argb(bombAlpha, 255, 255, 255)
-      canvas.drawText(bLabel, bX, bY - 1.2f * dpDensity * arcScale, hudLabelPaint)
-      hudLabelPaint.textSize = 7.6f * dpDensity * arcScale
+      canvas.drawText(bLabel, bX, bY - 1.8f * dpDensity * arcScale, hudLabelPaint)
+
+      // Docked Bottom Pill Badge with Custom Flux Crystal Icon inline next to bSub
+      val pillW = bR * 1.86f
+      val pillH = 14.5f * dpDensity * arcScale
+      val pillTop = bY + bR * 0.34f
+      arcRect.set(bX - pillW * 0.5f, pillTop, bX + pillW * 0.5f, pillTop + pillH)
+      hudCircleFillPaint.color = Color.argb(if (bombAvailable) 235 else 175, 4, 10, 22)
+      canvas.drawRoundRect(arcRect, 6f * dpDensity, 6f * dpDensity, hudCircleFillPaint)
+      hudCircleStrokePaint.strokeWidth = 1.2f * dpDensity * arcScale
+      hudCircleStrokePaint.color = Color.argb(bombAlpha, sR, sG, sB)
+      canvas.drawRoundRect(arcRect, 6f * dpDensity, 6f * dpDensity, hudCircleStrokePaint)
+      hudCircleStrokePaint.strokeWidth = 2.6f
+
+      val iconSize = 10.5f * dpDensity * arcScale
+      hudLabelPaint.textSize = 7.4f * dpDensity * arcScale
       hudLabelPaint.color = Color.argb(bombAlpha, 253, 224, 71)
-      canvas.drawText(bSub, bX, bY + 9.2f * dpDensity * arcScale, hudLabelPaint)
+      val textW = hudLabelPaint.measureText(bSub)
+      val totalContentW = iconSize + 2.5f * dpDensity * arcScale + textW
+      val startX = bX - totalContentW * 0.5f
+      val iconTop = pillTop + (pillH - iconSize) * 0.5f
+      nebulaDstRect.set(startX, iconTop, startX + iconSize, iconTop + iconSize)
+      buffGlowPaint.alpha = bombAlpha
+      canvas.drawBitmap(RiftSpriteBaker.fluxIconBitmap, null, nebulaDstRect, buffGlowPaint)
+      buffGlowPaint.alpha = 255
+      canvas.drawText(
+        bSub,
+        startX + iconSize + 2.5f * dpDensity * arcScale + textW * 0.5f,
+        pillTop + pillH * 0.74f,
+        hudLabelPaint,
+      )
 
       if (unlocked) {
         canvas.drawCircle(bX, bY, bR, unlockDashPaint)
