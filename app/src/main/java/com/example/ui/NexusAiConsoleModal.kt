@@ -386,10 +386,11 @@ fun NexusAiConsoleModal(
   onResolvePilotBestShipId: (uid: String, fallbackShipId: Int) -> Int = { _, fb -> fb },
   activeRankedMode: RankedGameMode = RankedGameMode.SECTOR_CONVERGENCE,
   activeTeamSizeBracket: Int = 3,
-  humanPilotCountByMode: (RankedGameMode) -> Int = { 1 },
+  humanPilotCountByMode: (RankedGameMode) -> Int = { 0 },
   canQueueSyndicateWars: Pair<Boolean, String> = Pair(false, "Requires enlisted Syndicate"),
   syndicateWarRecord: SyndicateWarRecord = SyndicateWarRecord(tag = "GUEST"),
   onDeployToRankedMode: (RankedGameMode, Int) -> Unit = { _, _ -> },
+  onLeaveMatch: () -> Unit = {},
   onOpenArmadaModal: () -> Unit = {},
   onQuickFormSyndicateArmada: () -> Unit = {},
   onOpenSyndicatesModal: () -> Unit = {},
@@ -712,14 +713,45 @@ fun NexusAiConsoleModal(
               }
             }
 
+            val isInMatch = engine?.hasJoinedMatch == true
+            if (isInMatch) {
+              Button(
+                onClick = onLeaveMatch,
+                colors =
+                  ButtonDefaults.buttonColors(
+                    containerColor = Color(0xCC2A151B),
+                    contentColor = Color(0xFFFB7185),
+                  ),
+                border = BorderStroke(1.2.dp, Color(0xFFFB7185)),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                modifier =
+                  Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
+                    .shadow(2.dp, RoundedCornerShape(8.dp))
+                    .testTag("nexus_leave_match_button"),
+              ) {
+                Text(
+                  text = if (isCompactPhone) "⏹ LEAVE" else "⏹ LEAVE MATCH",
+                  fontSize = 8.8.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                )
+              }
+            }
+
             Button(
               onClick = onCloseModal,
               colors =
                 ButtonDefaults.buttonColors(
-                  containerColor = Color(0xCC28111B),
-                  contentColor = Color(0xFFFF3B4E),
+                  containerColor = if (isInMatch) Color(0xCC0D2538) else Color(0xCC0B1C2C),
+                  contentColor = if (isInMatch) Color(0xFF00F5D4) else Color(0xFF38BDF8),
                 ),
-              border = BorderStroke(1.2.dp, Color(0xFFFF3B4E)),
+              border =
+                BorderStroke(
+                  1.2.dp,
+                  if (isInMatch) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+                ),
               shape = RoundedCornerShape(8.dp),
               contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
               modifier =
@@ -728,7 +760,13 @@ fun NexusAiConsoleModal(
                   .testTag("nexus_close_button"),
             ) {
               Text(
-                text = "✕ RETURN TO ARENA",
+                text =
+                  when {
+                    !isInMatch && isCompactPhone -> "👁️ ORBIT"
+                    !isInMatch -> "👁️ VIEW ORBIT"
+                    isCompactPhone -> "✕ ARENA"
+                    else -> "✕ RETURN TO ARENA"
+                  },
                 fontSize = 9.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.Monospace,
@@ -785,9 +823,18 @@ fun NexusAiConsoleModal(
             )
           }
 
+          val activeCustomTitle = engine?.currentCustomGame?.title
           Text(
-            text = "ACTIVE MODE: ${activeRankedMode.title.uppercase()} • HULL: $activeShipSummary",
-            color = Color(0xFF38BDF8),
+            text =
+              when {
+                engine?.hasJoinedMatch != true ->
+                  "🛰️ ORBITING NEXUS — NOT IN A MATCH • HULL: $activeShipSummary"
+                activeCustomTitle != null ->
+                  "ACTIVE CUSTOM: ${activeCustomTitle.uppercase()} • HULL: $activeShipSummary"
+                else ->
+                  "ACTIVE MATCH: ${activeRankedMode.title.uppercase()} • HULL: $activeShipSummary"
+              },
+            color = if (engine?.hasJoinedMatch == true) Color(0xFF00F5D4) else Color(0xFF94A3B8),
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
@@ -1536,8 +1583,11 @@ fun NexusAiConsoleModal(
                   ) {
                     rowModes.forEach { mode ->
                       Box(modifier = Modifier.weight(1f)) {
-                        val humanCount = humanPilotCountByMode(mode).coerceAtLeast(1)
-                        val isCurrentMode = activeRankedMode == mode && engine?.currentCustomGame == null
+                        val humanCount = humanPilotCountByMode(mode).coerceAtLeast(0)
+                        val isCurrentMode =
+                          engine?.hasJoinedMatch == true &&
+                            activeRankedMode == mode &&
+                            engine.currentCustomGame == null
                         val bracketForMode =
                           when (mode) {
                             RankedGameMode.RIFT_SKIRMISH -> skirmishBracket
@@ -1644,8 +1694,11 @@ fun NexusAiConsoleModal(
               )
 
               RankedGameMode.entries.forEach { mode ->
-                val humanCount = humanPilotCountByMode(mode).coerceAtLeast(1)
-                val isCurrentMode = activeRankedMode == mode && engine?.currentCustomGame == null
+                val humanCount = humanPilotCountByMode(mode).coerceAtLeast(0)
+                val isCurrentMode =
+                  engine?.hasJoinedMatch == true &&
+                    activeRankedMode == mode &&
+                    engine.currentCustomGame == null
                 val bracketForMode =
                   when (mode) {
                     RankedGameMode.RIFT_SKIRMISH -> skirmishBracket
@@ -2495,17 +2548,24 @@ private fun RankedModeDeploymentCard(
           }
         }
 
-        // Strict Human-Only Pilot Counter Badge
+        // Strict Real-Human Pilot Counter Badge (0 when no humans are in this match)
+        val hasActiveHumans = humanPilotsActive > 0
         Box(
           modifier =
             Modifier.clip(RoundedCornerShape(6.dp))
-              .background(Color(0xFF06281E))
-              .border(1.dp, Color(0xFF10B981), RoundedCornerShape(6.dp))
+              .background(if (hasActiveHumans) Color(0xFF06281E) else Color(0xFF0F172A))
+              .border(
+                1.dp,
+                if (hasActiveHumans) Color(0xFF10B981) else Color(0xFF334155),
+                RoundedCornerShape(6.dp),
+              )
               .padding(horizontal = 6.dp, vertical = 2.dp)
         ) {
           Text(
-            text = "🔥 $humanPilotsActive PILOTS ACTIVE",
-            color = Color(0xFF34D399),
+            text =
+              if (hasActiveHumans) "🔥 $humanPilotsActive PILOTS IN MATCH"
+              else "0 PILOTS IN MATCH",
+            color = if (hasActiveHumans) Color(0xFF34D399) else Color(0xFF94A3B8),
             fontSize = 8.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
@@ -2906,7 +2966,7 @@ private fun RankedModeDeploymentCard(
       }
 
       // Active Custom Game Status Banner
-      if (activeCustomGame != null) {
+      if (activeCustomGame != null && engine?.hasJoinedMatch == true) {
         Row(
           modifier =
             Modifier.fillMaxWidth()
@@ -3084,7 +3144,8 @@ private fun RankedModeDeploymentCard(
 
       // Active Custom Games Browser List
       customGamesList.forEach { game ->
-        val isJoined = activeCustomGame?.instanceId == game.instanceId
+        val isJoined = engine?.hasJoinedMatch == true && activeCustomGame?.instanceId == game.instanceId
+        val customHumanCount = engine?.getHumanPilotCountForCustomGame(game.instanceId) ?: 0
         val timerLabel = if (game.matchDurationMinutes == 0) "∞" else "${game.matchDurationMinutes}m"
         Row(
           modifier =
@@ -3101,13 +3162,25 @@ private fun RankedModeDeploymentCard(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-              text = "🧪 ${game.title.uppercase()}",
-              color = if (isJoined) Color(0xFF00F5D4) else Color.White,
-              fontSize = 8.8.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
+            Row(
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                text = "🧪 ${game.title.uppercase()}",
+                color = if (isJoined) Color(0xFF00F5D4) else Color.White,
+                fontSize = 8.8.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+              Text(
+                text = "• $customHumanCount PILOTS IN MATCH",
+                color = if (customHumanCount > 0) Color(0xFF34D399) else Color(0xFF94A3B8),
+                fontSize = 7.8.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
             Text(
               text = "${game.baseMode.title} • Host: ${game.hostCallsign} • Timer: $timerLabel • Bots: ${if (game.botsEnabled) "ON" else "OFF"} • Bullets: ${game.bulletSizeMult}x • Speed: ${game.speedMult}x",
               color = Color(0xFF94A3B8),

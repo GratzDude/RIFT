@@ -1159,7 +1159,7 @@ private fun CircularRadarMinimap(
       val drawSize = playfieldRadius * 2f
       val ox = center.x - playfieldRadius + panOffsetX
       val oy = center.y - playfieldRadius + panOffsetY
-      val scale = drawSize / RiftGameEngine.WORLD_SIZE
+      val radarScale = playfieldRadius / engine.arenaRadius.coerceAtLeast(1000f)
 
       fun clampToRadar(rawX: Float, rawY: Float): Offset {
         val dx = rawX - center.x
@@ -1172,6 +1172,12 @@ private fun CircularRadarMinimap(
           Offset(center.x + dx * ratio, center.y + dy * ratio)
         }
       }
+
+      fun worldToRadar(wx: Float, wy: Float): Offset =
+        clampToRadar(
+          center.x + panOffsetX + (wx - engine.arenaCenterX) * radarScale,
+          center.y + panOffsetY + (wy - engine.arenaCenterY) * radarScale,
+        )
 
       // Draw circular playfield background and clipped world map strictly inside playfieldRadius
       drawCircle(
@@ -1196,7 +1202,7 @@ private fun CircularRadarMinimap(
             image = radarBmp,
             dstOffset = IntOffset(ox.toInt(), oy.toInt()),
             dstSize = IntSize(drawSize.toInt(), drawSize.toInt()),
-            alpha = 0.58f,
+            alpha = 0.62f,
           )
         }
 
@@ -1216,9 +1222,9 @@ private fun CircularRadarMinimap(
         style = Stroke(width = 1.1.dp.toPx()),
       )
 
-      // Discreet Micro-Markers for Supply Crates (strictly clamped inside playfieldRadius)
+      // Discreet Micro-Markers for Supply Crates (1:1 circular playfield alignment)
       for (g in engine.greens) {
-        val pt = clampToRadar(ox + g.x * scale, oy + g.y * scale)
+        val pt = worldToRadar(g.x, g.y)
         drawCircle(
           color = Color(0xFF10B981).copy(alpha = 0.55f),
           radius = 1.1f,
@@ -1228,19 +1234,19 @@ private fun CircularRadarMinimap(
 
       // Mode-Specific Objectives on Radar (Stasis Jails or Rift Control Zones)
       if (engine.isStasisBreachRulesActive()) {
-        val wPt = clampToRadar(ox + engine.westBrigReactorX * scale, oy + engine.westBrigReactorY * scale)
-        val ePt = clampToRadar(ox + engine.eastBrigReactorX * scale, oy + engine.eastBrigReactorY * scale)
+        val wPt = worldToRadar(engine.westBrigReactorX, engine.westBrigReactorY)
+        val ePt = worldToRadar(engine.eastBrigReactorX, engine.eastBrigReactorY)
         drawCircle(color = Color(0xFF38BDF8), radius = 4.2f, center = wPt, style = Stroke(width = 1.3f))
         drawCircle(color = Color(0xFFF43F5E), radius = 4.2f, center = ePt, style = Stroke(width = 1.3f))
       } else if (engine.isRiftControlRulesActive()) {
-        val aPt = clampToRadar(ox + engine.riftAlphaX * scale, oy + engine.riftAlphaY * scale)
-        val oPt = clampToRadar(ox + engine.riftOmegaX * scale, oy + engine.riftOmegaY * scale)
+        val aPt = worldToRadar(engine.riftAlphaX, engine.riftAlphaY)
+        val oPt = worldToRadar(engine.riftOmegaX, engine.riftOmegaY)
         drawCircle(color = Color(0xFF00F5D4), radius = 4.2f, center = aPt, style = Stroke(width = 1.4f))
         drawCircle(color = Color(0xFF00F5D4), radius = 4.2f, center = oPt, style = Stroke(width = 1.4f))
       }
 
       for (anom in engine.anomalies) {
-        val pt = clampToRadar(ox + anom.x * scale, oy + anom.y * scale)
+        val pt = worldToRadar(anom.x, anom.y)
         val aColor =
           when (anom.type) {
             AnomalyType.PLASMA_RIFT -> Color(0xFFEF4444)
@@ -1262,25 +1268,25 @@ private fun CircularRadarMinimap(
 
       for (bw in engine.brickWalls) {
         val aPt =
-          clampToRadar(
-            ox + (if (bw.w >= bw.h) bw.x else bw.x + bw.w * 0.5f) * scale,
-            oy + (if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y) * scale,
+          worldToRadar(
+            if (bw.w >= bw.h) bw.x else bw.x + bw.w * 0.5f,
+            if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y,
           )
         val bPt =
-          clampToRadar(
-            ox + (if (bw.w >= bw.h) bw.x + bw.w else bw.x + bw.w * 0.5f) * scale,
-            oy + (if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y + bw.h) * scale,
+          worldToRadar(
+            if (bw.w >= bw.h) bw.x + bw.w else bw.x + bw.w * 0.5f,
+            if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y + bw.h,
           )
         drawLine(
-          color = Color(0xFF22D3EE),
+          color = Color(0xFF00F5D4),
           start = aPt,
           end = bPt,
-          strokeWidth = 1.8f,
+          strokeWidth = 2.2f,
         )
       }
 
       for (dc in engine.decoys) {
-        val pt = clampToRadar(ox + dc.x * scale, oy + dc.y * scale)
+        val pt = worldToRadar(dc.x, dc.y)
         val isFriendlyDecoy =
           dc.ownerId == p.id ||
             (p.armadaName.isNotEmpty() && dc.armadaName == p.armadaName) ||
@@ -1296,7 +1302,7 @@ private fun CircularRadarMinimap(
       // Free Flux Core Orb on Minimap when unclaimed
       val goldPulse = 0.5f + 0.5f * sin(((nowMs % 640L) / 640f) * 6.28318f)
       if (engine.isFluxCoreRulesActive() && engine.fluxCoreCarrierEntityId.isEmpty()) {
-        val orbPt = clampToRadar(ox + engine.fluxCoreOrb.x * scale, oy + engine.fluxCoreOrb.y * scale)
+        val orbPt = worldToRadar(engine.fluxCoreOrb.x, engine.fluxCoreOrb.y)
         val orbHaloR = (4.2f + 4.8f * goldPulse).coerceAtMost(maxBlipRadius - hypot(orbPt.x - center.x, orbPt.y - center.y) + 2.5f)
         if (orbHaloR > 2.0f) {
           drawCircle(
@@ -1319,16 +1325,18 @@ private fun CircularRadarMinimap(
         )
       }
 
-      for (s in engine.ships) {
+      val radarShips = if (engine.hasJoinedMatch) engine.ships else listOf(p)
+      for (s in radarShips) {
         if (s.respawnTimer > 0f) continue
         val isFriendly = engine.areAllied(p, s)
         val isBallCarrier =
-          engine.isFluxCoreRulesActive() &&
+          engine.hasJoinedMatch &&
+            engine.isFluxCoreRulesActive() &&
             (s.id == engine.fluxCoreCarrierEntityId ||
               (engine.fluxCoreOrb.carrierShipId != -1 && s.shipId == engine.fluxCoreOrb.carrierShipId))
         if (s.isCloaked && !isFriendly && !s.isLocalPlayer && !isBallCarrier) continue
 
-        val pt = clampToRadar(ox + s.x * scale, oy + s.y * scale)
+        val pt = worldToRadar(s.x, s.y)
         val sx = pt.x
         val sy = pt.y
 

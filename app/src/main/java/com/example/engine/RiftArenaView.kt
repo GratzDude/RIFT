@@ -234,6 +234,85 @@ class RiftArenaView(
         )
     }
 
+  // Pre-allocated 2.5D Perspective-Extruded Space Obstacle & 3D Ship Roll Paints (Zero GC)
+  private val obstacleSideDarkPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.FILL
+      color = Color.parseColor("#0B1324")
+    }
+  private val obstacleSideLitPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.FILL
+      color = Color.parseColor("#1E293B")
+    }
+  private val obstacleCapPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.FILL
+      color = Color.parseColor("#283548")
+    }
+  private val obstacleRockPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.FILL
+      color = Color.parseColor("#334155")
+    }
+  private val obstacleCrystalPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.FILL
+      color = Color.parseColor("#A855F7")
+    }
+  private val obstacleBeaconPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.FILL
+      color = Color.parseColor("#00F5D4")
+    }
+  private val perimeterVoidPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeWidth = 110f
+      color = Color.argb(150, 2, 6, 18)
+    }
+  private val perimeterGlowPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeWidth = 14f
+      color = Color.argb(72, 0, 245, 212)
+    }
+  private val perimeterRingPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeWidth = 5.2f
+      color = Color.parseColor("#00F5D4")
+    }
+  private val shipShadowPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+      colorFilter =
+        android.graphics.PorterDuffColorFilter(
+          Color.argb(135, 2, 6, 18),
+          android.graphics.PorterDuff.Mode.SRC_IN,
+        )
+    }
+  private val shipBellyTintPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+      colorFilter =
+        android.graphics.PorterDuffColorFilter(
+          Color.argb(115, 56, 189, 248),
+          android.graphics.PorterDuff.Mode.SRC_ATOP,
+        )
+    }
+  private val shipGlintPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeCap = Paint.Cap.ROUND
+      strokeWidth = 3.2f
+      color = Color.argb(185, 224, 242, 254)
+    }
+  private val vortexRibbonPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeCap = Paint.Cap.ROUND
+      strokeWidth = 3.4f
+    }
+
   private val shieldRipplePaint =
     Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.STROKE
@@ -356,9 +435,11 @@ class RiftArenaView(
     }
 
   private val shipMatrix = Matrix()
+  private val shadowMatrix = Matrix()
   private val arcRect = RectF()
   private val trajPath = Path()
   private val plumePath = Path()
+  private val obstaclePath = Path()
   private val activeUtilitySlots = mutableListOf<UtilityButtonSlot>()
 
   private var dpDensity: Float = resources.displayMetrics.density
@@ -707,12 +788,13 @@ class RiftArenaView(
       drawFreeFluxCoreOrb(canvas, viewLeft, viewRight, viewTop, viewBottom)
     }
 
-    // 5. Procedural Beveled Industrial Walls
+    // 5. Circular Dynamic-Radius Containment Perimeter + 2.5D Perspective-Extruded Space Obstacles
+    drawCircularContainmentPerimeter(canvas, effectiveCamX, effectiveCamY, viewLeft, viewRight, viewTop, viewBottom)
     for (w in engine.walls) {
-      if (w.x + w.w < viewLeft || w.x > viewRight || w.y + w.h < viewTop || w.y > viewBottom) {
+      if (w.x + w.w < viewLeft - 48f || w.x > viewRight + 48f || w.y + w.h < viewTop - 48f || w.y > viewBottom + 48f) {
         continue
       }
-      drawIndustrialWallSegment(canvas, w)
+      drawSpaceObstacle3D(canvas, w, effectiveCamX, effectiveCamY)
     }
 
     // 6. 2x Glowing Buff Icons (88f * 0.89f = 78.32f) with Pulsing Green Glow Aura
@@ -940,33 +1022,15 @@ class RiftArenaView(
       }
     }
 
-    // 7b. Solid Energy Brick Barriers (120px length, 10s lifespan)
+    // 7b. Permanent Placed 2.5D Anchored Rift Bulkhead Barriers (stay until round/match reset)
     for (bw in engine.brickWalls) {
-      if (bw.x + bw.w < viewLeft - 40f || bw.x > viewRight + 40f ||
-        bw.y + bw.h < viewTop - 40f || bw.y > viewBottom + 40f
+      if (bw.x + bw.w < viewLeft - 56f || bw.x > viewRight + 56f ||
+        bw.y + bw.h < viewTop - 56f || bw.y > viewBottom + 56f
       ) {
         continue
       }
-      val lifeFade = (bw.life / 1.5f).coerceIn(0.25f, 1f)
       val isFriendlyWall = bw.ownerId == p.id || bw.freq == p.freq
-      val ax = if (bw.w >= bw.h) bw.x else bw.x + bw.w * 0.5f
-      val ay = if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y
-      val bx = if (bw.w >= bw.h) bw.x + bw.w else bw.x + bw.w * 0.5f
-      val by = if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y + bw.h
-      val wallThickness = min(bw.w, bw.h)
-      bulletPaint.color =
-        if (isFriendlyWall) {
-          Color.argb((210 * lifeFade).toInt(), 34, 211, 238)
-        } else {
-          Color.argb((210 * lifeFade).toInt(), 249, 115, 22)
-        }
-      bulletPaint.strokeWidth = wallThickness * 1.05f
-      canvas.drawLine(ax, ay, bx, by, bulletPaint)
-      bulletCorePaint.strokeWidth = wallThickness * 0.38f
-      canvas.drawLine(ax, ay, bx, by, bulletCorePaint)
-      bombPaint.color = Color.WHITE
-      canvas.drawCircle(ax, ay, wallThickness * 0.42f, bombPaint)
-      canvas.drawCircle(bx, by, wallThickness * 0.42f, bombPaint)
+      drawPermanentBarrier3D(canvas, bw, isFriendlyWall, effectiveCamX, effectiveCamY)
     }
 
     // 7c. Interdictor Stasis Bubbles (Two-Way Containment Domes: 290px radius, 15s lifespan)
@@ -1413,12 +1477,9 @@ class RiftArenaView(
       canvas.drawBitmap(echoBmp, shipMatrix, phaseEchoPaint)
     }
 
-    // 10. 2x Playfield 3D Metallic Ship Sprites (88px) + Split World Labels:
-    //     - Zero thruster plumes
-    //     - Bounty centered ABOVE ship hull
-    //     - [TAG] Callsign centered BELOW ship hull
-    //     - Stealth Cloak (Disruptor / Rift Frame): completely invisible to enemy ships!
-    for (s in engine.ships) {
+    // 10. 2x Playfield 3D Metallic Ship Sprites (88px) + 3D Turn Banking + 360° Bounce Barrel Rolls + Split World Labels:
+    val shipsToRender = if (engine.hasJoinedMatch) engine.ships else listOf(p)
+    for (s in shipsToRender) {
       if (s.respawnTimer > 0f) continue
       if (s.x < viewLeft - 110f || s.x > viewRight + 110f || s.y < viewTop - 110f || s.y > viewBottom + 110f) {
         continue
@@ -1430,7 +1491,7 @@ class RiftArenaView(
         continue
       }
 
-      // 2x 3D Metallic Ship Sprite (88f world units, up from 44f) scaled by calibration
+      // 2x 3D Metallic Ship Sprite (88f world units) with Dynamic 3D Turn Banking & 0.48s 360° Bounce Barrel Roll
       val bmp =
         RiftSpriteBaker.getShipSprite(
           shipId = s.shipId,
@@ -1440,18 +1501,77 @@ class RiftArenaView(
       val halfBmp = bmp.width * 0.5f
       val drawScale = (88f / bmp.width.toFloat()) * RiftCalibrationState.shipScale
       val renderHeadingRad = if (hypot(s.vx, s.vy) > 2f) atan2(s.vy, s.vx) else s.angle
+      val renderHeadingDeg = renderHeadingRad * 180f / PI.toFloat()
+
+      val barrelProgress =
+        if (s.barrelRollTimer > 0f) (1f - (s.barrelRollTimer / 0.48f)).coerceIn(0f, 1f) else 0f
+      val easedBarrel = barrelProgress * barrelProgress * (3f - 2f * barrelProgress)
+      val barrelRad =
+        if (s.barrelRollTimer > 0f) easedBarrel * (PI.toFloat() * 2f) * s.barrelRollDir else 0f
+      val totalRollRad = (s.visualBankRoll * 0.72f) + barrelRad
+      val cosRoll = cos(totalRollRad)
+      val sinRoll = sin(totalRollRad)
+      val lateralScaleY = kotlin.math.abs(cosRoll).coerceAtLeast(0.28f) * drawScale
+      val rollSkewY = sinRoll * 0.14f
+
+      // 10a. Offset 3D Silhouette Drop-Shadow beneath the banking/rolling ship
+      if (!s.isCloaked) {
+        shadowMatrix.reset()
+        shadowMatrix.postTranslate(-halfBmp, -halfBmp)
+        shadowMatrix.postScale(drawScale * 0.96f, lateralScaleY * 0.94f)
+        shadowMatrix.postSkew(0f, rollSkewY)
+        shadowMatrix.postRotate(renderHeadingDeg)
+        shadowMatrix.postTranslate(s.x + 8f + sinRoll * 6f, s.y + 12f)
+        canvas.drawBitmap(bmp, shadowMatrix, shipShadowPaint)
+      }
+
+      // 10b. Foreshortened & Perspective-Skewed 3D Ship Hull (inverted cool-steel belly tint when cosRoll < 0f)
       shipMatrix.reset()
       shipMatrix.postTranslate(-halfBmp, -halfBmp)
-      shipMatrix.postScale(drawScale, drawScale)
-      shipMatrix.postRotate(renderHeadingRad * 180f / PI.toFloat())
+      shipMatrix.postScale(drawScale, lateralScaleY)
+      shipMatrix.postSkew(0f, rollSkewY)
+      shipMatrix.postRotate(renderHeadingDeg)
       shipMatrix.postTranslate(s.x, s.y)
       if (s.isCloaked) {
         buffGlowPaint.alpha = 78
         canvas.drawBitmap(bmp, shipMatrix, buffGlowPaint)
         bombRingPaint.color = Color.argb(165, 179, 136, 255)
         canvas.drawCircle(s.x, s.y, 44f * RiftCalibrationState.shipScale, bombRingPaint)
+      } else if (cosRoll < 0f) {
+        canvas.drawBitmap(bmp, shipMatrix, shipBellyTintPaint)
       } else {
         canvas.drawBitmap(bmp, shipMatrix, null)
+      }
+
+      // 10c. Specular Wing-Ridge Glint on Steep Bank/Roll + Swirling 360° Wingtip Vortex Helices on Bounce Barrel Roll
+      if (!s.isCloaked) {
+        val bankIntensity = kotlin.math.abs(sinRoll)
+        if (bankIntensity > 0.22f) {
+          val perpAng = renderHeadingRad + (if (sinRoll >= 0f) -PI.toFloat() * 0.5f else PI.toFloat() * 0.5f)
+          val ridgeDist = 16f * RiftCalibrationState.shipScale * kotlin.math.abs(cosRoll).coerceAtLeast(0.32f)
+          val gx = s.x + cos(perpAng) * ridgeDist
+          val gy = s.y + sin(perpAng) * ridgeDist
+          val halfSpan = 20f * RiftCalibrationState.shipScale
+          shipGlintPaint.alpha = ((bankIntensity - 0.20f) * 230f).toInt().coerceIn(30, 195)
+          canvas.drawLine(
+            gx - cos(renderHeadingRad) * halfSpan,
+            gy - sin(renderHeadingRad) * halfSpan,
+            gx + cos(renderHeadingRad) * halfSpan,
+            gy + sin(renderHeadingRad) * halfSpan,
+            shipGlintPaint,
+          )
+        }
+        if (s.barrelRollTimer > 0f) {
+          val fade = sin(barrelProgress * PI.toFloat()).coerceIn(0f, 1f)
+          val vortexR = 38f * RiftCalibrationState.shipScale
+          arcRect.set(s.x - vortexR, s.y - vortexR, s.x + vortexR, s.y + vortexR)
+          val spinDeg = (barrelRad * 180f / PI.toFloat()) + renderHeadingDeg
+          vortexRibbonPaint.strokeWidth = 3.2f
+          vortexRibbonPaint.color = Color.argb((215 * fade).toInt(), 0, 245, 212)
+          canvas.drawArc(arcRect, spinDeg, 105f, false, vortexRibbonPaint)
+          vortexRibbonPaint.color = Color.argb((205 * fade).toInt(), 250, 204, 21)
+          canvas.drawArc(arcRect, spinDeg + 180f, 105f, false, vortexRibbonPaint)
+        }
       }
 
       if (s.phaseDashTimer > 0f) {
@@ -2430,57 +2550,377 @@ class RiftArenaView(
     }
   }
 
-  private fun drawIndustrialWallSegment(canvas: Canvas, w: WallRect) {
+  private fun drawExtrudedBox3D(
+    canvas: Canvas,
+    left: Float,
+    top: Float,
+    right: Float,
+    bottom: Float,
+    ex: Float,
+    ey: Float,
+    sideDarkColor: Int,
+    sideLitColor: Int,
+  ) {
+    val tLeft = left + ex
+    val tTop = top + ey
+    val tRight = right + ex
+    val tBottom = bottom + ey
+
+    obstacleSideDarkPaint.color = sideDarkColor
+    obstacleSideLitPaint.color = sideLitColor
+
+    if (ey > 0.5f) {
+      obstaclePath.reset()
+      obstaclePath.moveTo(left, top)
+      obstaclePath.lineTo(right, top)
+      obstaclePath.lineTo(tRight, tTop)
+      obstaclePath.lineTo(tLeft, tTop)
+      obstaclePath.close()
+      canvas.drawPath(obstaclePath, obstacleSideLitPaint)
+    } else if (ey < -0.5f) {
+      obstaclePath.reset()
+      obstaclePath.moveTo(left, bottom)
+      obstaclePath.lineTo(right, bottom)
+      obstaclePath.lineTo(tRight, tBottom)
+      obstaclePath.lineTo(tLeft, tBottom)
+      obstaclePath.close()
+      canvas.drawPath(obstaclePath, obstacleSideDarkPaint)
+    }
+
+    if (ex > 0.5f) {
+      obstaclePath.reset()
+      obstaclePath.moveTo(left, top)
+      obstaclePath.lineTo(left, bottom)
+      obstaclePath.lineTo(tLeft, tBottom)
+      obstaclePath.lineTo(tLeft, tTop)
+      obstaclePath.close()
+      canvas.drawPath(obstaclePath, obstacleSideLitPaint)
+    } else if (ex < -0.5f) {
+      obstaclePath.reset()
+      obstaclePath.moveTo(right, top)
+      obstaclePath.lineTo(right, bottom)
+      obstaclePath.lineTo(tRight, tBottom)
+      obstaclePath.lineTo(tRight, tTop)
+      obstaclePath.close()
+      canvas.drawPath(obstaclePath, obstacleSideDarkPaint)
+    }
+  }
+
+  private fun drawCircularContainmentPerimeter(
+    canvas: Canvas,
+    camX: Float,
+    camY: Float,
+    viewLeft: Float,
+    viewRight: Float,
+    viewTop: Float,
+    viewBottom: Float,
+  ) {
+    val cx = engine.arenaCenterX
+    val cy = engine.arenaCenterY
+    val r = engine.arenaRadius
+    canvas.drawCircle(cx, cy, r + 58f, perimeterVoidPaint)
+    canvas.drawCircle(cx, cy, r, perimeterGlowPaint)
+    canvas.drawCircle(cx, cy, r, perimeterRingPaint)
+
+    // 36 evenly spaced 2.5D Perspective-Extruded Rift Containment Pylons along the circular perimeter
+    val pylonCount = 36
+    val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 1400L) / 1400f * (PI.toFloat() * 2f))
+    for (i in 0 until pylonCount) {
+      val ang = (i.toFloat() / pylonCount.toFloat()) * (PI.toFloat() * 2f)
+      val px = cx + cos(ang) * r
+      val py = cy + sin(ang) * r
+      if (px < viewLeft - 80f || px > viewRight + 80f || py < viewTop - 80f || py > viewBottom + 80f) {
+        continue
+      }
+      val ex = ((px - camX) * 0.045f).coerceIn(-24f, 24f)
+      val ey = ((py - camY) * 0.045f).coerceIn(-24f, 24f)
+      val halfP = 20f
+      drawExtrudedBox3D(
+        canvas = canvas,
+        left = px - halfP,
+        top = py - halfP,
+        right = px + halfP,
+        bottom = py + halfP,
+        ex = ex,
+        ey = ey,
+        sideDarkColor = Color.parseColor("#091122"),
+        sideLitColor = Color.parseColor("#1E293B"),
+      )
+      obstacleCapPaint.color = Color.parseColor("#243247")
+      arcRect.set(px - halfP + ex, py - halfP + ey, px + halfP + ex, py + halfP + ey)
+      canvas.drawRoundRect(arcRect, 6f, 6f, obstacleCapPaint)
+      wallCyanSeamPaint.strokeWidth = 2.4f
+      canvas.drawRoundRect(arcRect, 6f, 6f, wallCyanSeamPaint)
+      obstacleBeaconPaint.color =
+        if (i % 2 == 0) {
+          Color.argb((170 + (80 * pulse).toInt()).coerceIn(140, 255), 0, 245, 212)
+        } else {
+          Color.argb((155 + (80 * (1f - pulse)).toInt()).coerceIn(130, 245), 56, 189, 248)
+        }
+      canvas.drawCircle(px + ex, py + ey, 5.2f, obstacleBeaconPaint)
+    }
+    wallCyanSeamPaint.strokeWidth = 3.2f
+  }
+
+  private fun drawSpaceObstacle3D(
+    canvas: Canvas,
+    w: WallRect,
+    camX: Float,
+    camY: Float,
+  ) {
     val left = w.x
     val top = w.y
     val right = w.x + w.w
     val bottom = w.y + w.h
+    val cx = left + w.w * 0.5f
+    val cy = top + w.h * 0.5f
+    val ex = ((cx - camX) * 0.048f).coerceIn(-28f, 28f)
+    val ey = ((cy - camY) * 0.048f).coerceIn(-28f, 28f)
+    val tLeft = left + ex
+    val tTop = top + ey
+    val tRight = right + ex
+    val tBottom = bottom + ey
+    val tCx = cx + ex
+    val tCy = cy + ey
 
-    // 1. Seamless 64x64 Brushed Gunmetal Armor Plates + Electric Cyan Energy Conduit Seams
-    canvas.drawRect(left, top, right, bottom, wallBodyPaint)
+    // Ambient base shadow on the sector plane (1:1 with exact 2D collision rect)
+    obstacleSideDarkPaint.color = Color.argb(130, 3, 7, 18)
+    canvas.drawRoundRect(left - 5f, top - 5f, right + 5f, bottom + 5f, 10f, 10f, obstacleSideDarkPaint)
 
-    // 2. Crisp 3D Mitered Outer Specular & Shadow Bevels (#64748B top/left, #0F172A bottom/right)
-    canvas.drawRect(left, top, right, top + 4.5f, wallTopBevelPaint)
-    canvas.drawRect(left, top, left + 4.5f, bottom, wallTopBevelPaint)
-    canvas.drawRect(left, bottom - 4.5f, right, bottom, wallBottomBevelPaint)
-    canvas.drawRect(right - 4.5f, top, right, bottom, wallBottomBevelPaint)
+    when (w.style) {
+      SpaceObstacleStyle.ORBITAL_STATION -> {
+        drawExtrudedBox3D(
+          canvas = canvas,
+          left = left,
+          top = top,
+          right = right,
+          bottom = bottom,
+          ex = ex,
+          ey = ey,
+          sideDarkColor = Color.parseColor("#0B1324"),
+          sideLitColor = Color.parseColor("#1E293B"),
+        )
+        canvas.drawRect(tLeft, tTop, tRight, tBottom, wallBodyPaint)
+        canvas.drawRect(tLeft, tTop, tRight, tTop + 4.5f, wallTopBevelPaint)
+        canvas.drawRect(tLeft, tTop, tLeft + 4.5f, tBottom, wallTopBevelPaint)
+        canvas.drawRect(tLeft, tBottom - 4.5f, tRight, tBottom, wallBottomBevelPaint)
+        canvas.drawRect(tRight - 4.5f, tTop, tRight, tBottom, wallBottomBevelPaint)
+        canvas.drawRect(tLeft, tTop, tRight, tBottom, wallCyanSeamPaint)
 
-    // 3. Crisp Outer Electric Cyan Perimeter Border (strokeWidth = 3.2f) + Hazard Gold Corner Brackets
-    canvas.drawRect(left, top, right, bottom, wallCyanSeamPaint)
-    val bLen = min(22f, min(w.w, w.h) * 0.35f)
-    if (bLen >= 8f) {
-      canvas.drawLine(left, top, left + bLen, top, wallGoldBracketPaint)
-      canvas.drawLine(left, top, left, top + bLen, wallGoldBracketPaint)
-      canvas.drawLine(right - bLen, top, right, top, wallGoldBracketPaint)
-      canvas.drawLine(right, top, right, top + bLen, wallGoldBracketPaint)
-      canvas.drawLine(left, bottom - bLen, left, bottom, wallGoldBracketPaint)
-      canvas.drawLine(left, bottom, left + bLen, bottom, wallGoldBracketPaint)
-      canvas.drawLine(right - bLen, bottom, right, bottom, wallGoldBracketPaint)
-      canvas.drawLine(right, bottom - bLen, right, bottom, wallGoldBracketPaint)
-    }
+        // Recessed solar-grid bays & glowing cyan reactor conduit along top deck
+        obstacleSideDarkPaint.color = Color.parseColor("#0F1D36")
+        if (w.w >= w.h) {
+          val padY = min(14f, w.h * 0.22f)
+          canvas.drawRect(tLeft + 18f, tTop + padY, tRight - 18f, tBottom - padY, obstacleSideDarkPaint)
+          canvas.drawLine(tLeft + 16f, tCy, tRight - 16f, tCy, wallCyanSeamPaint)
+        } else {
+          val padX = min(14f, w.w * 0.22f)
+          canvas.drawRect(tLeft + padX, tTop + 18f, tRight - padX, tBottom - 18f, obstacleSideDarkPaint)
+          canvas.drawLine(tCx, tTop + 16f, tCx, tBottom - 16f, wallCyanSeamPaint)
+        }
 
-    // 4. Recessed Hazard Gold Trim
-    if (w.w > 20f && w.h > 20f) {
-      canvas.drawRect(left + 6f, top + 6f, right - 6f, bottom - 6f, wallHazardPaint)
-    }
+        val bLen = min(22f, min(w.w, w.h) * 0.35f)
+        if (bLen >= 8f) {
+          canvas.drawLine(tLeft, tTop, tLeft + bLen, tTop, wallGoldBracketPaint)
+          canvas.drawLine(tLeft, tTop, tLeft, tTop + bLen, wallGoldBracketPaint)
+          canvas.drawLine(tRight - bLen, tTop, tRight, tTop, wallGoldBracketPaint)
+          canvas.drawLine(tRight, tTop, tRight, tTop + bLen, wallGoldBracketPaint)
+          canvas.drawLine(tLeft, tBottom - bLen, tLeft, tBottom, wallGoldBracketPaint)
+          canvas.drawLine(tLeft, tBottom, tLeft + bLen, tBottom, wallGoldBracketPaint)
+          canvas.drawLine(tRight - bLen, tBottom, tRight, tBottom, wallGoldBracketPaint)
+          canvas.drawLine(tRight, tBottom - bLen, tRight, tBottom, wallGoldBracketPaint)
+        }
+        obstacleBeaconPaint.color = Color.parseColor("#00F5D4")
+        canvas.drawCircle(tCx, tCy, 6.5f, obstacleBeaconPaint)
+      }
 
-    // 5. Perimeter Titanium Micro-Bolts along Horizontal & Vertical Bulkhead Edges
-    if (w.h >= 24f) {
-      var rx = left + 18f
-      while (rx <= right - 14f) {
-        canvas.drawCircle(rx, top + 11.5f, 2.0f, wallRivetPaint)
-        canvas.drawCircle(rx, bottom - 11.5f, 2.0f, wallRivetPaint)
-        rx += 64f
+      SpaceObstacleStyle.ASTEROID_STATION -> {
+        drawExtrudedBox3D(
+          canvas = canvas,
+          left = left + 8f,
+          top = top + 8f,
+          right = right - 8f,
+          bottom = bottom - 8f,
+          ex = ex,
+          ey = ey,
+          sideDarkColor = Color.parseColor("#181826"),
+          sideLitColor = Color.parseColor("#2E3346"),
+        )
+        // Faceted dark regolith crag polygon across the footprint
+        val rx = w.w * 0.48f
+        val ry = w.h * 0.48f
+        obstaclePath.reset()
+        val verts = 10
+        for (v in 0 until verts) {
+          val a = (v.toFloat() / verts) * (PI.toFloat() * 2f)
+          val jag = 0.84f + (((w.variantSeed + v * 17) and 7) / 35f)
+          val vx = tCx + cos(a) * rx * jag
+          val vy = tCy + sin(a) * ry * jag
+          if (v == 0) obstaclePath.moveTo(vx, vy) else obstaclePath.lineTo(vx, vy)
+        }
+        obstaclePath.close()
+        obstacleRockPaint.color = Color.parseColor("#333A4D")
+        canvas.drawPath(obstaclePath, obstacleRockPaint)
+        wallBottomBevelPaint.style = Paint.Style.STROKE
+        wallBottomBevelPaint.strokeWidth = 3.2f
+        canvas.drawPath(obstaclePath, wallBottomBevelPaint)
+        wallBottomBevelPaint.style = Paint.Style.FILL
+
+        // Embedded Orbital Outpost Habitat Dome & Docking Struts on top of the asteroid
+        val domeR = min(w.w, w.h) * 0.27f
+        canvas.drawLine(tCx - domeR * 1.45f, tCy, tCx + domeR * 1.45f, tCy, wallGoldBracketPaint)
+        canvas.drawLine(tCx, tCy - domeR * 1.45f, tCx, tCy + domeR * 1.45f, wallGoldBracketPaint)
+        obstacleCapPaint.color = Color.parseColor("#1E293B")
+        canvas.drawCircle(tCx, tCy, domeR, obstacleCapPaint)
+        canvas.drawCircle(tCx, tCy, domeR, wallCyanSeamPaint)
+        obstacleBeaconPaint.color = Color.parseColor("#38BDF8")
+        canvas.drawCircle(tCx - domeR * 0.22f, tCy - domeR * 0.22f, domeR * 0.38f, obstacleBeaconPaint)
+      }
+
+      SpaceObstacleStyle.CRYSTAL_ASTEROID -> {
+        val rx = w.w * 0.47f
+        val ry = w.h * 0.47f
+        // Base basalt shadow rock
+        obstaclePath.reset()
+        for (v in 0 until 9) {
+          val a = (v.toFloat() / 9f) * (PI.toFloat() * 2f)
+          val jag = 0.82f + (((w.variantSeed + v * 13) and 7) / 32f)
+          val vx = cx + cos(a) * rx * jag
+          val vy = cy + sin(a) * ry * jag
+          if (v == 0) obstaclePath.moveTo(vx, vy) else obstaclePath.lineTo(vx, vy)
+        }
+        obstaclePath.close()
+        obstacleRockPaint.color = Color.parseColor("#1B1F32")
+        canvas.drawPath(obstaclePath, obstacleRockPaint)
+
+        // Extruded upper basalt shelf
+        obstaclePath.reset()
+        for (v in 0 until 9) {
+          val a = (v.toFloat() / 9f) * (PI.toFloat() * 2f)
+          val jag = 0.80f + (((w.variantSeed + v * 13) and 7) / 32f)
+          val vx = tCx + cos(a) * rx * jag
+          val vy = tCy + sin(a) * ry * jag
+          if (v == 0) obstaclePath.moveTo(vx, vy) else obstaclePath.lineTo(vx, vy)
+        }
+        obstaclePath.close()
+        obstacleRockPaint.color = Color.parseColor("#2D334A")
+        canvas.drawPath(obstaclePath, obstacleRockPaint)
+
+        // 3D Rift-Shard Crystal Spires jutting toward camera offset
+        val crystalAngles = floatArrayOf(0.4f, 1.95f, 3.55f, 5.1f)
+        for (idx in crystalAngles.indices) {
+          val ca = crystalAngles[idx] + ((w.variantSeed and 15) * 0.12f)
+          val tipX = tCx + ex * 0.45f + cos(ca) * (rx * 0.72f)
+          val tipY = tCy + ey * 0.45f + sin(ca) * (ry * 0.72f)
+          val perpX = -sin(ca) * 14f
+          val perpY = cos(ca) * 14f
+          obstaclePath.reset()
+          obstaclePath.moveTo(tCx + perpX, tCy + perpY)
+          obstaclePath.lineTo(tipX, tipY)
+          obstaclePath.lineTo(tCx - perpX, tCy - perpY)
+          obstaclePath.close()
+          obstacleCrystalPaint.color =
+            if (idx % 2 == 0) Color.parseColor("#A855F7") else Color.parseColor("#22D3EE")
+          canvas.drawPath(obstaclePath, obstacleCrystalPaint)
+        }
+        obstacleBeaconPaint.color = Color.parseColor("#F0ABFC")
+        canvas.drawCircle(tCx + ex * 0.25f, tCy + ey * 0.25f, 10f, obstacleBeaconPaint)
+      }
+
+      SpaceObstacleStyle.FLOATING_DEBRIS -> {
+        drawExtrudedBox3D(
+          canvas = canvas,
+          left = left + 4f,
+          top = top + 4f,
+          right = right - 4f,
+          bottom = bottom - 4f,
+          ex = ex * 0.85f,
+          ey = ey * 0.85f,
+          sideDarkColor = Color.parseColor("#0F172A"),
+          sideLitColor = Color.parseColor("#273449"),
+        )
+        // Exposed structural warship keel ribs
+        obstacleCapPaint.color = Color.parseColor("#1E293B")
+        val inset = 8f
+        canvas.drawRect(tLeft + inset, tTop + inset, tRight - inset, tBottom - inset, obstacleCapPaint)
+        wallGoldBracketPaint.strokeWidth = 3.0f
+        if (w.w >= w.h) {
+          var gx = tLeft + 24f
+          while (gx <= tRight - 24f) {
+            canvas.drawLine(gx, tTop + 4f, gx + 10f, tBottom - 4f, wallGoldBracketPaint)
+            gx += 44f
+          }
+        } else {
+          var gy = tTop + 24f
+          while (gy <= tBottom - 24f) {
+            canvas.drawLine(tLeft + 4f, gy, tRight - 4f, gy + 10f, wallGoldBracketPaint)
+            gy += 44f
+          }
+        }
+        // Flickering severed power conduit spark
+        val flicker = ((System.currentTimeMillis() + w.variantSeed * 97L) % 700L) < 420L
+        obstacleBeaconPaint.color =
+          if (flicker) Color.parseColor("#F97316") else Color.parseColor("#38BDF8")
+        canvas.drawCircle(tCx, tCy, 5.5f, obstacleBeaconPaint)
       }
     }
-    if (w.w >= 24f && w.h >= 96f) {
-      var ry = top + 50f
-      while (ry <= bottom - 36f) {
-        canvas.drawCircle(left + 11.5f, ry, 2.0f, wallRivetPaint)
-        canvas.drawCircle(right - 11.5f, ry, 2.0f, wallRivetPaint)
-        ry += 64f
-      }
-    }
+  }
+
+  private fun drawPermanentBarrier3D(
+    canvas: Canvas,
+    bw: BrickWallEntity,
+    isFriendlyWall: Boolean,
+    camX: Float,
+    camY: Float,
+  ) {
+    val left = bw.x
+    val top = bw.y
+    val right = bw.x + bw.w
+    val bottom = bw.y + bw.h
+    val cx = left + bw.w * 0.5f
+    val cy = top + bw.h * 0.5f
+    val ex = ((cx - camX) * 0.042f).coerceIn(-20f, 20f)
+    val ey = ((cy - camY) * 0.042f).coerceIn(-20f, 20f)
+    val tLeft = left + ex
+    val tTop = top + ey
+    val tRight = right + ex
+    val tBottom = bottom + ey
+
+    drawExtrudedBox3D(
+      canvas = canvas,
+      left = left,
+      top = top,
+      right = right,
+      bottom = bottom,
+      ex = ex,
+      ey = ey,
+      sideDarkColor = Color.parseColor("#091326"),
+      sideLitColor = if (isFriendlyWall) Color.parseColor("#133A52") else Color.parseColor("#472116"),
+    )
+
+    obstacleCapPaint.color = Color.parseColor("#1E293B")
+    arcRect.set(tLeft, tTop, tRight, tBottom)
+    canvas.drawRoundRect(arcRect, 8f, 8f, obstacleCapPaint)
+
+    val accentColor = if (isFriendlyWall) Color.parseColor("#00F5D4") else Color.parseColor("#F97316")
+    anomalyRingPaint.strokeWidth = 3.2f
+    anomalyRingPaint.color = accentColor
+    canvas.drawRoundRect(arcRect, 8f, 8f, anomalyRingPaint)
+
+    val ax = if (bw.w >= bw.h) tLeft + 14f else (tLeft + tRight) * 0.5f
+    val ay = if (bw.w >= bw.h) (tTop + tBottom) * 0.5f else tTop + 14f
+    val bx = if (bw.w >= bw.h) tRight - 14f else (tLeft + tRight) * 0.5f
+    val by = if (bw.w >= bw.h) (tTop + tBottom) * 0.5f else tBottom - 14f
+
+    bulletPaint.color = accentColor
+    bulletPaint.strokeWidth = 8.5f
+    canvas.drawLine(ax, ay, bx, by, bulletPaint)
+    bulletCorePaint.strokeWidth = 3.2f
+    canvas.drawLine(ax, ay, bx, by, bulletCorePaint)
+
+    obstacleBeaconPaint.color = Color.WHITE
+    canvas.drawCircle(ax, ay, 5.5f, obstacleBeaconPaint)
+    canvas.drawCircle(bx, by, 5.5f, obstacleBeaconPaint)
   }
 
   private fun drawRaycastTrajectory(canvas: Canvas, pts: List<TrajectoryPoint>, color: Int) {
@@ -2524,6 +2964,7 @@ class RiftArenaView(
 
   private fun drawTouchControlsOverlay(canvas: Canvas, p: ShipEntity) {
     val unlocked = RiftCalibrationState.isUiUnlockedForDragging
+    if (!engine.hasJoinedMatch && !unlocked) return
     val gpConnected = RiftCalibrationState.gamepadConnected
     val gpIdleAlpha = (RiftCalibrationState.gamepadIdleTouchOpacity * 255f).toInt().coerceIn(20, 240)
 

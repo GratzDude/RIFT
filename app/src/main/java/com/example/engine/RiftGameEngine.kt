@@ -19,7 +19,21 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-data class WallRect(val x: Float, val y: Float, val w: Float, val h: Float)
+enum class SpaceObstacleStyle {
+  ORBITAL_STATION,
+  ASTEROID_STATION,
+  CRYSTAL_ASTEROID,
+  FLOATING_DEBRIS,
+}
+
+data class WallRect(
+  val x: Float,
+  val y: Float,
+  val w: Float,
+  val h: Float,
+  val style: SpaceObstacleStyle = SpaceObstacleStyle.ORBITAL_STATION,
+  val variantSeed: Int = 0,
+)
 
 data class GreenCrate(
   var x: Float,
@@ -224,6 +238,10 @@ data class ShipEntity(
   var remoteFiringPrimary: Boolean = false,
   var isInStasisBrig: Boolean = false,
   val aiSeed: Float = Random.nextFloat() * 100f,
+  var visualBankRoll: Float = 0f,
+  var barrelRollTimer: Float = 0f,
+  var barrelRollDir: Float = 1f,
+  var prevHeadingForBank: Float = angle,
 ) {
   var spawnShieldTimer: Float
     get() = phaseShieldTimer
@@ -513,11 +531,17 @@ class RiftGameEngine(
   var fluxCoreCarrierEntityId: String = ""
   private var fluxCoreBountyTickAccum: Float = 0f
 
+  // Circular Dynamic-Radius Playfield (centered at 4000, 4000; scales 2100f..3800f with ship count)
+  val arenaCenterX: Float = 4000f
+  val arenaCenterY: Float = 4000f
+  var arenaRadius: Float = 3800f
+  private var currentArenaSeed: Int = (System.currentTimeMillis() / 3600_000L).toInt()
+
   // Mode 4 (STASIS_BREACH) 10v10 Circular Stasis Bubble Jail & Center Core State
   val stasisJailRadius: Float = 360f
-  val westBrigReactorX: Float = 1400f
+  var westBrigReactorX: Float = 1400f
   val westBrigReactorY: Float = 4000f
-  val eastBrigReactorX: Float = 6600f
+  var eastBrigReactorX: Float = 6600f
   val eastBrigReactorY: Float = 4000f
   val westBrigRect = RectF(westBrigReactorX - stasisJailRadius, westBrigReactorY - stasisJailRadius, westBrigReactorX + stasisJailRadius, westBrigReactorY + stasisJailRadius)
   val eastBrigRect = RectF(eastBrigReactorX - stasisJailRadius, eastBrigReactorY - stasisJailRadius, eastBrigReactorX + stasisJailRadius, eastBrigReactorY + stasisJailRadius)
@@ -526,9 +550,9 @@ class RiftGameEngine(
   var eastBrigGeneratorHp: Float = 40000f
 
   // Mode 5 (RIFT_CONTROL) 2-Rift Tug-of-War State
-  val riftAlphaX: Float = 2600f
+  var riftAlphaX: Float = 2600f
   val riftAlphaY: Float = 4000f
-  val riftOmegaX: Float = 5400f
+  var riftOmegaX: Float = 5400f
   val riftOmegaY: Float = 4000f
   val riftCaptureRadius: Float = 340f
   var riftAlphaControlSec: Float = 0f // -30f (West Lock) .. +30f (East Lock)
@@ -569,6 +593,7 @@ class RiftGameEngine(
   var highBountyShutdownTimer: Float = 0f
 
   private val remotePilots = mutableMapOf<String, ShipEntity>()
+  private val onlineRemoteSectorByUid = mutableMapOf<String, String>()
 
   // Control states updated by touch subsystem
   var leftStickActive: Boolean = false
@@ -599,10 +624,48 @@ class RiftGameEngine(
 
   fun isCustomGameActive(): Boolean = currentCustomGame != null
 
+  // False on cold boot so the pilot orbits peacefully in NEXUS without inflating any match count or spawning combat bots
+  var hasJoinedMatch: Boolean = false
+  var lobbyOrbitAngle: Float = 0f
+
   // True while the player is browsing the NEXUS Command Hub / Modal windows before deploying into combat
   var isInLobbyStaging: Boolean = true
 
+  fun computeTargetArenaRadius(totalShips: Int): Float =
+    (1700f + totalShips.coerceIn(2, 24) * 105f).coerceIn(2100f, 3800f)
+
+  fun updateDynamicArenaGeometryForShipCount(totalShips: Int, regenerateObstacles: Boolean = false) {
+    val targetR = computeTargetArenaRadius(totalShips)
+    val radiusChanged = kotlin.math.abs(targetR - arenaRadius) > 35f
+    arenaRadius = targetR
+
+    val brigOffset = (arenaRadius - 560f).coerceIn(1350f, 2600f)
+    westBrigReactorX = arenaCenterX - brigOffset
+    eastBrigReactorX = arenaCenterX + brigOffset
+    westBrigRect.set(
+      westBrigReactorX - stasisJailRadius,
+      westBrigReactorY - stasisJailRadius,
+      westBrigReactorX + stasisJailRadius,
+      westBrigReactorY + stasisJailRadius,
+    )
+    eastBrigRect.set(
+      eastBrigReactorX - stasisJailRadius,
+      eastBrigReactorY - stasisJailRadius,
+      eastBrigReactorX + stasisJailRadius,
+      eastBrigReactorY + stasisJailRadius,
+    )
+
+    val riftOffset = (arenaRadius * 0.40f).coerceIn(820f, 1450f)
+    riftAlphaX = arenaCenterX - riftOffset
+    riftOmegaX = arenaCenterX + riftOffset
+
+    if (regenerateObstacles || radiusChanged || walls.isEmpty()) {
+      generateSectorArena(currentArenaSeed)
+    }
+  }
+
   fun spawnLocalPlayerCleanly() {
+    hasJoinedMatch = true
     isInLobbyStaging = false
     val customHealthMult = currentCustomGame?.healthMult ?: 1.0f
     localPlayer.respawnTimer = 0f
@@ -615,6 +678,8 @@ class RiftGameEngine(
     localPlayer.safeZoneLockoutTimer = 0f
     localPlayer.vx = 0f
     localPlayer.vy = 0f
+    localPlayer.visualBankRoll = 0f
+    localPlayer.barrelRollTimer = 0f
     localPlayer.afterburning = false
     if (isTeamBasedRankedMode()) {
       val sp = getSkirmishGateSpawnPosition(localPlayer.freq)
@@ -943,7 +1008,6 @@ class RiftGameEngine(
 
     // Procedurally regenerate a brand-new arena map for the next 60-minute FFA match
     val newSeed = Random.nextInt(10_000, 999_999)
-    generateSectorArena(seed = newSeed)
     bullets.clear()
     bombs.clear()
     decoys.clear()
@@ -952,6 +1016,7 @@ class RiftGameEngine(
     shieldRipples.clear()
     phaseAfterimages.clear()
     interdictorBubbles.clear()
+    generateSectorArena(seed = newSeed)
 
     publicMatchDurationSec = 0f
     for (s in ships) {
@@ -1011,9 +1076,9 @@ class RiftGameEngine(
   var localPlayer: ShipEntity
 
   init {
-    generateSectorArena(seed = (System.currentTimeMillis() / 3600_000L).toInt())
+    currentArenaSeed = (System.currentTimeMillis() / 3600_000L).toInt()
+    updateDynamicArenaGeometryForShipCount(20, regenerateObstacles = true)
     val initialSpec = RiftCodex.getShipById(1)
-    val spawn = getSafeZoneSpawnPosition()
     localPlayer =
       ShipEntity(
         id = "local_player",
@@ -1025,10 +1090,11 @@ class RiftGameEngine(
         freq = 0,
         isHuman = true,
         isLocalPlayer = true,
-        x = spawn.first,
-        y = spawn.second,
-        wasInSafeZone = true,
-        inSafeZone = true,
+        x = arenaCenterX + 760f,
+        y = arenaCenterY,
+        angle = PI.toFloat() * 0.5f,
+        wasInSafeZone = false,
+        inSafeZone = false,
         weaponsLocked = true,
         canFire = false,
         weaponState = "DISARMED",
@@ -1053,7 +1119,6 @@ class RiftGameEngine(
         crateSpawnMult = 1.25f,
       )
     )
-    rebuildRosterForMode("FFA")
   }
 
   /**
@@ -1296,15 +1361,18 @@ class RiftGameEngine(
     effectiveModeRules() == RankedGameMode.RIFT_CONTROL
 
   fun enforceBotsEnabledState() {
+    if (!hasJoinedMatch) return
     val botsAllowed = currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled
     if (!botsAllowed) {
       ships.removeAll { !it.isHuman && !it.isLocalPlayer }
+      updateDynamicArenaGeometryForShipCount(ships.size.coerceAtLeast(2), regenerateObstacles = false)
     } else if (ships.none { !it.isHuman && !it.isLocalPlayer }) {
       rebuildRosterForMode(mode)
     }
   }
 
   fun createAndJoinCustomGame(config: CustomGameConfig) {
+    hasJoinedMatch = true
     isInLobbyStaging = false
     activeCustomGames.removeAll { it.instanceId == config.instanceId }
     activeCustomGames.add(0, config)
@@ -1313,6 +1381,7 @@ class RiftGameEngine(
 
   fun joinCustomGame(instanceId: String) {
     val cfg = activeCustomGames.firstOrNull { it.instanceId == instanceId } ?: return
+    hasJoinedMatch = true
     isInLobbyStaging = false
     currentCustomGame = cfg
     activeRankedMode = cfg.baseMode
@@ -1360,15 +1429,82 @@ class RiftGameEngine(
     riftControlMatchTimerSec = 180f
   }
 
+  fun activeMatchSectorTag(): String =
+    if (!hasJoinedMatch) {
+      "NEXUS_LOBBY"
+    } else {
+      currentCustomGame?.let { "CUSTOM_${it.instanceId}" } ?: activeRankedMode.id
+    }
+
+  private fun matchesRankedModeSector(rawSectorId: String, targetMode: RankedGameMode): Boolean {
+    val clean = rawSectorId.trim().uppercase()
+    if (clean.isEmpty() || clean == "NEXUS_LOBBY" || clean.startsWith("CUSTOM_")) return false
+    val mapped =
+      when (clean) {
+        "SECTOR_CONVERGENCE", "FFA", "CONVERGENCE" -> RankedGameMode.SECTOR_CONVERGENCE
+        "RIFT_SKIRMISH", "SKIRMISH", "TDM", "3V3", "5V5" -> RankedGameMode.RIFT_SKIRMISH
+        "FLUX_CORE", "CORE", "JUGGERNAUT" -> RankedGameMode.FLUX_CORE
+        "STASIS_BREACH", "BREACH", "JAILBREAK", "10V10" -> RankedGameMode.STASIS_BREACH
+        "RIFT_CONTROL", "CONTROL", "TUG", "KOTH" -> RankedGameMode.RIFT_CONTROL
+        "SYNDICATE_WARS", "WARS", "CLAN_WARS" -> RankedGameMode.SYNDICATE_WARS
+        else -> null
+      }
+    return mapped == targetMode
+  }
+
   /**
-   * Returns the count of HUMAN pilots (isHuman == true, NEVER counting AI bots) in the specified mode.
+   * Returns the exact count of real HUMAN pilots currently active in the specified Ranked Mode (0 when empty; NEVER counts AI bots).
    */
   fun getHumanPilotCountForMode(mode: RankedGameMode = activeRankedMode): Int {
-    if (mode == activeRankedMode) {
-      return ships.count { it.isHuman }.coerceAtLeast(1)
-    }
-    val remoteHumans = remotePilots.values.count { it.isHuman }
-    return (1 + remoteHumans).coerceIn(1, 20)
+    val localInMode = if (hasJoinedMatch && currentCustomGame == null && activeRankedMode == mode) 1 else 0
+    val remoteInMode = onlineRemoteSectorByUid.values.count { matchesRankedModeSector(it, mode) }
+    return localInMode + remoteInMode
+  }
+
+  /**
+   * Returns the exact count of real HUMAN pilots currently active in a specific Custom Game instance (0 when empty).
+   */
+  fun getHumanPilotCountForCustomGame(instanceId: String): Int {
+    val targetSector = "CUSTOM_${instanceId.trim()}"
+    val localInCustom = if (hasJoinedMatch && currentCustomGame?.instanceId == instanceId) 1 else 0
+    val remoteInCustom = onlineRemoteSectorByUid.values.count { it.equals(targetSector, ignoreCase = true) }
+    return localInCustom + remoteInCustom
+  }
+
+  /**
+   * Returns the total number of real HUMAN pilots online across the app (local pilot + live remote heartbeats).
+   */
+  fun getTotalHumanPilotsOnline(): Int = 1 + onlineRemoteSectorByUid.size
+
+  /**
+   * Cleanly leaves the active combat instance and returns the pilot to peaceful unjoined NEXUS orbit.
+   */
+  fun leaveActiveMatchToNexusOrbit() {
+    hasJoinedMatch = false
+    isInLobbyStaging = true
+    isShipLockedForMatch = false
+    currentCustomGame = null
+    spectatingTargetShipId = ""
+    ships.clear()
+    remotePilots.clear()
+    bullets.clear()
+    bombs.clear()
+    decoys.clear()
+    brickWalls.clear()
+    interdictorBubbles.clear()
+    killFeed.clear()
+    localPlayer.vx = 0f
+    localPlayer.vy = 0f
+    localPlayer.respawnTimer = 0f
+    localPlayer.flux = localPlayer.maxFlux
+    localPlayer.isCloaked = false
+    localPlayer.afterburning = false
+    localPlayer.visualBankRoll = 0f
+    localPlayer.barrelRollTimer = 0f
+    updateDynamicArenaGeometryForShipCount(20, regenerateObstacles = true)
+    sfx.playMutedClick()
+    onPrizeToast("🛰️ RETURNED TO NEXUS ORBIT")
+    onStatsUpdated()
   }
 
   /**
@@ -1431,6 +1567,8 @@ class RiftGameEngine(
         return
       }
     }
+    hasJoinedMatch = true
+    isInLobbyStaging = false
     currentCustomGame = null
     publicMatchCycleLimitSec = RiftCalibrationState.publicMatchCycleLimitSec
     activeRankedMode = mode
@@ -1514,8 +1652,8 @@ class RiftGameEngine(
     fluxCoreBountyTickAccum = 0f
 
     // Launch outward at 1,650 px/s away from Safe Zone center
-    val cx = WORLD_SIZE * 0.5f
-    val cy = WORLD_SIZE * 0.5f
+    val cx = arenaCenterX
+    val cy = arenaCenterY
     val baseAng =
       if (hypot(ship.x - cx, ship.y - cy) > 40f) {
         atan2(ship.y - cy, ship.x - cx) + (Random.nextFloat() - 0.5f) * 0.65f
@@ -1523,8 +1661,14 @@ class RiftGameEngine(
         Random.nextFloat() * PI.toFloat() * 2f
       }
     val ejectSp = RiftCalibrationState.fluxCoreEjectSpeed
-    fluxCoreOrb.x = ship.x.coerceIn(180f, WORLD_SIZE - 180f)
-    fluxCoreOrb.y = ship.y.coerceIn(180f, WORLD_SIZE - 180f)
+    fluxCoreOrb.x = ship.x
+    fluxCoreOrb.y = ship.y
+    val distFromCenter = hypot(fluxCoreOrb.x - cx, fluxCoreOrb.y - cy)
+    val maxOrbDist = (arenaRadius - 150f).coerceAtLeast(600f)
+    if (distFromCenter > maxOrbDist) {
+      fluxCoreOrb.x = cx + ((fluxCoreOrb.x - cx) / distFromCenter) * maxOrbDist
+      fluxCoreOrb.y = cy + ((fluxCoreOrb.y - cy) / distFromCenter) * maxOrbDist
+    }
     if (isInsideSafeZone(fluxCoreOrb.x, fluxCoreOrb.y)) {
       fluxCoreOrb.x = cx + cos(baseAng) * (safeZone.width() * 0.5f + 90f)
       fluxCoreOrb.y = cy + sin(baseAng) * (safeZone.height() * 0.5f + 90f)
@@ -1614,40 +1758,46 @@ class RiftGameEngine(
   private fun rectOverlapsProtectedZone(rx: Float, ry: Float, rw: Float, rh: Float): Boolean {
     val rRight = rx + rw
     val rBottom = ry + rh
-    // Protect West Warp Gate + West Circular Stasis Jail (x: 450..1820, y: 3450..4550)
-    val overlapsWestBrig = rRight >= 450f && rx <= 1820f && rBottom >= 3450f && ry <= 4550f
-    // Protect East Warp Gate + East Circular Stasis Jail (x: 6180..7550, y: 3450..4550)
-    val overlapsEastBrig = rRight >= 6180f && rx <= 7550f && rBottom >= 3450f && ry <= 4550f
-    // Protect Rift Control Alpha & Omega Zones (x: 2200..3000 & 5000..5800, y: 3600..4400)
-    val overlapsRiftControl =
-      (rRight >= 2200f && rx <= 3000f && rBottom >= 3600f && ry <= 4400f) ||
-        (rRight >= 5000f && rx <= 5800f && rBottom >= 3600f && ry <= 4400f)
-    // Protect Flux Core initial spawn north of Safe Zone (x: 3800..4200, y: 3150..3580)
-    val overlapsFluxSpawn = rRight >= 3800f && rx <= 4200f && rBottom >= 3150f && ry <= 3580f
-    return overlapsWestBrig || overlapsEastBrig || overlapsRiftControl || overlapsFluxSpawn
+    val rCx = rx + rw * 0.5f
+    val rCy = ry + rh * 0.5f
+    val halfDiag = hypot(rw * 0.5f, rh * 0.5f)
+    // Must fit comfortably inside circular sector containment ring
+    if (hypot(rCx - arenaCenterX, rCy - arenaCenterY) + halfDiag > arenaRadius - 190f) return true
+    // Protect Safe Zone + docking clearance
+    if (rRight >= safeZone.left - 180f && rx <= safeZone.right + 180f && rBottom >= safeZone.top - 180f && ry <= safeZone.bottom + 180f) {
+      return true
+    }
+    // Protect West/East Warp Gates & Circular Stasis Jails
+    val westGateX = arenaCenterX - arenaRadius * 0.76f
+    val eastGateX = arenaCenterX + arenaRadius * 0.76f
+    if (hypot(rCx - westGateX, rCy - arenaCenterY) < halfDiag + 380f) return true
+    if (hypot(rCx - eastGateX, rCy - arenaCenterY) < halfDiag + 380f) return true
+    if (hypot(rCx - westBrigReactorX, rCy - westBrigReactorY) < halfDiag + stasisJailRadius + 160f) return true
+    if (hypot(rCx - eastBrigReactorX, rCy - eastBrigReactorY) < halfDiag + stasisJailRadius + 160f) return true
+    // Protect Rift Control Alpha & Omega Zones
+    if (hypot(rCx - riftAlphaX, rCy - riftAlphaY) < halfDiag + riftCaptureRadius + 140f) return true
+    if (hypot(rCx - riftOmegaX, rCy - riftOmegaY) < halfDiag + riftCaptureRadius + 140f) return true
+    // Protect Flux Core initial spawn north of Safe Zone
+    val overlapsFluxSpawn = rRight >= 3780f && rx <= 4220f && rBottom >= 3140f && ry <= 3600f
+    return overlapsFluxSpawn
   }
 
   fun generateSectorArena(seed: Int) {
+    currentArenaSeed = seed
     walls.clear()
-    val b = 64f
-    // Outer Arena Perimeter Walls
-    walls.add(WallRect(0f, 0f, WORLD_SIZE, b))
-    walls.add(WallRect(0f, WORLD_SIZE - b, WORLD_SIZE, b))
-    walls.add(WallRect(0f, b, b, WORLD_SIZE - b * 2f))
-    walls.add(WallRect(WORLD_SIZE - b, b, b, WORLD_SIZE - b * 2f))
 
-    // Center Base Trench Pillars around Safe Zone
-    val cx = WORLD_SIZE / 2f
-    val cy = WORLD_SIZE / 2f
-    walls.add(WallRect(cx - 440f, cy - 440f, 256f, 64f))
-    walls.add(WallRect(cx + 184f, cy - 440f, 256f, 64f))
-    walls.add(WallRect(cx - 440f, cy + 376f, 256f, 64f))
-    walls.add(WallRect(cx + 184f, cy + 376f, 256f, 64f))
+    // Center Safe Zone Orbital Station Dock Pylons around (4000, 4000)
+    val cx = arenaCenterX
+    val cy = arenaCenterY
+    walls.add(WallRect(cx - 448f, cy - 448f, 256f, 68f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 101))
+    walls.add(WallRect(cx + 192f, cy - 448f, 256f, 68f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 102))
+    walls.add(WallRect(cx - 448f, cy + 380f, 256f, 68f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 103))
+    walls.add(WallRect(cx + 192f, cy + 380f, 256f, 68f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 104))
 
-    walls.add(WallRect(cx - 440f, cy - 376f, 64f, 192f))
-    walls.add(WallRect(cx - 440f, cy + 184f, 64f, 192f))
-    walls.add(WallRect(cx + 376f, cy - 376f, 64f, 192f))
-    walls.add(WallRect(cx + 376f, cy + 184f, 64f, 192f))
+    walls.add(WallRect(cx - 448f, cy - 380f, 68f, 192f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 105))
+    walls.add(WallRect(cx - 448f, cy + 188f, 68f, 192f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 106))
+    walls.add(WallRect(cx + 380f, cy - 380f, 68f, 192f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 107))
+    walls.add(WallRect(cx + 380f, cy + 188f, 68f, 192f, SpaceObstacleStyle.ORBITAL_STATION, seed xor 108))
 
     var rng = seed
     fun nextRand(): Float {
@@ -1655,22 +1805,45 @@ class RiftGameEngine(
       return ((rng ushr 8) and 0xFFFFFF).toFloat() / 0x1000000.toFloat()
     }
 
-    for (i in 0 until 18) {
-      val rx = 512f + ((nextRand() * 2600f).toInt() / 32) * 32f
-      val ry = 512f + ((nextRand() * 2600f).toInt() / 32) * 32f
+    val styles = SpaceObstacleStyle.entries
+    val clusterCount = ((arenaRadius / 3800f) * 18f).toInt().coerceIn(9, 18)
+    for (i in 0 until clusterCount) {
+      val radialMin = 680f
+      val radialMax = (arenaRadius - 320f).coerceAtLeast(radialMin + 220f)
+      val dist = radialMin + nextRand() * (radialMax - radialMin)
+      val theta = nextRand() * (PI.toFloat() * 0.46f) + 0.04f
+      val stylePick = styles[(i + (nextRand() * 4f).toInt()) % styles.size]
       val horizontal = nextRand() > 0.5f
-      val w = if (horizontal) 288f else 64f
-      val h = if (horizontal) 64f else 288f
+      val (w, h) =
+        when (stylePick) {
+          SpaceObstacleStyle.ORBITAL_STATION ->
+            if (horizontal) 288f to 84f else 84f to 288f
+          SpaceObstacleStyle.ASTEROID_STATION ->
+            if (horizontal) 224f to 160f else 160f to 224f
+          SpaceObstacleStyle.CRYSTAL_ASTEROID ->
+            168f to 168f
+          SpaceObstacleStyle.FLOATING_DEBRIS ->
+            if (horizontal) 256f to 72f else 72f to 256f
+        }
 
+      val offX = ((cos(theta) * dist).toInt() / 32) * 32f
+      val offY = ((sin(theta) * dist).toInt() / 32) * 32f
       val candidates =
         listOf(
-          WallRect(rx, ry, w, h),
-          WallRect(WORLD_SIZE - rx - w, ry, w, h),
-          WallRect(rx, WORLD_SIZE - ry - h, w, h),
-          WallRect(WORLD_SIZE - rx - w, WORLD_SIZE - ry - h, w, h),
+          WallRect(cx - offX - w * 0.5f, cy - offY - h * 0.5f, w, h, stylePick, seed + i * 31 + 1),
+          WallRect(cx + offX - w * 0.5f, cy - offY - h * 0.5f, w, h, stylePick, seed + i * 31 + 2),
+          WallRect(cx - offX - w * 0.5f, cy + offY - h * 0.5f, w, h, stylePick, seed + i * 31 + 3),
+          WallRect(cx + offX - w * 0.5f, cy + offY - h * 0.5f, w, h, stylePick, seed + i * 31 + 4),
         )
       for (cand in candidates) {
-        if (!rectOverlapsProtectedZone(cand.x, cand.y, cand.w, cand.h)) {
+        val overlapsExisting =
+          walls.any { ex ->
+            cand.x < ex.x + ex.w + 96f &&
+              cand.x + cand.w + 96f > ex.x &&
+              cand.y < ex.y + ex.h + 96f &&
+              cand.y + cand.h + 96f > ex.y
+          }
+        if (!overlapsExisting && !rectOverlapsProtectedZone(cand.x, cand.y, cand.w, cand.h)) {
           walls.add(cand)
         }
       }
@@ -1686,50 +1859,72 @@ class RiftGameEngine(
     bakeStaticRadarBitmap()
   }
 
-  private fun bakeStaticRadarBitmap() {
-    val size = 160
+  fun bakeStaticRadarBitmap() {
+    val size = 192
     val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
-    val drawSize = size * 0.84f
-    val ox = (size - drawSize) / 2f
-    val oy = (size - drawSize) / 2f
-    val scale = drawSize / WORLD_SIZE
+    val half = size * 0.5f
+    val rSafe = arenaRadius.coerceAtLeast(1000f)
+    val scale = half / rSafe
 
     val borderPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.5f
-        color = Color.argb(120, 56, 189, 248)
+        strokeWidth = 1.8f
+        color = Color.argb(145, 56, 189, 248)
       }
-    c.drawRect(ox, oy, ox + drawSize, oy + drawSize, borderPaint)
+    c.drawCircle(half, half, half - 1.5f, borderPaint)
 
     val safePaint =
-      Paint().apply {
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.argb(45, 16, 185, 129)
+        color = Color.argb(55, 16, 185, 129)
       }
     c.drawRect(
-      ox + safeZone.left * scale,
-      oy + safeZone.top * scale,
-      ox + safeZone.right * scale,
-      oy + safeZone.bottom * scale,
+      half + (safeZone.left - arenaCenterX) * scale,
+      half + (safeZone.top - arenaCenterY) * scale,
+      half + (safeZone.right - arenaCenterX) * scale,
+      half + (safeZone.bottom - arenaCenterY) * scale,
       safePaint,
     )
 
-    val wallPaint =
-      Paint().apply {
+    val stationPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.argb(135, 148, 163, 184)
+        color = Color.argb(175, 148, 163, 184)
+      }
+    val asteroidPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(175, 167, 139, 250)
       }
     for (w in walls) {
-      c.drawRect(
-        ox + w.x * scale,
-        oy + w.y * scale,
-        ox + (w.x + w.w) * scale,
-        oy + (w.y + w.h) * scale,
-        wallPaint,
-      )
+      val left = half + (w.x - arenaCenterX) * scale
+      val top = half + (w.y - arenaCenterY) * scale
+      val right = half + (w.x + w.w - arenaCenterX) * scale
+      val bottom = half + (w.y + w.h - arenaCenterY) * scale
+      if (w.style == SpaceObstacleStyle.CRYSTAL_ASTEROID || w.style == SpaceObstacleStyle.ASTEROID_STATION) {
+        c.drawRoundRect(left, top, right, bottom, 3f, 3f, asteroidPaint)
+      } else {
+        c.drawRect(left, top, right, bottom, stationPaint)
+      }
     }
+
+    if (brickWalls.isNotEmpty()) {
+      val barrierPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          style = Paint.Style.FILL
+          color = Color.argb(235, 0, 245, 212)
+        }
+      for (bw in brickWalls) {
+        val left = half + (bw.x - arenaCenterX) * scale
+        val top = half + (bw.y - arenaCenterY) * scale
+        val right = half + (bw.x + bw.w - arenaCenterX) * scale
+        val bottom = half + (bw.y + bw.h - arenaCenterY) * scale
+        c.drawRect(left, top, max(left + 1.8f, right), max(top + 1.8f, bottom), barrierPaint)
+      }
+    }
+
     radarBgBitmap = bmp
   }
 
@@ -1746,6 +1941,7 @@ class RiftGameEngine(
   }
 
   fun circleIntersectsWalls(cx: Float, cy: Float, r: Float): Boolean {
+    if (hypot(cx - arenaCenterX, cy - arenaCenterY) + r > arenaRadius) return true
     for (w in walls) {
       val closestX = cx.coerceIn(w.x, w.x + w.w)
       val closestY = cy.coerceIn(w.y, w.y + w.h)
@@ -1770,27 +1966,25 @@ class RiftGameEngine(
     var chosenX = 0f
     var chosenY = 0f
     var found = false
+    val maxSpawnR = (arenaRadius - 160f).coerceAtLeast(650f)
 
-    // Attempt to pick a non-repeating random spot at least 250f away from previous spawn locations and active crates
+    // Attempt to pick a non-repeating random spot inside the circular playfield
     for (attempt in 0 until 60) {
       val minSeparation = if (attempt < 40) 250f else 150f
-      val x: Float
-      val y: Float
-      if (Random.nextFloat() < 0.35f) {
-        val angle = Random.nextFloat() * (PI.toFloat() * 2f)
-        val dist = 600f + Random.nextFloat() * 1400f
-        x = (WORLD_SIZE * 0.5f + cos(angle) * dist).coerceIn(180f, WORLD_SIZE - 180f)
-        y = (WORLD_SIZE * 0.5f + sin(angle) * dist).coerceIn(180f, WORLD_SIZE - 180f)
-      } else {
-        x = 180f + Random.nextFloat() * (WORLD_SIZE - 360f)
-        y = 180f + Random.nextFloat() * (WORLD_SIZE - 360f)
-      }
+      val angle = Random.nextFloat() * (PI.toFloat() * 2f)
+      val dist =
+        if (Random.nextFloat() < 0.35f) {
+          (580f + Random.nextFloat() * (maxSpawnR - 580f) * 0.55f).coerceAtMost(maxSpawnR)
+        } else {
+          560f + sqrt(Random.nextFloat()) * (maxSpawnR - 560f)
+        }
+      val x = arenaCenterX + cos(angle) * dist
+      val y = arenaCenterY + sin(angle) * dist
 
       if (circleIntersectsWalls(x, y, 44f) || isInsideSafeZone(x, y)) {
         continue
       }
 
-      // Check distance against currently active crates
       var tooClose = false
       for (g in greens) {
         if (hypot(g.x - x, g.y - y) < minSeparation) {
@@ -1800,7 +1994,6 @@ class RiftGameEngine(
       }
       if (tooClose) continue
 
-      // Check distance against previous spawn locations in match memory (never in the same spot)
       for (loc in recentBuffSpawnLocations) {
         if (hypot(loc.first - x, loc.second - y) < minSeparation) {
           tooClose = true
@@ -1816,14 +2009,11 @@ class RiftGameEngine(
     }
 
     if (!found) {
-      chosenX = 240f + Random.nextFloat() * (WORLD_SIZE - 480f)
-      chosenY = 240f + Random.nextFloat() * (WORLD_SIZE - 480f)
-      if (isInsideSafeZone(chosenX, chosenY)) {
-        chosenX += 600f
-      }
+      val fallbackAng = Random.nextFloat() * PI.toFloat() * 2f
+      chosenX = arenaCenterX + cos(fallbackAng) * 720f
+      chosenY = arenaCenterY + sin(fallbackAng) * 720f
     }
 
-    // Record in spatial history to guarantee uniqueness during the match
     if (recentBuffSpawnLocations.size >= 64) {
       recentBuffSpawnLocations.removeFirst()
     }
@@ -1859,32 +2049,32 @@ class RiftGameEngine(
   }
 
   fun findRandomAnomalyPosition(existingAnomalies: List<SpatialAnomalyEntity> = emptyList()): Pair<Float, Float> {
+    val maxAnomR = (arenaRadius - 320f).coerceAtLeast(820f)
+    val westGateX = arenaCenterX - arenaRadius * 0.76f
+    val eastGateX = arenaCenterX + arenaRadius * 0.76f
     for (attempt in 0 until 85) {
-      val margin = 340f
-      val x = margin + Random.nextFloat() * (WORLD_SIZE - margin * 2f)
-      val y = margin + Random.nextFloat() * (WORLD_SIZE - margin * 2f)
-      // Must be outside safe zone with clearance and outside walls
+      val ang = Random.nextFloat() * PI.toFloat() * 2f
+      val dist = 740f + sqrt(Random.nextFloat()) * (maxAnomR - 740f)
+      val x = arenaCenterX + cos(ang) * dist
+      val y = arenaCenterY + sin(ang) * dist
       val inSafePadded = x >= safeZone.left - 280f && x <= safeZone.right + 280f &&
         y >= safeZone.top - 280f && y <= safeZone.bottom + 280f
       if (inSafePadded) continue
       if (circleIntersectsWalls(x, y, 140f)) continue
 
-      // Never spawn inside Stasis Breach Jails or Rift Control Tug-of-War capture zones (820px clearance)
-      if (hypot(x - westBrigReactorX, y - westBrigReactorY) < 820f) continue
-      if (hypot(x - eastBrigReactorX, y - eastBrigReactorY) < 820f) continue
-      if (hypot(x - riftAlphaX, y - riftAlphaY) < 820f) continue
-      if (hypot(x - riftOmegaX, y - riftOmegaY) < 820f) continue
+      if (hypot(x - westBrigReactorX, y - westBrigReactorY) < 760f) continue
+      if (hypot(x - eastBrigReactorX, y - eastBrigReactorY) < 760f) continue
+      if (hypot(x - riftAlphaX, y - riftAlphaY) < 720f) continue
+      if (hypot(x - riftOmegaX, y - riftOmegaY) < 720f) continue
 
-      // Never spawn on top of West/East team spawn gates (520px clearance)
-      if (hypot(x - 900f, y - 4000f) < 520f) continue
-      if (hypot(x - 7100f, y - 4000f) < 520f) continue
+      if (hypot(x - westGateX, y - arenaCenterY) < 480f) continue
+      if (hypot(x - eastGateX, y - arenaCenterY) < 480f) continue
 
-      val tooCloseToOther = existingAnomalies.any { hypot(it.x - x, it.y - y) < 560f }
+      val tooCloseToOther = existingAnomalies.any { hypot(it.x - x, it.y - y) < 520f }
       if (tooCloseToOther) continue
       return x to y
     }
-    // Fallback safe coordinate in upper-left quadrant clear of objectives
-    return (WORLD_SIZE * 0.25f) to (WORLD_SIZE * 0.22f)
+    return (arenaCenterX - maxAnomR * 0.55f) to (arenaCenterY - maxAnomR * 0.55f)
   }
 
   fun spawnSingleAnomaly(type: AnomalyType, partnerId: String = ""): SpatialAnomalyEntity {
@@ -1953,19 +2143,18 @@ class RiftGameEngine(
   }
 
   private fun getSkirmishGateSpawnPosition(freq: Int): Pair<Float, Float> {
-    val baseX = if (freq == 0) 900f else 7100f
-    val baseY = 4000f
+    val gateOffset = (arenaRadius * 0.76f).coerceAtLeast(1050f)
+    val baseX = if (freq == 0) arenaCenterX - gateOffset else arenaCenterX + gateOffset
+    val baseY = arenaCenterY
     for (attempt in 0 until 25) {
-      val x = (baseX + (Random.nextFloat() - 0.5f) * 220f).coerceIn(180f, WORLD_SIZE - 180f)
-      val y = (baseY + (Random.nextFloat() - 0.5f) * 520f).coerceIn(240f, WORLD_SIZE - 240f)
+      val x = baseX + (Random.nextFloat() - 0.5f) * 200f
+      val y = baseY + (Random.nextFloat() - 0.5f) * 460f
       if (!circleIntersectsWalls(x, y, 42f)) return x to y
     }
     return baseX to baseY
   }
 
   private fun getStasisBrigPrisonerSpawnPosition(prisonerFreq: Int): Pair<Float, Float> {
-    // West team (freq == 0) prisoners are held inside East Team's Circular Jail (6600f, 4000f)
-    // East team (freq == 1) prisoners are held inside West Team's Circular Jail (1400f, 4000f)
     val cx = if (prisonerFreq == 0) eastBrigReactorX else westBrigReactorX
     val cy = if (prisonerFreq == 0) eastBrigReactorY else westBrigReactorY
     val ang = Random.nextFloat() * PI.toFloat() * 2f
@@ -1977,15 +2166,20 @@ class RiftGameEngine(
     if (isSkirmishRulesActive() || isStasisBreachRulesActive() || isRiftControlRulesActive()) {
       return getSkirmishGateSpawnPosition(freq)
     }
-    for (i in 0 until 30) {
-      val baseX = if (freq == 0) 560f else WORLD_SIZE - 560f
-      val x = baseX + (Random.nextFloat() - 0.5f) * 260f
-      val y = (WORLD_SIZE / 2f + (Random.nextFloat() - 0.5f) * 1400f).coerceIn(180f, WORLD_SIZE - 180f)
-      if (!circleIntersectsWalls(x, y, 36f) && !isWithinBotBanPerimeter(x, y)) {
+    val outerBandMin = (arenaRadius * 0.55f).coerceAtLeast(900f)
+    val outerBandMax = (arenaRadius - 180f).coerceAtLeast(outerBandMin + 200f)
+    for (i in 0 until 35) {
+      val baseAng = if (freq % 2 == 0) PI.toFloat() else 0f
+      val ang = baseAng + (Random.nextFloat() - 0.5f) * (PI.toFloat() * 0.85f)
+      val dist = outerBandMin + Random.nextFloat() * (outerBandMax - outerBandMin)
+      val x = arenaCenterX + cos(ang) * dist
+      val y = arenaCenterY + sin(ang) * dist
+      if (!circleIntersectsWalls(x, y, 38f) && !isWithinBotBanPerimeter(x, y)) {
         return x to y
       }
     }
-    return (if (freq == 0) 560f else WORLD_SIZE - 560f) to (WORLD_SIZE / 2f)
+    val fallbackX = if (freq % 2 == 0) arenaCenterX - outerBandMin else arenaCenterX + outerBandMin
+    return fallbackX to arenaCenterY
   }
 
   fun rebuildRosterForMode(newMode: String = activeRankedMode.id) {
@@ -2003,6 +2197,14 @@ class RiftGameEngine(
         else -> 20
       }
     teamSize = if (isTeamMode) perTeamTarget else 20
+    val botsAllowedForSizing = currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled
+    val expectedTotalShips =
+      if (botsAllowedForSizing) {
+        if (isTeamMode) perTeamTarget * 2 else 20
+      } else {
+        (1 + remotePilots.size).coerceAtLeast(2)
+      }
+    updateDynamicArenaGeometryForShipCount(expectedTotalShips, regenerateObstacles = true)
 
     localPlayer.freq = 0
     localPlayer.isInStasisBrig = false
@@ -2191,13 +2393,41 @@ class RiftGameEngine(
   }
 
   fun updateRemotePilots(states: List<LivePilotState>, currentUid: String) {
-    val activeRemoteUids = mutableSetOf<String>()
+    val liveOnlineUids = mutableSetOf<String>()
+    for (st in states) {
+      val uid = st.userId.ifEmpty { st.id }
+      if (uid.isEmpty() || uid == currentUid) continue
+      liveOnlineUids.add(uid)
+      onlineRemoteSectorByUid[uid] = st.sectorId.ifBlank { "NEXUS_LOBBY" }
+    }
+    val offlineUids = onlineRemoteSectorByUid.keys.filter { it !in liveOnlineUids }
+    for (off in offlineUids) {
+      onlineRemoteSectorByUid.remove(off)
+    }
+
+    if (!hasJoinedMatch) {
+      if (remotePilots.isNotEmpty()) {
+        remotePilots.clear()
+      }
+      return
+    }
+
+    val activeMatchRemoteUids = mutableSetOf<String>()
     var rosterChanged = false
+    val myCustomGame = currentCustomGame
 
     for (st in states) {
       val uid = st.userId.ifEmpty { st.id }
       if (uid.isEmpty() || uid == currentUid) continue
-      activeRemoteUids.add(uid)
+      val inSameMatch =
+        if (myCustomGame != null) {
+          st.sectorId.equals("CUSTOM_${myCustomGame.instanceId}", ignoreCase = true)
+        } else {
+          matchesRankedModeSector(st.sectorId, activeRankedMode)
+        }
+      if (!inSameMatch) continue
+
+      activeMatchRemoteUids.add(uid)
 
       val existing = remotePilots[uid]
       val spec = RiftCodex.getShipById(st.shipId.toInt())
@@ -2276,7 +2506,7 @@ class RiftGameEngine(
       }
     }
 
-    val staleUids = remotePilots.keys.filter { it !in activeRemoteUids }
+    val staleUids = remotePilots.keys.filter { it !in activeMatchRemoteUids }
     if (staleUids.isNotEmpty()) {
       for (stale in staleUids) {
         remotePilots.remove(stale)
@@ -2284,7 +2514,7 @@ class RiftGameEngine(
       rosterChanged = true
     }
 
-    if (rosterChanged) {
+    if (rosterChanged && hasJoinedMatch) {
       rebuildRosterForMode(mode)
     }
   }
@@ -2875,7 +3105,7 @@ class RiftGameEngine(
       while (stepDist <= 135f) {
         val candX = startX + cosH * stepDist
         val candY = startY + sinH * stepDist
-        val inWorld = candX in 110f..(WORLD_SIZE - 110f) && candY in 110f..(WORLD_SIZE - 110f)
+        val inWorld = hypot(candX - arenaCenterX, candY - arenaCenterY) <= arenaRadius - ship.radius - 8f
         val blockedBySafeLockout =
           ship.safeZoneLockoutTimer > 0f &&
             candX >= safeZone.left - ship.radius - 6f &&
@@ -3398,32 +3628,51 @@ class RiftGameEngine(
         }
       }
       "STASIS_BARRIER" -> {
-        val dur = RiftCalibrationState.stasisBarrierDuration
         val span = RiftCalibrationState.stasisBarrierLength
-        val deployDist = 86f
-        val cx = (ship.x + cos(ship.angle) * deployDist).coerceIn(140f, WORLD_SIZE - 140f)
-        val cy = (ship.y + sin(ship.angle) * deployDist).coerceIn(140f, WORLD_SIZE - 140f)
+        val thickness = 48f
+        val deployDist = 98f
+        var cx = ship.x + cos(ship.angle) * deployDist
+        var cy = ship.y + sin(ship.angle) * deployDist
+        val dCenter = hypot(cx - arenaCenterX, cy - arenaCenterY)
+        val maxBarrierDist = (arenaRadius - span * 0.5f - 48f).coerceAtLeast(620f)
+        if (dCenter > maxBarrierDist) {
+          cx = arenaCenterX + ((cx - arenaCenterX) / dCenter) * maxBarrierDist
+          cy = arenaCenterY + ((cy - arenaCenterY) / dCenter) * maxBarrierDist
+        }
         if (!isInsideSafeZone(cx, cy)) {
           val horizPerp = kotlin.math.abs(sin(ship.angle)) >= kotlin.math.abs(cos(ship.angle))
-          val w = if (horizPerp) span else 22f
-          val h = if (horizPerp) 22f else span
+          val w = if (horizPerp) span else thickness
+          val h = if (horizPerp) thickness else span
+          val bx = cx - w * 0.5f
+          val by = cy - h * 0.5f
           brickWalls.add(
             BrickWallEntity(
               id = "brick_${nextDecoyBrickId++}",
               ownerId = ship.id,
               freq = ship.freq,
-              x = cx - w * 0.5f,
-              y = cy - h * 0.5f,
+              x = bx,
+              y = by,
               w = w,
               h = h,
-              life = dur,
-              maxLife = dur,
+              life = 999_999f,
+              maxLife = 999_999f,
             )
           )
-          shockwaves.add(ShockwaveEntity(cx, cy, 12f, 95f, Color.parseColor("#38BDF8")))
+          val closestX = ship.x.coerceIn(bx, bx + w)
+          val closestY = ship.y.coerceIn(by, by + h)
+          val dx = ship.x - closestX
+          val dy = ship.y - closestY
+          val dist = hypot(dx, dy)
+          if (dist < ship.radius + 4f) {
+            val pushAng = if (dist > 0.5f) atan2(dy, dx) else (ship.angle + PI.toFloat())
+            ship.x = closestX + cos(pushAng) * (ship.radius + 6f)
+            ship.y = closestY + sin(pushAng) * (ship.radius + 6f)
+          }
+          bakeStaticRadarBitmap()
+          shockwaves.add(ShockwaveEntity(cx, cy, 12f, 110f, Color.parseColor("#38BDF8")))
           if (ship.isLocalPlayer) {
             sfx.playBounce()
-            spawnPooledFct("🧱 STASIS BARRIER (${dur.toInt()}s)", cx, cy - 24f, Color.parseColor("#38BDF8"))
+            spawnPooledFct("🧱 PERMANENT BARRIER DEPLOYED", cx, cy - 24f, Color.parseColor("#38BDF8"))
           }
         }
       }
@@ -3448,31 +3697,51 @@ class RiftGameEngine(
         val accent = forged.strokeColorInt
         when (forged.specialEffect) {
           CustomBuffEffect.BARRIER -> {
-            val deployDist = 88f
-            val cx = (ship.x + cos(aimAngle) * deployDist).coerceIn(140f, WORLD_SIZE - 140f)
-            val cy = (ship.y + sin(aimAngle) * deployDist).coerceIn(140f, WORLD_SIZE - 140f)
+            val span = forged.blastRadius.coerceIn(90f, 320f)
+            val thickness = 48f
+            val deployDist = 98f
+            var cx = ship.x + cos(aimAngle) * deployDist
+            var cy = ship.y + sin(aimAngle) * deployDist
+            val dCenter = hypot(cx - arenaCenterX, cy - arenaCenterY)
+            val maxBarrierDist = (arenaRadius - span * 0.5f - 48f).coerceAtLeast(620f)
+            if (dCenter > maxBarrierDist) {
+              cx = arenaCenterX + ((cx - arenaCenterX) / dCenter) * maxBarrierDist
+              cy = arenaCenterY + ((cy - arenaCenterY) / dCenter) * maxBarrierDist
+            }
             if (!isInsideSafeZone(cx, cy)) {
               val horizPerp = kotlin.math.abs(sin(aimAngle)) >= kotlin.math.abs(cos(aimAngle))
-              val span = forged.blastRadius.coerceIn(70f, 320f)
-              val w = if (horizPerp) span else 24f
-              val h = if (horizPerp) 24f else span
+              val w = if (horizPerp) span else thickness
+              val h = if (horizPerp) thickness else span
+              val bx = cx - w * 0.5f
+              val by = cy - h * 0.5f
               brickWalls.add(
                 BrickWallEntity(
                   id = "brick_${nextDecoyBrickId++}",
                   ownerId = ship.id,
                   freq = ship.freq,
-                  x = cx - w * 0.5f,
-                  y = cy - h * 0.5f,
+                  x = bx,
+                  y = by,
                   w = w,
                   h = h,
-                  life = forged.flightDuration,
-                  maxLife = forged.flightDuration,
+                  life = 999_999f,
+                  maxLife = 999_999f,
                 )
               )
+              val closestX = ship.x.coerceIn(bx, bx + w)
+              val closestY = ship.y.coerceIn(by, by + h)
+              val dx = ship.x - closestX
+              val dy = ship.y - closestY
+              val dist = hypot(dx, dy)
+              if (dist < ship.radius + 4f) {
+                val pushAng = if (dist > 0.5f) atan2(dy, dx) else (aimAngle + PI.toFloat())
+                ship.x = closestX + cos(pushAng) * (ship.radius + 6f)
+                ship.y = closestY + sin(pushAng) * (ship.radius + 6f)
+              }
+              bakeStaticRadarBitmap()
               shockwaves.add(ShockwaveEntity(cx, cy, 14f, span * 0.8f, accent))
               if (ship.isLocalPlayer) {
                 sfx.playBounce()
-                spawnPooledFct("🧪 ${forged.officialName}", cx, cy - 26f, accent)
+                spawnPooledFct("🧱 ${forged.officialName} (PERMANENT)", cx, cy - 26f, accent)
               }
             }
           }
@@ -3741,6 +4010,30 @@ class RiftGameEngine(
         checkRect(bw.x, bw.y, bw.x + bw.w, bw.y + bw.h)
       }
 
+      // Check circular outer sector containment perimeter ray intersection
+      val fxPerim = curX - arenaCenterX
+      val fyPerim = curY - arenaCenterY
+      val bPerim = fxPerim * dirX + fyPerim * dirY
+      val cPerim = fxPerim * fxPerim + fyPerim * fyPerim - arenaRadius * arenaRadius
+      val discPerim = bPerim * bPerim - cPerim
+      if (discPerim >= 0f) {
+        val tExit = -bPerim + sqrt(discPerim)
+        if (tExit > 1.5f && tExit < bestT) {
+          val hx = curX + dirX * tExit
+          val hy = curY + dirY * tExit
+          val invR = 1f / arenaRadius.coerceAtLeast(1f)
+          bestT = tExit
+          closestHit =
+            RaycastHit(
+              t = tExit,
+              hitX = hx,
+              hitY = hy,
+              normalX = (arenaCenterX - hx) * invR,
+              normalY = (arenaCenterY - hy) * invR,
+            )
+        }
+      }
+
       // Check linked Phase Rift A ⇄ B portal warps closer than the closest wall hit
       var closestPortalEntry: Pair<Float, SpatialAnomalyEntity>? = null
       for (anom in anomalies) {
@@ -3803,6 +4096,14 @@ class RiftGameEngine(
     return pts
   }
 
+  private fun triggerVisualBarrelRoll(ship: ShipEntity, nx: Float, ny: Float) {
+    if (ship.barrelRollTimer <= 0.08f && hypot(ship.vx, ship.vy) > 38f) {
+      ship.barrelRollTimer = 0.48f
+      val cross = cos(ship.angle) * ny - sin(ship.angle) * nx
+      ship.barrelRollDir = if (cross >= 0f) 1f else -1f
+    }
+  }
+
   private fun bounceCircleAgainstRect(
     ship: ShipEntity,
     rx: Float,
@@ -3828,6 +4129,7 @@ class RiftGameEngine(
         val elast = RiftCalibrationState.wallElasticity
         ship.vx = (ship.vx - 2f * dot * nx) * elast
         ship.vy = (ship.vy - 2f * dot * ny) * elast
+        triggerVisualBarrelRoll(ship, nx, ny)
         if (ship.isLocalPlayer && hypot(ship.vx, ship.vy) > 45f) {
           sfx.playBounce()
         }
@@ -3841,6 +4143,27 @@ class RiftGameEngine(
     }
     for (bw in brickWalls) {
       bounceCircleAgainstRect(ship, bw.x, bw.y, bw.w, bw.h)
+    }
+    // True Circular Sector Containment Ring Elastic Bounce (0⚡ damage, triggers 360° visual barrel roll)
+    val dxC = ship.x - arenaCenterX
+    val dyC = ship.y - arenaCenterY
+    val distC = hypot(dxC, dyC)
+    val maxShipR = (arenaRadius - ship.radius).coerceAtLeast(400f)
+    if (distC > maxShipR) {
+      val outNx = dxC / distC.coerceAtLeast(0.001f)
+      val outNy = dyC / distC.coerceAtLeast(0.001f)
+      ship.x = arenaCenterX + outNx * maxShipR
+      ship.y = arenaCenterY + outNy * maxShipR
+      val dotOut = ship.vx * outNx + ship.vy * outNy
+      if (dotOut > 0f) {
+        val elast = RiftCalibrationState.wallElasticity
+        ship.vx = (ship.vx - 2f * dotOut * outNx) * elast
+        ship.vy = (ship.vy - 2f * dotOut * outNy) * elast
+        triggerVisualBarrelRoll(ship, -outNx, -outNy)
+        if (ship.isLocalPlayer && hypot(ship.vx, ship.vy) > 45f) {
+          sfx.playBounce()
+        }
+      }
     }
   }
 
@@ -4182,7 +4505,9 @@ class RiftGameEngine(
     }
     bullets.clear()
     bombs.clear()
+    brickWalls.clear()
     interdictorBubbles.clear()
+    bakeStaticRadarBitmap()
 
     if (skirmishWestRoundWins >= 2 || skirmishEastRoundWins >= 2) {
       val westWonMatch = skirmishWestRoundWins >= 2
@@ -4257,6 +4582,8 @@ class RiftGameEngine(
       s.y = sp.second
       s.phaseShieldTimer = 3.0f
     }
+    brickWalls.clear()
+    bakeStaticRadarBitmap()
     westBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
     eastBrigGeneratorHp = RiftCalibrationState.stasisBrigReactorMaxHp
 
@@ -4395,17 +4722,19 @@ class RiftGameEngine(
   }
 
   fun findRandomOpenPositionOutsideSafeZone(): Pair<Float, Float> {
+    val maxR = (arenaRadius - 200f).coerceAtLeast(700f)
     for (attempt in 0 until 60) {
-      val margin = 240f
-      val x = margin + Random.nextFloat() * (WORLD_SIZE - margin * 2f)
-      val y = margin + Random.nextFloat() * (WORLD_SIZE - margin * 2f)
+      val ang = Random.nextFloat() * PI.toFloat() * 2f
+      val dist = 620f + sqrt(Random.nextFloat()) * (maxR - 620f)
+      val x = arenaCenterX + cos(ang) * dist
+      val y = arenaCenterY + sin(ang) * dist
       val inSafePadded = x >= safeZone.left - 180f && x <= safeZone.right + 180f &&
         y >= safeZone.top - 180f && y <= safeZone.bottom + 180f
       if (inSafePadded) continue
       if (circleIntersectsWalls(x, y, 56f)) continue
       return x to y
     }
-    return (WORLD_SIZE * 0.22f) to (WORLD_SIZE * 0.22f)
+    return (arenaCenterX - maxR * 0.6f) to (arenaCenterY - maxR * 0.6f)
   }
 
   private fun destroyShipFromIdleDrain(target: ShipEntity) {
@@ -4575,13 +4904,7 @@ class RiftGameEngine(
   ): RaycastHit? {
     var closestHit: RaycastHit? = null
     var bestT = lookAheadDist
-    for (w in walls) {
-      val pad = 22f
-      val left = w.x - pad
-      val right = w.x + w.w + pad
-      val top = w.y - pad
-      val bottom = w.y + w.h + pad
-
+    fun checkRect(left: Float, top: Float, right: Float, bottom: Float) {
       intersectRaySegment(ox, oy, dirX, dirY, left, top, right, top, 0f, -1f)?.let {
         if (it.t < bestT) {
           bestT = it.t
@@ -4605,6 +4928,39 @@ class RiftGameEngine(
           bestT = it.t
           closestHit = it
         }
+      }
+    }
+
+    val pad = 22f
+    for (w in walls) {
+      checkRect(w.x - pad, w.y - pad, w.x + w.w + pad, w.y + w.h + pad)
+    }
+    for (bw in brickWalls) {
+      checkRect(bw.x - pad, bw.y - pad, bw.x + bw.w + pad, bw.y + bw.h + pad)
+    }
+
+    // Check circular outer sector boundary for AI bot look-ahead steering
+    val safePerimR = (arenaRadius - 48f).coerceAtLeast(500f)
+    val fxP = ox - arenaCenterX
+    val fyP = oy - arenaCenterY
+    val bP = fxP * dirX + fyP * dirY
+    val cP = fxP * fxP + fyP * fyP - safePerimR * safePerimR
+    val discP = bP * bP - cP
+    if (discP >= 0f) {
+      val tExit = -bP + sqrt(discP)
+      if (tExit > 1.5f && tExit < bestT) {
+        val hx = ox + dirX * tExit
+        val hy = oy + dirY * tExit
+        val invR = 1f / safePerimR
+        bestT = tExit
+        closestHit =
+          RaycastHit(
+            t = tExit,
+            hitX = hx,
+            hitY = hy,
+            normalX = (arenaCenterX - hx) * invR,
+            normalY = (arenaCenterY - hy) * invR,
+          )
       }
     }
     return closestHit
@@ -5013,9 +5369,9 @@ class RiftGameEngine(
           }
           else -> {
             val t = (System.currentTimeMillis() % 600000L) * 0.00042f
-            val orbitR = 2550f
-            val gx = WORLD_SIZE / 2f + cos(t + bot.aiSeed) * orbitR
-            val gy = WORLD_SIZE / 2f + sin(t * 1.12f + bot.aiSeed) * orbitR
+            val orbitR = (arenaRadius * 0.65f).coerceIn(1200f, 2550f)
+            val gx = arenaCenterX + cos(t + bot.aiSeed) * orbitR
+            val gy = arenaCenterY + sin(t * 1.12f + bot.aiSeed) * orbitR
             atan2(gy - bot.y, gx - bot.x)
           }
         }
@@ -5194,9 +5550,9 @@ class RiftGameEngine(
           desiredAngle = atan2(nearestLivingAlly.y - bot.y, nearestLivingAlly.x - bot.x)
         } else {
           val t = (System.currentTimeMillis() % 600000L) * 0.00035f
-          val orbitRadius = 2400f
-          val gx = WORLD_SIZE / 2f + cos(t + bot.aiSeed) * orbitRadius
-          val gy = WORLD_SIZE / 2f + sin(t * 1.15f + bot.aiSeed) * orbitRadius
+          val orbitRadius = (arenaRadius * 0.62f).coerceIn(1150f, 2400f)
+          val gx = arenaCenterX + cos(t + bot.aiSeed) * orbitRadius
+          val gy = arenaCenterY + sin(t * 1.15f + bot.aiSeed) * orbitRadius
           desiredAngle = atan2(gy - bot.y, gx - bot.x)
         }
         bot.weaponAngle = bot.angle
@@ -5242,6 +5598,33 @@ class RiftGameEngine(
       } else {
         rawDt
       }
+
+    // Unjoined Startup / NEXUS Orbit Mode: peacefully orbit the 3D circular sector with 0 combat ships
+    if (!hasJoinedMatch) {
+      lobbyOrbitAngle = (lobbyOrbitAngle + rawDt * 0.16f) % (PI.toFloat() * 2f)
+      localPlayer.x = arenaCenterX + cos(lobbyOrbitAngle) * 760f
+      localPlayer.y = arenaCenterY + sin(lobbyOrbitAngle) * 760f
+      localPlayer.angle = lobbyOrbitAngle + PI.toFloat() * 0.5f
+      localPlayer.weaponAngle = localPlayer.angle
+      localPlayer.vx = 0f
+      localPlayer.vy = 0f
+      localPlayer.flux = localPlayer.maxFlux
+      localPlayer.visualBankRoll = 0.22f
+      localPlayer.barrelRollTimer = 0f
+      for (g in greens) {
+        g.spinPhase = (g.spinPhase + rawDt * 1.8f) % (PI.toFloat() * 2f)
+      }
+      stepSpatialAnomalies(dt, rawDt)
+      for (i in particles.indices.reversed()) {
+        val p = particles[i]
+        p.life -= rawDt
+        if (p.life <= 0f) particles.removeAt(i) else {
+          p.x += p.vx * dt
+          p.y += p.vy * dt
+        }
+      }
+      return
+    }
 
     // 1. Local Player Thrust, Afterburner, Hyper Surge, Overcharge Surge, Manual HUD Brake & Live Life Stats
     if (isInLobbyStaging) {
@@ -5316,12 +5699,12 @@ class RiftGameEngine(
       }
     }
 
-    // Step Repel-pushed Supply Crates with wall bounce and smooth damping to rest
+    // Step Repel-pushed Supply Crates with circular perimeter & wall bounce and smooth damping to rest
     for (g in greens) {
       val gSpeed = hypot(g.vx, g.vy)
       if (gSpeed > 1f) {
-        val nx = (g.x + g.vx * dt).coerceIn(140f, WORLD_SIZE - 140f)
-        val ny = (g.y + g.vy * dt).coerceIn(140f, WORLD_SIZE - 140f)
+        val nx = g.x + g.vx * dt
+        val ny = g.y + g.vy * dt
         if (circleIntersectsWalls(nx, g.y, 38f)) {
           g.vx = -g.vx * 0.7f
         } else {
@@ -5342,13 +5725,20 @@ class RiftGameEngine(
       }
     }
 
-    // Step temporary Brick Energy Barriers (10s lifespan)
+    // Step Placed Bulkhead Barriers (permanent 999,999s barriers stay until round/match reset)
+    var removedBarrier = false
     for (bwIdx in brickWalls.indices.reversed()) {
       val bw = brickWalls[bwIdx]
-      bw.life -= dt
-      if (bw.life <= 0f) {
-        brickWalls.removeAt(bwIdx)
+      if (bw.maxLife < 500_000f) {
+        bw.life -= dt
+        if (bw.life <= 0f) {
+          brickWalls.removeAt(bwIdx)
+          removedBarrier = true
+        }
       }
+    }
+    if (removedBarrier) {
+      bakeStaticRadarBitmap()
     }
 
     // Step Interdictor Stasis Bubbles (15s two-way containment domes)
@@ -5512,6 +5902,9 @@ class RiftGameEngine(
           s.shotgunWaveTimer = 0f
           s.missileLockWarningTimer = 0f
           s.plasmaRiftTickTimer = 0f
+          s.visualBankRoll = 0f
+          s.barrelRollTimer = 0f
+          s.prevHeadingForBank = s.angle
           if (s.isLocalPlayer) {
             buffVersion++
             resetCurrentLifeStats()
@@ -5736,6 +6129,7 @@ class RiftGameEngine(
                 val elast = RiftCalibrationState.wallElasticity
                 s.vx = (s.vx - 2f * dot * nx) * elast
                 s.vy = (s.vy - 2f * dot * ny) * elast
+                triggerVisualBarrelRoll(s, -nx, -ny)
                 if (s.isLocalPlayer) sfx.playBounce()
               }
             }
@@ -5752,6 +6146,7 @@ class RiftGameEngine(
                 val elast = RiftCalibrationState.wallElasticity
                 s.vx = (s.vx - 2f * dot * nx) * elast
                 s.vy = (s.vy - 2f * dot * ny) * elast
+                triggerVisualBarrelRoll(s, nx, ny)
                 if (s.isLocalPlayer) sfx.playBounce()
               }
             }
@@ -5778,6 +6173,7 @@ class RiftGameEngine(
               val elast = RiftCalibrationState.wallElasticity
               s.vx = (s.vx - 2f * dot * nx) * elast
               s.vy = (s.vy - 2f * dot * ny) * elast
+              triggerVisualBarrelRoll(s, -nx, -ny)
               if (s.isLocalPlayer) sfx.playBounce()
             }
           }
@@ -5794,6 +6190,7 @@ class RiftGameEngine(
               val elast = RiftCalibrationState.wallElasticity
               s.vx = (s.vx - 2f * dot * nx) * elast
               s.vy = (s.vy - 2f * dot * ny) * elast
+              triggerVisualBarrelRoll(s, nx, ny)
               if (s.isLocalPlayer) sfx.playBounce()
             }
           }
@@ -5828,6 +6225,7 @@ class RiftGameEngine(
         val repelForce = RiftCalibrationState.safeZoneRepelForce
         s.vx = nx * repelForce
         s.vy = ny * repelForce
+        triggerVisualBarrelRoll(s, nx, ny)
         s.inSafeZone = false
         s.wasInSafeZone = false
 
@@ -5852,6 +6250,30 @@ class RiftGameEngine(
       } else if (s.isLocalPlayer && leftStickActive && leftStickMag > 0.08f) {
         s.angle = leftStickAngle
       }
+
+      // Update purely visual 3D Turn Banking (-1f..+1f) & 0.48s 360° Barrel Roll timer (zero hitbox impact)
+      if (s.barrelRollTimer > 0f) {
+        s.barrelRollTimer = max(0f, s.barrelRollTimer - rawDt)
+      }
+      val headingDelta = atan2(sin(s.angle - s.prevHeadingForBank), cos(s.angle - s.prevHeadingForBank))
+      s.prevHeadingForBank = s.angle
+      val safeBankDt = rawDt.coerceIn(0.004f, 0.05f)
+      val angVelBank =
+        if (kotlin.math.abs(headingDelta) < 1.35f) {
+          (headingDelta / safeBankDt) * 0.20f
+        } else {
+          0f
+        }
+      val stickCrossBank =
+        if (s.isLocalPlayer && leftStickActive && leftStickMag > 0.08f) {
+          val cross = cos(s.angle) * sin(leftStickAngle) - sin(s.angle) * cos(leftStickAngle)
+          cross * leftStickMag * 0.85f
+        } else {
+          0f
+        }
+      val targetBank = (angVelBank + stickCrossBank).coerceIn(-1f, 1f)
+      val bankLerp = (1f - 0.0008.pow(safeBankDt.toDouble()).toFloat()).coerceIn(0.08f, 0.45f)
+      s.visualBankRoll += (targetBank - s.visualBankRoll) * bankLerp
 
       // Collect 89%-Ship-Size Glowing Buff Pickups (Core 11-Buff Pool 0..10 + Custom AI-Forged Buffs 11+)
       for (gIdx in greens.indices.reversed()) {
@@ -6068,6 +6490,27 @@ class RiftGameEngine(
               bullets.removeAt(i)
             }
             break
+          }
+        }
+      }
+      if (!hitWall) {
+        val nextPerimDist = hypot(nx - arenaCenterX, ny - arenaCenterY)
+        if (nextPerimDist >= arenaRadius) {
+          hitWall = true
+          if (b.bouncesLeft > 0) {
+            b.bouncesLeft--
+            val dSafe = nextPerimDist.coerceAtLeast(0.001f)
+            val rnx = (nx - arenaCenterX) / dSafe
+            val rny = (ny - arenaCenterY) / dSafe
+            b.x = arenaCenterX + rnx * (arenaRadius - 3f)
+            b.y = arenaCenterY + rny * (arenaRadius - 3f)
+            val dot = b.vx * rnx + b.vy * rny
+            if (dot > 0f) {
+              b.vx -= 2f * dot * rnx
+              b.vy -= 2f * dot * rny
+            }
+          } else {
+            bullets.removeAt(i)
           }
         }
       }
@@ -6419,6 +6862,39 @@ class RiftGameEngine(
                 spawnExplosion(b.x, b.y, Color.parseColor("#38BDF8"))
               }
               break
+            }
+          }
+        }
+        if (!hitWall) {
+          val nextPerimDist = hypot(nx - arenaCenterX, ny - arenaCenterY)
+          if (nextPerimDist + b.radius >= arenaRadius) {
+            hitWall = true
+            if (b.bouncesLeft > 0) {
+              b.bouncesLeft--
+              val dSafe = nextPerimDist.coerceAtLeast(0.001f)
+              val rnx = (nx - arenaCenterX) / dSafe
+              val rny = (ny - arenaCenterY) / dSafe
+              b.x = arenaCenterX + rnx * (arenaRadius - b.radius - 3f)
+              b.y = arenaCenterY + rny * (arenaRadius - b.radius - 3f)
+              val dot = b.vx * rnx + b.vy * rny
+              val bounceRestitution = if (b.type == "MISSILE" || b.type == "BOUNCE" || b.type == "CUSTOM_ORB") 1.0f else 0.85f
+              if (dot > 0f) {
+                b.vx = (b.vx - 2f * dot * rnx) * bounceRestitution
+                b.vy = (b.vy - 2f * dot * rny) * bounceRestitution
+              }
+            } else {
+              if (b.type == "PROX") spawnProximityFlakShrapnel(b)
+              bombs.removeAt(i)
+              spawnExplosion(
+                b.x,
+                b.y,
+                when (b.type) {
+                  "CUSTOM_ORB" -> if (b.customColor != 0) b.customColor else Color.parseColor("#22D3EE")
+                  "EMP" -> Color.parseColor("#B388FF")
+                  "MISSILE" -> Color.parseColor("#EF4444")
+                  else -> Color.parseColor("#F59E0B")
+                },
+              )
             }
           }
         }
@@ -6810,6 +7286,8 @@ class RiftGameEngine(
         sfx.playWarp()
         onPrizeToast(msg)
       }
+      brickWalls.clear()
+      bakeStaticRadarBitmap()
       resetRiftControlZones()
       for (s in ships) {
         s.respawnTimer = 0f
@@ -6902,12 +7380,18 @@ class RiftGameEngine(
         val ny = fluxCoreOrb.y + fluxCoreOrb.vy * dt
         val orbR = 32f
         var bounced = false
-        if (nx < 160f || nx > WORLD_SIZE - 160f) {
-          fluxCoreOrb.vx = -fluxCoreOrb.vx
-          bounced = true
-        }
-        if (ny < 160f || ny > WORLD_SIZE - 160f) {
-          fluxCoreOrb.vy = -fluxCoreOrb.vy
+        val maxOrbDist = (arenaRadius - orbR - 24f).coerceAtLeast(500f)
+        val nextDist = hypot(nx - arenaCenterX, ny - arenaCenterY)
+        if (nextDist > maxOrbDist) {
+          val rnx = (nx - arenaCenterX) / nextDist.coerceAtLeast(0.001f)
+          val rny = (ny - arenaCenterY) / nextDist.coerceAtLeast(0.001f)
+          val dot = fluxCoreOrb.vx * rnx + fluxCoreOrb.vy * rny
+          if (dot > 0f) {
+            fluxCoreOrb.vx -= 2f * dot * rnx
+            fluxCoreOrb.vy -= 2f * dot * rny
+          }
+          fluxCoreOrb.x = arenaCenterX + rnx * maxOrbDist
+          fluxCoreOrb.y = arenaCenterY + rny * maxOrbDist
           bounced = true
         }
         if (!bounced && isInsideSafeZone(nx, ny)) {
@@ -6925,8 +7409,26 @@ class RiftGameEngine(
             }
           }
         }
-        fluxCoreOrb.x = (fluxCoreOrb.x + fluxCoreOrb.vx * dt).coerceIn(160f, WORLD_SIZE - 160f)
-        fluxCoreOrb.y = (fluxCoreOrb.y + fluxCoreOrb.vy * dt).coerceIn(160f, WORLD_SIZE - 160f)
+        if (!bounced) {
+          for (bw in brickWalls) {
+            if (nx + orbR >= bw.x && nx - orbR <= bw.x + bw.w && ny + orbR >= bw.y && ny - orbR <= bw.y + bw.h) {
+              val prevInX = fluxCoreOrb.x + orbR >= bw.x && fluxCoreOrb.x - orbR <= bw.x + bw.w
+              if (!prevInX) fluxCoreOrb.vx = -fluxCoreOrb.vx else fluxCoreOrb.vy = -fluxCoreOrb.vy
+              bounced = true
+              break
+            }
+          }
+        }
+        val movedX = fluxCoreOrb.x + fluxCoreOrb.vx * dt
+        val movedY = fluxCoreOrb.y + fluxCoreOrb.vy * dt
+        val movedDist = hypot(movedX - arenaCenterX, movedY - arenaCenterY)
+        if (movedDist <= maxOrbDist) {
+          fluxCoreOrb.x = movedX
+          fluxCoreOrb.y = movedY
+        } else {
+          fluxCoreOrb.x = arenaCenterX + ((movedX - arenaCenterX) / movedDist) * maxOrbDist
+          fluxCoreOrb.y = arenaCenterY + ((movedY - arenaCenterY) / movedDist) * maxOrbDist
+        }
       }
 
       // Check pickup by any alive ship outside the Safe Zone (`hypot <= ship.radius + 46f`)

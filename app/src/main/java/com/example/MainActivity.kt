@@ -93,7 +93,6 @@ import com.example.ui.RiftHudOverlay
 import com.example.ui.RiftShardsStoreModal
 import com.example.ui.RiftViewModel
 import com.example.ui.SettingsModal
-import com.example.ui.SyndicateChatModal
 import com.example.ui.SyndicatesModal
 import com.example.ui.UiState
 import com.example.ui.onGoogleSignInClicked
@@ -276,7 +275,9 @@ fun RiftArenaScreen(
   var unreadCommsCount by remember { mutableIntStateOf(0) }
 
   var bootToNexusHub by remember { mutableStateOf(localPrefs.getBootToNexusHub()) }
-  var activeModal by remember { mutableStateOf(ActiveModal.NEXUS) }
+  var activeModal by remember {
+    mutableStateOf(if (bootToNexusHub) ActiveModal.NEXUS else ActiveModal.NONE)
+  }
   var nexusInitialLayoutMode by remember { mutableStateOf(NexusHubLayoutMode.DECK_ONLY) }
   var showFullChangelogModal by remember { mutableStateOf(false) }
   var previousModalBeforeStore by remember { mutableStateOf(ActiveModal.DOSSIER) }
@@ -372,7 +373,9 @@ fun RiftArenaScreen(
         formOrJoinArmada(savedArmada, localPrefs.getFriendsList().take(2))
       }
       switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
-      rebuildRosterForMode(selectedMode)
+      if (!bootToNexusHub) {
+        deployToRankedMode(RankedGameMode.SECTOR_CONVERGENCE, 20)
+      }
     }
   }
 
@@ -476,8 +479,8 @@ fun RiftArenaScreen(
     }
   }
 
-  // Sync cloud dossier if higher than local stats
-  LaunchedEffect(dossierState) {
+  // Sync cloud dossier stats and preserve Sworn Pilot callsigns bidirectionally across devices/restarts
+  LaunchedEffect(dossierState, currentUserId, isGoogleAuthenticated) {
     val cloudDossier = (dossierState as? UiState.Success)?.data ?: return@LaunchedEffect
     if (cloudDossier.allTimeKills > engine.allTimeKills) {
       engine.allTimeKills = cloudDossier.allTimeKills
@@ -487,6 +490,47 @@ fun RiftArenaScreen(
       engine.pvpDeaths = cloudDossier.pvpDeaths
       engine.pvpBountyPeak = cloudDossier.pvpBountyPeak
       engine.convergencesWon = cloudDossier.convergencesWon
+    }
+    if (isGoogleAuthenticated && currentUserId.isNotBlank()) {
+      val cloudCallsign = cloudDossier.callsign.trim().uppercase(Locale.US)
+      val cloudHasChosenName =
+        cloudCallsign.length >= 3 &&
+          cloudCallsign != "COMMANDER" &&
+          !cloudCallsign.startsWith("RFT-")
+      val localHasChosenName =
+        callsign.length >= 3 &&
+          callsign != "COMMANDER" &&
+          !callsign.startsWith("RFT-")
+
+      if (cloudHasChosenName && !localHasChosenName) {
+        val adopted = localPrefs.setCallsign(cloudCallsign, currentUserId)
+        localPrefs.setHasChosenInitialCallsign(true, currentUserId)
+        callsign = adopted
+        initialSwornCallsignDraft = adopted
+        needsInitialSwornCallsign = false
+        engine.localPlayer.callsign = adopted
+      } else if (localHasChosenName && cloudCallsign != callsign) {
+        val saved = localPrefs.setCallsign(callsign, currentUserId)
+        localPrefs.setHasChosenInitialCallsign(true, currentUserId)
+        needsInitialSwornCallsign = false
+        engine.localPlayer.callsign = saved
+        viewModel.syncNativePilotStats(
+          callsign = saved,
+          shipId = engine.localPlayer.shipId,
+          foundry = engine.localPlayer.spec.role,
+          mode = engine.mode,
+          pvpKills = engine.pvpKills,
+          pvpDeaths = engine.pvpDeaths,
+          pvpBountyPeak = engine.pvpBountyPeak,
+          allTimeKills = engine.allTimeKills,
+          allTimeDeaths = engine.allTimeDeaths,
+          allTimeBountyPeak = engine.allTimeBountyPeak,
+          convergencesWon = engine.convergencesWon,
+          syndicateTag = engine.localPlayer.syndicateTag,
+          armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
+          armadaTierSize = engine.getCurrentArmadaSize(),
+        )
+      }
     }
   }
 
@@ -527,7 +571,7 @@ fun RiftArenaScreen(
       delay(350L)
       val p = engine.localPlayer
       viewModel.syncNativeLiveState(
-        sectorId = engine.mode,
+        sectorId = engine.activeMatchSectorTag(),
         callsign = p.callsign,
         syndicateTag = p.syndicateTag,
         armadaName = p.armadaName,
@@ -588,10 +632,16 @@ fun RiftArenaScreen(
     }
   }
 
-  LaunchedEffect(activeModal, com.example.engine.RiftCalibrationState.isCalibrationModalOpen) {
+  LaunchedEffect(
+    activeModal,
+    com.example.engine.RiftCalibrationState.isCalibrationModalOpen,
+    engine.hasJoinedMatch,
+    frameTick,
+  ) {
     val isInMenu =
       activeModal != ActiveModal.NONE ||
-        com.example.engine.RiftCalibrationState.isCalibrationModalOpen
+        com.example.engine.RiftCalibrationState.isCalibrationModalOpen ||
+        !engine.hasJoinedMatch
     engine.isInLobbyStaging = isInMenu
     if (isInMenu) {
       engine.localPlayer.isIdleDraining = false
@@ -610,7 +660,9 @@ fun RiftArenaScreen(
       activeModal = previousModalBeforeNexus
       previousModalBeforeNexus = ActiveModal.NONE
     } else if (activeModal != ActiveModal.NONE) {
-      activeModal = ActiveModal.NONE
+      activeModal = if (!engine.hasJoinedMatch) ActiveModal.NEXUS else ActiveModal.NONE
+    } else if (!engine.hasJoinedMatch) {
+      activeModal = ActiveModal.NEXUS
     } else {
       activeModal = ActiveModal.HANGAR
     }
@@ -827,7 +879,7 @@ fun RiftArenaScreen(
               com.example.engine.RiftCalibrationState.isCalibrationModalOpen = true
             },
             onReturnToArena = {
-              engine.isInLobbyStaging = false
+              engine.isInLobbyStaging = !engine.hasJoinedMatch
               activeModal = ActiveModal.NONE
             },
           )
@@ -979,7 +1031,21 @@ fun RiftArenaScreen(
             if (asGuest) {
               localPrefs.setGuestBypassEnabled(true)
             }
-            val cleanCallsign = localPrefs.setCallsign(newCallsign)
+            val cleanCallsign =
+              if (isGoogleAuthenticated) {
+                localPrefs.setCallsign(newCallsign, currentUserId)
+              } else {
+                localPrefs.setCallsign(newCallsign)
+              }
+            if (
+              isGoogleAuthenticated &&
+                cleanCallsign.length >= 3 &&
+                cleanCallsign != "COMMANDER" &&
+                !cleanCallsign.startsWith("RFT-")
+            ) {
+              localPrefs.setHasChosenInitialCallsign(true, currentUserId)
+              needsInitialSwornCallsign = false
+            }
             val clampedShipId = newShipId.coerceIn(1, 10)
             val activeModeId = engine.activeRankedMode.id
             callsign = cleanCallsign
@@ -995,10 +1061,15 @@ fun RiftArenaScreen(
             engine.localPlayer.syndicateTag = syndicateTag
             engine.syncLocalArmadaSelfSlot()
             engine.switchLocalPlayerShip(clampedShipId, forceFromHangar = true)
+            if (!engine.hasJoinedMatch) {
+              engine.deployToRankedMode(engine.activeRankedMode, engine.activeTeamSizeBracket)
+            }
             engine.onStatsUpdated()
             activeModal = ActiveModal.NONE
           },
-          onCloseModal = { activeModal = ActiveModal.NONE },
+          onCloseModal = {
+            activeModal = if (!engine.hasJoinedMatch) ActiveModal.NEXUS else ActiveModal.NONE
+          },
         )
       }
 
@@ -1272,8 +1343,10 @@ fun RiftArenaScreen(
             activeModal = ActiveModal.RIFT_SHARDS_STORE
           },
           onResetLocalPilotData = {
-            localPrefs.resetAllLocalPilotData()
-            callsign = localPrefs.getCallsign()
+            localPrefs.resetAllLocalPilotData(if (isGoogleAuthenticated) currentUserId else null)
+            callsign =
+              if (isGoogleAuthenticated) localPrefs.getCallsign(currentUserId)
+              else localPrefs.getCallsign()
             syndicateTag = localPrefs.getSyndicateTag()
             syndicateName = localPrefs.getSyndicateName()
             selectedShipId = localPrefs.getPreferredShipId()
@@ -1308,14 +1381,21 @@ fun RiftArenaScreen(
             syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
             friendsRefreshKey++
             engine.onStatsUpdated()
-            toastMessage = "↺ PILOT DATA RESET TO LEVEL 1 CLEAN SLATE"
+            toastMessage = "↺ PILOT STATS RESET TO LEVEL 1 (CALLSIGN PRESERVED)"
             toastVersion++
           },
           onCallsignChanged = { updatedCallsign ->
-            callsign = updatedCallsign
-            engine.localPlayer.callsign = updatedCallsign
+            val saved =
+              if (isGoogleAuthenticated) {
+                localPrefs.setHasChosenInitialCallsign(true, currentUserId)
+                localPrefs.setCallsign(updatedCallsign, currentUserId)
+              } else {
+                localPrefs.setCallsign(updatedCallsign)
+              }
+            callsign = saved
+            engine.localPlayer.callsign = saved
             engine.onStatsUpdated()
-            toastMessage = "✓ SWORN PILOT CALLSIGN UPDATED TO $updatedCallsign"
+            toastMessage = "✓ SWORN PILOT CALLSIGN UPDATED TO $saved"
             toastVersion++
           },
           onUpdateRiftShards = { remainingShards ->
@@ -1533,22 +1613,31 @@ fun RiftArenaScreen(
             localPrefs.getFriendsList()
           }
         val humanPilotsOnline =
-          remember(frameTick) { engine.getHumanPilotCountForMode(engine.activeRankedMode) }
+          remember(frameTick, sectorPilotsState) { engine.getTotalHumanPilotsOnline() }
         val syndicateOnlineCount =
-          remember(syndicateTag, frameTick, friendsRefreshKey) {
+          remember(syndicateTag, frameTick, friendsRefreshKey, sectorPilotsState) {
             val cleanSyn = RiftGameEngine.cleanTag(syndicateTag)
-            if (cleanSyn == "GUEST" || cleanSyn == "FREE" || cleanSyn.isEmpty()) {
-              1
+            if (cleanSyn == "GUEST" || cleanSyn == "FREE" || cleanSyn == "RFT" || cleanSyn.isEmpty()) {
+              0
             } else {
-              val inArena =
-                engine.ships.count {
-                  it.isHuman && RiftGameEngine.cleanTag(it.syndicateTag) == cleanSyn
-                }
-              val onlineFriends =
-                syndicateFriends.count {
-                  it.isOnline && RiftGameEngine.cleanTag(it.syndicateTag) == cleanSyn
-                }
-              maxOf(1, inArena + onlineFriends)
+              val remoteList = (sectorPilotsState as? UiState.Success)?.data ?: emptyList()
+              val remoteSynOnline =
+                remoteList
+                  .mapNotNull { st ->
+                    val rUid = st.userId.ifEmpty { st.id }
+                    if (
+                      rUid.isNotBlank() &&
+                        rUid != currentUserId &&
+                        RiftGameEngine.cleanTag(st.syndicateTag) == cleanSyn
+                    ) {
+                      rUid
+                    } else {
+                      null
+                    }
+                  }
+                  .distinct()
+                  .size
+              1 + remoteSynOnline
             }
           }
         val presetArmadasReadyCount =
@@ -1628,6 +1717,12 @@ fun RiftArenaScreen(
             engine.deployToRankedMode(mode, bracket)
             selectedMode = mode.id
             activeModal = ActiveModal.NONE
+          },
+          onLeaveMatch = {
+            engine.leaveActiveMatchToNexusOrbit()
+            toastMessage = "🛰️ LEFT MATCH // ORBITING SECTOR"
+            toastVersion++
+            frameTick++
           },
           onOpenArmadaModal = {
             armadaStatusBanner = null

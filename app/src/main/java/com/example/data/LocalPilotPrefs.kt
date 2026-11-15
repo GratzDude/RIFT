@@ -95,8 +95,22 @@ class LocalPilotPrefs(context: Context) {
       }
     }
     val perUid = if (!uid.isNullOrBlank()) prefs.getString(uidKey(KEY_CALLSIGN, uid), null) else null
+    val global = prefs.getString(KEY_CALLSIGN, null)
+    val chosenPerUid = perUid?.takeIf { it.isNotBlank() && it != "COMMANDER" }
+    val chosenGlobal = global?.takeIf { it.isNotBlank() && it != "COMMANDER" }
+    val resolved = chosenPerUid ?: chosenGlobal
+    if (resolved != null) {
+      if (chosenGlobal != resolved || (!uid.isNullOrBlank() && chosenPerUid != resolved)) {
+        val editor = prefs.edit().putString(KEY_CALLSIGN, resolved)
+        if (!uid.isNullOrBlank()) {
+          editor.putString(uidKey(KEY_CALLSIGN, uid), resolved)
+        }
+        editor.apply()
+      }
+      return resolved
+    }
     return perUid?.takeIf { it.isNotBlank() }
-      ?: prefs.getString(KEY_CALLSIGN, "COMMANDER")
+      ?: global?.takeIf { it.isNotBlank() }
       ?: "COMMANDER"
   }
 
@@ -113,11 +127,11 @@ class LocalPilotPrefs(context: Context) {
       } else {
         sanitizedRaw
       }
-    prefs
-      .edit()
-      .putString(KEY_CALLSIGN, cleaned)
-      .putString(uidKey(KEY_CALLSIGN, uid), cleaned)
-      .apply()
+    val editor = prefs.edit().putString(KEY_CALLSIGN, cleaned)
+    if (!uid.isNullOrBlank()) {
+      editor.putString(uidKey(KEY_CALLSIGN, uid), cleaned)
+    }
+    editor.apply()
     return cleaned
   }
 
@@ -133,15 +147,29 @@ class LocalPilotPrefs(context: Context) {
       .apply()
   }
 
-  fun hasChosenInitialCallsign(uid: String? = null): Boolean =
-    prefs.getBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), prefs.getBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, false))
+  fun hasChosenInitialCallsign(uid: String? = null): Boolean {
+    val explicitChosen =
+      prefs.getBoolean(
+        uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid),
+        prefs.getBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, false),
+      )
+    if (explicitChosen) return true
+    if (!isGuestBypassEnabled()) {
+      val existing = getCallsign(uid)
+      if (existing.isNotBlank() && existing != "COMMANDER") {
+        setHasChosenInitialCallsign(true, uid)
+        return true
+      }
+    }
+    return false
+  }
 
   fun setHasChosenInitialCallsign(chosen: Boolean, uid: String? = null) {
-    prefs
-      .edit()
-      .putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, chosen)
-      .putBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), chosen)
-      .apply()
+    val editor = prefs.edit().putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, chosen)
+    if (!uid.isNullOrBlank()) {
+      editor.putBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), chosen)
+    }
+    editor.apply()
   }
 
   /**
@@ -1281,6 +1309,10 @@ class LocalPilotPrefs(context: Context) {
    * Syndicate War H2H records, and custom modular ship slots (Frame A/B/C) while resetting Rift Shards to 150❖.
    */
   fun wipeAllStatsArmadasAndSyndicates(uid: String? = null) {
+    val preservedCallsign = if (!isGuestBypassEnabled()) getCallsign(uid) else null
+    val preservedChangeCount = getCallsignChangeCount(uid)
+    val preservedChosenFlag = hasChosenInitialCallsign(uid)
+
     val dynamicKeysToRemove =
       prefs.all.keys.filter { key ->
         key.startsWith(KEY_SYNDICATE_CHANNELS_PREFIX) ||
@@ -1361,7 +1393,20 @@ class LocalPilotPrefs(context: Context) {
       .putBoolean(uidKey(KEY_SLOT_C_UNLOCKED, uid), false)
       .putString(KEY_ACTIVE_CUSTOM_SLOT_ID, "Frame A")
       .putString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), "Frame A")
-      .apply()
+
+    if (!preservedCallsign.isNullOrBlank() && preservedCallsign != "COMMANDER") {
+      editor.putString(KEY_CALLSIGN, preservedCallsign)
+      if (!uid.isNullOrBlank()) {
+        editor.putString(uidKey(KEY_CALLSIGN, uid), preservedCallsign)
+      }
+    }
+    editor.putInt(KEY_CALLSIGN_CHANGE_COUNT, preservedChangeCount)
+    editor.putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, preservedChosenFlag)
+    if (!uid.isNullOrBlank()) {
+      editor.putInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), preservedChangeCount)
+      editor.putBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), preservedChosenFlag)
+    }
+    editor.apply()
 
     // Reset Custom Modular Ship Slots (Frame A, Frame B, Frame C) to default unallocated state
     for (slotId in listOf("Frame A", "Frame B", "Frame C")) {
@@ -1371,16 +1416,58 @@ class LocalPilotPrefs(context: Context) {
 
   /**
    * Resets all local pilot progression, combat stats, Syndicate/Armada affiliation, custom friends,
-   * and Rift Shards back to a clean Level 1, 0 XP, 0 Kills, 0 Shards, Solo, Unaffiliated state.
+   * and Rift Shards back to a clean Level 1, 0 XP, 0 Kills, 0 Shards, Solo, Unaffiliated state,
+   * while preserving the Sworn Pilot's permanent callsign and rename counter.
    */
-  fun resetAllLocalPilotData() {
+  fun resetAllLocalPilotData(uid: String? = null) {
     val seenBuild = getLastSeenChangelogBuild()
     val guestBypass = isGuestBypassEnabled()
+    val preservedCallsign = if (!guestBypass) getCallsign(uid) else null
+    val preservedChangeCount = getCallsignChangeCount(uid)
+    val preservedChosenFlag = if (!guestBypass) hasChosenInitialCallsign(uid) else false
+    val allCallsignEntries =
+      if (!guestBypass) {
+        prefs.all.filter { (k, v) ->
+          (k == KEY_CALLSIGN ||
+            k.startsWith("${KEY_CALLSIGN}_") ||
+            k == KEY_CALLSIGN_CHANGE_COUNT ||
+            k.startsWith("${KEY_CALLSIGN_CHANGE_COUNT}_") ||
+            k == KEY_INITIAL_CALLSIGN_CHOSEN ||
+            k.startsWith("${KEY_INITIAL_CALLSIGN_CHOSEN}_")) && v != null
+        }
+      } else {
+        emptyMap()
+      }
+
     prefs.edit().clear().apply()
     userSettingsPrefs.edit().clear().apply()
     setLastSeenChangelogBuild(seenBuild)
     setGuestBypassEnabled(guestBypass)
     getOrCreatePermanentDeviceUid()
+
+    if (!guestBypass) {
+      val restoreEditor = prefs.edit()
+      for ((k, v) in allCallsignEntries) {
+        when (v) {
+          is String -> restoreEditor.putString(k, v)
+          is Int -> restoreEditor.putInt(k, v)
+          is Boolean -> restoreEditor.putBoolean(k, v)
+        }
+      }
+      if (!preservedCallsign.isNullOrBlank() && preservedCallsign != "COMMANDER") {
+        restoreEditor.putString(KEY_CALLSIGN, preservedCallsign)
+        if (!uid.isNullOrBlank()) {
+          restoreEditor.putString(uidKey(KEY_CALLSIGN, uid), preservedCallsign)
+        }
+      }
+      restoreEditor.putInt(KEY_CALLSIGN_CHANGE_COUNT, preservedChangeCount)
+      restoreEditor.putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, preservedChosenFlag)
+      if (!uid.isNullOrBlank()) {
+        restoreEditor.putInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), preservedChangeCount)
+        restoreEditor.putBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), preservedChosenFlag)
+      }
+      restoreEditor.apply()
+    }
   }
 
   private fun cleanShipNameForId(shipId: Int): String =
