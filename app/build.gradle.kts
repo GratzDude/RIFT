@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.riftarena.vxpqzm"
     minSdk = 24
     targetSdk = 36
-    versionCode = 55
-    versionName = "55.0"
+    versionCode = 56
+    versionName = "56.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -113,7 +113,7 @@ dependencies {
   implementation(libs.androidx.compose.material3)
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.graphics)
-  implementation(libs.androidx.compose.ui.tooling.preview)
+  // implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
   // implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.lifecycle.runtime.compose)
@@ -154,8 +154,8 @@ dependencies {
   androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.runner)
-  debugImplementation(libs.androidx.compose.ui.test.manifest)
-  debugImplementation(libs.androidx.compose.ui.tooling)
+  // debugImplementation(libs.androidx.compose.ui.test.manifest)
+  // debugImplementation(libs.androidx.compose.ui.tooling)
   // "ksp"(libs.androidx.room.compiler)
   // "ksp"(libs.moshi.kotlin.codegen)
 }

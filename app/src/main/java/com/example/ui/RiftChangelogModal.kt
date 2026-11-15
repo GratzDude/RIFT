@@ -41,7 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 55
+const val CURRENT_RIFT_BUILD_VERSION = 56
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -56,8 +56,8 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
-      buildNumber = 55,
-      versionTag = "v55.0 // BUILD #55",
+      buildNumber = 56,
+      versionTag = "v56.0 // BUILD #56",
       releaseDate = "Nov 15, 2026",
       headline = "NEXUS FORGE Studio, 9-Tab Persistent Shell, 10-Ship 100-Pt Parity & 3D Playfield Rifts",
       badgeLabel = "LATEST RELEASE",
