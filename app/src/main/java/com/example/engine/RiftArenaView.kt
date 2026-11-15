@@ -112,6 +112,38 @@ class RiftArenaView(
   private var camX: Float = engine.localPlayer.x
   private var camY: Float = engine.localPlayer.y
 
+  var isModalOverlayOpen: Boolean = false
+    set(value) {
+      if (field != value) {
+        field = value
+        if (value && !RiftCalibrationState.isUiUnlockedForDragging) {
+          leftPointerId = MotionEvent.INVALID_POINTER_ID
+          firePointerId = MotionEvent.INVALID_POINTER_ID
+          bombPointerId = MotionEvent.INVALID_POINTER_ID
+          engine.leftStickActive = false
+          engine.leftStickMag = 0f
+          engine.fireStickActive = false
+          engine.bombStickActive = false
+        }
+      }
+    }
+
+  private fun blendColorsInt(c1: Int, c2: Int, frac: Float): Int {
+    val t = frac.coerceIn(0f, 1f)
+    val inv = 1f - t
+    val r = (Color.red(c1) * inv + Color.red(c2) * t).toInt().coerceIn(0, 255)
+    val g = (Color.green(c1) * inv + Color.green(c2) * t).toInt().coerceIn(0, 255)
+    val b = (Color.blue(c1) * inv + Color.blue(c2) * t).toInt().coerceIn(0, 255)
+    return Color.rgb(r, g, b)
+  }
+
+  private val ambientDarknessPaint = Paint()
+  private val dynamicRimPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeCap = Paint.Cap.ROUND
+    }
+
   // Multi-touch pointer tracking
   private var leftPointerId: Int = MotionEvent.INVALID_POINTER_ID
   private var leftOriginX: Float = 0f
@@ -688,6 +720,13 @@ class RiftArenaView(
       canvas.drawRect(sx, sy, sx + st.size, sy + st.size, starPaint)
     }
 
+    // Optional ambient space darkness contrast veil from NEXUS FORGE lighting studio
+    val ambientDark = RiftVisualForgeState.ambientSpaceDarkness.coerceIn(0f, 0.85f)
+    if (ambientDark > 0.01f) {
+      ambientDarknessPaint.color = Color.argb((ambientDark * 220f).toInt().coerceIn(0, 220), 2, 4, 10)
+      canvas.drawRect(0f, 0f, vw, vh, ambientDarknessPaint)
+    }
+
     // 3. World-Space Camera Transform (Base 0.65x * Real-Time Camera Zoom Slider [0.5x..1.5x] + Non-Linear Trauma Shake)
     val worldScale = engine.effectiveCameraScale()
     canvas.save()
@@ -721,8 +760,9 @@ class RiftArenaView(
 
     // 4. Center Safe Zone Pad (strictly disabled in RIFT_CONTROL where hasActiveSafeZone() == false)
     if (engine.hasActiveSafeZone()) {
+      val szPadRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SAFE_ZONE_PAD)
       val szBase = engine.safeZone
-      val szScale = RiftCalibrationState.safeZoneScale
+      val szScale = RiftCalibrationState.safeZoneScale * szPadRec.pixelScale.coerceIn(0.6f, 1.6f)
       val szW = (szBase.right - szBase.left) * szScale
       val szH = (szBase.bottom - szBase.top) * szScale
       val szCX = szBase.centerX()
@@ -738,10 +778,17 @@ class RiftArenaView(
           safeBracketPaint.color = borderColor
           safeTextPaint.color = borderColor
         } else {
-          safeFillPaint.color = Color.argb(20, 16, 185, 129)
-          safeDashPaint.color = Color.argb(115, 16, 185, 129)
-          safeBracketPaint.color = Color.argb(210, 56, 189, 248)
-          safeTextPaint.color = Color.argb(180, 16, 185, 129)
+          val padGlow = VisualElementRecipe.parseHexColorSafe(szPadRec.glowHex, Color.rgb(16, 185, 129))
+          val padTrim = VisualElementRecipe.parseHexColorSafe(szPadRec.trimHex, Color.rgb(56, 189, 248))
+          val opScale = szPadRec.surfaceOpacity.coerceIn(0.25f, 1.0f)
+          safeFillPaint.color =
+            Color.argb((20f * opScale * szPadRec.glowIntensity).toInt().coerceIn(8, 72), Color.red(padGlow), Color.green(padGlow), Color.blue(padGlow))
+          safeDashPaint.color =
+            Color.argb((115f * opScale).toInt().coerceIn(35, 225), Color.red(padGlow), Color.green(padGlow), Color.blue(padGlow))
+          safeBracketPaint.color =
+            Color.argb((210f * opScale).toInt().coerceIn(60, 255), Color.red(padTrim), Color.green(padTrim), Color.blue(padTrim))
+          safeTextPaint.color =
+            Color.argb((180f * opScale).toInt().coerceIn(60, 255), Color.red(padGlow), Color.green(padGlow), Color.blue(padGlow))
         }
 
         canvas.drawRect(sz, safeFillPaint)
@@ -782,7 +829,7 @@ class RiftArenaView(
       }
     }
 
-    // 4b. STASIS_BREACH (10v10 Jailbreak): Vertical Sector Divider (x = 4000), Circular Stasis Jails & 40,000 Flux Reactor Cores
+    // 4b. STASIS_BREACH (10v10 Jailbreak): Vertical Sector Divider (x = 4000), Circular Stasis Jails & 8,000 Flux Reactor Cores
     if (engine.isStasisBreachRulesActive()) {
       drawStasisBreachPlayfieldStructures(canvas, p, viewLeft, viewRight, viewTop, viewBottom)
     }
@@ -1025,21 +1072,27 @@ class RiftArenaView(
       drawPermanentBarrier3D(canvas, bw, isFriendlyWall, effectiveCamX, effectiveCamY)
     }
 
-    // 7c. Interdictor Stasis Bubbles (Two-Way Containment Domes: 290px radius, 15s lifespan)
+    // 7c. Eclipse Stasis Bubbles (Two-Way Containment Domes: 275px radius, 6.0s lifespan)
+    val bubbleRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.ECLIPSE_STASIS_BUBBLE)
+    val bubblePrimary = VisualElementRecipe.parseHexColorSafe(bubbleRec.primaryHex, Color.rgb(236, 72, 153))
+    val bubbleGlow = VisualElementRecipe.parseHexColorSafe(bubbleRec.glowHex, Color.rgb(0, 245, 212))
+    val bubbleTrim = VisualElementRecipe.parseHexColorSafe(bubbleRec.trimHex, Color.rgb(244, 114, 182))
     for (ib in engine.interdictorBubbles) {
-      val r = ib.radius
+      val r = ib.radius * bubbleRec.pixelScale.coerceIn(0.6f, 1.6f)
       if (ib.x + r < viewLeft - 40f || ib.x - r > viewRight + 40f ||
         ib.y + r < viewTop - 40f || ib.y - r > viewBottom + 40f
       ) {
         continue
       }
-      val fadeAlpha = (ib.life / 1.5f).coerceIn(0.25f, 1f)
-      anomalyFillPaint.color = Color.argb((24 * fadeAlpha).toInt(), 236, 72, 153)
+      val fadeAlpha = ((ib.life / 1.5f).coerceIn(0.25f, 1f) * bubbleRec.surfaceOpacity.coerceIn(0.25f, 1f))
+      anomalyFillPaint.color =
+        Color.argb((24 * fadeAlpha).toInt().coerceIn(6, 90), Color.red(bubblePrimary), Color.green(bubblePrimary), Color.blue(bubblePrimary))
       canvas.drawCircle(ib.x, ib.y, r, anomalyFillPaint)
 
-      val spinPhase = ((System.currentTimeMillis() % 4000L) / 4000f) * (PI.toFloat() * 2f)
-      anomalyRingPaint.strokeWidth = 2.2f
-      anomalyRingPaint.color = Color.argb((150 * fadeAlpha).toInt(), 0, 245, 212)
+      val spinPhase = ((System.currentTimeMillis() % 4000L) / 4000f) * (PI.toFloat() * 2f) * bubbleRec.glowIntensity.coerceIn(0.2f, 2.5f)
+      anomalyRingPaint.strokeWidth = 2.2f * bubbleRec.borderWeight.coerceIn(0.5f, 2.5f)
+      anomalyRingPaint.color =
+        Color.argb((150 * fadeAlpha).toInt().coerceIn(30, 255), Color.red(bubbleGlow), Color.green(bubbleGlow), Color.blue(bubbleGlow))
       val innerR = r * 0.92f
       arcRect.set(ib.x - innerR, ib.y - innerR, ib.x + innerR, ib.y + innerR)
       val degOffset = (spinPhase * 180f / PI.toFloat())
@@ -1048,14 +1101,16 @@ class RiftArenaView(
       }
 
       anomalyRingPaint.strokeWidth = 3.6f
-      anomalyRingPaint.color = Color.argb((225 * fadeAlpha).toInt(), 236, 72, 153)
+      anomalyRingPaint.color =
+        Color.argb((225 * fadeAlpha).toInt().coerceIn(45, 255), Color.red(bubblePrimary), Color.green(bubblePrimary), Color.blue(bubblePrimary))
       canvas.drawCircle(ib.x, ib.y, r, anomalyRingPaint)
 
       for (nodeIdx in 0 until 8) {
         val na = spinPhase * 0.5f + nodeIdx * (PI.toFloat() * 0.25f)
         val nx = ib.x + cos(na) * r
         val ny = ib.y + sin(na) * r
-        anomalyCorePaint.color = Color.argb((235 * fadeAlpha).toInt(), 0, 245, 212)
+        anomalyCorePaint.color =
+          Color.argb((235 * fadeAlpha).toInt().coerceIn(50, 255), Color.red(bubbleGlow), Color.green(bubbleGlow), Color.blue(bubbleGlow))
         canvas.drawCircle(nx, ny, 5.2f, anomalyCorePaint)
       }
 
@@ -1065,7 +1120,7 @@ class RiftArenaView(
         text = "🌐 STASIS BUBBLE • ${String.format(java.util.Locale.US, "%.1fs", ib.life)}",
         worldX = ib.x,
         worldY = ib.y - r - (16f / safeScale),
-        fillColor = Color.parseColor("#F472B6"),
+        fillColor = bubbleTrim,
         worldScale = worldScale,
         sizeMultiplier = 1.20f,
         alpha = (240 * fadeAlpha).toInt().coerceIn(0, 255),
@@ -1861,17 +1916,45 @@ class RiftArenaView(
     }
     popupPaint.alpha = 255
 
+    // 11a. Interactive Point-Light Test Orb (visible when spawned from NEXUS FORGE Studio Stage)
+    val testOrbPos = RiftVisualForgeState.pointLightTestOrbWorldPos
+    if (testOrbPos != null) {
+      val lightRadius = RiftVisualForgeState.projectileLightRadius.coerceIn(120f, 900f)
+      dynamicRimPaint.strokeWidth = 2.0f
+      dynamicRimPaint.color = Color.argb(95, 250, 204, 21)
+      canvas.drawCircle(testOrbPos.x, testOrbPos.y, lightRadius, dynamicRimPaint)
+      anomalyFillPaint.color = Color.argb(38, 250, 204, 21)
+      canvas.drawCircle(testOrbPos.x, testOrbPos.y, 44f, anomalyFillPaint)
+      obstacleBeaconPaint.color = Color.parseColor("#FACC15")
+      canvas.drawCircle(testOrbPos.x, testOrbPos.y, 16f, obstacleBeaconPaint)
+      obstacleBeaconPaint.color = Color.WHITE
+      canvas.drawCircle(testOrbPos.x, testOrbPos.y, 7f, obstacleBeaconPaint)
+      drawWorldOverheadBanner(
+        canvas = canvas,
+        text = "💡 POINT-LIGHT TEST ORB",
+        worldX = testOrbPos.x,
+        worldY = testOrbPos.y - 28f,
+        fillColor = Color.parseColor("#FACC15"),
+        worldScale = worldScale,
+        sizeMultiplier = 1.0f,
+        alpha = 235,
+      )
+    }
+
     canvas.restore()
 
-    // 11b. Screen-Space Ranked Mode Banner & Off-Screen Objective Indicator (Flux Core / Stasis Breach / Skirmish)
-    drawRankedModeScreenOverlay(canvas, vw, vh, p, effectiveCamX, effectiveCamY, worldScale)
+    // Suppress screen-space Arena HUD overlays behind NEXUS Master Window & modals (Law #4)
+    if (!isModalOverlayOpen || RiftCalibrationState.isUiUnlockedForDragging) {
+      // 11b. Screen-Space Ranked Mode Banner & Off-Screen Objective Indicator (Flux Core / Stasis Breach / Skirmish)
+      drawRankedModeScreenOverlay(canvas, vw, vh, p, effectiveCamX, effectiveCamY, worldScale)
 
-    // 12. Screen-Space Multi-Touch Controls (Always-Visible Left Stick + Strict Dynamic Right Combat Arc)
-    drawTouchControlsOverlay(canvas, p)
+      // 12. Screen-Space Multi-Touch Controls (Always-Visible Left Stick + Strict Dynamic Right Combat Arc)
+      drawTouchControlsOverlay(canvas, p)
 
-    // 13. Stationary Death Camera 3-Second Respawn Countdown Overlay
-    if (p.respawnTimer > 0f) {
-      drawStationaryRespawnBanner(canvas, vw, vh, p.respawnTimer)
+      // 13. Stationary Death Camera 3-Second Respawn Countdown Overlay
+      if (p.respawnTimer > 0f) {
+        drawStationaryRespawnBanner(canvas, vw, vh, p.respawnTimer)
+      }
     }
 
     // Schedule next 60+ FPS frame
@@ -1985,7 +2068,7 @@ class RiftArenaView(
         sizeMultiplier = 1.20f,
       )
 
-      // 5. Center 40,000 Flux 3D Stasis Singularity Core (coreR = 54f) with HP Bar & Breakout Instructions
+      // 5. Center 8,000 Flux 3D Stasis Singularity Core (coreR = 54f) with HP Bar & Breakout Instructions
       val coreR = 54f
       draw3dPlayfieldRift(
         canvas = canvas,
@@ -2514,9 +2597,14 @@ class RiftArenaView(
     canvas.drawCircle(cx, cy, r, perimeterGlowPaint)
     canvas.drawCircle(cx, cy, r, perimeterRingPaint)
 
+    val perimRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.ARENA_PERIMETER_RING)
+    val perimPrimary = VisualElementRecipe.parseHexColorSafe(perimRec.primaryHex, Color.parseColor("#243247"))
+    val perimTrim = VisualElementRecipe.parseHexColorSafe(perimRec.trimHex, Color.parseColor("#38BDF8"))
+    val perimGlow = VisualElementRecipe.parseHexColorSafe(perimRec.glowHex, Color.parseColor("#00F5D4"))
+    perimeterRingPaint.color = perimTrim
     // 36 evenly spaced 2.5D Perspective-Extruded Rift Containment Pylons along the circular perimeter
     val pylonCount = 36
-    val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 1400L) / 1400f * (PI.toFloat() * 2f))
+    val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 1400L) / 1400f * (PI.toFloat() * 2f) * perimRec.glowIntensity.coerceIn(0.2f, 2.5f))
     for (i in 0 until pylonCount) {
       val ang = (i.toFloat() / pylonCount.toFloat()) * (PI.toFloat() * 2f)
       val px = cx + cos(ang) * r
@@ -2526,7 +2614,7 @@ class RiftArenaView(
       }
       val ex = ((px - camX) * 0.045f).coerceIn(-24f, 24f)
       val ey = ((py - camY) * 0.045f).coerceIn(-24f, 24f)
-      val halfP = 20f
+      val halfP = 20f * perimRec.pixelScale.coerceIn(0.6f, 1.6f)
       drawExtrudedBox3D(
         canvas = canvas,
         left = px - halfP,
@@ -2538,19 +2626,21 @@ class RiftArenaView(
         sideDarkColor = Color.parseColor("#091122"),
         sideLitColor = Color.parseColor("#1E293B"),
       )
-      obstacleCapPaint.color = Color.parseColor("#243247")
+      obstacleCapPaint.color = perimPrimary
       arcRect.set(px - halfP + ex, py - halfP + ey, px + halfP + ex, py + halfP + ey)
       canvas.drawRoundRect(arcRect, 6f, 6f, obstacleCapPaint)
       wallCyanSeamPaint.strokeWidth = 2.4f
+      wallCyanSeamPaint.color = perimTrim
       canvas.drawRoundRect(arcRect, 6f, 6f, wallCyanSeamPaint)
       obstacleBeaconPaint.color =
         if (i % 2 == 0) {
-          Color.argb((170 + (80 * pulse).toInt()).coerceIn(140, 255), 0, 245, 212)
+          Color.argb((170 + (80 * pulse).toInt()).coerceIn(140, 255), Color.red(perimGlow), Color.green(perimGlow), Color.blue(perimGlow))
         } else {
-          Color.argb((155 + (80 * (1f - pulse)).toInt()).coerceIn(130, 245), 56, 189, 248)
+          Color.argb((155 + (80 * (1f - pulse)).toInt()).coerceIn(130, 245), Color.red(perimTrim), Color.green(perimTrim), Color.blue(perimTrim))
         }
       canvas.drawCircle(px + ex, py + ey, 5.2f, obstacleBeaconPaint)
     }
+    wallCyanSeamPaint.color = Color.parseColor("#00F5D4")
     wallCyanSeamPaint.strokeWidth = 3.2f
   }
 
@@ -2636,6 +2726,63 @@ class RiftArenaView(
     }
   }
 
+  private fun findNearestPointLightEmitter(cx: Float, cy: Float): Triple<Float, Float, Int>? {
+    val maxRange = RiftVisualForgeState.projectileLightRadius.coerceIn(120f, 950f)
+    var bestDistSq = maxRange * maxRange
+    var bestX = 0f
+    var bestY = 0f
+    var bestColor = 0
+    var found = false
+
+    val testOrb = RiftVisualForgeState.pointLightTestOrbWorldPos
+    if (testOrb != null) {
+      val dx = testOrb.x - cx
+      val dy = testOrb.y - cy
+      val dSq = dx * dx + dy * dy
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq
+        bestX = testOrb.x
+        bestY = testOrb.y
+        bestColor = Color.parseColor("#FACC15")
+        found = true
+      }
+    }
+
+    for (b in engine.bullets) {
+      val dx = b.x - cx
+      val dy = b.y - cy
+      val dSq = dx * dx + dy * dy
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq
+        bestX = b.x
+        bestY = b.y
+        bestColor = b.color
+        found = true
+      }
+    }
+
+    for (anom in engine.anomalies) {
+      val dx = anom.x - cx
+      val dy = anom.y - cy
+      val dSq = dx * dx + dy * dy
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq
+        bestX = anom.x
+        bestY = anom.y
+        bestColor =
+          when (anom.type) {
+            AnomalyType.PLASMA_RIFT -> Color.parseColor("#FB7185")
+            AnomalyType.REPULSOR_RIFT -> Color.parseColor("#38BDF8")
+            AnomalyType.GRAVITY_RIFT -> Color.parseColor("#C084FC")
+            AnomalyType.PHASE_RIFT_A, AnomalyType.PHASE_RIFT_B -> Color.parseColor("#2DD4BF")
+          }
+        found = true
+      }
+    }
+
+    return if (found) Triple(bestX, bestY, bestColor) else null
+  }
+
   private fun drawSpaceObstacle3D(
     canvas: Canvas,
     w: WallRect,
@@ -2648,6 +2795,7 @@ class RiftArenaView(
     val bottom = w.y + w.h
 
     if (w.style == SpaceObstacleStyle.PERMANENT_BARRIER) {
+      val szWallRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SAFE_ZONE_WALL)
       drawTetheredHardLightForcefield(
         canvas = canvas,
         left = left,
@@ -2656,12 +2804,25 @@ class RiftArenaView(
         bottom = bottom,
         camX = camX,
         camY = camY,
-        railColor = Color.parseColor("#00F5D4"),
-        coreColor = Color.parseColor("#E0F2FE"),
-        pulseAlphaFrac = 1.0f,
+        railColor = VisualElementRecipe.parseHexColorSafe(szWallRec.glowHex, Color.parseColor("#00F5D4")),
+        coreColor = VisualElementRecipe.parseHexColorSafe(szWallRec.trimHex, Color.parseColor("#E0F2FE")),
+        pulseAlphaFrac = szWallRec.surfaceOpacity.coerceIn(0.3f, 1.0f),
       )
       return
     }
+
+    val forgeTarget =
+      when (w.style) {
+        SpaceObstacleStyle.ORBITAL_STATION -> ForgeElementTarget.OBSTACLE_ORBITAL_STATION
+        SpaceObstacleStyle.ASTEROID_STATION -> ForgeElementTarget.OBSTACLE_ASTEROID_STATION
+        SpaceObstacleStyle.CRYSTAL_ASTEROID -> ForgeElementTarget.OBSTACLE_SPACE_ASTEROID
+        SpaceObstacleStyle.FLOATING_DEBRIS,
+        SpaceObstacleStyle.PERMANENT_BARRIER -> ForgeElementTarget.OBSTACLE_FLOATING_DEBRIS
+      }
+    val obsRec = RiftVisualForgeState.getRecipe(forgeTarget)
+    val obsPrimary = VisualElementRecipe.parseHexColorSafe(obsRec.primaryHex, Color.parseColor("#040914"))
+    val obsTrim = VisualElementRecipe.parseHexColorSafe(obsRec.trimHex, Color.parseColor("#1E3A5F"))
+    val obsGlow = VisualElementRecipe.parseHexColorSafe(obsRec.glowHex, Color.parseColor("#00F5D4"))
 
     val cx = left + w.w * 0.5f
     val cy = top + w.h * 0.5f
@@ -2678,7 +2839,7 @@ class RiftArenaView(
     obstacleSideDarkPaint.color = Color.argb(150, 2, 5, 12)
     canvas.drawRoundRect(left - 5f, top - 5f, right + 5f, bottom + 5f, 10f, 10f, obstacleSideDarkPaint)
 
-    // Extruded 2.5D #040914 / #081224 Obsidian Monolith / Station Hull (zero gray rock blobs, zero rainbow crystal stars)
+    // Extruded 2.5D #040914 / #081224 Obsidian Monolith / Station Hull
     drawExtrudedBox3D(
       canvas = canvas,
       left = left,
@@ -2688,7 +2849,7 @@ class RiftArenaView(
       ex = ex,
       ey = ey,
       sideDarkColor = Color.parseColor("#02060F"),
-      sideLitColor = Color.parseColor("#081224"),
+      sideLitColor = blendColorsInt(obsPrimary, obsTrim, 0.35f),
     )
 
     val ch = (min(w.w, w.h) * 0.22f).coerceIn(6f, 22f)
@@ -2703,14 +2864,14 @@ class RiftArenaView(
     obstaclePath.lineTo(tLeft, tTop + ch)
     obstaclePath.close()
 
-    obstacleCapPaint.color = Color.parseColor("#040914")
+    obstacleCapPaint.color = obsPrimary
     canvas.drawPath(obstaclePath, obstacleCapPaint)
 
-    anomalyRingPaint.strokeWidth = 2.2f
-    anomalyRingPaint.color = Color.parseColor("#1E3A5F")
+    anomalyRingPaint.strokeWidth = 2.2f * obsRec.borderWeight.coerceIn(0.5f, 2.5f)
+    anomalyRingPaint.color = obsTrim
     canvas.drawPath(obstaclePath, anomalyRingPaint)
 
-    // Inner recessed #081224 armor bevel deck
+    // Inner recessed armor bevel deck
     val inset = min(9f, min(w.w, w.h) * 0.16f)
     val inCh = (ch * 0.72f).coerceAtLeast(4f)
     obstaclePath.reset()
@@ -2723,12 +2884,12 @@ class RiftArenaView(
     obstaclePath.lineTo(tLeft + inset, tBottom - inset - inCh)
     obstaclePath.lineTo(tLeft + inset, tTop + inset + inCh)
     obstaclePath.close()
-    obstacleCapPaint.color = Color.parseColor("#081224")
+    obstacleCapPaint.color = blendColorsInt(obsPrimary, Color.parseColor("#0F2442"), 0.32f)
     canvas.drawPath(obstaclePath, obstacleCapPaint)
 
     when (w.style) {
       SpaceObstacleStyle.ORBITAL_STATION -> {
-        // Ringed Station Torus & Central #00F5D4 Conduit Spine
+        wallCyanSeamPaint.color = obsGlow
         if (w.w >= w.h) {
           wallCyanSeamPaint.strokeWidth = 2.4f
           canvas.drawLine(tLeft + 18f, tCy, tRight - 18f, tCy, wallCyanSeamPaint)
@@ -2738,31 +2899,29 @@ class RiftArenaView(
         }
         val ringR = (min(w.w, w.h) * 0.30f).coerceAtLeast(8f)
         anomalyRingPaint.strokeWidth = 3.2f
-        anomalyRingPaint.color = Color.parseColor("#00F5D4")
+        anomalyRingPaint.color = obsGlow
         canvas.drawCircle(tCx, tCy, ringR, anomalyRingPaint)
         obstacleBeaconPaint.color = Color.parseColor("#E0F2FE")
         canvas.drawCircle(tCx, tCy, 4.8f, obstacleBeaconPaint)
       }
 
       SpaceObstacleStyle.ASTEROID_STATION -> {
-        // Obsidian Reactor Hub with #38BDF8 Docking Conduit & Reactor Lens
         val hubR = (min(w.w, w.h) * 0.26f).coerceAtLeast(7f)
         anomalyRingPaint.strokeWidth = 2.2f
-        anomalyRingPaint.color = Color.parseColor("#38BDF8")
+        anomalyRingPaint.color = obsTrim
         canvas.drawLine(tCx - hubR * 1.5f, tCy, tCx + hubR * 1.5f, tCy, anomalyRingPaint)
         canvas.drawLine(tCx, tCy - hubR * 1.5f, tCx, tCy + hubR * 1.5f, anomalyRingPaint)
-        obstacleCapPaint.color = Color.parseColor("#040914")
+        obstacleCapPaint.color = obsPrimary
         canvas.drawCircle(tCx, tCy, hubR, obstacleCapPaint)
         canvas.drawCircle(tCx, tCy, hubR, anomalyRingPaint)
-        obstacleBeaconPaint.color = Color.parseColor("#00F5D4")
+        obstacleBeaconPaint.color = obsGlow
         canvas.drawCircle(tCx, tCy, hubR * 0.42f, obstacleBeaconPaint)
       }
 
       SpaceObstacleStyle.CRYSTAL_ASTEROID -> {
-        // Sleek 45°-chamfered Obsidian Monolith with central Flux Prism Node & #00F5D4 Cross-Conduits
         val span = (min(w.w, w.h) * 0.32f).coerceAtLeast(8f)
         anomalyRingPaint.strokeWidth = 2.0f
-        anomalyRingPaint.color = Color.parseColor("#00F5D4")
+        anomalyRingPaint.color = obsGlow
         canvas.drawLine(tCx - span, tCy, tCx + span, tCy, anomalyRingPaint)
         canvas.drawLine(tCx, tCy - span, tCx, tCy + span, anomalyRingPaint)
         RiftSpriteBaker.drawFluxPrismIcon(canvas, tCx, tCy, (min(w.w, w.h) * 0.16f).coerceIn(6f, 15f), alpha = 240)
@@ -2770,18 +2929,53 @@ class RiftArenaView(
 
       SpaceObstacleStyle.FLOATING_DEBRIS,
       SpaceObstacleStyle.PERMANENT_BARRIER -> {
-        // Segmented Obsidian Reactor Pylon with #38BDF8 Conduit Nodes
         anomalyRingPaint.strokeWidth = 2.2f
-        anomalyRingPaint.color = Color.parseColor("#38BDF8")
+        anomalyRingPaint.color = obsTrim
         if (w.w >= w.h) {
           canvas.drawLine(tLeft + 16f, tCy, tRight - 16f, tCy, anomalyRingPaint)
         } else {
           canvas.drawLine(tCx, tTop + 16f, tCx, tBottom - 16f, anomalyRingPaint)
         }
-        obstacleBeaconPaint.color = Color.parseColor("#00F5D4")
+        obstacleBeaconPaint.color = obsGlow
         canvas.drawCircle(tCx, tCy, 5.0f, obstacleBeaconPaint)
       }
     }
+
+    // Dynamic Point-Light Directional Rim-Lighting on obstacle edges facing nearby projectiles, Rifts, or Test Orb
+    if (RiftVisualForgeState.pointLightEnabled && RiftVisualForgeState.dynamicLightIntensity > 0.05f) {
+      val emitter = findNearestPointLightEmitter(cx, cy)
+      if (emitter != null) {
+        val (lx, ly, lColor) = emitter
+        val dx = lx - cx
+        val dy = ly - cy
+        val dist = hypot(dx, dy).coerceAtLeast(1f)
+        val maxRange = RiftVisualForgeState.projectileLightRadius.coerceIn(120f, 950f)
+        val falloff = (1f - dist / maxRange).coerceIn(0f, 1f)
+        val rimAlpha =
+          (falloff * falloff * 225f * RiftVisualForgeState.dynamicLightIntensity.coerceIn(0f, 2.5f))
+            .toInt()
+            .coerceIn(0, 245)
+        if (rimAlpha >= 14) {
+          dynamicRimPaint.strokeWidth = 3.4f
+          dynamicRimPaint.color = Color.argb(rimAlpha, Color.red(lColor), Color.green(lColor), Color.blue(lColor))
+          if (abs(dx) >= abs(dy)) {
+            if (dx > 0f) {
+              canvas.drawLine(tRight, tTop + ch, tRight, tBottom - ch, dynamicRimPaint)
+            } else {
+              canvas.drawLine(tLeft, tTop + ch, tLeft, tBottom - ch, dynamicRimPaint)
+            }
+          } else {
+            if (dy > 0f) {
+              canvas.drawLine(tLeft + ch, tBottom, tRight - ch, tBottom, dynamicRimPaint)
+            } else {
+              canvas.drawLine(tLeft + ch, tTop, tRight - ch, tTop, dynamicRimPaint)
+            }
+          }
+        }
+      }
+    }
+
+    wallCyanSeamPaint.color = Color.parseColor("#00F5D4")
     wallCyanSeamPaint.strokeWidth = 3.2f
   }
 
@@ -2792,15 +2986,30 @@ class RiftArenaView(
     camX: Float,
     camY: Float,
   ) {
+    val barrierRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.PLACED_STASIS_BARRIER)
     val pulseAlpha =
       if (bw.life <= 5.0f) {
         val warnWave = 0.55f + 0.45f * sin((System.currentTimeMillis() % 320L) / 320f * (PI.toFloat() * 2f))
         warnWave.coerceIn(0.38f, 1.0f)
       } else {
-        1.0f
+        barrierRec.surfaceOpacity.coerceIn(0.35f, 1.0f)
       }
-    val railColor = if (isFriendlyWall) Color.parseColor("#00F5D4") else Color.parseColor("#38BDF8")
-    val coreColor = if (isFriendlyWall) Color.parseColor("#E0F2FE") else Color.parseColor("#BAE6FD")
+    val railColor =
+      if (!barrierRec.isFactoryDefault) {
+        VisualElementRecipe.parseHexColorSafe(barrierRec.glowHex, Color.parseColor("#00F5D4"))
+      } else if (isFriendlyWall) {
+        Color.parseColor("#00F5D4")
+      } else {
+        Color.parseColor("#38BDF8")
+      }
+    val coreColor =
+      if (!barrierRec.isFactoryDefault) {
+        VisualElementRecipe.parseHexColorSafe(barrierRec.trimHex, Color.parseColor("#E0F2FE"))
+      } else if (isFriendlyWall) {
+        Color.parseColor("#E0F2FE")
+      } else {
+        Color.parseColor("#BAE6FD")
+      }
     drawTetheredHardLightForcefield(
       canvas = canvas,
       left = bw.x,
@@ -3368,6 +3577,7 @@ class RiftArenaView(
 
   @SuppressLint("ClickableViewAccessibility")
   override fun onTouchEvent(event: MotionEvent): Boolean {
+    if (isModalOverlayOpen && !RiftCalibrationState.isUiUnlockedForDragging) return false
     if (height > width) return true
     val action = event.actionMasked
     if (action == MotionEvent.ACTION_DOWN) {

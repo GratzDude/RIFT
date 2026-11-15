@@ -56,6 +56,9 @@ object RiftCalibrationState {
   private const val KEY_HIDDEN_SET = "hidden_calibration_keys_csv"
   private const val KEY_FORGED_BUFFS_JSON = "custom_forged_buffs_json"
   private const val KEY_SAVED_CONFIG_JSON = "saved_calibration_values_json"
+  private const val KEY_FORGED_VISUAL_RECIPES_JSON = "forged_visual_recipes_json"
+  private const val KEY_FORGED_AUDIO_JSON = "forged_audio_recipes_json"
+  private const val KEY_FORGED_SYNDICATE_CREST_JSON = "forged_syndicate_crest_json"
 
   // UI Modal & Live Peek States
   var isCalibrationModalOpen by mutableStateOf(false)
@@ -315,7 +318,7 @@ object RiftCalibrationState {
   var skirmishKillTargetPerRound by mutableIntStateOf(15)
   var fluxCoreBountyPerSec by mutableIntStateOf(15)
   var fluxCoreEjectSpeed by mutableFloatStateOf(1650f)
-  var stasisBrigReactorMaxHp by mutableFloatStateOf(40000f)
+  var stasisBrigReactorMaxHp by mutableFloatStateOf(8000f)
 
   /**
    * Converts any camelCase or snake_case variable name into a clean Plain-English Title.
@@ -457,6 +460,24 @@ object RiftCalibrationState {
       description = "Resizes the left movement stick.",
       min = 0.60f, max = 1.60f, step = 0.05f, decimals = 2,
       getter = { leftStickScale }, setter = { leftStickScale = it.coerceIn(0.60f, 1.60f) },
+    )
+    list += CalibrationParamDescriptor(
+      key = "safeZoneScale",
+      tabIndex = 0,
+      title = "Safe Zone Pad & Wall Scale",
+      unit = "x",
+      description = "Scales the center Safe Zone pad and boundary forcefield brackets.",
+      min = 0.50f, max = 2.00f, step = 0.05f, decimals = 2,
+      getter = { safeZoneScale }, setter = { safeZoneScale = it.coerceIn(0.50f, 2.00f) },
+    )
+    list += CalibrationParamDescriptor(
+      key = "idleWarningBannerScale",
+      tabIndex = 0,
+      title = "Tactical Alert Banner Size",
+      unit = "x",
+      description = "Resizes the Safe Zone lockout and AFK Flux drain warning pill.",
+      min = 0.60f, max = 1.60f, step = 0.05f, decimals = 2,
+      getter = { idleWarningBannerScale }, setter = { idleWarningBannerScale = it.coerceIn(0.60f, 1.60f) },
     )
     list += CalibrationParamDescriptor(
       key = "gamepadIdleTouchOpacity",
@@ -1399,14 +1420,17 @@ object RiftCalibrationState {
       tabIndex = 7,
       title = "Brig Core HP",
       unit = "Flux",
-      description = "Max HP of the West and East Stasis Cores in Stasis Breach (40,000 Flux default; prisoners deal 100% damage).",
-      min = 10000f, max = 100000f, step = 2000f, decimals = 0,
+      description = "Max HP of the West and East Stasis Cores in Stasis Breach (8,000 Flux default; prisoners deal 100% damage).",
+      min = 2000f, max = 100000f, step = 1000f, decimals = 0,
       getter = { stasisBrigReactorMaxHp },
-      setter = { stasisBrigReactorMaxHp = it.coerceIn(10000f, 100000f) },
+      setter = { stasisBrigReactorMaxHp = it.coerceIn(2000f, 100000f) },
     )
 
     return list
   }
+
+  val descriptors: List<CalibrationParamDescriptor>
+    get() = buildAllParameterDescriptors()
 
   /**
    * Deep-frozen baseline snapshot of all factory default numeric calibration parameters.
@@ -1453,6 +1477,7 @@ object RiftCalibrationState {
       interdictorBubbleDuration = 6.0f
       interdictorBubbleCooldown = 8.5f
       stasisBarrierDuration = 45.0f
+      stasisBrigReactorMaxHp = 8000f
       RiftCodex.getShipById(6).bombCost = 0f
       RiftCodex.getShipById(6).bombCooldown = 4.5f
       RiftCodex.getShipById(9).bombCost = 320f
@@ -1634,7 +1659,8 @@ object RiftCalibrationState {
     }
   }
 
-  fun loadPersistedLayout(context: Context) {
+  @JvmOverloads
+  fun loadPersistedLayout(context: Context, engine: RiftGameEngine? = null) {
     ensureBaselineCaptured()
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     fun readOffset(key: String): Offset {
@@ -1672,7 +1698,7 @@ object RiftCalibrationState {
     hiddenCalibrationKeys =
       hiddenCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
-    // Restore persisted AI-Forged Custom Buffs into BUFF_REGISTRY
+    // Restore persisted Forged Custom Buffs into BUFF_REGISTRY
     val forgedRaw = prefs.getString(KEY_FORGED_BUFFS_JSON, "[]") ?: "[]"
     try {
       val arr = JSONArray(forgedRaw)
@@ -1681,6 +1707,30 @@ object RiftCalibrationState {
         RiftCodex.registerCustomBuff(entry)
       }
     } catch (_: Exception) {}
+
+    // Restore persisted NEXUS FORGE Visual Recipes & Dynamic Lighting
+    val visualForgeRaw = prefs.getString(KEY_FORGED_VISUAL_RECIPES_JSON, null)
+    if (!visualForgeRaw.isNullOrBlank()) {
+      try {
+        RiftVisualForgeState.loadFromJsonObject(JSONObject(visualForgeRaw))
+      } catch (_: Exception) {}
+    }
+
+    // Restore persisted NEXUS FORGE Soundtrack Track A-C & SFX Recipes
+    val audioForgeRaw = prefs.getString(KEY_FORGED_AUDIO_JSON, null)
+    if (!audioForgeRaw.isNullOrBlank()) {
+      try {
+        RiftSoundSynthesizer.importAudioForgeJson(JSONObject(audioForgeRaw))
+      } catch (_: Exception) {}
+    }
+
+    // Restore persisted Syndicate Crest Recipe
+    val crestRaw = prefs.getString(KEY_FORGED_SYNDICATE_CREST_JSON, null)
+    if (!crestRaw.isNullOrBlank()) {
+      try {
+        RiftVisualForgeState.updateSyndicateCrest(SyndicateCrestRecipe.fromJson(JSONObject(crestRaw)))
+      } catch (_: Exception) {}
+    }
 
     // Restore persisted slider overrides
     val savedConfigRaw = prefs.getString(KEY_SAVED_CONFIG_JSON, null)
@@ -1707,7 +1757,7 @@ object RiftCalibrationState {
             val loadedVal = obj.optDouble(k, desc.getter().toDouble()).toFloat()
             when {
               k == "phaseDashImpulse" && loadedVal <= 650f -> desc.setter(1120f)
-              k == "stasisBrigReactorMaxHp" && loadedVal <= 10000f -> desc.setter(40000f)
+              k == "stasisBrigReactorMaxHp" && abs(loadedVal - 40000f) < 50f -> desc.setter(8000f)
               k == "cloakDrainPerSec" && loadedVal >= 150f -> desc.setter(36f)
               k == "empFluxDrainPct" && loadedVal >= 0.34f -> desc.setter(0.25f)
               k == "empFreezeSec" && loadedVal >= 2.4f -> desc.setter(2.0f)
@@ -1731,7 +1781,7 @@ object RiftCalibrationState {
     fctFontSizePx = 14.0f
     labelTextScale = 1.0f
     fctScale = 1.0f
-    applyCalibrationChangesLive(null, null)
+    applyCalibrationChangesLive(engine, null)
   }
 
   fun loadFromPrefs(context: Context) = loadPersistedLayout(context)
@@ -1774,6 +1824,13 @@ object RiftCalibrationState {
     RiftCodex.getCustomForgedBuffs().forEach { forgedArr.put(it.toJsonObject()) }
     editor.putString(KEY_FORGED_BUFFS_JSON, forgedArr.toString())
 
+    editor.putString(KEY_FORGED_VISUAL_RECIPES_JSON, RiftVisualForgeState.toJsonObject().toString())
+    editor.putString(KEY_FORGED_AUDIO_JSON, RiftSoundSynthesizer.exportAudioForgeJson().toString())
+    editor.putString(
+      KEY_FORGED_SYNDICATE_CREST_JSON,
+      RiftVisualForgeState.activeSyndicateCrestRecipe.toJson().toString(),
+    )
+
     val configObj = JSONObject()
     buildAllParameterDescriptors().forEach { desc ->
       val currentVal = desc.getter()
@@ -1790,7 +1847,6 @@ object RiftCalibrationState {
     ensureBaselineCaptured()
     if (tabIndex == 2 || tabIndex == 3) {
       if (tabIndex == 2) {
-        // Restore hull stats for ships 1..9
         buildAllParameterDescriptors()
           .filter { it.tabIndex == 2 }
           .forEach { desc -> DEFAULT_GAME_CONFIG[desc.key]?.let { desc.setter(it) } }
@@ -1828,6 +1884,7 @@ object RiftCalibrationState {
     interdictorBubbleDuration = 6.0f
     interdictorBubbleCooldown = 8.5f
     stasisBarrierDuration = 45.0f
+    stasisBrigReactorMaxHp = 8000f
     RiftCodex.getShipById(6).bombCost = 0f
     RiftCodex.getShipById(6).bombCooldown = 4.5f
     RiftCodex.getShipById(9).bombCost = 320f
@@ -1862,14 +1919,169 @@ object RiftCalibrationState {
     buffModeOverride = "FFA"
     buffTargetCountOverride = null
     resetControllerBindingsToDefault(null)
+    RiftVisualForgeState.resetAllVisualTargetsToDefault()
+    RiftSoundSynthesizer.resetAudioForgeToDefaults()
 
     applyCalibrationChangesLive(engine, context)
   }
 
   /**
+   * Exports a complete JSON bundle of all NEXUS FORGE visual recipes, dynamic lighting,
+   * Syndicate crest, Track A-C + SFX audio recipes, HUD offsets, forged buffs, and calibration sliders.
+   */
+  fun exportDevForgeBundleJson(): String {
+    ensureBaselineCaptured()
+    val calibrationObj = JSONObject()
+    for (desc in buildAllParameterDescriptors()) {
+      val cur = desc.getter()
+      calibrationObj.put(desc.key, ((cur * 1000f).roundToInt() / 1000.0))
+    }
+
+    fun offsetJson(o: Offset): JSONObject =
+      JSONObject().apply {
+        put("x", ((o.x * 10f).roundToInt() / 10.0))
+        put("y", ((o.y * 10f).roundToInt() / 10.0))
+      }
+
+    val hudOffsetsObj =
+      JSONObject().apply {
+        put("topBar", offsetJson(topBarOffset))
+        put("buffBar", offsetJson(buffBarOffset))
+        put("killLog", offsetJson(killLogOffset))
+        put("bottomConsole", offsetJson(bottomConsoleOffset))
+        put("combatArc", offsetJson(combatArcOffset))
+        put("leftStick", offsetJson(leftStickOffset))
+        put("fireStick", offsetJson(fireStickOffset))
+        put("bombBtn", offsetJson(bombBtnOffset))
+        put("repelBtn", offsetJson(repelBtnOffset))
+        put("burstBtn", offsetJson(burstBtnOffset))
+        put("brakeBtn", offsetJson(brakeBtnOffset))
+        put("multiBtn", offsetJson(multiBtnOffset))
+        put("calibrationBtn", offsetJson(calibrationBtnOffset))
+        put("nexusBtn", offsetJson(nexusBtnOffset))
+        put("toastContainer", offsetJson(toastContainerOffset))
+        put("idleWarningBanner", offsetJson(idleWarningBannerOffset))
+      }
+
+    val forgedBuffsArr = JSONArray()
+    RiftCodex.getCustomForgedBuffs().forEach { forgedBuffsArr.put(it.toJsonObject()) }
+
+    return JSONObject().apply {
+      put("bundleVersion", 1)
+      put("visualForge", RiftVisualForgeState.toJsonObject())
+      put("syndicateCrest", RiftVisualForgeState.activeSyndicateCrestRecipe.toJson())
+      put("audioForge", RiftSoundSynthesizer.exportAudioForgeJson())
+      put("hudOffsets", hudOffsetsObj)
+      put(
+        "labelPlacements",
+        JSONObject().apply {
+          put("bountyPlacement", bountyPlacement.name)
+          put("tagPlacement", tagPlacement.name)
+          put("namePlacement", namePlacement.name)
+        },
+      )
+      put("forgedBuffs", forgedBuffsArr)
+      put("calibrationValues", calibrationObj)
+    }.toString(2)
+  }
+
+  /**
+   * Imports a Developer Forge JSON bundle (raw JSON or markdown code block) and applies all
+   * visual recipes, audio tracks, HUD offsets, forged buffs, and calibration sliders live.
+   */
+  fun importDevForgeBundleJson(
+    rawJson: String,
+    engine: RiftGameEngine? = null,
+    context: Context? = null,
+  ): Boolean {
+    ensureBaselineCaptured()
+    val trimmed = rawJson.trim()
+    if (trimmed.isEmpty()) return false
+    val extracted =
+      if (trimmed.contains("```")) {
+        val afterOpen = trimmed.substringAfter("```").let {
+          if (it.startsWith("json", ignoreCase = true)) it.substring(4) else it
+        }
+        afterOpen.substringBefore("```").trim()
+      } else {
+        trimmed
+      }
+    return try {
+      val root = JSONObject(extracted)
+
+      root.optJSONObject("visualForge")?.let { RiftVisualForgeState.loadFromJsonObject(it) }
+      root.optJSONObject("syndicateCrest")?.let {
+        RiftVisualForgeState.updateSyndicateCrest(SyndicateCrestRecipe.fromJson(it))
+      }
+      root.optJSONObject("audioForge")?.let { RiftSoundSynthesizer.importAudioForgeJson(it) }
+
+      root.optJSONObject("hudOffsets")?.let { hObj ->
+        fun parseOff(key: String, fallback: Offset): Offset {
+          val o = hObj.optJSONObject(key) ?: return fallback
+          return Offset(
+            o.optDouble("x", fallback.x.toDouble()).toFloat(),
+            o.optDouble("y", fallback.y.toDouble()).toFloat(),
+          )
+        }
+        topBarOffset = parseOff("topBar", topBarOffset)
+        buffBarOffset = parseOff("buffBar", buffBarOffset)
+        killLogOffset = parseOff("killLog", killLogOffset)
+        bottomConsoleOffset = parseOff("bottomConsole", bottomConsoleOffset)
+        combatArcOffset = parseOff("combatArc", combatArcOffset)
+        leftStickOffset = parseOff("leftStick", leftStickOffset)
+        fireStickOffset = parseOff("fireStick", fireStickOffset)
+        bombBtnOffset = parseOff("bombBtn", bombBtnOffset)
+        repelBtnOffset = parseOff("repelBtn", repelBtnOffset)
+        burstBtnOffset = parseOff("burstBtn", burstBtnOffset)
+        brakeBtnOffset = parseOff("brakeBtn", brakeBtnOffset)
+        multiBtnOffset = parseOff("multiBtn", multiBtnOffset)
+        calibrationBtnOffset = parseOff("calibrationBtn", calibrationBtnOffset)
+        nexusBtnOffset = parseOff("nexusBtn", nexusBtnOffset)
+        toastContainerOffset = parseOff("toastContainer", toastContainerOffset)
+        idleWarningBannerOffset = parseOff("idleWarningBanner", idleWarningBannerOffset)
+      }
+
+      root.optJSONObject("labelPlacements")?.let { lp ->
+        runCatching { LabelPlacement.valueOf(lp.optString("bountyPlacement", "TOP")) }
+          .getOrNull()?.let { bountyPlacement = it }
+        runCatching { LabelPlacement.valueOf(lp.optString("tagPlacement", "BOTTOM")) }
+          .getOrNull()?.let { tagPlacement = it }
+        runCatching { LabelPlacement.valueOf(lp.optString("namePlacement", "BOTTOM")) }
+          .getOrNull()?.let { namePlacement = it }
+      }
+
+      root.optJSONArray("forgedBuffs")?.let { arr ->
+        for (i in 0 until arr.length()) {
+          val bObj = arr.optJSONObject(i) ?: continue
+          RiftCodex.registerCustomBuff(SpecialBuffRegistryEntry.fromJsonObject(bObj))
+        }
+      }
+
+      val calObj = root.optJSONObject("calibrationValues") ?: root.optJSONObject("DEFAULT_GAME_CONFIG")
+      if (calObj != null) {
+        val byKey = buildAllParameterDescriptors().associateBy { it.key }
+        val keys = calObj.keys()
+        while (keys.hasNext()) {
+          val k = keys.next()
+          val desc = byKey[k] ?: continue
+          val v = calObj.optDouble(k, desc.getter().toDouble()).toFloat()
+          desc.setter(v)
+        }
+      }
+
+      RiftSpriteBaker.invalidateAllVisualTargets()
+      calibrationRevision++
+      applyCalibrationChangesLive(engine, context)
+      true
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  /**
    * Generates a complete 1-click AI Studio prompt containing:
-   * - Section A: Modified Settings Diff (`key: oldDefault -> newValue`)
-   * - Section B: Complete Replacement Default Objects (`DEFAULT_GAME_CONFIG`, `BUFF_REGISTRY`, `hiddenCalibrationKeys`)
+   * - Section A: Modified Settings & Visual Forge Diff (`key: oldDefault -> newValue`)
+   * - Section B: Complete Replacement Default Objects (`DEFAULT_GAME_CONFIG`, `visualForge`, `audioForge`, `BUFF_REGISTRY`, `hiddenCalibrationKeys`)
    * Returns (promptString, modifiedCount).
    */
   fun generateAiStudioDefaultsPrompt(): Pair<String, Int> {
@@ -1884,6 +2096,14 @@ object RiftCalibrationState {
       val def = DEFAULT_GAME_CONFIG[desc.key]
       if (def != null && abs(cur - def) > 0.0005f) {
         diffs += "  - ${desc.key} (${desc.title}): ${desc.formatValue(def)} -> ${desc.formatValue(cur)}"
+      }
+    }
+
+    for (target in ForgeElementTarget.entries) {
+      val rec = RiftVisualForgeState.getRecipe(target)
+      if (!rec.isFactoryDefault) {
+        diffs +=
+          "  - [VISUAL FORGE] ${target.key} (${target.title}): primary=${rec.primaryHex}, trim=${rec.trimHex}, glow=${rec.glowHex}, style=${rec.geometryStyle}, scale=${rec.pixelScale}x, glowInt=${rec.glowIntensity}x (\"${rec.promptUsed}\")"
       }
     }
 
@@ -1913,11 +2133,11 @@ object RiftCalibrationState {
     val totalModified = diffs.size + (if (hiddenCalibrationKeys.isNotEmpty()) 1 else 0)
 
     val sb = StringBuilder()
-    sb.appendLine("Update RIFT's permanent factory defaults in RiftCalibrationState.kt and ShipSpecs.kt to match my calibrated values below:")
+    sb.appendLine("Update RIFT's permanent factory defaults in RiftCalibrationState.kt, RiftVisualForgeState.kt, and ShipSpecs.kt to match my forged configuration below:")
     sb.appendLine()
-    sb.appendLine("### SECTION A: MODIFIED SETTINGS DIFF (${diffs.size} Gameplay/UI Changes)")
+    sb.appendLine("### SECTION A: MODIFIED SETTINGS & VISUAL FORGE DIFF (${diffs.size} Changes)")
     if (diffs.isEmpty()) {
-      sb.appendLine("  - (All numeric sliders currently match factory defaults)")
+      sb.appendLine("  - (All numeric sliders and visual elements currently match factory defaults)")
     } else {
       diffs.forEach { sb.appendLine(it) }
     }
@@ -1929,6 +2149,9 @@ object RiftCalibrationState {
     sb.appendLine("```json")
     val bundle = JSONObject().apply {
       put("DEFAULT_GAME_CONFIG", fullConfigJson)
+      put("visualForge", RiftVisualForgeState.toJsonObject())
+      put("syndicateCrest", RiftVisualForgeState.activeSyndicateCrestRecipe.toJson())
+      put("audioForge", RiftSoundSynthesizer.exportAudioForgeJson())
       put("labelPlacements", JSONObject().apply {
         put("bountyPlacement", bountyPlacement.name)
         put("tagPlacement", tagPlacement.name)

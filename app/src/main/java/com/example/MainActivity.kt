@@ -86,6 +86,8 @@ import com.example.ui.DossierModal
 import com.example.ui.HangarModal
 import com.example.ui.NexusAiConsoleModal
 import com.example.ui.NexusAiViewModel
+import com.example.ui.NexusForgeModal
+import com.example.ui.NexusForgeTab
 import com.example.ui.NexusHubLayoutMode
 import com.example.ui.NexusStreamState
 import com.example.ui.RiftCalibrationDialog
@@ -152,6 +154,7 @@ private enum class ActiveModal {
   SETTINGS,
   RIFT_SHARDS_STORE,
   NEXUS,
+  FORGE,
   CALIBRATE,
 }
 
@@ -326,6 +329,8 @@ fun RiftArenaScreen(
     mutableStateOf(if (bootToNexusHub) ActiveModal.NEXUS else ActiveModal.NONE)
   }
   var nexusInitialLayoutMode by remember { mutableStateOf(NexusHubLayoutMode.DECK_ONLY) }
+  var forgeInitialTab by remember { mutableStateOf(NexusForgeTab.SHIP_COSMETICS) }
+  var isForgeFullScreenStage by remember { mutableStateOf(false) }
   var showFullChangelogModal by remember { mutableStateOf(false) }
   var previousModalBeforeStore by remember { mutableStateOf(ActiveModal.DOSSIER) }
   var previousModalBeforeNexus by remember { mutableStateOf(ActiveModal.NONE) }
@@ -521,10 +526,19 @@ fun RiftArenaScreen(
     }
   }
 
-  // Load persisted HUD layout offsets, Calibration overrides, and Forged Buffs on startup
+  // Load persisted HUD layout offsets, Visual/Audio Forge recipes, Calibration overrides, and Forged Buffs on startup
   LaunchedEffect(Unit) {
-    RiftCalibrationState.loadPersistedLayout(context)
+    RiftCalibrationState.loadPersistedLayout(context, engine)
+    musicBpm = sfx.musicBpm
+    activeMusicArchetypeId = sfx.currentMusicRecipe.archetype.id
+    activeMusicSummary = sfx.currentMusicRecipe.customPromptSummary
     RiftCalibrationState.applyCalibrationChangesLive(engine, null)
+  }
+
+  LaunchedEffect(activeModal) {
+    if (activeModal != ActiveModal.FORGE) {
+      isForgeFullScreenStage = false
+    }
   }
 
   // P1: Non-Blocking Tactical Toasts auto-fade after 1.5s
@@ -683,18 +697,18 @@ fun RiftArenaScreen(
   }
 
   var arenaViewRef by remember { mutableStateOf<RiftArenaView?>(null) }
-  // All 9 Persistent NEXUS Master Window Tabs in exact header ribbon order
+  // All 9 Persistent NEXUS Master Window Tabs in exact header ribbon order (Law #5)
   val nexusHubModals = remember {
     listOf(
       ActiveModal.NEXUS,
       ActiveModal.HANGAR,
+      ActiveModal.FORGE,
       ActiveModal.RIFT_SHARDS_STORE,
       ActiveModal.ARMADA,
       ActiveModal.SYNDICATES,
       ActiveModal.DOSSIER,
       ActiveModal.CODEX,
       ActiveModal.SETTINGS,
-      ActiveModal.CALIBRATE,
     )
   }
 
@@ -749,9 +763,12 @@ fun RiftArenaScreen(
     if (RiftCalibrationState.isUiUnlockedForDragging && RiftCalibrationState.isCalibrationModalOpen) {
       RiftCalibrationState.isUiUnlockedForDragging = false
       RiftCalibrationState.isCalibrationModalOpen = false
-      activeModal = ActiveModal.CALIBRATE
+      forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+      activeModal = ActiveModal.FORGE
     } else if (RiftCalibrationState.isCalibrationModalOpen) {
       RiftCalibrationState.isCalibrationModalOpen = false
+    } else if (activeModal == ActiveModal.FORGE && isForgeFullScreenStage) {
+      isForgeFullScreenStage = false
     } else if (activeModal == ActiveModal.NEXUS) {
       activeModal = previousModalBeforeNexus
       previousModalBeforeNexus = ActiveModal.NONE
@@ -763,6 +780,14 @@ fun RiftArenaScreen(
       activeModal = ActiveModal.HANGAR
     }
   }
+
+  val isLiveHudDragPillOpen =
+    RiftCalibrationState.isUiUnlockedForDragging && RiftCalibrationState.isCalibrationModalOpen
+
+  val isAnyModalCoveringArena =
+    (activeModal != ActiveModal.NONE ||
+      showFullChangelogModal ||
+      needsInitialSwornCallsign) && !isLiveHudDragPillOpen
 
   Box(
     modifier =
@@ -785,11 +810,12 @@ fun RiftArenaScreen(
                 if (RiftCalibrationState.isUiUnlockedForDragging) {
                   RiftCalibrationState.isUiUnlockedForDragging = false
                   RiftCalibrationState.isCalibrationModalOpen = false
-                  activeModal = ActiveModal.CALIBRATE
+                  forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+                  activeModal = ActiveModal.FORGE
                 } else {
                   RiftCalibrationState.isCalibrationModalOpen = false
                   activeModal =
-                    if (activeModal == ActiveModal.CALIBRATE) ActiveModal.NONE else ActiveModal.CALIBRATE
+                    if (activeModal == ActiveModal.FORGE) ActiveModal.NONE else ActiveModal.FORGE
                 }
                 sfx.playMutedClick()
                 true
@@ -861,11 +887,12 @@ fun RiftArenaScreen(
             if (RiftCalibrationState.isUiUnlockedForDragging) {
               RiftCalibrationState.isUiUnlockedForDragging = false
               RiftCalibrationState.isCalibrationModalOpen = false
-              activeModal = ActiveModal.CALIBRATE
+              forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+              activeModal = ActiveModal.FORGE
             } else {
               RiftCalibrationState.isCalibrationModalOpen = false
               activeModal =
-                if (activeModal == ActiveModal.CALIBRATE) ActiveModal.NONE else ActiveModal.CALIBRATE
+                if (activeModal == ActiveModal.FORGE) ActiveModal.NONE else ActiveModal.FORGE
             }
             sfx.playMutedClick()
           },
@@ -880,12 +907,16 @@ fun RiftArenaScreen(
               ViewGroup.LayoutParams.MATCH_PARENT,
               ViewGroup.LayoutParams.MATCH_PARENT,
             )
+          isModalOverlayOpen = isAnyModalCoveringArena
           arenaViewRef = this
         }
       },
+      update = { view ->
+        view.isModalOverlayOpen = isAnyModalCoveringArena
+      },
     )
 
-    // 2. Native Fullscreen HUD Overlay (1:1 Device Touch Ergonomics)
+    // 2. Native Fullscreen HUD Overlay (1:1 Device Touch Ergonomics; hidden cleanly behind open modals)
     RiftHudOverlay(
       engine = engine,
       fps = currentFps,
@@ -894,6 +925,7 @@ fun RiftArenaScreen(
       toastMessage = toastMessage,
       frameTick = frameTick,
       cameraZoom = cameraZoom,
+      isModalOpen = isAnyModalCoveringArena,
       onOpenHangar = { activeModal = ActiveModal.HANGAR },
       onOpenCodex = { activeModal = ActiveModal.CODEX },
       onOpenSyndicateCommand = {
@@ -953,9 +985,6 @@ fun RiftArenaScreen(
     )
 
     // 3. Single Persistent NEXUS Master Window Shell & Overlays Under Global DeviceAwareModalAutoScaler
-    val isLiveHudDragPillOpen =
-      RiftCalibrationState.isUiUnlockedForDragging && RiftCalibrationState.isCalibrationModalOpen
-
     val hasAnyModalVisible =
       activeModal != ActiveModal.NONE ||
         showFullChangelogModal ||
@@ -969,6 +998,12 @@ fun RiftArenaScreen(
             LaunchedEffect(Unit) {
               unreadCommsCount = 0
               activeModal = ActiveModal.NEXUS
+            }
+          }
+          if (activeModal == ActiveModal.CALIBRATE) {
+            LaunchedEffect(Unit) {
+              forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+              activeModal = ActiveModal.FORGE
             }
           }
 
@@ -1175,25 +1210,131 @@ fun RiftArenaScreen(
               when (activeModal) {
                 ActiveModal.NEXUS -> "NEXUS"
                 ActiveModal.HANGAR -> "HANGAR"
+                ActiveModal.FORGE, ActiveModal.CALIBRATE -> "FORGE"
                 ActiveModal.RIFT_SHARDS_STORE -> "PROGRESSION"
                 ActiveModal.ARMADA -> "ARMADA"
                 ActiveModal.SYNDICATES -> "SYNDICATES"
                 ActiveModal.DOSSIER -> "DOSSIER"
                 ActiveModal.CODEX -> "CODEX"
                 ActiveModal.SETTINGS -> "SETTINGS"
-                ActiveModal.CALIBRATE -> "CALIBRATE"
                 else -> "NEXUS"
               }
 
-            val embeddedModuleContent: (@Composable () -> Unit)? =
-              if (activeModal == ActiveModal.NEXUS) {
-                null
+            val closeEmbeddedModal: () -> Unit = {
+              activeModal = if (!engine.hasJoinedMatch) ActiveModal.NEXUS else ActiveModal.NONE
+            }
+            val saveCustomSlotShared: (com.example.engine.CustomShipLoadoutSlot) -> Unit = { updatedSlot ->
+              activeCustomSlot = updatedSlot
+              localPrefs.saveCustomShipSlot(updatedSlot, currentUserId)
+              RiftCodex.updateActiveCustomShipSlot(updatedSlot)
+              engine.spentCustomizationPoints = updatedSlot.totalAllocatedPoints()
+              engine.syncLocalPlayerCustomShipSpec()
+            }
+            val switchCustomSlotShared: (String) -> Unit = { targetSlotId ->
+              activeCustomSlotId = targetSlotId
+              localPrefs.setActiveCustomSlotId(targetSlotId, currentUserId)
+              val loaded = localPrefs.getCustomShipSlot(targetSlotId, currentUserId)
+              activeCustomSlot = loaded
+              RiftCodex.updateActiveCustomShipSlot(loaded)
+              engine.spentCustomizationPoints = loaded.totalAllocatedPoints()
+              engine.syncLocalPlayerCustomShipSpec()
+              sfx.playPrize()
+            }
+            val unlockCustomSlotShared: (String) -> Boolean = { targetSlotId ->
+              val gate = RiftProgressionCatalog.getFrameSlotGate(targetSlotId)
+              val cost = gate.shardCost
+              val freeByLevel = engine.pilotLevel >= gate.freeAtLevel
+              if (freeByLevel || engine.riftShards >= cost) {
+                if (!freeByLevel && cost > 0L) engine.riftShards -= cost
+                engine.unlockedExtraSlots++
+                localPrefs.setCustomSlotUnlocked(targetSlotId, true, currentUserId)
+                slot9BUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
+                slot9CUnlocked = localPrefs.isCustomSlotUnlocked("Frame C", currentUserId)
+                slot9DUnlocked = localPrefs.isCustomSlotUnlocked("Frame D", currentUserId)
+                slot9EUnlocked = localPrefs.isCustomSlotUnlocked("Frame E", currentUserId)
+                switchCustomSlotShared(targetSlotId)
+                engine.onStatsUpdated()
+                true
+              } else false
+            }
+            val forgeAiHullShared: (String, String) -> Pair<Boolean, String> = { promptText, hullTitle ->
+              val isFirstFree = activeCustomSlot.aiGenerationsCount == 0
+              val canAfford = isFirstFree || engine.aiShipDesignTokens > 0 || engine.riftShards >= 150L
+              if (!canAfford) {
+                Pair(false, "⚠️ NEED 150 RIFT SHARDS FOR HULL RE-DESIGN (OPEN PROGRESSION TAB).")
               } else {
+                if (!isFirstFree) {
+                  if (engine.aiShipDesignTokens > 0) engine.aiShipDesignTokens-- else engine.riftShards -= 150L
+                }
+                val nextGenCount = activeCustomSlot.aiGenerationsCount + 1
+                val baseRecipe = com.example.engine.CustomHullVisualRecipe.synthesizeFromPrompt(promptText, nextGenCount)
+                val finalTitle = hullTitle.trim().uppercase(Locale.US).take(18).ifEmpty { baseRecipe.hullName }
+                val finalRecipe = baseRecipe.copy(hullName = finalTitle)
+                val updatedSlot = activeCustomSlot.copy(customName = finalTitle, visualRecipe = finalRecipe, aiGenerationsCount = nextGenCount)
+                activeCustomSlot = updatedSlot
+                localPrefs.saveCustomShipSlot(updatedSlot, currentUserId)
+                RiftCodex.updateActiveCustomShipSlot(updatedSlot)
+                engine.syncLocalPlayerCustomShipSpec()
+                engine.onStatsUpdated()
+                sfx.playPrize()
+                val costNote = if (isFirstFree) "FREE 1ST DESIGN" else "-150 SHARDS"
+                Pair(true, "🎨 HULL FORGED ($costNote): [$finalTitle] (${finalRecipe.silhouette})")
+              }
+            }
+            val toggleSfxShared: () -> Unit = {
+              sfxEnabled = !sfxEnabled; sfx.enabled = sfxEnabled; localPrefs.setSfxEnabled(sfxEnabled)
+            }
+            val toggleMusicShared: () -> Unit = {
+              musicEnabled = !musicEnabled; localPrefs.setMusicEnabled(musicEnabled); sfx.setMusicEnabled(musicEnabled)
+            }
+            val changeMusicBpmShared: (Int) -> Unit = { newBpm ->
+              val clamped = newBpm.coerceIn(60, 180)
+              musicBpm = clamped; sfx.setMusicBpmLive(clamped)
+              activeMusicSummary = sfx.currentMusicRecipe.customPromptSummary
+              localPrefs.setMusicBpm(clamped)
+            }
+            val changeMusicVolShared: (Float) -> Unit = { newVol ->
+              val clamped = newVol.coerceIn(0f, 1f)
+              musicVolume = clamped; sfx.setMusicVolumeLive(clamped); localPrefs.setMusicVolume(clamped)
+            }
+            val changeSfxVolShared: (Float) -> Unit = { newVol ->
+              val clamped = newVol.coerceIn(0f, 1f)
+              sfxVolume = clamped; sfx.setSfxVolumeLive(clamped); localPrefs.setSfxVolume(clamped)
+            }
+            val selectMusicArchetypeShared: (com.example.engine.MusicSynthArchetype) -> Unit = { archetype ->
+              sfx.applyMusicArchetype(archetype)
+              musicBpm = sfx.musicBpm
+              activeMusicArchetypeId = archetype.id
+              activeMusicSummary = sfx.currentMusicRecipe.customPromptSummary
+              musicForgePrompt = ""
+              localPrefs.setMusicArchetypeId(archetype.id)
+              localPrefs.setMusicForgePrompt("")
+              localPrefs.setMusicBpm(sfx.musicBpm)
+              if (!musicEnabled) { musicEnabled = true; localPrefs.setMusicEnabled(true); sfx.setMusicEnabled(true) }
+            }
+            val forgeMusicPromptShared: (String, Boolean) -> Unit = { rawPrompt, showToast ->
+              val forged = sfx.forgeMusicFromPrompt(rawPrompt)
+              musicBpm = forged.bpm
+              activeMusicArchetypeId = forged.archetype.id
+              activeMusicSummary = forged.customPromptSummary
+              musicForgePrompt = rawPrompt.trim()
+              localPrefs.setMusicArchetypeId(forged.archetype.id)
+              localPrefs.setMusicForgePrompt(musicForgePrompt)
+              localPrefs.setMusicBpm(forged.bpm)
+              if (!musicEnabled) { musicEnabled = true; localPrefs.setMusicEnabled(true); sfx.setMusicEnabled(true) }
+              sfx.playPrize()
+              if (showToast) {
+                toastMessage = "🎶 FORGED TRACK: ${forged.customPromptSummary}"
+                toastVersion++
+              }
+            }
+
+            val embeddedModuleContent: (@Composable () -> Unit)? =
+              if (activeModal == ActiveModal.NEXUS) null else {
                 {
                   when (activeModal) {
                     ActiveModal.HANGAR -> {
-                      val (_, _, hangarLvlFrac) =
-                        remember(frameTick) { engine.getXpProgressInCurrentLevel() }
+                      val (_, _, hangarLvlFrac) = remember(frameTick) { engine.getXpProgressInCurrentLevel() }
                       HangarModal(
                         initialCallsign = callsign,
                         syndicateTag = syndicateTag,
@@ -1205,8 +1346,7 @@ fun RiftArenaScreen(
                         customizationPointsTotal = engine.getCustomizationPointsTotal(),
                         spentCustomizationPoints = activeCustomSlot.totalAllocatedPoints(),
                         riftShards = engine.riftShards,
-                        unlockFullNinthShipOverride =
-                          RiftCalibrationState.unlockFullNinthShipOverride,
+                        unlockFullNinthShipOverride = RiftCalibrationState.unlockFullNinthShipOverride,
                         activeCustomSlot = activeCustomSlot,
                         slot9BUnlocked = slot9BUnlocked,
                         slot9CUnlocked = slot9CUnlocked,
@@ -1220,152 +1360,41 @@ fun RiftArenaScreen(
                           syndicateStatusBanner = null
                           activeModal = ActiveModal.SYNDICATES
                         },
-                        onSaveCustomSlot = { updatedSlot ->
-                          activeCustomSlot = updatedSlot
-                          localPrefs.saveCustomShipSlot(updatedSlot, currentUserId)
-                          RiftCodex.updateActiveCustomShipSlot(updatedSlot)
-                          engine.spentCustomizationPoints = updatedSlot.totalAllocatedPoints()
-                          engine.syncLocalPlayerCustomShipSpec()
-                        },
-                        onSwitchCustomSlot = { targetSlotId ->
-                          activeCustomSlotId = targetSlotId
-                          localPrefs.setActiveCustomSlotId(targetSlotId, currentUserId)
-                          val loaded = localPrefs.getCustomShipSlot(targetSlotId, currentUserId)
-                          activeCustomSlot = loaded
-                          RiftCodex.updateActiveCustomShipSlot(loaded)
-                          engine.spentCustomizationPoints = loaded.totalAllocatedPoints()
-                          engine.syncLocalPlayerCustomShipSpec()
-                          sfx.playPrize()
-                        },
-                        onUnlockCustomSlot = { targetSlotId ->
-                          val gate = RiftProgressionCatalog.getFrameSlotGate(targetSlotId)
-                          val cost = gate.shardCost
-                          val freeByLevel = engine.pilotLevel >= gate.freeAtLevel
-                          if (freeByLevel || engine.riftShards >= cost) {
-                            if (!freeByLevel && cost > 0L) {
-                              engine.riftShards -= cost
-                            }
-                            engine.unlockedExtraSlots++
-                            localPrefs.setCustomSlotUnlocked(targetSlotId, true, currentUserId)
-                            slot9BUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
-                            slot9CUnlocked = localPrefs.isCustomSlotUnlocked("Frame C", currentUserId)
-                            slot9DUnlocked = localPrefs.isCustomSlotUnlocked("Frame D", currentUserId)
-                            slot9EUnlocked = localPrefs.isCustomSlotUnlocked("Frame E", currentUserId)
-                            activeCustomSlotId = targetSlotId
-                            localPrefs.setActiveCustomSlotId(targetSlotId, currentUserId)
-                            val loaded = localPrefs.getCustomShipSlot(targetSlotId, currentUserId)
-                            activeCustomSlot = loaded
-                            RiftCodex.updateActiveCustomShipSlot(loaded)
-                            engine.spentCustomizationPoints = loaded.totalAllocatedPoints()
-                            engine.syncLocalPlayerCustomShipSpec()
-                            engine.onStatsUpdated()
-                            sfx.playPrize()
-                            true
-                          } else {
-                            false
-                          }
-                        },
+                        onSaveCustomSlot = saveCustomSlotShared,
+                        onSwitchCustomSlot = switchCustomSlotShared,
+                        onUnlockCustomSlot = unlockCustomSlotShared,
                         onRespecCustomSlot = {
                           if (engine.riftShards >= 50L && activeCustomSlot.totalAllocatedPoints() > 0) {
                             engine.riftShards -= 50L
-                            val zeroed =
-                              activeCustomSlot.copy(
-                                speedPts = 0,
-                                thrustPts = 0,
-                                turnPts = 0,
-                                maxFluxPts = 0,
-                                rechargePts = 0,
-                                primaryArchetype = "LIGHT_PULSE",
-                                secondaryType = "NONE",
-                              )
-                            activeCustomSlot = zeroed
-                            localPrefs.saveCustomShipSlot(zeroed, currentUserId)
-                            RiftCodex.updateActiveCustomShipSlot(zeroed)
-                            engine.spentCustomizationPoints = 0
-                            engine.syncLocalPlayerCustomShipSpec()
+                            val zeroed = activeCustomSlot.copy(
+                              speedPts = 0, thrustPts = 0, turnPts = 0, maxFluxPts = 0, rechargePts = 0,
+                              primaryArchetype = "LIGHT_PULSE", secondaryType = "NONE",
+                            )
+                            saveCustomSlotShared(zeroed)
                             engine.onStatsUpdated()
                             sfx.playPrize()
                             true
-                          } else {
-                            false
-                          }
+                          } else false
                         },
-                        onForgeAiHullDesign = { promptText, hullTitle ->
-                          val isFirstFree = activeCustomSlot.aiGenerationsCount == 0
-                          val canAfford =
-                            isFirstFree || engine.aiShipDesignTokens > 0 || engine.riftShards >= 150L
-                          if (!canAfford) {
-                            Pair(
-                              false,
-                              "⚠️ NEED 150 RIFT SHARDS FOR HULL RE-DESIGN (OPEN PROGRESSION TAB).",
-                            )
-                          } else {
-                            if (!isFirstFree) {
-                              if (engine.aiShipDesignTokens > 0) {
-                                engine.aiShipDesignTokens--
-                              } else {
-                                engine.riftShards -= 150L
-                              }
-                            }
-                            val nextGenCount = activeCustomSlot.aiGenerationsCount + 1
-                            val baseRecipe =
-                              com.example.engine.CustomHullVisualRecipe.synthesizeFromPrompt(
-                                rawPrompt = promptText,
-                                variationSalt = nextGenCount,
-                              )
-                            val finalTitle =
-                              hullTitle
-                                .trim()
-                                .uppercase(Locale.US)
-                                .take(18)
-                                .ifEmpty { baseRecipe.hullName }
-                            val finalRecipe = baseRecipe.copy(hullName = finalTitle)
-                            val updatedSlot =
-                              activeCustomSlot.copy(
-                                customName = finalTitle,
-                                visualRecipe = finalRecipe,
-                                aiGenerationsCount = nextGenCount,
-                              )
-                            activeCustomSlot = updatedSlot
-                            localPrefs.saveCustomShipSlot(updatedSlot, currentUserId)
-                            RiftCodex.updateActiveCustomShipSlot(updatedSlot)
-                            engine.syncLocalPlayerCustomShipSpec()
-                            engine.onStatsUpdated()
-                            sfx.playPrize()
-                            val costNote = if (isFirstFree) "FREE 1ST DESIGN" else "-150 SHARDS"
-                            Pair(
-                              true,
-                              "🎨 HULL FORGED ($costNote): [$finalTitle] (${finalRecipe.silhouette})",
-                            )
-                          }
-                        },
+                        onForgeAiHullDesign = forgeAiHullShared,
                         onToggleDevLevel20Or100 = {
-                          RiftCalibrationState.unlockFullNinthShipOverride =
-                            !RiftCalibrationState.unlockFullNinthShipOverride
+                          RiftCalibrationState.unlockFullNinthShipOverride = !RiftCalibrationState.unlockFullNinthShipOverride
                           RiftCalibrationState.savePersistedLayout(context)
                           engine.syncLocalPlayerCustomShipSpec()
                           sfx.playPrize()
                         },
                         isNexusStreaming = isNexusStreaming,
-                        onOpenNexus = {
-                          activeModal = ActiveModal.NEXUS
+                        onOpenNexus = { activeModal = ActiveModal.NEXUS },
+                        onOpenShipForge = {
+                          forgeInitialTab = NexusForgeTab.SHIP_COSMETICS
+                          activeModal = ActiveModal.FORGE
                         },
                         onDeployPilot = { newCallsign, newShipId, _, asGuest ->
-                          if (asGuest) {
-                            localPrefs.setGuestBypassEnabled(true)
-                          }
+                          if (asGuest) localPrefs.setGuestBypassEnabled(true)
                           val cleanCallsign =
-                            if (isGoogleAuthenticated) {
-                              localPrefs.setCallsign(newCallsign, currentUserId)
-                            } else {
-                              localPrefs.setCallsign(newCallsign)
-                            }
-                          if (
-                            isGoogleAuthenticated &&
-                              cleanCallsign.length >= 3 &&
-                              cleanCallsign != "COMMANDER" &&
-                              !cleanCallsign.startsWith("RFT-")
-                          ) {
+                            if (isGoogleAuthenticated) localPrefs.setCallsign(newCallsign, currentUserId)
+                            else localPrefs.setCallsign(newCallsign)
+                          if (isGoogleAuthenticated && cleanCallsign.length >= 3 && cleanCallsign != "COMMANDER" && !cleanCallsign.startsWith("RFT-")) {
                             localPrefs.setHasChosenInitialCallsign(true, currentUserId)
                             needsInitialSwornCallsign = false
                           }
@@ -1376,26 +1405,17 @@ fun RiftArenaScreen(
                           selectedMode = activeModeId
                           syndicateTag = localPrefs.getSyndicateTag()
                           syndicateName = localPrefs.getSyndicateName()
-
                           localPrefs.setPreferredShipId(clampedShipId)
                           localPrefs.setPreferredMode(activeModeId)
-
                           engine.localPlayer.callsign = cleanCallsign
                           engine.localPlayer.syndicateTag = syndicateTag
                           engine.syncLocalArmadaSelfSlot()
                           engine.switchLocalPlayerShip(clampedShipId, forceFromHangar = true)
-                          if (!engine.hasJoinedMatch) {
-                            engine.deployToRankedMode(
-                              engine.activeRankedMode,
-                              engine.activeTeamSizeBracket,
-                            )
-                          }
+                          if (!engine.hasJoinedMatch) engine.deployToRankedMode(engine.activeRankedMode, engine.activeTeamSizeBracket)
                           engine.onStatsUpdated()
                           activeModal = ActiveModal.NONE
                         },
-                        onCloseModal = {
-                          activeModal = if (!engine.hasJoinedMatch) ActiveModal.NEXUS else ActiveModal.NONE
-                        },
+                        onCloseModal = closeEmbeddedModal,
                       )
                     }
 
@@ -1885,93 +1905,28 @@ fun RiftArenaScreen(
                         cameraZoom = cameraZoom,
                         playfieldTextScale = playfieldTextScale,
                         isGoogleAuthenticated = isGoogleAuthenticated,
-                        onToggleSfx = {
-                          sfxEnabled = !sfxEnabled
-                          sfx.enabled = sfxEnabled
-                          localPrefs.setSfxEnabled(sfxEnabled)
-                        },
-                        onToggleMusic = {
-                          musicEnabled = !musicEnabled
-                          localPrefs.setMusicEnabled(musicEnabled)
-                          sfx.setMusicEnabled(musicEnabled)
-                        },
-                        onChangeMusicBpm = { newBpm ->
-                          val clamped = newBpm.coerceIn(60, 180)
-                          musicBpm = clamped
-                          sfx.setMusicBpmLive(clamped)
-                          activeMusicSummary = sfx.currentMusicRecipe.customPromptSummary
-                          localPrefs.setMusicBpm(clamped)
-                        },
-                        onChangeMusicVolume = { newVol ->
-                          val clamped = newVol.coerceIn(0f, 1f)
-                          musicVolume = clamped
-                          sfx.setMusicVolumeLive(clamped)
-                          localPrefs.setMusicVolume(clamped)
-                        },
-                        onChangeSfxVolume = { newVol ->
-                          val clamped = newVol.coerceIn(0f, 1f)
-                          sfxVolume = clamped
-                          sfx.setSfxVolumeLive(clamped)
-                          localPrefs.setSfxVolume(clamped)
-                        },
-                        onSelectMusicArchetype = { archetype ->
-                          sfx.applyMusicArchetype(archetype)
-                          musicBpm = sfx.musicBpm
-                          activeMusicArchetypeId = archetype.id
-                          activeMusicSummary = sfx.currentMusicRecipe.customPromptSummary
-                          musicForgePrompt = ""
-                          localPrefs.setMusicArchetypeId(archetype.id)
-                          localPrefs.setMusicForgePrompt("")
-                          localPrefs.setMusicBpm(sfx.musicBpm)
-                          if (!musicEnabled) {
-                            musicEnabled = true
-                            localPrefs.setMusicEnabled(true)
-                            sfx.setMusicEnabled(true)
-                          }
-                        },
-                        onForgeCustomMusicPrompt = { rawPrompt ->
-                          val forged = sfx.forgeMusicFromPrompt(rawPrompt)
-                          musicBpm = forged.bpm
-                          activeMusicArchetypeId = forged.archetype.id
-                          activeMusicSummary = forged.customPromptSummary
-                          musicForgePrompt = rawPrompt.trim()
-                          localPrefs.setMusicArchetypeId(forged.archetype.id)
-                          localPrefs.setMusicForgePrompt(musicForgePrompt)
-                          localPrefs.setMusicBpm(forged.bpm)
-                          if (!musicEnabled) {
-                            musicEnabled = true
-                            localPrefs.setMusicEnabled(true)
-                            sfx.setMusicEnabled(true)
-                          }
-                          sfx.playPrize()
-                          toastMessage = "🎶 FORGED TRACK: ${forged.customPromptSummary}"
-                          toastVersion++
-                        },
+                        onToggleSfx = toggleSfxShared,
+                        onToggleMusic = toggleMusicShared,
+                        onChangeMusicBpm = changeMusicBpmShared,
+                        onChangeMusicVolume = changeMusicVolShared,
+                        onChangeSfxVolume = changeSfxVolShared,
+                        onSelectMusicArchetype = selectMusicArchetypeShared,
+                        onForgeCustomMusicPrompt = { forgeMusicPromptShared(it, true) },
                         onChangeCameraZoom = { newZoom ->
                           val clamped = newZoom.coerceIn(0.5f, 1.5f)
-                          cameraZoom = clamped
-                          engine.cameraZoom = clamped
-                          localPrefs.setCameraZoom(clamped)
+                          cameraZoom = clamped; engine.cameraZoom = clamped; localPrefs.setCameraZoom(clamped)
                         },
                         onChangePlayfieldTextScale = { newScale ->
                           val clamped = newScale.coerceIn(0.75f, 1.75f)
-                          playfieldTextScale = clamped
-                          engine.playfieldTextScale = clamped
-                          localPrefs.setPlayfieldTextScale(clamped)
-                          frameTick++
+                          playfieldTextScale = clamped; engine.playfieldTextScale = clamped
+                          localPrefs.setPlayfieldTextScale(clamped); frameTick++
                         },
                         onRequestGoogleSignIn = {
                           onGoogleSignInClicked(
                             context = context,
                             credentialManager = credentialManager,
-                            onAuthSuccess = {
-                              toastMessage = "☁️ GOOGLE CLOUD ACCOUNT LINKED!"
-                              toastVersion++
-                            },
-                            onAuthError = { msg ->
-                              toastMessage = "⚠️ SIGN-IN: $msg"
-                              toastVersion++
-                            },
+                            onAuthSuccess = { toastMessage = "☁️ GOOGLE CLOUD ACCOUNT LINKED!"; toastVersion++ },
+                            onAuthError = { msg -> toastMessage = "⚠️ SIGN-IN: $msg"; toastVersion++ },
                             scope = scope,
                           )
                         },
@@ -1979,38 +1934,78 @@ fun RiftArenaScreen(
                           localPrefs.setGuestBypassEnabled(false)
                           signOut(credentialManager = credentialManager, scope = scope)
                         },
-                        onCloseModal = {
-                          activeModal = if (!engine.hasJoinedMatch) ActiveModal.NEXUS else ActiveModal.NONE
-                        },
-                        onOpenChangelog = {
-                          showFullChangelogModal = true
+                        onCloseModal = closeEmbeddedModal,
+                        onOpenChangelog = { showFullChangelogModal = true },
+                        onOpenAudioForge = {
+                          forgeInitialTab = NexusForgeTab.AUDIO_SFX
+                          activeModal = ActiveModal.FORGE
                         },
                       )
                     }
 
+                    ActiveModal.FORGE,
                     ActiveModal.CALIBRATE -> {
-                      RiftCalibrationDialog(
+                      NexusForgeModal(
                         engine = engine,
-                        onDismiss = {
-                          activeModal = if (!engine.hasJoinedMatch) ActiveModal.NEXUS else ActiveModal.NONE
+                        sfx = sfx,
+                        localPrefs = localPrefs,
+                        currentUserId = currentUserId,
+                        callsign = callsign,
+                        syndicateTag = syndicateTag,
+                        pilotLevel = engine.pilotLevel,
+                        riftShards = engine.riftShards,
+                        selectedShipId = selectedShipId,
+                        activeCustomSlot = activeCustomSlot,
+                        slot9BUnlocked = slot9BUnlocked,
+                        slot9CUnlocked = slot9CUnlocked,
+                        slot9DUnlocked = slot9DUnlocked,
+                        slot9EUnlocked = slot9EUnlocked,
+                        unlockFullNinthShipOverride = RiftCalibrationState.unlockFullNinthShipOverride,
+                        sfxEnabled = sfxEnabled,
+                        musicEnabled = musicEnabled,
+                        musicBpm = musicBpm,
+                        musicVolume = musicVolume,
+                        sfxVolume = sfxVolume,
+                        initialTab = forgeInitialTab,
+                        isFullScreenStage = isForgeFullScreenStage,
+                        onToggleFullScreenStage = { expanded -> isForgeFullScreenStage = expanded },
+                        onSelectShipForDeploy = { targetShipId ->
+                          val clamped = targetShipId.coerceIn(1, 10)
+                          selectedShipId = clamped
+                          localPrefs.setPreferredShipId(clamped)
+                          engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
+                          engine.onStatsUpdated()
+                          sfx.playPrize()
                         },
-                        onSyncToAllTesters = {
+                        onSaveCustomSlot = saveCustomSlotShared,
+                        onSwitchCustomSlot = switchCustomSlotShared,
+                        onUnlockCustomSlot = unlockCustomSlotShared,
+                        onForgeAiHullDesign = forgeAiHullShared,
+                        onSpendRiftShards = { cost ->
+                          if (engine.riftShards >= cost) {
+                            engine.riftShards -= cost; sfx.playPrize(); engine.onStatsUpdated(); true
+                          } else false
+                        },
+                        onToggleSfx = toggleSfxShared,
+                        onToggleMusic = toggleMusicShared,
+                        onChangeMusicBpm = changeMusicBpmShared,
+                        onChangeMusicVolume = changeMusicVolShared,
+                        onChangeSfxVolume = changeSfxVolShared,
+                        onSelectMusicArchetype = selectMusicArchetypeShared,
+                        onForgeCustomMusicPrompt = { forgeMusicPromptShared(it, false) },
+                        onEnterHudDragArenaMode = {
+                          RiftCalibrationState.isUiUnlockedForDragging = true
+                          RiftCalibrationState.isCalibrationModalOpen = true
+                          activeModal = ActiveModal.NONE
+                        },
+                        onSyncCalibrationToTesters = {
                           val customGameId = engine.currentCustomGame?.instanceId ?: "global_custom"
                           val json = RiftCalibrationState.exportGameplaySyncPayloadJson()
                           viewModel.broadcastCalibrationToCustomGame(customGameId, callsign, json)
                           toastMessage = "📡 CUSTOM GAME CALIBRATION SYNCED TO ALL TESTERS"
                           toastVersion++
                         },
-                        onEnterHudDragArenaMode = {
-                          RiftCalibrationState.isUiUnlockedForDragging = true
-                          RiftCalibrationState.isCalibrationModalOpen = true
-                          activeModal = ActiveModal.NONE
-                        },
-                        onReturnToNexusCalibration = {
-                          RiftCalibrationState.isUiUnlockedForDragging = false
-                          RiftCalibrationState.isCalibrationModalOpen = false
-                          activeModal = ActiveModal.CALIBRATE
-                        },
+                        onShowToast = { msg -> toastMessage = msg; toastVersion++ },
                       )
                     }
 
@@ -2143,10 +2138,16 @@ fun RiftArenaScreen(
               onOpenSettings = {
                 activeModal = ActiveModal.SETTINGS
               },
+              onOpenForge = {
+                RiftCalibrationState.isUiUnlockedForDragging = false
+                RiftCalibrationState.isCalibrationModalOpen = false
+                activeModal = ActiveModal.FORGE
+              },
               onOpenCalibration = {
                 RiftCalibrationState.isUiUnlockedForDragging = false
                 RiftCalibrationState.isCalibrationModalOpen = false
-                activeModal = ActiveModal.CALIBRATE
+                forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+                activeModal = ActiveModal.FORGE
               },
               onOpenHangarForShip = { targetShipId ->
                 val clamped = targetShipId.coerceIn(1, 10)
@@ -2235,7 +2236,8 @@ fun RiftArenaScreen(
                 activeModal = ActiveModal.NEXUS
               },
               isCalibrationLivePeeking =
-                activeModal == ActiveModal.CALIBRATE && RiftCalibrationState.isDraggingAnySlider,
+                activeModal == ActiveModal.FORGE && RiftCalibrationState.isDraggingAnySlider,
+              hideTopHeaderForFullScreenStage = isForgeFullScreenStage,
               embeddedModuleContent = embeddedModuleContent,
             )
           }
@@ -2271,7 +2273,8 @@ fun RiftArenaScreen(
                 onReturnToNexusCalibration = {
                   RiftCalibrationState.isUiUnlockedForDragging = false
                   RiftCalibrationState.isCalibrationModalOpen = false
-                  activeModal = ActiveModal.CALIBRATE
+                  forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+                  activeModal = ActiveModal.FORGE
                 },
               )
             }

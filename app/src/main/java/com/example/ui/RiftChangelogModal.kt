@@ -1,7 +1,6 @@
 package com.example.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -43,7 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 47
+const val CURRENT_RIFT_BUILD_VERSION = 55
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -58,22 +56,31 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
-      buildNumber = 47,
-      versionTag = "v1.47 // BUILD #47",
+      buildNumber = 55,
+      versionTag = "v55.0 // BUILD #55",
       releaseDate = "Nov 15, 2026",
-      headline = "NEXUS Boot Flow, 3D Rifts, 40,000⚡ Stasis Cores, Fixed Action Buttons & Battle Music",
+      headline = "NEXUS FORGE Studio, 9-Tab Persistent Shell, 10-Ship 100-Pt Parity & 3D Playfield Rifts",
       badgeLabel = "LATEST RELEASE",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
-          "Redesigned the Launch Command Briefing Card with current RIFT lore, 10 modular 3D hulls, 6 ranked modes, and Sworn Pilot vs [RFT] Drifter entry.",
-          "Updated boot flow so signing in or entering as a Drifter opens the full-screen NEXUS Mode Selection & Matchmaking Deck first instead of dropping straight into an active match.",
-          "Upgraded the bottom HUD console pills: frameless 3D ship icon over a holo-emitter ring, stacked [TAG] under SECTOR, crossed-swords MODES emblem, and tighter pill widths.",
-          "Upgraded the circular minimap Flux ring into a 20-segment energy capacitor arc with a glowing leading-edge plasma tip and ⚡ FLUX % badge.",
-          "Locked combat action buttons (Secondary, Special Crate, Repel) to fixed positions for muscle memory, with enlarged Codex/Playfield crate icons.",
-          "Upgraded the NEXUS vortex, all 4 playfield Rifts, Stasis Breach Jails, and Rift Control Tug-of-War zones to 4-layer 3D singularities.",
-          "Increased Stasis Breach Jail Core Flux 10x to 40,000⚡, added 820px Rift spawn exclusion zones around mode objectives, made Gravity Rifts grow as they absorb fire, and made Holo Phantoms react to all Rifts.",
-          "Fixed procedural ambient battle music synthesis and added a dedicated [🎵 MUSIC: ON / OFF] toggle in Settings.",
+          "Launched NEXUS FORGE across Ship & Cosmetic Turntable, Track A–C Soundtrack & SFX Lab (60–180 BPM), Custom Buff Forge, Syndicate Crest Forge, and Interactive Playfield & HUD Studio.",
+          "Unified all 9 header tabs inside a single persistent NEXUS Master Window frame with seamless embedded panes.",
+          "Added 10th Ship parity (Eclipse 6.0s Stasis Bubble & Disruptor Cloak/EMP rebalance), 8,000 Flux Stasis Breach Jail Cores, and Graphical Dual-Rift Tug-of-War HUD.",
+          "Added Living-Teammate Spectator switcher, pure vector FluxEmblem HUD readouts, and 100% real-player Syndicate War ladders.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 47,
+      versionTag = "v1.47 // BUILD #47",
+      releaseDate = "Nov 15, 2026",
+      headline = "NEXUS Boot Flow, 3D Rifts, Fixed Action Buttons & Procedural Battle Music",
+      badgeLabel = "CORE ARENA",
+      accentColorHex = "#38BDF8",
+      highlights =
+        listOf(
+          "Updated boot flow to enter Unjoined NEXUS Orbit first until explicit mode deployment.",
+          "Upgraded circular minimap Flux capacitor arc, fixed combat action buttons, and 4-layer 3D singularities.",
         ),
     ),
     RiftVersionLogEntry(
@@ -82,108 +89,22 @@ val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
       releaseDate = "Nov 14, 2026",
       headline = "Rift Control Tug-of-War, Custom 10-Rule Sandbox & Pre-Match Ship Lock",
       badgeLabel = "MODES & SANDBOX",
-      accentColorHex = "#38BDF8",
+      accentColorHex = "#A78BFA",
       highlights =
         listOf(
-          "Added Rift Control (2-Rift Tug-of-War) with majority capture progression, contested ring status, and AI squad attackers and defenders.",
-          "Added Custom Game 10-Rule Cloner & Browser with one-tap [📡 SYNC TO ALL] room broadcasting and pre-match ship lock picker for team modes.",
-          "Added 128x128 3D multi-layered metallic ship sprites across all 10 hulls and the Hangar holographic inspector pedestal.",
+          "Added Rift Control 2-Rift Tug-of-War, Custom Game 10-Rule Sandbox cloner, and 128x128 3D metallic ship sprites.",
         ),
     ),
     RiftVersionLogEntry(
       buildNumber = 20,
       versionTag = "v1.20 // BUILD #20",
       releaseDate = "Nov 13, 2026",
-      headline = "Pre-Auth Changelog Transmission & Native Twin-Stick Controller Support",
-      badgeLabel = "CONTROLLER & ARCHIVE",
-      accentColorHex = "#A78BFA",
-      highlights =
-        listOf(
-          "Added pre-sign-in Sector Transmission & Full Version Changelog modal tracking updates since your last session alongside the complete historical archive.",
-          "Added plug-and-play Bluetooth & USB Gamepad support: Left Stick 360° Newtonian drift and >80% Afterburner ignition, plus Right Stick 360° independent turret aim.",
-          "Mapped full controller combat & HUD navigation: Right Trigger / R1 Primary Fire, Left Trigger Secondary Warhead, L1 / X Special Buff, A / R3 Repel, B / L3 Manual Retro-Brake, Y Multi-Shot toggle, and D-Pad Hangar 3x3 matrix selection.",
-          "Added live Gamepad Deadzone and Idle Touch Ring Auto-Dim sliders to Calibration.",
-        ),
-    ),
-    RiftVersionLogEntry(
-      buildNumber = 19,
-      versionTag = "v1.19 // BUILD #19",
-      releaseDate = "Nov 13, 2026",
-      headline = "UGC Moderation, Pilot Blocking & High-Contrast Arena Polish",
-      badgeLabel = "MODERATION & VISUALS",
+      headline = "Native Twin-Stick Controller Support & UGC Safety Filters",
+      badgeLabel = "CONTROLLER",
       accentColorHex = "#FFD700",
       highlights =
         listOf(
-          "Added User-Generated Content (UGC) profanity sanitization across Pilot Callsigns, Syndicate Tags, Custom Hull Names, and Syndicate Comms.",
-          "Added in-game Pilot Reporting (⚑ REPORT) and one-tap Pilot Blocking (🚫 BLOCK) inside Syndicate Comms and Armada rosters.",
-          "Upgraded arena visual scaling, high-contrast pilot nametag/bounty legibility, dark obsidian bulkhead wall seams, and 3-tier parallax starfield depth.",
-        ),
-    ),
-    RiftVersionLogEntry(
-      buildNumber = 18,
-      versionTag = "v1.18 // BUILD #18",
-      releaseDate = "Nov 13, 2026",
-      headline = "Official Privacy Policy & Persistent Release Signing",
-      badgeLabel = "PLATFORM & COMPLIANCE",
-      accentColorHex = "#38BDF8",
-      highlights =
-        listOf(
-          "Published Play Store compliant Privacy Policy covering anonymous Guest UIDs, optional Google Sign-In cloud sync, and UGC moderation workflows.",
-          "Configured persistent Android release keystore signing so seamless over-the-air APK updates preserve local pilot data and preferences.",
-        ),
-    ),
-    RiftVersionLogEntry(
-      buildNumber = 17,
-      versionTag = "v1.17 // BUILD #17",
-      releaseDate = "Nov 12, 2026",
-      headline = "Standardized 9-Ship Nomenclature & Personal Cockpit Settings",
-      badgeLabel = "STANDARDIZATION",
-      accentColorHex = "#00E676",
-      highlights =
-        listOf(
-          "Standardized all 9 ship class names across HUD, Hangar, Codex, and telemetry: Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, and Rift Frame.",
-          "Separated personal User Settings (Camera Zoom 0.50x–1.50x and Playfield Text Scale 75%–200%) into dedicated persistent device storage.",
-          "Enforced zero-Flux (0❖) 360° AoE EMP detonation when Disruptor breaks Stealth Cloak, plus wall-safe Phase Dash spatial step for Viper and Rift Frame.",
-        ),
-    ),
-    RiftVersionLogEntry(
-      buildNumber = 16,
-      versionTag = "v1.16 // BUILD #16",
-      releaseDate = "Nov 12, 2026",
-      headline = "NEXUS Omniscient Rift Core AI & Firebase App Check",
-      badgeLabel = "NEXUS AI",
-      accentColorHex = "#B388FF",
-      highlights =
-        listOf(
-          "Integrated NEXUS, the live tactical AI core bound directly to real-time arena telemetry, 100-point Rift Frame theorycrafting, and Cloud Leaderboard records.",
-          "Enabled Firebase App Check protection alongside live AI Buff Forge and AI Hull Forge visual synthesis.",
-        ),
-    ),
-    RiftVersionLogEntry(
-      buildNumber = 15,
-      versionTag = "v1.15 // BUILD #15",
-      releaseDate = "Nov 12, 2026",
-      headline = "Peak Bounty Executioner Telemetry & Syndicate Service Record",
-      badgeLabel = "CAREER DOSSIER",
-      accentColorHex = "#FFAB40",
-      highlights =
-        listOf(
-          "Added Hall of Fame Peak Bounty Run snapshots tracking Time Survived, PVP/Bot Kills, Shot Accuracy, Damage Dealt/Taken, and full Executioner telemetry.",
-          "Added persistent Syndicate Affiliation Service Record history and Independent Syndicate directory (SOLR, APEX, NOVA, VOID, ECLP) with 15-day allegiance lock.",
-        ),
-    ),
-    RiftVersionLogEntry(
-      buildNumber = 12,
-      versionTag = "v1.12 // BUILD #12",
-      releaseDate = "Nov 11, 2026",
-      headline = "9th Ship (Rift Frame) Modular Builder & FFA Convergence",
-      badgeLabel = "MAJOR EXPANSION",
-      accentColorHex = "#FF5252",
-      highlights =
-        listOf(
-          "Introduced the 9th Ship (Rift Frame) featuring 3 saveable slots (Frame A, Frame B, Frame C), a 100-point parity matrix across 8 base hulls, and procedural AI Hull Forge silhouettes.",
-          "Added 4 Playfield Rifts (Plasma Rift, Repulsor Rift, Gravity Rift, Phase Rift) documented in the Codex.",
-          "Launched Named Armadas (2–5 pilots with friendly fire off) and 60-minute Public FFA Convergence cycles.",
+          "Added Bluetooth & USB Gamepad twin-stick flight/turret controls, Pilot Reporting/Blocking, and persistent release signing.",
         ),
     ),
     RiftVersionLogEntry(
@@ -192,20 +113,15 @@ val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
       releaseDate = "Nov 10, 2026",
       headline = "RIFT Core Newtonian Engine & Landscape Touch HUD Launch",
       badgeLabel = "FOUNDATION",
-      accentColorHex = "#00F5D4",
+      accentColorHex = "#00E676",
       highlights =
         listOf(
-          "Launched the 60+ FPS 2D Newtonian space combat arena featuring pure zero-friction drift on Left Stick release, >80% Afterburner ignition, and an independent manual [BRAKE] HUD button.",
-          "Implemented Unified Flux (❖) power management where hull defense and weapon discharge draw from a single pool, paired with elastic 0.65 wall ricochets.",
-          "Built Safe Zone disarmament protections, 15-second Re-Entry Lockout barriers, and real-time Firestore cloud sector telemetry.",
+          "Launched zero-friction Newtonian drift, >80% Afterburner ignition, Unified Flux defense/weapon pool, Paired Phase Rifts, and Firestore telemetry.",
         ),
     ),
   )
 
-private enum class ChangelogFilter {
-  ALL_VERSIONS,
-  NEW_ONLY,
-}
+private enum class ChangelogFilter { ALL_VERSIONS, NEW_ONLY }
 
 @Composable
 fun RiftChangelogModal(
@@ -213,49 +129,36 @@ fun RiftChangelogModal(
   onAcknowledgeAndContinue: () -> Unit,
 ) {
   BackHandler { onAcknowledgeAndContinue() }
-
-  val hasNewSincePriorSession = lastSeenBuild in 1 until CURRENT_RIFT_BUILD_VERSION
+  val hasNew = lastSeenBuild in 1 until CURRENT_RIFT_BUILD_VERSION
   val isFreshOrUpdated = lastSeenBuild < CURRENT_RIFT_BUILD_VERSION
   var selectedFilter by remember(lastSeenBuild) { mutableStateOf(ChangelogFilter.ALL_VERSIONS) }
 
-  val newUpdates =
-    remember(lastSeenBuild) {
-      when {
-        lastSeenBuild <= 0 -> listOf(RIFT_FULL_CHANGELOG.first())
-        lastSeenBuild < CURRENT_RIFT_BUILD_VERSION ->
-          RIFT_FULL_CHANGELOG.filter { it.buildNumber > lastSeenBuild }
-        else -> emptyList()
-      }
+  val newUpdates = remember(lastSeenBuild) {
+    when {
+      lastSeenBuild <= 0 -> listOf(RIFT_FULL_CHANGELOG.first())
+      lastSeenBuild < CURRENT_RIFT_BUILD_VERSION -> RIFT_FULL_CHANGELOG.filter { it.buildNumber > lastSeenBuild }
+      else -> emptyList()
     }
-
-  val previousUpdates =
-    remember(lastSeenBuild) {
-      when {
-        lastSeenBuild <= 0 -> RIFT_FULL_CHANGELOG.drop(1)
-        lastSeenBuild < CURRENT_RIFT_BUILD_VERSION ->
-          RIFT_FULL_CHANGELOG.filter { it.buildNumber <= lastSeenBuild }
-        else -> RIFT_FULL_CHANGELOG
-      }
+  }
+  val previousUpdates = remember(lastSeenBuild) {
+    when {
+      lastSeenBuild <= 0 -> RIFT_FULL_CHANGELOG.drop(1)
+      lastSeenBuild < CURRENT_RIFT_BUILD_VERSION -> RIFT_FULL_CHANGELOG.filter { it.buildNumber <= lastSeenBuild }
+      else -> RIFT_FULL_CHANGELOG
     }
+  }
 
   Box(
     modifier =
       Modifier.fillMaxSize()
-        .background(
-          Brush.radialGradient(
-            colors = listOf(Color(0xFF0A172B), Color(0xFF040812), Color(0xFF000000)),
-            radius = 1400f,
-          )
-        )
+        .background(Brush.radialGradient(listOf(Color(0xFF0A172B), Color(0xFF040812), Color.Black), radius = 1400f))
         .windowInsetsPadding(WindowInsets.safeDrawing)
         .padding(horizontal = 16.dp, vertical = 10.dp)
         .testTag("rift_changelog_modal"),
     contentAlignment = Alignment.Center,
   ) {
     Surface(
-      modifier =
-        Modifier.fillMaxSize()
-          .border(1.5.dp, Color(0xFF00F5D4), RoundedCornerShape(16.dp)),
+      modifier = Modifier.fillMaxSize().border(1.5.dp, Color(0xFF00F5D4), RoundedCornerShape(16.dp)),
       color = Color(0xF4060D1A),
       shape = RoundedCornerShape(16.dp),
       tonalElevation = 10.dp,
@@ -264,7 +167,6 @@ fun RiftChangelogModal(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        // Header Row
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -272,46 +174,32 @@ fun RiftChangelogModal(
         ) {
           Column(modifier = Modifier.weight(1f)) {
             Text(
-              text = "📡 RIFT // SECTOR TRANSMISSION & FULL VERSION CHANGELOG",
+              text = "📡 RIFT // SECTOR TRANSMISSION & VERSION CHANGELOG",
               color = Color(0xFF00F5D4),
               fontSize = 15.sp,
               fontWeight = FontWeight.ExtraBold,
               fontFamily = FontFamily.Monospace,
-              letterSpacing = 0.8.sp,
             )
-            Spacer(modifier = Modifier.height(2.dp))
-            val subtitle =
-              if (hasNewSincePriorSession) {
-                "CURRENT VERSION: v1.20 (BUILD #$CURRENT_RIFT_BUILD_VERSION) • Showing changes since Build #$lastSeenBuild + Complete Version Archive"
-              } else {
-                "CURRENT VERSION: v1.20 (BUILD #$CURRENT_RIFT_BUILD_VERSION) • Complete Chronological Patch Archive (Builds #$CURRENT_RIFT_BUILD_VERSION ➔ #1)"
-              }
             Text(
-              text = subtitle,
+              text =
+                if (hasNew) "CURRENT VERSION: v54.0 (BUILD #$CURRENT_RIFT_BUILD_VERSION) • Changes since Build #$lastSeenBuild"
+                else "CURRENT VERSION: v54.0 (BUILD #$CURRENT_RIFT_BUILD_VERSION) • Chronological Patch Archive",
               color = Color(0xFFFFD700),
               fontSize = 11.sp,
               fontWeight = FontWeight.SemiBold,
               fontFamily = FontFamily.Monospace,
             )
           }
-
           Spacer(modifier = Modifier.width(12.dp))
-
           Button(
             onClick = onAcknowledgeAndContinue,
-            colors =
-              ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF00F5D4),
-                contentColor = Color(0xFF030B14),
-              ),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F5D4), contentColor = Color(0xFF030B14)),
             shape = RoundedCornerShape(10.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            modifier =
-              Modifier.heightIn(min = 48.dp)
-                .testTag("changelog_btn_continue"),
+            modifier = Modifier.heightIn(min = 48.dp).testTag("changelog_btn_continue"),
           ) {
             Text(
-              text = "[⚡ ACKNOWLEDGE & CONTINUE ▸]",
+              text = "[ACKNOWLEDGE & CONTINUE ▸]",
               fontSize = 12.sp,
               fontWeight = FontWeight.ExtraBold,
               fontFamily = FontFamily.Monospace,
@@ -319,7 +207,6 @@ fun RiftChangelogModal(
           }
         }
 
-        // Filter / Jump Bar
         Row(
           modifier =
             Modifier.fillMaxWidth()
@@ -329,18 +216,15 @@ fun RiftChangelogModal(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             FilterTabPill(
-              label = "⚡ ALL VERSIONS (${RIFT_FULL_CHANGELOG.size})",
+              label = "❖ ALL VERSIONS (${RIFT_FULL_CHANGELOG.size})",
               selected = selectedFilter == ChangelogFilter.ALL_VERSIONS,
               accentColor = Color(0xFF00F5D4),
               testTag = "changelog_tab_all",
               onClick = { selectedFilter = ChangelogFilter.ALL_VERSIONS },
             )
-            if (hasNewSincePriorSession) {
+            if (hasNew) {
               FilterTabPill(
                 label = "🆕 NEW SINCE LAST VISIT (${newUpdates.size})",
                 selected = selectedFilter == ChangelogFilter.NEW_ONLY,
@@ -350,79 +234,34 @@ fun RiftChangelogModal(
               )
             }
           }
-
-          Box(
-            modifier =
-              Modifier.background(Color(0x1F00F5D4), RoundedCornerShape(6.dp))
-                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-          ) {
-            Text(
-              text = "LATEST: BUILD #$CURRENT_RIFT_BUILD_VERSION",
-              color = Color(0xFF00F5D4),
-              fontSize = 10.5.sp,
-              fontWeight = FontWeight.ExtraBold,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
+          Text(
+            text = "LATEST: BUILD #$CURRENT_RIFT_BUILD_VERSION",
+            color = Color(0xFF00F5D4),
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+          )
         }
 
-        // Scrollable Version List
         LazyColumn(
           modifier = Modifier.weight(1f).fillMaxWidth().testTag("changelog_list"),
           verticalArrangement = Arrangement.spacedBy(10.dp),
           contentPadding = PaddingValues(bottom = 8.dp),
         ) {
           if (isFreshOrUpdated && newUpdates.isNotEmpty()) {
-            item(key = "section_new_updates") {
-              SectionBanner(
-                text = "⚡ CHANGES SINCE YOUR LAST VERSION (NEW UPDATES)",
-                borderColor = Color(0xFFFFD700),
-                backgroundColor = Color(0x1FFFD700),
-                textColor = Color(0xFFFFD700),
-              )
-            }
-
             items(items = newUpdates, key = { "new_${it.buildNumber}" }) { entry ->
-              val statusLabel =
-                if (entry.buildNumber == CURRENT_RIFT_BUILD_VERSION) {
-                  "⚡ LATEST BUILD"
-                } else {
-                  "🆕 NEW SINCE LAST LAUNCH"
-                }
               VersionLogCard(
                 entry = entry,
-                statusBadge = statusLabel,
+                statusBadge = if (entry.buildNumber == CURRENT_RIFT_BUILD_VERSION) "LATEST BUILD" else "NEW UPDATE",
                 highlighted = true,
               )
             }
           }
-
           if (selectedFilter == ChangelogFilter.ALL_VERSIONS && previousUpdates.isNotEmpty()) {
-            item(key = "section_previous_updates") {
-              SectionBanner(
-                text =
-                  if (isFreshOrUpdated) {
-                    "📜 PREVIOUS VERSIONS — COMPLETE HISTORICAL LOG"
-                  } else {
-                    "📜 COMPLETE HISTORICAL LOG (BUILDS #$CURRENT_RIFT_BUILD_VERSION ➔ #1)"
-                  },
-                borderColor = Color(0x6600F5D4),
-                backgroundColor = Color(0x1400F5D4),
-                textColor = Color(0xFF00F5D4),
-              )
-            }
-
             items(items = previousUpdates, key = { "prev_${it.buildNumber}" }) { entry ->
-              val statusLabel =
-                if (entry.buildNumber == CURRENT_RIFT_BUILD_VERSION) {
-                  "⚡ LATEST BUILD"
-                } else {
-                  "ARCHIVED BUILD"
-                }
               VersionLogCard(
                 entry = entry,
-                statusBadge = statusLabel,
+                statusBadge = if (entry.buildNumber == CURRENT_RIFT_BUILD_VERSION) "LATEST BUILD" else "ARCHIVED",
                 highlighted = entry.buildNumber == CURRENT_RIFT_BUILD_VERSION,
               )
             }
@@ -445,184 +284,39 @@ private fun FilterTabPill(
     modifier =
       Modifier.clip(RoundedCornerShape(8.dp))
         .background(if (selected) accentColor.copy(alpha = 0.22f) else Color(0xFF102038))
-        .border(
-          width = if (selected) 1.5.dp else 1.dp,
-          color = if (selected) accentColor else Color(0x337C9BB5),
-          shape = RoundedCornerShape(8.dp),
-        )
+        .border(if (selected) 1.5.dp else 1.dp, if (selected) accentColor else Color(0x337C9BB5), RoundedCornerShape(8.dp))
         .clickable(onClick = onClick)
         .padding(horizontal = 12.dp, vertical = 8.dp)
         .testTag(testTag),
     contentAlignment = Alignment.Center,
   ) {
-    Text(
-      text = label,
-      color = if (selected) accentColor else Color(0xFF9BB4CA),
-      fontSize = 11.sp,
-      fontWeight = FontWeight.Bold,
-      fontFamily = FontFamily.Monospace,
-    )
+    Text(label, color = if (selected) accentColor else Color(0xFF9BB4CA), fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
   }
 }
 
 @Composable
-private fun SectionBanner(
-  text: String,
-  borderColor: Color,
-  backgroundColor: Color,
-  textColor: Color,
-) {
-  Box(
-    modifier =
-      Modifier.fillMaxWidth()
-        .background(backgroundColor, RoundedCornerShape(8.dp))
-        .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-        .padding(horizontal = 12.dp, vertical = 6.dp),
-  ) {
-    Text(
-      text = text,
-      color = textColor,
-      fontSize = 11.5.sp,
-      fontWeight = FontWeight.ExtraBold,
-      fontFamily = FontFamily.Monospace,
-      letterSpacing = 0.6.sp,
-    )
+private fun VersionLogCard(entry: RiftVersionLogEntry, statusBadge: String, highlighted: Boolean) {
+  val accentColor = remember(entry.accentColorHex) {
+    val cleaned = entry.accentColorHex.removePrefix("#")
+    val v = cleaned.toLongOrNull(16) ?: 0x00F5D4L
+    if (cleaned.length <= 6) Color(0xFF000000L or v) else Color(v)
   }
-}
-
-@Composable
-private fun VersionLogCard(
-  entry: RiftVersionLogEntry,
-  statusBadge: String,
-  highlighted: Boolean,
-) {
-  val accentColor = remember(entry.accentColorHex) { parseHexColor(entry.accentColorHex) }
-  val borderColor = if (highlighted) accentColor else accentColor.copy(alpha = 0.42f)
-  val cardBg = if (highlighted) Color(0xFF0C1A30) else Color(0xFF081222)
-
   Column(
     modifier =
       Modifier.fillMaxWidth()
-        .background(cardBg, RoundedCornerShape(12.dp))
-        .border(if (highlighted) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(12.dp))
+        .background(if (highlighted) Color(0xFF0C1A30) else Color(0xFF081222), RoundedCornerShape(12.dp))
+        .border(if (highlighted) 1.5.dp else 1.dp, if (highlighted) accentColor else accentColor.copy(alpha = 0.42f), RoundedCornerShape(12.dp))
         .padding(12.dp)
         .testTag("changelog_card_build_${entry.buildNumber}"),
     verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Box(
-          modifier =
-            Modifier.background(accentColor.copy(alpha = 0.18f), RoundedCornerShape(6.dp))
-              .border(1.dp, accentColor, RoundedCornerShape(6.dp))
-              .padding(horizontal = 8.dp, vertical = 3.dp),
-        ) {
-          Text(
-            text = entry.versionTag,
-            color = accentColor,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-
-        Text(
-          text = "• ${entry.releaseDate}",
-          color = Color(0xFF8EA8C3),
-          fontSize = 11.sp,
-          fontFamily = FontFamily.Monospace,
-        )
-
-        Box(
-          modifier =
-            Modifier.background(Color(0xFF13243E), RoundedCornerShape(5.dp))
-              .border(1.dp, Color(0x448EA8C3), RoundedCornerShape(5.dp))
-              .padding(horizontal = 6.dp, vertical = 2.dp),
-        ) {
-          Text(
-            text = entry.badgeLabel,
-            color = Color(0xFFD0E3F5),
-            fontSize = 9.5.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-
-      val isLatestOrNew = statusBadge.startsWith("⚡") || statusBadge.startsWith("🆕")
-      val statusColor =
-        when {
-          statusBadge.startsWith("⚡") -> Color(0xFF00F5D4)
-          statusBadge.startsWith("🆕") -> Color(0xFFFFD700)
-          else -> Color(0xFF7C9BB5)
-        }
-      Box(
-        modifier =
-          Modifier.background(
-              if (isLatestOrNew) statusColor.copy(alpha = 0.16f) else Color(0xFF0D1829),
-              RoundedCornerShape(6.dp),
-            )
-            .border(1.dp, statusColor.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-      ) {
-        Text(
-          text = statusBadge,
-          color = statusColor,
-          fontSize = 10.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+      Text("${entry.versionTag} • ${entry.releaseDate} • ${entry.badgeLabel}", color = accentColor, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+      Text(statusBadge, color = if (highlighted) Color(0xFF00F5D4) else Color(0xFF7C9BB5), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
     }
-
-    Text(
-      text = entry.headline,
-      color = Color.White,
-      fontSize = 13.5.sp,
-      fontWeight = FontWeight.Bold,
-      fontFamily = FontFamily.SansSerif,
-    )
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-      entry.highlights.forEach { bullet ->
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.Start,
-          verticalAlignment = Alignment.Top,
-        ) {
-          Text(
-            text = "▸ ",
-            color = accentColor,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-          )
-          Text(
-            text = bullet,
-            color = Color(0xFFD5E6F7),
-            fontSize = 12.sp,
-            lineHeight = 16.sp,
-            fontFamily = FontFamily.SansSerif,
-          )
-        }
-      }
+    Text(entry.headline, color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.SansSerif)
+    entry.highlights.forEach { bullet ->
+      Text("▸ $bullet", color = Color(0xFFD5E6F7), fontSize = 12.sp, lineHeight = 16.sp, fontFamily = FontFamily.SansSerif)
     }
-  }
-}
-
-private fun parseHexColor(hex: String): Color {
-  val cleaned = hex.removePrefix("#")
-  val value = cleaned.toLongOrNull(16) ?: return Color(0xFF00F5D4)
-  return if (cleaned.length <= 6) {
-    Color(0xFF000000L or value)
-  } else {
-    Color(value)
   }
 }

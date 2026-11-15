@@ -348,8 +348,8 @@ class RiftAuditConsistencyTest {
   @Test
   fun `stasis breach captures eliminated ships and prisoner core breakout releases all prisoners`() {
     engine.deployToRankedMode(com.example.engine.RankedGameMode.STASIS_BREACH, teamSizeBracket = 10)
-    assertEquals(40000f, engine.westBrigGeneratorHp, 0.1f)
-    assertEquals(40000f, engine.eastBrigGeneratorHp, 0.1f)
+    assertEquals(8000f, engine.westBrigGeneratorHp, 0.1f)
+    assertEquals(8000f, engine.eastBrigGeneratorHp, 0.1f)
 
     val player = engine.localPlayer // freq = 0 (West Horizon)
     val eastVictim = engine.ships.first { it.freq == 1 }
@@ -385,11 +385,11 @@ class RiftAuditConsistencyTest {
 
     assertTrue("Eliminated ship in Stasis Breach must be captured in Stasis Brig", eastVictim.isInStasisBrig)
 
-    // Prisoner inside the West Brig destroys the 40,000f West Brig Reactor Core at 100% weapon damage
-    engine.damageBrigReactorCore(targetBrigFreq = 0, attacker = eastVictim, rawDamage = 40000f)
+    // Prisoner inside the West Brig destroys the 8,000f West Brig Reactor Core at 100% weapon damage
+    engine.damageBrigReactorCore(targetBrigFreq = 0, attacker = eastVictim, rawDamage = 8000f)
 
     assertFalse("Destroyed Brig Reactor Core must release captured prisoner", eastVictim.isInStasisBrig)
-    assertEquals("Brig Reactor Core HP must reset to 40000f after breach", 40000f, engine.westBrigGeneratorHp, 0.1f)
+    assertEquals("Brig Reactor Core HP must reset to 8000f after breach", 8000f, engine.westBrigGeneratorHp, 0.1f)
   }
 
   @Test

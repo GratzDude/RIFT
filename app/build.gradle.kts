@@ -4,7 +4,7 @@ import java.time.Duration
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
-  alias(libs.plugins.google.devtools.ksp)
+  // alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.secrets)
   alias(libs.plugins.google.services)
 }
@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.riftarena.vxpqzm"
     minSdk = 24
     targetSdk = 36
-    versionCode = 53
-    versionName = "1.0.53"
+    versionCode = 55
+    versionName = "55.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

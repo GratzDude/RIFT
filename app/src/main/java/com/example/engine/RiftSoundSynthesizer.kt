@@ -4,6 +4,12 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.SoundPool
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -12,8 +18,11 @@ import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
+import org.json.JSONArray
+import org.json.JSONObject
 
 enum class MusicSynthArchetype(
   val id: String,
@@ -70,6 +79,22 @@ data class MusicForgeRecipe(
   val brightness: Float = 0.65f,
   val customPromptSummary: String = "Dark Synthwave • 118 BPM",
 ) {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
+      put("archetype", archetype.id)
+      put("bpm", bpm.coerceIn(60, 180))
+      put("rootMidiNote", rootMidiNote.coerceIn(28, 60))
+      val scaleArr = JSONArray()
+      scaleIntervals.forEach { scaleArr.put(it) }
+      put("scaleIntervals", scaleArr)
+      put("leadWaveform", leadWaveform.coerceIn(0, 3))
+      put("arpPattern", arpPattern.coerceIn(0, 3))
+      put("drumsEnabled", drumsEnabled)
+      put("bassDrive", ((bassDrive.coerceIn(0.2f, 1.2f) * 100f).roundToInt() / 100.0))
+      put("brightness", ((brightness.coerceIn(0.2f, 1.0f) * 100f).roundToInt() / 100.0))
+      put("customPromptSummary", customPromptSummary.take(120))
+    }
+
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
     if (other !is MusicForgeRecipe) return false
@@ -98,17 +123,147 @@ data class MusicForgeRecipe(
     result = 31 * result + customPromptSummary.hashCode()
     return result
   }
+
+  companion object {
+    fun fromJson(obj: JSONObject?): MusicForgeRecipe {
+      if (obj == null) return RiftSoundSynthesizer.buildArchetypeRecipe(MusicSynthArchetype.DARK_SYNTHWAVE, 118)
+      val arch = MusicSynthArchetype.fromId(obj.optString("archetype", "DARK_SYNTHWAVE"))
+      val bpm = obj.optInt("bpm", arch.defaultBpm).coerceIn(60, 180)
+      val scaleArr = obj.optJSONArray("scaleIntervals")
+      val intervals =
+        if (scaleArr != null && scaleArr.length() > 0) {
+          IntArray(scaleArr.length()) { idx -> scaleArr.optInt(idx, 0).coerceIn(0, 11) }
+        } else {
+          intArrayOf(0, 2, 3, 5, 7, 8, 10)
+        }
+      return MusicForgeRecipe(
+        archetype = arch,
+        bpm = bpm,
+        rootMidiNote = obj.optInt("rootMidiNote", 38).coerceIn(28, 60),
+        scaleIntervals = intervals,
+        leadWaveform = obj.optInt("leadWaveform", 0).coerceIn(0, 3),
+        arpPattern = obj.optInt("arpPattern", 0).coerceIn(0, 3),
+        drumsEnabled = obj.optBoolean("drumsEnabled", arch != MusicSynthArchetype.COSMIC_AMBIENT),
+        bassDrive = obj.optDouble("bassDrive", 0.80).toFloat().coerceIn(0.2f, 1.2f),
+        brightness = obj.optDouble("brightness", 0.65).toFloat().coerceIn(0.2f, 1.0f),
+        customPromptSummary =
+          obj.optString("customPromptSummary", "${arch.label} • $bpm BPM")
+            .ifBlank { "${arch.label} • $bpm BPM" }
+            .take(120),
+      )
+    }
+  }
 }
 
 /**
- * Zero-Latency Procedural Space Audio Synthesizer + Real-Time 60–180 BPM Battle Soundtrack.
- * Pre-generates crisp 16-bit PCM WAV buffers at boot for SoundPool SFX and runs a phase-continuous
- * streaming AudioTrack thread that responds instantaneously to live BPM, volume, genre archetype,
- * and 100% local on-device NEXUS Music Forge prompts with zero network calls and zero audio dropouts.
+ * 100% On-Device Procedural Combat SFX Recipe for `NEXUS FORGE` (`Soundtrack & SFX Forge` bay).
+ * Controls live PCM synthesis of lasers, explosions, Repel/shield ripples, and pickup chimes.
+ */
+data class SfxForgeRecipe(
+  val laserPitchMultiplier: Float = 1.0f, // 0.55f .. 1.75f
+  val laserHarmonicDrive: Float = 0.45f, // 0.10f .. 1.00f
+  val explosionSubBass: Float = 0.85f, // 0.25f .. 1.40f
+  val explosionDebrisCrunch: Float = 0.35f, // 0.05f .. 1.00f
+  val shieldRippleResonance: Float = 0.70f, // 0.20f .. 1.35f
+  val uiChimeBrightness: Float = 0.65f, // 0.20f .. 1.25f
+  val promptUsed: String = "Tactical Standard SFX",
+) {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
+      put("laserPitchMultiplier", ((laserPitchMultiplier.coerceIn(0.55f, 1.75f) * 100f).roundToInt() / 100.0))
+      put("laserHarmonicDrive", ((laserHarmonicDrive.coerceIn(0.10f, 1.00f) * 100f).roundToInt() / 100.0))
+      put("explosionSubBass", ((explosionSubBass.coerceIn(0.25f, 1.40f) * 100f).roundToInt() / 100.0))
+      put("explosionDebrisCrunch", ((explosionDebrisCrunch.coerceIn(0.05f, 1.00f) * 100f).roundToInt() / 100.0))
+      put("shieldRippleResonance", ((shieldRippleResonance.coerceIn(0.20f, 1.35f) * 100f).roundToInt() / 100.0))
+      put("uiChimeBrightness", ((uiChimeBrightness.coerceIn(0.20f, 1.25f) * 100f).roundToInt() / 100.0))
+      put("promptUsed", promptUsed.take(120))
+    }
+
+  companion object {
+    fun fromJson(obj: JSONObject?): SfxForgeRecipe {
+      if (obj == null) return SfxForgeRecipe()
+      return SfxForgeRecipe(
+        laserPitchMultiplier = obj.optDouble("laserPitchMultiplier", 1.0).toFloat().coerceIn(0.55f, 1.75f),
+        laserHarmonicDrive = obj.optDouble("laserHarmonicDrive", 0.45).toFloat().coerceIn(0.10f, 1.00f),
+        explosionSubBass = obj.optDouble("explosionSubBass", 0.85).toFloat().coerceIn(0.25f, 1.40f),
+        explosionDebrisCrunch = obj.optDouble("explosionDebrisCrunch", 0.35).toFloat().coerceIn(0.05f, 1.00f),
+        shieldRippleResonance = obj.optDouble("shieldRippleResonance", 0.70).toFloat().coerceIn(0.20f, 1.35f),
+        uiChimeBrightness = obj.optDouble("uiChimeBrightness", 0.65).toFloat().coerceIn(0.20f, 1.25f),
+        promptUsed = obj.optString("promptUsed", "Tactical Standard SFX").ifBlank { "Tactical Standard SFX" }.take(120),
+      )
+    }
+
+    fun synthesizeFromPrompt(rawPrompt: String, variationSalt: Int = 0): SfxForgeRecipe {
+      val cleaned = rawPrompt.trim()
+      if (cleaned.isEmpty()) return SfxForgeRecipe()
+      val lower = cleaned.lowercase(Locale.US)
+      val hash = abs((lower + "#$variationSalt").hashCode())
+      fun hasAny(vararg w: String): Boolean = w.any { lower.contains(it) }
+
+      val pitch =
+        when {
+          hasAny("heavy", "deep", "cannon", "bass", "sub", "railgun", "thump", "low") -> 0.72f
+          hasAny("chirp", "high", "needle", "crystal", "arcade", "8-bit", "8bit", "sharp", "crisp") -> 1.34f
+          hasAny("stealth", "silenced", "soft", "muted", "suppressed") -> 0.86f
+          else -> 0.92f + (hash % 25) * 0.01f
+        }
+
+      val drive =
+        when {
+          hasAny("gritty", "overdrive", "acid", "industrial", "distorted", "plasma", "heavy", "8-bit") -> 0.82f
+          hasAny("clean", "pure", "glass", "crystal", "stealth", "soft") -> 0.24f
+          else -> 0.48f
+        }
+
+      val subBass =
+        when {
+          hasAny("seismic", "sub", "bass", "boom", "heavy", "nuclear", "cinematic", "cannon") -> 1.25f
+          hasAny("light", "arcade", "minimal", "stealth", "crisp") -> 0.58f
+          else -> 0.88f
+        }
+
+      val crunch =
+        when {
+          hasAny("crunch", "debris", "shrapnel", "metallic", "industrial", "gritty") -> 0.78f
+          hasAny("smooth", "clean", "sub", "pure", "soft") -> 0.18f
+          else -> 0.38f
+        }
+
+      val shieldRes =
+        when {
+          hasAny("resonant", "quantum", "phase", "ripple", "magnetic", "sci-fi", "glass", "crystal") -> 1.15f
+          hasAny("tight", "dry", "minimal", "stealth") -> 0.42f
+          else -> 0.74f
+        }
+
+      val chime =
+        when {
+          hasAny("bright", "sparkle", "crystal", "bell", "chime", "arcade", "gold") -> 1.08f
+          hasAny("dark", "warm", "deep", "stealth", "muted") -> 0.42f
+          else -> 0.68f
+        }
+
+      return SfxForgeRecipe(
+        laserPitchMultiplier = pitch.coerceIn(0.55f, 1.75f),
+        laserHarmonicDrive = drive.coerceIn(0.10f, 1.00f),
+        explosionSubBass = subBass.coerceIn(0.25f, 1.40f),
+        explosionDebrisCrunch = crunch.coerceIn(0.05f, 1.00f),
+        shieldRippleResonance = shieldRes.coerceIn(0.20f, 1.35f),
+        uiChimeBrightness = chime.coerceIn(0.20f, 1.25f),
+        promptUsed = cleaned.take(120),
+      )
+    }
+  }
+}
+
+/**
+ * Zero-Latency Procedural Space Audio Synthesizer + Real-Time 60–180 BPM Battle Soundtrack
+ * with 3 persistent Track Slots (`Track A`, `Track B`, `Track C`) and live procedural SFX forging.
  */
 class RiftSoundSynthesizer(
   cacheDir: File = File(System.getProperty("java.io.tmpdir") ?: "/data/local/tmp"),
 ) {
+  private val sfxCacheDir: File = cacheDir
   private val sampleRate = 22050
   private val soundPool: SoundPool
 
@@ -122,24 +277,43 @@ class RiftSoundSynthesizer(
   @Volatile var musicEnabled: Boolean = true
   @Volatile var sfxVolume: Float = 0.85f
   @Volatile var musicVolume: Float = 0.70f
-  @Volatile var musicBpm: Int = 118
-  @Volatile var currentMusicRecipe: MusicForgeRecipe = buildArchetypeRecipe(MusicSynthArchetype.DARK_SYNTHWAVE, 118)
+  @Volatile var musicBpm: Int = 128
+  @Volatile
+  var currentMusicRecipe: MusicForgeRecipe =
+    trackSlots.getOrNull(activeTrackSlotIndex)
+      ?: buildArchetypeRecipe(MusicSynthArchetype.DARK_SYNTHWAVE, 128)
+
+  val musicTrackSlots: SnapshotStateList<MusicForgeRecipe>
+    get() = trackSlots
+
+  var currentTrackSlot: Int
+    get() = activeTrackSlotIndex
+    set(value) {
+      selectTrackSlot(value)
+    }
+
+  var currentSfxRecipe: SfxForgeRecipe
+    get() = sharedSfxRecipe
+    set(value) {
+      applySfxRecipe(value)
+    }
 
   @Volatile private var isReleased: Boolean = false
   private var ambientMusicThread: Thread? = null
+  private var sfxBakeGeneration: Int = 0
 
-  private val sfxLaser: Int
-  private val sfxBomb: Int
-  private val sfxExplosion: Int
-  private val sfxPrize: Int
-  private val sfxPortal: Int
-  private val sfxRepel: Int
-  private val sfxWarp: Int
-  private val sfxThor: Int
-  private val sfxShotgun: Int
-  private val sfxMissileBeep: Int
-  private val sfxMutedClick: Int
-  private val sfxBounce: Int
+  @Volatile private var sfxLaser: Int = 0
+  @Volatile private var sfxBomb: Int = 0
+  @Volatile private var sfxExplosion: Int = 0
+  @Volatile private var sfxPrize: Int = 0
+  @Volatile private var sfxPortal: Int = 0
+  @Volatile private var sfxRepel: Int = 0
+  @Volatile private var sfxWarp: Int = 0
+  @Volatile private var sfxThor: Int = 0
+  @Volatile private var sfxShotgun: Int = 0
+  @Volatile private var sfxMissileBeep: Int = 0
+  @Volatile private var sfxMutedClick: Int = 0
+  @Volatile private var sfxBounce: Int = 0
 
   init {
     val attrs =
@@ -147,22 +321,202 @@ class RiftSoundSynthesizer(
         .setUsage(AudioAttributes.USAGE_GAME)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
         .build()
-    soundPool = SoundPool.Builder().setMaxStreams(10).setAudioAttributes(attrs).build()
+    soundPool = SoundPool.Builder().setMaxStreams(12).setAudioAttributes(attrs).build()
 
-    sfxLaser = loadWav(cacheDir, "sfx_laser.wav", synthSweep(980.0, 220.0, 0.085, 0.45))
-    sfxBomb = loadWav(cacheDir, "sfx_bomb.wav", synthSweep(320.0, 65.0, 0.24, 0.75, addNoise = 0.25))
-    sfxExplosion = loadWav(cacheDir, "sfx_exp.wav", synthNoiseBurst(0.36, 0.85))
-    sfxPrize = loadWav(cacheDir, "sfx_prize.wav", synthArpeggio(doubleArrayOf(523.25, 659.25, 783.99, 1046.5), 0.16, 0.50))
-    sfxPortal = loadWav(cacheDir, "sfx_portal.wav", synthSweep(240.0, 880.0, 0.22, 0.55))
-    sfxRepel = loadWav(cacheDir, "sfx_repel.wav", synthSweep(150.0, 740.0, 0.25, 0.70, addNoise = 0.18))
-    sfxWarp = loadWav(cacheDir, "sfx_warp.wav", synthSweep(660.0, 180.0, 0.20, 0.55))
-    sfxThor = loadWav(cacheDir, "sfx_thor.wav", synthSweep(140.0, 42.0, 0.34, 0.90, addNoise = 0.40))
-    sfxShotgun = loadWav(cacheDir, "sfx_shotgun.wav", synthSweep(420.0, 95.0, 0.14, 0.75, addNoise = 0.55))
-    sfxMissileBeep = loadWav(cacheDir, "sfx_lock_beep.wav", synthArpeggio(doubleArrayOf(1320.0, 1760.0), 0.11, 0.55))
-    sfxMutedClick = loadWav(cacheDir, "sfx_muted_click.wav", synthSweep(190.0, 110.0, 0.055, 0.38))
-    sfxBounce = loadWav(cacheDir, "sfx_bounce.wav", synthSweep(360.0, 580.0, 0.065, 0.48))
+    musicBpm = currentMusicRecipe.bpm.coerceIn(60, 180)
+    bakeAllSfxBuffers(sharedSfxRecipe)
 
+    activeInstance = this
     startAmbientMusicLoop()
+  }
+
+  private fun bakeAllSfxBuffers(recipe: SfxForgeRecipe) {
+    val gen = ++sfxBakeGeneration
+    val pitch = recipe.laserPitchMultiplier.coerceIn(0.55f, 1.75f).toDouble()
+    val drive = recipe.laserHarmonicDrive.coerceIn(0.10f, 1.00f).toDouble()
+    val subBass = recipe.explosionSubBass.coerceIn(0.25f, 1.40f).toDouble()
+    val crunch = recipe.explosionDebrisCrunch.coerceIn(0.05f, 1.00f).toDouble()
+    val ripple = recipe.shieldRippleResonance.coerceIn(0.20f, 1.35f).toDouble()
+    val chimeBright = recipe.uiChimeBrightness.coerceIn(0.20f, 1.25f).toDouble()
+
+    val oldIds =
+      intArrayOf(
+        sfxLaser,
+        sfxBomb,
+        sfxExplosion,
+        sfxPrize,
+        sfxPortal,
+        sfxRepel,
+        sfxWarp,
+        sfxThor,
+        sfxShotgun,
+        sfxMissileBeep,
+        sfxMutedClick,
+        sfxBounce,
+      )
+
+    sfxLaser =
+      loadWav(
+        sfxCacheDir,
+        "sfx_laser_$gen.wav",
+        synthSweep(
+          fStart = 980.0 * pitch,
+          fEnd = 220.0 * pitch,
+          durationSec = 0.085,
+          amp = 0.45,
+          addNoise = (drive * 0.14).coerceIn(0.0, 0.35),
+          harmonicDrive = drive,
+        ),
+      )
+    sfxBomb =
+      loadWav(
+        sfxCacheDir,
+        "sfx_bomb_$gen.wav",
+        synthSweep(
+          fStart = 320.0 * (0.75 + pitch * 0.25),
+          fEnd = 62.0 / subBass.coerceIn(0.6, 1.35),
+          durationSec = 0.24,
+          amp = 0.78,
+          addNoise = (0.20 + crunch * 0.25).coerceIn(0.05, 0.55),
+          harmonicDrive = drive * 0.8,
+        ),
+      )
+    sfxExplosion =
+      loadWav(
+        sfxCacheDir,
+        "sfx_exp_$gen.wav",
+        synthExplosionBurst(
+          durationSec = 0.38,
+          amp = 0.88,
+          subBass = subBass,
+          debrisCrunch = crunch,
+        ),
+      )
+    sfxPrize =
+      loadWav(
+        sfxCacheDir,
+        "sfx_prize_$gen.wav",
+        synthArpeggio(
+          notes =
+            doubleArrayOf(
+              523.25 * (0.85 + chimeBright * 0.22),
+              659.25 * (0.85 + chimeBright * 0.22),
+              783.99 * (0.85 + chimeBright * 0.22),
+              1046.5 * (0.85 + chimeBright * 0.22),
+            ),
+          durationSec = 0.16,
+          amp = 0.52,
+          brightness = chimeBright,
+        ),
+      )
+    sfxPortal =
+      loadWav(
+        sfxCacheDir,
+        "sfx_portal_$gen.wav",
+        synthSweep(
+          fStart = 240.0 * ripple.coerceIn(0.65, 1.3),
+          fEnd = 880.0 * ripple.coerceIn(0.65, 1.3),
+          durationSec = 0.22,
+          amp = 0.56,
+          harmonicDrive = ripple * 0.45,
+        ),
+      )
+    sfxRepel =
+      loadWav(
+        sfxCacheDir,
+        "sfx_repel_$gen.wav",
+        synthSweep(
+          fStart = 150.0,
+          fEnd = 740.0 * ripple.coerceIn(0.65, 1.35),
+          durationSec = 0.25,
+          amp = 0.74,
+          addNoise = 0.16,
+          harmonicDrive = ripple * 0.55,
+        ),
+      )
+    sfxWarp =
+      loadWav(
+        sfxCacheDir,
+        "sfx_warp_$gen.wav",
+        synthSweep(660.0 * ripple.coerceIn(0.7, 1.25), 180.0, 0.20, 0.55),
+      )
+    sfxThor =
+      loadWav(
+        sfxCacheDir,
+        "sfx_thor_$gen.wav",
+        synthSweep(
+          fStart = 140.0,
+          fEnd = 42.0 / subBass.coerceIn(0.7, 1.3),
+          durationSec = 0.34,
+          amp = 0.90,
+          addNoise = (0.28 + crunch * 0.30).coerceIn(0.1, 0.65),
+          harmonicDrive = drive,
+        ),
+      )
+    sfxShotgun =
+      loadWav(
+        sfxCacheDir,
+        "sfx_shotgun_$gen.wav",
+        synthSweep(
+          fStart = 420.0 * pitch.coerceIn(0.75, 1.35),
+          fEnd = 95.0,
+          durationSec = 0.14,
+          amp = 0.75,
+          addNoise = (0.38 + crunch * 0.30).coerceIn(0.15, 0.72),
+          harmonicDrive = drive,
+        ),
+      )
+    sfxMissileBeep =
+      loadWav(
+        sfxCacheDir,
+        "sfx_lock_beep_$gen.wav",
+        synthArpeggio(
+          notes = doubleArrayOf(1320.0 * (0.85 + chimeBright * 0.2), 1760.0 * (0.85 + chimeBright * 0.2)),
+          durationSec = 0.11,
+          amp = 0.55,
+          brightness = chimeBright,
+        ),
+      )
+    sfxMutedClick =
+      loadWav(sfxCacheDir, "sfx_muted_click_$gen.wav", synthSweep(190.0, 110.0, 0.055, 0.38))
+    sfxBounce =
+      loadWav(
+        sfxCacheDir,
+        "sfx_bounce_$gen.wav",
+        synthSweep(360.0 * ripple.coerceIn(0.75, 1.25), 580.0 * ripple.coerceIn(0.75, 1.25), 0.065, 0.48),
+      )
+
+    for (oldId in oldIds) {
+      if (oldId > 0) {
+        try {
+          soundPool.unload(oldId)
+        } catch (_: Throwable) {}
+      }
+    }
+    // Clean up older cached wav generations quietly
+    if (gen > 1) {
+      val prev = gen - 1
+      val prefixes =
+        arrayOf(
+          "sfx_laser_",
+          "sfx_bomb_",
+          "sfx_exp_",
+          "sfx_prize_",
+          "sfx_portal_",
+          "sfx_repel_",
+          "sfx_warp_",
+          "sfx_thor_",
+          "sfx_shotgun_",
+          "sfx_lock_beep_",
+          "sfx_muted_click_",
+          "sfx_bounce_",
+        )
+      for (p in prefixes) {
+        try {
+          File(sfxCacheDir, "$p$prev.wav").delete()
+        } catch (_: Throwable) {}
+      }
+    }
   }
 
   @JvmName("updateMusicEnabled")
@@ -176,11 +530,16 @@ class RiftSoundSynthesizer(
     val prev = currentMusicRecipe
     val baseTitle = prev.customPromptSummary.substringBefore("•").trim().ifEmpty { prev.archetype.label }
     val drumSuffix = if (!prev.drumsEnabled && !baseTitle.contains("Pad", ignoreCase = true)) " (No Drums)" else ""
-    currentMusicRecipe =
+    val updated =
       prev.copy(
         bpm = clamped,
         customPromptSummary = "$baseTitle • $clamped BPM$drumSuffix",
       )
+    currentMusicRecipe = updated
+    val slotIdx = activeTrackSlotIndex.coerceIn(0, 2)
+    if (slotIdx in trackSlots.indices) {
+      trackSlots[slotIdx] = updated
+    }
   }
 
   fun setMusicVolumeLive(vol: Float) {
@@ -191,6 +550,48 @@ class RiftSoundSynthesizer(
     sfxVolume = vol.coerceIn(0f, 1f)
   }
 
+  /**
+   * Switches active playback instantaneously between Track A (`0`), Track B (`1`), and Track C (`2`).
+   */
+  fun selectTrackSlot(index: Int): MusicForgeRecipe {
+    val clampedIdx = index.coerceIn(0, 2)
+    activeTrackSlotIndex = clampedIdx
+    val slotRecipe =
+      trackSlots.getOrNull(clampedIdx)
+        ?: buildArchetypeRecipe(MusicSynthArchetype.DARK_SYNTHWAVE, 128)
+    musicBpm = slotRecipe.bpm.coerceIn(60, 180)
+    currentMusicRecipe = slotRecipe
+    return slotRecipe
+  }
+
+  /**
+   * Saves the active procedural soundtrack recipe into `Track A` (`0`), `Track B` (`1`), or `Track C` (`2`).
+   */
+  fun saveCurrentMusicToSlot(
+    index: Int = activeTrackSlotIndex,
+    customTitle: String? = null,
+  ): MusicForgeRecipe {
+    val clampedIdx = index.coerceIn(0, 2)
+    val slotPrefix = "Track ${'A' + clampedIdx}"
+    val base = currentMusicRecipe
+    val summary =
+      if (!customTitle.isNullOrBlank()) {
+        "$slotPrefix: ${customTitle.trim()} • ${base.bpm} BPM"
+      } else if (base.customPromptSummary.startsWith("Track ")) {
+        "$slotPrefix: ${base.customPromptSummary.substringAfter(":", base.customPromptSummary).trim()}"
+      } else {
+        "$slotPrefix: ${base.customPromptSummary}"
+      }
+    val saved = base.copy(customPromptSummary = summary.take(120))
+    while (trackSlots.size < 3) {
+      trackSlots.add(buildDefaultTrackSlots()[trackSlots.size])
+    }
+    trackSlots[clampedIdx] = saved
+    activeTrackSlotIndex = clampedIdx
+    currentMusicRecipe = saved
+    return saved
+  }
+
   fun applyMusicArchetype(
     archetype: MusicSynthArchetype,
     overrideBpm: Int? = null,
@@ -199,7 +600,24 @@ class RiftSoundSynthesizer(
     val recipe = buildArchetypeRecipe(archetype, targetBpm)
     musicBpm = targetBpm
     currentMusicRecipe = recipe
+    val slotIdx = activeTrackSlotIndex.coerceIn(0, 2)
+    if (slotIdx in trackSlots.indices) {
+      val slotPrefix = "Track ${'A' + slotIdx}"
+      trackSlots[slotIdx] = recipe.copy(customPromptSummary = "$slotPrefix: ${recipe.customPromptSummary}")
+    }
     return recipe
+  }
+
+  fun synthesizeMusicFromPrompt(
+    prompt: String,
+    currentBpm: Int? = null,
+    saveToActiveSlot: Boolean = true,
+  ): MusicForgeRecipe {
+    val forged = forgeMusicFromPrompt(prompt, currentBpm)
+    if (saveToActiveSlot) {
+      return saveCurrentMusicToSlot(activeTrackSlotIndex)
+    }
+    return forged
   }
 
   /**
@@ -222,7 +640,7 @@ class RiftSoundSynthesizer(
     val isIndustrial =
       containsAnyKeyword(lower, "dark", "aggressive", "industrial", "evil", "metal", "acid", "gritty", "cyber", "cyberpunk")
     val isCosmic =
-      containsAnyKeyword(lower, "dreamy", "cosmic", "ethereal", "nebula", "float", "floating", "pad", "calm", "chill", "ambient")
+      containsAnyKeyword(lower, "dreamy", "cosmic", "ethereal", "nebula", "float", "floating", "pad", "calm", "chill", "ambient", "zero-g")
     val isRetro =
       containsAnyKeyword(lower, "retro", "8-bit", "8bit", "arcade", "chip", "chiptune", "pixel", "nes", "gameboy")
     val isHeroic =
@@ -277,11 +695,11 @@ class RiftSoundSynthesizer(
       when {
         explicitBpm != null -> explicitBpm.coerceIn(60, 180)
         containsAnyKeyword(lower, "fast", "intense", "hyper", "overdrive", "boss", "frantic", "rave", "speed", "rapid") ->
-          148 + (hashSalt % 18) // 148..165 BPM
-        containsAnyKeyword(lower, "slow", "calm", "chill", "ambient", "space", "float", "drift", "meditative", "downtempo") ->
-          76 + (hashSalt % 17) // 76..92 BPM
+          148 + (hashSalt % 18)
+        containsAnyKeyword(lower, "slow", "calm", "chill", "ambient", "space", "float", "drift", "meditative", "downtempo", "zero-g") ->
+          76 + (hashSalt % 17)
         containsAnyKeyword(lower, "mid", "steady", "groove", "cruise") ->
-          110 + (hashSalt % 15) // 110..124 BPM
+          110 + (hashSalt % 15)
         currentBpm != null -> currentBpm.coerceIn(60, 180)
         else -> resolvedArchetype.defaultBpm
       }
@@ -375,8 +793,54 @@ class RiftSoundSynthesizer(
 
     musicBpm = resolvedBpm
     currentMusicRecipe = recipe
+    val slotIdx = activeTrackSlotIndex.coerceIn(0, 2)
+    if (slotIdx in trackSlots.indices) {
+      val slotPrefix = "Track ${'A' + slotIdx}"
+      trackSlots[slotIdx] = recipe.copy(customPromptSummary = "$slotPrefix: $moodDescriptor $waveLabel • $resolvedBpm BPM$drumNote")
+    }
     return recipe
   }
+
+  /**
+   * Applies a `SfxForgeRecipe` and immediately re-synthesizes all procedural combat WAV buffers on-device.
+   */
+  fun applySfxRecipe(recipe: SfxForgeRecipe) {
+    sharedSfxRecipe = recipe
+    if (!isReleased) {
+      bakeAllSfxBuffers(recipe)
+    }
+  }
+
+  fun synthesizeSfxFromPrompt(rawPrompt: String, variationSalt: Int = 0): SfxForgeRecipe {
+    val forged = SfxForgeRecipe.synthesizeFromPrompt(rawPrompt, variationSalt)
+    applySfxRecipe(forged)
+    return forged
+  }
+
+  // 1-Tap Audition Triggers for `Soundtrack & SFX Forge`
+  fun previewForgedLaser() {
+    val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
+    soundPool.play(sfxLaser, v, v, 2, 0, 1.0f)
+  }
+
+  fun previewForgedExplosion() {
+    val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
+    soundPool.play(sfxExplosion, v, v, 3, 0, 1.0f)
+  }
+
+  fun previewForgedShieldHit() {
+    val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
+    soundPool.play(sfxRepel, v, v, 3, 0, 1.0f)
+  }
+
+  fun previewForgedPrizeChime() {
+    val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
+    soundPool.play(sfxPrize, v, v, 2, 0, 1.0f)
+  }
+
+  fun exportAudioForgeObject(): JSONObject = exportAudioForgeJson()
+
+  fun importAudioForgeObject(obj: JSONObject?) = importAudioForgeJson(obj)
 
   private fun startAmbientMusicLoop() {
     val musicSampleRate = 22050
@@ -413,7 +877,6 @@ class RiftSoundSynthesizer(
                 .build()
             track.play()
 
-            // Chord root scale degree offsets across a 4-bar tactical progression (i -> VI -> iv -> v / VII)
             val progressionScaleIndices = intArrayOf(0, 5, 3, 4)
             val upDownDegrees = intArrayOf(0, 2, 4, 7, 4, 2, 0, 4)
             val octaveJumpDegrees = intArrayOf(0, 7, 2, 9, 4, 11, 2, 7)
@@ -469,7 +932,6 @@ class RiftSoundSynthesizer(
                 val posIn16th =
                   (sampleInSixteenth.toDouble() / samplesPerSixteenth.toDouble()).coerceIn(0.0, 1.0)
 
-                // 16 sixteenth-notes per 4/4 bar; chord advances every bar (4 bars total)
                 val stepInBar = (sixteenthStepCounter % 16L).toInt()
                 val chordBarIdx = ((sixteenthStepCounter / 16L) % 4L).toInt()
                 val chordScaleDeg = progressionScaleIndices[chordBarIdx]
@@ -478,14 +940,12 @@ class RiftSoundSynthesizer(
                 val chordThirdMidi = midiFromScaleDegree(recipe.rootMidiNote + 12, scale, chordScaleDeg + 2)
                 val chordFifthMidi = midiFromScaleDegree(recipe.rootMidiNote + 12, scale, chordScaleDeg + 4)
 
-                // Bassline: off-beat octave bounce on Industrial/Synthwave/Overdrive, deep sub-drone on Ambient
                 val bassOctaveBoost =
                   if (recipe.drumsEnabled && (stepInBar % 4 == 2)) 12 else 0
                 val bassHz = midiToHz(chordRootMidi + bassOctaveBoost)
                 val padThirdHz = midiToHz(chordThirdMidi)
                 val padFifthHz = midiToHz(chordFifthMidi)
 
-                // Layer 1: Sculpted Bass (Sine sub + sawtooth harmonic grit scaled by bassDrive)
                 phaseBassA = (phaseBassA + twoPi * bassHz * invRate) % twoPi
                 phaseBassB = (phaseBassB + twoPi * (bassHz * 0.5) * invRate) % twoPi
                 val bassSaw = (phaseBassA / PI) - 1.0
@@ -500,7 +960,6 @@ class RiftSoundSynthesizer(
                     bassGate *
                     bassDrive
 
-                // Layer 2: Lush Stereo-Detuned Space Pad
                 val tSec = globalSampleCounter * invRate
                 phasePad1 = (phasePad1 + twoPi * (padThirdHz * 1.003) * invRate) % twoPi
                 phasePad2 = (phasePad2 + twoPi * (padFifthHz * 0.997) * invRate) % twoPi
@@ -509,7 +968,6 @@ class RiftSoundSynthesizer(
                   (0.48 * sin(phasePad1) + 0.38 * sin(phasePad2) + 0.18 * bright * sin(phasePad1 * 2.0)) *
                     padLfo
 
-                // Layer 3: Patterned Arpeggio & Lead Waveform Synthesizer
                 val arpDegOffset: Int
                 val arpTriggerActive: Boolean
                 when (recipe.arpPattern) {
@@ -522,7 +980,6 @@ class RiftSoundSynthesizer(
                     arpTriggerActive = true
                   }
                   3 -> {
-                    // Sparse ambient: triggers gently every 4 sixteenth-notes (quarter-note shimmer)
                     arpDegOffset = sparseDegrees[((sixteenthStepCounter / 4L) % sparseDegrees.size).toInt()]
                     arpTriggerActive = (stepInBar % 4 == 0)
                   }
@@ -548,22 +1005,18 @@ class RiftSoundSynthesizer(
                 val rawLeadWave =
                   when (recipe.leadWaveform) {
                     1 -> {
-                      // Crisp Arcade Pulse Square (25%/50% duty blend)
                       val sq1 = if (phaseLeadA < PI * 0.65) 0.75 else -0.75
                       val sq2 = if (phaseLeadB < PI) 0.25 else -0.25
                       sq1 + sq2
                     }
                     2 -> {
-                      // Warm Sine + Octave Shimmer Pad
                       0.72 * sin(phaseLeadA) + 0.28 * bright * sin(phaseLeadB * 2.0)
                     }
                     3 -> {
-                      // Glassy FM Bell Synth
                       val modIndex = 1.65 * bright * arpEnv
                       sin(phaseLeadA + modIndex * sin(phaseLeadA * 2.0))
                     }
                     else -> {
-                      // Detuned Dual-Sawtooth Synthwave Lead
                       val sawA = (phaseLeadA / PI) - 1.0
                       val sawB = (phaseLeadB / PI) - 1.0
                       0.45 * (sawA + sawB) * bright + 0.35 * sin(phaseLeadA)
@@ -571,32 +1024,27 @@ class RiftSoundSynthesizer(
                   }
                 val leadSample = rawLeadWave * arpEnv
 
-                // Layer 4: Punchy Tactical Drums (4-on-the-floor Kick + Crisp Off-beat Hi-Hat)
                 var drumSample = 0.0
                 if (recipe.drumsEnabled) {
                   val stepInBeat = stepInBar % 4
                   if (stepInBeat == 0) {
-                    // Kick on every quarter-note beat
                     val kickEnv = (1.0 - posIn16th).coerceIn(0.0, 1.0).pow(2.2)
                     val kickFreq = 52.0 + 135.0 * (1.0 - posIn16th).pow(3.0)
                     phaseKick = (phaseKick + twoPi * kickFreq * invRate) % twoPi
                     drumSample += sin(phaseKick) * kickEnv * 0.95
                   } else if (stepInBeat == 2) {
-                    // Crisp off-beat hi-hat / snare tick
                     val hatEnv = (1.0 - posIn16th).coerceIn(0.0, 1.0).pow(3.2)
                     val white = Random.nextDouble(-1.0, 1.0)
                     hatFilterState = hatFilterState * 0.35 + white * 0.65
                     val highPass = white - hatFilterState
                     drumSample += highPass * hatEnv * (0.38 + 0.22 * bright)
                   } else if (recipe.archetype == MusicSynthArchetype.SINGULARITY_OVERDRIVE && stepInBeat == 3) {
-                    // Ghost 16th-note percussion tick in Overdrive
                     val ghostEnv = (1.0 - posIn16th).coerceIn(0.0, 1.0).pow(4.0)
                     val white = Random.nextDouble(-1.0, 1.0)
                     drumSample += white * ghostEnv * 0.22
                   }
                 }
 
-                // Master mix scaled smoothly by user musicVolume (0.0..1.0)
                 val rawMix =
                   bassSample * 0.32 +
                     padSample * (if (recipe.drumsEnabled) 0.24 else 0.38) +
@@ -609,7 +1057,6 @@ class RiftSoundSynthesizer(
               track.write(pcmChunk, 0, chunkSamples)
             }
           } catch (_: Throwable) {
-            // AudioTrack gracefully exits if interrupted or released
           } finally {
             try {
               track?.stop()
@@ -629,8 +1076,8 @@ class RiftSoundSynthesizer(
 
   private fun playSfxScaled(soundId: Int, baseVol: Float, priority: Int, rate: Float = 1.0f) {
     val v = (baseVol * sfxVolume.coerceIn(0f, 1f)).coerceIn(0f, 1f)
-    if (enabled && v > 0.001f) {
-      soundPool.play(soundId, v, v, priority, 0, rate)
+    if (enabled && v > 0.001f && soundId > 0) {
+      soundPool.play(soundId, v, v, priority, 0, rate.coerceIn(0.5f, 2.0f))
     }
   }
 
@@ -684,6 +1131,9 @@ class RiftSoundSynthesizer(
 
   fun release() {
     isReleased = true
+    if (activeInstance === this) {
+      activeInstance = null
+    }
     try {
       ambientMusicThread?.interrupt()
     } catch (_: Throwable) {}
@@ -696,6 +1146,7 @@ class RiftSoundSynthesizer(
     durationSec: Double,
     amp: Double,
     addNoise: Double = 0.0,
+    harmonicDrive: Double = 0.0,
   ): ShortArray {
     val count = (sampleRate * durationSec).toInt().coerceAtLeast(1)
     val pcm = ShortArray(count)
@@ -703,48 +1154,69 @@ class RiftSoundSynthesizer(
     for (i in 0 until count) {
       val t = i.toDouble() / count
       val env = (1.0 - t).coerceIn(0.0, 1.0)
-      val freq = fStart + (fEnd - fStart) * t
+      val freq = (fStart + (fEnd - fStart) * t).coerceIn(28.0, 9500.0)
       phase += 2.0 * PI * freq / sampleRate
-      val tone = sin(phase)
+      val fundamental = sin(phase)
+      val harmonic = if (harmonicDrive > 0.01) sin(phase * 2.0) * 0.38 * harmonicDrive else 0.0
+      val tone = (fundamental + harmonic).coerceIn(-1.1, 1.1)
       val noise = if (addNoise > 0.0) (Random.nextDouble(-1.0, 1.0) * addNoise) else 0.0
-      val sample = ((tone * (1.0 - addNoise) + noise) * env * amp).coerceIn(-1.0, 1.0)
+      val sample = ((tone * (1.0 - addNoise * 0.65) + noise) * env * amp).coerceIn(-1.0, 1.0)
       pcm[i] = (sample * 32767.0).toInt().toShort()
     }
     return pcm
   }
 
-  private fun synthNoiseBurst(durationSec: Double, amp: Double): ShortArray {
+  private fun synthExplosionBurst(
+    durationSec: Double,
+    amp: Double,
+    subBass: Double = 0.85,
+    debrisCrunch: Double = 0.35,
+  ): ShortArray {
     val count = (sampleRate * durationSec).toInt().coerceAtLeast(1)
     val pcm = ShortArray(count)
     var lp = 0.0
+    var subPhase = 0.0
+    val filterAlpha = (0.20 + debrisCrunch * 0.38).coerceIn(0.12, 0.72)
     for (i in 0 until count) {
       val t = i.toDouble() / count
       val env = (1.0 - t) * (1.0 - t)
       val raw = Random.nextDouble(-1.0, 1.0)
-      lp = lp * 0.72 + raw * 0.28
-      val sample = (lp * env * amp).coerceIn(-1.0, 1.0)
+      lp = lp * (1.0 - filterAlpha) + raw * filterAlpha
+      val subFreq = 44.0 + 95.0 * (1.0 - t).pow(2.4)
+      subPhase += 2.0 * PI * subFreq / sampleRate
+      val subBoom = sin(subPhase) * (1.0 - t).pow(1.8) * 0.45 * subBass
+      val sample = ((lp * 0.78 + subBoom) * env * amp).coerceIn(-1.0, 1.0)
       pcm[i] = (sample * 32767.0).toInt().toShort()
     }
     return pcm
   }
 
-  private fun synthArpeggio(notes: DoubleArray, durationSec: Double, amp: Double): ShortArray {
+  private fun synthArpeggio(
+    notes: DoubleArray,
+    durationSec: Double,
+    amp: Double,
+    brightness: Double = 0.65,
+  ): ShortArray {
     val count = (sampleRate * durationSec).toInt().coerceAtLeast(1)
     val pcm = ShortArray(count)
     var phase = 0.0
     for (i in 0 until count) {
       val t = i.toDouble() / count
       val idx = (t * notes.size).toInt().coerceIn(0, notes.lastIndex)
-      val freq = notes[idx]
+      val freq = notes[idx].coerceIn(80.0, 8800.0)
       val env = (1.0 - t * 0.6).coerceIn(0.0, 1.0)
       phase += 2.0 * PI * freq / sampleRate
-      val sample = (sin(phase) * env * amp).coerceIn(-1.0, 1.0)
+      val shimmer = sin(phase * 2.0) * 0.25 * brightness.coerceIn(0.0, 1.25)
+      val sample = ((sin(phase) * 0.85 + shimmer) * env * amp).coerceIn(-1.0, 1.0)
       pcm[i] = (sample * 32767.0).toInt().toShort()
     }
     return pcm
   }
 
   private fun loadWav(cacheDir: File, fileName: String, pcm: ShortArray): Int {
+    if (!cacheDir.exists()) {
+      cacheDir.mkdirs()
+    }
     val file = File(cacheDir, fileName)
     val byteData = ByteBuffer.allocate(44 + pcm.size * 2).order(ByteOrder.LITTLE_ENDIAN)
     val dataSize = pcm.size * 2
@@ -752,13 +1224,13 @@ class RiftSoundSynthesizer(
     byteData.putInt(36 + dataSize)
     byteData.put("WAVE".toByteArray(Charsets.US_ASCII))
     byteData.put("fmt ".toByteArray(Charsets.US_ASCII))
-    byteData.putInt(16) // PCM chunk size
-    byteData.putShort(1) // PCM format
-    byteData.putShort(1) // Mono
+    byteData.putInt(16)
+    byteData.putShort(1)
+    byteData.putShort(1)
     byteData.putInt(sampleRate)
     byteData.putInt(sampleRate * 2)
-    byteData.putShort(2) // Block align
-    byteData.putShort(16) // Bits per sample
+    byteData.putShort(2)
+    byteData.putShort(16)
     byteData.put("data".toByteArray(Charsets.US_ASCII))
     byteData.putInt(dataSize)
     for (s in pcm) {
@@ -769,6 +1241,74 @@ class RiftSoundSynthesizer(
   }
 
   companion object {
+    @Volatile var activeInstance: RiftSoundSynthesizer? = null
+
+    private fun buildDefaultTrackSlots(): List<MusicForgeRecipe> =
+      listOf(
+        buildArchetypeRecipe(MusicSynthArchetype.DARK_SYNTHWAVE, 128)
+          .copy(customPromptSummary = "Track A: Dark Cyber-Pulse • 128 BPM"),
+        buildArchetypeRecipe(MusicSynthArchetype.COSMIC_AMBIENT, 96)
+          .copy(customPromptSummary = "Track B: Zero-G Drift Pad • 96 BPM"),
+        buildArchetypeRecipe(MusicSynthArchetype.SINGULARITY_OVERDRIVE, 148)
+          .copy(customPromptSummary = "Track C: Singularity Acid • 148 BPM"),
+      )
+
+    val trackSlots: SnapshotStateList<MusicForgeRecipe> =
+      mutableStateListOf<MusicForgeRecipe>().apply { addAll(buildDefaultTrackSlots()) }
+
+    var activeTrackSlotIndex by mutableIntStateOf(0)
+    var sharedSfxRecipe by mutableStateOf(SfxForgeRecipe())
+
+    fun resetAudioForgeToDefaults() {
+      val defaults = buildDefaultTrackSlots()
+      trackSlots.clear()
+      trackSlots.addAll(defaults)
+      activeTrackSlotIndex = 0
+      sharedSfxRecipe = SfxForgeRecipe()
+      activeInstance?.let { inst ->
+        inst.selectTrackSlot(0)
+        inst.applySfxRecipe(sharedSfxRecipe)
+      }
+    }
+
+    fun exportAudioForgeJson(): JSONObject {
+      val slotsArr = JSONArray()
+      for (i in 0 until 3) {
+        val rec = trackSlots.getOrNull(i) ?: buildDefaultTrackSlots()[i]
+        slotsArr.put(rec.toJson())
+      }
+      return JSONObject().apply {
+        put("activeTrackSlotIndex", activeTrackSlotIndex.coerceIn(0, 2))
+        put("trackSlots", slotsArr)
+        put("sfxRecipe", sharedSfxRecipe.toJson())
+      }
+    }
+
+    fun importAudioForgeJson(obj: JSONObject?) {
+      if (obj == null) return
+      val defaults = buildDefaultTrackSlots()
+      val slotsArr = obj.optJSONArray("trackSlots")
+      if (slotsArr != null && slotsArr.length() > 0) {
+        val loaded =
+          (0 until 3).map { idx ->
+            val item = slotsArr.optJSONObject(idx)
+            if (item != null) MusicForgeRecipe.fromJson(item) else defaults[idx]
+          }
+        trackSlots.clear()
+        trackSlots.addAll(loaded)
+      }
+      val selIdx = obj.optInt("activeTrackSlotIndex", 0).coerceIn(0, 2)
+      activeTrackSlotIndex = selIdx
+      val sfxObj = obj.optJSONObject("sfxRecipe")
+      val restoredSfx = SfxForgeRecipe.fromJson(sfxObj)
+      sharedSfxRecipe = restoredSfx
+
+      activeInstance?.let { inst ->
+        inst.selectTrackSlot(selIdx)
+        inst.applySfxRecipe(restoredSfx)
+      }
+    }
+
     private fun containsAnyKeyword(lowerText: String, vararg keywords: String): Boolean =
       keywords.any { lowerText.contains(it) }
 
