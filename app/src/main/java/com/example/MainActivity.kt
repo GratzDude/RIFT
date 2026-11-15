@@ -75,6 +75,7 @@ import com.example.ui.DossierModal
 import com.example.ui.HangarModal
 import com.example.ui.NexusAiConsoleModal
 import com.example.ui.NexusAiViewModel
+import com.example.ui.NexusHubLayoutMode
 import com.example.ui.NexusStreamState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Spacer
@@ -169,17 +170,31 @@ fun AppNavigation(
 
   val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
   var isGuestMode by remember { mutableStateOf(localPrefs.isGuestBypassEnabled()) }
+  var showPreAuthChangelog by remember { mutableStateOf(false) }
   val user = currentUser
 
   Box(modifier = Modifier.fillMaxSize()) {
     if (user == null && !isGuestMode) {
       AuthScreen(
-        onAuthSuccess = {},
+        onAuthSuccess = {
+          localPrefs.setBootToNexusHub(true)
+        },
         onPlayAsGuest = {
           localPrefs.startFreshDrifterSession()
+          localPrefs.setBootToNexusHub(true)
           isGuestMode = true
         },
+        onOpenChangelog = { showPreAuthChangelog = true },
       )
+      if (showPreAuthChangelog) {
+        RiftChangelogModal(
+          lastSeenBuild = localPrefs.getLastSeenChangelogBuild(),
+          onAcknowledgeAndContinue = {
+            localPrefs.setLastSeenChangelogBuild(CURRENT_RIFT_BUILD_VERSION)
+            showPreAuthChangelog = false
+          },
+        )
+      }
     } else {
       if (user != null) {
         localPrefs.setGuestBypassEnabled(false)
@@ -245,18 +260,27 @@ fun RiftArenaScreen(
   val isNexusStreaming =
     nexusStreamState is NexusStreamState.Loading || nexusStreamState is NexusStreamState.Streaming
 
-  val sfx = remember { RiftSoundSynthesizer() }
+  val sfx = remember {
+    RiftSoundSynthesizer().apply {
+      setMusicEnabled(localPrefs.getMusicEnabled())
+    }
+  }
   var sfxEnabled by remember { mutableStateOf(true) }
+  var musicEnabled by remember { mutableStateOf(localPrefs.getMusicEnabled()) }
   var currentFps by remember { mutableIntStateOf(60) }
   var frameTick by remember { mutableIntStateOf(0) }
   var toastMessage by remember {
-    mutableStateOf<String?>("⚡ RIFT FFA ARENA ONLINE // 360° AIM & NAMED ARMADAS ACTIVE")
+    mutableStateOf<String?>("⚡ RIFT NEXUS COMMAND ONLINE // SELECT GAME MODE TO DEPLOY")
   }
   var toastVersion by remember { mutableIntStateOf(0) }
   var unreadCommsCount by remember { mutableIntStateOf(0) }
 
   var bootToNexusHub by remember { mutableStateOf(localPrefs.getBootToNexusHub()) }
-  var activeModal by remember { mutableStateOf(ActiveModal.NONE) }
+  var activeModal by remember {
+    mutableStateOf(if (localPrefs.getBootToNexusHub()) ActiveModal.NEXUS else ActiveModal.NONE)
+  }
+  var nexusInitialLayoutMode by remember { mutableStateOf(NexusHubLayoutMode.DECK_ONLY) }
+  var showFullChangelogModal by remember { mutableStateOf(false) }
   var previousModalBeforeStore by remember { mutableStateOf(ActiveModal.DOSSIER) }
   var previousModalBeforeNexus by remember { mutableStateOf(ActiveModal.NONE) }
   var callsign by remember(currentUserId, isGoogleAuthenticated) {
@@ -717,6 +741,7 @@ fun RiftArenaScreen(
       onOpenComms = {
         unreadCommsCount = 0
         previousModalBeforeNexus = ActiveModal.NONE
+        nexusInitialLayoutMode = NexusHubLayoutMode.SPLIT_COMMAND
         activeModal = ActiveModal.NEXUS
       },
       onOpenDossier = { activeModal = ActiveModal.DOSSIER },
@@ -739,6 +764,12 @@ fun RiftArenaScreen(
       isNexusStreaming = isNexusStreaming,
       onOpenNexus = {
         previousModalBeforeNexus = ActiveModal.NONE
+        nexusInitialLayoutMode = NexusHubLayoutMode.SPLIT_COMMAND
+        activeModal = ActiveModal.NEXUS
+      },
+      onOpenModes = {
+        previousModalBeforeNexus = ActiveModal.NONE
+        nexusInitialLayoutMode = NexusHubLayoutMode.DECK_ONLY
         activeModal = ActiveModal.NEXUS
       },
       onEngageBrake = {
@@ -1371,12 +1402,18 @@ fun RiftArenaScreen(
         SettingsModal(
           fps = currentFps,
           sfxEnabled = sfxEnabled,
+          musicEnabled = musicEnabled,
           cameraZoom = cameraZoom,
           playfieldTextScale = playfieldTextScale,
           isGoogleAuthenticated = isGoogleAuthenticated,
           onToggleSfx = {
             sfxEnabled = !sfxEnabled
             sfx.enabled = sfxEnabled
+          },
+          onToggleMusic = {
+            musicEnabled = !musicEnabled
+            localPrefs.setMusicEnabled(musicEnabled)
+            sfx.setMusicEnabled(musicEnabled)
           },
           onChangeCameraZoom = { newZoom ->
             val clamped = newZoom.coerceIn(0.5f, 1.5f)
@@ -1407,13 +1444,12 @@ fun RiftArenaScreen(
             )
           },
           onRequestSignOut = {
-            localPrefs.setGuestBypassEnabled(true)
+            localPrefs.setGuestBypassEnabled(false)
             signOut(credentialManager = credentialManager, scope = scope)
           },
           onCloseModal = { activeModal = ActiveModal.NONE },
           onOpenChangelog = {
-            previousModalBeforeNexus = ActiveModal.SETTINGS
-            activeModal = ActiveModal.NEXUS
+            showFullChangelogModal = true
           },
         )
       }
@@ -1702,12 +1738,23 @@ fun RiftArenaScreen(
             toastVersion++
           },
           engine = engine,
+          initialLayoutMode = nexusInitialLayoutMode,
         )
       }
 
       ActiveModal.NONE -> Unit
         }
       }
+    }
+
+    if (showFullChangelogModal) {
+      RiftChangelogModal(
+        lastSeenBuild = localPrefs.getLastSeenChangelogBuild(),
+        onAcknowledgeAndContinue = {
+          localPrefs.setLastSeenChangelogBuild(CURRENT_RIFT_BUILD_VERSION)
+          showFullChangelogModal = false
+        },
+      )
     }
 
     if (com.example.engine.RiftCalibrationState.isCalibrationModalOpen) {

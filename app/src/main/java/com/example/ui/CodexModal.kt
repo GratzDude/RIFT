@@ -315,16 +315,16 @@ fun CodexModal(
             ) {
               CodexHighlightCard(
                 modifier = Modifier.weight(1f),
-                title = "⏱ 45-SECOND DYNAMIC RIFT CYCLES",
-                body = "Playfield Rifts remain active for 45 seconds before collapsing in a particle burst and relocating to fresh open-space coordinates outside the Safe Zone.",
+                title = "⏱ 45-SECOND RIFT CYCLES & SAFE ZONES",
+                body = "Playfield Rifts relocate every 45s outside the Safe Zone and never spawn inside Stasis Breach Jails or Rift Control Tug-of-War rings.",
                 bgColor = Color(0xFF1B102E),
                 borderColor = Color(0xFFA855F7),
                 bodyColor = Color(0xFFE9D5FF),
               )
               CodexHighlightCard(
                 modifier = Modifier.weight(1f),
-                title = "📐 5x HULL SCALE & ORDNANCE PHYSICS",
-                body = "Each Rift spans a 180px physical core (5x ship scale) and directly interacts with both Newtonian ship trajectories and live bullets/warheads.",
+                title = "⚫ GROWING BLACK HOLE & PHANTOM PHYSICS",
+                body = "Gravity Rifts absorb bullets (+6px), bombs/mines (+18px), and Holo Phantoms (+14px) to grow up to 420px! Holo Phantoms react to all 4 Rifts.",
                 bgColor = Color(0xFF0A2229),
                 borderColor = Color(0xFF2DD4BF),
                 bodyColor = Color(0xFFCCFBF1),
@@ -466,7 +466,7 @@ fun CodexModal(
                 )
                 CodexHighlightCard(
                   modifier = Modifier.weight(1f),
-                  title = "⚡ WOW-STYLE LIVE REMAPPER",
+                  title = "⚡ LIVE CONTROLLER REMAPPER",
                   body = "Default ergonomic layout: RT=Main Attack, R1=Special Buff, LT=Manual Brake, X=Instant Secondary, A=Repel, Y=Multi-Shot. Tap any slot below to rebind!",
                   bgColor = Color(0xFF092318),
                   borderColor = Color(0xFF34D399),

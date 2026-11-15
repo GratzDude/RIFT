@@ -51,6 +51,7 @@ private data class UtilityButtonSlot(
   val strokeColor: Int,
   val fillColor: Int,
   val enabled: Boolean,
+  val iconBuffType: Int = -1,
 )
 
 class RiftArenaView(
@@ -450,68 +451,64 @@ class RiftArenaView(
   }
 
   /**
-   * Computes the active non-zero utility button slots for the 4-Input Right-Hand Combat Cluster:
-   * - Special Buff Weapon Button (Burst, Shotgun, or Lock-On Bouncing Missile)
-   * - Repel Button (Defensive repulsion shockwave)
+   * Computes the fixed-angle muscle-memory utility button slots for the Right-Hand Combat Cluster:
+   * - 188°: Secondary Ability / Bomb (handled by bombBtnX/Y)
+   * - 227°: Special Crate Attack Button (permanently locked at 227°; never shifts when charges == 0)
+   * - 265°: Repel Shockwave Button (permanently locked at 265°; never shifts down to 227°)
    */
   private fun rebuildActiveUtilitySlots(p: ShipEntity) {
     activeUtilitySlots.clear()
     val showAll = RiftCalibrationState.forceAllButtonsVisible || RiftCalibrationState.isUiUnlockedForDragging
-    val hasBombEffective = p.spec.hasBomb || showAll
-    val startDeg = if (hasBombEffective) 227.0 else 194.0
-    val stepDeg = 38.0
-    var slotIndex = 0
     val arcScale = RiftCalibrationState.combatArcScale
     val baseArcX = fireBtnX + RiftCalibrationState.combatArcOffset.x
     val baseArcY = fireBtnY + RiftCalibrationState.combatArcOffset.y
     val scaledDist = arcDistUtil * arcScale
     val scaledR = utilBtnRadius * arcScale
 
-    if (p.specialWeaponCharges > 0 || showAll) {
-      val rad = ((startDeg + slotIndex * stepDeg) * PI / 180.0).toFloat()
-      val count = if (p.specialWeaponCharges > 0) p.specialWeaponCharges else 1
-      val activeType =
-        if (p.specialWeaponCharges > 0 && p.specialWeaponType != "NONE") {
-          p.specialWeaponType
-        } else {
-          "NOVA_RING"
-        }
-      val reg = RiftCodex.getBuffRegistryEntry(activeType) ?: RiftCodex.BUFF_REGISTRY.getValue("NOVA_RING")
-      activeUtilitySlots.add(
-        UtilityButtonSlot(
-          type = "SPECIAL",
-          title = "${reg.shortLabel} [$count]",
-          sub = "0⚡",
-          cx = baseArcX + cos(rad) * scaledDist + RiftCalibrationState.burstBtnOffset.x,
-          cy = baseArcY + sin(rad) * scaledDist + RiftCalibrationState.burstBtnOffset.y,
-          r = scaledR,
-          strokeColor = reg.strokeColorInt,
-          fillColor = reg.fillColorArgb,
-          enabled = p.canFire && p.specialWeaponCharges > 0,
-        )
+    // Slot 1: Permanently locked at 227.0° -> SPECIAL CRATE ATTACK
+    val radSpecial = (227.0 * PI / 180.0).toFloat()
+    val hasSpecialCharges = p.specialWeaponCharges > 0
+    val specialCount = if (hasSpecialCharges) p.specialWeaponCharges else if (showAll) 1 else 0
+    val activeType =
+      if (p.specialWeaponType != "NONE") {
+        p.specialWeaponType
+      } else {
+        "NOVA_RING"
+      }
+    val reg = RiftCodex.getBuffRegistryEntry(activeType) ?: RiftCodex.BUFF_REGISTRY.getValue("NOVA_RING")
+    activeUtilitySlots.add(
+      UtilityButtonSlot(
+        type = "SPECIAL",
+        title = if (hasSpecialCharges || showAll) "${reg.shortLabel} [$specialCount]" else "CRATE [0]",
+        sub = if (hasSpecialCharges || showAll) "0⚡" else "EMPTY",
+        cx = baseArcX + cos(radSpecial) * scaledDist + RiftCalibrationState.burstBtnOffset.x,
+        cy = baseArcY + sin(radSpecial) * scaledDist + RiftCalibrationState.burstBtnOffset.y,
+        r = scaledR,
+        strokeColor = if (hasSpecialCharges || showAll) reg.strokeColorInt else Color.parseColor("#475569"),
+        fillColor = if (hasSpecialCharges || showAll) reg.fillColorArgb else Color.argb(120, 15, 23, 42),
+        enabled = p.canFire && hasSpecialCharges,
+        iconBuffType = reg.buffTypeIndex.coerceAtLeast(0),
       )
-      slotIndex++
-    }
+    )
 
-    if (p.repels > 0 || showAll) {
-      val rad = ((startDeg + slotIndex * stepDeg) * PI / 180.0).toFloat()
-      val count = if (p.repels > 0) p.repels else 3
-      val rCost = RiftCalibrationState.repelCost
-      activeUtilitySlots.add(
-        UtilityButtonSlot(
-          type = "REPEL",
-          title = "REPEL [$count]",
-          sub = "${rCost.toInt()}⚡",
-          cx = baseArcX + cos(rad) * scaledDist + RiftCalibrationState.repelBtnOffset.x,
-          cy = baseArcY + sin(rad) * scaledDist + RiftCalibrationState.repelBtnOffset.y,
-          r = scaledR,
-          strokeColor = Color.parseColor("#38BDF8"),
-          fillColor = Color.argb(155, 10, 48, 82),
-          enabled = p.canFire && p.repels > 0 && (p.flux - rCost >= 1f),
-        )
+    // Slot 2: Permanently locked at 265.0° -> REPEL SHOCKWAVE
+    val radRepel = (265.0 * PI / 180.0).toFloat()
+    val repelCount = if (p.repels > 0) p.repels else if (showAll) 3 else 0
+    val rCost = RiftCalibrationState.repelCost
+    activeUtilitySlots.add(
+      UtilityButtonSlot(
+        type = "REPEL",
+        title = "REPEL [$repelCount]",
+        sub = "${rCost.toInt()}⚡",
+        cx = baseArcX + cos(radRepel) * scaledDist + RiftCalibrationState.repelBtnOffset.x,
+        cy = baseArcY + sin(radRepel) * scaledDist + RiftCalibrationState.repelBtnOffset.y,
+        r = scaledR,
+        strokeColor = Color.parseColor("#38BDF8"),
+        fillColor = Color.argb(165, 10, 48, 82),
+        enabled = p.canFire && p.repels > 0 && (p.flux - rCost >= 1f),
+        iconBuffType = 7, // Codex / Playfield Repel Charge icon
       )
-      slotIndex++
-    }
+    )
   }
 
   override fun onDraw(canvas: Canvas) {
@@ -748,10 +745,10 @@ class RiftArenaView(
       canvas.drawBitmap(buffBmp, null, nebulaDstRect, null)
     }
 
-    // 6b. Playfield Rift Obstacles (Plasma Rift, Repulsor Rift, Gravity Rift, Phase Rifts at 5x Ship Size)
+    // 6b. 4-Layer 3D Playfield Rift Obstacles (Plasma Rift, Repulsor Rift, Growing Gravity Black Hole, Paired Phase Rifts)
     for (anom in engine.anomalies) {
-      val r = anom.physicalRadius * RiftCalibrationState.anomalyScale // 180f = 5x 36f ship radius
-      if (anom.x + r < viewLeft || anom.x - r > viewRight || anom.y + r < viewTop || anom.y - r > viewBottom) {
+      val r = anom.physicalRadius * RiftCalibrationState.anomalyScale
+      if (anom.x + r * 1.65f < viewLeft || anom.x - r * 1.65f > viewRight || anom.y + r * 1.65f < viewTop || anom.y - r * 1.65f > viewBottom) {
         continue
       }
       val fadeAlpha = (anom.life / 2.0f).coerceIn(0f, 1f)
@@ -759,145 +756,81 @@ class RiftArenaView(
 
       when (anom.type) {
         AnomalyType.PLASMA_RIFT -> {
-          // Swirling crimson/magenta damaging Plasma Rift tear (10% Max Flux damage per pass-through)
-          anomalyFillPaint.color = Color.argb((58 * fadeAlpha).toInt(), 239, 68, 68)
-          canvas.drawCircle(anom.x, anom.y, r * 1.15f, anomalyFillPaint)
-
-          // Pulsing crimson hazard shear boundary ring
-          val pulsePhase = (System.currentTimeMillis() % 1100L) / 1100f
-          val waveR = r * (0.45f + pulsePhase * 0.55f)
-          anomalyRingPaint.strokeWidth = 3.8f
-          anomalyRingPaint.color = Color.argb((185 * (1f - pulsePhase) * fadeAlpha).toInt(), 251, 113, 133)
-          canvas.drawCircle(anom.x, anom.y, waveR, anomalyRingPaint)
-
-          // Outer 180f Plasma Tear perimeter ring
-          anomalyRingPaint.strokeWidth = 3.2f
-          anomalyRingPaint.color = Color.argb((210 * fadeAlpha).toInt(), 239, 68, 68)
-          canvas.drawCircle(anom.x, anom.y, r, anomalyRingPaint)
-
-          // Swirling jagged plasma filaments
-          anomalyRingPaint.strokeWidth = 2.8f
-          anomalyRingPaint.color = Color.argb((210 * fadeAlpha).toInt(), 217, 70, 239)
-          for (i in 0 until 6) {
-            val a = anom.spinAngle + i * (PI.toFloat() / 3f)
-            val p1x = anom.x + cos(a) * (r * 0.25f)
-            val p1y = anom.y + sin(a) * (r * 0.25f)
-            val midX = anom.x + cos(a + 0.28f) * (r * 0.62f)
-            val midY = anom.y + sin(a + 0.28f) * (r * 0.62f)
-            val p2x = anom.x + cos(a - 0.18f) * (r * 0.96f)
-            val p2y = anom.y + sin(a - 0.18f) * (r * 0.96f)
-            canvas.drawLine(p1x, p1y, midX, midY, anomalyRingPaint)
-            canvas.drawLine(midX, midY, p2x, p2y, anomalyRingPaint)
-          }
-
-          // Crimson/white volatile plasma core
-          anomalyCorePaint.color = Color.argb(baseAlphaInt, 239, 68, 68)
-          canvas.drawCircle(anom.x, anom.y, r * 0.30f, anomalyCorePaint)
-          anomalyCorePaint.color = Color.argb(baseAlphaInt, 255, 228, 230)
-          canvas.drawCircle(anom.x, anom.y, r * 0.14f, anomalyCorePaint)
+          draw3dPlayfieldRift(
+            canvas = canvas,
+            cx = anom.x,
+            cy = anom.y,
+            r = r,
+            spinAngle = anom.spinAngle,
+            fadeAlpha = fadeAlpha,
+            outerColor = Color.rgb(239, 68, 68),
+            midColor = Color.rgb(217, 70, 239),
+            coreColor = Color.rgb(255, 228, 230),
+            darkVoidCenter = false,
+            inwardSpiral = false,
+          )
         }
 
         AnomalyType.REPULSOR_RIFT -> {
-          // Radiant white/cyan outer accretion disk
-          anomalyFillPaint.color = Color.argb((45 * fadeAlpha).toInt(), 56, 189, 248)
-          canvas.drawCircle(anom.x, anom.y, r * 1.55f, anomalyFillPaint)
-
-          // Glowing repulsor waves
-          val waveOffset = (System.currentTimeMillis() % 1500L) / 1500f
-          val waveR = r * (0.4f + waveOffset * 0.95f)
-          anomalyRingPaint.strokeWidth = 3.5f
-          anomalyRingPaint.color = Color.argb((160 * (1f - waveOffset) * fadeAlpha).toInt(), 255, 255, 255)
-          canvas.drawCircle(anom.x, anom.y, waveR, anomalyRingPaint)
-
-          // Spiraling white ejecta prongs
-          anomalyRingPaint.strokeWidth = 2.8f
-          anomalyRingPaint.color = Color.argb((185 * fadeAlpha).toInt(), 186, 230, 253)
-          for (i in 0 until 6) {
-            val a = anom.spinAngle + i * (PI.toFloat() / 3f)
-            val p1x = anom.x + cos(a) * (r * 0.35f)
-            val p1y = anom.y + sin(a) * (r * 0.35f)
-            val p2x = anom.x + cos(a + 0.45f) * r
-            val p2y = anom.y + sin(a + 0.45f) * r
-            canvas.drawLine(p1x, p1y, p2x, p2y, anomalyRingPaint)
-          }
-
-          // Blinding white-hot core
-          anomalyCorePaint.color = Color.argb(baseAlphaInt, 255, 255, 255)
-          canvas.drawCircle(anom.x, anom.y, r * 0.32f, anomalyCorePaint)
-          anomalyRingPaint.strokeWidth = 3.2f
-          anomalyRingPaint.color = Color.argb(baseAlphaInt, 56, 189, 248)
-          canvas.drawCircle(anom.x, anom.y, r * 0.32f, anomalyRingPaint)
+          draw3dPlayfieldRift(
+            canvas = canvas,
+            cx = anom.x,
+            cy = anom.y,
+            r = r,
+            spinAngle = anom.spinAngle,
+            fadeAlpha = fadeAlpha,
+            outerColor = Color.rgb(56, 189, 248),
+            midColor = Color.rgb(186, 230, 253),
+            coreColor = Color.rgb(255, 255, 255),
+            darkVoidCenter = false,
+            inwardSpiral = false,
+          )
         }
 
         AnomalyType.GRAVITY_RIFT -> {
-          // Deep violet gravitational vortex halo
-          anomalyFillPaint.color = Color.argb((55 * fadeAlpha).toInt(), 99, 102, 241)
-          canvas.drawCircle(anom.x, anom.y, r * 1.6f, anomalyFillPaint)
-
-          // Inward accretion spiral rings
-          val waveOffset = 1f - ((System.currentTimeMillis() % 1800L) / 1800f)
-          val waveR = r * (0.35f + waveOffset * 0.95f)
-          anomalyRingPaint.strokeWidth = 3.6f
-          anomalyRingPaint.color = Color.argb((175 * waveOffset * fadeAlpha).toInt(), 192, 132, 252)
-          canvas.drawCircle(anom.x, anom.y, waveR, anomalyRingPaint)
-
-          // Inward spiral vortex strands
-          anomalyRingPaint.strokeWidth = 2.4f
-          anomalyRingPaint.color = Color.argb((150 * fadeAlpha).toInt(), 129, 140, 248)
-          for (i in 0 until 5) {
-            val a = anom.spinAngle + i * (PI.toFloat() * 2f / 5f)
-            val p1x = anom.x + cos(a) * r
-            val p1y = anom.y + sin(a) * r
-            val p2x = anom.x + cos(a + 0.7f) * (r * 0.38f)
-            val p2y = anom.y + sin(a + 0.7f) * (r * 0.38f)
-            canvas.drawLine(p1x, p1y, p2x, p2y, anomalyRingPaint)
+          draw3dPlayfieldRift(
+            canvas = canvas,
+            cx = anom.x,
+            cy = anom.y,
+            r = r,
+            spinAngle = anom.spinAngle,
+            fadeAlpha = fadeAlpha,
+            outerColor = Color.rgb(168, 85, 247),
+            midColor = Color.rgb(99, 102, 241),
+            coreColor = Color.rgb(233, 213, 255),
+            darkVoidCenter = true,
+            inwardSpiral = true,
+          )
+          if (anom.absorbedWeaponCount > 0) {
+            popupPaint.color = Color.argb(baseAlphaInt, 216, 180, 254)
+            popupPaint.textSize = 13.5f
+            val growthPct = ((anom.physicalRadius / RiftCalibrationState.riftPhysicalRadius.coerceAtLeast(120f)) * 100f).toInt()
+            canvas.drawText(
+              "⚫ MASS ${growthPct}% (+${anom.absorbedWeaponCount} ABSORBED)",
+              anom.x,
+              anom.y - r - 14f,
+              popupPaint,
+            )
           }
-
-          // Pitch-black event horizon core + glowing event horizon photon ring
-          anomalyRingPaint.strokeWidth = 4.2f
-          anomalyRingPaint.color = Color.argb(baseAlphaInt, 168, 85, 247)
-          canvas.drawCircle(anom.x, anom.y, r * 0.42f, anomalyRingPaint)
-          anomalyCorePaint.color = Color.argb(baseAlphaInt, 3, 7, 18)
-          canvas.drawCircle(anom.x, anom.y, r * 0.40f, anomalyCorePaint)
         }
 
         AnomalyType.PHASE_RIFT_A, AnomalyType.PHASE_RIFT_B -> {
           val isNodeA = anom.type == AnomalyType.PHASE_RIFT_A
-          val ringColor = if (isNodeA) Color.parseColor("#2DD4BF") else Color.parseColor("#38BDF8")
-
-          // Luminous transit aura
-          anomalyFillPaint.color = Color.argb((45 * fadeAlpha).toInt(), Color.red(ringColor), Color.green(ringColor), Color.blue(ringColor))
-          canvas.drawCircle(anom.x, anom.y, r * 1.35f, anomalyFillPaint)
-
-          // Inter-dimensional gateway rings
-          val pulsePhase = (System.currentTimeMillis() % 1200L) / 1200f
-          val waveR = r * (0.35f + pulsePhase * 0.45f)
-          anomalyRingPaint.strokeWidth = 3.2f
-          anomalyRingPaint.color = Color.argb((160 * (1f - pulsePhase) * fadeAlpha).toInt(), Color.red(ringColor), Color.green(ringColor), Color.blue(ringColor))
-          canvas.drawCircle(anom.x, anom.y, waveR, anomalyRingPaint)
-
-          // Rotating quantum torus gate
-          anomalyRingPaint.strokeWidth = 4.0f
-          anomalyRingPaint.color = Color.argb(baseAlphaInt, Color.red(ringColor), Color.green(ringColor), Color.blue(ringColor))
-          canvas.drawCircle(anom.x, anom.y, r * 0.52f, anomalyRingPaint)
-
-          // Swirling quantum filaments
-          anomalyRingPaint.strokeWidth = 2.0f
-          anomalyRingPaint.color = Color.argb((190 * fadeAlpha).toInt(), 255, 255, 255)
-          for (i in 0 until 4) {
-            val a = anom.spinAngle + i * (PI.toFloat() * 0.5f)
-            val p1x = anom.x + cos(a) * (r * 0.50f)
-            val p1y = anom.y + sin(a) * (r * 0.50f)
-            val p2x = anom.x + cos(a + 0.6f) * (r * 0.18f)
-            val p2y = anom.y + sin(a + 0.6f) * (r * 0.18f)
-            canvas.drawLine(p1x, p1y, p2x, p2y, anomalyRingPaint)
-          }
-
-          // Gateway Singularity portal center
-          anomalyCorePaint.color = Color.argb(baseAlphaInt, 5, 20, 28)
-          canvas.drawCircle(anom.x, anom.y, r * 0.48f, anomalyCorePaint)
-          anomalyCorePaint.color = Color.argb((200 * fadeAlpha).toInt(), Color.red(ringColor), Color.green(ringColor), Color.blue(ringColor))
-          canvas.drawCircle(anom.x, anom.y, r * 0.18f, anomalyCorePaint)
+          val outerCol = if (isNodeA) Color.rgb(45, 212, 191) else Color.rgb(56, 189, 248)
+          val midCol = if (isNodeA) Color.rgb(56, 189, 248) else Color.rgb(168, 85, 247)
+          draw3dPlayfieldRift(
+            canvas = canvas,
+            cx = anom.x,
+            cy = anom.y,
+            r = r * 0.85f,
+            spinAngle = anom.spinAngle,
+            fadeAlpha = fadeAlpha,
+            outerColor = outerCol,
+            midColor = midCol,
+            coreColor = Color.rgb(240, 253, 250),
+            darkVoidCenter = true,
+            inwardSpiral = false,
+          )
         }
       }
     }
@@ -1813,76 +1746,109 @@ class RiftArenaView(
       }
       val isFriendlyBrig = p.freq == brigOwnerFreq
       val borderCol = if (isFriendlyBrig) Color.parseColor("#38BDF8") else Color.parseColor("#F43F5E")
+      val midCol = if (isFriendlyBrig) Color.parseColor("#00F5D4") else Color.parseColor("#FB7185")
 
-      // 1. Translucent Circular Stasis Dome Fill (#2238BDF8 for West, #22F43F5E for East)
+      // 1. 3D Layered Stasis Containment Vortex Field
       anomalyFillPaint.color =
-        if (brigOwnerFreq == 0) Color.argb(34, 56, 189, 248) else Color.argb(34, 244, 63, 94)
+        if (brigOwnerFreq == 0) Color.argb(26, 56, 189, 248) else Color.argb(26, 244, 63, 94)
+      canvas.drawCircle(reactorX, reactorY, jailR * 1.06f, anomalyFillPaint)
+      anomalyFillPaint.color = Color.argb(145, 4, 10, 22)
       canvas.drawCircle(reactorX, reactorY, jailR, anomalyFillPaint)
 
-      // 2. Rotating Segmented Inner Containment Arcs
-      val innerR = jailR * 0.93f
-      arcRect.set(reactorX - innerR, reactorY - innerR, reactorX + innerR, reactorY + innerR)
-      anomalyRingPaint.strokeWidth = 2.4f
-      anomalyRingPaint.color = Color.argb(165, 0, 245, 212)
-      val degOffset = spinPhase * 180f / PI.toFloat()
-      for (seg in 0 until 8) {
-        canvas.drawArc(arcRect, degOffset + seg * 45f, 26f, false, anomalyRingPaint)
+      // 2. Counter-Rotating 3D Spiral Stasis Filaments across the Jail Dome
+      anomalyRingPaint.strokeWidth = 2.2f
+      anomalyRingPaint.color = Color.argb(75, Color.red(borderCol), Color.green(borderCol), Color.blue(borderCol))
+      for (arm in 0 until 6) {
+        val baseA = -spinPhase * 0.8f + arm * (PI.toFloat() / 3f)
+        val x0 = reactorX + cos(baseA) * (jailR * 0.22f)
+        val y0 = reactorY + sin(baseA) * (jailR * 0.22f)
+        val xm = reactorX + cos(baseA + 0.42f) * (jailR * 0.62f)
+        val ym = reactorY + sin(baseA + 0.42f) * (jailR * 0.62f)
+        val x1 = reactorX + cos(baseA + 0.82f) * (jailR * 0.94f)
+        val y1 = reactorY + sin(baseA + 0.82f) * (jailR * 0.94f)
+        canvas.drawLine(x0, y0, xm, ym, anomalyRingPaint)
+        canvas.drawLine(xm, ym, x1, y1, anomalyRingPaint)
       }
 
-      // 3. Crisp Outer Stasis Perimeter Ring (strokeWidth = 4.5f) + 12 Glowing Anchor Nodes
-      anomalyRingPaint.strokeWidth = 4.5f
+      // 3. Rotating Segmented Beveled Containment Arcs + 24 Degree Ticks
+      val innerR = jailR * 0.94f
+      arcRect.set(reactorX - innerR, reactorY - innerR, reactorX + innerR, reactorY + innerR)
+      anomalyRingPaint.strokeWidth = 3.2f
+      anomalyRingPaint.color = Color.argb(185, Color.red(midCol), Color.green(midCol), Color.blue(midCol))
+      val degOffset = spinPhase * 180f / PI.toFloat()
+      for (seg in 0 until 8) {
+        canvas.drawArc(arcRect, degOffset + seg * 45f, 28f, false, anomalyRingPaint)
+      }
+      anomalyRingPaint.strokeWidth = 1.6f
+      for (t in 0 until 24) {
+        val ta = t * (PI.toFloat() / 12f)
+        canvas.drawLine(
+          reactorX + cos(ta) * (jailR * 0.96f),
+          reactorY + sin(ta) * (jailR * 0.96f),
+          reactorX + cos(ta) * jailR,
+          reactorY + sin(ta) * jailR,
+          anomalyRingPaint,
+        )
+      }
+
+      // 4. Crisp Outer 3D Stasis Perimeter Ring + 12 Beveled Emitter Pylons
+      anomalyRingPaint.strokeWidth = 5.0f
       anomalyRingPaint.color = borderCol
       canvas.drawCircle(reactorX, reactorY, jailR, anomalyRingPaint)
       for (i in 0 until 12) {
         val na = spinPhase * 0.5f + i * (PI.toFloat() * 2f / 12f)
         val nx = reactorX + cos(na) * jailR
         val ny = reactorY + sin(na) * jailR
-        anomalyCorePaint.color = Color.parseColor("#00F5D4")
-        canvas.drawCircle(nx, ny, 5.5f, anomalyCorePaint)
+        anomalyCorePaint.color = borderCol
+        canvas.drawCircle(nx, ny, 7.2f, anomalyCorePaint)
+        anomalyCorePaint.color = Color.WHITE
+        canvas.drawCircle(nx, ny, 3.2f, anomalyCorePaint)
       }
 
       popupPaint.color = borderCol
       popupPaint.textSize = 17.5f
       canvas.drawText(
-        "🔒 $labelPrefix STASIS JAIL • $capturedCount/10 CAPTURED",
+        "🔒 $labelPrefix STASIS RIFT JAIL • $capturedCount/10 CAPTURED",
         reactorX,
         reactorY - jailR - 18f,
         popupPaint,
       )
 
-      // 4. Center 4,000⚡ Stasis Core (coreR = 46f) with HP Bar & Breakout Instructions
-      val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 720L) / 720f * (PI.toFloat() * 2f))
-      val coreR = 46f
-      anomalyFillPaint.color =
-        if (isFriendlyBrig) Color.argb(75, 56, 189, 248) else Color.argb(85, 245, 158, 11)
-      canvas.drawCircle(reactorX, reactorY, coreR * (1.25f + 0.15f * pulse), anomalyFillPaint)
-
-      anomalyRingPaint.strokeWidth = 4.5f
-      anomalyRingPaint.color = if (isFriendlyBrig) Color.parseColor("#38BDF8") else Color.parseColor("#F59E0B")
-      canvas.drawCircle(reactorX, reactorY, coreR, anomalyRingPaint)
-
-      anomalyCorePaint.color = Color.parseColor("#FACC15")
-      canvas.drawCircle(reactorX, reactorY, coreR * 0.48f, anomalyCorePaint)
+      // 5. Center 40,000⚡ 3D Stasis Singularity Core (coreR = 54f) with HP Bar & Breakout Instructions
+      val coreR = 54f
+      draw3dPlayfieldRift(
+        canvas = canvas,
+        cx = reactorX,
+        cy = reactorY,
+        r = coreR * 1.35f,
+        spinAngle = spinPhase * 2.2f,
+        fadeAlpha = 1.0f,
+        outerColor = if (isFriendlyBrig) Color.rgb(56, 189, 248) else Color.rgb(245, 158, 11),
+        midColor = Color.rgb(250, 204, 21),
+        coreColor = Color.rgb(255, 255, 255),
+        darkVoidCenter = true,
+        inwardSpiral = true,
+      )
 
       val hpFrac = (reactorHp / maxReactorHp).coerceIn(0f, 1f)
-      val barW = 150f
-      val barH = 11f
+      val barW = 168f
+      val barH = 12f
       val barLeft = reactorX - barW * 0.5f
-      val barTop = reactorY - coreR - 28f
+      val barTop = reactorY - coreR * 1.35f - 28f
       arcRect.set(barLeft, barTop, barLeft + barW, barTop + barH)
-      hudCircleFillPaint.color = Color.argb(215, 15, 23, 42)
-      canvas.drawRoundRect(arcRect, 4f, 4f, hudCircleFillPaint)
+      hudCircleFillPaint.color = Color.argb(225, 10, 18, 34)
+      canvas.drawRoundRect(arcRect, 5f, 5f, hudCircleFillPaint)
       arcRect.set(barLeft, barTop, barLeft + barW * hpFrac, barTop + barH)
       hudCircleFillPaint.color =
         if (hpFrac > 0.5f) Color.parseColor("#22D3EE")
         else if (hpFrac > 0.25f) Color.parseColor("#F59E0B")
         else Color.parseColor("#EF4444")
-      canvas.drawRoundRect(arcRect, 4f, 4f, hudCircleFillPaint)
+      canvas.drawRoundRect(arcRect, 5f, 5f, hudCircleFillPaint)
 
       popupPaint.color = Color.parseColor("#FACC15")
       popupPaint.textSize = 13.8f
       canvas.drawText(
-        "STASIS CORE: ${reactorHp.toInt()}⚡ (PRISONERS SHOOT TO BREAK OUT)",
+        "STASIS RIFT CORE: ${reactorHp.toInt()}⚡ / ${maxReactorHp.toInt()}⚡ (SHOOT TO BREAK OUT)",
         reactorX,
         barTop - 8f,
         popupPaint,
@@ -1917,6 +1883,7 @@ class RiftArenaView(
   ) {
     val zoneR = engine.riftCaptureRadius
     val pulse = 0.5f + 0.5f * sin((System.currentTimeMillis() % 900L) / 900f * (PI.toFloat() * 2f))
+    val spinPhase = ((System.currentTimeMillis() % 4200L) / 4200f) * (PI.toFloat() * 2f)
 
     fun drawSingleControlZone(
       cx: Float,
@@ -1945,42 +1912,80 @@ class RiftArenaView(
           isEastControl -> Color.parseColor("#F43F5E")
           else -> Color.parseColor("#00F5D4")
         }
+      val secondaryColor =
+        when {
+          lockedBy != -1 -> Color.parseColor("#FACC15")
+          isContested -> Color.parseColor("#FB7185")
+          else -> Color.parseColor("#38BDF8")
+        }
 
-      // 1. Subtle capture zone fill
+      // 1. 3D Volumetric Rift Capture Horizon Fill
       anomalyFillPaint.color =
         Color.argb(
-          if (lockedBy != -1 || isContested) 42 else (22 + (14 * pulse).toInt()),
+          if (lockedBy != -1 || isContested) 46 else (26 + (14 * pulse).toInt()),
           Color.red(primaryColor),
           Color.green(primaryColor),
           Color.blue(primaryColor),
         )
       canvas.drawCircle(cx, cy, zoneR, anomalyFillPaint)
 
-      // 2. Outer capture boundary ring
-      anomalyRingPaint.strokeWidth = if (isContested) 4.2f else 3.2f
-      anomalyRingPaint.color = Color.argb(165, Color.red(primaryColor), Color.green(primaryColor), Color.blue(primaryColor))
-      canvas.drawCircle(cx, cy, zoneR, anomalyRingPaint)
+      // 2. Swirling 3D Accretion Arms inside the Capture Ring
+      anomalyRingPaint.strokeWidth = 2.4f
+      anomalyRingPaint.color = Color.argb(88, Color.red(primaryColor), Color.green(primaryColor), Color.blue(primaryColor))
+      for (arm in 0 until 6) {
+        val a = spinPhase + arm * (PI.toFloat() / 3f)
+        val x0 = cx + cos(a) * (zoneR * 0.28f)
+        val y0 = cy + sin(a) * (zoneR * 0.28f)
+        val xm = cx + cos(a + 0.45f) * (zoneR * 0.64f)
+        val ym = cy + sin(a + 0.45f) * (zoneR * 0.64f)
+        val x1 = cx + cos(a + 0.85f) * (zoneR * 0.94f)
+        val y1 = cy + sin(a + 0.85f) * (zoneR * 0.94f)
+        canvas.drawLine(x0, y0, xm, ym, anomalyRingPaint)
+        canvas.drawLine(xm, ym, x1, y1, anomalyRingPaint)
+      }
 
-      // 3. 360-Degree Tug-of-War Progress Arc (sweepAngle = (abs(controlSec) / 30f) * 360f)
+      // 3. Beveled Outer Capture Boundary Ring + 24 Degree Ticks
+      anomalyRingPaint.strokeWidth = if (isContested) 4.4f else 3.4f
+      anomalyRingPaint.color = Color.argb(185, Color.red(primaryColor), Color.green(primaryColor), Color.blue(primaryColor))
+      canvas.drawCircle(cx, cy, zoneR, anomalyRingPaint)
+      anomalyRingPaint.strokeWidth = 1.8f
+      for (t in 0 until 24) {
+        val ta = t * (PI.toFloat() / 12f)
+        canvas.drawLine(
+          cx + cos(ta) * (zoneR * 0.95f),
+          cy + sin(ta) * (zoneR * 0.95f),
+          cx + cos(ta) * zoneR,
+          cy + sin(ta) * zoneR,
+          anomalyRingPaint,
+        )
+      }
+
+      // 4. 360-Degree Segmented Tug-of-War Progress Arc (sweepAngle = (abs(controlSec) / 30f) * 360f)
       val progressFrac = if (lockedBy != -1) 1f else (abs(controlSec) / 30f).coerceIn(0f, 1f)
       if (progressFrac > 0.01f) {
         arcRect.set(cx - zoneR, cy - zoneR, cx + zoneR, cy + zoneR)
-        anomalyRingPaint.strokeWidth = 6.5f
+        anomalyRingPaint.strokeWidth = 7.5f
         anomalyRingPaint.color = if (lockedBy != -1) Color.parseColor("#FACC15") else primaryColor
         canvas.drawArc(arcRect, -90f, progressFrac * 360f, false, anomalyRingPaint)
       }
 
-      // 4. Center Rift Singularity Beacon
-      val beaconR = 42f + 6f * pulse
-      anomalyFillPaint.color = Color.argb(95, Color.red(primaryColor), Color.green(primaryColor), Color.blue(primaryColor))
-      canvas.drawCircle(cx, cy, beaconR * 1.4f, anomalyFillPaint)
-      anomalyRingPaint.strokeWidth = 4.0f
-      anomalyRingPaint.color = primaryColor
-      canvas.drawCircle(cx, cy, beaconR, anomalyRingPaint)
-      anomalyCorePaint.color = if (lockedBy != -1) Color.parseColor("#FACC15") else Color.WHITE
-      canvas.drawCircle(cx, cy, beaconR * 0.42f, anomalyCorePaint)
+      // 5. Center 3D Rift Singularity Vortex Beacon
+      val beaconR = 78f + 6f * pulse
+      draw3dPlayfieldRift(
+        canvas = canvas,
+        cx = cx,
+        cy = cy,
+        r = beaconR,
+        spinAngle = spinPhase * 1.8f,
+        fadeAlpha = 1.0f,
+        outerColor = primaryColor,
+        midColor = secondaryColor,
+        coreColor = if (lockedBy != -1) Color.rgb(250, 204, 21) else Color.rgb(255, 255, 255),
+        darkVoidCenter = true,
+        inwardSpiral = true,
+      )
 
-      // 5. Status Text above Rift Zone
+      // 6. Status Text above Rift Zone
       val pct = ((abs(controlSec) / 30f) * 100f).toInt().coerceIn(0, 100)
       val statusText =
         when {
@@ -2000,7 +2005,7 @@ class RiftArenaView(
       popupPaint.textSize = 17.5f
       canvas.drawText(statusText, cx, cy - zoneR - 18f, popupPaint)
 
-      // 6. Live Ship Count Sub-Label below Center Beacon
+      // 7. Live Ship Count Sub-Label below Center 3D Rift Beacon
       popupPaint.color = Color.parseColor("#E2E8F0")
       popupPaint.textSize = 14.0f
       canvas.drawText("WEST: $westCount  |  EAST: $eastCount", cx, cy + beaconR + 24f, popupPaint)
@@ -2024,6 +2029,154 @@ class RiftArenaView(
       eastCount = engine.riftOmegaEastCount,
       zoneTitle = "RIFT OMEGA",
     )
+  }
+
+  /**
+   * Renders a 4-Layer 3D Swirling Rift Singularity on the playfield Canvas:
+   * - Layer 1: Volumetric outer radial accretion aura + deep-space event horizon backdrop
+   * - Layer 2: Beveled 3D outer containment torus ring with 16 degree ticks & counter-rotating inner arc
+   * - Layer 3: Multi-layered 3D logarithmic spiral plasma arms (outer glow + bright inner core filaments)
+   * - Layer 4: 3D Event-Horizon Singularity Core with specular photon ring
+   */
+  private fun draw3dPlayfieldRift(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    r: Float,
+    spinAngle: Float,
+    fadeAlpha: Float,
+    outerColor: Int,
+    midColor: Int,
+    coreColor: Int,
+    darkVoidCenter: Boolean,
+    inwardSpiral: Boolean,
+  ) {
+    val oR = Color.red(outerColor)
+    val oG = Color.green(outerColor)
+    val oB = Color.blue(outerColor)
+    val mR = Color.red(midColor)
+    val mG = Color.green(midColor)
+    val mB = Color.blue(midColor)
+    val cR = Color.red(coreColor)
+    val cG = Color.green(coreColor)
+    val cB = Color.blue(coreColor)
+
+    // Layer 1: Volumetric Radial Accretion Halo
+    anomalyFillPaint.color = Color.argb((34 * fadeAlpha).toInt(), oR, oG, oB)
+    canvas.drawCircle(cx, cy, r * 1.38f, anomalyFillPaint)
+    anomalyFillPaint.color = Color.argb((64 * fadeAlpha).toInt(), mR, mG, mB)
+    canvas.drawCircle(cx, cy, r * 1.05f, anomalyFillPaint)
+    anomalyFillPaint.color = Color.argb((185 * fadeAlpha).toInt(), 3, 8, 20)
+    canvas.drawCircle(cx, cy, r * 0.88f, anomalyFillPaint)
+
+    // Layer 2: Pulsing Accretion Shockwave Ring + Beveled Outer Containment Ring with 16 Degree Ticks
+    val pulsePhase = (System.currentTimeMillis() % 1400L) / 1400f
+    val waveFrac = if (inwardSpiral) (1f - pulsePhase) else pulsePhase
+    val waveR = r * (0.34f + waveFrac * 0.64f)
+    anomalyRingPaint.strokeWidth = 3.0f
+    anomalyRingPaint.color =
+      Color.argb(((1f - abs(waveFrac - 0.5f) * 1.6f).coerceIn(0.15f, 1f) * 165f * fadeAlpha).toInt(), mR, mG, mB)
+    canvas.drawCircle(cx, cy, waveR, anomalyRingPaint)
+
+    anomalyRingPaint.strokeWidth = 3.8f
+    anomalyRingPaint.color = Color.argb((220 * fadeAlpha).toInt(), oR, oG, oB)
+    canvas.drawCircle(cx, cy, r, anomalyRingPaint)
+
+    // 16 Beveled Degree Ticks around the outer torus
+    anomalyRingPaint.strokeWidth = 1.8f
+    anomalyRingPaint.color = Color.argb((175 * fadeAlpha).toInt(), cR, cG, cB)
+    for (t in 0 until 16) {
+      val ta = -spinAngle * 0.35f + t * (PI.toFloat() / 8f)
+      val r0 = if (t % 2 == 0) r * 0.90f else r * 0.94f
+      canvas.drawLine(
+        cx + cos(ta) * r0,
+        cy + sin(ta) * r0,
+        cx + cos(ta) * r,
+        cy + sin(ta) * r,
+        anomalyRingPaint,
+      )
+    }
+
+    // Counter-rotating segmented inner containment arcs
+    val innerArcR = r * 0.76f
+    arcRect.set(cx - innerArcR, cy - innerArcR, cx + innerArcR, cy + innerArcR)
+    anomalyRingPaint.strokeWidth = 2.6f
+    anomalyRingPaint.color = Color.argb((170 * fadeAlpha).toInt(), mR, mG, mB)
+    val degBase = (-spinAngle * 1.3f) * (180f / PI.toFloat())
+    for (seg in 0 until 4) {
+      canvas.drawArc(arcRect, degBase + seg * 90f, 52f, false, anomalyRingPaint)
+    }
+
+    // Layer 3: 6 Multi-Layered 3D Logarithmic Spiral Plasma Arms
+    val twistSign = if (inwardSpiral) -1f else 1f
+    for (arm in 0 until 6) {
+      val baseA = spinAngle + arm * (PI.toFloat() / 3f)
+      val r0 = r * 0.24f
+      val r1 = r * 0.50f
+      val r2 = r * 0.74f
+      val r3 = r * 0.94f
+      val a0 = baseA
+      val a1 = baseA + twistSign * 0.42f
+      val a2 = baseA + twistSign * 0.86f
+      val a3 = baseA + twistSign * 1.28f
+
+      val x0 = cx + cos(a0) * r0
+      val y0 = cy + sin(a0) * r0
+      val x1 = cx + cos(a1) * r1
+      val y1 = cy + sin(a1) * r1
+      val x2 = cx + cos(a2) * r2
+      val y2 = cy + sin(a2) * r2
+      val x3 = cx + cos(a3) * r3
+      val y3 = cy + sin(a3) * r3
+
+      // Outer plasma ribbon glow
+      anomalyRingPaint.strokeWidth = 5.2f
+      anomalyRingPaint.color = Color.argb((95 * fadeAlpha).toInt(), oR, oG, oB)
+      canvas.drawLine(x0, y0, x1, y1, anomalyRingPaint)
+      canvas.drawLine(x1, y1, x2, y2, anomalyRingPaint)
+      canvas.drawLine(x2, y2, x3, y3, anomalyRingPaint)
+
+      // Inner high-luminance filament core
+      anomalyRingPaint.strokeWidth = 2.1f
+      anomalyRingPaint.color =
+        if (arm % 2 == 0) Color.argb((225 * fadeAlpha).toInt(), cR, cG, cB)
+        else Color.argb((210 * fadeAlpha).toInt(), mR, mG, mB)
+      canvas.drawLine(x0, y0, x1, y1, anomalyRingPaint)
+      canvas.drawLine(x1, y1, x2, y2, anomalyRingPaint)
+      canvas.drawLine(x2, y2, x3, y3, anomalyRingPaint)
+    }
+
+    // Layer 4: 3D Event-Horizon Singularity Core & Specular Photon Ring
+    val coreR = r * 0.36f
+    if (darkVoidCenter) {
+      anomalyRingPaint.strokeWidth = 4.6f
+      anomalyRingPaint.color = Color.argb((245 * fadeAlpha).toInt(), oR, oG, oB)
+      canvas.drawCircle(cx, cy, coreR * 1.06f, anomalyRingPaint)
+
+      anomalyRingPaint.strokeWidth = 2.2f
+      anomalyRingPaint.color = Color.argb((240 * fadeAlpha).toInt(), cR, cG, cB)
+      canvas.drawCircle(cx, cy, coreR * 0.94f, anomalyRingPaint)
+
+      anomalyCorePaint.color = Color.argb((248 * fadeAlpha).toInt(), 2, 6, 16)
+      canvas.drawCircle(cx, cy, coreR * 0.86f, anomalyCorePaint)
+
+      // Inner gravitational lensing highlight arc
+      val lensR = coreR * 0.62f
+      arcRect.set(cx - lensR, cy - lensR, cx + lensR, cy + lensR)
+      anomalyRingPaint.strokeWidth = 2.0f
+      anomalyRingPaint.color = Color.argb((195 * fadeAlpha).toInt(), cR, cG, cB)
+      canvas.drawArc(arcRect, (spinAngle * 180f / PI.toFloat()), 135f, false, anomalyRingPaint)
+    } else {
+      anomalyCorePaint.color = Color.argb((195 * fadeAlpha).toInt(), oR, oG, oB)
+      canvas.drawCircle(cx, cy, coreR * 1.05f, anomalyCorePaint)
+      anomalyCorePaint.color = Color.argb((235 * fadeAlpha).toInt(), mR, mG, mB)
+      canvas.drawCircle(cx, cy, coreR * 0.72f, anomalyCorePaint)
+      anomalyCorePaint.color = Color.argb((255 * fadeAlpha).toInt(), cR, cG, cB)
+      canvas.drawCircle(cx, cy, coreR * 0.38f, anomalyCorePaint)
+      anomalyRingPaint.strokeWidth = 2.8f
+      anomalyRingPaint.color = Color.argb((235 * fadeAlpha).toInt(), cR, cG, cB)
+      canvas.drawCircle(cx, cy, coreR, anomalyRingPaint)
+    }
   }
 
   private fun drawFreeFluxCoreOrb(
@@ -2523,7 +2676,7 @@ class RiftArenaView(
       }
     }
 
-    // 4. Dynamic Upper-Arc Satellite Utility Buttons (SPECIAL BUFF SLOT & REPEL — strictly hidden when count == 0)
+    // 4. Fixed-Position Muscle-Memory Upper-Arc Utility Buttons (227° SPECIAL CRATE & 265° REPEL)
     for (slot in activeUtilitySlots) {
       drawSatelliteButton(
         canvas = canvas,
@@ -2537,6 +2690,7 @@ class RiftArenaView(
         enabled = slot.enabled || unlocked,
         unlocked = unlocked,
         arcScale = arcScale,
+        iconBuffType = slot.iconBuffType,
       )
     }
   }
@@ -2566,37 +2720,65 @@ class RiftArenaView(
     enabled: Boolean,
     unlocked: Boolean = false,
     arcScale: Float = 1.0f,
+    iconBuffType: Int = -1,
   ) {
     val alphaVal = if (enabled) 255 else 115
+    val sR = Color.red(strokeColor)
+    val sG = Color.green(strokeColor)
+    val sB = Color.blue(strokeColor)
+
+    // 1. Outer 3D Beveled Dark-Glass Housing + Metallic Rim
+    hudCircleFillPaint.color = Color.argb(if (enabled) 225 else 145, 7, 15, 30)
+    canvas.drawCircle(cx, cy, r * 1.06f, hudCircleFillPaint)
     hudCircleFillPaint.color =
       Color.argb(
-        if (enabled) 155 else 75,
+        if (enabled) 165 else 70,
         Color.red(fillColor),
         Color.green(fillColor),
         Color.blue(fillColor),
       )
-    canvas.drawCircle(cx, cy, r, hudCircleFillPaint)
-    hudCircleStrokePaint.color =
-      Color.argb(
-        alphaVal,
-        Color.red(strokeColor),
-        Color.green(strokeColor),
-        Color.blue(strokeColor),
-      )
+    canvas.drawCircle(cx, cy, r * 0.94f, hudCircleFillPaint)
+
+    hudCircleStrokePaint.strokeWidth = 2.6f * dpDensity * arcScale
+    hudCircleStrokePaint.color = Color.argb(alphaVal, sR, sG, sB)
     canvas.drawCircle(cx, cy, r, hudCircleStrokePaint)
 
-    hudLabelPaint.textSize = 8.6f * dpDensity * arcScale
-    hudLabelPaint.color = Color.argb(alphaVal, 255, 255, 255)
-    canvas.drawText(title, cx, cy - 1.0f * dpDensity * arcScale, hudLabelPaint)
-    hudLabelPaint.textSize = 7.8f * dpDensity * arcScale
-    hudLabelPaint.color =
-      Color.argb(
-        alphaVal,
-        Color.red(strokeColor),
-        Color.green(strokeColor),
-        Color.blue(strokeColor),
+    // Subtle inner beveled highlight ring
+    hudCircleStrokePaint.strokeWidth = 1.1f * dpDensity * arcScale
+    hudCircleStrokePaint.color = Color.argb((alphaVal * 0.55f).toInt(), 255, 255, 255)
+    canvas.drawCircle(cx, cy, r * 0.86f, hudCircleStrokePaint)
+    hudCircleStrokePaint.strokeWidth = 2.6f
+
+    // 2. Enlarged Codex / Playfield Crate Icon centered inside the button
+    if (iconBuffType >= 0) {
+      val bmp = RiftSpriteBaker.getBuffIconBitmap(iconBuffType)
+      val iconHalf = r * 0.72f
+      nebulaDstRect.set(
+        cx - iconHalf,
+        cy - iconHalf - 2.5f * dpDensity * arcScale,
+        cx + iconHalf,
+        cy + iconHalf - 2.5f * dpDensity * arcScale,
       )
-    canvas.drawText(sub, cx, cy + 8.6f * dpDensity * arcScale, hudLabelPaint)
+      buffGlowPaint.alpha = if (enabled) 250 else 95
+      canvas.drawBitmap(bmp, null, nebulaDstRect, buffGlowPaint)
+      buffGlowPaint.alpha = 255
+    }
+
+    // 3. Compact Beveled Bottom Readout Pill (Charge Count + Flux Cost)
+    val pillW = r * 1.88f
+    val pillH = 14.5f * dpDensity * arcScale
+    val pillTop = cy + r * 0.36f
+    arcRect.set(cx - pillW * 0.5f, pillTop, cx + pillW * 0.5f, pillTop + pillH)
+    hudCircleFillPaint.color = Color.argb(if (enabled) 235 else 175, 4, 10, 22)
+    canvas.drawRoundRect(arcRect, 6f * dpDensity, 6f * dpDensity, hudCircleFillPaint)
+    hudCircleStrokePaint.strokeWidth = 1.2f * dpDensity * arcScale
+    hudCircleStrokePaint.color = Color.argb(alphaVal, sR, sG, sB)
+    canvas.drawRoundRect(arcRect, 6f * dpDensity, 6f * dpDensity, hudCircleStrokePaint)
+    hudCircleStrokePaint.strokeWidth = 2.6f
+
+    hudLabelPaint.textSize = 7.4f * dpDensity * arcScale
+    hudLabelPaint.color = Color.argb(alphaVal, 255, 255, 255)
+    canvas.drawText("$title • $sub", cx, pillTop + pillH * 0.73f, hudLabelPaint)
 
     if (unlocked) {
       canvas.drawCircle(cx, cy, r, unlockDashPaint)

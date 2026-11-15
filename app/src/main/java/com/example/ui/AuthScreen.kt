@@ -201,16 +201,16 @@ fun AuthScreen(
       Modifier.fillMaxSize()
         .background(
           Brush.radialGradient(
-            colors = listOf(Color(0xFF0B192C), Color(0xFF040811), Color(0xFF000000)),
-            radius = 1200f,
+            colors = listOf(Color(0xFF0A192E), Color(0xFF040914), Color(0xFF000000)),
+            radius = 1350f,
           )
         )
         .windowInsetsPadding(WindowInsets.safeDrawing),
     contentAlignment = Alignment.Center,
   ) {
-    // Procedural tactical starfield & grid backdrop
+    // Procedural tactical starfield & holographic grid backdrop
     Canvas(modifier = Modifier.fillMaxSize()) {
-      val step = 64.dp.toPx()
+      val step = 56.dp.toPx()
       var x = 0f
       while (x < size.width) {
         drawLine(
@@ -235,134 +235,221 @@ fun AuthScreen(
 
     Surface(
       modifier =
-        Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-          .widthIn(max = 540.dp)
+        Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+          .widthIn(max = 580.dp)
           .fillMaxWidth()
           .border(1.5.dp, Color(0xFF00F5D4), RoundedCornerShape(16.dp)),
-      color = Color(0xE607101E),
+      color = Color(0xEB050C18),
       shape = RoundedCornerShape(16.dp),
-      tonalElevation = 8.dp,
+      tonalElevation = 10.dp,
     ) {
-      Column(
-        modifier =
-          Modifier.verticalScroll(scrollState)
-            .padding(horizontal = 24.dp, vertical = 18.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-      ) {
-        Text(
-          text = stringResource(R.string.auth_title),
-          color = Color(0xFF00F5D4),
-          fontSize = 20.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.Monospace,
-          textAlign = TextAlign.Center,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-          text = stringResource(R.string.auth_subtitle),
-          color = Color(0xFFFFE800),
-          fontSize = 12.sp,
-          fontFamily = FontFamily.Monospace,
-          textAlign = TextAlign.Center,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-
-        FeatureBullet(icon = RiftAuthIcons.Rocket, text = stringResource(R.string.auth_feature_physics))
-        Spacer(modifier = Modifier.height(6.dp))
-        FeatureBullet(icon = RiftAuthIcons.Bolt, text = stringResource(R.string.auth_feature_ships))
-        Spacer(modifier = Modifier.height(6.dp))
-        FeatureBullet(icon = RiftAuthIcons.Globe, text = stringResource(R.string.auth_feature_cloud))
-
-        if (errorMessage != null) {
-          Spacer(modifier = Modifier.height(10.dp))
-          Text(
-            text = errorMessage ?: "",
-            color = Color(0xFFFF3B4E),
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.testTag("auth_error_text"),
-          )
+      Box(modifier = Modifier.fillMaxWidth()) {
+        // Chamfered Cyan & Gold Holographic Corner Brackets
+        Canvas(modifier = Modifier.matchParentSize()) {
+          val stroke = 2.2.dp.toPx()
+          val inset = 6.dp.toPx()
+          val arm = 22.dp.toPx()
+          val cyan = Color(0xFF00F5D4)
+          val gold = Color(0xFFFACC15)
+          // Top-Left
+          drawLine(cyan, Offset(inset, inset), Offset(inset + arm, inset), stroke)
+          drawLine(cyan, Offset(inset, inset), Offset(inset, inset + arm), stroke)
+          // Top-Right
+          drawLine(gold, Offset(size.width - inset - arm, inset), Offset(size.width - inset, inset), stroke)
+          drawLine(gold, Offset(size.width - inset, inset), Offset(size.width - inset, inset + arm), stroke)
+          // Bottom-Left
+          drawLine(gold, Offset(inset, size.height - inset - arm), Offset(inset, size.height - inset), stroke)
+          drawLine(gold, Offset(inset, size.height - inset), Offset(inset + arm, size.height - inset), stroke)
+          // Bottom-Right
+          drawLine(cyan, Offset(size.width - inset - arm, size.height - inset), Offset(size.width - inset, size.height - inset), stroke)
+          drawLine(cyan, Offset(size.width - inset, size.height - inset - arm), Offset(size.width - inset, size.height - inset), stroke)
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Button(
-          onClick = {
-            errorMessage = null
-            isLoading = true
-            onGoogleSignInClicked(
-              context = context,
-              credentialManager = credentialManager,
-              onAuthSuccess = {
-                isLoading = false
-                onAuthSuccess()
-              },
-              onAuthError = { msg ->
-                isLoading = false
-                errorMessage = msg
-              },
-              scope = coroutineScope,
-              onAuthCancelled = { isLoading = false },
-            )
-          },
-          enabled = !isLoading,
-          colors =
-            ButtonDefaults.buttonColors(
-              containerColor = Color(0xFF00F5D4),
-              contentColor = Color(0xFF030A14),
-            ),
-          shape = RoundedCornerShape(10.dp),
+        Column(
           modifier =
-            Modifier.fillMaxWidth()
-              .height(48.dp)
-              .testTag("google_sign_in_button"),
+            Modifier.verticalScroll(scrollState)
+              .padding(horizontal = 24.dp, vertical = 16.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-          if (isLoading) {
-            CircularProgressIndicator(
-              modifier = Modifier.size(20.dp),
-              color = Color(0xFF030A14),
-              strokeWidth = 2.5.dp,
-            )
-            Spacer(modifier = Modifier.width(10.dp))
+          // Header Row with 3D Swirling NEXUS Singularity Emblem + Title + What's New Patch Notes Pill
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(12.dp),
+              modifier = Modifier.weight(1f),
+            ) {
+              Box(
+                modifier =
+                  Modifier.size(44.dp)
+                    .background(Color(0xFF030812), RoundedCornerShape(22.dp))
+                    .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(22.dp)),
+                contentAlignment = Alignment.Center,
+              ) {
+                SwirlingRiftVortexGlyph(
+                  modifier = Modifier.size(38.dp),
+                  isStreaming = true,
+                )
+              }
+              Column {
+                Text(
+                  text = stringResource(R.string.auth_title),
+                  color = Color(0xFF00F5D4),
+                  fontSize = 18.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+                Text(
+                  text = stringResource(R.string.auth_subtitle),
+                  color = Color(0xFFFACC15),
+                  fontSize = 10.5.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+
+            Button(
+              onClick = onOpenChangelog,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = Color(0xFF0D2036),
+                  contentColor = Color(0xFF38BDF8),
+                ),
+              border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8)),
+              shape = RoundedCornerShape(8.dp),
+              contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+              modifier = Modifier.height(32.dp).testTag("auth_changelog_button"),
+            ) {
+              Text(
+                text = "📜 BUILD #47",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // Holographic Command Briefing Telemetry Panel
+          Column(
+            modifier =
+              Modifier.fillMaxWidth()
+                .background(Color(0xB809172A), RoundedCornerShape(10.dp))
+                .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(10.dp))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            FeatureBullet(icon = RiftAuthIcons.Rocket, text = stringResource(R.string.auth_feature_physics))
+            FeatureBullet(icon = RiftAuthIcons.Bolt, text = stringResource(R.string.auth_feature_ships))
+            FeatureBullet(icon = RiftAuthIcons.Globe, text = stringResource(R.string.auth_feature_cloud))
+          }
+
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(
+            text = "NEXUS COMMAND READY • SELECT YOUR PILOT LINK TO ENTER MATCHMAKING HUB",
+            color = Color(0xFF94A3B8),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.Center,
+          )
+
+          if (errorMessage != null) {
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-              text = stringResource(R.string.signing_in),
-              fontWeight = FontWeight.Bold,
+              text = errorMessage ?: "",
+              color = Color(0xFFFF3B4E),
+              fontSize = 11.sp,
               fontFamily = FontFamily.Monospace,
+              textAlign = TextAlign.Center,
+              modifier = Modifier.testTag("auth_error_text"),
             )
-          } else {
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          Button(
+            onClick = {
+              errorMessage = null
+              isLoading = true
+              onGoogleSignInClicked(
+                context = context,
+                credentialManager = credentialManager,
+                onAuthSuccess = {
+                  isLoading = false
+                  onAuthSuccess()
+                },
+                onAuthError = { msg ->
+                  isLoading = false
+                  errorMessage = msg
+                },
+                scope = coroutineScope,
+                onAuthCancelled = { isLoading = false },
+              )
+            },
+            enabled = !isLoading,
+            colors =
+              ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF00F5D4),
+                contentColor = Color(0xFF030A14),
+              ),
+            shape = RoundedCornerShape(10.dp),
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(48.dp)
+                .testTag("google_sign_in_button"),
+          ) {
+            if (isLoading) {
+              CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                color = Color(0xFF030A14),
+                strokeWidth = 2.5.dp,
+              )
+              Spacer(modifier = Modifier.width(10.dp))
+              Text(
+                text = stringResource(R.string.signing_in),
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              )
+            } else {
+              Text(
+                text = stringResource(R.string.sign_in_with_google),
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+
+          Spacer(modifier = Modifier.height(8.dp))
+
+          Button(
+            onClick = onPlayAsGuest,
+            enabled = !isLoading,
+            colors =
+              ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF102036),
+                contentColor = Color(0xFFFACC15),
+              ),
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFFACC15)),
+            shape = RoundedCornerShape(10.dp),
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(48.dp)
+                .testTag("skip_sign_in_guest_button"),
+          ) {
             Text(
-              text = stringResource(R.string.sign_in_with_google),
-              fontSize = 14.sp,
+              text = "⚡ ENTER AS [RFT] DRIFTER (GUEST)",
+              fontSize = 13.sp,
               fontWeight = FontWeight.ExtraBold,
               fontFamily = FontFamily.Monospace,
             )
           }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Button(
-          onClick = onPlayAsGuest,
-          enabled = !isLoading,
-          colors =
-            ButtonDefaults.buttonColors(
-              containerColor = Color(0xFF132238),
-              contentColor = Color(0xFFFFE800),
-            ),
-          border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFFFE800)),
-          shape = RoundedCornerShape(10.dp),
-          modifier =
-            Modifier.fillMaxWidth()
-              .height(48.dp)
-              .testTag("skip_sign_in_guest_button"),
-        ) {
-          Text(
-            text = "⚡ SKIP SIGN-IN (PLAY AS GUEST)",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-          )
         }
       }
     }

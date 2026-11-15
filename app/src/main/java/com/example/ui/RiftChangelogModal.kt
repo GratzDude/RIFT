@@ -43,7 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 20
+const val CURRENT_RIFT_BUILD_VERSION = 47
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -58,12 +58,45 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 47,
+      versionTag = "v1.47 // BUILD #47",
+      releaseDate = "Nov 15, 2026",
+      headline = "NEXUS Boot Flow, 3D Rifts, 40,000⚡ Stasis Cores, Fixed Action Buttons & Battle Music",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Redesigned the Launch Command Briefing Card with current RIFT lore, 10 modular 3D hulls, 6 ranked modes, and Sworn Pilot vs [RFT] Drifter entry.",
+          "Updated boot flow so signing in or entering as a Drifter opens the full-screen NEXUS Mode Selection & Matchmaking Deck first instead of dropping straight into an active match.",
+          "Upgraded the bottom HUD console pills: frameless 3D ship icon over a holo-emitter ring, stacked [TAG] under SECTOR, crossed-swords MODES emblem, and tighter pill widths.",
+          "Upgraded the circular minimap Flux ring into a 20-segment energy capacitor arc with a glowing leading-edge plasma tip and ⚡ FLUX % badge.",
+          "Locked combat action buttons (Secondary, Special Crate, Repel) to fixed positions for muscle memory, with enlarged Codex/Playfield crate icons.",
+          "Upgraded the NEXUS vortex, all 4 playfield Rifts, Stasis Breach Jails, and Rift Control Tug-of-War zones to 4-layer 3D singularities.",
+          "Increased Stasis Breach Jail Core Flux 10x to 40,000⚡, added 820px Rift spawn exclusion zones around mode objectives, made Gravity Rifts grow as they absorb fire, and made Holo Phantoms react to all Rifts.",
+          "Fixed procedural ambient battle music synthesis and added a dedicated [🎵 MUSIC: ON / OFF] toggle in Settings.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 30,
+      versionTag = "v1.30 // BUILD #30",
+      releaseDate = "Nov 14, 2026",
+      headline = "Rift Control Tug-of-War, Custom 10-Rule Sandbox & Pre-Match Ship Lock",
+      badgeLabel = "MODES & SANDBOX",
+      accentColorHex = "#38BDF8",
+      highlights =
+        listOf(
+          "Added Rift Control (2-Rift Tug-of-War) with majority capture progression, contested ring status, and AI squad attackers and defenders.",
+          "Added Custom Game 10-Rule Cloner & Browser with one-tap [📡 SYNC TO ALL] room broadcasting and pre-match ship lock picker for team modes.",
+          "Added 128x128 3D multi-layered metallic ship sprites across all 10 hulls and the Hangar holographic inspector pedestal.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 20,
       versionTag = "v1.20 // BUILD #20",
       releaseDate = "Nov 13, 2026",
       headline = "Pre-Auth Changelog Transmission & Native Twin-Stick Controller Support",
-      badgeLabel = "LATEST RELEASE",
-      accentColorHex = "#00F5D4",
+      badgeLabel = "CONTROLLER & ARCHIVE",
+      accentColorHex = "#A78BFA",
       highlights =
         listOf(
           "Added pre-sign-in Sector Transmission & Full Version Changelog modal tracking updates since your last session alongside the complete historical archive.",

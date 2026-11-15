@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,6 +51,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -130,10 +132,12 @@ private val HARDWARE_BIND_CHIPS =
 fun SettingsModal(
   fps: Int,
   sfxEnabled: Boolean,
+  musicEnabled: Boolean = true,
   cameraZoom: Float,
   playfieldTextScale: Float,
   isGoogleAuthenticated: Boolean,
   onToggleSfx: () -> Unit,
+  onToggleMusic: () -> Unit = {},
   onChangeCameraZoom: (Float) -> Unit,
   onChangePlayfieldTextScale: (Float) -> Unit,
   onRequestGoogleSignIn: () -> Unit,
@@ -182,7 +186,7 @@ fun SettingsModal(
               letterSpacing = 1.2.sp,
             )
             Text(
-              text = "AUDIO SFX • TWIN-STICK CONTROLLER REMAPPER • CAMERA FOV • PLAYFIELD TEXT SCALE • CLOUD IDENTITY",
+              text = "AUDIO SFX & BATTLE MUSIC • TWIN-STICK CONTROLLER REMAPPER • CAMERA FOV • PLAYFIELD TEXT SCALE • CLOUD IDENTITY",
               color = Color(0xFF00F0FF),
               fontSize = 11.sp,
               fontWeight = FontWeight.Medium,
@@ -246,21 +250,44 @@ fun SettingsModal(
         ) {
           Column(modifier = Modifier.weight(1f)) {
             Text(
-              text = "SYNTHESIZED AUDIO & ENGINE",
+              text = "SYNTHESIZED AUDIO, BATTLE MUSIC & ENGINE",
               color = Color(0xFF00F0FF),
               fontSize = 13.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.SansSerif,
             )
             Text(
-              text = "Procedural audio synthesizer ($fps FPS dynamic simulation)",
+              text = "Procedural battle synth music & combat SFX ($fps FPS dynamic simulation)",
               color = Color(0xFF8A99AD),
               fontSize = 11.sp,
               fontFamily = FontFamily.SansSerif,
             )
           }
 
-          Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+              onClick = onToggleMusic,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = if (musicEnabled) Color(0xFF0D253A) else Color(0xFF2B141C),
+                  contentColor = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFFFF3B4E),
+                ),
+              border =
+                BorderStroke(
+                  1.dp,
+                  if (musicEnabled) Color(0xFF00F5D4) else Color(0xFFFF3B4E),
+                ),
+              shape = RoundedCornerShape(8.dp),
+              modifier = Modifier.height(36.dp).testTag("settings_music_toggle_button"),
+            ) {
+              Text(
+                text = if (musicEnabled) "🎵 MUSIC: ON" else "🔇 MUSIC: OFF",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+              )
+            }
+
             Button(
               onClick = onToggleSfx,
               colors =
@@ -325,7 +352,7 @@ fun SettingsModal(
           }
         }
 
-        // Section 2: Interactive Twin-Stick Controller Schematic & WoW-Style Live Button Remapper
+        // Section 2: Interactive Twin-Stick Controller Schematic & Live Button Remapper
         ControllerDiagramAndMapperCard(context = context)
 
         // Section 3: Playfield Text Scale Slider (0.75x to 2.0x)
@@ -511,6 +538,7 @@ fun ControllerDiagramAndMapperCard(
 ) {
   // Watch calibrationRevision so changes recompose immediately
   val rev = RiftCalibrationState.calibrationRevision
+  val isGamepadConnected = RiftCalibrationState.gamepadConnected
   var listeningSlot by remember { mutableStateOf<String?>(null) }
   var feedbackBanner by remember { mutableStateOf<String?>(null) }
   val mapperFocusRequester = remember { FocusRequester() }
@@ -547,7 +575,7 @@ fun ControllerDiagramAndMapperCard(
     modifier =
       modifier
         .fillMaxWidth()
-        .background(Color(0xFF0B182C), RoundedCornerShape(12.dp))
+        .background(Color(0xFF071120), RoundedCornerShape(12.dp))
         .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(12.dp))
         .focusRequester(mapperFocusRequester)
         .focusable()
@@ -592,52 +620,111 @@ fun ControllerDiagramAndMapperCard(
         .testTag("controller_diagram_and_mapper_card"),
     verticalArrangement = Arrangement.spacedBy(9.dp),
   ) {
-    // Header Row + Reset Default Binds Button
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
+    // 1. Top Status Header: Dark-glass header bar with #00F5D4 Cyan / #F59E0B Gold corner ticks
+    Box(
+      modifier =
+        Modifier.fillMaxWidth()
+          .background(Color(0xFF050B14), RoundedCornerShape(8.dp))
+          .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
     ) {
-      Column(modifier = Modifier.weight(1f)) {
-        Text(
-          text = "🎮 TWIN-STICK CONTROLLER SCHEMATIC & LIVE BUTTON REMAPPER",
-          color = Color(0xFF00F0FF),
-          fontSize = 13.5.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.SansSerif,
+      Canvas(modifier = Modifier.matchParentSize()) {
+        val tick = 9.dp.toPx()
+        val strokeW = 2.dp.toPx()
+        // Top-left & bottom-left #00F5D4 Cyan ticks
+        drawLine(Color(0xFF00F5D4), Offset(0f, 0f), Offset(tick, 0f), strokeW)
+        drawLine(Color(0xFF00F5D4), Offset(0f, 0f), Offset(0f, tick), strokeW)
+        drawLine(Color(0xFF00F5D4), Offset(0f, size.height), Offset(tick, size.height), strokeW)
+        drawLine(Color(0xFF00F5D4), Offset(0f, size.height), Offset(0f, size.height - tick), strokeW)
+        // Top-right & bottom-right #F59E0B Gold ticks
+        drawLine(Color(0xFFF59E0B), Offset(size.width - tick, 0f), Offset(size.width, 0f), strokeW)
+        drawLine(Color(0xFFF59E0B), Offset(size.width, 0f), Offset(size.width, tick), strokeW)
+        drawLine(
+          Color(0xFFF59E0B),
+          Offset(size.width - tick, size.height),
+          Offset(size.width, size.height),
+          strokeW,
         )
-        Text(
-          text =
-            "L-STICK: 360° Flight & Heading Aim (Zero-Friction Drift on Release) • R-STICK: 360° Independent Turret Aim (When Neutral, Weapons Fire Along L-Stick Heading!)",
-          color = Color(0xFF94A3B8),
-          fontSize = 10.sp,
-          fontFamily = FontFamily.SansSerif,
+        drawLine(
+          Color(0xFFF59E0B),
+          Offset(size.width, size.height - tick),
+          Offset(size.width, size.height),
+          strokeW,
         )
       }
 
-      Button(
-        onClick = {
-          RiftCalibrationState.resetControllerBindingsToDefault(context)
-          listeningSlot = null
-          feedbackBanner =
-            "↺ RESTORED DEFAULT CONTROLLER BINDINGS (RT=MAIN, R1=BUFF, LT=BRAKE, X=SECONDARY, A=REPEL, Y=MULTI)."
-        },
-        colors =
-          ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF2B1810),
-            contentColor = Color(0xFFFBBF24),
-          ),
-        border = BorderStroke(1.dp, Color(0xFFF59E0B)),
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.height(32.dp).testTag("btn_reset_default_controller_binds"),
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
       ) {
-        Text(
-          text = "↺ RESET DEFAULT BINDS",
-          fontSize = 9.5.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Text(
+              text = "🎮 TWIN-STICK GAMEPAD & TOUCH HUD",
+              color = Color(0xFF00F5D4),
+              fontSize = 13.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+            Box(
+              modifier =
+                Modifier.background(
+                    if (isGamepadConnected) Color(0xFF052E16) else Color(0xFF0F172A),
+                    RoundedCornerShape(5.dp),
+                  )
+                  .border(
+                    1.dp,
+                    if (isGamepadConnected) Color(0xFF22C55E) else Color(0xFF475569),
+                    RoundedCornerShape(5.dp),
+                  )
+                  .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+              Text(
+                text =
+                  if (isGamepadConnected) "🟢 GAMEPAD CONNECTED" else "⚪ TOUCH HUD ENABLED",
+                color = if (isGamepadConnected) Color(0xFF4ADE80) else Color(0xFFCBD5E1),
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+          Text(
+            text =
+              "L-STICK: Flight & Heading (Zero-Friction Drift) • R-STICK: 360° Independent Aim (Fires Along Heading When Neutral)",
+            color = Color(0xFF94A3B8),
+            fontSize = 9.5.sp,
+            fontFamily = FontFamily.SansSerif,
+          )
+        }
+
+        Button(
+          onClick = {
+            RiftCalibrationState.resetControllerBindingsToDefault(context)
+            listeningSlot = null
+            feedbackBanner =
+              "↺ RESTORED DEFAULT CONTROLLER BINDINGS (RT=MAIN, R1=BUFF, LT=BRAKE, X=SECONDARY, A=REPEL, Y=MULTI)."
+          },
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = Color(0xFF2B1810),
+              contentColor = Color(0xFFFBBF24),
+            ),
+          border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+          contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+          shape = RoundedCornerShape(6.dp),
+          modifier = Modifier.height(30.dp).testTag("btn_reset_default_controller_binds"),
+        ) {
+          Text(
+            text = "↺ RESET BINDS",
+            fontSize = 9.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
       }
     }
 
@@ -698,17 +785,17 @@ fun ControllerDiagramAndMapperCard(
       }
     }
 
-    // Main Content: Left = Procedural Vector Gamepad Schematic | Right = 6-Slot WoW-Style Click-to-Bind Grid
+    // Main Content: Left (0.52f) = Sculpted Vector Controller Schematic | Right (0.48f) = 2x3 Beveled Action Cards
     Row(
       modifier = Modifier.fillMaxWidth(),
       horizontalArrangement = Arrangement.spacedBy(10.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      // 1. Procedural Vector Twin-Stick Controller Schematic Canvas
+      // 2. Left Panel (0.52f width): Sculpted Vector Twin-Stick Controller Schematic
       TwinStickControllerSchematicCanvas(
         modifier =
           Modifier.weight(0.52f)
-            .height(215.dp)
+            .height(225.dp)
             .background(Color(0xFF050B14), RoundedCornerShape(10.dp))
             .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
             .testTag("controller_schematic_canvas"),
@@ -717,19 +804,11 @@ fun ControllerDiagramAndMapperCard(
         pulseAlpha = pulseAlpha,
       )
 
-      // 2. WoW-Style 6-Slot Action Remapping Grid (2 Columns x 3 Rows)
+      // 3. Right Panel (0.48f width): 2x3 Beveled Sci-Fi Action Binding Cards
       Column(
         modifier = Modifier.weight(0.48f),
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        Text(
-          text = "TAP ANY ACTION SLOT TO REBIND (AUTO-SWAPS DUPLICATES):",
-          color = Color(0xFFCBD5E1),
-          fontSize = 9.5.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-
         REMAPPABLE_ACTION_SLOTS.chunked(2).forEach { pair ->
           Row(
             modifier = Modifier.fillMaxWidth(),
@@ -745,72 +824,155 @@ fun ControllerDiagramAndMapperCard(
                 remember(boundCode) {
                   RiftCalibrationState.getBindingLabel(boundCode)
                 }
+              val bracketColor =
+                if (slotInfo.slotId == "PRIMARY_FIRE" || slotInfo.slotId == "MULTI_TOGGLE") {
+                  Color(0xFFF59E0B)
+                } else {
+                  Color(0xFF00F5D4)
+                }
 
-              Column(
+              Box(
                 modifier =
                   Modifier.weight(1f)
+                    .height(68.dp)
                     .testTag("controller_bind_slot_${slotInfo.slotId}")
                     .clip(RoundedCornerShape(8.dp))
                     .background(
-                      if (isListening) Color(0xFF2D2106) else Color(0xFF081222)
+                      if (isListening) {
+                        Brush.verticalGradient(listOf(Color(0xFF3B2806), Color(0xFF1E1403)))
+                      } else {
+                        Brush.verticalGradient(listOf(Color(0xFF091326), Color(0xFF112240)))
+                      }
                     )
                     .border(
                       width = if (isListening) 1.6.dp else 1.dp,
                       color =
                         if (isListening) Color(0xFFFACC15)
-                        else slotInfo.accentColor.copy(alpha = 0.65f),
+                        else bracketColor.copy(alpha = 0.42f),
                       shape = RoundedCornerShape(8.dp),
                     )
                     .clickable {
                       listeningSlot =
                         if (listeningSlot == slotInfo.slotId) null else slotInfo.slotId
                     }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
               ) {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.CenterVertically,
-                ) {
-                  Text(
-                    text = slotInfo.title,
-                    color = Color.White,
-                    fontSize = 9.5.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.SansSerif,
-                    maxLines = 1,
+                // Chamfered Corner Bracket Accents + Center Mini Vector Controller Glyph
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                  val bLen = 8.dp.toPx()
+                  val bStroke = 1.8.dp.toPx()
+                  val cCol = if (isListening) Color(0xFFFACC15) else bracketColor
+
+                  // Top-left bracket
+                  drawLine(cCol, Offset(0f, 0f), Offset(bLen, 0f), bStroke)
+                  drawLine(cCol, Offset(0f, 0f), Offset(0f, bLen), bStroke)
+                  // Top-right bracket
+                  drawLine(cCol, Offset(size.width - bLen, 0f), Offset(size.width, 0f), bStroke)
+                  drawLine(cCol, Offset(size.width, 0f), Offset(size.width, bLen), bStroke)
+                  // Bottom-left bracket
+                  drawLine(cCol, Offset(0f, size.height), Offset(bLen, size.height), bStroke)
+                  drawLine(cCol, Offset(0f, size.height - bLen), Offset(0f, size.height), bStroke)
+                  // Bottom-right bracket
+                  drawLine(
+                    cCol,
+                    Offset(size.width - bLen, size.height),
+                    Offset(size.width, size.height),
+                    bStroke,
                   )
-                  Box(
-                    modifier =
-                      Modifier.background(
-                          if (isListening) Color(0xFFFACC15)
-                          else slotInfo.accentColor.copy(alpha = 0.22f),
-                          RoundedCornerShape(4.dp),
-                        )
-                        .border(
-                          1.dp,
-                          if (isListening) Color(0xFFFACC15) else slotInfo.accentColor,
-                          RoundedCornerShape(4.dp),
-                        )
-                        .padding(horizontal = 5.dp, vertical = 1.5.dp)
+                  drawLine(
+                    cCol,
+                    Offset(size.width, size.height - bLen),
+                    Offset(size.width, size.height),
+                    bStroke,
+                  )
+
+                  // Center Mini Vector Controller Glyph highlighting bound trigger/button position
+                  val gx = size.width * 0.22f
+                  val gy = size.height * 0.32f
+                  val gw = 26.dp.toPx()
+                  val gh = 14.dp.toPx()
+                  drawRoundRect(
+                    color = Color(0xFF050B14),
+                    topLeft = Offset(gx - gw * 0.5f, gy - gh * 0.5f),
+                    size = Size(gw, gh),
+                    cornerRadius = CornerRadius(4f, 4f),
+                  )
+                  drawRoundRect(
+                    color = Color(0xFF475569),
+                    topLeft = Offset(gx - gw * 0.5f, gy - gh * 0.5f),
+                    size = Size(gw, gh),
+                    cornerRadius = CornerRadius(4f, 4f),
+                    style = Stroke(width = 1.2f),
+                  )
+                  val dotOffset =
+                    when (boundCode) {
+                      RiftCalibrationState.BIND_LT,
+                      KeyEvent.KEYCODE_BUTTON_L1 -> Offset(gx - gw * 0.34f, gy - gh * 0.48f)
+                      RiftCalibrationState.BIND_RT,
+                      KeyEvent.KEYCODE_BUTTON_R1 -> Offset(gx + gw * 0.34f, gy - gh * 0.48f)
+                      KeyEvent.KEYCODE_BUTTON_Y -> Offset(gx + gw * 0.26f, gy - gh * 0.22f)
+                      KeyEvent.KEYCODE_BUTTON_X -> Offset(gx + gw * 0.14f, gy)
+                      KeyEvent.KEYCODE_BUTTON_B -> Offset(gx + gw * 0.38f, gy)
+                      else -> Offset(gx + gw * 0.26f, gy + gh * 0.22f)
+                    }
+                  drawCircle(
+                    color = cCol,
+                    radius = 3.2.dp.toPx(),
+                    center = dotOffset,
+                  )
+                }
+
+                Column(
+                  modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 5.dp),
+                  verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                  // Top-right boxed hardware binding badge
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
                   ) {
+                    Box(
+                      modifier =
+                        Modifier.background(
+                            if (isListening) Color(0xFFFACC15) else Color(0xFF050B14),
+                            RoundedCornerShape(4.dp),
+                          )
+                          .border(
+                            1.dp,
+                            if (isListening) Color(0xFFFACC15) else bracketColor,
+                            RoundedCornerShape(4.dp),
+                          )
+                          .padding(horizontal = 5.dp, vertical = 1.5.dp)
+                    ) {
+                      Text(
+                        text = if (isListening) "PRESS KEY..." else "[$boundLabel]",
+                        color = if (isListening) Color(0xFF030712) else bracketColor,
+                        fontSize = 8.2.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                      )
+                    }
+                  }
+
+                  // Bottom bold uppercase action title + concise 1-line subtitle
+                  Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Text(
-                      text = if (isListening) "PRESS KEY..." else boundLabel,
-                      color = if (isListening) Color(0xFF030712) else Color.White,
-                      fontSize = 8.5.sp,
+                      text = slotInfo.title,
+                      color = Color.White,
+                      fontSize = 9.5.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = FontFamily.Monospace,
+                      maxLines = 1,
+                    )
+                    Text(
+                      text = slotInfo.subtitle,
+                      color = Color(0xFF94A3B8),
+                      fontSize = 7.4.sp,
+                      lineHeight = 9.sp,
+                      maxLines = 1,
                     )
                   }
                 }
-                Text(
-                  text = slotInfo.subtitle,
-                  color = Color(0xFF94A3B8),
-                  fontSize = 7.8.sp,
-                  lineHeight = 10.sp,
-                  maxLines = 2,
-                )
               }
             }
           }
@@ -941,52 +1103,20 @@ private fun TwinStickControllerSchematicCanvas(
     val w = size.width
     val h = size.height
     val cx = w * 0.5f
-    val cy = h * 0.52f
+    val cy = h * 0.54f
 
-    // 1. Controller Body Silhouette (Ergonomic Dual-Grip Gamepad)
-    val bodyW = w * 0.44f
-    val bodyH = h * 0.48f
-    val bodyLeft = cx - bodyW * 0.5f
-    val bodyTop = cy - bodyH * 0.46f
-    val bodyRight = cx + bodyW * 0.5f
-    val bodyBottom = cy + bodyH * 0.54f
-
-    val gamepadPath =
-      Path().apply {
-        moveTo(bodyLeft + bodyW * 0.16f, bodyTop)
-        lineTo(bodyRight - bodyW * 0.16f, bodyTop)
-        quadraticTo(bodyRight + bodyW * 0.08f, bodyTop, bodyRight + bodyW * 0.12f, cy + bodyH * 0.18f)
-        quadraticTo(
-          bodyRight + bodyW * 0.15f,
-          bodyBottom + bodyH * 0.34f,
-          bodyRight - bodyW * 0.04f,
-          bodyBottom + bodyH * 0.36f,
-        )
-        quadraticTo(
-          bodyRight - bodyW * 0.18f,
-          bodyBottom + bodyH * 0.34f,
-          bodyRight - bodyW * 0.24f,
-          bodyBottom - bodyH * 0.06f,
-        )
-        lineTo(bodyLeft + bodyW * 0.24f, bodyBottom - bodyH * 0.06f)
-        quadraticTo(
-          bodyLeft + bodyW * 0.18f,
-          bodyBottom + bodyH * 0.34f,
-          bodyLeft + bodyW * 0.04f,
-          bodyBottom + bodyH * 0.36f,
-        )
-        quadraticTo(
-          bodyLeft - bodyW * 0.15f,
-          bodyBottom + bodyH * 0.34f,
-          bodyLeft - bodyW * 0.12f,
-          cy + bodyH * 0.18f,
-        )
-        quadraticTo(bodyLeft - bodyW * 0.08f, bodyTop, bodyLeft + bodyW * 0.16f, bodyTop)
-        close()
-      }
-
-    drawPath(path = gamepadPath, color = Color(0xFF0E1B2E))
-    drawPath(path = gamepadPath, color = Color(0xFF38BDF8), style = Stroke(width = 2.2f))
+    // Blueprint corner reticle ticks inside #050B14 canvas
+    val tick = 10.dp.toPx()
+    val pad = 5.dp.toPx()
+    val reticleCol = Color(0xFF00F5D4).copy(alpha = 0.55f)
+    drawLine(reticleCol, Offset(pad, pad), Offset(pad + tick, pad), 1.5f)
+    drawLine(reticleCol, Offset(pad, pad), Offset(pad, pad + tick), 1.5f)
+    drawLine(reticleCol, Offset(w - pad - tick, pad), Offset(w - pad, pad), 1.5f)
+    drawLine(reticleCol, Offset(w - pad, pad), Offset(w - pad, pad + tick), 1.5f)
+    drawLine(reticleCol, Offset(pad, h - pad), Offset(pad + tick, h - pad), 1.5f)
+    drawLine(reticleCol, Offset(pad, h - pad - tick), Offset(pad, h - pad), 1.5f)
+    drawLine(reticleCol, Offset(w - pad - tick, h - pad), Offset(w - pad, h - pad), 1.5f)
+    drawLine(reticleCol, Offset(w - pad, h - pad - tick), Offset(w - pad, h - pad), 1.5f)
 
     // Helper for highlighting physical hardware controls
     fun strokeForCode(code: Int, defaultColor: Color): Color {
@@ -997,120 +1127,288 @@ private fun TwinStickControllerSchematicCanvas(
       }
     }
 
-    // 2. Shoulder Triggers (LT/L2 & RT/R2) + Bumpers (L1/LB & R1/RB)
-    val trigW = bodyW * 0.24f
-    val trigH = h * 0.08f
-    val ltCenter = Offset(bodyLeft + bodyW * 0.20f, bodyTop - trigH * 1.45f)
-    val rtCenter = Offset(bodyRight - bodyW * 0.20f, bodyTop - trigH * 1.45f)
-    val l1Center = Offset(bodyLeft + bodyW * 0.20f, bodyTop - trigH * 0.52f)
-    val r1Center = Offset(bodyRight - bodyW * 0.20f, bodyTop - trigH * 0.52f)
+    val bodyW = w * 0.44f
+    val bodyH = h * 0.48f
+    val bodyLeft = cx - bodyW * 0.5f
+    val bodyTop = cy - bodyH * 0.46f
+    val bodyRight = cx + bodyW * 0.5f
+    val bodyBottom = cy + bodyH * 0.54f
 
-    // LT & RT boxes
+    // 1. Sculpted Shoulder Triggers (LT/L2 & RT/R2) & Curved Bumpers (L1/LB & R1/RB)
+    val trigW = bodyW * 0.24f
+    val trigH = h * 0.075f
+    val ltCenter = Offset(bodyLeft + bodyW * 0.20f, bodyTop - trigH * 1.48f)
+    val rtCenter = Offset(bodyRight - bodyW * 0.20f, bodyTop - trigH * 1.48f)
+    val l1Center = Offset(bodyLeft + bodyW * 0.20f, bodyTop - trigH * 0.54f)
+    val r1Center = Offset(bodyRight - bodyW * 0.20f, bodyTop - trigH * 0.54f)
+
+    // Stepped rear trigger housings (LT/L2 & RT/R2)
     drawRoundRect(
       color =
         if (highlightedCode == RiftCalibrationState.BIND_LT) Color(0xFF422806)
-        else Color(0xFF132642),
-      topLeft = Offset(ltCenter.x - trigW * 0.5f, ltCenter.y - trigH * 0.45f),
-      size = Size(trigW, trigH * 0.9f),
-      cornerRadius = CornerRadius(6f, 6f),
+        else Color(0xFF0F223D),
+      topLeft = Offset(ltCenter.x - trigW * 0.48f, ltCenter.y - trigH * 0.45f),
+      size = Size(trigW * 0.96f, trigH * 0.90f),
+      cornerRadius = CornerRadius(7f, 7f),
     )
     drawRoundRect(
-      color = strokeForCode(RiftCalibrationState.BIND_LT, Color(0xFF38BDF8)),
-      topLeft = Offset(ltCenter.x - trigW * 0.5f, ltCenter.y - trigH * 0.45f),
-      size = Size(trigW, trigH * 0.9f),
-      cornerRadius = CornerRadius(6f, 6f),
+      color = strokeForCode(RiftCalibrationState.BIND_LT, Color(0xFF00F5D4)),
+      topLeft = Offset(ltCenter.x - trigW * 0.48f, ltCenter.y - trigH * 0.45f),
+      size = Size(trigW * 0.96f, trigH * 0.90f),
+      cornerRadius = CornerRadius(7f, 7f),
       style = Stroke(width = if (highlightedCode == RiftCalibrationState.BIND_LT) 3.2f else 1.8f),
     )
 
     drawRoundRect(
       color =
         if (highlightedCode == RiftCalibrationState.BIND_RT) Color(0xFF422806)
-        else Color(0xFF2B1219),
-      topLeft = Offset(rtCenter.x - trigW * 0.5f, rtCenter.y - trigH * 0.45f),
-      size = Size(trigW, trigH * 0.9f),
-      cornerRadius = CornerRadius(6f, 6f),
+        else Color(0xFF281509),
+      topLeft = Offset(rtCenter.x - trigW * 0.48f, rtCenter.y - trigH * 0.45f),
+      size = Size(trigW * 0.96f, trigH * 0.90f),
+      cornerRadius = CornerRadius(7f, 7f),
     )
     drawRoundRect(
-      color = strokeForCode(RiftCalibrationState.BIND_RT, Color(0xFFEF4444)),
-      topLeft = Offset(rtCenter.x - trigW * 0.5f, rtCenter.y - trigH * 0.45f),
-      size = Size(trigW, trigH * 0.9f),
-      cornerRadius = CornerRadius(6f, 6f),
+      color = strokeForCode(RiftCalibrationState.BIND_RT, Color(0xFFF59E0B)),
+      topLeft = Offset(rtCenter.x - trigW * 0.48f, rtCenter.y - trigH * 0.45f),
+      size = Size(trigW * 0.96f, trigH * 0.90f),
+      cornerRadius = CornerRadius(7f, 7f),
       style = Stroke(width = if (highlightedCode == RiftCalibrationState.BIND_RT) 3.2f else 1.8f),
     )
 
-    // L1 & R1 bumpers
+    // Curved top-edge bumper plates (L1/LB & R1/RB)
     drawRoundRect(
       color =
         if (highlightedCode == KeyEvent.KEYCODE_BUTTON_L1) Color(0xFF422806)
-        else Color(0xFF0F1D33),
-      topLeft = Offset(l1Center.x - trigW * 0.5f, l1Center.y - trigH * 0.42f),
-      size = Size(trigW, trigH * 0.84f),
-      cornerRadius = CornerRadius(5f, 5f),
+        else Color(0xFF111E34),
+      topLeft = Offset(l1Center.x - trigW * 0.52f, l1Center.y - trigH * 0.40f),
+      size = Size(trigW * 1.04f, trigH * 0.80f),
+      cornerRadius = CornerRadius(6f, 6f),
     )
     drawRoundRect(
       color = strokeForCode(KeyEvent.KEYCODE_BUTTON_L1, Color(0xFF94A3B8)),
-      topLeft = Offset(l1Center.x - trigW * 0.5f, l1Center.y - trigH * 0.42f),
-      size = Size(trigW, trigH * 0.84f),
-      cornerRadius = CornerRadius(5f, 5f),
+      topLeft = Offset(l1Center.x - trigW * 0.52f, l1Center.y - trigH * 0.40f),
+      size = Size(trigW * 1.04f, trigH * 0.80f),
+      cornerRadius = CornerRadius(6f, 6f),
       style = Stroke(width = if (highlightedCode == KeyEvent.KEYCODE_BUTTON_L1) 3.2f else 1.6f),
     )
 
     drawRoundRect(
       color =
         if (highlightedCode == KeyEvent.KEYCODE_BUTTON_R1) Color(0xFF422806)
-        else Color(0xFF0B291E),
-      topLeft = Offset(r1Center.x - trigW * 0.5f, r1Center.y - trigH * 0.42f),
-      size = Size(trigW, trigH * 0.84f),
-      cornerRadius = CornerRadius(5f, 5f),
+        else Color(0xFF0A2823),
+      topLeft = Offset(r1Center.x - trigW * 0.52f, r1Center.y - trigH * 0.40f),
+      size = Size(trigW * 1.04f, trigH * 0.80f),
+      cornerRadius = CornerRadius(6f, 6f),
     )
     drawRoundRect(
-      color = strokeForCode(KeyEvent.KEYCODE_BUTTON_R1, Color(0xFF34D399)),
-      topLeft = Offset(r1Center.x - trigW * 0.5f, r1Center.y - trigH * 0.42f),
-      size = Size(trigW, trigH * 0.84f),
-      cornerRadius = CornerRadius(5f, 5f),
+      color = strokeForCode(KeyEvent.KEYCODE_BUTTON_R1, Color(0xFF00F5D4)),
+      topLeft = Offset(r1Center.x - trigW * 0.52f, r1Center.y - trigH * 0.40f),
+      size = Size(trigW * 1.04f, trigH * 0.80f),
+      cornerRadius = CornerRadius(6f, 6f),
       style = Stroke(width = if (highlightedCode == KeyEvent.KEYCODE_BUTTON_R1) 3.2f else 1.6f),
     )
 
-    // 3. Locked Left Stick (360° Flight & Heading Aim) & Right Stick (360° Turret Aim)
+    // 2. Sculpted Dual-Grip Shell: Smooth cubic Bezier silhouette with #0F172A->#1E293B gradient,
+    // outer #38BDF8 Cyan contour (2.2.dp), and inner #F59E0B Gold ergonomic grip seam contours
+    val gamepadPath =
+      Path().apply {
+        moveTo(bodyLeft + bodyW * 0.16f, bodyTop)
+        lineTo(bodyRight - bodyW * 0.16f, bodyTop)
+        cubicTo(
+          bodyRight + bodyW * 0.08f,
+          bodyTop,
+          bodyRight + bodyW * 0.15f,
+          cy - bodyH * 0.05f,
+          bodyRight + bodyW * 0.13f,
+          cy + bodyH * 0.22f,
+        )
+        cubicTo(
+          bodyRight + bodyW * 0.15f,
+          bodyBottom + bodyH * 0.36f,
+          bodyRight - bodyW * 0.02f,
+          bodyBottom + bodyH * 0.40f,
+          bodyRight - bodyW * 0.10f,
+          bodyBottom + bodyH * 0.34f,
+        )
+        cubicTo(
+          bodyRight - bodyW * 0.19f,
+          bodyBottom + bodyH * 0.26f,
+          bodyRight - bodyW * 0.22f,
+          bodyBottom + bodyH * 0.02f,
+          bodyRight - bodyW * 0.26f,
+          bodyBottom - bodyH * 0.06f,
+        )
+        lineTo(bodyLeft + bodyW * 0.26f, bodyBottom - bodyH * 0.06f)
+        cubicTo(
+          bodyLeft + bodyW * 0.22f,
+          bodyBottom + bodyH * 0.02f,
+          bodyLeft + bodyW * 0.19f,
+          bodyBottom + bodyH * 0.26f,
+          bodyLeft + bodyW * 0.10f,
+          bodyBottom + bodyH * 0.34f,
+        )
+        cubicTo(
+          bodyLeft + bodyW * 0.02f,
+          bodyBottom + bodyH * 0.40f,
+          bodyLeft - bodyW * 0.15f,
+          bodyBottom + bodyH * 0.36f,
+          bodyLeft - bodyW * 0.13f,
+          cy + bodyH * 0.22f,
+        )
+        cubicTo(
+          bodyLeft - bodyW * 0.15f,
+          cy - bodyH * 0.05f,
+          bodyLeft - bodyW * 0.08f,
+          bodyTop,
+          bodyLeft + bodyW * 0.16f,
+          bodyTop,
+        )
+        close()
+      }
+
+    drawPath(
+      path = gamepadPath,
+      brush =
+        Brush.verticalGradient(
+          colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A)),
+          startY = bodyTop,
+          endY = bodyBottom + bodyH * 0.38f,
+        ),
+    )
+    drawPath(
+      path = gamepadPath,
+      color = Color(0xFF38BDF8),
+      style = Stroke(width = 2.2.dp.toPx()),
+    )
+
+    // Inner #F59E0B Gold ergonomic grip seam contours along left and right handles
+    val leftGripSeam =
+      Path().apply {
+        moveTo(bodyLeft + bodyW * 0.05f, bodyTop + bodyH * 0.16f)
+        quadraticTo(
+          bodyLeft - bodyW * 0.05f,
+          cy + bodyH * 0.16f,
+          bodyLeft + bodyW * 0.06f,
+          bodyBottom + bodyH * 0.24f,
+        )
+      }
+    val rightGripSeam =
+      Path().apply {
+        moveTo(bodyRight - bodyW * 0.05f, bodyTop + bodyH * 0.16f)
+        quadraticTo(
+          bodyRight + bodyW * 0.05f,
+          cy + bodyH * 0.16f,
+          bodyRight - bodyW * 0.06f,
+          bodyBottom + bodyH * 0.24f,
+        )
+      }
+    drawPath(
+      path = leftGripSeam,
+      color = Color(0xFFF59E0B).copy(alpha = 0.72f),
+      style = Stroke(width = 1.4.dp.toPx()),
+    )
+    drawPath(
+      path = rightGripSeam,
+      color = Color(0xFFF59E0B).copy(alpha = 0.72f),
+      style = Stroke(width = 1.4.dp.toPx()),
+    )
+
+    // 3. Concentric 3-Ring Analog Thumbsticks
     val lStickCenter = Offset(cx - bodyW * 0.25f, cy - bodyH * 0.08f)
     val rStickCenter = Offset(cx + bodyW * 0.14f, cy + bodyH * 0.20f)
     val stickRadius = bodyH * 0.19f
 
-    drawCircle(color = Color(0xFF07101E), radius = stickRadius, center = lStickCenter)
+    // Left Stick: outer knurled ring + recessed dark well + glowing #00F5D4 Cyan center cap
+    drawCircle(color = Color(0xFF050B14), radius = stickRadius, center = lStickCenter)
     drawCircle(
-      color = strokeForCode(KeyEvent.KEYCODE_BUTTON_THUMBL, Color(0xFF00F0FF)),
+      color = strokeForCode(KeyEvent.KEYCODE_BUTTON_THUMBL, Color(0xFF00F5D4)),
       radius = stickRadius,
       center = lStickCenter,
-      style = Stroke(width = 2.4f),
+      style = Stroke(width = 2.2f),
     )
-    drawCircle(color = Color(0xFF00F0FF).copy(alpha = 0.35f), radius = stickRadius * 0.48f, center = lStickCenter)
+    drawCircle(
+      color = Color(0xFF1E293B),
+      radius = stickRadius * 0.72f,
+      center = lStickCenter,
+      style = Stroke(width = 1.4f),
+    )
+    drawCircle(
+      color = Color(0xFF00F5D4).copy(alpha = 0.42f),
+      radius = stickRadius * 0.42f,
+      center = lStickCenter,
+    )
+    drawCircle(
+      color = Color(0xFF00F5D4),
+      radius = stickRadius * 0.42f,
+      center = lStickCenter,
+      style = Stroke(width = 1.4f),
+    )
 
-    drawCircle(color = Color(0xFF07101E), radius = stickRadius, center = rStickCenter)
+    // Right Stick: outer knurled ring + recessed dark well + glowing #C084FC Purple / #F59E0B Gold center cap
+    drawCircle(color = Color(0xFF050B14), radius = stickRadius, center = rStickCenter)
     drawCircle(
       color = strokeForCode(KeyEvent.KEYCODE_BUTTON_THUMBR, Color(0xFFC084FC)),
       radius = stickRadius,
       center = rStickCenter,
-      style = Stroke(width = 2.4f),
+      style = Stroke(width = 2.2f),
     )
-    drawCircle(color = Color(0xFFC084FC).copy(alpha = 0.35f), radius = stickRadius * 0.48f, center = rStickCenter)
+    drawCircle(
+      color = Color(0xFFF59E0B).copy(alpha = 0.65f),
+      radius = stickRadius * 0.72f,
+      center = rStickCenter,
+      style = Stroke(width = 1.4f),
+    )
+    drawCircle(
+      color = Color(0xFFC084FC).copy(alpha = 0.42f),
+      radius = stickRadius * 0.42f,
+      center = rStickCenter,
+    )
+    drawCircle(
+      color = Color(0xFFC084FC),
+      radius = stickRadius * 0.42f,
+      center = rStickCenter,
+      style = Stroke(width = 1.4f),
+    )
 
-    // 4. D-Pad Cross (Lower-Left)
+    // 4. Beveled 4-Way D-Pad with Directional Chevrons (Lower-Left)
     val dpadCenter = Offset(cx - bodyW * 0.14f, cy + bodyH * 0.20f)
-    val dArm = stickRadius * 0.72f
-    drawLine(
-      color = Color(0xFF64748B),
-      start = Offset(dpadCenter.x - dArm, dpadCenter.y),
-      end = Offset(dpadCenter.x + dArm, dpadCenter.y),
-      strokeWidth = 6f,
+    val dArm = stickRadius * 0.76f
+    val dThick = stickRadius * 0.46f
+    drawRoundRect(
+      color = Color(0xFF0B1528),
+      topLeft = Offset(dpadCenter.x - dArm, dpadCenter.y - dThick * 0.5f),
+      size = Size(dArm * 2f, dThick),
+      cornerRadius = CornerRadius(3f, 3f),
     )
-    drawLine(
-      color = Color(0xFF64748B),
-      start = Offset(dpadCenter.x, dpadCenter.y - dArm),
-      end = Offset(dpadCenter.x, dpadCenter.y + dArm),
-      strokeWidth = 6f,
+    drawRoundRect(
+      color = Color(0xFF0B1528),
+      topLeft = Offset(dpadCenter.x - dThick * 0.5f, dpadCenter.y - dArm),
+      size = Size(dThick, dArm * 2f),
+      cornerRadius = CornerRadius(3f, 3f),
     )
+    drawRoundRect(
+      color = Color(0xFF64748B),
+      topLeft = Offset(dpadCenter.x - dArm, dpadCenter.y - dThick * 0.5f),
+      size = Size(dArm * 2f, dThick),
+      cornerRadius = CornerRadius(3f, 3f),
+      style = Stroke(width = 1.3f),
+    )
+    drawRoundRect(
+      color = Color(0xFF64748B),
+      topLeft = Offset(dpadCenter.x - dThick * 0.5f, dpadCenter.y - dArm),
+      size = Size(dThick, dArm * 2f),
+      cornerRadius = CornerRadius(3f, 3f),
+      style = Stroke(width = 1.3f),
+    )
+    // Directional chevrons on D-Pad arms
+    val chevCol = Color(0xFF38BDF8)
+    val chevOff = dArm * 0.62f
+    drawCircle(color = chevCol, radius = 2.0f, center = Offset(dpadCenter.x, dpadCenter.y - chevOff))
+    drawCircle(color = chevCol, radius = 2.0f, center = Offset(dpadCenter.x, dpadCenter.y + chevOff))
+    drawCircle(color = chevCol, radius = 2.0f, center = Offset(dpadCenter.x - chevOff, dpadCenter.y))
+    drawCircle(color = chevCol, radius = 2.0f, center = Offset(dpadCenter.x + chevOff, dpadCenter.y))
 
-    // 5. Face Buttons (Y = Top, X = Left, B = Right, A = Bottom)
+    // 5. 4 Color-Coded Face Buttons (Y = Top, X = Left, B = Right, A = Bottom)
     val faceClusterCenter = Offset(cx + bodyW * 0.26f, cy - bodyH * 0.08f)
     val faceOffset = stickRadius * 0.78f
     val btnR = stickRadius * 0.36f
@@ -1122,9 +1420,9 @@ private fun TwinStickControllerSchematicCanvas(
     val faceButtons =
       listOf(
         Triple(KeyEvent.KEYCODE_BUTTON_Y, yPos, Color(0xFFFACC15) to "Y"),
-        Triple(KeyEvent.KEYCODE_BUTTON_X, xPos, Color(0xFFF59E0B) to "X"),
+        Triple(KeyEvent.KEYCODE_BUTTON_X, xPos, Color(0xFF00F5D4) to "X"),
         Triple(KeyEvent.KEYCODE_BUTTON_B, bPos, Color(0xFFEF4444) to "B"),
-        Triple(KeyEvent.KEYCODE_BUTTON_A, aPos, Color(0xFF60A5FA) to "A"),
+        Triple(KeyEvent.KEYCODE_BUTTON_A, aPos, Color(0xFF38BDF8) to "A"),
       )
     for ((code, pos, colAndLetter) in faceButtons) {
       val (col, letter) = colAndLetter
@@ -1139,32 +1437,42 @@ private fun TwinStickControllerSchematicCanvas(
         color = strokeForCode(code, if (isBound) col else col.copy(alpha = 0.65f)),
         radius = btnR,
         center = pos,
-        style = Stroke(width = if (isHi) 3.0f else if (isBound) 2.2f else 1.6f),
+        style = Stroke(width = if (isHi) 3.2f else if (isBound) 2.2f else 1.6f),
       )
       drawContext.canvas.nativeCanvas.apply {
         labelPaint.color = android.graphics.Color.WHITE
         labelPaint.textSize = btnR * 1.15f
+        labelPaint.textAlign = Paint.Align.CENTER
         drawText(letter, pos.x, pos.y + btnR * 0.40f, labelPaint)
       }
     }
 
-    // 6. Leader Callouts & Live Bound Labels Around the Perimeter
+    // 6. Clean 2-Segment Angled Leader Callout Lines with Glowing Origin Dots
     fun drawCalloutLabel(
       anchor: Offset,
+      elbowPos: Offset,
       calloutPos: Offset,
       text: String,
       argbColor: Int,
       alignLeft: Boolean,
     ) {
+      val cCol = Color(argbColor)
+      drawCircle(color = cCol, radius = 2.6f, center = anchor)
       drawLine(
-        color = Color(argbColor).copy(alpha = 0.65f),
+        color = cCol.copy(alpha = 0.78f),
         start = anchor,
+        end = elbowPos,
+        strokeWidth = 1.4f,
+      )
+      drawLine(
+        color = cCol.copy(alpha = 0.78f),
+        start = elbowPos,
         end = calloutPos,
         strokeWidth = 1.4f,
       )
       drawContext.canvas.nativeCanvas.apply {
         labelPaint.color = argbColor
-        labelPaint.textSize = (h * 0.048f).coerceIn(14f, 22f)
+        labelPaint.textSize = (h * 0.046f).coerceIn(13f, 20f)
         labelPaint.textAlign = if (alignLeft) Paint.Align.LEFT else Paint.Align.RIGHT
         drawText(
           text,
@@ -1178,28 +1486,32 @@ private fun TwinStickControllerSchematicCanvas(
     // Left Side Callouts
     drawCalloutLabel(
       anchor = ltCenter,
+      elbowPos = Offset(w * 0.30f, h * 0.13f),
       calloutPos = Offset(w * 0.25f, h * 0.13f),
-      text = "LT: $ltAction",
-      argbColor = android.graphics.Color.parseColor("#38BDF8"),
+      text = "LT/L2: $ltAction",
+      argbColor = android.graphics.Color.parseColor("#00F5D4"),
       alignLeft = false,
     )
     drawCalloutLabel(
       anchor = l1Center,
+      elbowPos = Offset(w * 0.30f, h * 0.25f),
       calloutPos = Offset(w * 0.25f, h * 0.25f),
-      text = "L1: $l1Action",
+      text = "L1/LB: $l1Action",
       argbColor = android.graphics.Color.parseColor("#CBD5E1"),
       alignLeft = false,
     )
     drawCalloutLabel(
       anchor = lStickCenter,
-      calloutPos = Offset(w * 0.24f, h * 0.48f),
-      text = "L-STICK: 360° FLIGHT + AIM",
-      argbColor = android.graphics.Color.parseColor("#00F0FF"),
+      elbowPos = Offset(w * 0.30f, h * 0.50f),
+      calloutPos = Offset(w * 0.25f, h * 0.50f),
+      text = "L-STICK: FLIGHT & HEADING",
+      argbColor = android.graphics.Color.parseColor("#00F5D4"),
       alignLeft = false,
     )
     drawCalloutLabel(
       anchor = dpadCenter,
-      calloutPos = Offset(w * 0.24f, h * 0.78f),
+      elbowPos = Offset(w * 0.30f, h * 0.80f),
+      calloutPos = Offset(w * 0.25f, h * 0.80f),
       text = "D-PAD: ZOOM / HANGAR",
       argbColor = android.graphics.Color.parseColor("#94A3B8"),
       alignLeft = false,
@@ -1208,50 +1520,57 @@ private fun TwinStickControllerSchematicCanvas(
     // Right Side Callouts
     drawCalloutLabel(
       anchor = rtCenter,
+      elbowPos = Offset(w * 0.70f, h * 0.12f),
       calloutPos = Offset(w * 0.75f, h * 0.12f),
-      text = "RT: $rtAction",
-      argbColor = android.graphics.Color.parseColor("#F87171"),
+      text = "RT/R2: $rtAction",
+      argbColor = android.graphics.Color.parseColor("#F59E0B"),
       alignLeft = true,
     )
     drawCalloutLabel(
       anchor = r1Center,
+      elbowPos = Offset(w * 0.70f, h * 0.23f),
       calloutPos = Offset(w * 0.75f, h * 0.23f),
-      text = "R1: $r1Action",
-      argbColor = android.graphics.Color.parseColor("#34D399"),
+      text = "R1/RB: $r1Action",
+      argbColor = android.graphics.Color.parseColor("#00F5D4"),
       alignLeft = true,
     )
     drawCalloutLabel(
       anchor = yPos,
-      calloutPos = Offset(w * 0.76f, h * 0.35f),
+      elbowPos = Offset(w * 0.71f, h * 0.35f),
+      calloutPos = Offset(w * 0.75f, h * 0.35f),
       text = "Y: $yAction",
       argbColor = android.graphics.Color.parseColor("#FACC15"),
       alignLeft = true,
     )
     drawCalloutLabel(
       anchor = xPos,
-      calloutPos = Offset(w * 0.76f, h * 0.46f),
+      elbowPos = Offset(w * 0.71f, h * 0.46f),
+      calloutPos = Offset(w * 0.75f, h * 0.46f),
       text = "X: $xAction",
-      argbColor = android.graphics.Color.parseColor("#F59E0B"),
+      argbColor = android.graphics.Color.parseColor("#00F5D4"),
       alignLeft = true,
     )
     drawCalloutLabel(
       anchor = bPos,
-      calloutPos = Offset(w * 0.76f, h * 0.57f),
+      elbowPos = Offset(w * 0.71f, h * 0.57f),
+      calloutPos = Offset(w * 0.75f, h * 0.57f),
       text = "B: $bAction",
       argbColor = android.graphics.Color.parseColor("#EF4444"),
       alignLeft = true,
     )
     drawCalloutLabel(
       anchor = aPos,
-      calloutPos = Offset(w * 0.76f, h * 0.68f),
+      elbowPos = Offset(w * 0.71f, h * 0.68f),
+      calloutPos = Offset(w * 0.75f, h * 0.68f),
       text = "A: $aAction",
-      argbColor = android.graphics.Color.parseColor("#60A5FA"),
+      argbColor = android.graphics.Color.parseColor("#38BDF8"),
       alignLeft = true,
     )
     drawCalloutLabel(
       anchor = rStickCenter,
+      elbowPos = Offset(w * 0.70f, h * 0.82f),
       calloutPos = Offset(w * 0.75f, h * 0.82f),
-      text = "R-STICK: 360° TURRET AIM",
+      text = "R-STICK: 360° AIM",
       argbColor = android.graphics.Color.parseColor("#C084FC"),
       alignLeft = true,
     )

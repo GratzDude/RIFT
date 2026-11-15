@@ -385,17 +385,27 @@ class LocalPilotPrefs(context: Context) {
 
   /**
    * Startup Boot Preference:
-   * false (default) = fast-boot straight into the live arena.
-   * true = open NEXUS Command Hub on startup.
+   * true (default) = open NEXUS Mode Selection Hub on startup so pilots choose their mode before deploying.
+   * false = fast-boot straight into the live arena.
    */
   fun getBootToNexusHub(): Boolean {
-    val fallback = prefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, false)
+    val fallback = prefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, true)
     return userSettingsPrefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, fallback)
   }
 
   fun setBootToNexusHub(enabled: Boolean) {
     prefs.edit().putBoolean(KEY_BOOT_TO_NEXUS_HUB, enabled).apply()
     userSettingsPrefs.edit().putBoolean(KEY_BOOT_TO_NEXUS_HUB, enabled).apply()
+  }
+
+  fun getMusicEnabled(): Boolean {
+    val fallback = prefs.getBoolean(KEY_MUSIC_ENABLED, true)
+    return userSettingsPrefs.getBoolean(KEY_MUSIC_ENABLED, fallback)
+  }
+
+  fun setMusicEnabled(enabled: Boolean) {
+    prefs.edit().putBoolean(KEY_MUSIC_ENABLED, enabled).apply()
+    userSettingsPrefs.edit().putBoolean(KEY_MUSIC_ENABLED, enabled).apply()
   }
 
   /**
@@ -1430,6 +1440,7 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_SHIP_ID = "preferred_ship_id"
     private const val KEY_MODE = "preferred_mode"
     private const val KEY_BOOT_TO_NEXUS_HUB = "boot_to_nexus_hub"
+    private const val KEY_MUSIC_ENABLED = "music_enabled"
     private const val KEY_SYNDICATE_CHANNELS_PREFIX = "syndicate_custom_channels_"
     private const val KEY_SYNDICATE_GUESTS_PREFIX = "syndicate_invited_guests_"
     private const val KEY_SYNDICATE_WAR_RECORDS_JSON = "syndicate_war_records_json"

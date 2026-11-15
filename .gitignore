@@ -20,3 +20,6 @@ debug.keystore
 .build-outputs/
 *.apk
 *.aab
+app/build/
+.aistudio/
+public/

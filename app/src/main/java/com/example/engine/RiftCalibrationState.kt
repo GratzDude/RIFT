@@ -103,7 +103,7 @@ object RiftCalibrationState {
   var gamepadDeadzoneRight by mutableFloatStateOf(0.18f)
   var gamepadIdleTouchOpacity by mutableFloatStateOf(0.28f)
 
-  // Virtual Keycodes & Ergonomic Default Controller Bindings (WoW-Style Live Remapper)
+  // Virtual Keycodes & Ergonomic Default Controller Bindings (Live Hardware Remapper)
   const val BIND_LT = 1001 // Left Trigger (AXIS_LTRIGGER / AXIS_BRAKE / KEYCODE_BUTTON_L2)
   const val BIND_RT = 1002 // Right Trigger (AXIS_RTRIGGER / AXIS_GAS / AXIS_THROTTLE / KEYCODE_BUTTON_R2)
 
@@ -315,7 +315,7 @@ object RiftCalibrationState {
   var skirmishKillTargetPerRound by mutableIntStateOf(15)
   var fluxCoreBountyPerSec by mutableIntStateOf(15)
   var fluxCoreEjectSpeed by mutableFloatStateOf(1650f)
-  var stasisBrigReactorMaxHp by mutableFloatStateOf(4000f)
+  var stasisBrigReactorMaxHp by mutableFloatStateOf(40000f)
 
   /**
    * Converts any camelCase or snake_case variable name into a clean Plain-English Title.
@@ -1394,10 +1394,10 @@ object RiftCalibrationState {
       tabIndex = 7,
       title = "Brig Core HP",
       unit = "⚡",
-      description = "Max HP of the West and East Stasis Cores in Stasis Breach (prisoners deal 100% damage).",
-      min = 1500f, max = 20000f, step = 500f, decimals = 0,
+      description = "Max HP of the West and East Stasis Cores in Stasis Breach (40,000⚡ default; prisoners deal 100% damage).",
+      min = 10000f, max = 100000f, step = 2000f, decimals = 0,
       getter = { stasisBrigReactorMaxHp },
-      setter = { stasisBrigReactorMaxHp = it.coerceIn(1500f, 20000f) },
+      setter = { stasisBrigReactorMaxHp = it.coerceIn(10000f, 100000f) },
     )
 
     return list
@@ -1696,6 +1696,8 @@ object RiftCalibrationState {
             val loadedVal = obj.optDouble(k, desc.getter().toDouble()).toFloat()
             if (k == "phaseDashImpulse" && loadedVal <= 650f) {
               desc.setter(1120f)
+            } else if (k == "stasisBrigReactorMaxHp" && loadedVal <= 10000f) {
+              desc.setter(40000f)
             } else {
               desc.setter(loadedVal)
             }

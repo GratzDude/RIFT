@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -63,6 +64,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -107,7 +109,7 @@ private val NEXUS_STARTER_CHIPS =
     "Explain Flux Core, Stasis Breach & Rift Control",
   )
 
-private enum class NexusHubLayoutMode {
+enum class NexusHubLayoutMode {
   SPLIT_COMMAND,
   CHANNELS_ONLY,
   DECK_ONLY,
@@ -123,7 +125,7 @@ private data class LocalChannelPost(
 )
 
 /**
- * Procedurally animated swirling Rift vortex glyph (cyan/violet accretion arcs + dark singularity core).
+ * 4-Layer 3D Swirling NEXUS Singularity Vortex (3D gravity well, 24-tick bezel, 4 logarithmic spiral accretion arms, tilted 3D containment rings, and pulsing white/cyan photon core).
  */
 @Composable
 fun SwirlingRiftVortexGlyph(
@@ -137,18 +139,18 @@ fun SwirlingRiftVortexGlyph(
       targetValue = 360f,
       animationSpec =
         infiniteRepeatable(
-          animation = tween(durationMillis = if (isStreaming) 1350 else 3600, easing = LinearEasing),
+          animation = tween(durationMillis = if (isStreaming) 1250 else 3200, easing = LinearEasing),
           repeatMode = RepeatMode.Restart,
         ),
       label = "vortex_outer_deg",
     )
   val corePulse by
     transition.animateFloat(
-      initialValue = 0.72f,
+      initialValue = 0.76f,
       targetValue = 1.0f,
       animationSpec =
         infiniteRepeatable(
-          animation = tween(durationMillis = if (isStreaming) 480 else 1100, easing = LinearEasing),
+          animation = tween(durationMillis = if (isStreaming) 420 else 980, easing = LinearEasing),
           repeatMode = RepeatMode.Reverse,
         ),
       label = "vortex_core_pulse",
@@ -160,25 +162,41 @@ fun SwirlingRiftVortexGlyph(
     val r = minOf(w, h) * 0.5f
     val c = Offset(w * 0.5f, h * 0.5f)
     if (r <= 1f) return@Canvas
+    val phaseRad = outerDeg * (PI.toFloat() / 180f)
 
-    // 1. Ambient singularity radial aura
+    // Layer 1: Deep 3D Singularity Gravity Well & Multi-Stop Nebula Halo
     drawCircle(
       brush =
         Brush.radialGradient(
           colors =
             listOf(
-              Color(0xAA00F5D4),
-              Color(0x777C3AED),
+              Color(0xFF02040A),
+              Color(0xFF140B2E),
+              Color(0xAA7C3AED),
+              Color(0x6600F5D4),
               Color.Transparent,
             ),
           center = c,
-          radius = r * 1.02f,
+          radius = r * 1.05f,
         ),
       radius = r,
       center = c,
     )
 
-    // 2. Outer rotating accretion arcs (Electric Cyan & Event-Horizon Violet)
+    // Layer 2: Precision 24-Tick Telemetry Bezel & Counter-Rotating Containment Arcs
+    val tickCount = 24
+    for (t in 0 until tickCount) {
+      val tickRad = (t * 15f - outerDeg * 0.45f) * (PI.toFloat() / 180f)
+      val rIn = r * (if (t % 3 == 0) 0.80f else 0.87f)
+      val rOut = r * 0.96f
+      drawLine(
+        color = if (t % 6 == 0) Color(0xFFFACC15) else Color(0x9938BDF8),
+        start = Offset(c.x + cos(tickRad) * rIn, c.y + sin(tickRad) * rIn),
+        end = Offset(c.x + cos(tickRad) * rOut, c.y + sin(tickRad) * rOut),
+        strokeWidth = (r * 0.055f).coerceAtLeast(1.0f),
+      )
+    }
+
     val outerInset = r * 0.14f
     val outerSize = Size((r - outerInset) * 2f, (r - outerInset) * 2f)
     val outerTopLeft = Offset(c.x - (r - outerInset), c.y - (r - outerInset))
@@ -187,56 +205,62 @@ fun SwirlingRiftVortexGlyph(
       drawArc(
         color = if (arm % 2 == 0) Color(0xFF00F5D4) else Color(0xFFB388FF),
         startAngle = startA,
-        sweepAngle = 74f,
+        sweepAngle = 68f,
         useCenter = false,
         topLeft = outerTopLeft,
         size = outerSize,
-        style = Stroke(width = (r * 0.13f).coerceAtLeast(1.8f), cap = StrokeCap.Round),
+        style = Stroke(width = (r * 0.11f).coerceAtLeast(1.6f), cap = StrokeCap.Round),
       )
     }
 
-    // 3. Counter-rotating inner plasma ring
-    val innerInset = r * 0.34f
-    val innerSize = Size((r - innerInset) * 2f, (r - innerInset) * 2f)
-    val innerTopLeft = Offset(c.x - (r - innerInset), c.y - (r - innerInset))
-    for (arm in 0 until 2) {
-      val startA = -outerDeg * 1.45f + arm * 180f
-      drawArc(
-        color = if (arm == 0) Color(0xFF38BDF8) else Color(0xFFE879F9),
-        startAngle = startA,
-        sweepAngle = 105f,
-        useCenter = false,
-        topLeft = innerTopLeft,
-        size = innerSize,
-        style = Stroke(width = (r * 0.11f).coerceAtLeast(1.5f), cap = StrokeCap.Round),
+    // Layer 3: 4 Sculpted Logarithmic Spiral Accretion Arms
+    val armCount = 4
+    val segments = 14
+    for (arm in 0 until armCount) {
+      val armBase = phaseRad * 1.35f + arm * (PI.toFloat() * 0.5f)
+      val path = Path()
+      for (s in 0..segments) {
+        val frac = s / segments.toFloat()
+        val sr = r * (0.16f + 0.68f * frac)
+        val sa = armBase + frac * 2.4f
+        val px = c.x + cos(sa) * sr
+        val py = c.y + sin(sa) * sr
+        if (s == 0) path.moveTo(px, py) else path.lineTo(px, py)
+      }
+      val armCol =
+        when (arm % 3) {
+          0 -> Color(0xFF00F5D4)
+          1 -> Color(0xFFA855F7)
+          else -> Color(0xFF38BDF8)
+        }
+      drawPath(
+        path = path,
+        color = armCol.copy(alpha = 0.88f * corePulse),
+        style = Stroke(width = (r * 0.085f).coerceAtLeast(1.3f), cap = StrokeCap.Round),
       )
     }
 
-    // 4. Swirling quantum filaments spiraling into core
-    val radBase = outerDeg * (PI.toFloat() / 180f)
-    for (i in 0 until 4) {
-      val a1 = radBase + i * (PI.toFloat() * 0.5f)
-      val a2 = a1 + 0.72f
-      val p1 = Offset(c.x + cos(a1) * (r * 0.78f), c.y + sin(a1) * (r * 0.78f))
-      val p2 = Offset(c.x + cos(a2) * (r * 0.30f), c.y + sin(a2) * (r * 0.30f))
-      drawLine(
-        color = Color.White.copy(alpha = 0.72f * corePulse),
-        start = p1,
-        end = p2,
-        strokeWidth = (r * 0.07f).coerceAtLeast(1.1f),
-        cap = StrokeCap.Round,
-      )
-    }
+    // Layer 4: Tilted 3D Gyroscopic Elliptical Rings & Event-Horizon Photon Core
+    val ovalW = r * 1.56f
+    val ovalH = r * 0.56f
+    drawArc(
+      color = Color(0xCC00F5D4),
+      startAngle = -outerDeg * 1.5f,
+      sweepAngle = 250f,
+      useCenter = false,
+      topLeft = Offset(c.x - ovalW * 0.5f, c.y - ovalH * 0.5f),
+      size = Size(ovalW, ovalH),
+      style = Stroke(width = (r * 0.075f).coerceAtLeast(1.2f), cap = StrokeCap.Round),
+    )
 
-    // 5. Pitch-black event horizon singularity + glowing photon ring
     drawCircle(
       color = Color(0xFF030712),
-      radius = r * 0.31f,
+      radius = r * 0.28f,
       center = c,
     )
     drawCircle(
       color = Color(0xFF00F5D4).copy(alpha = corePulse),
-      radius = r * 0.32f,
+      radius = r * 0.29f,
       center = c,
       style = Stroke(width = (r * 0.09f).coerceAtLeast(1.4f)),
     )
@@ -326,11 +350,11 @@ fun SwirlingRiftHeaderPill(
 }
 
 /**
- * Unified Battle.net × Discord × Brawl Stars NEXUS Command Hub & Matchmaking Console.
+ * Unified NEXUS Command Hub & Matchmaking Console.
  * Keeps the 120Hz space arena visible behind translucent obsidian glass while hosting:
- * - Left Sidebar: Discord-style Channel Directory (NEXUS Core, 10 Ship Hull Channels, Private [TAG] Syndicate Server, & Armada Party Comms)
+ * - Full-Screen Mode Selection & Armada View (DECK_ONLY default): 2-Column Matchmaking stage with 5-slot Armada Pedestals, Pre-Match Ship Lock Picker, Custom 10-Rule Sandbox, and 2x3 Grid of 6 Official Ranked Modes.
+ * - Left Sidebar: Sector Channel Directory (NEXUS Core, 10 Ship Hull Channels, Private [TAG] Syndicate Server, & Armada Party Comms)
  * - Center Window: Active Channel Feed / Live Streaming #nexus-ai Intelligence / Ship Telemetry / Changelog / Rules / Bug Report
- * - Right Deck: Brawl Stars Graphical "Best Ship" Armada Staging Deck + 5 Always-Open Ranked Game Mode Cards
  */
 @Composable
 fun NexusAiConsoleModal(
@@ -385,10 +409,11 @@ fun NexusAiConsoleModal(
   onSendChannelMessage: (channelKey: String, messageText: String) -> Unit = { _, _ -> },
   onSubmitBugReport: (category: String, description: String) -> Unit = { _, _ -> },
   engine: RiftGameEngine? = null,
+  initialLayoutMode: NexusHubLayoutMode = NexusHubLayoutMode.DECK_ONLY,
 ) {
   val context = LocalContext.current
   var selectedChannelKey by remember { mutableStateOf("#nexus-ai") }
-  var layoutMode by remember { mutableStateOf(NexusHubLayoutMode.SPLIT_COMMAND) }
+  var layoutMode by remember(initialLayoutMode) { mutableStateOf(initialLayoutMode) }
   var inputQuery by remember { mutableStateOf("") }
   var channelChatInput by remember { mutableStateOf("") }
   var skirmishBracket by remember { mutableIntStateOf(activeTeamSizeBracket.coerceIn(2, 5)) }
@@ -690,7 +715,7 @@ fun NexusAiConsoleModal(
           onReturnToArena = onCloseModal,
         )
 
-        // Sub-view mode bar (Split Command View vs Full Channels vs Full Armada & Ranked Queues)
+        // Sub-view mode bar (Full-Screen Mode Selection & Matchmaking vs Comms & Channels vs Split Command View)
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -701,22 +726,22 @@ fun NexusAiConsoleModal(
             verticalAlignment = Alignment.CenterVertically,
           ) {
             NexusViewModeTab(
-              label = "⚡ SPLIT COMMAND VIEW",
-              selected = layoutMode == NexusHubLayoutMode.SPLIT_COMMAND,
-              onClick = { layoutMode = NexusHubLayoutMode.SPLIT_COMMAND },
-              tag = "nexus_tab_split_view",
+              label = "🎯 MODE SELECTION & MATCHMAKING (FULL VIEW)",
+              selected = layoutMode == NexusHubLayoutMode.DECK_ONLY,
+              onClick = { layoutMode = NexusHubLayoutMode.DECK_ONLY },
+              tag = "nexus_tab_deck_view",
             )
             NexusViewModeTab(
-              label = "💬 CHANNELS & NEXUS AI",
+              label = "💬 COMMS CHANNELS & NEXUS AI",
               selected = layoutMode == NexusHubLayoutMode.CHANNELS_ONLY,
               onClick = { layoutMode = NexusHubLayoutMode.CHANNELS_ONLY },
               tag = "nexus_tab_channels_view",
             )
             NexusViewModeTab(
-              label = "🎮 ARMADA DECK & RANKED QUEUES",
-              selected = layoutMode == NexusHubLayoutMode.DECK_ONLY,
-              onClick = { layoutMode = NexusHubLayoutMode.DECK_ONLY },
-              tag = "nexus_tab_deck_view",
+              label = "⚡ SPLIT COMMAND VIEW",
+              selected = layoutMode == NexusHubLayoutMode.SPLIT_COMMAND,
+              onClick = { layoutMode = NexusHubLayoutMode.SPLIT_COMMAND },
+              tag = "nexus_tab_split_view",
             )
           }
 
@@ -731,14 +756,14 @@ fun NexusAiConsoleModal(
         }
 
         // =========================================================================
-        // 2. MAIN 3-PANE COMMAND HUB BODY
+        // 2. MAIN COMMAND HUB BODY
         // =========================================================================
         Row(
           modifier = Modifier.weight(1f).fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           // -----------------------------------------------------------------------
-          // PANE A: LEFT SIDEBAR — DISCORD-STYLE CHANNEL DIRECTORY
+          // PANE A: LEFT SIDEBAR — SECTOR CHANNEL DIRECTORY
           // -----------------------------------------------------------------------
           if (layoutMode != NexusHubLayoutMode.DECK_ONLY) {
             Column(
@@ -773,7 +798,7 @@ fun NexusAiConsoleModal(
               )
               ChannelNavItem(
                 label = "⚡ #change-log",
-                badge = "v39.0",
+                badge = "v47.0",
                 selected = selectedChannelKey == "#change-log",
                 accent = Color(0xFFFACC15),
                 onClick = { selectedChannelKey = "#change-log" },
@@ -1254,10 +1279,269 @@ fun NexusAiConsoleModal(
           }
 
           // -----------------------------------------------------------------------
-          // PANE C: RIGHT STAGE — BRAWL STARS GRAPHICAL "BEST SHIP" ARMADA DECK
-          //         + 5 ALWAYS-OPEN RANKED GAME MODE DEPLOYMENT CARDS
+          // PANE C: MODE SELECTION, HOLOGRAPHIC ARMADA DECK & CUSTOM SANDBOX
+          //   - In DECK_ONLY (Default Full-Screen Mode Selection): Crisp 2-Column Layout
+          //     (Left 43%: Armada Pedestals + Team Ship Lock + Custom 10-Rule Sandbox;
+          //      Right 57%: 2x3 Grid of the 6 Official Ranked Mode Deployment Cards)
+          //   - In SPLIT_COMMAND: Right-hand scrollable stage alongside Comms
           // -----------------------------------------------------------------------
-          if (layoutMode != NexusHubLayoutMode.CHANNELS_ONLY) {
+          if (layoutMode == NexusHubLayoutMode.DECK_ONLY) {
+            Row(
+              modifier =
+                Modifier.weight(1f)
+                  .fillMaxHeight()
+                  .testTag("nexus_armada_and_ranked_deck"),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              // LEFT COLUMN (0.43f): Armada Staging Pedestals + Pre-Match Ship Lock + Custom Sandbox
+              Column(
+                modifier =
+                  Modifier.weight(0.43f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0x99040914))
+                    .border(1.dp, Color(0x5538BDF8), RoundedCornerShape(12.dp))
+                    .padding(10.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+              ) {
+                HolographicArmadaStagingDeck(
+                  callsign = callsign,
+                  syndicateTag = cleanSyndicateTag,
+                  bestShipId = bestShipId,
+                  activeArmadaName = activeArmadaName,
+                  armadaSlots = armadaSlots,
+                  onResolvePilotBestShipId = onResolvePilotBestShipId,
+                  onOpenArmadaModal = onOpenArmadaModal,
+                  onQuickFormSyndicateArmada = onQuickFormSyndicateArmada,
+                  onOpenArmadaChat = {
+                    selectedChannelKey = "#armada-chat"
+                    layoutMode = NexusHubLayoutMode.SPLIT_COMMAND
+                  },
+                )
+
+                PreMatchTeamShipLockCard(
+                  selectedShipId = lockedTeamShipId,
+                  isCurrentlyLockedInMatch = engine?.isShipLockedForMatch == true,
+                  pendingTeamMode = pendingTeamDeployMode,
+                  onSelectShip = { chosenId ->
+                    lockedTeamShipId = chosenId.coerceIn(1, 10)
+                    if (engine?.isShipLockedForMatch != true) {
+                      engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
+                    }
+                  },
+                  onConfirmLockAndDeploy = { mode, bracket ->
+                    engine?.isShipLockedForMatch = false
+                    engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
+                    pendingTeamDeployMode = null
+                    onDeployToRankedMode(mode, bracket)
+                    onCloseModal()
+                  },
+                  onCancelPending = { pendingTeamDeployMode = null },
+                )
+
+                CustomGamesSectionCard(
+                  engine = engine,
+                  callsign = callsign,
+                  lockedTeamShipId = lockedTeamShipId,
+                  refreshTick = customGamesRefreshTick,
+                  showBuilder = showCustomGameBuilder,
+                  onToggleBuilder = { showCustomGameBuilder = !showCustomGameBuilder },
+                  baseMode = customBaseMode,
+                  onSelectBaseMode = { customBaseMode = it },
+                  resetMinutes = customResetMinutes,
+                  onSelectResetMinutes = { customResetMinutes = it },
+                  teamBracket = customTeamBracket,
+                  onSelectTeamBracket = { customTeamBracket = it },
+                  allowArmadasInFfa = customAllowArmadasInFfa,
+                  onToggleAllowArmadasInFfa = { customAllowArmadasInFfa = it },
+                  botsEnabled = customBotsEnabled,
+                  onToggleBotsEnabled = { customBotsEnabled = it },
+                  bulletSizeMult = customBulletSizeMult,
+                  onSelectBulletSizeMult = { customBulletSizeMult = it },
+                  speedMult = customSpeedMult,
+                  onSelectSpeedMult = { customSpeedMult = it },
+                  rechargeMult = customRechargeMult,
+                  onSelectRechargeMult = { customRechargeMult = it },
+                  damageMult = customDamageMult,
+                  onSelectDamageMult = { customDamageMult = it },
+                  crateSpawnMult = customCrateSpawnMult,
+                  onSelectCrateSpawnMult = { customCrateSpawnMult = it },
+                  onReturnToOfficialRankedFfa = {
+                    onDeployToRankedMode(RankedGameMode.SECTOR_CONVERGENCE, 20)
+                    customGamesRefreshTick++
+                  },
+                  onJoinCustomGame = { instanceId ->
+                    val target = engine?.activeCustomGames?.firstOrNull { it.instanceId == instanceId }
+                    val isTeamCustom =
+                      target != null &&
+                        target.baseMode != RankedGameMode.SECTOR_CONVERGENCE &&
+                        target.baseMode != RankedGameMode.FLUX_CORE
+                    if (isTeamCustom) {
+                      engine?.isShipLockedForMatch = false
+                      engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
+                    }
+                    engine?.joinCustomGame(instanceId)
+                    RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                    customGamesRefreshTick++
+                    onCloseModal()
+                  },
+                  onLaunchCustomGame = {
+                    val isTeamCustom =
+                      customBaseMode != RankedGameMode.SECTOR_CONVERGENCE &&
+                        customBaseMode != RankedGameMode.FLUX_CORE
+                    if (isTeamCustom) {
+                      engine?.isShipLockedForMatch = false
+                      engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
+                    }
+                    val modeShort =
+                      when (customBaseMode) {
+                        RankedGameMode.SECTOR_CONVERGENCE -> "FFA"
+                        RankedGameMode.RIFT_SKIRMISH -> "Skirmish"
+                        RankedGameMode.FLUX_CORE -> "Flux Core"
+                        RankedGameMode.STASIS_BREACH -> "Stasis Breach"
+                        RankedGameMode.RIFT_CONTROL -> "Rift Control"
+                        RankedGameMode.SYNDICATE_WARS -> "Syndicate Wars"
+                      }
+                    val newConfig =
+                      CustomGameConfig(
+                        instanceId = "custom_${System.currentTimeMillis()}",
+                        title = "${callsign.uppercase()}'S $modeShort SANDBOX",
+                        hostCallsign = callsign,
+                        baseMode = customBaseMode,
+                        teamSizeBracket = customTeamBracket,
+                        matchDurationMinutes = customResetMinutes,
+                        allowArmadasInFfa = customAllowArmadasInFfa,
+                        botsEnabled = customBotsEnabled,
+                        bulletSizeMult = customBulletSizeMult,
+                        damageMult = customDamageMult,
+                        speedMult = customSpeedMult,
+                        healthMult = if (customRechargeMult > 1.0f) 1.25f else 1.0f,
+                        rechargeMult = customRechargeMult,
+                        crateSpawnMult = customCrateSpawnMult,
+                      )
+                    engine?.createAndJoinCustomGame(newConfig)
+                    RiftCalibrationState.botsEnabled = customBotsEnabled
+                    RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                    customGamesRefreshTick++
+                    showCustomGameBuilder = false
+                    onCloseModal()
+                  },
+                )
+              }
+
+              // RIGHT COLUMN (0.57f): 2x3 Grid of 6 Official Ranked Mode Cards
+              Column(
+                modifier =
+                  Modifier.weight(0.57f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0x99040914))
+                    .border(1.dp, Color(0x6600F5D4), RoundedCornerShape(12.dp))
+                    .padding(10.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+              ) {
+                Row(
+                  modifier =
+                    Modifier.fillMaxWidth()
+                      .clip(RoundedCornerShape(8.dp))
+                      .background(Color(0xCC08182C))
+                      .border(1.dp, Color(0x8800F5D4), RoundedCornerShape(8.dp))
+                      .padding(horizontal = 10.dp, vertical = 6.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Column {
+                    Text(
+                      text = "🎯 SELECT GAME MODE TO DEPLOY // 6 OFFICIAL RANKED QUEUES",
+                      color = Color(0xFF00F5D4),
+                      fontSize = 10.5.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                      text = "Tap any mode below to launch directly into the sector with your selected hull & Armada.",
+                      color = Color(0xFFCBD5E1),
+                      fontSize = 8.4.sp,
+                      fontFamily = FontFamily.SansSerif,
+                    )
+                  }
+                  Box(
+                    modifier =
+                      Modifier.clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF142842))
+                        .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                        .clickable { layoutMode = NexusHubLayoutMode.SPLIT_COMMAND }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                  ) {
+                    Text(
+                      text = "💬 SHOW COMMS",
+                      color = Color(0xFFE0F2FE),
+                      fontSize = 8.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                    )
+                  }
+                }
+
+                RankedGameMode.entries.chunked(2).forEach { rowModes ->
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  ) {
+                    rowModes.forEach { mode ->
+                      Box(modifier = Modifier.weight(1f)) {
+                        val humanCount = humanPilotCountByMode(mode).coerceAtLeast(1)
+                        val isCurrentMode = activeRankedMode == mode && engine?.currentCustomGame == null
+                        val bracketForMode =
+                          when (mode) {
+                            RankedGameMode.RIFT_SKIRMISH -> skirmishBracket
+                            RankedGameMode.RIFT_CONTROL -> riftControlBracket
+                            RankedGameMode.SYNDICATE_WARS -> syndicateWarBracket
+                            RankedGameMode.STASIS_BREACH -> 10
+                            else -> 20
+                          }
+
+                        RankedModeDeploymentCard(
+                          mode = mode,
+                          isCurrentActive = isCurrentMode,
+                          humanPilotsActive = humanCount,
+                          armadaSize = armadaSlots.size.coerceAtLeast(1),
+                          syndicateTag = cleanSyndicateTag,
+                          selectedBracket = bracketForMode,
+                          onSelectBracket = { newBracket ->
+                            when (mode) {
+                              RankedGameMode.RIFT_SKIRMISH -> skirmishBracket = newBracket.coerceIn(2, 5)
+                              RankedGameMode.RIFT_CONTROL -> riftControlBracket = newBracket
+                              RankedGameMode.SYNDICATE_WARS -> syndicateWarBracket = newBracket
+                              else -> {}
+                            }
+                          },
+                          canQueueSyndicateWars = canQueueSyndicateWars,
+                          syndicateWarRecord = syndicateWarRecord,
+                          onDeploy = {
+                            val isTeamMode =
+                              mode == RankedGameMode.RIFT_SKIRMISH ||
+                                mode == RankedGameMode.STASIS_BREACH ||
+                                mode == RankedGameMode.RIFT_CONTROL ||
+                                mode == RankedGameMode.SYNDICATE_WARS
+                            if (isTeamMode) {
+                              engine?.isShipLockedForMatch = false
+                              engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
+                            }
+                            pendingTeamDeployMode = null
+                            onDeployToRankedMode(mode, bracketForMode)
+                            onCloseModal()
+                          },
+                        )
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } else if (layoutMode != NexusHubLayoutMode.CHANNELS_ONLY) {
             Column(
               modifier =
                 Modifier.weight(1.1f)
@@ -1270,8 +1554,8 @@ fun NexusAiConsoleModal(
                   .testTag("nexus_armada_and_ranked_deck"),
               verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-              // 1. Brawl Stars Graphical "Best Ship" Armada Staging Bay
-              BrawlStarsArmadaStagingDeck(
+              // 1. Holographic "Best Ship" Armada Staging Bay
+              HolographicArmadaStagingDeck(
                 callsign = callsign,
                 syndicateTag = cleanSyndicateTag,
                 bestShipId = bestShipId,
@@ -1282,9 +1566,6 @@ fun NexusAiConsoleModal(
                 onQuickFormSyndicateArmada = onQuickFormSyndicateArmada,
                 onOpenArmadaChat = {
                   selectedChannelKey = "#armada-chat"
-                  if (layoutMode == NexusHubLayoutMode.DECK_ONLY) {
-                    layoutMode = NexusHubLayoutMode.SPLIT_COMMAND
-                  }
                 },
               )
 
@@ -1719,7 +2000,7 @@ private fun ChannelNavItem(
 }
 
 @Composable
-private fun BrawlStarsArmadaStagingDeck(
+private fun HolographicArmadaStagingDeck(
   callsign: String,
   syndicateTag: String,
   bestShipId: Int,
@@ -1758,7 +2039,7 @@ private fun BrawlStarsArmadaStagingDeck(
         )
         .border(1.dp, Color(0x8838BDF8), RoundedCornerShape(12.dp))
         .padding(10.dp)
-        .testTag("nexus_brawl_stars_armada_deck"),
+        .testTag("nexus_holographic_armada_deck"),
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
     Row(
@@ -1823,7 +2104,7 @@ private fun BrawlStarsArmadaStagingDeck(
       }
     }
 
-    // 5-Pedestal Brawl Stars Holographic Row
+    // 5-Pedestal Holographic Armada Row
     Row(
       modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
       horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1836,16 +2117,20 @@ private fun BrawlStarsArmadaStagingDeck(
             if (member.isLeader) bestShipId.coerceIn(1, 10)
             else onResolvePilotBestShipId(member.uid, member.shipId).coerceIn(1, 10)
           val bestHullSpec = RiftCodex.getShipById(resolvedBestHullId)
-          val tagStr = member.syndicateTag.ifBlank { "GUEST" }
+          val tagStr = member.syndicateTag.ifBlank { "RFT" }
+          val holoRingColor =
+            if (member.isLeader) Color(0xFFF59E0B)
+            else if (resolvedBestHullId == 10 || resolvedBestHullId == 9) Color(0xFFA855F7)
+            else Color(0xFF00F5D4)
 
           Column(
             modifier =
-              Modifier.width(104.dp)
+              Modifier.width(108.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xCC071122))
+                .background(Color(0xD9060E1C))
                 .border(
                   1.dp,
-                  if (member.isLeader) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+                  holoRingColor.copy(alpha = 0.72f),
                   RoundedCornerShape(10.dp),
                 )
                 .padding(6.dp),
@@ -1854,53 +2139,104 @@ private fun BrawlStarsArmadaStagingDeck(
           ) {
             Text(
               text = if (member.isLeader) "★ LEADER • READY" else "● WINGMAN • READY",
-              color = if (member.isLeader) Color(0xFF00F5D4) else Color(0xFF34D399),
+              color = holoRingColor,
               fontSize = 7.2.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
+            // Ship Sprite Floating Above Glowing Circular Holo-Projector Base
             Box(
-              modifier = Modifier.size(48.dp),
+              modifier = Modifier.size(width = 58.dp, height = 52.dp),
               contentAlignment = Alignment.Center,
             ) {
               Canvas(modifier = Modifier.fillMaxSize()) {
-                drawCircle(
-                  color = Color(0x3300F5D4),
-                  radius = size.minDimension * 0.46f,
+                val w = size.width
+                val h = size.height
+                val baseCx = w * 0.5f
+                val baseCy = h * 0.80f
+
+                // Upward translucent hologram projection cone
+                val conePath =
+                  Path().apply {
+                    moveTo(baseCx - w * 0.36f, baseCy)
+                    lineTo(baseCx - w * 0.44f, h * 0.16f)
+                    lineTo(baseCx + w * 0.44f, h * 0.16f)
+                    lineTo(baseCx + w * 0.36f, baseCy)
+                    close()
+                  }
+                drawPath(
+                  path = conePath,
+                  brush =
+                    Brush.verticalGradient(
+                      colors =
+                        listOf(
+                          holoRingColor.copy(alpha = 0.03f),
+                          holoRingColor.copy(alpha = 0.25f),
+                        ),
+                      startY = h * 0.16f,
+                      endY = baseCy,
+                    ),
                 )
-                drawCircle(
-                  color = Color(0xFF00F5D4),
-                  radius = size.minDimension * 0.46f,
-                  style = Stroke(width = 1.4.dp.toPx()),
+
+                // Concentric Holo-Projector Base Rings
+                drawOval(
+                  color = holoRingColor.copy(alpha = 0.28f),
+                  topLeft = Offset(baseCx - w * 0.42f, baseCy - h * 0.12f),
+                  size = Size(w * 0.84f, h * 0.24f),
+                )
+                drawOval(
+                  color = holoRingColor,
+                  topLeft = Offset(baseCx - w * 0.42f, baseCy - h * 0.12f),
+                  size = Size(w * 0.84f, h * 0.24f),
+                  style = Stroke(width = 1.5.dp.toPx()),
+                )
+                drawOval(
+                  color = Color.White.copy(alpha = 0.78f),
+                  topLeft = Offset(baseCx - w * 0.24f, baseCy - h * 0.07f),
+                  size = Size(w * 0.48f, h * 0.14f),
+                  style = Stroke(width = 1.dp.toPx()),
                 )
               }
-              ShipSpritePreview(shipId = resolvedBestHullId, sizeDp = 38)
+              Box(modifier = Modifier.offset(y = (-4).dp)) {
+                ShipSpritePreview(shipId = resolvedBestHullId, sizeDp = 38)
+              }
             }
-            Text(
-              text = "[$tagStr] ${member.callsign}",
-              color = Color.White,
-              fontSize = 8.2.sp,
-              fontWeight = FontWeight.ExtraBold,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-              text = "BEST HULL: ${bestHullSpec.name.uppercase()}",
-              color = Color(0xFFFACC15),
-              fontSize = 7.2.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
+            // Sleek dark-glass callsign & stats tag underneath
+            Column(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .clip(RoundedCornerShape(5.dp))
+                  .background(Color(0xFF040914))
+                  .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(5.dp))
+                  .padding(horizontal = 4.dp, vertical = 2.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+              Text(
+                text = "[$tagStr] ${member.callsign}",
+                color = Color.White,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Text(
+                text = "HULL: ${bestHullSpec.name.uppercase()}",
+                color = holoRingColor,
+                fontSize = 7.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
           }
         } else {
           // Empty holographic invite pedestal
           Column(
             modifier =
               Modifier.width(96.dp)
-                .height(106.dp)
+                .height(110.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color(0x55071122))
                 .border(1.dp, Color(0x44475569), RoundedCornerShape(10.dp))
@@ -1911,7 +2247,7 @@ private fun BrawlStarsArmadaStagingDeck(
           ) {
             Text(
               text = "＋",
-              color = Color(0xFF38BDF8),
+              color = Color(0xFF00F5D4),
               fontSize = 16.sp,
               fontWeight = FontWeight.Black,
             )
@@ -1948,60 +2284,80 @@ private fun RankedModeDeploymentCard(
   syndicateWarRecord: SyndicateWarRecord,
   onDeploy: () -> Unit,
 ) {
+  // Color-coded chamfered neon border:
+  // Cyan #00F5D4 for FFA (SECTOR_CONVERGENCE) & Rift Control (RIFT_CONTROL)
+  // Gold #F59E0B for Team Deathmatch (RIFT_SKIRMISH) & Flux Core (FLUX_CORE)
+  // Purple #A855F7 for Stasis Breach (STASIS_BREACH) & Syndicate Wars (SYNDICATE_WARS)
   val modeAccent =
     when (mode) {
-      RankedGameMode.SECTOR_CONVERGENCE -> Color(0xFF00F5D4)
-      RankedGameMode.RIFT_SKIRMISH -> Color(0xFF38BDF8)
-      RankedGameMode.FLUX_CORE -> Color(0xFFFACC15)
-      RankedGameMode.STASIS_BREACH -> Color(0xFFFB7185)
-      RankedGameMode.RIFT_CONTROL -> Color(0xFFA855F7)
-      RankedGameMode.SYNDICATE_WARS -> Color(0xFFF59E0B)
+      RankedGameMode.SECTOR_CONVERGENCE,
+      RankedGameMode.RIFT_CONTROL -> Color(0xFF00F5D4)
+      RankedGameMode.RIFT_SKIRMISH,
+      RankedGameMode.FLUX_CORE -> Color(0xFFF59E0B)
+      RankedGameMode.STASIS_BREACH,
+      RankedGameMode.SYNDICATE_WARS -> Color(0xFFA855F7)
     }
 
-  val modeIcon =
+  val displayTitle =
+    if (mode == RankedGameMode.RIFT_CONTROL) "RIFT CONTROL (TUG-OF-WAR)"
+    else mode.title.uppercase()
+
+  val modeDescription =
     when (mode) {
-      RankedGameMode.SECTOR_CONVERGENCE -> "🌀"
-      RankedGameMode.RIFT_SKIRMISH -> "⚔️"
-      RankedGameMode.FLUX_CORE -> "⚡"
-      RankedGameMode.STASIS_BREACH -> "🔒"
-      RankedGameMode.RIFT_CONTROL -> "🎯"
-      RankedGameMode.SYNDICATE_WARS -> "🏴‍☠️"
+      RankedGameMode.SECTOR_CONVERGENCE ->
+        "20-Pilot FFA / 1–5 Armada Bounty • Ongoing 60m cycle • +100❖ Rift Shards for #1 Bounty with >50% presence."
+      RankedGameMode.RIFT_SKIRMISH ->
+        "Best-of-3 Team Deathmatch (3m Rounds • No Respawn) • Opposite West/East Warp Gates • +75❖ Rift Shards on match win."
+      RankedGameMode.FLUX_CORE ->
+        "20-Pilot Singularity Carrier FFA • +1 Overcharge Tier / 5s (up to +50% Dmg/Recharge & +40% Speed) + 15 Bounty/s • 30s Safe-Zone Eject."
+      RankedGameMode.STASIS_BREACH ->
+        "10v10 Circular Stasis Jailbreak • Kills send victims to enemy Stasis Jail • Prisoners destroy 4,000⚡ Center Core to detonate and break out!"
+      RankedGameMode.RIFT_CONTROL ->
+        "Hold a Rift uncontested for 30s to lock it • 3m match timer or instant win when both Rifts are locked."
+      RankedGameMode.SYNDICATE_WARS ->
+        "Direct [$syndicateTag] Clan-vs-Clan Ranked Ladder • H2H Record: 🏆 ${syndicateWarRecord.warTrophies} WAR TROPHIES (${syndicateWarRecord.warWins}W - ${syndicateWarRecord.warLosses}L)."
     }
 
-    val displayTitle =
-      if (mode == RankedGameMode.RIFT_CONTROL) "🎯 RIFT CONTROL (TUG-OF-WAR)"
-      else "$modeIcon ${mode.title.uppercase()}"
+  val isSyndicateWarsLocked = mode == RankedGameMode.SYNDICATE_WARS && !canQueueSyndicateWars.first
 
-    val modeDescription =
-      when (mode) {
-        RankedGameMode.SECTOR_CONVERGENCE ->
-          "20-Pilot FFA / 1–5 Armada Bounty • Ongoing 60m cycle • +100❖ Rift Shards for #1 Bounty with >50% presence."
-        RankedGameMode.RIFT_SKIRMISH ->
-          "Best-of-3 Team Deathmatch (3m Rounds • No Respawn) • Opposite West/East Warp Gates • +75❖ Rift Shards on match win."
-        RankedGameMode.FLUX_CORE ->
-          "20-Pilot Singularity Carrier FFA • +1 Overcharge Tier / 5s (up to +50% Dmg/Recharge & +40% Speed) + 15 Bounty/s • 30s Safe-Zone Eject."
-        RankedGameMode.STASIS_BREACH ->
-          "10v10 Circular Stasis Jailbreak • Kills send victims to enemy Stasis Jail • Prisoners destroy 4,000⚡ Center Core to detonate and break out!"
-        RankedGameMode.RIFT_CONTROL ->
-          "Hold a Rift uncontested for 30s to lock it • 3m match timer or instant win when both Rifts are locked."
-        RankedGameMode.SYNDICATE_WARS ->
-          "Direct [$syndicateTag] Clan-vs-Clan Ranked Ladder • H2H Record: 🏆 ${syndicateWarRecord.warTrophies} WAR TROPHIES (${syndicateWarRecord.warWins}W - ${syndicateWarRecord.warLosses}L)."
-      }
-
-    val isSyndicateWarsLocked = mode == RankedGameMode.SYNDICATE_WARS && !canQueueSyndicateWars.first
+  Box(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(10.dp))
+        .background(if (isCurrentActive) Color(0xE60B1D33) else Color(0xD907101F))
+        .border(
+          width = if (isCurrentActive) 1.6.dp else 1.dp,
+          color = if (isCurrentActive) modeAccent else modeAccent.copy(alpha = 0.52f),
+          shape = RoundedCornerShape(10.dp),
+        )
+        .testTag("nexus_mode_card_${mode.id}")
+  ) {
+    // Chamfered Corner Neon Brackets
+    Canvas(modifier = Modifier.matchParentSize()) {
+      val bLen = 10.dp.toPx()
+      val bStroke = 2.dp.toPx()
+      drawLine(modeAccent, Offset(0f, 0f), Offset(bLen, 0f), bStroke)
+      drawLine(modeAccent, Offset(0f, 0f), Offset(0f, bLen), bStroke)
+      drawLine(modeAccent, Offset(size.width - bLen, 0f), Offset(size.width, 0f), bStroke)
+      drawLine(modeAccent, Offset(size.width, 0f), Offset(size.width, bLen), bStroke)
+      drawLine(modeAccent, Offset(0f, size.height), Offset(bLen, size.height), bStroke)
+      drawLine(modeAccent, Offset(0f, size.height - bLen), Offset(0f, size.height), bStroke)
+      drawLine(
+        modeAccent,
+        Offset(size.width - bLen, size.height),
+        Offset(size.width, size.height),
+        bStroke,
+      )
+      drawLine(
+        modeAccent,
+        Offset(size.width, size.height - bLen),
+        Offset(size.width, size.height),
+        bStroke,
+      )
+    }
 
     Column(
-      modifier =
-        Modifier.fillMaxWidth()
-          .clip(RoundedCornerShape(10.dp))
-          .background(if (isCurrentActive) Color(0xCC0B1D33) else Color(0x9907101F))
-          .border(
-            width = if (isCurrentActive) 1.5.dp else 1.dp,
-            color = if (isCurrentActive) modeAccent else modeAccent.copy(alpha = 0.45f),
-            shape = RoundedCornerShape(10.dp),
-          )
-          .padding(9.dp)
-          .testTag("nexus_mode_card_${mode.id}"),
+      modifier = Modifier.fillMaxWidth().padding(10.dp),
       verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
       Row(
@@ -2011,9 +2367,60 @@ private fun RankedModeDeploymentCard(
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          horizontalArrangement = Arrangement.spacedBy(7.dp),
           modifier = Modifier.weight(1f),
         ) {
+          // Crisp Vector Mode Emblem
+          Box(
+            modifier =
+              Modifier.size(24.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFF040914))
+                .border(1.dp, modeAccent, RoundedCornerShape(6.dp)),
+            contentAlignment = Alignment.Center,
+          ) {
+            Canvas(modifier = Modifier.size(16.dp)) {
+              val r = size.minDimension * 0.42f
+              val c = Offset(size.width * 0.5f, size.height * 0.5f)
+              when (mode) {
+                RankedGameMode.SECTOR_CONVERGENCE -> {
+                  drawCircle(modeAccent, radius = r, center = c, style = Stroke(width = 1.6f))
+                  drawCircle(modeAccent, radius = r * 0.38f, center = c)
+                }
+                RankedGameMode.RIFT_SKIRMISH -> {
+                  drawLine(modeAccent, Offset(c.x - r, c.y - r), Offset(c.x + r, c.y + r), 2f)
+                  drawLine(modeAccent, Offset(c.x + r, c.y - r), Offset(c.x - r, c.y + r), 2f)
+                }
+                RankedGameMode.FLUX_CORE -> {
+                  drawCircle(modeAccent, radius = r * 0.85f, center = c, style = Stroke(width = 1.8f))
+                  drawCircle(Color.White, radius = r * 0.40f, center = c)
+                }
+                RankedGameMode.STASIS_BREACH -> {
+                  drawCircle(modeAccent, radius = r, center = c, style = Stroke(width = 1.8f))
+                  drawLine(modeAccent, Offset(c.x - r * 0.5f, c.y), Offset(c.x + r * 0.5f, c.y), 1.6f)
+                  drawLine(modeAccent, Offset(c.x, c.y - r * 0.5f), Offset(c.x, c.y + r * 0.5f), 1.6f)
+                }
+                RankedGameMode.RIFT_CONTROL -> {
+                  drawCircle(modeAccent, radius = r * 0.52f, center = Offset(c.x - r * 0.42f, c.y), style = Stroke(width = 1.6f))
+                  drawCircle(modeAccent, radius = r * 0.52f, center = Offset(c.x + r * 0.42f, c.y), style = Stroke(width = 1.6f))
+                }
+                RankedGameMode.SYNDICATE_WARS -> {
+                  val shield =
+                    Path().apply {
+                      moveTo(c.x, c.y - r)
+                      lineTo(c.x + r, c.y - r * 0.35f)
+                      lineTo(c.x + r * 0.65f, c.y + r * 0.55f)
+                      lineTo(c.x, c.y + r)
+                      lineTo(c.x - r * 0.65f, c.y + r * 0.55f)
+                      lineTo(c.x - r, c.y - r * 0.35f)
+                      close()
+                    }
+                  drawPath(shield, modeAccent, style = Stroke(width = 1.8f))
+                }
+              }
+            }
+          }
+
           Text(
             text = displayTitle,
             color = modeAccent,
@@ -2206,7 +2613,7 @@ private fun RankedModeDeploymentCard(
           enabled = !isSyndicateWarsLocked,
           colors =
             ButtonDefaults.buttonColors(
-              containerColor = modeAccent.copy(alpha = 0.22f),
+              containerColor = modeAccent.copy(alpha = 0.24f),
               contentColor = Color.White,
               disabledContainerColor = Color(0x551E293B),
               disabledContentColor = Color(0xFF64748B),
@@ -2231,6 +2638,7 @@ private fun RankedModeDeploymentCard(
       }
     }
   }
+}
 
   @Composable
   private fun PreMatchTeamShipLockCard(
@@ -3293,7 +3701,7 @@ private fun NexusChangelogChannelView() {
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
     Text(
-      text = "⚡ #change-log // RIFT v39.0 SECTOR COMMAND HUB & 5-MODE EXPANSION",
+      text = "⚡ #change-log // RIFT BUILD #47 — 3D RIFTS, NEXUS MATCHMAKING & COMBAT UPGRADE",
       color = Color(0xFFFACC15),
       fontSize = 11.sp,
       fontWeight = FontWeight.Black,
@@ -3301,13 +3709,13 @@ private fun NexusChangelogChannelView() {
     )
     val notes =
       listOf(
-        "🌐 NEXUS COMMAND HUB: Unified Battle.net × Discord × Brawl Stars hub with #nexus-ai streaming intelligence, 10 Ship Channels, Private [TAG] Syndicate Servers (up to 5 custom channels + Guest Passes), and Startup Boot Toggle.",
-        "🛡️ BRAWL STARS ARMADA STAGING BAY: Displays your 1–5 Pilot Armada with each pilot's #1 Peak-Bounty Hull Avatar.",
-        "⚔️ MODE 2 — RIFT SKIRMISH (2v2–5v5 Bo3 TDM): West vs East Warp Gates, 15 kills/round, +75❖ Rift Shards on match victory.",
-        "⚡ MODE 3 — VOLATILE FLUX CORE (Powerball FFA): Hold the center Singularity Orb for +15 Bounty/s and +1 Overcharge Tier every 5s (up to +50% Dmg/Recharge & +40% Speed). Safe Zone entry or death ejects the Core at 1,650 px/s!",
-        "🔒 MODE 4 — STASIS BREACH (10v10 Territory Jailbreak): Divided West/East playfield. Eliminations imprison victims in the enemy Stasis Brig. Destroy the 8,000⚡ Brig Reactor Core (100% outside / 25% prisoner damage) to trigger a mass jailbreak!",
-        "🏴‍☠️ MODE 5 — SYNDICATE WARS: Ranked Clan-vs-Clan matchmaking with persistent War Trophies and Win/Loss records.",
-        "🚀 10-SHIP ROSTER: Standard Hull #9 Interdictor (380⚡ • 9s CD • 5.0s Two-Way Stasis Bubble) + Modular Ship #10 Rift Frame.",
+        "🎯 FULL-SCREEN NEXUS MODE SELECTION: Signing in or entering as an [RFT] Drifter now opens the NEXUS Mode Selection & Armada Hub directly so you can pick your ship, Armada, and game mode before deploying.",
+        "🌀 3D PLAYFIELD RIFTS & OBJECTIVE RIFTS: Upgraded the NEXUS Singularity, all 4 Playfield Rifts (Plasma, Repulsor, Gravity, and Phase Wormholes), Stasis Breach Jails, and Rift Control Tug-of-War zones with multi-layered 3D event horizons and containment rings.",
+        "⚫ GROWING BLACK HOLE & HOLO PHANTOM RIFT PHYSICS: The Gravity Rift now pulls in and absorbs bullets (+6px), bombs/mines (+18px), and Holo Phantoms (+14px), growing up to 420px in radius. Holo Phantoms now react to all 4 Playfield Rifts.",
+        "🔒 40,000⚡ STASIS JAIL CORES & SAFE OBJECTIVE ZONES: Stasis Breach Jail Cores now have 40,000⚡ Flux (10x tougher) so multi-shot bursts inside the bubble cannot melt the core instantly, and random Rifts never spawn inside Stasis Jails or Tug-of-War rings.",
+        "🎮 FIXED MUSCLE-MEMORY COMBAT BUTTONS & ENLARGED CODEX ICONS: Secondary, Special Crate Attack, and Repel buttons are permanently locked in place around the fire stick so Repel never shifts when you have no crate weapon. Each button displays its enlarged Codex/Playfield crate emblem.",
+        "⚡ 20-SEGMENT CIRCULAR MINIMAP FLUX CAPACITOR & COMPACT WINGS: Upgraded the circular minimap Flux bar with 20 energy segments, a glowing plasma tip, and a bottom ⚡ FLUX % badge. Compacted the left/right HUD pills with a frameless 3D ship icon, stacked [TAG] under SECTOR, and a Crossed-Swords Modes button.",
+        "🎵 PROCEDURAL SPACE BATTLE MUSIC & TOGGLE: Upgraded the ambient space synth soundtrack so it is rich and audible, with a dedicated [🎵 MUSIC: ON / OFF] button in Settings.",
       )
     notes.forEach { line ->
       Text(

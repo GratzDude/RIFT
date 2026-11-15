@@ -1639,7 +1639,7 @@ object RiftCodex {
         classification = "HAZARD • RED RADAR BLIP",
         specBadge = "10% MAX FLUX / 0.6s • 180PX",
         accentHex = "#EF4444",
-        effectSummary = "Burns ships inside its 180px core for 10% Max Flux every 0.6s. Can destroy ships at 0⚡.",
+        effectSummary = "Burns ships inside its 180px core for 10% Max Flux every 0.6s and incinerates Holo Phantoms on contact. Can destroy ships at 0⚡.",
         tacticalNote = "Repel or knock low-Flux enemies into the tear for an instant kill.",
       ),
       PlayfieldRiftCodexEntry(
@@ -1648,17 +1648,17 @@ object RiftCodex {
         classification = "KINETIC • WHITE RADAR BLIP",
         specBadge = "520PX FIELD • 1.35x SLINGSHOT",
         accentHex = "#38BDF8",
-        effectSummary = "Launches approaching ships outward up to 1.35x afterburner speed and deflects shots.",
+        effectSummary = "Launches approaching ships and Holo Phantoms outward up to 1.35x afterburner speed and deflects shots.",
         tacticalNote = "Skim the edge to slingshot across the map for 0⚡.",
       ),
       PlayfieldRiftCodexEntry(
         id = "gravity_rift",
-        title = "GRAVITY RIFT (PULL WELL)",
+        title = "GRAVITY RIFT (GROWING BLACK HOLE)",
         classification = "GRAVITY • VIOLET RADAR BLIP",
-        specBadge = "600PX PULL • CORE STOP",
+        specBadge = "600PX+ PULL • GROWS TO 420PX",
         accentHex = "#A855F7",
-        effectSummary = "Pulls ships inward across 600px. Touching the center stops your ship for a moment and swallows shots.",
-        tacticalNote = "Fire bombs at enemies pulled toward the center.",
+        effectSummary = "Pulls ships, shots, bombs, and Holo Phantoms inward. Every weapon shot or phantom absorbed expands its singularity core and pull radius (up to 420px).",
+        tacticalNote = "Firing weapons into a Gravity Rift feeds its event horizon and widens its gravitational pull.",
       ),
       PlayfieldRiftCodexEntry(
         id = "phase_rift_pair",
@@ -1666,8 +1666,8 @@ object RiftCodex {
         classification = "PORTALS • TEAL RADAR BLIPS",
         specBadge = "INSTANT WARP • 1.0s CD",
         accentHex = "#2DD4BF",
-        effectSummary = "Linked portals across the map. Ships and shots entering one gate exit the other at full speed.",
-        tacticalNote = "Shoot Bounce Bombs through a portal or warp away from hunters.",
+        effectSummary = "Linked portals across the map. Ships, Holo Phantoms, and shots entering one gate exit the other at full speed.",
+        tacticalNote = "Shoot Bounce Bombs or send a Holo Phantom through a portal to ambush enemies.",
       ),
     )
 

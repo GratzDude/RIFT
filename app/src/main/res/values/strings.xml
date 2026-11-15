@@ -1,12 +1,12 @@
 <resources>
     <string name="app_name">RIFT</string>
     <string name="auth_title">RIFT // SECTOR CONVERGENCE</string>
-    <string name="auth_subtitle">2D Newtonian Space Combat Arena • 10v10 Continuous Warzone</string>
-    <string name="sign_in_with_google">Sign in with Google</string>
+    <string name="auth_subtitle">NEXUS Tactical Command • 10 Modular 3D Hulls • 6 Official Modes</string>
+    <string name="sign_in_with_google">SIGN IN WITH GOOGLE (SWORN PILOT)</string>
     <string name="signing_in">Authenticating Command Link…</string>
-    <string name="auth_feature_physics">Zero-Friction Drift &amp; 0.65 Elastic Wall Bounce</string>
-    <string name="auth_feature_ships">9 Modular Hulls • Supply Buff Pool • Unified Flux Capacitor</string>
-    <string name="auth_feature_cloud">Live Cloud Leaderboard (PVP Only &amp; All-Time) + Sector Sync</string>
+    <string name="auth_feature_physics">10 Modular 3D Hulls • 6 Crate Overcharge Buffs • Unified Flux Capacitor</string>
+    <string name="auth_feature_ships">6 Official Ranked Modes • 2-Rift Tug-of-War • Custom 10-Rule Sandbox</string>
+    <string name="auth_feature_cloud">Sworn Pilot Cloud Dossier (#RFT-XXXXXX) • Syndicates &amp; Live Leaderboards</string>
     <string name="sign_out">Sign Out</string>
     <string name="nexus_orb_content_desc">Open NEXUS Rift Core Tactical Intelligence</string>
     <string name="nexus_console_title">NEXUS // OMNISCIENT RIFT CORE</string>

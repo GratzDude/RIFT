@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,11 +21,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -569,117 +574,196 @@ fun HangarModal(
                 }
               }
 
-              // Ship #10: Full-Width Rift Frame Modular Forge Banner directly beneath the 3x3 standard ship matrix
+              // Ship #10: Full-Width Rift Frame (Modular) Card with glowing purple-magenta (#A855F7 / #EC4899) chamfered border,
+              // blueprint thumbnails for Frame A / B / C, and bold [🛠 FORGE & CUSTOMIZE HULL] button
               val tenthShip = allNineShips.first { it.id == 10 }
               val isTenthSelected = currentShipId == 10
               val isTenthEquipped = selectedShipId == 10
               val normalizedSlot = CustomShipLoadoutSlot.normalizeSlotId(activeCustomSlot.slotId)
-              Row(
+              Box(
                 modifier =
                   Modifier.fillMaxWidth()
-                    .height(54.dp)
+                    .height(58.dp)
                     .testTag("hangar_ship_card_10")
                     .clip(RoundedCornerShape(9.dp))
-                    .background(if (isTenthSelected) Color(0xFF1B1033) else Color(0xFF140D26))
+                    .background(
+                      Brush.horizontalGradient(
+                        listOf(
+                          if (isTenthSelected) Color(0xFF1F113B) else Color(0xFF130B26),
+                          Color(0xFF280E38),
+                        )
+                      )
+                    )
                     .border(
                       if (isTenthSelected || isTenthEquipped) 1.5.dp else 1.dp,
                       when {
-                        isTenthSelected -> Color(0xFF00F0FF)
-                        isTenthEquipped -> Color(0xFF22C55E)
-                        else -> Color(0xFFC084FC).copy(alpha = 0.75f)
+                        isTenthSelected -> Color(0xFFEC4899)
+                        isTenthEquipped -> Color(0xFF00F5D4)
+                        else -> Color(0xFFA855F7)
                       },
                       RoundedCornerShape(9.dp),
                     )
                     .clickable { currentShipId = 10 }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
               ) {
+                // Chamfered Purple-Magenta Corner Bracket Ticks
+                Canvas(modifier = Modifier.matchParentSize()) {
+                  val tLen = 9.dp.toPx()
+                  val sW = 2.dp.toPx()
+                  val cLeft = Color(0xFFA855F7)
+                  val cRight = Color(0xFFEC4899)
+                  drawLine(cLeft, Offset(0f, 0f), Offset(tLen, 0f), sW)
+                  drawLine(cLeft, Offset(0f, 0f), Offset(0f, tLen), sW)
+                  drawLine(cLeft, Offset(0f, size.height), Offset(tLen, size.height), sW)
+                  drawLine(cLeft, Offset(0f, size.height - tLen), Offset(0f, size.height), sW)
+                  drawLine(cRight, Offset(size.width - tLen, 0f), Offset(size.width, 0f), sW)
+                  drawLine(cRight, Offset(size.width, 0f), Offset(size.width, tLen), sW)
+                  drawLine(
+                    cRight,
+                    Offset(size.width - tLen, size.height),
+                    Offset(size.width, size.height),
+                    sW,
+                  )
+                  drawLine(
+                    cRight,
+                    Offset(size.width, size.height - tLen),
+                    Offset(size.width, size.height),
+                    sW,
+                  )
+                }
+
                 Row(
+                  modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 5.dp),
                   verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(8.dp),
-                  modifier = Modifier.weight(0.45f),
+                  horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                  Box(
-                    modifier =
-                      Modifier.size(40.dp)
-                        .background(Color(0xFF050A14), RoundedCornerShape(7.dp))
-                        .border(1.dp, Color(0xFFC084FC).copy(alpha = 0.7f), RoundedCornerShape(7.dp)),
-                    contentAlignment = Alignment.Center,
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(0.44f),
                   ) {
-                    ShipSpritePreview(shipId = 10, sizeDp = 36)
-                  }
-                  Column {
-                    Row(
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    Box(
+                      modifier =
+                        Modifier.size(42.dp)
+                          .background(Color(0xFF070B16), RoundedCornerShape(7.dp))
+                          .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(7.dp)),
+                      contentAlignment = Alignment.Center,
                     ) {
+                      Canvas(modifier = Modifier.fillMaxSize()) {
+                        drawCircle(
+                          brush =
+                            Brush.radialGradient(
+                              colors = listOf(Color(0x66EC4899), Color.Transparent),
+                            ),
+                          radius = size.minDimension * 0.48f,
+                        )
+                      }
+                      ShipSpritePreview(shipId = 10, sizeDp = 36)
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                      Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                      ) {
+                        Text(
+                          text = "RIFT FRAME (MODULAR)",
+                          color = Color.White,
+                          fontSize = 13.sp,
+                          fontWeight = FontWeight.Black,
+                          fontFamily = FontFamily.SansSerif,
+                          maxLines = 1,
+                          overflow = TextOverflow.Ellipsis,
+                        )
+                        if (isTenthEquipped) {
+                          Text(
+                            text = "EQUIPPED",
+                            color = Color(0xFF00F5D4),
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                          )
+                        }
+                      }
                       Text(
-                        text = "RIFT FRAME",
-                        color = Color.White,
-                        fontSize = 14.5.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = FontFamily.SansSerif,
+                        text =
+                          if (isNinthUnlocked) {
+                            "$normalizedSlot • $pointsAllocatedInSlot/$effectivePointBudget PTS"
+                          } else {
+                            "🔒 LVL 20 GATE • $normalizedSlot ($pointsAllocatedInSlot/$effectivePointBudget PTS)"
+                          },
+                        color = if (isNinthUnlocked) Color(0xFFEC4899) else Color(0xFFF59E0B),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                       )
-                      if (isTenthEquipped) {
-                        Text(
-                          text = "★",
-                          color = Color(0xFF22C55E),
-                          fontSize = 12.sp,
-                          fontWeight = FontWeight.Black,
-                        )
+                    }
+                  }
+
+                  // Blueprint Thumbnails for Frame A / B / C
+                  Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                  ) {
+                    listOf("FRAME A", "FRAME B", "FRAME C").forEach { frameLbl ->
+                      val isActiveFrame = normalizedSlot.equals(frameLbl, ignoreCase = true)
+                      Box(
+                        modifier =
+                          Modifier.clip(RoundedCornerShape(5.dp))
+                            .background(
+                              if (isActiveFrame) Color(0xFF3B1366) else Color(0xFF090E1A)
+                            )
+                            .border(
+                              1.dp,
+                              if (isActiveFrame) Color(0xFFEC4899) else Color(0xFF475569),
+                              RoundedCornerShape(5.dp),
+                            )
+                            .padding(horizontal = 5.dp, vertical = 3.dp),
+                        contentAlignment = Alignment.Center,
+                      ) {
+                        Row(
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                          ShipSpritePreview(shipId = 10, sizeDp = 14)
+                          Text(
+                            text = frameLbl.removePrefix("FRAME "),
+                            color = if (isActiveFrame) Color.White else Color(0xFF94A3B8),
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                          )
+                        }
                       }
                     }
+                  }
+
+                  // Direct [🛠 FORGE & CUSTOMIZE HULL] Button
+                  Box(
+                    modifier =
+                      Modifier.testTag("btn_matrix_open_9th_forge")
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                          Brush.horizontalGradient(
+                            listOf(Color(0xFF6D28D9), Color(0xFFBE185D))
+                          )
+                        )
+                        .border(1.dp, Color(0xFFEC4899), RoundedCornerShape(6.dp))
+                        .clickable {
+                          currentShipId = 10
+                          showFullNinthShipForgeModal = true
+                        }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center,
+                  ) {
                     Text(
-                      text =
-                        if (isNinthUnlocked) {
-                          "$normalizedSlot • $pointsAllocatedInSlot/$effectivePointBudget PTS"
-                        } else {
-                          "🔒 LVL 20 GATE • $normalizedSlot ($pointsAllocatedInSlot/$effectivePointBudget PTS)"
-                        },
-                      color = if (isNinthUnlocked) Color(0xFFC084FC) else Color(0xFFF59E0B),
-                      fontSize = 10.5.sp,
-                      fontWeight = FontWeight.Bold,
-                      fontFamily = FontFamily.SansSerif,
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
+                      text = "🛠 FORGE & CUSTOMIZE HULL",
+                      color = Color.White,
+                      fontSize = 8.2.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
                     )
                   }
-                }
-
-                // Compact 3-Bar (SPD / THR / FLX) Preview
-                Column(
-                  modifier = Modifier.weight(0.32f).padding(horizontal = 6.dp),
-                  verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                  CardMatrixStatBar("SPD", tenthShip.speedPts, tenthShip.topSpeed.roundToInt().toString())
-                  CardMatrixStatBar("THR", tenthShip.thrustPts, tenthShip.thrust.roundToInt().toString())
-                  CardMatrixStatBar("FLX", tenthShip.maxFluxPts, tenthShip.maxFlux.roundToInt().toString())
-                }
-
-                // Direct [🛠️ FORGE & AI HULL] Button
-                Box(
-                  modifier =
-                    Modifier.testTag("btn_matrix_open_9th_forge")
-                      .clip(RoundedCornerShape(6.dp))
-                      .background(Color(0xFF4C1D95))
-                      .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(6.dp))
-                      .clickable {
-                        currentShipId = 10
-                        showFullNinthShipForgeModal = true
-                      }
-                      .padding(horizontal = 8.dp, vertical = 6.dp),
-                  contentAlignment = Alignment.Center,
-                ) {
-                  Text(
-                    text = "🛠️ FORGE & AI HULL",
-                    color = Color.White,
-                    fontSize = 8.5.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                  )
                 }
               }
             }
@@ -739,139 +823,190 @@ private fun MatrixShipComparisonCell(
 
   val borderColor =
     when {
-      isSelected -> Color(0xFF00F0FF)
-      isEquipped -> Color(0xFF22C55E)
+      isSelected || isEquipped -> Color(0xFF00F5D4)
       isNinthCell -> Color(0xFFC084FC).copy(alpha = 0.7f)
       else -> Color(0xFF1E293B)
     }
 
   val bgColor =
     when {
-      isSelected -> Color(0xFF11223D)
+      isSelected -> Color(0xFF0E1D34)
       isNinthCell -> Color(0xFF140D26)
-      else -> Color(0xFF0A1322)
+      else -> Color(0xFF0A1324)
     }
 
   val cleanName = cleanShipDisplayTitle(ship)
 
-  Column(
+  Box(
     modifier =
       modifier
         .testTag("hangar_ship_card_${ship.id}")
         .clip(RoundedCornerShape(9.dp))
         .background(bgColor)
-        .border(if (isSelected || isEquipped) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(9.dp))
+        .border(
+          if (isSelected || isEquipped) 1.5.dp else 1.dp,
+          borderColor,
+          RoundedCornerShape(9.dp),
+        )
         .clickable { onSelect() }
-        .padding(horizontal = 8.dp, vertical = 6.dp),
-    verticalArrangement = Arrangement.SpaceBetween,
   ) {
-    // Top Row: Sprite + Enlarged Bold Name (15sp) + Role Subtitle (11sp)
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-        modifier = Modifier.weight(1f),
-      ) {
-        val spriteBitmap =
-          remember(ship.id, spriteVersion) {
-            RiftSpriteBaker.getShipSprite(
-                shipId = ship.id,
-                isAllied = true,
-                isHitFlashing = false,
-              )
-              .asImageBitmap()
-          }
-        Box(
-          modifier =
-            Modifier.size(34.dp)
-              .background(Color(0xFF050A14), RoundedCornerShape(7.dp))
-              .border(1.dp, accentColor.copy(alpha = 0.55f), RoundedCornerShape(7.dp)),
-          contentAlignment = Alignment.Center,
-        ) {
-          Image(
-            bitmap = spriteBitmap,
-            contentDescription = cleanName,
-            filterQuality = FilterQuality.High,
-            modifier = Modifier.size(28.dp),
-          )
-        }
+    // Crisp Holographic Corner Bracket Ticks (#00F5D4 Cyan when equipped/selected, #1E293B slate otherwise)
+    Canvas(modifier = Modifier.matchParentSize()) {
+      val tickLen = 8.dp.toPx()
+      val strokeW = 1.8.dp.toPx()
+      val tickCol =
+        if (isSelected || isEquipped) Color(0xFF00F5D4) else Color(0xFF1E293B)
+      drawLine(tickCol, Offset(0f, 0f), Offset(tickLen, 0f), strokeW)
+      drawLine(tickCol, Offset(0f, 0f), Offset(0f, tickLen), strokeW)
+      drawLine(tickCol, Offset(size.width - tickLen, 0f), Offset(size.width, 0f), strokeW)
+      drawLine(tickCol, Offset(size.width, 0f), Offset(size.width, tickLen), strokeW)
+      drawLine(tickCol, Offset(0f, size.height), Offset(tickLen, size.height), strokeW)
+      drawLine(tickCol, Offset(0f, size.height - tickLen), Offset(0f, size.height), strokeW)
+      drawLine(
+        tickCol,
+        Offset(size.width - tickLen, size.height),
+        Offset(size.width, size.height),
+        strokeW,
+      )
+      drawLine(
+        tickCol,
+        Offset(size.width, size.height - tickLen),
+        Offset(size.width, size.height),
+        strokeW,
+      )
+    }
 
-        Column(modifier = Modifier.weight(1f)) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+    Column(
+      modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
+      verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+      // Top Row: Centered/Framed 128x128 3D Ship Sprite with Radial Under-Glow + Name + Top-Right Status Badge
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(7.dp),
+          modifier = Modifier.weight(1f),
+        ) {
+          val spriteBitmap =
+            remember(ship.id, spriteVersion) {
+              RiftSpriteBaker.getShipSprite(
+                  shipId = ship.id,
+                  isAllied = true,
+                  isHitFlashing = false,
+                )
+                .asImageBitmap()
+            }
+          Box(
+            modifier =
+              Modifier.size(36.dp)
+                .background(Color(0xFF050A14), RoundedCornerShape(7.dp))
+                .border(1.dp, accentColor.copy(alpha = 0.55f), RoundedCornerShape(7.dp)),
+            contentAlignment = Alignment.Center,
           ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+              drawCircle(
+                brush =
+                  Brush.radialGradient(
+                    colors = listOf(accentColor.copy(alpha = 0.36f), Color.Transparent),
+                  ),
+                radius = size.minDimension * 0.48f,
+              )
+            }
+            Image(
+              bitmap = spriteBitmap,
+              contentDescription = cleanName,
+              filterQuality = FilterQuality.High,
+              modifier = Modifier.size(30.dp),
+            )
+          }
+
+          Column(modifier = Modifier.weight(1f)) {
             Text(
               text = cleanName,
               color = Color.White,
-              fontSize = 15.sp,
+              fontSize = 14.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.SansSerif,
-              lineHeight = 16.sp,
+              lineHeight = 15.sp,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
-            if (isEquipped) {
-              Text(
-                text = "★",
-                color = Color(0xFF22C55E),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Black,
-              )
-            }
+            Text(
+              text =
+                if (isNinthCell) {
+                  if (isNinthUnlocked) "${activeSlotId.uppercase(Locale.US)} • $pointsAllocated/$pointBudget PTS"
+                  else "🔒 LVL 20 GATE"
+                } else {
+                  ship.role.uppercase(Locale.US)
+                },
+              color = if (isNinthCell && !isNinthUnlocked) Color(0xFFF59E0B) else accentColor,
+              fontSize = 10.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.SansSerif,
+              lineHeight = 11.sp,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
           }
-          Text(
-            text =
-              if (isNinthCell) {
-                if (isNinthUnlocked) "${activeSlotId.uppercase(Locale.US)} • $pointsAllocated/$pointBudget PTS"
-                else "🔒 LVL 20 GATE"
-              } else {
-                ship.role.uppercase(Locale.US)
-              },
-            color = if (isNinthCell && !isNinthUnlocked) Color(0xFFF59E0B) else accentColor,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.SansSerif,
-            lineHeight = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
+        }
+
+        // Top-right status badge (EQUIPPED in cyan or SELECT in muted slate)
+        if (isNinthCell) {
+          Box(
+            modifier =
+              Modifier.testTag("btn_matrix_open_9th_forge")
+                .clip(RoundedCornerShape(5.dp))
+                .background(Color(0xFF4C1D95))
+                .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(5.dp))
+                .clickable { onOpenNinthForge() }
+                .padding(horizontal = 6.dp, vertical = 3.dp)
+          ) {
+            Text(
+              text = "🛠️ FORGE",
+              color = Color.White,
+              fontSize = 8.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        } else {
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(4.dp))
+                .background(
+                  if (isEquipped) Color(0xFF042F2E) else Color(0xFF0F172A)
+                )
+                .border(
+                  1.dp,
+                  if (isEquipped) Color(0xFF00F5D4) else Color(0xFF334155),
+                  RoundedCornerShape(4.dp),
+                )
+                .padding(horizontal = 4.dp, vertical = 1.5.dp)
+          ) {
+            Text(
+              text = if (isEquipped) "EQUIPPED" else "SELECT",
+              color = if (isEquipped) Color(0xFF00F5D4) else Color(0xFF64748B),
+              fontSize = 7.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
         }
       }
 
-      if (isNinthCell) {
-        Box(
-          modifier =
-            Modifier.testTag("btn_matrix_open_9th_forge")
-              .clip(RoundedCornerShape(5.dp))
-              .background(Color(0xFF4C1D95))
-              .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(5.dp))
-              .clickable { onOpenNinthForge() }
-              .padding(horizontal = 6.dp, vertical = 3.dp)
-        ) {
-          Text(
-            text = "🛠️ FORGE",
-            color = Color.White,
-            fontSize = 8.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
+      // Decluttered 3-Bar Core Hull Preview (SPD / THR / FLX) — Monochrome Cyan, Anchored at Baseline Floor (0 pts = 10%)
+      Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+      ) {
+        CardMatrixStatBar("SPD", ship.speedPts, ship.topSpeed.roundToInt().toString())
+        CardMatrixStatBar("THR", ship.thrustPts, ship.thrust.roundToInt().toString())
+        CardMatrixStatBar("FLX", ship.maxFluxPts, ship.maxFlux.roundToInt().toString())
       }
-    }
-
-    // Decluttered 3-Bar Core Hull Preview (SPD / THR / FLX) — Monochrome Cyan, Anchored at Baseline Floor (0 pts = 10%)
-    Column(
-      modifier = Modifier.fillMaxWidth(),
-      verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-      CardMatrixStatBar("SPD", ship.speedPts, ship.topSpeed.roundToInt().toString())
-      CardMatrixStatBar("THR", ship.thrustPts, ship.thrust.roundToInt().toString())
-      CardMatrixStatBar("FLX", ship.maxFluxPts, ship.maxFlux.roundToInt().toString())
     }
   }
 }
@@ -1036,10 +1171,15 @@ private fun ShipComparisonInspectorPanel(
       modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-      // Header + Sprite (18sp Ship Title)
+      // 3D Holographic Ship Inspector Pedestal + Header (128x128 sprite above concentric glowing emitter rings & scan-cone)
       Row(
+        modifier =
+          Modifier.fillMaxWidth()
+            .background(Color(0xFF060C18), RoundedCornerShape(9.dp))
+            .border(1.dp, accentColor.copy(alpha = 0.50f), RoundedCornerShape(9.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
       ) {
         val largeSprite =
           remember(ship.id, spriteVersion) {
@@ -1050,22 +1190,80 @@ private fun ShipComparisonInspectorPanel(
               )
               .asImageBitmap()
           }
+        val holoPrimary = if (isNinth) Color(0xFFA855F7) else Color(0xFF00F5D4)
         Box(
-          modifier =
-            Modifier.size(50.dp)
-              .background(Color(0xFF050A14), RoundedCornerShape(8.dp))
-              .border(1.5.dp, accentColor, RoundedCornerShape(8.dp)),
+          modifier = Modifier.size(width = 76.dp, height = 68.dp),
           contentAlignment = Alignment.Center,
         ) {
+          Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val baseCx = w * 0.5f
+            val baseCy = h * 0.80f
+
+            // Subtle cyan wireframe grid lines on the pedestal deck
+            val gridCol = holoPrimary.copy(alpha = 0.16f)
+            drawLine(gridCol, Offset(w * 0.10f, baseCy), Offset(w * 0.90f, baseCy), 1f)
+            drawLine(gridCol, Offset(baseCx, h * 0.12f), Offset(baseCx, h * 0.95f), 1f)
+
+            // Upward translucent hologram scan-cone
+            val conePath =
+              Path().apply {
+                moveTo(baseCx - w * 0.36f, baseCy)
+                lineTo(baseCx - w * 0.44f, h * 0.14f)
+                lineTo(baseCx + w * 0.44f, h * 0.14f)
+                lineTo(baseCx + w * 0.36f, baseCy)
+                close()
+              }
+            drawPath(
+              path = conePath,
+              brush =
+                Brush.verticalGradient(
+                  colors =
+                    listOf(
+                      holoPrimary.copy(alpha = 0.04f),
+                      holoPrimary.copy(alpha = 0.24f),
+                    ),
+                  startY = h * 0.14f,
+                  endY = baseCy,
+                ),
+            )
+
+            // Concentric glowing cyan/purple emitter rings at pedestal base
+            drawOval(
+              color = holoPrimary.copy(alpha = 0.25f),
+              topLeft = Offset(baseCx - w * 0.42f, baseCy - h * 0.12f),
+              size = Size(w * 0.84f, h * 0.24f),
+            )
+            drawOval(
+              color = holoPrimary,
+              topLeft = Offset(baseCx - w * 0.42f, baseCy - h * 0.12f),
+              size = Size(w * 0.84f, h * 0.24f),
+              style = Stroke(width = 1.6.dp.toPx()),
+            )
+            drawOval(
+              color = Color.White.copy(alpha = 0.75f),
+              topLeft = Offset(baseCx - w * 0.24f, baseCy - h * 0.07f),
+              size = Size(w * 0.48f, h * 0.14f),
+              style = Stroke(width = 1.dp.toPx()),
+            )
+          }
           Image(
             bitmap = largeSprite,
             contentDescription = cleanTitle,
             filterQuality = FilterQuality.High,
-            modifier = Modifier.size(42.dp),
+            modifier = Modifier.size(48.dp).offset(y = (-5).dp),
           )
         }
 
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Text(
+            text = "HOLO-INSPECTOR // HULL #${ship.id}",
+            color = holoPrimary,
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
           Text(
             text = cleanTitle,
             color = Color.White,
@@ -1077,7 +1275,7 @@ private fun ShipComparisonInspectorPanel(
           Text(
             text = ship.role.uppercase(Locale.US),
             color = accentColor,
-            fontSize = 12.sp,
+            fontSize = 11.5.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.SansSerif,
           )

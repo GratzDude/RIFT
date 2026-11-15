@@ -169,6 +169,7 @@ fun RiftHudOverlay(
   onCycleCameraZoom: () -> Unit = {},
   isNexusStreaming: Boolean = false,
   onOpenNexus: () -> Unit = {},
+  onOpenModes: () -> Unit = onOpenNexus,
   onEngageBrake: () -> Unit,
   onToggleMultifire: () -> Unit,
 ) {
@@ -182,11 +183,12 @@ fun RiftHudOverlay(
   val sectorX = ((player.x / 1000f).toInt()).coerceIn(0, 7)
   val sectorY = ((player.y / 1000f).toInt()).coerceIn(0, 7)
   val sectorCode = "${('A' + sectorX)}${sectorY + 1}"
+  val tagCore = player.syndicateTag.ifBlank { "RFT" }
   val armadaBadge =
     if (engine.activeArmadaName.isNotEmpty()) {
-      "[${engine.activeArmadaName} ${engine.getCurrentArmadaSize()}/5]"
+      "[$tagCore] • ${engine.activeArmadaName} ${engine.getCurrentArmadaSize()}/5"
     } else {
-      "[SOLO]"
+      "[$tagCore] • SOLO"
     }
   val zoomFormatted = String.format(Locale.US, "%.2fx", cameraZoom).replace(".00x", ".0x")
 
@@ -474,7 +476,7 @@ fun RiftHudOverlay(
       }
     }
 
-    // 5. Bottom-Center EVE Echoes Console: Auto-Scaling Symmetric Telemetry Wings + Circular Radar Minimap
+    // 5. Bottom-Center Tactical Console: Auto-Scaling Symmetric Telemetry Wings + Circular Radar Minimap
     // Uses SubcomposeLayout so BOTH wings auto-scale with user Text Size (zero hardcoded width/height)
     // while matching each other 1:1 in width and height alongside the embedded frameless swirling NEXUS vortex!
     // When UI Unlock is active, NO outer rectangular wrapper box is drawn; amber dashed outlines trace
@@ -567,6 +569,7 @@ fun RiftHudOverlay(
         isNexusStreaming = isNexusStreaming,
         onOpenHangar = onOpenHangar,
         onOpenNexus = onOpenNexus,
+        onOpenModes = onOpenModes,
         frameTick = tickRead,
         rootScreenSize = rootScreenSize,
       )
@@ -768,6 +771,7 @@ private fun SymmetricBottomConsoleLayout(
   isNexusStreaming: Boolean,
   onOpenHangar: () -> Unit,
   onOpenNexus: () -> Unit,
+  onOpenModes: () -> Unit,
   frameTick: Int,
   rootScreenSize: IntSize,
 ) {
@@ -779,10 +783,9 @@ private fun SymmetricBottomConsoleLayout(
       else -> Color(0xFFEF4444)
     }
 
-  val padStart = (10f * textScale).dp
-  val padEnd = (10f * textScale).dp
-  val padVert = (7f * textScale).dp
-  val lineGap = (2.2f * textScale).dp
+  val padStart = (8f * textScale).dp
+  val padVert = (5.5f * textScale).dp
+  val lineGap = (1.2f * textScale).dp
   val consoleGap = 8.dp
 
   val shipBmp =
@@ -798,95 +801,161 @@ private fun SymmetricBottomConsoleLayout(
           .background(Color(0xF6080E18), RoundedCornerShape(50))
           .border(1.dp, Color(0x5938BDF8), RoundedCornerShape(50))
           .wysiwygUnlockOutline(enabled = uiUnlocked && fillEqualSpace, cornerRadius = 28.dp)
-          .padding(start = (6f * textScale).dp, end = (8f * textScale).dp, top = padVert, bottom = padVert),
+          .padding(start = (5f * textScale).dp, end = (6.5f * textScale).dp, top = padVert, bottom = padVert),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement =
-        if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((7f * textScale).dp),
+        if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((5.5f * textScale).dp),
     ) {
-      // Outer Left: Hangar Ship Quick-Swap Button (38.dp circle with ship sprite + HANGAR / LOCKED badge)
+      // Outer Left: Frameless 3D Ship Sprite over a Holographic Emitter Ring (No circle border or cut-off "HANGAR" text)
       Box(
         modifier =
-          Modifier.size(38.dp)
-            .clip(CircleShape)
-            .background(Color(0xCC0D223B))
-            .border(
-              1.2.dp,
-              if (engine.isShipLockedForMatch) Color(0xFFF59E0B) else Color(0xFF38BDF8),
-              CircleShape,
-            )
+          Modifier.size(36.dp)
             .clickable(enabled = !uiUnlocked) { onOpenHangar() }
             .testTag("hud_btn_hangar_ship"),
         contentAlignment = Alignment.Center,
       ) {
-        Canvas(modifier = Modifier.size(28.dp)) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+          val cx = size.width * 0.5f
+          val cy = size.height * 0.5f
+          val ringCol = if (engine.isShipLockedForMatch) Color(0xFFF59E0B) else Color(0xFF00F5D4)
+          drawOval(
+            color = ringCol.copy(alpha = 0.24f),
+            topLeft = Offset(cx - size.width * 0.44f, cy + size.height * 0.16f),
+            size = Size(size.width * 0.88f, size.height * 0.28f),
+          )
+          drawOval(
+            color = ringCol.copy(alpha = 0.85f),
+            topLeft = Offset(cx - size.width * 0.44f, cy + size.height * 0.16f),
+            size = Size(size.width * 0.88f, size.height * 0.28f),
+            style = Stroke(width = 1.1.dp.toPx()),
+          )
+          val pad = 1.dp.toPx()
+          val dstSize = (size.minDimension - pad * 2f).toInt().coerceAtLeast(1)
           drawImage(
             image = shipBmp,
-            dstOffset = IntOffset.Zero,
-            dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+            dstOffset = IntOffset(pad.toInt(), (pad * 0.4f).toInt()),
+            dstSize = IntSize(dstSize, dstSize),
           )
         }
-        Box(
-          modifier =
-            Modifier.align(Alignment.BottomCenter)
-              .background(Color(0xD9030712), RoundedCornerShape(3.dp))
-              .padding(horizontal = 2.dp),
-        ) {
-          Text(
-            text = if (engine.isShipLockedForMatch) "LOCKED" else "HANGAR",
-            color = if (engine.isShipLockedForMatch) Color(0xFFFACC15) else Color(0xFF00F5D4),
-            fontSize = 5.4.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-            style = CompactCircleTextStyle,
-            maxLines = 1,
-          )
+        if (engine.isShipLockedForMatch) {
+          Box(
+            modifier =
+              Modifier.align(Alignment.TopEnd)
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(Color(0xEE1E1604))
+                .border(0.8.dp, Color(0xFFF59E0B), CircleShape),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "🔒",
+              fontSize = 6.sp,
+              style = CompactCircleTextStyle,
+            )
+          }
         }
       }
 
-      // Center Left: SPEED & SECTOR Telemetry
+      // Center Left: Compact 3-Line Stacked Telemetry (SPEED -> SECTOR -> [TAG] • ARMADA)
       Column(
-        verticalArrangement = Arrangement.spacedBy(lineGap),
+        verticalArrangement = Arrangement.spacedBy(0.5.dp),
       ) {
         Text(
           text = "SPEED $speed",
-          color = Color(0xFF38BDF8),
-          fontSize = (10.0f * textScale).sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
-          style = WingTelemetryTextStyle,
-          maxLines = 1,
-        )
-        Text(
-          text = "SECTOR $sectorCode $armadaBadge".uppercase(Locale.US),
-          color = Color(0xFF94A3B8),
+          color = Color(0xFF00F5D4),
           fontSize = (8.4f * textScale).sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          style = WingTelemetryTextStyle,
+          maxLines = 1,
+        )
+        Text(
+          text = "SECTOR $sectorCode",
+          color = Color(0xFFE2E8F0),
+          fontSize = (7.6f * textScale).sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           style = WingTelemetryTextStyle,
           maxLines = 1,
         )
-      }
-
-      // Inner Left (next to Minimap): Compact [🎮 MODES] Pill Button
-      Box(
-        modifier =
-          Modifier.clip(RoundedCornerShape(8.dp))
-            .background(Color(0x800D223B))
-            .border(0.8.dp, Color(0xAA00F0FF), RoundedCornerShape(8.dp))
-            .clickable(enabled = !uiUnlocked) { onOpenNexus() }
-            .padding(horizontal = (5.5f * textScale).dp, vertical = (3.5f * textScale).dp)
-            .testTag("hud_btn_modes"),
-        contentAlignment = Alignment.Center,
-      ) {
         Text(
-          text = "🎮 MODES",
-          color = Color(0xFF00F0FF),
-          fontSize = (7.6f * textScale).sp,
+          text = armadaBadge.uppercase(Locale.US),
+          color = Color(0xFFFACC15),
+          fontSize = (7.2f * textScale).sp,
           fontWeight = FontWeight.ExtraBold,
           fontFamily = FontFamily.Monospace,
           style = WingTelemetryTextStyle,
           maxLines = 1,
         )
+      }
+
+      // Inner Left (next to Minimap): Beveled Crossed-Swords Combat Mode Selection Emblem Button
+      Box(
+        modifier =
+          Modifier.size(32.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(
+              androidx.compose.ui.graphics.Brush.verticalGradient(
+                colors = listOf(Color(0xFF142842), Color(0xFF071222))
+              )
+            )
+            .border(1.2.dp, Color(0xFF38BDF8), RoundedCornerShape(9.dp))
+            .clickable(enabled = !uiUnlocked) { onOpenModes() }
+            .testTag("hud_btn_modes"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Canvas(modifier = Modifier.size(20.dp)) {
+          val w = size.width
+          val h = size.height
+          val cx = w * 0.5f
+          val cy = h * 0.5f
+          // Outer tactical diamond frame
+          val diamond = Path().apply {
+            moveTo(cx, h * 0.06f)
+            lineTo(w * 0.94f, cy)
+            lineTo(cx, h * 0.94f)
+            lineTo(w * 0.06f, cy)
+            close()
+          }
+          drawPath(diamond, color = Color(0x2800F5D4))
+          drawPath(diamond, color = Color(0x8838BDF8), style = Stroke(width = 1.dp.toPx()))
+
+          // Crossed Energy Blades
+          val bladeStroke = 2.2.dp.toPx()
+          drawLine(
+            color = Color(0xFF00F5D4),
+            start = Offset(w * 0.22f, h * 0.78f),
+            end = Offset(w * 0.82f, h * 0.18f),
+            strokeWidth = bladeStroke,
+            cap = StrokeCap.Round,
+          )
+          drawLine(
+            color = Color(0xFFFACC15),
+            start = Offset(w * 0.20f, h * 0.58f),
+            end = Offset(w * 0.42f, h * 0.80f),
+            strokeWidth = 1.8.dp.toPx(),
+            cap = StrokeCap.Round,
+          )
+          drawLine(
+            color = Color(0xFF38BDF8),
+            start = Offset(w * 0.78f, h * 0.78f),
+            end = Offset(w * 0.18f, h * 0.18f),
+            strokeWidth = bladeStroke,
+            cap = StrokeCap.Round,
+          )
+          drawLine(
+            color = Color(0xFFFACC15),
+            start = Offset(w * 0.58f, h * 0.80f),
+            end = Offset(w * 0.80f, h * 0.58f),
+            strokeWidth = 1.8.dp.toPx(),
+            cap = StrokeCap.Round,
+          )
+          drawCircle(
+            color = Color.White,
+            radius = 2.0.dp.toPx(),
+            center = Offset(cx, cy),
+          )
+        }
       }
     }
   }
@@ -899,28 +968,28 @@ private fun SymmetricBottomConsoleLayout(
           .background(Color(0xF6080E18), RoundedCornerShape(50))
           .border(1.dp, Color(0x5938BDF8), RoundedCornerShape(50))
           .wysiwygUnlockOutline(enabled = uiUnlocked && fillEqualSpace, cornerRadius = 28.dp)
-          .padding(start = padStart, end = (6f * textScale).dp, top = padVert, bottom = padVert),
+          .padding(start = padStart, end = (5.5f * textScale).dp, top = padVert, bottom = padVert),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement =
-        if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((7f * textScale).dp),
+        if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((5.5f * textScale).dp),
     ) {
-      // Inner Right (next to Minimap): FLUX & BOUNTY • K/D Readout
+      // Inner Right (next to Minimap): Compact 2-Line FLUX & BTY • K/D Readout
       Column(
         verticalArrangement = Arrangement.spacedBy(lineGap),
       ) {
         Text(
-          text = "FLUX ${player.flux.toInt()}⚡ (${(fluxPct * 100).toInt()}%)",
+          text = "⚡ ${player.flux.toInt()} (${(fluxPct * 100).toInt()}%)",
           color = fluxColor,
-          fontSize = (10.0f * textScale).sp,
-          fontWeight = FontWeight.Bold,
+          fontSize = (8.8f * textScale).sp,
+          fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           style = WingTelemetryTextStyle,
           maxLines = 1,
         )
         Text(
-          text = "BOUNTY ${player.bounty} • K/D ${engine.allTimeKills}/${engine.allTimeDeaths}",
+          text = "BTY ${player.bounty} • K/D ${engine.allTimeKills}/${engine.allTimeDeaths}",
           color = Color(0xFFFACC15),
-          fontSize = (9.0f * textScale).sp,
+          fontSize = (7.8f * textScale).sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           style = WingTelemetryTextStyle,
@@ -1287,25 +1356,99 @@ private fun CircularRadarMinimap(
           else -> Color(0xFFEF4444).copy(alpha = critFlash)
         }
 
-      val strokeW = 4.2.dp.toPx()
-      val inset = strokeW * 0.6f
+      val strokeW = 4.5.dp.toPx()
+      val inset = strokeW * 0.65f
+      val arcRadius = (w - inset * 2f) * 0.5f
+      val arcTopLeft = Offset(inset, inset)
       val arcSize = Size(w - inset * 2f, h - inset * 2f)
 
-      drawCircle(
-        color = ringColor.copy(alpha = 0.28f),
-        radius = (w - inset * 2f) * 0.5f,
-        center = Offset(w * 0.5f, h * 0.5f),
-        style = Stroke(width = strokeW),
-      )
+      // Subtle outer glow behind active Flux capacitor arc
+      if (fluxPct > 0.01f) {
+        drawArc(
+          color = ringColor.copy(alpha = 0.25f),
+          startAngle = -90f,
+          sweepAngle = (360f * fluxPct).coerceAtLeast(14f),
+          useCenter = false,
+          topLeft = arcTopLeft,
+          size = arcSize,
+          style = Stroke(width = strokeW * 1.85f, cap = StrokeCap.Round),
+        )
+      }
 
-      drawArc(
-        color = ringColor,
-        startAngle = -90f,
-        sweepAngle = (360f * fluxPct).coerceAtLeast(18f),
-        useCenter = false,
-        topLeft = Offset(inset, inset),
-        size = arcSize,
-        style = Stroke(width = strokeW, cap = StrokeCap.Round),
+      // 20-Segment Circular Flux Capacitor Ring
+      val totalSegments = 20
+      val stepDeg = 360f / totalSegments
+      val segSweep = 14.2f
+      val activeFloatSegs = fluxPct.coerceIn(0f, 1f) * totalSegments
+      for (seg in 0 until totalSegments) {
+        val segStart = -90f + seg * stepDeg + 1.9f
+        val segFill = (activeFloatSegs - seg).coerceIn(0f, 1f)
+        drawArc(
+          color = Color(0xFF102036),
+          startAngle = segStart,
+          sweepAngle = segSweep,
+          useCenter = false,
+          topLeft = arcTopLeft,
+          size = arcSize,
+          style = Stroke(width = strokeW, cap = StrokeCap.Butt),
+        )
+        if (segFill > 0.02f) {
+          drawArc(
+            color = ringColor,
+            startAngle = segStart,
+            sweepAngle = segSweep * segFill,
+            useCenter = false,
+            topLeft = arcTopLeft,
+            size = arcSize,
+            style = Stroke(width = strokeW, cap = StrokeCap.Butt),
+          )
+        }
+      }
+
+      // Glowing plasma tip at the leading edge of the Flux arc
+      if (fluxPct > 0.02f) {
+        val tipRad = Math.toRadians(-90.0 + 360.0 * fluxPct.coerceIn(0f, 1f))
+        val tipX = center.x + arcRadius * cos(tipRad).toFloat()
+        val tipY = center.y + arcRadius * sin(tipRad).toFloat()
+        drawCircle(
+          color = ringColor.copy(alpha = 0.65f),
+          radius = strokeW * 1.35f,
+          center = Offset(tipX, tipY),
+        )
+        drawCircle(
+          color = Color.White,
+          radius = strokeW * 0.55f,
+          center = Offset(tipX, tipY),
+        )
+      }
+    }
+
+    // Compact "⚡ FLUX XX%" Badge at the bottom rim of the circular minimap
+    val playerFluxPct = (engine.localPlayer.flux / engine.localPlayer.maxFlux).coerceIn(0f, 1f)
+    val badgeColor =
+      when {
+        engine.localPlayer.isIdleDraining || playerFluxPct < 0.25f -> Color(0xFFEF4444)
+        playerFluxPct >= 0.75f -> Color(0xFF00E676)
+        else -> Color(0xFFF59E0B)
+      }
+    Box(
+      modifier =
+        Modifier.align(Alignment.BottomCenter)
+          .padding(bottom = 2.dp)
+          .clip(RoundedCornerShape(6.dp))
+          .background(Color(0xEE040B16))
+          .border(1.dp, badgeColor.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
+          .padding(horizontal = 5.dp, vertical = 1.dp),
+      contentAlignment = Alignment.Center,
+    ) {
+      Text(
+        text = "⚡ FLUX ${(playerFluxPct * 100f).roundToInt()}%",
+        color = badgeColor,
+        fontSize = 6.5.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        style = CompactCircleTextStyle,
+        maxLines = 1,
       )
     }
   }

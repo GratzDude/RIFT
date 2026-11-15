@@ -46,6 +46,7 @@ data class DecoyEntity(
   val bounty: Int,
   var life: Float = 8.0f,
   val maxLife: Float = 8.0f,
+  var wormholeCooldownTimer: Float = 0f,
 )
 
 data class BrickWallEntity(
@@ -297,6 +298,7 @@ data class SpatialAnomalyEntity(
   val maxLife: Float = 45.0f,
   var spinAngle: Float = 0f,
   var partnerId: String = "",
+  var absorbedWeaponCount: Int = 0,
 )
 
 data class ParticleEntity(
@@ -508,8 +510,8 @@ class RiftGameEngine(
   val westBrigRect = RectF(westBrigReactorX - stasisJailRadius, westBrigReactorY - stasisJailRadius, westBrigReactorX + stasisJailRadius, westBrigReactorY + stasisJailRadius)
   val eastBrigRect = RectF(eastBrigReactorX - stasisJailRadius, eastBrigReactorY - stasisJailRadius, eastBrigReactorX + stasisJailRadius, eastBrigReactorY + stasisJailRadius)
   val brigReactorRadius: Float = 54f
-  var westBrigGeneratorHp: Float = 4000f
-  var eastBrigGeneratorHp: Float = 4000f
+  var westBrigGeneratorHp: Float = 40000f
+  var eastBrigGeneratorHp: Float = 40000f
 
   // Mode 5 (RIFT_CONTROL) 2-Rift Tug-of-War State
   val riftAlphaX: Float = 2600f
@@ -1800,21 +1802,32 @@ class RiftGameEngine(
   }
 
   fun findRandomAnomalyPosition(existingAnomalies: List<SpatialAnomalyEntity> = emptyList()): Pair<Float, Float> {
-    for (attempt in 0 until 60) {
-      val margin = 320f
+    for (attempt in 0 until 85) {
+      val margin = 340f
       val x = margin + Random.nextFloat() * (WORLD_SIZE - margin * 2f)
       val y = margin + Random.nextFloat() * (WORLD_SIZE - margin * 2f)
       // Must be outside safe zone with clearance and outside walls
-      val inSafePadded = x >= safeZone.left - 260f && x <= safeZone.right + 260f &&
-        y >= safeZone.top - 260f && y <= safeZone.bottom + 260f
+      val inSafePadded = x >= safeZone.left - 280f && x <= safeZone.right + 280f &&
+        y >= safeZone.top - 280f && y <= safeZone.bottom + 280f
       if (inSafePadded) continue
-      if (circleIntersectsWalls(x, y, 120f)) continue
+      if (circleIntersectsWalls(x, y, 140f)) continue
+
+      // Never spawn inside Stasis Breach Jails or Rift Control Tug-of-War capture zones (820px clearance)
+      if (hypot(x - westBrigReactorX, y - westBrigReactorY) < 820f) continue
+      if (hypot(x - eastBrigReactorX, y - eastBrigReactorY) < 820f) continue
+      if (hypot(x - riftAlphaX, y - riftAlphaY) < 820f) continue
+      if (hypot(x - riftOmegaX, y - riftOmegaY) < 820f) continue
+
+      // Never spawn on top of West/East team spawn gates (520px clearance)
+      if (hypot(x - 900f, y - 4000f) < 520f) continue
+      if (hypot(x - 7100f, y - 4000f) < 520f) continue
+
       val tooCloseToOther = existingAnomalies.any { hypot(it.x - x, it.y - y) < 560f }
       if (tooCloseToOther) continue
       return x to y
     }
-    // Fallback safe coordinate
-    return (WORLD_SIZE * 0.25f) to (WORLD_SIZE * 0.25f)
+    // Fallback safe coordinate in upper-left quadrant clear of objectives
+    return (WORLD_SIZE * 0.25f) to (WORLD_SIZE * 0.22f)
   }
 
   fun spawnSingleAnomaly(type: AnomalyType, partnerId: String = ""): SpatialAnomalyEntity {
@@ -6553,6 +6566,11 @@ class RiftGameEngine(
         bm.wormholeCooldownTimer = max(0f, bm.wormholeCooldownTimer - dt)
       }
     }
+    for (d in decoys) {
+      if (d.wormholeCooldownTimer > 0f) {
+        d.wormholeCooldownTimer = max(0f, d.wormholeCooldownTimer - dt)
+      }
+    }
 
     // 2. Step anomaly life, rotation, physics fields
     val expiredPairsToRespawn = mutableListOf<AnomalyType>()
@@ -6652,6 +6670,14 @@ class RiftGameEngine(
               }
             }
           }
+          // Incinerate Holo Phantoms entering the Plasma Rift core
+          for (dIdx in decoys.indices.reversed()) {
+            val d = decoys[dIdx]
+            if (hypot(d.x - anom.x, d.y - anom.y) < tearRadius + 18f) {
+              decoys.removeAt(dIdx)
+              spawnExplosion(d.x, d.y, Color.parseColor("#EF4444"))
+            }
+          }
         }
 
         AnomalyType.REPULSOR_RIFT -> {
@@ -6679,6 +6705,30 @@ class RiftGameEngine(
               }
               if (s.isLocalPlayer && approachSpeed > 60f) {
                 sfx.playBounce()
+              }
+            }
+          }
+
+          // Slingshot Holo Phantoms outward just like ships
+          for (d in decoys) {
+            val dx = d.x - anom.x
+            val dy = d.y - anom.y
+            val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+            if (dist < fieldRadius) {
+              val nx = dx / dist
+              val ny = dy / dist
+              val approachSpeed = -(d.vx * nx + d.vy * ny)
+              val slingshotBonus = if (approachSpeed > 0f) approachSpeed * 2.8f else 0f
+              val forceMag = (baseRepulse + slingshotBonus) * (1f - dist / fieldRadius).coerceIn(0.2f, 1f)
+              d.vx += nx * forceMag * dt
+              d.vy += ny * forceMag * dt
+              val sp = hypot(d.vx, d.vy)
+              if (sp > 920f) {
+                d.vx = (d.vx / sp) * 920f
+                d.vy = (d.vy / sp) * 920f
+              }
+              if (sp > 20f) {
+                d.angle = atan2(d.vy, d.vx)
               }
             }
           }
@@ -6717,9 +6767,11 @@ class RiftGameEngine(
         }
 
         AnomalyType.GRAVITY_RIFT -> {
-          val pullRadius = RiftCalibrationState.gravityPullRadius
-          val pullStrength = RiftCalibrationState.gravityPullForce
-          val coreRadius = anom.physicalRadius * 0.42f
+          val baseRadius = RiftCalibrationState.riftPhysicalRadius.coerceAtLeast(120f)
+          val growthRatio = (anom.physicalRadius / baseRadius).coerceIn(1f, 2.5f)
+          val pullRadius = RiftCalibrationState.gravityPullRadius * growthRatio
+          val pullStrength = RiftCalibrationState.gravityPullForce * (0.85f + 0.15f * growthRatio)
+          val coreRadius = anom.physicalRadius * 0.44f
 
           for (s in ships) {
             if (s.respawnTimer > 0f) continue
@@ -6749,19 +6801,73 @@ class RiftGameEngine(
             }
           }
 
-          // Absorbs live projectiles touching the core
-          for (bIdx in bullets.indices.reversed()) {
-            val b = bullets[bIdx]
-            if (hypot(b.x - anom.x, b.y - anom.y) < coreRadius) {
-              bullets.removeAt(bIdx)
-              spawnExplosion(b.x, b.y, Color.parseColor("#A855F7"))
+          // Pull and absorb Holo Phantoms into the Gravity Rift (feeding its growth)
+          for (dIdx in decoys.indices.reversed()) {
+            val d = decoys[dIdx]
+            val dx = anom.x - d.x
+            val dy = anom.y - d.y
+            val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+            if (dist < coreRadius + 16f) {
+              decoys.removeAt(dIdx)
+              anom.absorbedWeaponCount++
+              anom.physicalRadius = (anom.physicalRadius + 14f).coerceAtMost(420f)
+              spawnExplosion(d.x, d.y, Color.parseColor("#C084FC"))
+            } else if (dist < pullRadius) {
+              val nx = dx / dist
+              val ny = dy / dist
+              val pullMag = pullStrength * 1.15f * (1f - dist / pullRadius).coerceIn(0.20f, 1f)
+              d.vx += nx * pullMag * dt
+              d.vy += ny * pullMag * dt
+              if (hypot(d.vx, d.vy) > 20f) {
+                d.angle = atan2(d.vy, d.vx)
+              }
             }
           }
+
+          // Pull and absorb live bullets into the Gravity Rift; each absorbed bullet expands the Black Hole!
+          for (bIdx in bullets.indices.reversed()) {
+            val b = bullets[bIdx]
+            val dx = anom.x - b.x
+            val dy = anom.y - b.y
+            val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+            if (dist < coreRadius + 12f) {
+              bullets.removeAt(bIdx)
+              anom.absorbedWeaponCount++
+              anom.physicalRadius = (anom.physicalRadius + 6f).coerceAtMost(420f)
+              spawnExplosion(b.x, b.y, Color.parseColor("#A855F7"))
+            } else if (dist < pullRadius * 0.85f) {
+              val nx = dx / dist
+              val ny = dy / dist
+              val sp = hypot(b.vx, b.vy).coerceAtLeast(320f)
+              b.vx += nx * (pullStrength * 2.4f) * dt
+              b.vy += ny * (pullStrength * 2.4f) * dt
+              val newSp = hypot(b.vx, b.vy).coerceAtLeast(1f)
+              b.vx = (b.vx / newSp) * sp
+              b.vy = (b.vy / newSp) * sp
+            }
+          }
+
+          // Pull and absorb bombs/torpedoes into the Gravity Rift; heavy ordnance expands the Black Hole even more!
           for (bmIdx in bombs.indices.reversed()) {
             val bm = bombs[bmIdx]
-            if (hypot(bm.x - anom.x, bm.y - anom.y) < coreRadius) {
+            val dx = anom.x - bm.x
+            val dy = anom.y - bm.y
+            val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+            if (dist < coreRadius + 18f) {
               bombs.removeAt(bmIdx)
-              spawnExplosion(bm.x, bm.y, Color.parseColor("#A855F7"))
+              anom.absorbedWeaponCount += 3
+              anom.physicalRadius = (anom.physicalRadius + 18f).coerceAtMost(420f)
+              spawnExplosion(bm.x, bm.y, Color.parseColor("#C084FC"))
+              shockwaves.add(ShockwaveEntity(anom.x, anom.y, coreRadius * 0.6f, anom.physicalRadius * 1.15f, Color.parseColor("#A855F7")))
+            } else if (dist < pullRadius * 0.90f) {
+              val nx = dx / dist
+              val ny = dy / dist
+              val sp = hypot(bm.vx, bm.vy).coerceAtLeast(200f)
+              bm.vx += nx * (pullStrength * 1.9f) * dt
+              bm.vy += ny * (pullStrength * 1.9f) * dt
+              val newSp = hypot(bm.vx, bm.vy).coerceAtLeast(1f)
+              bm.vx = (bm.vx / newSp) * sp
+              bm.vy = (bm.vy / newSp) * sp
             }
           }
         }
@@ -6783,6 +6889,17 @@ class RiftGameEngine(
                   sfx.playWarp()
                   spawnPooledFct("🌌 PHASE RIFT TRANSIT", s.x, s.y - 36f, Color.parseColor("#2DD4BF"))
                 }
+              }
+            }
+
+            // Teleport Holo Phantoms through paired Phase Rifts at full momentum
+            for (d in decoys) {
+              if (d.wormholeCooldownTimer <= 0f && hypot(d.x - anom.x, d.y - anom.y) < portalRadius + 18f) {
+                d.x = partner.x
+                d.y = partner.y
+                d.wormholeCooldownTimer = phaseCd
+                spawnExplosion(anom.x, anom.y, Color.parseColor("#2DD4BF"))
+                spawnExplosion(partner.x, partner.y, Color.parseColor("#2DD4BF"))
               }
             }
 

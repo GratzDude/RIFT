@@ -1018,74 +1018,111 @@ object RiftSpriteBaker {
     c.save()
     c.translate(cx, cy)
 
-    // Hull-specific 5-stop 3D metallic gradient across [-r, r]
+    // Layer 2 Base 5-stop Metallic Steel/Titanium Shader (#0F172A -> #334155 -> #CBD5E1 -> #475569 -> #0F172A)
+    // blended with each ship's distinct faction hull tint
     val hullColors =
       when (spec.id) {
-        9 ->
+        9 -> // 9-Eclipse: Amethyst/Magenta twin-ring gravimetric interdictor cruiser
           intArrayOf(
-            Color.parseColor("#0D0B26"),
-            Color.parseColor("#1E1B4B"),
-            Color.parseColor("#EC4899"),
-            Color.parseColor("#1E1B4B"),
-            Color.parseColor("#0D0B26"),
+            Color.parseColor("#0F172A"),
+            Color.parseColor("#3B1D5E"),
+            Color.parseColor("#CBD5E1"),
+            Color.parseColor("#6D28D9"),
+            Color.parseColor("#0F172A"),
           )
-        3, 4 ->
+        3 -> // 3-Suppressor: Imperial Indigo/Gold swept crescent wings
           intArrayOf(
-            Color.parseColor("#0D0B26"),
-            Color.parseColor("#1E1B4B"),
-            Color.parseColor("#6366F1"),
-            Color.parseColor("#1E1B4B"),
-            Color.parseColor("#0D0B26"),
+            Color.parseColor("#0F172A"),
+            Color.parseColor("#2A2F6D"),
+            Color.parseColor("#CBD5E1"),
+            Color.parseColor("#3730A3"),
+            Color.parseColor("#0F172A"),
           )
-        5, 6 ->
+        4 -> // 4-Goliath: Heavy Dreadnought bastion armor with stepped shoulder plates
           intArrayOf(
-            Color.parseColor("#041924"),
-            Color.parseColor("#0E3A4D"),
-            Color.parseColor("#38BDF8"),
-            Color.parseColor("#0C3142"),
-            Color.parseColor("#041924"),
+            Color.parseColor("#0F172A"),
+            Color.parseColor("#334155"),
+            Color.parseColor("#CBD5E1"),
+            Color.parseColor("#475569"),
+            Color.parseColor("#0F172A"),
           )
-        7, 8 ->
+        5 -> // 5-Twinfang: Predatory bio-cyan twin-boom manta frame
           intArrayOf(
-            Color.parseColor("#14110F"),
-            Color.parseColor("#292524"),
-            Color.parseColor("#78716C"),
-            Color.parseColor("#292524"),
-            Color.parseColor("#14110F"),
+            Color.parseColor("#0F172A"),
+            Color.parseColor("#155E75"),
+            Color.parseColor("#CBD5E1"),
+            Color.parseColor("#0E7490"),
+            Color.parseColor("#0F172A"),
           )
-        else -> // Ships 1, 2 Obsidian Rail
+        6 -> // 6-Disruptor: Wide stingray hydrofoil with gold EMP arc emitters
           intArrayOf(
-            Color.parseColor("#090D16"),
-            Color.parseColor("#1E293B"),
-            Color.parseColor("#64748B"),
-            Color.parseColor("#1E293B"),
-            Color.parseColor("#090D16"),
+            Color.parseColor("#0F172A"),
+            Color.parseColor("#1E3A5F"),
+            Color.parseColor("#CBD5E1"),
+            Color.parseColor("#334155"),
+            Color.parseColor("#0F172A"),
+          )
+        7, 8 -> // 7-Valkyrie & 8-Manta: Gunmetal titanium interceptor & armored mandible pincer hull
+          intArrayOf(
+            Color.parseColor("#0F172A"),
+            Color.parseColor("#334155"),
+            Color.parseColor("#CBD5E1"),
+            Color.parseColor("#475569"),
+            Color.parseColor("#0F172A"),
+          )
+        else -> // 1-Viper & 2-Ricochet: Obsidian/Titanium-Steel precision hulls
+          intArrayOf(
+            Color.parseColor("#0F172A"),
+            Color.parseColor("#334155"),
+            Color.parseColor("#CBD5E1"),
+            Color.parseColor("#475569"),
+            Color.parseColor("#0F172A"),
           )
       }
 
     val trimColors =
       when (spec.id) {
-        3, 4, 9 ->
+        9 -> // Eclipse Amethyst-Magenta & Gold trim
+          intArrayOf(
+            Color.parseColor("#F472B6"),
+            Color.parseColor("#EC4899"),
+            Color.parseColor("#831843"),
+            Color.parseColor("#A855F7"),
+          )
+        5 -> // Twinfang Bio-Cyan & Bronze-Gold trim
+          intArrayOf(
+            Color.parseColor("#67E8F9"),
+            Color.parseColor("#00F5D4"),
+            Color.parseColor("#0E7490"),
+            Color.parseColor("#F59E0B"),
+          )
+        3, 4, 6 -> // Imperial Gold & Amber trim
           intArrayOf(
             Color.parseColor("#FEF08A"),
             Color.parseColor("#F59E0B"),
             Color.parseColor("#92400E"),
             Color.parseColor("#FACC15"),
           )
-        7, 8 ->
+        7, 8 -> // Valkyrie / Manta Burnished Bronze-Gold trim
           intArrayOf(
             Color.parseColor("#FDBA74"),
             Color.parseColor("#EA580C"),
             Color.parseColor("#7C2D12"),
-            Color.parseColor("#FB923C"),
+            Color.parseColor("#F59E0B"),
           )
-        else ->
+        else -> // Viper / Ricochet Amber-Gold & Titanium-Gold trim
           intArrayOf(
             Color.parseColor("#FDE68A"),
             Color.parseColor("#D97706"),
             Color.parseColor("#78350F"),
             Color.parseColor("#FBBF24"),
           )
+      }
+
+    val underChassisShadowPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#030712")
       }
 
     val goldPaint =
@@ -1113,7 +1150,7 @@ object RiftSpriteBaker {
             0f,
             r,
             hullColors,
-            floatArrayOf(0.0f, 0.30f, 0.50f, 0.70f, 1.0f),
+            floatArrayOf(0.0f, 0.28f, 0.50f, 0.72f, 1.0f),
             Shader.TileMode.CLAMP,
           )
       }
@@ -1123,16 +1160,16 @@ object RiftSpriteBaker {
         style = Paint.Style.FILL
         shader =
           LinearGradient(
-            -r * 0.5f,
-            -r * 0.5f,
-            r * 0.6f,
-            r * 0.5f,
+            -r * 0.55f,
+            -r * 0.55f,
+            r * 0.65f,
+            r * 0.55f,
             intArrayOf(
-              hullColors[2],
+              Color.parseColor("#E2E8F0"),
               hullColors[1],
-              hullColors[0],
+              Color.parseColor("#0F172A"),
             ),
-            floatArrayOf(0f, 0.55f, 1f),
+            floatArrayOf(0f, 0.52f, 1f),
             Shader.TileMode.CLAMP,
           )
       }
@@ -1145,7 +1182,7 @@ object RiftSpriteBaker {
     val gunBarrelStroke =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.6f
+        strokeWidth = 1.4f
         color = Color.parseColor("#94A3B8")
       }
     val muzzleGlowPaint =
@@ -1157,44 +1194,107 @@ object RiftSpriteBaker {
     val readabilityOutlinePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2.6f
+        strokeWidth = 2.4f
         strokeJoin = Paint.Join.ROUND
         color = if (isAllied) Color.parseColor("#38BDF8") else Color.parseColor("#EF4444")
       }
 
+    // Layer 3: 1.0f px bright specular edge highlight (#E2E8F0 at 60% alpha) on upper-left facing bevels
     val specularEdgePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.5f
+        strokeWidth = 1.0f
         strokeJoin = Paint.Join.ROUND
-        color = Color.argb(200, 255, 255, 255)
+        color = Color.argb(153, 226, 232, 240)
       }
 
+    // Layer 3: Crisp 1.2f px dark mechanical panel seams (#050811)
     val seamPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.5f
-        color = Color.parseColor("#020617")
+        strokeWidth = 1.2f
+        color = Color.parseColor("#050811")
       }
 
+    val intakeVentPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#050811")
+      }
+
+    // Recessed stern metallic exhaust housings + focused inner plasma core (#00F5D4 Allied / #FF5500 Hostile)
+    val nozzleHousingPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#0B1120")
+      }
+    val nozzleRimPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.3f
+        color = Color.parseColor("#64748B")
+      }
+    val plasmaExhaustCoreColor =
+      if (isAllied) Color.parseColor("#00F5D4") else Color.parseColor("#FF5500")
+    val plasmaExhaustOuterPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = plasmaExhaustCoreColor
+      }
+    val plasmaExhaustInnerPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.WHITE
+      }
+
+    // Layer 4: Faceted 3D Glass Cockpit Canopy with deep glowing interior
     val canopyPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         shader =
-          LinearGradient(
-            -r * 0.2f,
-            -r * 0.2f,
-            r * 0.5f,
-            r * 0.2f,
+          RadialGradient(
+            r * 0.22f,
+            -r * 0.04f,
+            r * 0.38f,
             intArrayOf(
-              Color.parseColor("#E0F2FE"),
-              Color.parseColor("#0284C7"),
+              Color.parseColor("#38BDF8"),
+              Color.parseColor("#0369A1"),
               Color.parseColor("#082F49"),
             ),
-            floatArrayOf(0f, 0.45f, 1f),
+            floatArrayOf(0f, 0.58f, 1f),
             Shader.TileMode.CLAMP,
           )
       }
+    val canopyReflectionPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.3f
+        strokeCap = Paint.Cap.ROUND
+        color = Color.argb(235, 255, 255, 255)
+      }
+
+    fun drawRecessedExhaustNozzle(nx: Float, ny: Float, halfHeight: Float) {
+      c.drawRoundRect(
+        nx - r * 0.14f,
+        ny - halfHeight,
+        nx + r * 0.10f,
+        ny + halfHeight,
+        3f,
+        3f,
+        nozzleHousingPaint,
+      )
+      c.drawRoundRect(
+        nx - r * 0.14f,
+        ny - halfHeight,
+        nx + r * 0.10f,
+        ny + halfHeight,
+        3f,
+        3f,
+        nozzleRimPaint,
+      )
+      c.drawCircle(nx - r * 0.08f, ny, halfHeight * 0.72f, plasmaExhaustOuterPaint)
+      c.drawCircle(nx - r * 0.06f, ny, halfHeight * 0.36f, plasmaExhaustInnerPaint)
+    }
 
     val goldWingPath = Path()
     val armorHullPath = Path()
@@ -1202,7 +1302,10 @@ object RiftSpriteBaker {
 
     when (spec.id) {
       1 -> {
-        // 1-Viper: "Forward-swept obsidian rail-prongs with bronze wing-tips and a narrow V-cyan reactor spine."
+        // 1-Viper: Forward-swept obsidian/amber-gold twin railgun prongs & narrow V-cyan reactor spine
+        drawRecessedExhaustNozzle(-r * 0.76f, -r * 0.20f, r * 0.11f)
+        drawRecessedExhaustNozzle(-r * 0.76f, r * 0.20f, r * 0.11f)
+
         // Protruding twin hyper-velocity railgun barrels inside forward prongs
         c.drawRect(r * 0.30f, -r * 0.22f, r * 1.18f, -r * 0.12f, gunBarrelPaint)
         c.drawRect(r * 0.30f, -r * 0.22f, r * 1.18f, -r * 0.12f, gunBarrelStroke)
@@ -1211,11 +1314,10 @@ object RiftSpriteBaker {
         c.drawCircle(r * 1.16f, -r * 0.17f, r * 0.05f, muzzleGlowPaint)
         c.drawCircle(r * 1.16f, r * 0.17f, r * 0.05f, muzzleGlowPaint)
 
-        // Outer bronze wing-tips & forward-swept rail prongs
         goldWingPath.apply {
           moveTo(r * 1.12f, -r * 0.26f)
           lineTo(r * 0.40f, -r * 0.32f)
-          lineTo(r * 0.22f, -r * 0.98f) // Forward-swept wingtip
+          lineTo(r * 0.22f, -r * 0.98f)
           lineTo(-r * 0.38f, -r * 0.92f)
           lineTo(-r * 0.92f, -r * 0.56f)
           lineTo(-r * 0.72f, 0f)
@@ -1229,7 +1331,6 @@ object RiftSpriteBaker {
           lineTo(r * 0.35f, -r * 0.08f)
           close()
         }
-        // Obsidian main fuselage with forward prongs
         armorHullPath.apply {
           moveTo(r * 1.02f, -r * 0.22f)
           lineTo(r * 0.28f, -r * 0.28f)
@@ -1247,7 +1348,6 @@ object RiftSpriteBaker {
           lineTo(r * 0.24f, -r * 0.08f)
           close()
         }
-        // Narrow elevated sniper spine
         upperDeckPath.apply {
           moveTo(r * 0.46f, 0f)
           lineTo(-r * 0.15f, -r * 0.32f)
@@ -1260,8 +1360,10 @@ object RiftSpriteBaker {
       }
 
       2 -> {
-        // 2-Ricochet: "Twin-forked ballistic hull with gold-trimmed deflection vanes and a deep cyan V-core."
-        // Central recessed bounce-torpedo launch tube + twin fork pulse emitters
+        // 2-Ricochet: Titanium-Gold twin-forked deflection hull
+        drawRecessedExhaustNozzle(-r * 0.76f, -r * 0.24f, r * 0.12f)
+        drawRecessedExhaustNozzle(-r * 0.76f, r * 0.24f, r * 0.12f)
+
         c.drawRect(r * 0.10f, -r * 0.11f, r * 0.78f, r * 0.11f, gunBarrelPaint)
         c.drawRect(r * 0.10f, -r * 0.11f, r * 0.78f, r * 0.11f, gunBarrelStroke)
         c.drawCircle(r * 0.74f, 0f, r * 0.08f, muzzleGlowPaint)
@@ -1272,11 +1374,11 @@ object RiftSpriteBaker {
           lineTo(r * 0.32f, r * 0.16f)
           lineTo(r * 1.10f, r * 0.36f)
           lineTo(r * 0.56f, r * 0.68f)
-          lineTo(-r * 0.18f, r * 1.02f) // Angled deflection vane
+          lineTo(-r * 0.18f, r * 1.02f)
           lineTo(-r * 0.92f, r * 0.68f)
           lineTo(-r * 0.72f, 0f)
           lineTo(-r * 0.92f, -r * 0.68f)
-          lineTo(-r * 0.18f, -r * 1.02f) // Angled deflection vane
+          lineTo(-r * 0.18f, -r * 1.02f)
           lineTo(r * 0.56f, -r * 0.68f)
           close()
         }
@@ -1308,8 +1410,10 @@ object RiftSpriteBaker {
       }
 
       3 -> {
-        // 3-Suppressor: "Swept imperial crescent wings in dark indigo & gold with an overcharged V-cyan heart."
-        // Quad-Stream Rapid Plasma Array barrels along crescent leading edge
+        // 3-Suppressor: Imperial Indigo/Gold swept crescent wings
+        drawRecessedExhaustNozzle(-r * 0.68f, -r * 0.20f, r * 0.10f)
+        drawRecessedExhaustNozzle(-r * 0.68f, r * 0.20f, r * 0.10f)
+
         for (offsetY in floatArrayOf(-0.62f, -0.32f, 0.32f, 0.62f)) {
           val bx = if (kotlin.math.abs(offsetY) > 0.45f) r * 0.56f else r * 0.78f
           c.drawRect(bx - r * 0.35f, offsetY * r - 2.5f, bx + r * 0.22f, offsetY * r + 2.5f, gunBarrelPaint)
@@ -1317,7 +1421,6 @@ object RiftSpriteBaker {
           c.drawCircle(bx + r * 0.22f, offsetY * r, 3.2f, muzzleGlowPaint)
         }
 
-        // Curved Imperial Crescent Gold Trim
         goldWingPath.apply {
           moveTo(r * 1.10f, 0f)
           cubicTo(r * 0.85f, -r * 0.55f, r * 0.30f, -r * 1.08f, -r * 0.72f, -r * 0.96f)
@@ -1326,7 +1429,6 @@ object RiftSpriteBaker {
           cubicTo(r * 0.30f, r * 1.08f, r * 0.85f, r * 0.55f, r * 1.10f, 0f)
           close()
         }
-        // Indigo Crescent Armor Hull
         armorHullPath.apply {
           moveTo(r * 0.95f, 0f)
           cubicTo(r * 0.72f, -r * 0.46f, r * 0.22f, -r * 0.92f, -r * 0.58f, -r * 0.82f)
@@ -1347,18 +1449,19 @@ object RiftSpriteBaker {
       }
 
       4 -> {
-        // 4-Goliath: "Heavy armored dreadnought chassis with bronze bastion shoulders and a massive V-reactor."
-        // Heavy Twin Autocannon + Central Siege Nova Mortar
+        // 4-Goliath: Heavy Dreadnought bastion armor with stepped shoulder plates
+        drawRecessedExhaustNozzle(-r * 0.88f, -r * 0.44f, r * 0.13f)
+        drawRecessedExhaustNozzle(-r * 0.84f, 0f, r * 0.15f)
+        drawRecessedExhaustNozzle(-r * 0.88f, r * 0.44f, r * 0.13f)
+
         c.drawRect(r * 0.40f, -r * 0.46f, r * 1.14f, -r * 0.32f, gunBarrelPaint)
         c.drawRect(r * 0.40f, -r * 0.46f, r * 1.14f, -r * 0.32f, gunBarrelStroke)
         c.drawRect(r * 0.40f, r * 0.32f, r * 1.14f, r * 0.46f, gunBarrelPaint)
         c.drawRect(r * 0.40f, r * 0.32f, r * 1.14f, r * 0.46f, gunBarrelStroke)
-        // Central Siege Mortar muzzle
         c.drawRect(r * 0.50f, -r * 0.16f, r * 1.08f, r * 0.16f, gunBarrelPaint)
         c.drawRect(r * 0.50f, -r * 0.16f, r * 1.08f, r * 0.16f, gunBarrelStroke)
         c.drawCircle(r * 1.04f, 0f, r * 0.10f, muzzleGlowPaint)
 
-        // Cathedral Bronze Bastion Shoulders
         goldWingPath.apply {
           moveTo(r * 0.98f, -r * 0.26f)
           lineTo(r * 0.68f, -r * 0.68f)
@@ -1375,7 +1478,6 @@ object RiftSpriteBaker {
           lineTo(r * 0.98f, r * 0.26f)
           close()
         }
-        // Dreadnought Main Armor Block
         armorHullPath.apply {
           moveTo(r * 0.86f, -r * 0.22f)
           lineTo(r * 0.56f, -r * 0.56f)
@@ -1390,7 +1492,6 @@ object RiftSpriteBaker {
           lineTo(r * 0.86f, r * 0.22f)
           close()
         }
-        // Stepped Cathedral Citadel Superstructure
         upperDeckPath.apply {
           moveTo(r * 0.62f, -r * 0.20f)
           lineTo(r * 0.20f, -r * 0.62f)
@@ -1403,21 +1504,22 @@ object RiftSpriteBaker {
       }
 
       5 -> {
-        // 5-Twinfang: "Predatory twin-boom manta frame with bronze fangs and a split electric-cyan core."
-        // Tri-Spread Bio-Plasma Volley emitters in jaw
+        // 5-Twinfang: Predatory bio-cyan twin-boom manta frame
+        drawRecessedExhaustNozzle(-r * 0.78f, -r * 0.26f, r * 0.11f)
+        drawRecessedExhaustNozzle(-r * 0.78f, r * 0.26f, r * 0.11f)
+
         c.drawCircle(r * 0.74f, 0f, r * 0.08f, muzzleGlowPaint)
         c.drawCircle(r * 1.06f, -r * 0.42f, r * 0.06f, muzzleGlowPaint)
         c.drawCircle(r * 1.06f, r * 0.42f, r * 0.06f, muzzleGlowPaint)
 
-        // Predatory Twin-Boom Manta Frame & Bronze Fangs
         goldWingPath.apply {
-          moveTo(r * 1.16f, -r * 0.42f) // Left bronze fang tip
+          moveTo(r * 1.16f, -r * 0.42f)
           lineTo(r * 0.28f, -r * 0.18f)
-          lineTo(r * 0.68f, 0f) // Center plasma needle
+          lineTo(r * 0.68f, 0f)
           lineTo(r * 0.28f, r * 0.18f)
-          lineTo(r * 1.16f, r * 0.42f) // Right bronze fang tip
+          lineTo(r * 1.16f, r * 0.42f)
           lineTo(r * 0.45f, r * 0.74f)
-          lineTo(-r * 0.28f, r * 1.06f) // Swept manta wingtip
+          lineTo(-r * 0.28f, r * 1.06f)
           lineTo(-r * 0.94f, r * 0.54f)
           lineTo(-r * 0.62f, 0f)
           lineTo(-r * 0.94f, -r * 0.54f)
@@ -1452,19 +1554,20 @@ object RiftSpriteBaker {
       }
 
       6 -> {
-        // 6-Disruptor: "Wide stingray hydrofoil with gold-plated arc emitters and a pulsing V-cyan capacitor."
-        // Forward Gold-Plated Arc Emitter Prongs
+        // 6-Disruptor: Wide stingray hydrofoil with gold EMP arc emitters
+        drawRecessedExhaustNozzle(-r * 0.60f, -r * 0.28f, r * 0.10f)
+        drawRecessedExhaustNozzle(-r * 0.60f, r * 0.28f, r * 0.10f)
+
         c.drawRect(r * 0.55f, -r * 0.28f, r * 1.16f, -r * 0.18f, goldPaint)
         c.drawRect(r * 0.55f, r * 0.18f, r * 1.16f, r * 0.28f, goldPaint)
         c.drawCircle(r * 1.14f, -r * 0.23f, r * 0.06f, muzzleGlowPaint)
         c.drawCircle(r * 1.14f, r * 0.23f, r * 0.06f, muzzleGlowPaint)
 
-        // Wide Curved Stingray Hydrofoil
         goldWingPath.apply {
           moveTo(r * 1.06f, 0f)
           cubicTo(r * 0.72f, -r * 0.36f, r * 0.35f, -r * 1.12f, -r * 0.26f, -r * 1.06f)
           cubicTo(-r * 0.68f, -r * 0.92f, -r * 0.60f, -r * 0.36f, -r * 0.42f, -r * 0.18f)
-          lineTo(-r * 1.12f, 0f) // Stingray tail spine
+          lineTo(-r * 1.12f, 0f)
           lineTo(-r * 0.42f, r * 0.18f)
           cubicTo(-r * 0.60f, r * 0.36f, -r * 0.68f, r * 0.92f, -r * 0.26f, r * 1.06f)
           cubicTo(r * 0.35f, r * 1.12f, r * 0.72f, r * 0.36f, r * 1.06f, 0f)
@@ -1492,36 +1595,37 @@ object RiftSpriteBaker {
       }
 
       7 -> {
-        // 7-Valkyrie: "Aggressive X-wing skeletal interceptor with bronze thruster pods and V-cyan reactor."
-        // Twin Heavy Rotary Cannon Barrels
+        // 7-Valkyrie: Aggressive X-wing interceptor with outboard thruster pods
+        drawRecessedExhaustNozzle(-r * 0.94f, -r * 0.54f, r * 0.12f)
+        drawRecessedExhaustNozzle(-r * 0.94f, r * 0.54f, r * 0.12f)
+        drawRecessedExhaustNozzle(-r * 0.80f, 0f, r * 0.10f)
+
         c.drawRect(r * 0.45f, -r * 0.24f, r * 1.16f, -r * 0.12f, gunBarrelPaint)
         c.drawRect(r * 0.45f, -r * 0.24f, r * 1.16f, -r * 0.12f, gunBarrelStroke)
         c.drawRect(r * 0.45f, r * 0.12f, r * 1.16f, r * 0.24f, gunBarrelPaint)
         c.drawRect(r * 0.45f, r * 0.12f, r * 1.16f, r * 0.24f, gunBarrelStroke)
 
-        // Outboard Bronze Thruster Pods on the rear X-frame
         c.drawRect(-r * 0.98f, -r * 0.64f, -r * 0.38f, -r * 0.44f, goldPaint)
         c.drawRect(-r * 0.98f, -r * 0.64f, -r * 0.38f, -r * 0.44f, gunBarrelStroke)
         c.drawRect(-r * 0.98f, r * 0.44f, -r * 0.38f, r * 0.64f, goldPaint)
         c.drawRect(-r * 0.98f, r * 0.44f, -r * 0.38f, r * 0.64f, gunBarrelStroke)
 
-        // Skeletal X-Frame Wings
         goldWingPath.apply {
           moveTo(r * 1.06f, 0f)
           lineTo(r * 0.42f, -r * 0.22f)
-          lineTo(r * 0.72f, -r * 1.02f) // Forward upper X-foil
+          lineTo(r * 0.72f, -r * 1.02f)
           lineTo(r * 0.32f, -r * 1.04f)
           lineTo(-r * 0.08f, -r * 0.40f)
-          lineTo(-r * 0.68f, -r * 1.02f) // Rear upper X-foil
+          lineTo(-r * 0.68f, -r * 1.02f)
           lineTo(-r * 0.98f, -r * 0.86f)
           lineTo(-r * 0.56f, -r * 0.22f)
           lineTo(-r * 0.90f, 0f)
           lineTo(-r * 0.56f, r * 0.22f)
           lineTo(-r * 0.98f, r * 0.86f)
-          lineTo(-r * 0.68f, r * 1.02f) // Rear lower X-foil
+          lineTo(-r * 0.68f, r * 1.02f)
           lineTo(-r * 0.08f, r * 0.40f)
           lineTo(r * 0.32f, r * 1.04f)
-          lineTo(r * 0.72f, r * 1.02f) // Forward lower X-foil
+          lineTo(r * 0.72f, r * 1.02f)
           lineTo(r * 0.42f, r * 0.22f)
           close()
         }
@@ -1556,20 +1660,20 @@ object RiftSpriteBaker {
       }
 
       8 -> {
-        // 8-Manta: "Armored pincer hull with gold-beveled mandible plates and a twin-cell V-cyan core."
-        // Dual Gauss Barrels inside pincer jaws + Rear Mine-Layer Bay
+        // 8-Manta: Armored mandible pincer hull
+        drawRecessedExhaustNozzle(-r * 0.82f, -r * 0.42f, r * 0.12f)
+        drawRecessedExhaustNozzle(-r * 0.82f, r * 0.42f, r * 0.12f)
+
         c.drawRect(r * 0.32f, -r * 0.26f, r * 0.98f, -r * 0.14f, gunBarrelPaint)
         c.drawRect(r * 0.32f, -r * 0.26f, r * 0.98f, -r * 0.14f, gunBarrelStroke)
         c.drawRect(r * 0.32f, r * 0.14f, r * 0.98f, r * 0.26f, gunBarrelPaint)
         c.drawRect(r * 0.32f, r * 0.14f, r * 0.98f, r * 0.26f, gunBarrelStroke)
-        // Rear magnetic mine chute
         c.drawCircle(-r * 0.72f, 0f, r * 0.18f, gunBarrelPaint)
         c.drawCircle(-r * 0.72f, 0f, r * 0.18f, gunBarrelStroke)
 
-        // Gold-Beveled Mandible Pincer Plates
         goldWingPath.apply {
-          moveTo(r * 1.12f, -r * 0.32f) // Inner pincer tip
-          lineTo(r * 0.78f, -r * 0.68f) // Outer mandible bevel
+          moveTo(r * 1.12f, -r * 0.32f)
+          lineTo(r * 0.78f, -r * 0.68f)
           lineTo(r * 0.28f, -r * 0.36f)
           lineTo(r * 0.28f, r * 0.36f)
           lineTo(r * 0.78f, r * 0.68f)
@@ -1613,7 +1717,10 @@ object RiftSpriteBaker {
       }
 
       else -> {
-        // 9-Interdictor: "Twin-ringed amethyst gravimetric cruiser with forward containment prongs and a glowing magenta-cyan singularity core."
+        // 9-Eclipse: Amethyst/Magenta twin-ring gravimetric interdictor cruiser
+        drawRecessedExhaustNozzle(-r * 0.82f, -r * 0.28f, r * 0.12f)
+        drawRecessedExhaustNozzle(-r * 0.82f, r * 0.28f, r * 0.12f)
+
         c.drawRect(r * 0.36f, -r * 0.30f, r * 1.12f, -r * 0.18f, gunBarrelPaint)
         c.drawRect(r * 0.36f, -r * 0.30f, r * 1.12f, -r * 0.18f, gunBarrelStroke)
         c.drawRect(r * 0.36f, r * 0.18f, r * 1.12f, r * 0.30f, gunBarrelPaint)
@@ -1667,21 +1774,35 @@ object RiftSpriteBaker {
       }
     }
 
-    // Layer 3: Outer Gold/Bronze Wing Trim + Brawl Stars Team Readability Outline
+    // Layer 1: Under-Chassis Depth Silhouette (#030712 drop-shadow hull layer offset by +1.8f px)
+    c.save()
+    c.translate(1.8f, 1.8f)
+    c.drawPath(goldWingPath, underChassisShadowPaint)
+    c.drawPath(armorHullPath, underChassisShadowPaint)
+    c.restore()
+
+    // Layer 2A: Outer Faction Trim + Team Readability Outline
     c.drawPath(goldWingPath, goldPaint)
     c.drawPath(goldWingPath, readabilityOutlinePaint)
 
-    // Layer 4: Primary 5-Stop 3D Metallic Armor Hull + Specular Leading Edge
+    // Layer 2B: Primary 5-Stop 3D Metallic Armor Hull + 1.0f px Specular Leading Edge
     c.drawPath(armorHullPath, hullPaint)
     c.drawPath(armorHullPath, specularEdgePaint)
 
-    // Layer 5: Elevated Superstructure Deck + Recessed Armor Panel Seams
+    // Layer 3: Elevated Superstructure Deck + Recessed 1.2f px Mechanical Panel Seams & Intake Vents
     c.drawPath(upperDeckPath, upperPlatePaint)
     c.drawPath(upperDeckPath, seamPaint)
-    c.drawLine(-r * 0.56f, -r * 0.38f, r * 0.38f, -r * 0.14f, seamPaint)
-    c.drawLine(-r * 0.56f, r * 0.38f, r * 0.38f, r * 0.14f, seamPaint)
+    c.drawPath(upperDeckPath, specularEdgePaint)
+    c.drawLine(-r * 0.58f, -r * 0.40f, r * 0.42f, -r * 0.15f, seamPaint)
+    c.drawLine(-r * 0.58f, r * 0.40f, r * 0.42f, r * 0.15f, seamPaint)
+    c.drawLine(-r * 0.24f, -r * 0.64f, r * 0.14f, -r * 0.30f, seamPaint)
+    c.drawLine(-r * 0.24f, r * 0.64f, r * 0.14f, r * 0.30f, seamPaint)
 
-    // Ship-specific accent details (Disruptor EMP coils, Interdictor twin singularity rings, Goliath bastion rivets)
+    // Recessed forward intake vents on port and starboard shoulders
+    c.drawRect(-r * 0.18f, -r * 0.46f, r * 0.06f, -r * 0.36f, intakeVentPaint)
+    c.drawRect(-r * 0.18f, r * 0.36f, r * 0.06f, r * 0.46f, intakeVentPaint)
+
+    // Ship-specific accent details (Disruptor EMP coils, Eclipse twin singularity rings, Goliath bastion rivets)
     if (spec.id == 6) {
       val empCoilPaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1708,24 +1829,29 @@ object RiftSpriteBaker {
       c.drawCircle(-r * 0.06f, 0f, r * 0.46f, ringMagentaPaint)
       c.drawCircle(-r * 0.06f, 0f, r * 0.30f, ringCyanPaint)
     } else if (spec.id == 4) {
-      // Goliath bastion shoulder armor bars
-      c.drawLine(-r * 0.35f, -r * 0.72f, r * 0.25f, -r * 0.72f, specularEdgePaint)
-      c.drawLine(-r * 0.35f, r * 0.72f, r * 0.25f, r * 0.72f, specularEdgePaint)
+      // Goliath stepped shoulder plates & armor bevel bars
+      c.drawLine(-r * 0.38f, -r * 0.72f, r * 0.28f, -r * 0.72f, specularEdgePaint)
+      c.drawLine(-r * 0.38f, r * 0.72f, r * 0.28f, r * 0.72f, specularEdgePaint)
+      c.drawLine(-r * 0.46f, -r * 0.52f, r * 0.18f, -r * 0.52f, seamPaint)
+      c.drawLine(-r * 0.46f, r * 0.52f, r * 0.18f, r * 0.52f, seamPaint)
     }
 
-    // Layer 6: Tinted 3D Cockpit Glass Canopy ahead of the reactor
+    // Layer 4A: Faceted 3D Glass Cockpit Canopy + Diagonal White Reflection Streak
     val canopyPath =
       Path().apply {
-        moveTo(r * 0.56f, 0f)
-        lineTo(r * 0.16f, -r * 0.16f)
-        lineTo(-r * 0.06f, 0f)
-        lineTo(r * 0.16f, r * 0.16f)
+        moveTo(r * 0.58f, 0f)
+        lineTo(r * 0.18f, -r * 0.18f)
+        lineTo(-r * 0.08f, 0f)
+        lineTo(r * 0.18f, r * 0.18f)
         close()
       }
     c.drawPath(canopyPath, canopyPaint)
     c.drawPath(canopyPath, seamPaint)
+    // Facet frame lines + sharp white diagonal reflection streak
+    c.drawLine(r * 0.18f, -r * 0.18f, r * 0.18f, r * 0.18f, seamPaint)
+    c.drawLine(r * 0.42f, -r * 0.05f, r * 0.14f, -r * 0.12f, canopyReflectionPaint)
 
-    // Layer 7: Signature V-Shaped Electric-Cyan Reactor Core (with Twin-Cell variant for Twinfang & Manta)
+    // Layer 4B: Signature V-Shaped Electric-Cyan Reactor Core (with Twin-Cell variant for Goliath, Twinfang, Manta, Eclipse)
     val cyanGlowPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -1757,7 +1883,6 @@ object RiftSpriteBaker {
       }
     c.drawPath(vCoreInner, whiteCorePaint)
 
-    // Twin-cell aft reactor node for Twinfang (5), Goliath (4), Manta (8), and Interdictor (9)
     if (spec.id == 4 || spec.id == 5 || spec.id == 8 || spec.id == 9) {
       c.drawCircle(-r * 0.42f, -r * 0.16f, r * 0.07f, cyanGlowPaint)
       c.drawCircle(-r * 0.42f, r * 0.16f, r * 0.07f, cyanGlowPaint)
@@ -1769,10 +1894,9 @@ object RiftSpriteBaker {
   }
 
   /**
-   * Phase 4 AI Hull Forge Procedural 3D Metallic Renderer for the 9th Custom Modular Ship:
-   * - Renders from the <2KB JSON CustomHullVisualRecipe
-   * - Enforces minimum luminance contrast (L >= 0.32) against #000000 space
-   * - Strictly fits within the 36x36px physical hitbox footprint with mandatory Allied/Hostile readability outline
+   * AAA 128x128 3D Multi-Layered Modular Ship Renderer for Ship #10 (Rift Frame):
+   * - Renders from the CustomHullVisualRecipe with 4-layer depth shadow, recessed plasma nozzles,
+   *   5-stop metallic armor shader, recessed mechanical seams, and faceted 3D glass canopy.
    */
   fun drawCustomModularShipOnCanvas(
     c: Canvas,
@@ -1800,13 +1924,14 @@ object RiftSpriteBaker {
       return Color.rgb(red, green, blue)
     }
 
+    // 5-Stop Metallic Shader anchored with #0F172A deep edge and #CBD5E1 specular spine
     val hullColors =
       intArrayOf(
-        scaleColor(baseHullInt, 0.45f),
-        scaleColor(baseHullInt, 0.85f),
-        scaleColor(baseHullInt, 1.45f),
-        scaleColor(baseHullInt, 0.85f),
-        scaleColor(baseHullInt, 0.45f),
+        Color.parseColor("#0F172A"),
+        scaleColor(baseHullInt, 0.90f),
+        Color.parseColor("#CBD5E1"),
+        scaleColor(baseHullInt, 0.95f),
+        Color.parseColor("#0F172A"),
       )
 
     val trimColors =
@@ -1816,6 +1941,12 @@ object RiftSpriteBaker {
         scaleColor(trimInt, 0.62f),
         scaleColor(trimInt, 1.15f),
       )
+
+    val underChassisShadowPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#030712")
+      }
 
     val trimPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1842,7 +1973,7 @@ object RiftSpriteBaker {
             0f,
             r,
             hullColors,
-            floatArrayOf(0f, 0.30f, 0.50f, 0.70f, 1f),
+            floatArrayOf(0f, 0.28f, 0.50f, 0.72f, 1f),
             Shader.TileMode.CLAMP,
           )
       }
@@ -1856,7 +1987,7 @@ object RiftSpriteBaker {
             -r * 0.5f,
             r * 0.6f,
             r * 0.5f,
-            intArrayOf(hullColors[2], hullColors[1], hullColors[0]),
+            intArrayOf(Color.parseColor("#E2E8F0"), hullColors[1], hullColors[0]),
             floatArrayOf(0f, 0.55f, 1f),
             Shader.TileMode.CLAMP,
           )
@@ -1865,7 +1996,7 @@ object RiftSpriteBaker {
     val readabilityOutlinePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2.8f
+        strokeWidth = 2.6f
         strokeJoin = Paint.Join.ROUND
         color = if (isAllied) Color.parseColor("#38BDF8") else Color.parseColor("#EF4444")
       }
@@ -1873,16 +2004,16 @@ object RiftSpriteBaker {
     val specularEdgePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.6f
+        strokeWidth = 1.0f
         strokeJoin = Paint.Join.ROUND
-        color = Color.argb(210, 255, 255, 255)
+        color = Color.argb(153, 226, 232, 240)
       }
 
     val seamPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.5f
-        color = Color.parseColor("#020617")
+        strokeWidth = 1.2f
+        color = Color.parseColor("#050811")
       }
 
     val gunBarrelPaint =
@@ -1893,7 +2024,7 @@ object RiftSpriteBaker {
     val gunBarrelStroke =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.6f
+        strokeWidth = 1.5f
         color = Color.parseColor("#94A3B8")
       }
     val coreGlowPaint =
@@ -1907,15 +2038,49 @@ object RiftSpriteBaker {
         color = Color.WHITE
       }
 
-    // Clamp wingSweep to ensure silhouette stays strictly inside the 36x36 hitbox footprint
+    val plasmaExhaustColor =
+      if (isAllied) Color.parseColor("#00F5D4") else Color.parseColor("#FF5500")
+    val plasmaExhaustPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = plasmaExhaustColor
+      }
+
+    val canopyPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader =
+          RadialGradient(
+            r * 0.22f,
+            -r * 0.04f,
+            r * 0.36f,
+            intArrayOf(
+              Color.parseColor("#38BDF8"),
+              Color.parseColor("#0369A1"),
+              Color.parseColor("#082F49"),
+            ),
+            floatArrayOf(0f, 0.58f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      }
+    val canopyReflectionPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.3f
+        strokeCap = Paint.Cap.ROUND
+        color = Color.argb(235, 255, 255, 255)
+      }
+
     val sweep = recipe.wingSweep.coerceIn(0.68f, 1.08f)
 
-    // 1. Engine Housing Pods based on recipe.engineStyle
+    // 1. Recessed Engine Housing Pods + Focused Inner Plasma Cores
     when (recipe.engineStyle) {
       "QUAD_NOVA" -> {
         for (ey in floatArrayOf(-0.62f, -0.34f, 0.34f, 0.62f)) {
           c.drawRect(-r * 0.96f, ey * r - r * 0.08f, -r * 0.45f, ey * r + r * 0.08f, trimPaint)
           c.drawRect(-r * 0.96f, ey * r - r * 0.08f, -r * 0.45f, ey * r + r * 0.08f, gunBarrelStroke)
+          c.drawCircle(-r * 0.92f, ey * r, r * 0.06f, plasmaExhaustPaint)
+          c.drawCircle(-r * 0.90f, ey * r, r * 0.03f, whiteCorePaint)
         }
       }
       "HEAVY_THRUSTER" -> {
@@ -1923,14 +2088,24 @@ object RiftSpriteBaker {
         c.drawRect(-r * 1.00f, r * 0.24f, -r * 0.42f, r * 0.56f, trimPaint)
         c.drawRect(-r * 1.00f, -r * 0.56f, -r * 0.42f, -r * 0.24f, gunBarrelStroke)
         c.drawRect(-r * 1.00f, r * 0.24f, -r * 0.42f, r * 0.56f, gunBarrelStroke)
+        c.drawCircle(-r * 0.94f, -r * 0.40f, r * 0.10f, plasmaExhaustPaint)
+        c.drawCircle(-r * 0.94f, r * 0.40f, r * 0.10f, plasmaExhaustPaint)
+        c.drawCircle(-r * 0.92f, -r * 0.40f, r * 0.05f, whiteCorePaint)
+        c.drawCircle(-r * 0.92f, r * 0.40f, r * 0.05f, whiteCorePaint)
       }
       "BIO_ARC" -> {
-        c.drawCircle(-r * 0.78f, -r * 0.36f, r * 0.14f, coreGlowPaint)
-        c.drawCircle(-r * 0.78f, r * 0.36f, r * 0.14f, coreGlowPaint)
+        c.drawCircle(-r * 0.78f, -r * 0.36f, r * 0.14f, plasmaExhaustPaint)
+        c.drawCircle(-r * 0.78f, r * 0.36f, r * 0.14f, plasmaExhaustPaint)
+        c.drawCircle(-r * 0.78f, -r * 0.36f, r * 0.06f, whiteCorePaint)
+        c.drawCircle(-r * 0.78f, r * 0.36f, r * 0.06f, whiteCorePaint)
       }
       else -> {
         c.drawRect(-r * 0.94f, -r * 0.44f, -r * 0.46f, -r * 0.24f, gunBarrelPaint)
         c.drawRect(-r * 0.94f, r * 0.24f, -r * 0.46f, r * 0.44f, gunBarrelPaint)
+        c.drawCircle(-r * 0.90f, -r * 0.34f, r * 0.08f, plasmaExhaustPaint)
+        c.drawCircle(-r * 0.90f, r * 0.34f, r * 0.08f, plasmaExhaustPaint)
+        c.drawCircle(-r * 0.88f, -r * 0.34f, r * 0.04f, whiteCorePaint)
+        c.drawCircle(-r * 0.88f, r * 0.34f, r * 0.04f, whiteCorePaint)
       }
     }
 
@@ -2150,24 +2325,42 @@ object RiftSpriteBaker {
       close()
     }
 
-    // Layer 1: Trim + Mandatory Team Readability Outline
+    // Layer 1: Under-Chassis Depth Silhouette (#030712 drop-shadow hull layer offset by +1.8f px)
+    c.save()
+    c.translate(1.8f, 1.8f)
+    c.drawPath(outerTrimPath, underChassisShadowPaint)
+    c.drawPath(mainArmorPath, underChassisShadowPaint)
+    c.restore()
+
+    // Layer 2: Trim + Mandatory Team Readability Outline + 5-Stop Metallic Armor Hull + Specular Highlight
     c.drawPath(outerTrimPath, trimPaint)
     c.drawPath(outerTrimPath, readabilityOutlinePaint)
-
-    // Layer 2: Main 5-Stop Metallic Armor Hull + Specular Highlight
     c.drawPath(mainArmorPath, hullPaint)
     c.drawPath(mainArmorPath, specularEdgePaint)
 
-    // Layer 3: Superstructure Deck & Chassis Plates (1..4)
+    // Layer 3: Superstructure Deck & Recessed Mechanical Seams (1..4)
     c.drawPath(upperDeckPath, upperPlatePaint)
     c.drawPath(upperDeckPath, seamPaint)
+    c.drawPath(upperDeckPath, specularEdgePaint)
     for (pIdx in 1..recipe.chassisPlates.coerceIn(1, 4)) {
       val frac = pIdx * 0.15f
       c.drawLine(-r * 0.52f, -r * frac, r * 0.36f, -r * (frac * 0.5f), seamPaint)
       c.drawLine(-r * 0.52f, r * frac, r * 0.36f, r * (frac * 0.5f), seamPaint)
     }
 
-    // Layer 4: glowing V-Core Reactor in custom coreGlowHex
+    // Layer 4: Faceted 3D Glass Cockpit Canopy + Diagonal White Reflection Streak + V-Core Reactor
+    val canopyPath =
+      Path().apply {
+        moveTo(r * 0.56f, 0f)
+        lineTo(r * 0.16f, -r * 0.16f)
+        lineTo(-r * 0.06f, 0f)
+        lineTo(r * 0.16f, r * 0.16f)
+        close()
+      }
+    c.drawPath(canopyPath, canopyPaint)
+    c.drawPath(canopyPath, seamPaint)
+    c.drawLine(r * 0.40f, -r * 0.04f, r * 0.14f, -r * 0.11f, canopyReflectionPaint)
+
     val vCoreOuter =
       Path().apply {
         moveTo(r * 0.40f, 0f)
