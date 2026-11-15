@@ -521,6 +521,10 @@ class RiftGameEngine(
   var riftOmegaControlSec: Float = 0f // -30f (West Lock) .. +30f (East Lock)
   var riftAlphaLockedBy: Int = -1 // -1 = unlocked, 0 = West, 1 = East
   var riftOmegaLockedBy: Int = -1 // -1 = unlocked, 0 = West, 1 = East
+  var riftAlphaWestCount: Int = 0
+  var riftAlphaEastCount: Int = 0
+  var riftOmegaWestCount: Int = 0
+  var riftOmegaEastCount: Int = 0
   var riftControlMatchTimerSec: Float = 180f
 
   // Fluid Up-to-5-Man Named Armada State
@@ -1291,6 +1295,10 @@ class RiftGameEngine(
     riftOmegaControlSec = 0f
     riftAlphaLockedBy = -1
     riftOmegaLockedBy = -1
+    riftAlphaWestCount = 0
+    riftAlphaEastCount = 0
+    riftOmegaWestCount = 0
+    riftOmegaEastCount = 0
     riftControlMatchTimerSec = 180f
   }
 
@@ -4726,18 +4734,36 @@ class RiftGameEngine(
       desiredAngle = atan2(fluxCoreOrb.y - bot.y, fluxCoreOrb.x - bot.x)
       bot.weaponAngle = desiredAngle
       bot.independentAimActive = false
-    } else if (isRiftControlRulesActive() && (nearestEnemy == null || nearestDist > 460f)) {
-      // Contest unlocked Control Rifts in RIFT_CONTROL
+    } else if (isRiftControlRulesActive() && (nearestEnemy == null || nearestDist > 680f)) {
+      // Contest uncaptured Control Rifts in RIFT_CONTROL; if an enemy is within 680px (e.g. inside the same 340px ring), fall through to dogfight & clear them!
+      val myTeam = bot.freq
+      val alphaUncapturedByUs = riftAlphaLockedBy != myTeam
+      val omegaUncapturedByUs = riftOmegaLockedBy != myTeam
+      val distAlpha = hypot(bot.x - riftAlphaX, bot.y - riftAlphaY)
+      val distOmega = hypot(bot.x - riftOmegaX, bot.y - riftOmegaY)
       val targetAlpha =
-        riftAlphaLockedBy == -1 &&
-          (riftOmegaLockedBy != -1 || hypot(bot.x - riftAlphaX, bot.y - riftAlphaY) <= hypot(bot.x - riftOmegaX, bot.y - riftOmegaY))
+        when {
+          alphaUncapturedByUs && !omegaUncapturedByUs -> true
+          !alphaUncapturedByUs && omegaUncapturedByUs -> false
+          else -> distAlpha <= distOmega
+        }
       val rx = if (targetAlpha) riftAlphaX else riftOmegaX
       val ry = if (targetAlpha) riftAlphaY else riftOmegaY
       val distToRift = hypot(rx - bot.x, ry - bot.y)
       val toRiftAng = atan2(ry - bot.y, rx - bot.x)
-      desiredAngle = if (distToRift > 180f) toRiftAng else (toRiftAng + PI.toFloat() * 0.5f)
-      bot.weaponAngle = desiredAngle
-      bot.independentAimActive = false
+      desiredAngle = if (distToRift > 140f) toRiftAng else (toRiftAng + PI.toFloat() * 0.5f)
+      if (nearestEnemy != null && nearestDist < RiftCalibrationState.botGunFireRange) {
+        val leadT = min(0.75f, nearestDist / bot.spec.primarySpeed)
+        val aimAngle = atan2((nearestEnemy.y + nearestEnemy.vy * leadT) - bot.y, (nearestEnemy.x + nearestEnemy.vx * leadT) - bot.x)
+        bot.weaponAngle = aimAngle
+        bot.independentAimActive = true
+        if (!bot.isCloaked && bot.flux > bot.maxFlux * 0.28f) {
+          firePrimaryGun(bot)
+        }
+      } else {
+        bot.weaponAngle = desiredAngle
+        bot.independentAimActive = false
+      }
     } else if (nearestEnemy != null && nearestDist < RiftCalibrationState.botEngageRange) {
       val leadT = min(0.75f, nearestDist / bot.spec.primarySpeed)
       val tx = nearestEnemy.x + nearestEnemy.vx * leadT
@@ -6258,8 +6284,8 @@ class RiftGameEngine(
       curControl: Float,
       curLockedBy: Int,
       zoneLabel: String,
+      isAlpha: Boolean,
     ): Pair<Float, Int> {
-      if (curLockedBy != -1) return curControl to curLockedBy
       var westInside = 0
       var eastInside = 0
       for (s in ships) {
@@ -6267,37 +6293,64 @@ class RiftGameEngine(
           if (s.freq == 0) westInside++ else if (s.freq == 1) eastInside++
         }
       }
+      if (isAlpha) {
+        riftAlphaWestCount = westInside
+        riftAlphaEastCount = eastInside
+      } else {
+        riftOmegaWestCount = westInside
+        riftOmegaEastCount = eastInside
+      }
+
       var nextControl = curControl
-      var nextLocked = -1
-      if (westInside > 0 && eastInside == 0) {
-        val rate = if (curControl > 0f) 1.5f else 1.0f
-        nextControl = max(-30f, curControl - rawDt * rate)
-        if (nextControl <= -30f) {
+      var nextLocked = curLockedBy
+
+      if (westInside > eastInside) {
+        val adv = (westInside - eastInside).coerceIn(1, 4)
+        val advMult = 1.0f + (adv - 1) * 0.25f
+        val reversalMult = if (curControl > 0f) 1.5f else 1.0f
+        nextControl = max(-30f, curControl - rawDt * advMult * reversalMult)
+        if (curLockedBy == 1 && nextControl < 15f) {
+          nextLocked = -1
+          onPrizeToast("⚡ $zoneLabel UNLOCKED — WEST HORIZON CONTESTING!")
+        }
+        if (nextControl <= -30f && curLockedBy != 0) {
           nextLocked = 0
           shockwaves.add(ShockwaveEntity(zx, zy, 24f, riftCaptureRadius * 1.3f, Color.parseColor("#38BDF8")))
           sfx.playPrize()
-          onPrizeToast("🔒 $zoneLabel LOCKED BY WEST HORIZON!")
+          onPrizeToast("🎯 $zoneLabel CAPTURED BY WEST HORIZON!")
         }
-      } else if (eastInside > 0 && westInside == 0) {
-        val rate = if (curControl < 0f) 1.5f else 1.0f
-        nextControl = min(30f, curControl + rawDt * rate)
-        if (nextControl >= 30f) {
+      } else if (eastInside > westInside) {
+        val adv = (eastInside - westInside).coerceIn(1, 4)
+        val advMult = 1.0f + (adv - 1) * 0.25f
+        val reversalMult = if (curControl < 0f) 1.5f else 1.0f
+        nextControl = min(30f, curControl + rawDt * advMult * reversalMult)
+        if (curLockedBy == 0 && nextControl > -15f) {
+          nextLocked = -1
+          onPrizeToast("⚡ $zoneLabel UNLOCKED — EAST HORIZON CONTESTING!")
+        }
+        if (nextControl >= 30f && curLockedBy != 1) {
           nextLocked = 1
           shockwaves.add(ShockwaveEntity(zx, zy, 24f, riftCaptureRadius * 1.3f, Color.parseColor("#EF4444")))
           sfx.playWarp()
-          onPrizeToast("🔒 $zoneLabel LOCKED BY EAST HORIZON!")
+          onPrizeToast("🎯 $zoneLabel CAPTURED BY EAST HORIZON!")
+        }
+      } else if (westInside == 0 && eastInside == 0 && curLockedBy == -1) {
+        if (curControl < 0f) {
+          nextControl = min(0f, curControl + 0.25f * rawDt)
+        } else if (curControl > 0f) {
+          nextControl = max(0f, curControl - 0.25f * rawDt)
         }
       }
       return nextControl to nextLocked
     }
 
     val (alphaCtrl, alphaLock) =
-      updateZone(riftAlphaX, riftAlphaY, riftAlphaControlSec, riftAlphaLockedBy, "RIFT ALPHA")
+      updateZone(riftAlphaX, riftAlphaY, riftAlphaControlSec, riftAlphaLockedBy, "RIFT ALPHA", isAlpha = true)
     riftAlphaControlSec = alphaCtrl
     riftAlphaLockedBy = alphaLock
 
     val (omegaCtrl, omegaLock) =
-      updateZone(riftOmegaX, riftOmegaY, riftOmegaControlSec, riftOmegaLockedBy, "RIFT OMEGA")
+      updateZone(riftOmegaX, riftOmegaY, riftOmegaControlSec, riftOmegaLockedBy, "RIFT OMEGA", isAlpha = false)
     riftOmegaControlSec = omegaCtrl
     riftOmegaLockedBy = omegaLock
 

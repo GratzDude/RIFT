@@ -938,14 +938,15 @@ fun RiftArenaScreen(
             }
             val cleanCallsign = localPrefs.setCallsign(newCallsign)
             val clampedShipId = newShipId.coerceIn(1, 10)
+            val activeModeId = engine.activeRankedMode.id
             callsign = cleanCallsign
             selectedShipId = clampedShipId
-            selectedMode = "FFA"
+            selectedMode = activeModeId
             syndicateTag = localPrefs.getSyndicateTag()
             syndicateName = localPrefs.getSyndicateName()
 
             localPrefs.setPreferredShipId(clampedShipId)
-            localPrefs.setPreferredMode("FFA")
+            localPrefs.setPreferredMode(activeModeId)
 
             engine.localPlayer.callsign = cleanCallsign
             engine.localPlayer.syndicateTag = syndicateTag

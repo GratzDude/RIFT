@@ -225,19 +225,17 @@ fun RiftHudOverlay(
           RankedGameMode.SYNDICATE_WARS -> Color(0xFFEF4444)
           RankedGameMode.SECTOR_CONVERGENCE -> Color(0xFF38BDF8)
         }
-      fun formatRiftState(controlSec: Float, lockedBy: Int): String =
-        when (lockedBy) {
-          0 -> "WEST LOCKED"
-          1 -> "EAST LOCKED"
-          else -> {
-            val sec = kotlin.math.abs(controlSec).toInt()
-            when {
-              controlSec < -0.5f -> "W ${sec}s/30s"
-              controlSec > 0.5f -> "E ${sec}s/30s"
-              else -> "0s/30s"
-            }
-          }
+      fun formatRiftState(controlSec: Float, lockedBy: Int, westCnt: Int, eastCnt: Int): String {
+        val pct = ((kotlin.math.abs(controlSec) / 30f) * 100f).toInt().coerceIn(0, 100)
+        return when {
+          lockedBy == 0 -> "✓ WEST CAPTURED ($pct%)"
+          lockedBy == 1 -> "✓ EAST CAPTURED ($pct%)"
+          westCnt > 0 && westCnt == eastCnt -> "⚔️ CONTESTED (${westCnt}v${eastCnt})"
+          controlSec < -0.2f -> "WEST $pct% (${kotlin.math.abs(controlSec).toInt()}s/30s)"
+          controlSec > 0.2f -> "EAST $pct% (${kotlin.math.abs(controlSec).toInt()}s/30s)"
+          else -> "OPEN (0%)"
         }
+      }
       val baseModeSummaryText =
         when (mode) {
           RankedGameMode.RIFT_SKIRMISH ->
@@ -261,7 +259,7 @@ fun RiftHudOverlay(
           RankedGameMode.STASIS_BREACH ->
             "🔒 STASIS BREACH (10v10) • WEST CORE ${engine.westBrigGeneratorHp.toInt()}⚡ | EAST CORE ${engine.eastBrigGeneratorHp.toInt()}⚡"
           RankedGameMode.RIFT_CONTROL ->
-            "🎯 RIFT CONTROL (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • ${engine.riftControlMatchTimerSec.toInt()}s • ALPHA: ${formatRiftState(engine.riftAlphaControlSec, engine.riftAlphaLockedBy)} | OMEGA: ${formatRiftState(engine.riftOmegaControlSec, engine.riftOmegaLockedBy)}"
+            "🎯 RIFT CONTROL (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • ${engine.riftControlMatchTimerSec.toInt()}s • ALPHA: ${formatRiftState(engine.riftAlphaControlSec, engine.riftAlphaLockedBy, engine.riftAlphaWestCount, engine.riftAlphaEastCount)} | OMEGA: ${formatRiftState(engine.riftOmegaControlSec, engine.riftOmegaLockedBy, engine.riftOmegaWestCount, engine.riftOmegaEastCount)}"
           RankedGameMode.SYNDICATE_WARS ->
             "🏛️ SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • [${player.syndicateTag}] ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} [${engine.rivalSyndicateWarTag}] • ${engine.skirmishRoundTimerSec.toInt()}s"
           RankedGameMode.SECTOR_CONVERGENCE -> mode.title

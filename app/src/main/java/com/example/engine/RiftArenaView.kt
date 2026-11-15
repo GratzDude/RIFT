@@ -1923,6 +1923,8 @@ class RiftArenaView(
       cy: Float,
       controlSec: Float,
       lockedBy: Int,
+      westCount: Int,
+      eastCount: Int,
       zoneTitle: String,
     ) {
       if (cx + zoneR < viewLeft - 80f || cx - zoneR > viewRight + 80f ||
@@ -1931,10 +1933,12 @@ class RiftArenaView(
         return
       }
 
+      val isContested = westCount > 0 && eastCount > 0 && westCount == eastCount
       val isWestControl = lockedBy == 0 || (lockedBy == -1 && controlSec < -0.1f)
       val isEastControl = lockedBy == 1 || (lockedBy == -1 && controlSec > 0.1f)
       val primaryColor =
         when {
+          isContested -> Color.parseColor("#F59E0B")
           lockedBy == 0 -> Color.parseColor("#38BDF8")
           lockedBy == 1 -> Color.parseColor("#F43F5E")
           isWestControl -> Color.parseColor("#38BDF8")
@@ -1945,7 +1949,7 @@ class RiftArenaView(
       // 1. Subtle capture zone fill
       anomalyFillPaint.color =
         Color.argb(
-          if (lockedBy != -1) 42 else (22 + (14 * pulse).toInt()),
+          if (lockedBy != -1 || isContested) 42 else (22 + (14 * pulse).toInt()),
           Color.red(primaryColor),
           Color.green(primaryColor),
           Color.blue(primaryColor),
@@ -1953,8 +1957,8 @@ class RiftArenaView(
       canvas.drawCircle(cx, cy, zoneR, anomalyFillPaint)
 
       // 2. Outer capture boundary ring
-      anomalyRingPaint.strokeWidth = 3.2f
-      anomalyRingPaint.color = Color.argb(145, Color.red(primaryColor), Color.green(primaryColor), Color.blue(primaryColor))
+      anomalyRingPaint.strokeWidth = if (isContested) 4.2f else 3.2f
+      anomalyRingPaint.color = Color.argb(165, Color.red(primaryColor), Color.green(primaryColor), Color.blue(primaryColor))
       canvas.drawCircle(cx, cy, zoneR, anomalyRingPaint)
 
       // 3. 360-Degree Tug-of-War Progress Arc (sweepAngle = (abs(controlSec) / 30f) * 360f)
@@ -1977,17 +1981,29 @@ class RiftArenaView(
       canvas.drawCircle(cx, cy, beaconR * 0.42f, anomalyCorePaint)
 
       // 5. Status Text above Rift Zone
+      val pct = ((abs(controlSec) / 30f) * 100f).toInt().coerceIn(0, 100)
       val statusText =
         when {
-          lockedBy == 0 -> "$zoneTitle • LOCKED BY WEST"
-          lockedBy == 1 -> "$zoneTitle • LOCKED BY EAST"
-          controlSec < -0.5f -> "$zoneTitle • WEST ${abs(controlSec).toInt()}s / 30s"
-          controlSec > 0.5f -> "$zoneTitle • EAST ${abs(controlSec).toInt()}s / 30s"
-          else -> "$zoneTitle • UNCLAIMED (HOLD 30s TO LOCK)"
+          lockedBy == 0 -> "✓ $zoneTitle • CAPTURED BY WEST ($pct%)"
+          lockedBy == 1 -> "✓ $zoneTitle • CAPTURED BY EAST ($pct%)"
+          isContested -> "⚔️ $zoneTitle • CONTESTED (WEST $westCount vs EAST $eastCount)"
+          controlSec < -0.2f -> "🎯 $zoneTitle • WEST CAPTURING $pct% (${abs(controlSec).toInt()}s / 30s)"
+          controlSec > 0.2f -> "🎯 $zoneTitle • EAST CAPTURING $pct% (${abs(controlSec).toInt()}s / 30s)"
+          else -> "🎯 $zoneTitle • OPEN OBJECTIVE (FLY INSIDE RING TO CAPTURE)"
         }
-      popupPaint.color = if (lockedBy != -1) Color.parseColor("#FACC15") else primaryColor
+      popupPaint.color =
+        when {
+          isContested -> Color.parseColor("#FACC15")
+          lockedBy != -1 -> Color.parseColor("#FACC15")
+          else -> primaryColor
+        }
       popupPaint.textSize = 17.5f
       canvas.drawText(statusText, cx, cy - zoneR - 18f, popupPaint)
+
+      // 6. Live Ship Count Sub-Label below Center Beacon
+      popupPaint.color = Color.parseColor("#E2E8F0")
+      popupPaint.textSize = 14.0f
+      canvas.drawText("WEST: $westCount  |  EAST: $eastCount", cx, cy + beaconR + 24f, popupPaint)
     }
 
     drawSingleControlZone(
@@ -1995,6 +2011,8 @@ class RiftArenaView(
       cy = engine.riftAlphaY,
       controlSec = engine.riftAlphaControlSec,
       lockedBy = engine.riftAlphaLockedBy,
+      westCount = engine.riftAlphaWestCount,
+      eastCount = engine.riftAlphaEastCount,
       zoneTitle = "RIFT ALPHA",
     )
     drawSingleControlZone(
@@ -2002,6 +2020,8 @@ class RiftArenaView(
       cy = engine.riftOmegaY,
       controlSec = engine.riftOmegaControlSec,
       lockedBy = engine.riftOmegaLockedBy,
+      westCount = engine.riftOmegaWestCount,
+      eastCount = engine.riftOmegaEastCount,
       zoneTitle = "RIFT OMEGA",
     )
   }
@@ -2083,6 +2103,74 @@ class RiftArenaView(
         hudLabelPaint.color = Color.parseColor("#030712")
         canvas.drawText("⚡", ix, iy + 3f * dpDensity, hudLabelPaint)
       }
+    }
+
+    // Off-Screen Directional Pointers for RIFT ALPHA & RIFT OMEGA in RIFT_CONTROL
+    if (engine.isRiftControlRulesActive()) {
+      fun drawRiftPointer(
+        tx: Float,
+        ty: Float,
+        controlSec: Float,
+        lockedBy: Int,
+        westCnt: Int,
+        eastCnt: Int,
+        shortName: String,
+      ) {
+        val sx = (tx - effectiveCamX) * worldScale + vw * 0.5f
+        val sy = (ty - effectiveCamY) * worldScale + vh * 0.5f
+        if (sx < 56f || sx > vw - 56f || sy < 56f || sy > vh - 56f) {
+          val ang = atan2(ty - effectiveCamY, tx - effectiveCamX)
+          val edgeRx = (vw * 0.5f - 68f * dpDensity).coerceAtLeast(80f)
+          val edgeRy = (vh * 0.5f - 58f * dpDensity).coerceAtLeast(60f)
+          val ix = (vw * 0.5f + cos(ang) * edgeRx).coerceIn(58f * dpDensity, vw - 58f * dpDensity)
+          val iy = (vh * 0.5f + sin(ang) * edgeRy).coerceIn(48f * dpDensity, vh - 86f * dpDensity)
+          val distM = (hypot(tx - p.x, ty - p.y) / 10f).toInt()
+          val isContested = westCnt > 0 && eastCnt > 0 && westCnt == eastCnt
+          val badgeColor =
+            when {
+              isContested -> Color.parseColor("#F59E0B")
+              lockedBy == 0 || controlSec < -0.2f -> Color.parseColor("#38BDF8")
+              lockedBy == 1 || controlSec > 0.2f -> Color.parseColor("#EF4444")
+              else -> Color.parseColor("#A855F7")
+            }
+          val pillW = 48f * dpDensity
+          val pillH = 13f * dpDensity
+          arcRect.set(ix - pillW, iy - pillH, ix + pillW, iy + pillH)
+          hudCircleFillPaint.color = Color.argb(215, 7, 14, 28)
+          canvas.drawRoundRect(arcRect, 6f * dpDensity, 6f * dpDensity, hudCircleFillPaint)
+          anomalyRingPaint.strokeWidth = 1.6f * dpDensity
+          anomalyRingPaint.color = badgeColor
+          canvas.drawRoundRect(arcRect, 6f * dpDensity, 6f * dpDensity, anomalyRingPaint)
+
+          val arrowTipX = ix + cos(ang) * (pillW + 7f * dpDensity)
+          val arrowTipY = iy + sin(ang) * (pillH + 7f * dpDensity)
+          hudCircleFillPaint.color = badgeColor
+          canvas.drawCircle(arrowTipX, arrowTipY, 3.6f * dpDensity, hudCircleFillPaint)
+
+          hudLabelPaint.textSize = 8.2f * dpDensity
+          hudLabelPaint.color = badgeColor
+          canvas.drawText("$shortName • ${distM}m", ix, iy + 3f * dpDensity, hudLabelPaint)
+        }
+      }
+
+      drawRiftPointer(
+        tx = engine.riftAlphaX,
+        ty = engine.riftAlphaY,
+        controlSec = engine.riftAlphaControlSec,
+        lockedBy = engine.riftAlphaLockedBy,
+        westCnt = engine.riftAlphaWestCount,
+        eastCnt = engine.riftAlphaEastCount,
+        shortName = "ALPHA",
+      )
+      drawRiftPointer(
+        tx = engine.riftOmegaX,
+        ty = engine.riftOmegaY,
+        controlSec = engine.riftOmegaControlSec,
+        lockedBy = engine.riftOmegaLockedBy,
+        westCnt = engine.riftOmegaWestCount,
+        eastCnt = engine.riftOmegaEastCount,
+        shortName = "OMEGA",
+      )
     }
   }
 
