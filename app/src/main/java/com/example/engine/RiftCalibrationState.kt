@@ -245,17 +245,17 @@ object RiftCalibrationState {
   var playfieldIdleDrainPctPerSec by mutableFloatStateOf(0.10f)
 
   // 4. Shared Class & Secondary Weapon Mechanics (Tab 3)
-  var cloakDrainPerSec by mutableFloatStateOf(180f)
+  var cloakDrainPerSec by mutableFloatStateOf(36f)
   var empPulseRadius by mutableFloatStateOf(220f)
-  var empFluxDrainPct by mutableFloatStateOf(0.35f)
-  var empFreezeSec by mutableFloatStateOf(2.5f)
+  var empFluxDrainPct by mutableFloatStateOf(0.25f)
+  var empFreezeSec by mutableFloatStateOf(2.0f)
   var phaseDashImpulse by mutableFloatStateOf(1120f)
   var phaseOverchargeBonusPct by mutableFloatStateOf(0.35f)
   var proxFuseRadius by mutableFloatStateOf(65f)
   var maxMinesPerShip by mutableIntStateOf(6)
   var interdictorBubbleRadius by mutableFloatStateOf(275f)
-  var interdictorBubbleDuration by mutableFloatStateOf(8.0f)
-  var interdictorBubbleCooldown by mutableFloatStateOf(10.0f)
+  var interdictorBubbleDuration by mutableFloatStateOf(6.0f)
+  var interdictorBubbleCooldown by mutableFloatStateOf(8.5f)
 
   // 5. Official RIFT Special Buffs & Bucket B Enhancers (Tab 4)
   var seekerFlightTime by mutableFloatStateOf(2.5f)      // Official 2.5s Seeker Torpedo flight time
@@ -268,7 +268,7 @@ object RiftCalibrationState {
   var novaBoltCount by mutableIntStateOf(24)             // 24 radial ricochet bolts
   var novaBoltDamage by mutableFloatStateOf(280f)        // 280 Flux per bolt
   var novaBoltSpeed by mutableFloatStateOf(860f)         // 860 px/s bolt velocity
-  var stasisBarrierDuration by mutableFloatStateOf(10.0f)// 10.0s hard-light wall lifespan
+  var stasisBarrierDuration by mutableFloatStateOf(45.0f)// 45.0s tethered hard-light forcefield lifespan
   var stasisBarrierLength by mutableFloatStateOf(120f)   // 120px barrier span
   var hyperSurgeDuration by mutableFloatStateOf(3.0f)    // 3.0s thruster burn
   var hyperSurgeSpeedMult by mutableFloatStateOf(1.65f)  // 1.65x speed multiplier
@@ -492,7 +492,7 @@ object RiftCalibrationState {
       tabIndex = 1,
       title = "Wall Bounce",
       unit = "x",
-      description = "Speed kept when bouncing off walls (0⚡ damage).",
+      description = "Speed kept when bouncing off walls (0 Flux damage).",
       min = 0.20f, max = 1.00f, step = 0.05f, decimals = 2,
       getter = { wallElasticity }, setter = { wallElasticity = it.coerceIn(0.20f, 1.00f) },
     )
@@ -509,8 +509,8 @@ object RiftCalibrationState {
       key = "afterburnerDrainPerSec",
       tabIndex = 1,
       title = "Afterburner Drain",
-      unit = "⚡/s",
-      description = "Flux used per second while burning afterburners (stops at 1⚡).",
+      unit = "Flux/s",
+      description = "Flux used per second while burning afterburners (stops at 1 Flux).",
       min = 0f, max = 600f, step = 15f, decimals = 0,
       getter = { afterburnerDrainPerSec }, setter = { afterburnerDrainPerSec = it.coerceIn(0f, 600f) },
     )
@@ -605,7 +605,7 @@ object RiftCalibrationState {
         tabIndex = 2,
         shipIdFilter = shipId,
         title = "$prefix Maximum Flux",
-        unit = "⚡",
+        unit = "Flux",
         description = "Unified Flux capacitor pool (HP + weapon ammo) for $prefix.",
         min = 1200f, max = 7500f, step = 100f, decimals = 0,
         getter = { RiftCodex.getShipById(shipId).maxFlux },
@@ -616,7 +616,7 @@ object RiftCalibrationState {
         tabIndex = 2,
         shipIdFilter = shipId,
         title = "$prefix Flux Recharge Rate",
-        unit = "⚡/s",
+        unit = "Flux/s",
         description = "Passive Flux restored per second in open space for $prefix.",
         min = 100f, max = 900f, step = 10f, decimals = 0,
         getter = { RiftCodex.getShipById(shipId).rechargeRate },
@@ -668,10 +668,10 @@ object RiftCalibrationState {
       tabIndex = 3,
       shipIdFilter = 0,
       title = "Stealth Cloak Flux Drain",
-      unit = "⚡/s",
-      description = "Continuous Flux drain while Tactical Cloak is active on Disruptor or Rift Frame.",
-      min = 40f, max = 500f, step = 10f, decimals = 0,
-      getter = { cloakDrainPerSec }, setter = { cloakDrainPerSec = it.coerceIn(40f, 500f) },
+      unit = "Flux/s",
+      description = "Continuous Flux drain while Tactical Cloak is active on Disruptor or Rift Frame (default 36 Flux/s).",
+      min = 10f, max = 250f, step = 4f, decimals = 0,
+      getter = { cloakDrainPerSec }, setter = { cloakDrainPerSec = it.coerceIn(10f, 250f) },
     )
     list += CalibrationParamDescriptor(
       key = "empPulseRadius",
@@ -759,7 +759,7 @@ object RiftCalibrationState {
       shipIdFilter = 0,
       title = "Eclipse Bubble: Duration",
       unit = "s",
-      description = "Seconds an Eclipse Stasis Bubble stays active (default 8.0s).",
+      description = "Seconds an Eclipse Stasis Bubble stays active (default 6.0s).",
       min = 2.0f, max = 15.0f, step = 0.5f, decimals = 1,
       getter = { interdictorBubbleDuration }, setter = { interdictorBubbleDuration = it.coerceIn(2.0f, 15.0f) },
     )
@@ -769,7 +769,7 @@ object RiftCalibrationState {
       shipIdFilter = 0,
       title = "Eclipse Bubble: Cooldown",
       unit = "s",
-      description = "Cooldown between Eclipse Stasis Bubbles (default 10.0s).",
+      description = "Cooldown between Eclipse Stasis Bubbles (default 8.5s).",
       min = 4.0f, max = 25.0f, step = 0.5f, decimals = 1,
       getter = { interdictorBubbleCooldown },
       setter = {
@@ -787,7 +787,7 @@ object RiftCalibrationState {
         tabIndex = 3,
         shipIdFilter = shipId,
         title = "$prefix Primary Bolt Damage",
-        unit = "⚡",
+        unit = "Flux",
         description = "Base Flux damage per primary projectile stream for $prefix.",
         min = 30f, max = 800f, step = 5f, decimals = 0,
         getter = { RiftCodex.getShipById(shipId).primaryDamage },
@@ -798,7 +798,7 @@ object RiftCalibrationState {
         tabIndex = 3,
         shipIdFilter = shipId,
         title = "$prefix Primary Flux Cost",
-        unit = "⚡",
+        unit = "Flux",
         description = "Flux drained per primary trigger pull on $prefix.",
         min = 0f, max = 120f, step = 2f, decimals = 0,
         getter = { RiftCodex.getShipById(shipId).primaryCost },
@@ -833,7 +833,7 @@ object RiftCalibrationState {
             tabIndex = 3,
             shipIdFilter = shipId,
             title = "$prefix Secondary Flux Cost",
-            unit = "⚡",
+            unit = "Flux",
             description = "Flux drained when activating $prefix's secondary (${spec.secondaryShortLabel}).",
             min = 0f, max = 1200f, step = 25f, decimals = 0,
             getter = { RiftCodex.getShipById(shipId).bombCost },
@@ -857,7 +857,7 @@ object RiftCalibrationState {
             tabIndex = 3,
             shipIdFilter = shipId,
             title = "$prefix Secondary Warhead Damage",
-            unit = "⚡",
+            unit = "Flux",
             description = "Direct Flux damage dealt by $prefix's secondary warhead.",
             min = 50f, max = 2500f, step = 25f, decimals = 0,
             getter = { RiftCodex.getShipById(shipId).bombDamage },
@@ -922,7 +922,7 @@ object RiftCalibrationState {
       key = "seekerDamage",
       tabIndex = 4,
       title = "Seeker Torpedo Impact Damage",
-      unit = "⚡",
+      unit = "Flux",
       description = "Flux damage inflicted when a Seeker Torpedo strikes a target.",
       min = 200f, max = 2000f, step = 25f, decimals = 0,
       getter = { seekerDamage },
@@ -954,7 +954,7 @@ object RiftCalibrationState {
       key = "shatterPelletDamage",
       tabIndex = 4,
       title = "Shatter Cone Shard Damage",
-      unit = "⚡",
+      unit = "Flux",
       description = "Flux damage dealt by each individual Shatter Cone plasma shard.",
       min = 15f, max = 220f, step = 5f, decimals = 0,
       getter = { shatterPelletDamage }, setter = { shatterPelletDamage = it.coerceIn(15f, 220f) },
@@ -972,7 +972,7 @@ object RiftCalibrationState {
       key = "novaBoltDamage",
       tabIndex = 4,
       title = "Nova Ring Bolt Damage",
-      unit = "⚡",
+      unit = "Flux",
       description = "Flux damage dealt per individual Nova Ring ricochet bolt.",
       min = 60f, max = 700f, step = 20f, decimals = 0,
       getter = { novaBoltDamage }, setter = { novaBoltDamage = it.coerceIn(60f, 700f) },
@@ -991,9 +991,14 @@ object RiftCalibrationState {
       tabIndex = 4,
       title = "Stasis Barrier Duration",
       unit = "s",
-      description = "Seconds a deployed Stasis Barrier hard-light wall persists in space.",
-      min = 2.0f, max = 25.0f, step = 0.5f, decimals = 1,
-      getter = { stasisBarrierDuration }, setter = { stasisBarrierDuration = it.coerceIn(2.0f, 25.0f) },
+      description = "Seconds a deployed Stasis Barrier hard-light forcefield persists in space (default 45.0s).",
+      min = 5.0f, max = 120.0f, step = 1.0f, decimals = 1,
+      getter = { stasisBarrierDuration },
+      setter = {
+        val v = it.coerceIn(5.0f, 120.0f)
+        stasisBarrierDuration = v
+        RiftCodex.BUFF_REGISTRY["STASIS_BARRIER"]?.flightDuration = v
+      },
     )
     list += CalibrationParamDescriptor(
       key = "stasisBarrierLength",
@@ -1009,7 +1014,7 @@ object RiftCalibrationState {
       tabIndex = 4,
       title = "Hyper Surge Boost Duration",
       unit = "s",
-      description = "Duration of the 0⚡ Hyper Surge thruster speed burn.",
+      description = "Duration of the 0-Flux Hyper Surge thruster speed burn.",
       min = 1.0f, max = 8.0f, step = 0.25f, decimals = 2,
       getter = { hyperSurgeDuration }, setter = { hyperSurgeDuration = it.coerceIn(1.0f, 8.0f) },
     )
@@ -1035,7 +1040,7 @@ object RiftCalibrationState {
       key = "repelCost",
       tabIndex = 4,
       title = "Repel Shockwave Flux Cost",
-      unit = "⚡",
+      unit = "Flux",
       description = "Flux drained when triggering a 360° Repel defensive shockwave.",
       min = 0f, max = 800f, step = 20f, decimals = 0,
       getter = { repelCost }, setter = { repelCost = it.coerceIn(0f, 800f) },
@@ -1115,7 +1120,7 @@ object RiftCalibrationState {
         key = "forged_${bId}_damage",
         tabIndex = 4,
         title = "[FORGED] $bName Flux Damage",
-        unit = "⚡",
+        unit = "Flux",
         description = "Direct/AoE Flux damage inflicted by $bName.",
         min = 0f, max = 2500f, step = 25f, decimals = 0,
         getter = { RiftCodex.BUFF_REGISTRY[bId]?.damage ?: 480f },
@@ -1393,8 +1398,8 @@ object RiftCalibrationState {
       key = "stasisBrigReactorMaxHp",
       tabIndex = 7,
       title = "Brig Core HP",
-      unit = "⚡",
-      description = "Max HP of the West and East Stasis Cores in Stasis Breach (40,000⚡ default; prisoners deal 100% damage).",
+      unit = "Flux",
+      description = "Max HP of the West and East Stasis Cores in Stasis Breach (40,000 Flux default; prisoners deal 100% damage).",
       min = 10000f, max = 100000f, step = 2000f, decimals = 0,
       getter = { stasisBrigReactorMaxHp },
       setter = { stasisBrigReactorMaxHp = it.coerceIn(10000f, 100000f) },
@@ -1441,11 +1446,17 @@ object RiftCalibrationState {
       anomalyScale = 1.0f
       botsEnabled = true
 
+      cloakDrainPerSec = 36f
+      empFluxDrainPct = 0.25f
+      empFreezeSec = 2.0f
       interdictorBubbleRadius = 275f
-      interdictorBubbleDuration = 8.0f
-      interdictorBubbleCooldown = 10.0f
-      RiftCodex.getShipById(9).bombCost = 360f
-      RiftCodex.getShipById(9).bombCooldown = 10.0f
+      interdictorBubbleDuration = 6.0f
+      interdictorBubbleCooldown = 8.5f
+      stasisBarrierDuration = 45.0f
+      RiftCodex.getShipById(6).bombCost = 0f
+      RiftCodex.getShipById(6).bombCooldown = 4.5f
+      RiftCodex.getShipById(9).bombCost = 320f
+      RiftCodex.getShipById(9).bombCooldown = 8.5f
 
       engine.publicMatchCycleLimitSec = publicMatchCycleLimitSec
       for (ship in engine.ships) {
@@ -1694,12 +1705,19 @@ object RiftCalibrationState {
           val desc = descriptorsByKey[k]
           if (desc != null) {
             val loadedVal = obj.optDouble(k, desc.getter().toDouble()).toFloat()
-            if (k == "phaseDashImpulse" && loadedVal <= 650f) {
-              desc.setter(1120f)
-            } else if (k == "stasisBrigReactorMaxHp" && loadedVal <= 10000f) {
-              desc.setter(40000f)
-            } else {
-              desc.setter(loadedVal)
+            when {
+              k == "phaseDashImpulse" && loadedVal <= 650f -> desc.setter(1120f)
+              k == "stasisBrigReactorMaxHp" && loadedVal <= 10000f -> desc.setter(40000f)
+              k == "cloakDrainPerSec" && loadedVal >= 150f -> desc.setter(36f)
+              k == "empFluxDrainPct" && loadedVal >= 0.34f -> desc.setter(0.25f)
+              k == "empFreezeSec" && loadedVal >= 2.4f -> desc.setter(2.0f)
+              k == "interdictorBubbleDuration" && (loadedVal >= 7.5f || abs(loadedVal - 5.0f) < 0.05f) -> desc.setter(6.0f)
+              k == "interdictorBubbleCooldown" && loadedVal >= 9.0f -> desc.setter(8.5f)
+              k == "stasisBarrierDuration" && loadedVal <= 15.0f -> desc.setter(45.0f)
+              k == "ship_9_bombCost" && loadedVal >= 350f -> desc.setter(320f)
+              k == "ship_9_bombCooldown" && loadedVal >= 9.0f -> desc.setter(8.5f)
+              k == "ship_6_bombCooldown" && loadedVal <= 1.2f -> desc.setter(4.5f)
+              else -> desc.setter(loadedVal)
             }
           }
         }
@@ -1715,6 +1733,8 @@ object RiftCalibrationState {
     fctScale = 1.0f
     applyCalibrationChangesLive(null, null)
   }
+
+  fun loadFromPrefs(context: Context) = loadPersistedLayout(context)
 
   fun savePersistedLayout(context: Context) {
     ensureBaselineCaptured()
@@ -1801,11 +1821,17 @@ object RiftCalibrationState {
       DEFAULT_GAME_CONFIG[desc.key]?.let { desc.setter(it) }
     }
 
+    cloakDrainPerSec = 36f
+    empFluxDrainPct = 0.25f
+    empFreezeSec = 2.0f
     interdictorBubbleRadius = 275f
-    interdictorBubbleDuration = 8.0f
-    interdictorBubbleCooldown = 10.0f
-    RiftCodex.getShipById(9).bombCost = 360f
-    RiftCodex.getShipById(9).bombCooldown = 10.0f
+    interdictorBubbleDuration = 6.0f
+    interdictorBubbleCooldown = 8.5f
+    stasisBarrierDuration = 45.0f
+    RiftCodex.getShipById(6).bombCost = 0f
+    RiftCodex.getShipById(6).bombCooldown = 4.5f
+    RiftCodex.getShipById(9).bombCost = 320f
+    RiftCodex.getShipById(9).bombCooldown = 8.5f
 
     bountyPlacement = LabelPlacement.TOP
     tagPlacement = LabelPlacement.BOTTOM

@@ -549,8 +549,10 @@ class LocalPilotPrefs(context: Context) {
   fun getPilotLevel(uid: String? = null): Int =
     computeLevelFromTotalXp(getTotalXp(uid))
 
-  fun getCustomizationPointsTotal(uid: String? = null): Int =
-    getPilotLevel(uid).coerceIn(1, 100)
+  fun getCustomizationPointsTotal(uid: String? = null): Int {
+    val lvl = getPilotLevel(uid).coerceIn(1, 100)
+    return if (lvl >= 20) 100 else lvl
+  }
 
   fun getSpentCustomizationPoints(uid: String? = null): Int =
     prefs.getInt(uidKey(KEY_SPENT_CUSTOM_POINTS, uid), prefs.getInt(KEY_SPENT_CUSTOM_POINTS, 0))
@@ -604,11 +606,13 @@ class LocalPilotPrefs(context: Context) {
       .apply()
   }
 
-  // Custom Modular Ship Loadout Slots (Frame A, Frame B, Frame C) with seamless legacy migration
+  // Custom Modular Ship Loadout Slots (Frame A through Frame E) with seamless legacy migration
   fun normalizeCustomSlotId(rawSlotId: String?): String =
     when (rawSlotId?.trim()?.uppercase(Locale.US)) {
       "FRAME B", "9B", "B" -> "Frame B"
       "FRAME C", "9C", "C" -> "Frame C"
+      "FRAME D", "9D", "D" -> "Frame D"
+      "FRAME E", "9E", "E" -> "Frame E"
       else -> "Frame A"
     }
 
@@ -616,6 +620,8 @@ class LocalPilotPrefs(context: Context) {
     when (cleanSlotId) {
       "Frame B" -> "9B"
       "Frame C" -> "9C"
+      "Frame D" -> "9D"
+      "Frame E" -> "9E"
       else -> "9A"
     }
 
@@ -638,14 +644,25 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun isCustomSlotUnlocked(slotId: String, uid: String? = null): Boolean {
+    val lvl = getPilotLevel(uid)
     return when (normalizeCustomSlotId(slotId)) {
       "Frame A" -> true
       "Frame B" ->
         prefs.getBoolean(uidKey(KEY_SLOT_B_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_B_UNLOCKED, false)) ||
-          getUnlockedExtraSlots(uid) >= 1
+          getUnlockedExtraSlots(uid) >= 1 ||
+          lvl >= 35
       "Frame C" ->
         prefs.getBoolean(uidKey(KEY_SLOT_C_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_C_UNLOCKED, false)) ||
-          getUnlockedExtraSlots(uid) >= 2
+          getUnlockedExtraSlots(uid) >= 2 ||
+          lvl >= 50
+      "Frame D" ->
+        prefs.getBoolean(uidKey(KEY_SLOT_D_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_D_UNLOCKED, false)) ||
+          getUnlockedExtraSlots(uid) >= 3 ||
+          lvl >= 75
+      "Frame E" ->
+        prefs.getBoolean(uidKey(KEY_SLOT_E_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_E_UNLOCKED, false)) ||
+          getUnlockedExtraSlots(uid) >= 4 ||
+          lvl >= 100
       else -> true
     }
   }
@@ -655,6 +672,8 @@ class LocalPilotPrefs(context: Context) {
       when (normalizeCustomSlotId(slotId)) {
         "Frame B" -> KEY_SLOT_B_UNLOCKED
         "Frame C" -> KEY_SLOT_C_UNLOCKED
+        "Frame D" -> KEY_SLOT_D_UNLOCKED
+        "Frame E" -> KEY_SLOT_E_UNLOCKED
         else -> return
       }
     prefs
@@ -713,6 +732,73 @@ class LocalPilotPrefs(context: Context) {
       .putLong(uidKey(KEY_RIFT_SHARDS, uid), cleanShards)
       .putInt(KEY_HIGHEST_MILESTONE_LVL, kotlin.math.max(getHighestMilestoneLevelClaimed(uid), highestMilestoneLevelClaimed))
       .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), kotlin.math.max(getHighestMilestoneLevelClaimed(uid), highestMilestoneLevelClaimed))
+      .apply()
+  }
+
+  fun claimPendingMilestoneShards(currentLevel: Int, uid: String? = null): Long {
+    val highestClaimed = getHighestMilestoneLevelClaimed(uid).coerceAtLeast(1)
+    val clampedLevel = currentLevel.coerceIn(1, 100)
+    val reward =
+      com.example.engine.RiftProgressionCatalog.calculateUnclaimedMilestoneShards(
+        highestClaimedLevel = highestClaimed,
+        currentLevel = clampedLevel,
+      )
+    if (reward > 0L || clampedLevel > highestClaimed) {
+      val nextShards = getRiftShards(uid) + reward
+      prefs
+        .edit()
+        .putLong(KEY_RIFT_SHARDS, nextShards)
+        .putLong(uidKey(KEY_RIFT_SHARDS, uid), nextShards)
+        .putInt(KEY_HIGHEST_MILESTONE_LVL, clampedLevel)
+        .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), clampedLevel)
+        .apply()
+    }
+    return reward
+  }
+
+  fun isCosmeticUnlocked(
+    category: String,
+    itemId: Int,
+    pilotLevel: Int = getPilotLevel(),
+    uid: String? = null,
+  ): Boolean {
+    if (itemId <= 0) return true
+    val cat = category.trim().uppercase(Locale.US)
+    val item = com.example.engine.RiftProgressionCatalog.getCosmeticItem(cat, itemId)
+    if (item != null && pilotLevel >= item.freeAtLevel) return true
+    val baseKey = "cosmetic_unlocked_${cat}_$itemId"
+    return prefs.getBoolean(uidKey(baseKey, uid), prefs.getBoolean(baseKey, false))
+  }
+
+  fun setCosmeticUnlocked(
+    category: String,
+    itemId: Int,
+    unlocked: Boolean = true,
+    uid: String? = null,
+  ) {
+    val cat = category.trim().uppercase(Locale.US)
+    val baseKey = "cosmetic_unlocked_${cat}_$itemId"
+    prefs
+      .edit()
+      .putBoolean(baseKey, unlocked)
+      .putBoolean(uidKey(baseKey, uid), unlocked)
+      .apply()
+  }
+
+  fun getEquippedCosmeticId(category: String, uid: String? = null): Int {
+    val cat = category.trim().uppercase(Locale.US)
+    val baseKey = "cosmetic_equipped_$cat"
+    return prefs.getInt(uidKey(baseKey, uid), prefs.getInt(baseKey, 0)).coerceAtLeast(0)
+  }
+
+  fun setEquippedCosmeticId(category: String, itemId: Int, uid: String? = null) {
+    val cat = category.trim().uppercase(Locale.US)
+    val baseKey = "cosmetic_equipped_$cat"
+    val cleanId = itemId.coerceAtLeast(0)
+    prefs
+      .edit()
+      .putInt(baseKey, cleanId)
+      .putInt(uidKey(baseKey, uid), cleanId)
       .apply()
   }
 
@@ -842,70 +928,109 @@ class LocalPilotPrefs(context: Context) {
   fun getAllSyndicates(): List<SyndicateInfo> {
     val customRaw = prefs.getString(KEY_CUSTOM_SYNDICATES_JSON, "[]") ?: "[]"
     val customList = mutableListOf<SyndicateInfo>()
+    var purgedStaleEntries = false
     try {
       val arr = JSONArray(customRaw)
       for (i in 0 until arr.length()) {
         val obj = arr.getJSONObject(i)
         val parsedTag = obj.optString("tag", "").trim().uppercase()
-        if (parsedTag.isNotEmpty() && parsedTag != "BOT" && parsedTag != "RFT") {
-          customList.add(
-            SyndicateInfo(
-              id = obj.optString("id", "syn_custom_$i"),
-              tag = parsedTag,
-              name = obj.optString("name", "$parsedTag Syndicate"),
-              foundryOrigin = obj.optString("foundryOrigin", "Player Registered Syndicate"),
-              motto = obj.optString("motto", "Forged in the Convergence"),
-              memberCount = obj.optInt("memberCount", 1),
-              combinedBounty = obj.optLong("combinedBounty", 1000L),
-              isCustom = true,
-            )
+        val parsedOwner = obj.optString("ownerId", "").trim()
+        val syn =
+          SyndicateInfo(
+            id = obj.optString("id", "syn_custom_$i"),
+            ownerId = parsedOwner,
+            tag = parsedTag,
+            name = obj.optString("name", "$parsedTag Syndicate"),
+            foundryOrigin = obj.optString("foundryOrigin", "Player Founded Syndicate"),
+            motto = obj.optString("motto", "Forged in the Convergence"),
+            memberCount = obj.optInt("memberCount", 1).coerceAtLeast(1),
+            combinedBounty = obj.optLong("combinedBounty", 100L).coerceAtLeast(100L),
+            isCustom = obj.optBoolean("isCustom", true),
           )
+        if (syn.isRealPlayerFoundedSyndicate()) {
+          customList.add(syn)
+        } else {
+          purgedStaleEntries = true
         }
       }
     } catch (_: Exception) {}
 
+    if (purgedStaleEntries) {
+      persistSyndicatesJson(customList)
+    }
     return customList
   }
 
-  fun getSyndicatesList(): List<SyndicateInfo> = getAllSyndicates()
-
-  fun mergeCloudSyndicates(cloudSyndicates: List<SyndicateInfo>) {
-    if (cloudSyndicates.isEmpty()) return
-    val mergedByTag = linkedMapOf<String, SyndicateInfo>()
-    for (local in getAllSyndicates()) {
-      mergedByTag[local.tag.uppercase()] = local
-    }
-    for (cloud in cloudSyndicates) {
-      val cleanTag = sanitizeSyndicateTag(cloud.tag)
-      if (cleanTag.length in 1..3 && cleanTag != "BOT" && cleanTag != "RFT") {
-        mergedByTag[cleanTag] =
-          cloud.copy(
-            id = cloud.id.ifBlank { "syn_cloud_$cleanTag" },
-            tag = cleanTag,
-            isCustom = true,
-          )
-      }
-    }
+  private fun persistSyndicatesJson(list: Collection<SyndicateInfo>) {
     val arr = JSONArray()
-    for (syn in mergedByTag.values) {
+    for (syn in list) {
+      if (!syn.isRealPlayerFoundedSyndicate()) continue
       arr.put(
         JSONObject().apply {
           put("id", syn.id)
+          put("ownerId", syn.ownerId)
           put("tag", syn.tag)
           put("name", syn.name)
           put("foundryOrigin", syn.foundryOrigin)
           put("motto", syn.motto)
           put("memberCount", syn.memberCount)
           put("combinedBounty", syn.combinedBounty)
+          put("isCustom", true)
         }
       )
     }
     prefs.edit().putString(KEY_CUSTOM_SYNDICATES_JSON, arr.toString()).apply()
   }
 
-  fun createCustomSyndicate(tag: String, name: String, motto: String): Result<SyndicateInfo> {
-    if (isGuestBypassEnabled()) {
-      return Result.failure(IllegalStateException("Drifters cannot found Syndicates. Sign in to become a Sworn Pilot."))
+  fun getSyndicatesList(): List<SyndicateInfo> = getAllSyndicates()
+
+  fun mergeCloudSyndicates(cloudSyndicates: List<SyndicateInfo>) {
+    val mergedByTag = linkedMapOf<String, SyndicateInfo>()
+    for (local in getAllSyndicates()) {
+      if (local.isRealPlayerFoundedSyndicate()) {
+        mergedByTag[local.tag.uppercase()] = local
+      }
+    }
+    for (cloud in cloudSyndicates) {
+      val cleanTag = sanitizeSyndicateTag(cloud.tag)
+      val normalized =
+        cloud.copy(
+          id = cloud.id.ifBlank { "syn_cloud_$cleanTag" },
+          tag = cleanTag,
+          isCustom = cloud.isCustom,
+        )
+      if (cleanTag.length in 1..3 && normalized.isRealPlayerFoundedSyndicate()) {
+        val existing = mergedByTag[cleanTag]
+        mergedByTag[cleanTag] =
+          if (existing != null) {
+            normalized.copy(
+              memberCount = kotlin.math.max(existing.memberCount, normalized.memberCount),
+              combinedBounty = kotlin.math.max(existing.combinedBounty, normalized.combinedBounty),
+            )
+          } else {
+            normalized
+          }
+      }
+    }
+    persistSyndicatesJson(mergedByTag.values)
+  }
+
+  fun createCustomSyndicate(
+    tag: String,
+    name: String,
+    motto: String,
+    ownerUid: String = "",
+  ): Result<SyndicateInfo> {
+    val cleanOwner = ownerUid.trim()
+    if (
+      isGuestBypassEnabled() ||
+        cleanOwner.isEmpty() ||
+        cleanOwner.startsWith("dev_") ||
+        cleanOwner.startsWith("drifter_")
+    ) {
+      return Result.failure(
+        IllegalStateException("Only Google-authenticated Sworn Pilots can found Syndicates.")
+      )
     }
     val now = System.currentTimeMillis()
     val remainingDays = getRemainingSyndicateLockDays(now)
@@ -921,7 +1046,7 @@ class LocalPilotPrefs(context: Context) {
     if (cleanTag.length !in 1..3) {
       return Result.failure(IllegalArgumentException("Syndicate Tag must be 1 to 3 characters."))
     }
-    if (cleanTag == "RFT" || cleanTag == "BOT") {
+    if (cleanTag in setOf("RFT", "BOT", "SOLO", "FREE", "GUEST")) {
       return Result.failure(IllegalArgumentException("[$cleanTag] is a reserved system tag."))
     }
     if (UgcModeration.containsProfanity(cleanTag)) {
@@ -940,40 +1065,23 @@ class LocalPilotPrefs(context: Context) {
       return Result.failure(IllegalArgumentException("Tag [$cleanTag] is already registered."))
     }
 
-    val cleanMotto = UgcModeration.sanitizeUgcText(motto.trim().take(60)).ifEmpty { "Forged in the RIFT Convergence" }
+    val cleanMotto =
+      UgcModeration.sanitizeUgcText(motto.trim().take(60)).ifEmpty { "Forged in the RIFT Convergence" }
 
     val newSyndicate =
       SyndicateInfo(
         id = "syn_custom_$now",
+        ownerId = cleanOwner,
         tag = cleanTag,
         name = cleanName,
-        foundryOrigin = "Player Founded Syndicate",
+        foundryOrigin = "Sworn Pilot Syndicate",
         motto = cleanMotto,
         memberCount = 1,
-        combinedBounty = getAllTimeBountyPeak().coerceAtLeast(250L),
+        combinedBounty = getAllTimeBountyPeak().coerceAtLeast(100L),
         isCustom = true,
       )
 
-    val customRaw = prefs.getString(KEY_CUSTOM_SYNDICATES_JSON, "[]") ?: "[]"
-    val arr =
-      try {
-        JSONArray(customRaw)
-      } catch (_: Exception) {
-        JSONArray()
-      }
-    arr.put(
-      JSONObject().apply {
-        put("id", newSyndicate.id)
-        put("tag", newSyndicate.tag)
-        put("name", newSyndicate.name)
-        put("foundryOrigin", newSyndicate.foundryOrigin)
-        put("motto", newSyndicate.motto)
-        put("memberCount", newSyndicate.memberCount)
-        put("combinedBounty", newSyndicate.combinedBounty)
-      }
-    )
-
-    prefs.edit().putString(KEY_CUSTOM_SYNDICATES_JSON, arr.toString()).apply()
+    persistSyndicatesJson(existing + newSyndicate)
     joinOfficialSyndicate(cleanTag, cleanName, apply15DayLock = true, role = "Founder / Commander")
     return Result.success(newSyndicate)
   }
@@ -1428,6 +1536,10 @@ class LocalPilotPrefs(context: Context) {
       .putBoolean(uidKey(KEY_SLOT_B_UNLOCKED, uid), false)
       .putBoolean(KEY_SLOT_C_UNLOCKED, false)
       .putBoolean(uidKey(KEY_SLOT_C_UNLOCKED, uid), false)
+      .putBoolean(KEY_SLOT_D_UNLOCKED, false)
+      .putBoolean(uidKey(KEY_SLOT_D_UNLOCKED, uid), false)
+      .putBoolean(KEY_SLOT_E_UNLOCKED, false)
+      .putBoolean(uidKey(KEY_SLOT_E_UNLOCKED, uid), false)
       .putString(KEY_ACTIVE_CUSTOM_SLOT_ID, "Frame A")
       .putString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), "Frame A")
 
@@ -1445,9 +1557,9 @@ class LocalPilotPrefs(context: Context) {
     }
     editor.apply()
 
-    // Reset Custom Modular Ship Slots (Frame A, Frame B, Frame C) to default unallocated state
-    for (slotId in listOf("Frame A", "Frame B", "Frame C")) {
-      saveCustomShipSlot(com.example.engine.CustomShipLoadoutSlot(slotId = slotId), uid)
+    // Reset Custom Modular Ship Slots (Frame A through Frame E) to default state
+    for (slotId in com.example.engine.CustomShipLoadoutSlot.ALL_SLOT_IDS) {
+      saveCustomShipSlot(com.example.engine.CustomShipLoadoutSlot.defaultSlot(slotId), uid)
     }
   }
 
@@ -1621,6 +1733,8 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_ACTIVE_CUSTOM_SLOT_ID = "active_custom_slot_id"
     private const val KEY_SLOT_B_UNLOCKED = "custom_slot_9b_unlocked"
     private const val KEY_SLOT_C_UNLOCKED = "custom_slot_9c_unlocked"
+    private const val KEY_SLOT_D_UNLOCKED = "custom_slot_9d_unlocked"
+    private const val KEY_SLOT_E_UNLOCKED = "custom_slot_9e_unlocked"
     private const val KEY_CUSTOM_SLOT_PREFIX = "custom_ship_slot_json"
     private const val KEY_ALL_TIME_PEAK_SNAPSHOT = "all_time_peak_bounty_snapshot_json"
     private const val KEY_PVP_PEAK_SNAPSHOT = "pvp_peak_bounty_snapshot_json"

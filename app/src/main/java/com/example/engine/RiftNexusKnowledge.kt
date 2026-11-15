@@ -12,7 +12,7 @@ import kotlin.math.roundToInt
 /**
  * Dynamically compiles the complete, authoritative RIFT Engine, Pixel-Rendering,
  * 100-Point Ship Math, Buff Registry, Calibration, Pilot Dossier, and Cloud Leaderboard
- * Ground-Truth Snapshot for NEXUS (Omniscient Rift Core Tactical Intelligence).
+ * Ground-Truth Snapshot for NEXUS (100% On-Device Tactical Intelligence).
  */
 object RiftNexusKnowledge {
 
@@ -21,11 +21,11 @@ object RiftNexusKnowledge {
 You are NEXUS, the omniscient Rift Core tactical intelligence embedded inside the **NEXUS Command Hub (`#nexus-ai` channel)** of RIFT, a mobile-first competitive 2D Newtonian space arena game on Android.
 
 CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
-1. EXCLUSIVE RIFT-ONLY KNOWLEDGE BASE: Your ONLY knowledge base is RIFT itself — its physics, pixel-level rendering math, 10 ship classes (9 standard hulls: Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, and Eclipse + #10 modular custom ship: Rift Frame), 100-point Rift Frame modular builder & AI Hull Forge, Supply Buff pool + custom AI-forged buffs, 4 Playfield Rifts (including the weapon-absorbing Gravity Rift Black Hole up to 420px and Holo Phantom Rift physics), Safe Zone & AFK rules, Calibration parameters (including the 2-step `[🧨 WIPE STATS / ARMADAS / SYNDICATES]` fresh-start button), the NEXUS Command Hub (`#nexus-ai`, `#main-lobby`, `#change-log`, `#rules`, `#bug-report`, the 10 Hull Bay channels `#viper` through `#rift-frame`, Private `[TAG] Syndicate Name` servers with up to 5 custom channels starting with `#general` and guest passes, and `#armada-chat`), the Holographic Armada Staging Deck (where every pilot is represented by their Best Ship = highest career Peak Bounty hull), all 6 Official Ranked Modes (`SECTOR CONVERGENCE`, `RIFT SKIRMISH`, `FLUX CORE`, `STASIS BREACH`, `RIFT CONTROL`, and `SYNDICATE WARS` with strict human-only pilot counts and seamless bot hot-swapping), Direct Syndicate-vs-Syndicate H2H War Trophies vs Collective Member Prestige, Pilot Dossier & Executioner telemetry, and Cloud Leaderboard bounty records.
-2. REFUSE NON-RIFT TOPICS IN CHARACTER: If the user asks about anything outside RIFT (real-world news, weather, politics, coding/homework unrelated to RIFT's own mechanics, other video games, recipes, trivia), briefly decline in character: "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Submit a query regarding RIFT ships, pixel/physics telemetry, custom builds, Ranked Modes, buffs, or bounty records."
-3. PINPOINT NUMERICAL & PIXEL PRECISION: Every turn, you receive a [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT] containing the exact live engine numbers, world-pixel dimensions, zoom-scaled screen-pixel dimensions, DPS, Flux (⚡) costs, Rift Shards (❖) economy, custom slots (Frame A / Frame B / Frame C), Ranked Mode telemetry, Calibration overrides, Executioner snapshots, and Cloud Leaderboard records. Always cite exact numbers from that snapshot — never guess or approximate when exact values exist. Always use ⚡ for Flux (HP + weapon energy) and ❖ strictly for Rift Shards (permanent progression currency).
-4. ANDROID TOUCH HUD & TWIN-STICK CONTROLLER TERMINOLOGY ONLY: RIFT supports both the native Android Landscape Touch HUD (Left Movement Stick with zero-friction coasting on release and >80% Afterburner, Independent Manual HUD [BRAKE] Stop button, Right Primary Fire Stick, fixed-angle Secondary, Special Crate Attack, and Repel buttons with enlarged Codex/Playfield Crate icons, Native Multi-Shot button, and the Bottom Console displaying a frameless 3D ship icon, stacked SPEED / SECTOR / [TAG], Crossed-Swords Modes emblem, 20-segment Circular Minimap Flux Capacitor ring with ⚡ FLUX % badge, Swirling 3D NEXUS Orb, FLUX, and BTY • K/D) AND Plug-and-Play Bluetooth/USB Twin-Stick Controllers (Left Stick permanently locked to 360° flight with >80% Afterburner and zero-friction drift on release; Right Stick permanently locked to 360° independent turret aiming; when Right Stick is neutral, all weapons fire along the Left-Stick ship heading; default ergonomic button bindings: RT/R2 Main Attack, R1/RB Special Buff Attack, LT/L2 Manual Retro-Brake, X Instant 1-Press Secondary Ability/Warhead, A Repel Shockwave, Y Native Multi-Shot toggle, and B 100% remappable with no hardcoded back-button lock, plus a live controller button remapper in Settings & Codex; D-Pad Camera Zoom & Hangar 1..10 ship navigation, Start/Select modals). NEVER mention PC keyboard keys or shortcuts.
-5. PURE TEXT Q&A & THEORYCRAFTING: Deliver clear, structured, tactical text answers and 100-point Rift Frame theorycrafting breakdowns (showing exact point costs summing to the pilot's target budget such as 20 pts at Lv 20 or 100 pts at Lv 100, plus resulting Speed, Thrust, Turn Rate, Max Flux, Recharge, Primary, and Secondary stats). Never prefix ship names with legacy numbers (say "Viper", "Disruptor", "Eclipse", "Rift Frame", never "1-Viper" or "6-Disruptor"). Keep formatting crisp and scannable on a landscape mobile tactical console.
+1. EXCLUSIVE RIFT-ONLY KNOWLEDGE BASE: Your ONLY knowledge base is RIFT itself — its physics, pixel-level rendering math, 10 ship classes (9 standard hulls: Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, and Eclipse + modular custom ship: Rift Frame), 100-point Rift Frame modular builder & AI Hull Forge (`Frame A` through `Frame E`), Supply Buff pool + custom AI-forged buffs, 4 Playfield Rifts (Plasma Rift, Repulsor Rift, Gravity Rift, and Paired Phase Rifts — Node A & B), Safe Zone & AFK rules (with NO Safe Zone in Rift Control), Calibration parameters, the persistent 9-tab NEXUS Master Window (`COMMAND & LOBBY`, `HANGAR`, `PROGRESSION`, `ARMADA FLEET`, `SYNDICATES`, `DOSSIER`, `CODEX`, `SETTINGS`, `CALIBRATE`), all 6 Official Ranked Modes (`SECTOR CONVERGENCE`, `RIFT SKIRMISH`, `FLUX CORE`, `STASIS BREACH`, `RIFT CONTROL`, and `SYNDICATE WARS` with strict human-only pilot counts and ship lock strictly on `RIFT_SKIRMISH` and `SYNDICATE_WARS`), Syndicate War Trophies, Pilot Dossier & Executioner telemetry, and Sworn Pilot Cloud Leaderboard bounty records.
+2. REFUSE NON-RIFT TOPICS IN CHARACTER: If the user asks about anything outside RIFT, briefly decline in character: "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Submit a query regarding RIFT ships, pixel/physics telemetry, custom builds, Ranked Modes, buffs, or bounty records."
+3. PINPOINT NUMERICAL & PIXEL PRECISION: Cite exact live engine numbers, world-pixel dimensions, DPS, Flux costs (HP + weapon energy, floored at 1 Flux on self-drain), Rift Shards (❖) economy, custom frames (`Frame A–E`), Ranked Mode telemetry, Calibration overrides, and Sworn Pilot Leaderboard records. Never use the lightning emoji; write "Flux" for ship energy/HP and ❖ strictly for Rift Shards.
+4. ANDROID TOUCH HUD & TWIN-STICK CONTROLLER TERMINOLOGY ONLY: Support native Android Landscape Touch HUD (Left Movement Stick, Manual [BRAKE], Right Primary Fire Stick, Secondary, Special Buff, Repel, Native Multi-Shot, Interactive Living-Teammate Spectator Selector, Graphical Dual-Rift Tug-of-War Top Bar in Rift Control, Top LVL + XP badge, and Bottom Console with circular minimap) AND Bluetooth/USB Twin-Stick Controllers (including LB/RB teammate spectator cycling). Never mention PC keyboard shortcuts.
+5. PURE TEXT Q&A & THEORYCRAFTING: Deliver clear, structured tactical answers and 100-point Rift Frame theorycrafting breakdowns (full 100-point parity unlocked at Pilot Level 20).
 """
 
   fun buildLiveSystemPrompt(
@@ -74,15 +74,14 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
 
     sb.appendLine("=== [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT] ===")
 
-    // 1. RENDERING, PIXEL DIMENSIONS & WORLD GEOMETRY
     sb.appendLine()
     sb.appendLine("[1. EXACT PIXEL, SPRITE & ARENA RENDERING SPECIFICATIONS]")
-    sb.appendLine("- World Arena Size: 8000 x 8000 world pixels (8x8 sectors A1..H8, each sector = 1000 x 1000 world px).")
-    sb.appendLine("- Central Safe Zone Rect: x=[3600..4400], y=[3600..4400] (800 x 800 world px centered at (4000, 4000), spanning D4/E4/D5/E5).")
+    sb.appendLine("- World Arena Size: 8000 x 8000 world pixels (8x8 sectors A1..H8, each sector = 1000 x 1000 world px; circular perimeter radius = ${engine.arenaRadius.toInt()} world px).")
+    sb.appendLine("- Central Safe Zone Rect: x=[3600..4400], y=[3600..4400] (800 x 800 world px centered at (4000, 4000), rendered with Tethered Cyan Hard-Light Forcefields; completely disabled in RIFT CONTROL where hasActiveSafeZone() == false).")
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Camera Scale Formula: effectiveCameraScale = 0.65 (base) * cameraZoom (%.2fx) * cameraZoomScale (%.2fx) = %.4fx live (1 world px = %.4f screen px; at factory default 1.0x zoom, 1 world px = 0.65 screen px).",
+        "- Camera Scale Formula: effectiveCameraScale = 0.65 (base) * cameraZoom (%.2fx) * cameraZoomScale (%.2fx) = %.4fx live (1 world px = %.4f screen px).",
         engine.cameraZoom,
         RiftCalibrationState.cameraZoomScale,
         camScale,
@@ -92,38 +91,32 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Ship Hull Rendering & Hitbox: Offscreen procedural 3D metallic bitmap = 128x128 px; physical collision radius = 36.0 world px (72.0 world px hitbox diameter); live world render quad = %.2f x %.2f world px (88.0 * shipScale %.2fx = %.2f screen px at live zoom, 57.20 screen px at default 0.65x zoom); Radial Flux Capacitor Ring radius = %.2f world px (%.2f world px diameter).",
+        "- Ship Hull Rendering & Hitbox: Offscreen procedural 3D metallic bitmap = 128x128 px; physical collision radius = 36.0 world px (72.0 world px diameter); live world render quad = %.2f x %.2f world px (%.2f screen px at live zoom).",
         88f * shipVisScale,
         88f * shipVisScale,
-        shipVisScale,
         88f * shipVisScale * camScale,
-        44f * shipVisScale,
-        88f * shipVisScale,
       )
     )
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Primary Laser / Bolt Exact Pixel Formula (RiftArenaView step 8): Every primary projectile is rendered as a dual-pass StrokeCap.ROUND vector line from (x, y) to (x - vx * 0.036, y - vy * 0.036): Shaft Vector Length = primarySpeed * 0.036 world px (36ms motion trail); Outer Colored Glow Stroke Width = %.2f world px (6.4 * projectileScale %.2fx); Inner White Core Stroke Width = %.2f world px (2.8 * projectileScale %.2fx); Total Visual Footprint Length (including round endcaps of +3.2*projectileScale on each tip) = (primarySpeed * 0.036) + (6.4 * projectileScale) world px.",
+        "- Primary Laser / Bolt Exact Pixel Formula: Shaft Vector Length = primarySpeed * 0.036 world px; Outer Colored Glow Width = %.2f world px; Inner White Core Width = %.2f world px.",
         6.4f * projScale,
-        projScale,
         2.8f * projScale,
-        projScale,
       )
     )
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Secondary Warhead & Ability Pixel Radii (scaled by projectileScale %.2fx): Viper Phase Dash = 135 world px wall-safe spatial blink + %.0f px/s supersonic dodge burst (0.42s combat dodge i-frames + 0.65s phase shield + +%.0f%% next-shot rail overcharge, 300⚡ cost, 2.5s CD); Siege Bomb = %.1f world px radius (24px base, 48px dia, 540 px/s + 25%% ship vel); Bounce Bomb & Proximity Flak Bomb = %.1f world px radius (17px base, 34px dia, 640 px/s + 25%% ship vel; Prox Flak fuse trigger = %.0f world px, red sensor ring = %.1f world px, bursts into 8 shrapnel bolts); Disruptor 360° AoE EMP Pulse = %.0f world px radial shockwave centered on Disruptor's hull upon uncloaking (0⚡ decloak EMP cost while Cloak drains %.0f⚡/s; drains %.0f%% Max Flux & disables recharge for %.1fs; forced uncloak from enemy fire or <=150⚡ floor breaks stealth cleanly without firing EMP); Proximity Mine = %.1f world px radius (18px base, 36px dia, stationary, max %d active mines, 30s life); Seeker Torpedo = %.1f world px radius (%.0f px/s, %.1fs flight = %.0f world px max flight path); Stasis Barrier = %.0f world px hard-light span (%.1fs duration); Interdictor Stasis Bubble (INTERDICTOR_DOME) = %.0f world px radius (%.0f world px diameter) two-way hard-light containment sphere active for %.1fs (380⚡ cost, %.1fs CD — nothing can enter or leave; bounces ships with 0⚡ wall collision damage and reflects bullets/bombs both inside and outside).",
+        "- Secondary Warhead & Ability Specs (scaled by projectileScale %.2fx): Viper Phase Dash = 135 world px spatial blink + %.0f px/s dodge burst (300 Flux cost, 2.5s CD, +%.0f%% next-shot rail overcharge); Siege Bomb = %.1f world px radius; Bounce & Prox Flak Bomb = %.1f world px radius (Prox Flak fuse = %.0f world px); Disruptor Cloak & 360° EMP = 20 Flux entry, %.0f Flux/s cloak drain (50%% cloaked afterburner drain, 4.5s CD), 0 Flux manual decloak %.0f world px EMP draining %.0f%% Max Flux (capped at 850 Flux) + %.1fs recharge freeze (forced uncloak <=150 Flux or damage skips EMP); Proximity Mine = %.1f world px radius (max %d mines, 30s life); Seeker Torpedo = %.1f world px radius (%.0f px/s, %.1fs flight); Stasis Barrier = %.0f world px Tethered Cyan Hard-Light Forcefield (%.1fs duration); Eclipse Stasis Bubble (INTERDICTOR_DOME) = %.0f world px radius (%.0f world px diameter) two-way sphere active for %.1fs (320 Flux cost, %.1fs CD).",
         projScale,
         RiftCalibrationState.phaseDashImpulse,
         RiftCalibrationState.phaseOverchargeBonusPct * 100f,
         24f * projScale,
         17f * projScale,
         RiftCalibrationState.proxFuseRadius,
-        45f * projScale,
-        RiftCalibrationState.empPulseRadius,
         RiftCalibrationState.cloakDrainPerSec,
+        RiftCalibrationState.empPulseRadius,
         RiftCalibrationState.empFluxDrainPct * 100f,
         RiftCalibrationState.empFreezeSec,
         18f * projScale,
@@ -131,7 +124,6 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
         19f * projScale,
         RiftCalibrationState.seekerSpeed,
         RiftCalibrationState.seekerFlightTime,
-        RiftCalibrationState.seekerSpeed * RiftCalibrationState.seekerFlightTime,
         RiftCalibrationState.stasisBarrierLength,
         RiftCalibrationState.stasisBarrierDuration,
         RiftCalibrationState.interdictorBubbleRadius,
@@ -143,133 +135,82 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Supply Crates, Walls & World Labels: Supply Crate offscreen icon = 68x68 px, world render size = %.2f world px (88 * 0.89 * crateScale %.2fx = 89%% of ship visual size); Arena Walls = 64x64 px dark obsidian bulkhead tiles with cyan energy conduit seams & 3D mitered bevels; World Label Fonts = 1:1 physical screen pixels (Nametag %.0fpx, Bounty %.0fpx, Floating Combat Text %.0fpx * textScale %.2fx); Circular Radar Minimap = 122dp diameter (expands 1.65x for 1.5s on tap).",
+        "- Supply Crates & Interior Obstacles: Supply Crate world size = %.2f world px; Interior Obstacles = sleek pitch-black #040914 obsidian/reactor & 3D station geometry; Circular Radar Minimap aligns 1:1 with arenaRadius, highlights the Flux Core carrier at 2x pulsing Gold (#FFD700), and renders above the Buff Bar when expanded.",
         78.32f * crateVisScale,
-        crateVisScale,
-        RiftCalibrationState.nametagFontSizePx,
-        RiftCalibrationState.bountyFontSizePx,
-        RiftCalibrationState.fctFontSizePx,
-        engine.playfieldTextScale * RiftCalibrationState.labelTextScale,
       )
     )
 
-    // 2. PHYSICS, UNIFIED FLUX, SAFE ZONE & MATCH RULES
     sb.appendLine()
-    sb.appendLine("[2. NEWTONIAN PHYSICS, UNIFIED FLUX CAPACITOR, TOUCH/GAMEPAD CONTROLS & SAFE ZONE RULES]")
+    sb.appendLine("[2. NEWTONIAN PHYSICS, UNIFIED FLUX, SPECTATOR & RANKED MODES]")
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Zero-Friction Newtonian Drift & Dual Touch/Gamepad Controls: Ships coast indefinitely on (vx, vy) with zero friction when releasing the Left Stick (both Touch and Bluetooth/USB Gamepad). Left Stick >80%% radius ignites Afterburners (%.2fx thrust, ~1.32x top speed, drains %.0f⚡/s floored safely at 1⚡). Braking occurs ONLY via the independent manual HUD [BRAKE] button or mapped Gamepad Retro-Brake trigger/button (retro-braking damping %.2f). On Gamepad, Left Stick is permanently locked to 360° flight & ship heading, and Right Stick is permanently locked to 360° independent turret aiming (when Right Stick is neutral, Main Attack, Secondary Ability, and Special Buff Attack fire straight along the Left-Stick heading; Deadzones: Left %.0f%%, Right %.0f%%; Idle Touch Ring Opacity: %.0f%%). Live Controller Bindings (customizable via live controller remapper in Settings & Codex; B button is 100%% remappable with no hardcoded back-button lock): Main Attack=%s (default RT/R2), Buff Attack=%s (default R1/RB), Manual Retro-Brake=%s (default LT/L2), Instant Secondary Ability=%s (default X BTN), Repel=%s (default A BTN), Multi-Shot Toggle=%s (default Y BTN), B Button=%s; D-Pad steps Camera Zoom & navigates Hangar 1..10 ships; Start/Select toggle Hangar & Calibration. The legacy top navigation bar and Comms drawer have been retired in favor of the unified NEXUS Command Hub (accessed via the Swirling NEXUS Orb or Crossed-Swords Modes emblem on the bottom console), and the bottom console right wing displays BOUNTY and live K/D.",
+        "- Zero-Friction Newtonian Drift & Controls: Ships coast indefinitely when releasing the Left Stick. Left Stick >80%% ignites Afterburners (%.2fx thrust, drains %.0f Flux/s floored at 1 Flux). Braking occurs ONLY via manual [BRAKE] or mapped Gamepad Retro-Brake (damping %.2f). Live Controller Bindings: Main=%s, Buff=%s, Brake=%s, Secondary=%s, Repel=%s, Multi=%s; LB/RB cycle living allies while spectating.",
         RiftCalibrationState.afterburnerThrustMult,
         RiftCalibrationState.afterburnerDrainPerSec,
         RiftCalibrationState.retroBrakeDamping,
-        RiftCalibrationState.gamepadDeadzoneLeft * 100f,
-        RiftCalibrationState.gamepadDeadzoneRight * 100f,
-        RiftCalibrationState.gamepadIdleTouchOpacity * 100f,
         RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindPrimaryFire),
         RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindSpecialBuff),
         RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindRetroBrake),
         RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindSecondaryAbility),
         RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindRepel),
         RiftCalibrationState.getBindingLabel(RiftCalibrationState.bindMultiToggle),
-        RiftCalibrationState.getActionForBinding(android.view.KeyEvent.KEYCODE_BUTTON_B) ?: "UNBOUND",
       )
     )
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Collisions & Unified Flux (⚡ = HP + Ammo): Wall bounce elasticity = %.2f with ZERO wall collision damage. Ships pass through other ships without hull-to-hull collision (Stasis Barriers physically block ships & bounce shots). Firing weapons/afterburners/cloak/repel drains Flux but floors at 1⚡ (cannot self-kill). Enemy damage reducing Flux <= 0⚡ destroys the ship, anchoring a stationary %.1fs death camera at death coordinates before Safe Zone respawn (%.2fs hit-stop freeze on lethal blasts).",
+        "- Collisions & Unified Flux (Flux = HP + Weapon Energy): Wall bounce elasticity = %.2f with zero wall damage. Self-drain floors at 1 Flux. Enemy damage <= 0 Flux destroys the ship (%.1fs respawn timer; interactive living-teammate spectator box in team modes).",
         RiftCalibrationState.wallElasticity,
         RiftCalibrationState.respawnDelaySec,
-        RiftCalibrationState.hitStopDurationSec,
-      )
-    )
-    sb.appendLine(
-      String.format(
-        Locale.US,
-        "- Safe Zone & Anti-AFK Rules: Inside Safe Zone, weapons are locked and Flux recharges at %.2fx speed, capped at %.0fs stay before automatic arena eviction teleport. Exiting grants a %.1fs Exit Phase Shield AND triggers a %.1fs Safe Zone Re-Entry Repulsion Lockout (amber barrier knocks locked-out ships away at %.0f px/s). In open space, %.0fs of zero input triggers AFK Flux Overload draining %.0f%% Max Flux/sec.",
-        RiftCalibrationState.safeZoneRechargeMult,
-        RiftCalibrationState.safeZoneIdleLimitSec,
-        RiftCalibrationState.exitPhaseShieldSec,
-        RiftCalibrationState.safeZoneReentryLockoutTime,
-        RiftCalibrationState.safeZoneRepelForce,
-        RiftCalibrationState.playfieldIdleLimitSec,
-        RiftCalibrationState.playfieldIdleDrainPctPerSec * 100f,
       )
     )
     val matchRemainingSec = (engine.publicMatchCycleLimitSec - engine.publicMatchDurationSec).coerceAtLeast(0f)
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Public FFA Sector Convergence & Bounty Math: %.0f-minute (%.0fs) match cycle (%.0fs remaining in current cycle). Ships spawn at 100 Bounty. High-Value Target (HVT) gold radar crown at >= %d Bounty; >1,000 Bounty triggers arena-wide gold shutdown alerts. Killing an enemy awards +%.0f%% of victim's Bounty; Supply Crates award +%d Bounty. Winning Sector Convergence with >50%% match presence awards +100❖ Rift Shards.",
+        "- Public FFA Sector Convergence & Bounty Math: %.0f-minute cycle (%.0fs remaining). Ships spawn at 100 Bounty; HVT crown at >= %d Bounty; killing awards +%.0f%% victim Bounty; Supply Crates +%d Bounty. Winning with >50%% presence awards +100❖ Rift Shards.",
         engine.publicMatchCycleLimitSec / 60f,
-        engine.publicMatchCycleLimitSec,
         matchRemainingSec,
         RiftCalibrationState.hvtBountyThreshold,
         RiftCalibrationState.bountyKillBonusPct * 100f,
         RiftCalibrationState.cratePickupBounty,
       )
     )
-    sb.appendLine(
-      "- NEXUS Command Hub & 5 Always-Open Ranked Modes (Human-Only Pilot Counters + Seamless Bot Hot-Swapping):"
-    )
-    sb.appendLine(
-      "  • NEXUS Channels: #nexus-ai (live streaming Gemini tactical intelligence), #main-lobby, #change-log, #rules, #bug-report, 10 Hull Bay channels (#viper through #rift-frame), Private [TAG] Syndicate Name servers (up to 5 custom channels always starting with mandatory #general at index 0, accessible to Syndicate members and Invited Guests), and #armada-chat. Startup preference toggle lets pilots boot straight into NEXUS Hub (default) or Fast-Boot into the arena with the Changelog + 1-Tap Quick-Join Bar."
-    )
-    sb.appendLine(
-      "  • Graphical Armada Staging Deck: 1–5 pilot pedestals where each pilot is represented by their Best Ship (highest career Peak Bounty hull via getBestShipId())."
-    )
-    sb.appendLine(
-      "  • 1) SECTOR CONVERGENCE: 20-Pilot Ranked FFA / 1-5 Armada Bounty • 60-minute cycle • +100❖ for #1 Bounty with >50% match presence."
-    )
-    sb.appendLine(
-      "  • 2) RIFT SKIRMISH: Ranked 2v2–5v5 Best-of-3 Rounds Team Deathmatch • Opposite West/East Warp Gates • First to 15 kills/round • +75❖."
-    )
+    sb.appendLine("- 6 Official Ranked Modes (Ship selection locked strictly in RIFT SKIRMISH & SYNDICATE WARS):")
+    sb.appendLine("  • 1) SECTOR CONVERGENCE: 20-Pilot Ranked FFA / 1-5 Armada Bounty • 60-minute cycle • +100❖.")
+    sb.appendLine("  • 2) RIFT SKIRMISH: Ranked 2v2–5v5 Best-of-3 Rounds Team Deathmatch • Ship Lock ON • Interactive Teammate Spectator • +75❖.")
     sb.appendLine(
       String.format(
         Locale.US,
-        "  • 3) FLUX CORE: 20-Pilot Ranked Powerball FFA • Holding the Volatile Flux Core grants +1 Overcharge Tier every 5s up to Tier 10 (+50%% Damage, +50%% Flux Recharge, +40%% Top Speed at Tier 10) and +15 Bounty/sec. On carrier death or Safe Zone entry, the Flux Core rockets off at %.0f px/s and decelerates over 30.0s while bouncing off walls (Live Core: Tier %d/10, Hold %.1fs, Pos=(%.0f, %.0f)).",
+        "  • 3) FLUX CORE: 20-Pilot Ranked Powerball FFA • Tier 1–10 Overcharge (+15 Bounty/s; 2x pulsing Gold radar beacon) • Ejects at %.0f px/s on death or Safe Zone entry.",
         RiftCalibrationState.fluxCoreEjectSpeed,
-        engine.fluxCoreOrb.overchargeTier,
-        engine.fluxCoreOrb.holdDurationSec,
-        engine.fluxCoreOrb.x,
-        engine.fluxCoreOrb.y,
       )
     )
     sb.appendLine(
       String.format(
         Locale.US,
-        "  • 4) STASIS BREACH: Ranked 10v10 Divided Playfield Jailbreak (split at x = 4000) • Killing an enemy locks them in your team's Stasis Brig; free teammates can destroy the enemy's %.0f⚡ Brig Reactor Core (prisoners inside deal 25%% damage) to break everyone out with 100%% Flux and a 3.0s Phase Shield; locking all 10 enemies in the Brig wins +100❖ (Live Reactors: West=%.0f⚡, East=%.0f⚡).",
+        "  • 4) STASIS BREACH: Ranked 10v10 Circular Stasis Jailbreak • Prisoners inside deal 100%% weapon damage to the %.0f Flux Stasis Core to detonate a radial shockwave and break everyone out • +100❖ (Live Cores: West=%.0f Flux, East=%.0f Flux).",
         RiftCalibrationState.stasisBrigReactorMaxHp,
         engine.westBrigGeneratorHp,
         engine.eastBrigGeneratorHp,
       )
     )
+    sb.appendLine("  • 5) RIFT CONTROL: Ranked Tug-of-War over Rift Alpha & Rift Omega • NO Safe Zone (hasActiveSafeZone() == false) • Graphical Dual-Rift Tug-of-War Top HUD Bar • +90❖.")
     val myWarRec = localPrefs.getSyndicateWarRecord(syndicateTag)
     sb.appendLine(
-      "  • 5) SYNDICATE WARS: Ranked Direct Syndicate-vs-Syndicate Ladder in 1–5 Strike Fleet (3v3/5v5) or 10v10 Stasis Breach • Requires an enlisted non-GUEST Syndicate and a 100% same-Syndicate Armada • Ranks Syndicates by direct H2H War Trophies (Active Syndicate [$syndicateTag] Record: ${myWarRec.warTrophies} War Trophies, ${myWarRec.warWins}W-${myWarRec.warLosses}L, Streak ${myWarRec.warStreak})."
+      "  • 6) SYNDICATE WARS: Ranked Direct Syndicate-vs-Syndicate Ladder • Ship Lock ON • Requires a Sworn Pilot Syndicate and 100% same-Syndicate Armada • Ranked by Syndicate War Trophies (Active Syndicate [$syndicateTag] Record: ${myWarRec.warTrophies} War Trophies, ${myWarRec.warWins}W-${myWarRec.warLosses}L, Streak ${myWarRec.warStreak})."
     )
     sb.appendLine(
-      "  • Active Ranked Mode Right Now: ${engine.activeRankedMode.title} (${engine.activeRankedMode.id}, Bracket=${engine.activeTeamSizeBracket}, Human Pilots in Mode=${engine.getHumanPilotCountForMode(engine.activeRankedMode)})."
-    )
-    sb.appendLine(
-      "  • Calibration Master Wipe: Calibration header includes a 2-step `[🧨 WIPE STATS / ARMADAS / SYNDICATES]` button (`performMasterFreshStartWipe`) for instant fresh-start testing."
+      "  • Active Ranked Mode Right Now: ${engine.activeRankedMode.title} (${engine.activeRankedMode.id}, Bracket=${engine.activeTeamSizeBracket}, Human Pilots in Mode=${engine.getHumanPilotCountForMode(engine.activeRankedMode)}, ShipLocked=${engine.doesModeLockShipSelection()})."
     )
 
-    // 3. ALL 10 SHIPS LIVE STATS + PER-SHIP LASER PIXEL DIMENSIONS
     sb.appendLine()
-    sb.appendLine("[3. COMPLETE 10-SHIP ROSTER (9 STANDARD HULLS 1..9 + #10 RIFT FRAME) — LIVE STATS, DPS & EXACT LASER PIXEL DIMENSIONS]")
+    sb.appendLine("[3. COMPLETE 10-SHIP ROSTER — 100-POINT PARITY LIVE STATS & LASER PIXEL DIMENSIONS]")
     for (spec in RiftCodex.getAllTenShips()) {
       val shaftWorldPx = spec.primarySpeed * 0.036f
       val outerWidthWorldPx = 6.4f * projScale
-      val coreWidthWorldPx = 2.8f * projScale
       val totalWorldLenPx = shaftWorldPx + outerWidthWorldPx
-      val shaftScreenPxDef = shaftWorldPx * 0.65f
-      val totalScreenPxDef = totalWorldLenPx * 0.65f
-      val shaftScreenPxLive = shaftWorldPx * camScale
-      val totalScreenPxLive = totalWorldLenPx * camScale
-      val outerScreenPxLive = outerWidthWorldPx * camScale
-      val coreScreenPxLive = coreWidthWorldPx * camScale
       val shotsPerSec = if (spec.primaryCooldown > 0.001f) 1f / spec.primaryCooldown else 0f
       val volleyDmg = spec.primaryDamage * spec.primaryStreams
       val primaryDps = volleyDmg * shotsPerSec
@@ -294,250 +235,106 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
       sb.appendLine(
         String.format(
           Locale.US,
-          "  - Hull: MaxFlux=%.0f⚡, Recharge=%.0f⚡/s, TopSpeed=%.0f px/s (Afterburner=%.0f px/s), Thrust=%.0f px/s², TurnRate=%.2f rad/s, InitialRepels=%d.",
+          "  - Hull: MaxFlux=%.0f Flux, Recharge=%.0f Flux/s, TopSpeed=%.0f px/s (Afterburner=%.0f px/s), Thrust=%.0f px/s², TurnRate=%.2f rad/s.",
           spec.maxFlux,
           spec.rechargeRate,
           spec.topSpeed,
           spec.afterburnerSpeed,
           spec.thrust,
           spec.turnRate,
-          spec.initialRepels,
         )
       )
       sb.appendLine(
         String.format(
           Locale.US,
-          "  - Primary [%s]: %d stream(s)%s, %.0f⚡/stream (%.0f⚡/volley), Cost=%.0f⚡/shot, Cooldown=%.3fs (%.2f shots/s), Speed=%.0f px/s, Spread=%.3f rad, WallBounces=%d | Raw DPS=%.0f⚡/s, Drain=%.0f⚡/s (Net Sustain=%.0f⚡/s)%s.",
+          "  - Primary [%s]: %d stream(s), %.0f Flux/stream (%.0f Flux/volley), Cost=%.0f Flux/shot, Cooldown=%.3fs, Speed=%.0f px/s, Bounces=%d | Raw DPS=%.0f Flux/s, Drain=%.0f Flux/s | Bolt=%.2f world px.",
           spec.primaryTitle,
           spec.primaryStreams,
-          if (spec.isParallelTwin) " parallel-twin" else "",
           spec.primaryDamage,
           volleyDmg,
           spec.primaryCost,
           spec.primaryCooldown,
-          shotsPerSec,
           spec.primarySpeed,
-          spec.primarySpreadRad,
           spec.primaryBounces,
           primaryDps,
           fluxPerSec,
-          spec.rechargeRate - fluxPerSec,
-          if (spec.supportsNativeMultifire) {
-            if (spec.id == 5 || spec.isParallelTwin) " [Native Twin Multi-Shot Toggle: 0⚡ extra cost, splits 2x135⚡ into 4x67.5⚡ fan = 270⚡ total]"
-            else " [Native Split Multi-Shot Toggle: 0⚡ extra cost, toggles 1x100% focused beam vs 3x33.3% (80⚡ each) split streams]"
-          } else "",
-        )
-      )
-      sb.appendLine(
-        String.format(
-          Locale.US,
-          "  - Exact Laser/Bolt Pixel Size for %s: World Shaft=%.2f px, World Total Length (with round glow caps)=%.2f px, World Width=%.2f px outer glow / %.2f px white core | Screen Pixels @ 0.65x default zoom: %.2f px shaft (%.2f px total) x %.2f px glow (%.2f px core) | Screen Pixels @ %.2fx live zoom: %.2f px shaft (%.2f px total) x %.2f px glow (%.2f px core).",
-          spec.name,
-          shaftWorldPx,
           totalWorldLenPx,
-          outerWidthWorldPx,
-          coreWidthWorldPx,
-          shaftScreenPxDef,
-          totalScreenPxDef,
-          outerWidthWorldPx * 0.65f,
-          coreWidthWorldPx * 0.65f,
-          camScale,
-          shaftScreenPxLive,
-          totalScreenPxLive,
-          outerScreenPxLive,
-          coreScreenPxLive,
         )
       )
       if (spec.hasBomb) {
         sb.appendLine(
           String.format(
             Locale.US,
-            "  - Secondary [%s | type=%s]: Cost=%.0f⚡, Cooldown=%.2fs, Damage=%.0f⚡, WallBounces=%d, Recoil=%.0f px/s.",
+            "  - Secondary [%s | type=%s]: Cost=%.0f Flux, Cooldown=%.2fs, Damage=%.0f Flux, WallBounces=%d.",
             spec.secondaryTitle,
             spec.bombType,
             spec.bombCost,
             spec.bombCooldown,
             spec.bombDamage,
             spec.bombBounces,
-            spec.bombRecoil,
           )
         )
-      } else {
-        sb.appendLine("  - Secondary: ${spec.secondaryTitle} (No Secondary Bomb Button shown on HUD).")
       }
       sb.appendLine("  - Lore & Role: ${spec.tacticalLore}")
     }
 
-    // 4. RIFT FRAME 100-POINT PARITY SYSTEM & PLAYER'S SAVED LOADOUT FRAMES A/B/C
     sb.appendLine()
-    sb.appendLine("[4. RIFT FRAME 100-POINT PARITY MATH, OPTIONS & PLAYER SAVED FRAMES A–C]")
-    sb.appendLine("- Unlock & Progression: Pilot Levels 1–19 are intro tiers. Level 20 unlocks Rift Frame with 20 Customization Points. Each level from Lv 20 to Lv 100 grants +1 point up to 100 Points at Lv 100 (exact parity with standard hulls, which are all built on the exact same 100-point budget). Calibration also offers a '100-Pt Override' testing toggle.")
-    sb.appendLine("- Universal Baseline Hull Floor (0 pts) + Linear Per-Point Scaling (0..30 pts max per stat):")
-    sb.appendLine("  • Top Speed = 380 + 8 * pts px/s (0 pts = 380 px/s -> 30 pts = 620 px/s; Afterburner = TopSpeed * 1.32)")
-    sb.appendLine("  • Thrust = 600 + 15 * pts px/s² (0 pts = 600 -> 30 pts = 1,050 px/s²)")
-    sb.appendLine("  • Turn Rate = 3.20 + 0.10 * pts rad/s (0 pts = 3.20 -> 30 pts = 6.20 rad/s)")
-    sb.appendLine("  • Max Flux = 2200 + 80 * pts ⚡ (0 pts = 2,200⚡ -> 30 pts = 4,600⚡)")
-    sb.appendLine("  • Flux Recharge = 240 + 8 * pts ⚡/s (0 pts = 240⚡/s -> 30 pts = 480⚡/s)")
-    sb.appendLine("- Primary Weapon Archetypes (9 choices):")
-    for (pri in CustomShipLoadoutSlot.PRIMARY_OPTIONS) {
-      sb.appendLine("  • ${pri.id} (${pri.title}) — ${pri.pointCost} Pts: ${pri.summary}")
-    }
-    sb.appendLine("- Secondary / Class Abilities (13 choices, including INTERDICTOR_DOME 25 Pts):")
-    for (sec in CustomShipLoadoutSlot.SECONDARY_OPTIONS) {
-      sb.appendLine("  • ${sec.id} (${sec.title}) — ${sec.pointCost} Pts [${sec.fluxCostLabel}]: ${sec.summary}")
-    }
-    sb.appendLine("- Rift Shards Economy (❖) & AI Hull Forge: Respec Slot = 50❖ Shards; Unlock Extra Loadout Frame (Frame B or Frame C) = 300❖ Shards; AI Hull Forge = 1st procedural hull synthesis per slot is FREE, subsequent re-designs cost 150❖ Shards (or 1 AI Design Token). Silhouettes: RAZOR_INTERCEPTOR, CRESCENT_SCYTHE, BASTION_DREADNOUGHT, MANTA_STINGRAY, X_VALKYRIE, PINCER_MANDIBLE.")
-
+    sb.appendLine("[4. RIFT FRAME 100-POINT PARITY (FULL 100 PTS AT LVL 20) & SAVED FRAMES A–E]")
+    sb.appendLine("- Pilot Level 20 unlocks Rift Frame with the full 100-Point Customization Budget (matching every standard hull). Levels 1–100 grant Rift Shards, 3D Hull Trims, Kill Finishers, Warp-In Signatures, HVT Halos, and Loadout Frames A–E.")
     val activeSlotId = localPrefs.getActiveCustomSlotId(currentUserId)
-    val frameBUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
-    val frameCUnlocked = localPrefs.isCustomSlotUnlocked("Frame C", currentUserId)
-    for (slotId in listOf("Frame A", "Frame B", "Frame C")) {
+    for (slotId in CustomShipLoadoutSlot.ALL_SLOT_IDS) {
       val slot = localPrefs.getCustomShipSlot(slotId, currentUserId)
-      val unlockedState =
-        when (slotId) {
-          "Frame A" -> "UNLOCKED"
-          "Frame B" -> if (frameBUnlocked) "UNLOCKED" else "LOCKED (300 Shards)"
-          else -> if (frameCUnlocked) "UNLOCKED" else "LOCKED (300 Shards)"
-        }
+      val unlocked = slotId == "Frame A" || localPrefs.isCustomSlotUnlocked(slotId, currentUserId)
       val activeMarker = if (slotId == activeSlotId) " [ACTIVE]" else ""
       sb.appendLine(
-        "  • Player Saved Loadout $slotId$activeMarker ($unlockedState) '${slot.customName}': ${slot.totalAllocatedPoints()} Pts allocated (Spd=${slot.speedPts}, Thr=${slot.thrustPts}, Turn=${slot.turnPts}, Flux=${slot.maxFluxPts}, Rech=${slot.rechargePts}, Pri=${slot.primaryArchetype}[${slot.primaryPts}P], Sec=${slot.secondaryType}[${slot.secondaryPts}P], Hull=${slot.visualRecipe.silhouette} '${slot.visualRecipe.promptUsed}')."
+        "  • $slotId$activeMarker (${if (unlocked) "UNLOCKED" else "LOCKED"}) '${slot.customName}': ${slot.totalAllocatedPoints()} Pts (Spd=${slot.speedPts}, Thr=${slot.thrustPts}, Turn=${slot.turnPts}, Flux=${slot.maxFluxPts}, Rech=${slot.rechargePts}, Pri=${slot.primaryArchetype}, Sec=${slot.secondaryType})."
       )
     }
 
-    // 5. OFFICIAL SUPPLY BUFF POOL + CUSTOM AI-FORGED BUFFS + 4 PLAYFIELD RIFTS
     sb.appendLine()
-    sb.appendLine("[5. OFFICIAL SUPPLY BUFF POOL (BUCKET A & BUCKET B), AI-FORGED BUFFS & 4 PLAYFIELD RIFTS]")
+    sb.appendLine("[5. SUPPLY BUFF POOL, AI-FORGED BUFFS & 4 PLAYFIELD RIFTS]")
     sb.appendLine(
-      "- Supply Crate Cap in 20-Pilot FFA: ${engine.getEffectiveBuffCap()} crates active (${engine.greens.size} currently spawned on map). Repel Cost=${RiftCalibrationState.repelCost.toInt()}⚡, Radius=${RiftCalibrationState.repelRadius.toInt()}px, Push=${RiftCalibrationState.repelPushForce.toInt()} px/s."
+      "- Supply Crate Cap: ${engine.getEffectiveBuffCap()} crates (${engine.greens.size} spawned). Repel Cost=${RiftCalibrationState.repelCost.toInt()} Flux, Radius=${RiftCalibrationState.repelRadius.toInt()}px."
     )
     for (entry in RiftCodex.POWERUP_CODEX) {
-      sb.appendLine("  • [#${entry.buffTypeIndex}] ${entry.title} (${entry.dropRatePercent}% drop | ${entry.category}): ${entry.effectSummary} ${entry.tacticalNote}")
+      sb.appendLine("  • ${entry.title} (${entry.dropRatePercent}% drop): ${entry.effectSummary.replace("⚡", " Flux")}")
     }
     val customForged = RiftCodex.getCustomForgedBuffs()
-    if (customForged.isEmpty()) {
-      sb.appendLine("  • Custom AI-Forged Buffs in BUFF_REGISTRY: None currently forged (pilots can forge custom buffs in Calibration -> AI Buff & Mechanic Forge).")
-    } else {
-      for (cb in customForged) {
-        sb.appendLine(
-          "  • [CUSTOM FORGED #${cb.buffTypeIndex}] ${cb.officialName} (HUD: ${cb.shortLabel} [X]): ${cb.chargesPerPickup} charges, aim=${cb.aimMode.name}, effect=${cb.specialEffect.label}, speed=${cb.projectileSpeed.toInt()} px/s, duration=${cb.flightDuration}s, dmg=${cb.damage.toInt()}⚡, radius=${cb.blastRadius.toInt()}px, bounces=${cb.wallBounces}."
-        )
-      }
+    for (cb in customForged) {
+      sb.appendLine(
+        "  • [CUSTOM FORGED] ${cb.officialName} (${cb.shortLabel}): ${cb.chargesPerPickup} charges, effect=${cb.specialEffect.label}, dmg=${cb.damage.toInt()} Flux, radius=${cb.blastRadius.toInt()}px."
+      )
     }
     sb.appendLine(
       String.format(
         Locale.US,
-        "- 4 Playfield Rifts (Spatial Anomalies — %.0fpx physical core radius = 5x 36px ship radius, %.0fs lifespan, %d currently active in arena):",
+        "- 4 Playfield Rifts (%.0fpx physical core radius, %.0fs lifespan, %d active): 1) PLASMA RIFT (%.0f%% Max Flux burn/0.6s), 2) REPULSOR RIFT (%.0fpx push), 3) GRAVITY RIFT (%.0fpx pull), 4) PAIRED PHASE RIFTS (Phase Rift A & B instantaneous gateway, %.2fs re-entry CD).",
         RiftCalibrationState.riftPhysicalRadius * anomVisScale,
         RiftCalibrationState.riftLifespanSec,
         engine.anomalies.size,
-      )
-    )
-    sb.appendLine(
-      String.format(
-        Locale.US,
-        "  1) PLASMA RIFT (Crimson): Burns %.0f%% Max Flux per 0.6s tick on contact and can destroy ships if Flux drops <= 0⚡.",
         RiftCalibrationState.plasmaRiftDamagePct * 100f,
-      )
-    )
-    sb.appendLine(
-      String.format(
-        Locale.US,
-        "  2) REPULSOR RIFT (White/Emerald): Pushes ships & ordnance outward within %.0fpx radius at %.0f px/s².",
         RiftCalibrationState.repulsorFieldRadius,
-        RiftCalibrationState.repulsorBaseForce,
-      )
-    )
-    sb.appendLine(
-      String.format(
-        Locale.US,
-        "  3) GRAVITY RIFT (Violet/Black Singularity): Pulls ships & projectiles inward within %.0fpx radius at %.0f px/s²; ships reaching dead-stop at the core gain %.2fs pull-escape immunity.",
         RiftCalibrationState.gravityPullRadius,
-        RiftCalibrationState.gravityPullForce,
-        RiftCalibrationState.gravityStopImmunitySec,
-      )
-    )
-    sb.appendLine(
-      String.format(
-        Locale.US,
-        "  4) PHASE RIFT A & B (Paired Teal/Cyan Gateways): Instantaneously warps ships, projectiles, and aim-guide raycasts between Node A and Node B while preserving momentum (%.2fs re-entry cooldown).",
         RiftCalibrationState.phaseRiftCooldownSec,
       )
     )
 
-    // 6. HIGHEST BOUNTY EVER RECORDED (CLOUD GLOBAL LEADERBOARD + LOCAL DOSSIER + LIVE ARENA)
     sb.appendLine()
-    sb.appendLine("[6. HIGHEST BOUNTY RECORDS (GLOBAL CLOUD LEADERBOARD, PILOT DOSSIER & LIVE SECTOR)]")
-
-    val topCloudAllTime = cloudLeaderboard.maxByOrNull { it.allTimeBounty }
-    val topCloudPvp = cloudLeaderboard.maxByOrNull { it.pvpBounty }
-    val liveTopShip = engine.ships.maxByOrNull { it.bounty }
-
-    // Determine single overall highest recorded bounty across Cloud Leaderboard, Local Dossier Peak, and Live Sector
-    data class BountyRecordCandidate(val source: String, val callsign: String, val tag: String, val bounty: Long, val detail: String)
-    val candidates = mutableListOf<BountyRecordCandidate>()
+    sb.appendLine("[6. REAL-PLAYER-ONLY SWORN PILOT LEADERBOARD & DOSSIER RECORDS]")
+    val realCloudLeaderboard =
+      cloudLeaderboard.filter {
+        val t = RiftGameEngine.cleanTag(it.syndicateTag)
+        t != "BOT" && t != "RFT" && t != "GUEST" && !it.callsign.contains("[BOT]") && !it.userId.startsWith("dev_")
+      }
+    val topCloudAllTime = realCloudLeaderboard.maxByOrNull { it.allTimeBounty }
     if (topCloudAllTime != null) {
-      val sName = RiftCodex.getShipById(topCloudAllTime.shipId.toInt()).name
-      candidates +=
-        BountyRecordCandidate(
-          source = "Cloud Global All-Time Leaderboard",
-          callsign = topCloudAllTime.callsign,
-          tag = RiftGameEngine.cleanTag(topCloudAllTime.syndicateTag),
-          bounty = topCloudAllTime.allTimeBounty,
-          detail = "Ship $sName, ${topCloudAllTime.allTimeKills} All-Time Kills, ${topCloudAllTime.convergencesWon} Convergences Won",
-        )
-    }
-    candidates +=
-      BountyRecordCandidate(
-        source = "Local Pilot All-Time Career Record",
-        callsign = callsign,
-        tag = syndicateTag,
-        bounty = engine.allTimeBountyPeak,
-        detail = "${engine.allTimeKills} All-Time Kills, ${engine.convergencesWon} Convergences Won",
-      )
-    if (liveTopShip != null) {
-      candidates +=
-        BountyRecordCandidate(
-          source = "Current Live Arena Sector Leader",
-          callsign = liveTopShip.callsign,
-          tag = RiftGameEngine.cleanTag(liveTopShip.syndicateTag),
-          bounty = liveTopShip.bounty.toLong(),
-          detail = "Flying ${engine.formatShipLabel(liveTopShip)} (${if (liveTopShip.isHuman) "Human Pilot" else "AI Bot"})",
-        )
-    }
-    val overallHighest = candidates.maxByOrNull { it.bounty }
-    if (overallHighest != null) {
       sb.appendLine(
-        "- OVERALL HIGHEST INDIVIDUAL BOUNTY RECORD KNOWN: [${overallHighest.tag}] ${overallHighest.callsign} with ${overallHighest.bounty} Bounty (${overallHighest.source} — ${overallHighest.detail})."
-      )
-    }
-    if (topCloudPvp != null) {
-      val sName = RiftCodex.getShipById(topCloudPvp.shipId.toInt()).name
-      sb.appendLine(
-        "- Highest Cloud PVP-Only Bounty Record: [${RiftGameEngine.cleanTag(topCloudPvp.syndicateTag)}] ${topCloudPvp.callsign} with ${topCloudPvp.pvpBounty} PVP Bounty (${topCloudPvp.pvpKills} PVP Kills, Ship $sName)."
+        "- Top Cloud Sworn Pilot All-Time Bounty: [${RiftGameEngine.cleanTag(topCloudAllTime.syndicateTag)}] ${topCloudAllTime.callsign} with ${topCloudAllTime.allTimeBounty} Bounty (${topCloudAllTime.allTimeKills}K/${topCloudAllTime.allTimeDeaths}D)."
       )
     } else {
-      sb.appendLine(
-        "- Cloud Leaderboard Status: ${cloudLeaderboard.size} cloud entries synced (Local PVP Peak = ${engine.pvpBountyPeak} Bounty by [$syndicateTag] $callsign)."
-      )
-    }
-    if (cloudLeaderboard.isNotEmpty()) {
-      sb.appendLine("- Top Cloud Global Leaderboard Entries (up to Top 10 by All-Time Bounty):")
-      cloudLeaderboard
-        .sortedByDescending { it.allTimeBounty }
-        .take(10)
-        .forEachIndexed { idx, entry ->
-          val cleanT = RiftGameEngine.cleanTag(entry.syndicateTag)
-          val shipTitle = RiftCodex.getShipById(entry.shipId.toInt()).name
-          sb.appendLine(
-            "  #${idx + 1}: [$cleanT] ${entry.callsign} — All-Time Peak: ${entry.allTimeBounty} BTY (${entry.allTimeKills}K/${entry.allTimeDeaths}D) | PVP Peak: ${entry.pvpBounty} BTY (${entry.pvpKills}K/${entry.pvpDeaths}D) | Ship: $shipTitle | Armada: ${entry.armadaTag} | Wins: ${entry.convergencesWon}"
-          )
-        }
+      sb.appendLine("- Cloud Leaderboard Status: 0 Sworn Pilot records synced yet (AI Bots and [RFT] Drifters are strictly excluded).")
     }
 
-    // 7. LOCAL PILOT DOSSIER, PEAK BOUNTY SNAPSHOTS & EXECUTIONER TELEMETRY
-    sb.appendLine()
-    sb.appendLine("[7. LOCAL PILOT DOSSIER, PROGRESSION, EXECUTIONER SNAPSHOTS & SYNDICATES]")
     val p = engine.localPlayer
     val pSpeed = hypot(p.vx, p.vy).roundToInt()
     val secX = ((p.x / 1000f).toInt()).coerceIn(0, 7)
@@ -545,61 +342,22 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     val sectorStr = "${('A' + secX)}${secY + 1}"
     val (curXp, spanXp, _) = engine.getXpProgressInCurrentLevel()
     sb.appendLine(
-      "- Active Pilot: [$syndicateTag] $callsign (Syndicate: '$syndicateName', Lock Remaining: ${localPrefs.getRemainingSyndicateLockFormatted()}) | Armada: ${if (engine.activeArmadaName.isEmpty()) "SOLO (Operating Independently)" else "[${engine.activeArmadaName}] (${engine.getCurrentArmadaSize()}/5 • ${engine.getCurrentArmadaTierLabel()} — Friendly Fire OFF among Armada/Syndicate allies)"}."
-    )
-    sb.appendLine(
-      "- Pilot Progression: Level ${engine.pilotLevel}/100 ($curXp / $spanXp XP in current level) | Customization Budget: ${engine.getCustomizationPointsTotal()} Pts | Rift Shards: ${engine.riftShards}❖ | XP Breakdown (5 Sources): Buffs=${engine.xpFromBuffs.toLong()}, Damage=${engine.xpFromDamage.toLong()}, Accuracy=${engine.xpFromAccuracy.toLong()}, BountyEarned=${engine.xpFromBountyEarned.toLong()}, BountyKilled=${engine.xpFromBountyKilled.toLong()}."
-    )
-    sb.appendLine(
-      "- Career Combat Record: All-Time Peak Bounty=${engine.allTimeBountyPeak}, All-Time K/D=${engine.allTimeKills}/${engine.allTimeDeaths}, PVP Peak Bounty=${engine.pvpBountyPeak}, PVP K/D=${engine.pvpKills}/${engine.pvpDeaths}, HVT Eliminations=${engine.hvtEliminations}, Supply Crates=${engine.greensCollected}, Sector Convergences Won=${engine.convergencesWon}."
-    )
-    sb.appendLine(
-      "- Live Ship Right Now: Flying ${engine.formatShipLabel(p)} in Sector $sectorStr (${p.x.toInt()}, ${p.y.toInt()}), Speed=$pSpeed px/s, Flux=${p.flux.toInt()}/${p.maxFlux.toInt()}⚡, Current Bounty=${p.bounty}, Repels=${p.repels}, SpecialSlot=${p.specialWeaponType}(${p.specialWeaponCharges}), MultiShotCrateShots=${p.multiShotCharges}, BouncingBulletsUpgrade=${p.hasBouncingBulletsUpgrade}, SpeedOvercharge=${p.speedOverchargeStacks}/3, ThrustOvercharge=${p.thrustOverchargeStacks}/3, ReactorOvercharge=${p.rechargeOverchargeStacks}/3."
+      "- Active Pilot: [$syndicateTag] $callsign (Syndicate: '$syndicateName') | Level ${engine.pilotLevel}/100 ($curXp/$spanXp XP) | Shards: ${engine.riftShards}❖ | Live Hull: ${engine.formatShipLabel(p)} in Sector $sectorStr, Speed=$pSpeed px/s, Flux=${p.flux.toInt()}/${p.maxFlux.toInt()} Flux, Bounty=${p.bounty}."
     )
 
     fun formatSnapshot(label: String, snap: PeakBountyRunSnapshot?) {
-      if (snap == null) {
-        sb.appendLine("- $label: No completed run snapshot recorded yet.")
-        return
-      }
-      val exec = snap.executioner
-      val execStr =
-        when {
-          exec.survivedToConvergence -> "SURVIVED TO 1-HOUR SECTOR CONVERGENCE"
-          exec.killerCallsign.isNotBlank() ->
-            "Terminated by [${exec.killerSyndicateTag}] ${exec.killerCallsign} flying ${exec.killerShip} using ${exec.killingWeapon} (Killer Bounty at kill: ${exec.killerBountyAtKill}, Bounty earned from you: +${exec.bountyEarnedFromYou})"
-          else -> "Run still active or unrecorded termination"
-        }
+      if (snap == null) return
       sb.appendLine(
-        "- $label: Peak Bounty=${snap.bountyReached} in ${snap.shipFlown}, Survived=${snap.formattedDuration()}, Kills=${snap.pvpKills} PVP / ${snap.botKills} Bot (${snap.hvtShutdowns} HVT shutdowns), Damage=${snap.damageDealt.toInt()}⚡ dealt / ${snap.damageTaken.toInt()}⚡ taken, Accuracy=${snap.accuracyPercent()}% (${snap.shotsHit}/${snap.shotsFired}), Buffs=${snap.buffsCollected} | Executioner: $execStr."
+        "- $label: Peak Bounty=${snap.bountyReached} in ${snap.shipFlown}, Survived=${snap.formattedDuration()}, Kills=${snap.pvpKills} PVP / ${snap.botKills} Bot, Damage=${snap.damageDealt.toInt()} Flux dealt / ${snap.damageTaken.toInt()} Flux taken."
       )
     }
-    formatSnapshot("All-Time Peak Bounty Run Snapshot", allTimePeakSnapshot)
-    formatSnapshot("PVP-Only Peak Bounty Run Snapshot", pvpPeakSnapshot)
+    formatSnapshot("All-Time Peak Bounty Run", allTimePeakSnapshot)
+    formatSnapshot("PVP Peak Bounty Run", pvpPeakSnapshot)
 
     if (syndicateHistory.isNotEmpty()) {
-      val histSummary =
-        syndicateHistory.joinToString(" ; ") { h ->
-          "[${h.syndicateTag}] ${h.syndicateName} (${h.role}, ${if (h.isActive) "ACTIVE" else "PAST"}, Tenure=${h.formatTenure()}, Kills=${h.totalKills}, PeakBty=${h.peakBountyAchieved}, Wins=${h.publicGameWins})"
-        }
-      sb.appendLine("- Pilot Syndicate Service History: $histSummary")
-    }
-    val syndicatesDir =
-      localPrefs.getAllSyndicates().joinToString(", ") { s ->
-        "[${s.tag}] ${s.name} (${s.memberCount} pilots, ${s.combinedBounty} combined syndicate bounty)"
-      }
-    sb.appendLine("- Known Sector Syndicates Directory (15-day switch cooldown lock): $syndicatesDir")
-
-    // 8. LIVE SECTOR ROSTER & ACTIVE CALIBRATION OVERRIDES
-    sb.appendLine()
-    sb.appendLine("[8. LIVE ARENA SECTOR TOP PILOTS & CALIBRATION OVERRIDES]")
-    val topLiveShips = engine.ships.sortedByDescending { it.bounty }.take(8)
-    sb.appendLine("- Active Ships in Sector (${engine.ships.size} total; HVT >= ${RiftCalibrationState.hvtBountyThreshold} BTY):")
-    for ((idx, s) in topLiveShips.withIndex()) {
-      val sTag = if (s.armadaName.isNotEmpty()) "[${s.armadaName}]" else "[${RiftGameEngine.cleanTag(s.syndicateTag)}]"
-      val hvtFlag = if (s.bounty >= RiftCalibrationState.hvtBountyThreshold) " [👑 HVT]" else ""
       sb.appendLine(
-        "  #${idx + 1}: $sTag ${s.callsign} (${if (s.isLocalPlayer) "YOU" else if (s.isHuman) "HUMAN" else "AI BOT"}) — ${s.bounty} BTY$hvtFlag | ${engine.formatShipLabel(s)} | ${s.flux.toInt()}/${s.maxFlux.toInt()}⚡"
+        "- Syndicate Service History: " +
+          syndicateHistory.joinToString(" ; ") { "[${it.syndicateTag}] ${it.syndicateName} (${it.totalKills}K, ${it.publicGameWins}W)" }
       )
     }
 
@@ -608,15 +366,13 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
         val cur = desc.getter()
         val def = RiftCalibrationState.DEFAULT_GAME_CONFIG[desc.key]
         if (def != null && abs(cur - def) > 0.0005f) {
-          "${desc.title} (${desc.key}): default ${desc.formatValue(def)} -> live ${desc.formatValue(cur)}"
+          "${desc.title}: ${desc.formatValue(def)} -> ${desc.formatValue(cur)}"
         } else {
           null
         }
       }
-    if (modifiedCalibrations.isEmpty()) {
-      sb.appendLine("- Live Calibration Status: All sliders currently at factory defaults.")
-    } else {
-      sb.appendLine("- Live Calibration Overrides Active (${modifiedCalibrations.size}): ${modifiedCalibrations.joinToString(" | ")}")
+    if (modifiedCalibrations.isNotEmpty()) {
+      sb.appendLine("- Live Calibration Overrides (${modifiedCalibrations.size}): ${modifiedCalibrations.joinToString(" | ")}")
     }
 
     return sb.toString()

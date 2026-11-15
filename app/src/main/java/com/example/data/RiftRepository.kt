@@ -97,6 +97,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         "RIFT_SKIRMISH",
         "FLUX_CORE",
         "STASIS_BREACH",
+        "RIFT_CONTROL",
         "SYNDICATE_WARS",
         "warzone_10v10",
         "ranked_3v3",
@@ -185,19 +186,27 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           )
         docRef.set(createPayload).await()
       } else {
+        val existingObj =
+          existingSnap.toObject(PilotDossier::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+        val mergedCallsign =
+          if (safeCallsign == "COMMANDER" || safeCallsign == "PILOT_01") {
+            existingObj?.callsign?.takeIf { it.isNotBlank() && it != "COMMANDER" } ?: safeCallsign
+          } else {
+            safeCallsign
+          }
         val updatePayload =
           mapOf(
-            "callsign" to safeCallsign,
+            "callsign" to mergedCallsign,
             "preferredShipId" to safeShipId,
             "preferredFoundry" to safeFoundry,
             "preferredMode" to safeMode,
-            "pvpKills" to dossier.pvpKills.coerceAtLeast(0L),
-            "pvpDeaths" to dossier.pvpDeaths.coerceAtLeast(0L),
-            "pvpBountyPeak" to dossier.pvpBountyPeak.coerceAtLeast(0L),
-            "allTimeKills" to dossier.allTimeKills.coerceAtLeast(0L),
-            "allTimeDeaths" to dossier.allTimeDeaths.coerceAtLeast(0L),
-            "allTimeBountyPeak" to dossier.allTimeBountyPeak.coerceAtLeast(0L),
-            "convergencesWon" to dossier.convergencesWon.coerceAtLeast(0L),
+            "pvpKills" to kotlin.math.max(existingObj?.pvpKills ?: 0L, dossier.pvpKills.coerceAtLeast(0L)),
+            "pvpDeaths" to kotlin.math.max(existingObj?.pvpDeaths ?: 0L, dossier.pvpDeaths.coerceAtLeast(0L)),
+            "pvpBountyPeak" to kotlin.math.max(existingObj?.pvpBountyPeak ?: 100L, dossier.pvpBountyPeak.coerceAtLeast(0L)),
+            "allTimeKills" to kotlin.math.max(existingObj?.allTimeKills ?: 0L, dossier.allTimeKills.coerceAtLeast(0L)),
+            "allTimeDeaths" to kotlin.math.max(existingObj?.allTimeDeaths ?: 0L, dossier.allTimeDeaths.coerceAtLeast(0L)),
+            "allTimeBountyPeak" to kotlin.math.max(existingObj?.allTimeBountyPeak ?: 100L, dossier.allTimeBountyPeak.coerceAtLeast(0L)),
+            "convergencesWon" to kotlin.math.max(existingObj?.convergencesWon ?: 0L, dossier.convergencesWon.coerceAtLeast(0L)),
             "updatedAt" to FieldValue.serverTimestamp(),
           )
         docRef.update(updatePayload).await()
@@ -214,11 +223,14 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
 
   suspend fun saveLeaderboardEntry(entry: LeaderboardEntry): Result<Unit> = runCatching {
     val uid = requireUserId()
+    val safeSyndicateTag = sanitizeTag(entry.syndicateTag)
+    if (safeSyndicateTag == "RFT" || safeSyndicateTag == "BOT" || entry.callsign.contains("[BOT]", ignoreCase = true)) {
+      return@runCatching
+    }
     val docRef = db.collection("leaderboard").document(uid)
     val safeCallsign = sanitizeCallsign(entry.callsign)
     val safeShipId = entry.shipId.coerceIn(1L, 10L)
     val safeFoundry = sanitizeFoundry(entry.foundry)
-    val safeSyndicateTag = sanitizeTag(entry.syndicateTag)
     val safeArmadaTag = sanitizeTag(entry.armadaTag).ifEmpty { "SOLO" }
     val safeArmadaTierSize = entry.armadaTierSize.coerceIn(1, 5)
 
@@ -247,21 +259,29 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           )
         docRef.set(createPayload).await()
       } else {
+        val existingObj =
+          existingSnap.toObject(LeaderboardEntry::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+        val mergedCallsign =
+          if (safeCallsign == "COMMANDER" || safeCallsign == "PILOT_01") {
+            existingObj?.callsign?.takeIf { it.isNotBlank() && it != "COMMANDER" } ?: safeCallsign
+          } else {
+            safeCallsign
+          }
         val updatePayload =
           mapOf(
-            "callsign" to safeCallsign,
+            "callsign" to mergedCallsign,
             "shipId" to safeShipId,
             "syndicateTag" to safeSyndicateTag,
             "armadaTag" to safeArmadaTag,
             "armadaTierSize" to safeArmadaTierSize,
             "foundry" to safeFoundry,
-            "pvpKills" to entry.pvpKills.coerceAtLeast(0L),
-            "pvpDeaths" to entry.pvpDeaths.coerceAtLeast(0L),
-            "pvpBounty" to entry.pvpBounty.coerceAtLeast(0L),
-            "allTimeKills" to entry.allTimeKills.coerceAtLeast(0L),
-            "allTimeDeaths" to entry.allTimeDeaths.coerceAtLeast(0L),
-            "allTimeBounty" to entry.allTimeBounty.coerceAtLeast(0L),
-            "convergencesWon" to entry.convergencesWon.coerceAtLeast(0L),
+            "pvpKills" to kotlin.math.max(existingObj?.pvpKills ?: 0L, entry.pvpKills.coerceAtLeast(0L)),
+            "pvpDeaths" to kotlin.math.max(existingObj?.pvpDeaths ?: 0L, entry.pvpDeaths.coerceAtLeast(0L)),
+            "pvpBounty" to kotlin.math.max(existingObj?.pvpBounty ?: 100L, entry.pvpBounty.coerceAtLeast(0L)),
+            "allTimeKills" to kotlin.math.max(existingObj?.allTimeKills ?: 0L, entry.allTimeKills.coerceAtLeast(0L)),
+            "allTimeDeaths" to kotlin.math.max(existingObj?.allTimeDeaths ?: 0L, entry.allTimeDeaths.coerceAtLeast(0L)),
+            "allTimeBounty" to kotlin.math.max(existingObj?.allTimeBounty ?: 100L, entry.allTimeBounty.coerceAtLeast(0L)),
+            "convergencesWon" to kotlin.math.max(existingObj?.convergencesWon ?: 0L, entry.convergencesWon.coerceAtLeast(0L)),
             "updatedAt" to FieldValue.serverTimestamp(),
           )
         docRef.update(updatePayload).await()
@@ -282,10 +302,21 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .whereEqualTo("visibility", "public")
       .snapshots()
       .map { snapshot ->
-        snapshot.toObjects(
-          LeaderboardEntry::class.java,
-          DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-        )
+        snapshot
+          .toObjects(
+            LeaderboardEntry::class.java,
+            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+          )
+          .filter { entry ->
+            val cleanUid = entry.userId.ifBlank { entry.id }.trim()
+            val cleanTag = entry.syndicateTag.trim().uppercase()
+            cleanUid.isNotEmpty() &&
+              !cleanUid.startsWith("dev_") &&
+              !cleanUid.startsWith("drifter_") &&
+              cleanTag != "BOT" &&
+              cleanTag != "RFT" &&
+              !entry.callsign.contains("[BOT]", ignoreCase = true)
+          }
       }
       .catch { error ->
         val firestoreError =
@@ -424,10 +455,12 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .whereEqualTo("isCustom", true)
       .snapshots()
       .map { snapshot ->
-        snapshot.toObjects(
-          SyndicateInfo::class.java,
-          DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-        )
+        snapshot
+          .toObjects(
+            SyndicateInfo::class.java,
+            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+          )
+          .filter { it.isRealPlayerFoundedSyndicate() }
       }
       .catch { error ->
         val firestoreError =

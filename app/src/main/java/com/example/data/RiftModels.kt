@@ -80,6 +80,7 @@ data class LivePilotState(
 @IgnoreExtraProperties
 data class SyndicateInfo(
   @DocumentId val id: String = "",
+  val ownerId: String = "",
   val tag: String = "",
   val name: String = "",
   val foundryOrigin: String = "Independent",
@@ -89,7 +90,19 @@ data class SyndicateInfo(
   val isCustom: Boolean = false,
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null,
-)
+) {
+  fun isRealPlayerFoundedSyndicate(): Boolean {
+    val cleanTag = tag.trim().uppercase()
+    val cleanOwner = ownerId.trim()
+    if (!isCustom) return false
+    if (cleanOwner.isEmpty() || cleanOwner.startsWith("dev_") || cleanOwner.startsWith("drifter_")) {
+      return false
+    }
+    if (cleanTag.length !in 1..4) return false
+    if (cleanTag in setOf("BOT", "RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED")) return false
+    return true
+  }
+}
 
 data class SyndicateMemberEntry(
   val uid: String,
@@ -195,6 +208,8 @@ private fun stripShipNumberPrefix(raw: String): String =
     .replace("9A", "Frame A")
     .replace("9B", "Frame B")
     .replace("9C", "Frame C")
+    .replace("9D", "Frame D")
+    .replace("9E", "Frame E")
 
 data class CurrentLifeStats(
   var bountyReached: Int = 100,

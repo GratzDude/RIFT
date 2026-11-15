@@ -10,7 +10,6 @@ import com.example.engine.RiftGameEngine
 import com.example.engine.SpecialBuffRegistryEntry
 import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -268,9 +267,10 @@ class NexusAiViewModel : ViewModel() {
         "pilot",
         "drifter",
         "build",
+        "spectat",
       )
     if (nonRiftKeywords.any { lower.contains(it) } && riftContextKeywords.none { lower.contains(it) }) {
-      return "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Ask about RIFT ships, weapons, Flux (⚡) math, Ranked Modes, Custom Games, or Sworn Pilot Leaderboards."
+      return "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Ask about RIFT ships, weapons, Flux math, Ranked Modes, Custom Games, or Sworn Pilot Leaderboards."
     }
 
     // 2. Pixel / Laser Geometry Queries
@@ -286,8 +286,9 @@ class NexusAiViewModel : ViewModel() {
         appendLine(
           String.format(
             Locale.US,
-            "• Suppressor Rotary Pulse Speed: %.0f px/s (15⚡ cost, %.3fs interval, %.0f⚡ damage per bolt).",
+            "• Suppressor Rotary Pulse Speed: %.0f px/s (%.0f Flux cost, %.3fs interval, %.0f Flux damage per bolt).",
             sup.primarySpeed,
+            sup.primaryCost,
             sup.primaryCooldown,
             sup.primaryDamage,
           )
@@ -336,7 +337,11 @@ class NexusAiViewModel : ViewModel() {
         pvpLeaderboard
           .filter {
             val tag = it.syndicateTag.trim().uppercase(Locale.US)
-            tag != "RFT" && tag != "GUEST" && !it.userId.startsWith("dev_")
+            tag != "RFT" &&
+              tag != "GUEST" &&
+              tag != "BOT" &&
+              !it.callsign.contains("[BOT]") &&
+              !it.userId.startsWith("dev_")
           }
           .sortedByDescending { it.pvpBounty }
           .take(5)
@@ -344,13 +349,17 @@ class NexusAiViewModel : ViewModel() {
         allTimeLeaderboard
           .filter {
             val tag = it.syndicateTag.trim().uppercase(Locale.US)
-            tag != "RFT" && tag != "GUEST" && !it.userId.startsWith("dev_")
+            tag != "RFT" &&
+              tag != "GUEST" &&
+              tag != "BOT" &&
+              !it.callsign.contains("[BOT]") &&
+              !it.userId.startsWith("dev_")
           }
           .sortedByDescending { it.allTimeBounty }
           .take(5)
 
       return buildString {
-        appendLine("NEXUS SWORN PILOT LEADERBOARD TELEMETRY // ([RFT] Drifters Excluded)")
+        appendLine("NEXUS SWORN PILOT LEADERBOARD TELEMETRY // (AI Bots & [RFT] Drifters Excluded)")
         if (engine != null) {
           val p = engine.localPlayer
           val isSworn =
@@ -381,16 +390,16 @@ class NexusAiViewModel : ViewModel() {
               "  #${i + 1} $tag${entry.callsign} — PvP Peak ★ ${entry.pvpBounty} (${entry.pvpKills}K / ${entry.pvpDeaths}D)"
             )
           }
-        } else if (liveTelemetrySnapshot.contains("TOP 5 ALL-TIME")) {
+        } else if (liveTelemetrySnapshot.contains("Top Cloud Sworn Pilot")) {
           val snippet =
             liveTelemetrySnapshot
-              .substringAfter("[6. CLOUD LEADERBOARD", "")
+              .substringAfter("[6. REAL-PLAYER-ONLY", "")
               .take(600)
               .trim()
           if (snippet.isNotEmpty()) appendLine(snippet)
         } else {
           appendLine(
-            "• Only Google-authenticated Sworn Pilots are recorded on Cloud Leaderboards. Ephemeral [RFT] Drifters are excluded from permanent rankings."
+            "• Only Google-authenticated Sworn Pilots are recorded on Cloud Leaderboards. AI Bots and ephemeral [RFT] Drifters are strictly excluded."
           )
         }
       }.trim()
@@ -407,15 +416,15 @@ class NexusAiViewModel : ViewModel() {
     ) {
       val budget = engine?.getCustomizationPointsTotal() ?: 100
       return buildString {
-        appendLine("NEXUS 100-POINT RIFT FRAME THEORYCRAFT // (Active Budget: $budget Pts)")
+        appendLine("NEXUS 100-POINT RIFT FRAME THEORYCRAFT // (Active Budget: $budget Pts • Full 100 Pts Unlocked at Lv 20)")
         appendLine("1) 100-PT HYPER-RAIL PHASE SNIPER (Frame A):")
-        appendLine("   • Hull Points (60P): Speed 16P (692 px/s) | Thrust 12P (870 px/s²) | Turn 8P (4.84 rad/s) | Max Flux 12P (3,100⚡) | Recharge 12P (410⚡/s)")
-        appendLine("   • Weapons (40P): Hyper-Velocity Dual Rail (15P • 25⚡ • 285⚡ DMG @ 1,120 px/s) + Phase Dash (25P • 300⚡ • 2.5s CD • +35% Next-Shot Rail Overcharge = 385⚡ burst)")
-        appendLine("2) 100-PT ECLIPSE BUBBLE BRAWLER (Frame B):")
-        appendLine("   • Hull Points (60P): Speed 10P | Thrust 12P | Turn 10P | Max Flux 16P (3,500⚡) | Recharge 12P (410⚡/s)")
-        appendLine("   • Weapons (40P): Parallel Twin-Stream (15P • 22⚡ • 2x135⚡ DMG) + Eclipse Stasis Bubble (25P • 380⚡ • 8.0s 275px two-way dome, 12.0s CD)")
+        appendLine("   • Hull Points (60P): Speed 16P | Thrust 12P | Turn 8P | Max Flux 12P (3,160 Flux) | Recharge 12P (336 Flux/s)")
+        appendLine("   • Weapons (40P): Hyper-Velocity Dual Rail (15P • 25 Flux • 285 Flux DMG @ 1,120 px/s) + Phase Dash (25P • 300 Flux • 2.5s CD • +35% Next-Shot Rail Overcharge)")
+        appendLine("2) 100-PT ECLIPSE BUBBLE BRAWLER (Frame E):")
+        appendLine("   • Hull Points (60P): Speed 10P | Thrust 12P | Turn 10P | Max Flux 16P (3,480 Flux) | Recharge 12P (336 Flux/s)")
+        appendLine("   • Weapons (40P): Parallel Twin-Stream (15P • 22 Flux • 2x135 Flux DMG) + Eclipse Stasis Bubble (25P • 320 Flux • 6.0s 275px two-way dome, 8.5s CD)")
         append(
-          "• Tip: Every hull stat starts on the universal Baseline Hull Floor (500 px/s, 450 px/s², 3.4 rad/s, 1,900⚡ Max Flux, 230⚡/s Recharge) and scales up to 30P per stat."
+          "• Tip: Save up to 5 independent builds across Frame A through Frame E in Hangar & Progression."
         )
       }
     }
@@ -439,7 +448,7 @@ class NexusAiViewModel : ViewModel() {
           appendLine(
             String.format(
               Locale.US,
-              "• Point Allocation: SPD %dP (%.0f px/s, Burn %.0f px/s) | THR %dP (%.0f px/s²) | TURN %dP (%.2f rad/s) | MAX FLUX %dP (%.0f⚡) | RECHARGE %dP (%.0f⚡/s)",
+              "• Point Allocation: SPD %dP (%.0f px/s, Burn %.0f px/s) | THR %dP (%.0f px/s²) | TURN %dP (%.2f rad/s) | MAX FLUX %dP (%.0f Flux) | RECHARGE %dP (%.0f Flux/s)",
               s.speedPts,
               s.topSpeed,
               s.afterburnerSpeed,
@@ -456,7 +465,7 @@ class NexusAiViewModel : ViewModel() {
           appendLine(
             String.format(
               Locale.US,
-              "• Primary [%s • %dP]: %.0f⚡ cost | %.2fs CD | %.0f⚡ damage | %.0f px/s (%d stream%s, %d bounce%s)",
+              "• Primary [%s • %dP]: %.0f Flux cost | %.2fs CD | %.0f Flux damage | %.0f px/s (%d stream%s, %d bounce%s)",
               s.primaryTitle,
               s.primaryPts,
               s.primaryCost,
@@ -473,7 +482,7 @@ class NexusAiViewModel : ViewModel() {
             appendLine(
               String.format(
                 Locale.US,
-                "• Secondary [%s • %dP]: 380⚡ cost | %.1fs CD | Anchors a %.0fpx radius (%.0fpx diameter) two-way Stasis Bubble for %.1fs. Ships bounce off both sides with 0⚡ damage; traps enemies inside for close-quarters dogfights.",
+                "• Secondary [%s • %dP]: 320 Flux cost | %.1fs CD | Anchors a %.0fpx radius (%.0fpx diameter) two-way Stasis Bubble for %.1fs. Ships bounce off both sides with 0 Flux wall damage; reflects ordnance inside and outside.",
                 s.secondaryTitle,
                 s.secondaryPts,
                 RiftCalibrationState.interdictorBubbleCooldown,
@@ -486,7 +495,7 @@ class NexusAiViewModel : ViewModel() {
             appendLine(
               String.format(
                 Locale.US,
-                "• Secondary [%s • %dP]: Drains %.0f⚡/s while cloaked (floors at 150⚡). Uncloaking manually fires a 0⚡ %.0fpx 360° EMP pulse that drains %.0f%% enemy Max Flux and freezes recharge for %.1fs.",
+                "• Secondary [%s • %dP]: 20 Flux entry + %.0f Flux/s cloak drain (50%% cloaked afterburner drain, 4.5s CD, floors at 150 Flux). Uncloaking manually fires a 0 Flux %.0fpx 360° EMP pulse that drains %.0f%% enemy Max Flux (up to 850 Flux) and freezes recharge for %.1fs.",
                 s.secondaryTitle,
                 s.secondaryPts,
                 RiftCalibrationState.cloakDrainPerSec,
@@ -499,7 +508,7 @@ class NexusAiViewModel : ViewModel() {
             appendLine(
               String.format(
                 Locale.US,
-                "• Secondary [%s • %dP]: %.0f⚡ cost | %.2fs CD | %.0f⚡ damage | %.0f px/s recoil",
+                "• Secondary [%s • %dP]: %.0f Flux cost | %.2fs CD | %.0f Flux damage | %.0f px/s recoil",
                 s.secondaryTitle,
                 s.secondaryPts,
                 s.bombCost,
@@ -527,17 +536,18 @@ class NexusAiViewModel : ViewModel() {
         lower.contains("rift control") ||
         lower.contains("tug") ||
         lower.contains("syndicate war") ||
-        lower.contains("custom game")
+        lower.contains("custom game") ||
+        lower.contains("spectat")
     ) {
       return buildString {
         appendLine("NEXUS SECTOR MODES // 6 RANKED MODES + CLONEABLE CUSTOM GAMES")
-        appendLine("1) FREE-FOR-ALL (Sector Convergence): 20-pilot open arena (60m cycle). #1 Bounty with >50% presence wins +100❖.")
-        appendLine("2) TEAM DEATHMATCH (Rift Skirmish): 2v2–5v5 Best-of-3 rounds (3:00 round timer). No respawn until round ends; eliminated pilots spectate their highest-bounty living ally. +75❖.")
-        appendLine("3) FLUX CORE (Kill The Man With The Ball): Hold the center Flux Core for +15 Bounty/s and up to Tier 10 Overcharge (+50% DMG/Recharge, +40% Speed). Carrier cannot enter Safe Zone or Cloak.")
-        appendLine("4) STASIS BREACH (10v10 Circular Stasis Jail): Eliminated enemies warp into your team's 360px circular Stasis Bubble Jail (West 1400,4000 / East 6600,4000). Only prisoners inside can damage the 4,000⚡ center Stasis Core; destroying it triggers a radial shockwave that frees all prisoners and damages nearby outside enemies!")
-        appendLine("5) RIFT CONTROL (Tug-of-War): Contest Rift Alpha (2600,4000) & Rift Omega (5400,4000). Hold uncontested for 30s to lock a Rift (+1 pt/s). Locking both Rifts wins immediately, or highest score at 3:00 wins +90❖.")
-        appendLine("6) SYNDICATE WARS: Ranked Clan-vs-Clan ladder for 100% same-Syndicate Armadas (+125❖ & War Trophies).")
-        append("• CUSTOM GAMES: Clone any mode in NEXUS with up to 10 custom rules (Allow Armadas in FFA, AI Bots ON/OFF, Fat Bullets, Speed/Damage multipliers). Main Ranked Modes are locked to 100% factory defaults; Custom Games unlock live Calibration sliders and [📡 SYNC TO ALL]!")
+        appendLine("1) SECTOR CONVERGENCE (FFA): 20-pilot open arena (60m cycle). #1 Bounty with >50% presence wins +100❖. Ship switching allowed.")
+        appendLine("2) RIFT SKIRMISH (Team Deathmatch): 2v2–5v5 Best-of-3 rounds. Ship Lock ON. Eliminated pilots use the Interactive Living-Teammate Spectator Bar (◀ / ▶, ally pills, or Gamepad LB/RB). +75❖.")
+        appendLine("3) FLUX CORE: Hold the center Flux Core for +15 Bounty/s and up to Tier 10 Overcharge (+50% DMG/Recharge, +40% Speed, 2x pulsing Gold radar beacon). Ship switching allowed.")
+        appendLine("4) STASIS BREACH (10v10 Circular Stasis Jail): Eliminated enemies warp into your team's 360px circular Stasis Bubble Jail. Prisoners deal 100% weapon damage to the 40,000 Flux center Stasis Core to detonate a breakout shockwave! +100❖.")
+        appendLine("5) RIFT CONTROL (Tug-of-War): Contest Rift Alpha & Rift Omega with NO Safe Zone anywhere on the map and a Graphical Dual-Rift Tug-of-War Top HUD Bar. +90❖.")
+        appendLine("6) SYNDICATE WARS: Ranked Syndicate-vs-Syndicate ladder for 100% same-Syndicate Armadas. Ship Lock ON. Awards +125❖ & War Trophies.")
+        append("• CUSTOM GAMES: Clone any mode with custom rules, AI Bots ON/OFF, live Calibration sliders, and [📡 SYNC TO ALL].")
       }
     }
 
@@ -552,13 +562,13 @@ class NexusAiViewModel : ViewModel() {
     ) {
       return buildString {
         appendLine("NEXUS SUPPLY CRATE & BUFF TELEMETRY //")
-        appendLine("• 5 Stackable Hull Stat Upgrades (Shown on Buff Bar above Minimap, up to 3x stacks each):")
+        appendLine("• 5 Stackable Hull Stat Upgrades (up to 3x stacks each):")
         appendLine("  - SPD (+8% Top Speed/stack) | THR (+8% Thrust/stack) | RCH (+8% Flux Recharge/stack)")
-        appendLine("  - TURN (+12% Turn Rate/stack) | MAX ⚡ (+10% Max Flux & instant +10%⚡ heal/stack)")
+        appendLine("  - TURN (+12% Turn Rate/stack) | MAX FLUX (+10% Max Flux & instant +10% Flux heal/stack)")
         appendLine("  - Plus BNC (+30 Bouncing Primary Shots) & MULTI (+25 Multi-Shot Ammo).")
         appendLine("• 4th Right-Hand Special Buff Slot Pickups:")
         append(
-          "  - Seeker Torpedo (1x • 780⚡ homing 2.5s), Shatter Cone (2x • 3 waves of 9 bouncing shards), Nova Ring (2x • 24 radial ricochet bolts), Stasis Barrier (2x • 120px hard-light wall), Hyper Surge (2x • 0⚡ 1.65x speed burn), Holo Phantom (2x • decoy clone), and custom AI-Forged Buffs!"
+          "  - Seeker Torpedo (1x • 780 Flux homing 2.5s), Shatter Cone (2x • 3 waves of 9 bouncing shards), Nova Ring (2x • 24 radial ricochet bolts), Stasis Barrier (2x • 45.0s tethered cyan hard-light forcefield), Hyper Surge (2x • 0 Flux 1.65x speed burn), Holo Phantom (2x • decoy clone), and custom AI-Forged Buffs!"
         )
       }
     }
@@ -569,14 +579,14 @@ class NexusAiViewModel : ViewModel() {
     val modeTitle =
       engine?.currentCustomGame?.let { "Custom Game: ${it.title} (${it.baseMode.title})" }
         ?: engine?.activeRankedMode?.title
-        ?: "Free-For-All"
+        ?: "Sector Convergence"
     return buildString {
       appendLine("NEXUS TACTICAL TELEMETRY // ON-DEVICE CORE READY")
       if (p != null && engine != null) {
         appendLine(
           String.format(
             Locale.US,
-            "• Active Hull: %s (%s) | Flux: %.0f⚡ / %.0f⚡ (%.0f⚡/s) | Bounty: ★ %d | Shards: %d❖",
+            "• Active Hull: %s (%s) | Flux: %.0f / %.0f (%.0f Flux/s) | Bounty: ★ %d | Shards: %d❖",
             shipSpec.name,
             shipSpec.role,
             p.flux,
@@ -592,9 +602,9 @@ class NexusAiViewModel : ViewModel() {
           "• Active Sector: $modeTitle | Pilot Status: ${if (isSworn) "Sworn Pilot" else "[RFT] Drifter"}"
         )
       }
-      appendLine("• All 10 Ships (100-Point Parity): Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, Eclipse (8.0s 275px Stasis Bubble, 380⚡, 12s CD), and modular Rift Frame (Frame A/B/C).")
+      appendLine("• All 10 Ships (100-Point Parity): Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor (36 Flux/s Cloak + 0 Flux EMP), Valkyrie, Manta, Eclipse (6.0s 275px Stasis Bubble, 320 Flux, 8.5s CD), and modular Rift Frame (100 Pts at Lv 20, Frame A–E).")
       append(
-        "• Ask about any ship's exact pixel/Flux math, 100-pt Rift Frame builds, the 6 Ranked Modes (including Stasis Breach & Rift Control), Custom Game [📡 SYNC TO ALL], or Sworn Pilot Leaderboards."
+        "• Ask about any ship's exact pixel/Flux math, 100-pt Rift Frame builds, Paired Phase Rifts, the 6 Ranked Modes, or Sworn Pilot Leaderboards."
       )
     }
   }

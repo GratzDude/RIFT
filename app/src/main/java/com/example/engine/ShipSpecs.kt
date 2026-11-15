@@ -347,7 +347,7 @@ enum class CustomBuffEffect(val label: String) {
   PUSH("Shockwave Repel Knockback"),
   EMP("Flux-Drain EMP Lockout"),
   SLOW("Cryo Velocity Snare"),
-  BARRIER("Permanent Hard-Light Barrier"),
+  BARRIER("45s Tethered Hard-Light Barrier"),
   SPEED_BOOST("Hyper-Thruster Surge"),
   CLONE("Holographic Decoy Clone"),
 }
@@ -518,7 +518,7 @@ data class SpecialBuffRegistryEntry(
           officialName.replace(Regex("[^A-Z0-9]"), "_").trim('_').ifEmpty { "BUFF" } +
           "_$nextBuffTypeIndex"
       val summary =
-        "${effect.label} • ${charges}x Charges • ${String.format(Locale.US, "%.1fs", duration)} • ${dmg.toInt()}⚡ DMG (${radius.toInt()}px)."
+        "${effect.label} • ${charges}x Charges • ${String.format(Locale.US, "%.1fs", duration)} • ${dmg.toInt()} Flux DMG (${radius.toInt()}px)."
 
       return SpecialBuffRegistryEntry(
         id = idSlug,
@@ -1006,8 +1006,8 @@ data class CustomShipLoadoutSlot(
           "Stealth Cloak + 0-Flux Decloak EMP",
           "CLOAK",
           25,
-          "180 Flux/s • 0 Flux EMP",
-          "Invisible stealth cloak; decloaking drains 25% Max Flux (cap 850) + 2.0s freeze.",
+          "36 Flux/s • 0 Flux EMP",
+          "Invisible stealth cloak (20 Flux entry, 50% AB drain, 4.5s CD); decloak EMP drains 25% Max Flux (cap 850) + 2.0s freeze.",
         ),
         SecondaryAbilityOption(
           "SIEGE",
@@ -1021,9 +1021,9 @@ data class CustomShipLoadoutSlot(
           "INTERDICTOR_DOME",
           "Stasis Containment Bubble",
           "BUBBLE",
-          25,
-          "360 Flux • 10.0s CD",
-          "8.0s two-way stasis bubble (275px radius). Nothing enters or leaves.",
+          22,
+          "320 Flux • 8.5s CD",
+          "6.0s two-way stasis bubble (275px radius). Nothing enters or leaves.",
         ),
       )
 
@@ -1130,9 +1130,9 @@ data class CustomShipLoadoutSlot(
           CustomShipLoadoutSlot(
             slotId = "Frame E",
             customName = "Stasis Archon",
-            speedPts = 11,
+            speedPts = 12,
             thrustPts = 12,
-            turnPts = 9,
+            turnPts = 11,
             maxFluxPts = 18,
             rechargePts = 13,
             primaryArchetype = "ANGLED_PULSE",
@@ -1423,10 +1423,10 @@ object RiftCodex {
           aimMode = BuffAimMode.AIM_DIRECTIONAL,
           strokeColorHex = "#38BDF8",
           fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#38BDF8"),
-          summary = "Deploys a permanent 3D shield-emitter bulkhead wall ahead of your ship.",
+          summary = "Deploys a 45.0s tethered cyan hard-light forcefield ahead of your ship.",
           isCustomForged = false,
           projectileSpeed = 0f,
-          flightDuration = 999999f,
+          flightDuration = 45.0f,
           damage = 0f,
           blastRadius = 220f,
           specialEffect = CustomBuffEffect.BARRIER,
@@ -1568,11 +1568,11 @@ object RiftCodex {
         "SEEKER_TORPEDO" ->
           SecondaryTuple("Homing Seeker Torpedo", "SEEKER", 460f, 1.05f, 880f, 0, 190f)
         "CLOAK_EMP" ->
-          SecondaryTuple("Stealth Cloak + 0-Flux Decloak EMP", "CLOAK", 0f, 0.95f, 0f, 0, 0f)
+          SecondaryTuple("Stealth Cloak + 0-Flux Decloak EMP", "CLOAK", 0f, 4.5f, 0f, 0, 0f)
         "SIEGE" ->
           SecondaryTuple("Heavy Siege Bomb (Air-Burst)", "SIEGE BOMB", 650f, 1.20f, 1350f, 1, 360f)
         "INTERDICTOR_DOME" ->
-          SecondaryTuple("Stasis Bubble (360 Flux • 8.0s)", "BUBBLE", 360f, 10.0f, 0f, 0, 0f)
+          SecondaryTuple("Stasis Bubble (320 Flux • 6.0s)", "BUBBLE", 320f, 8.5f, 0f, 0, 0f)
         else ->
           SecondaryTuple("Pure Hull Focus (No Secondary)", "NONE", 0f, 0f, 0f, 0, 0f)
       }
@@ -1656,12 +1656,12 @@ object RiftCodex {
       ),
       RiftAnomalyCodexEntry(
         id = "phase_rift",
-        title = "PHASE WORMHOLE",
+        title = "PAIRED PHASE RIFTS",
         classification = "PAIRED TELEPORT",
         specBadge = "A <-> B • MOMENTUM",
         accentHex = "#34D399",
-        effectSummary = "Linked spatial wormhole pair that teleports ships, lasers, and bombs across quadrants while preserving 100% velocity.",
-        tacticalNote = "Fire Siege Bombs or 3-Bounce Torpedoes through Wormhole A to ambush targets near Wormhole B.",
+        effectSummary = "Linked Paired Phase Rifts (Phase Rift A & Phase Rift B) that teleport ships, lasers, and bombs across quadrants while preserving 100% velocity.",
+        tacticalNote = "Fire Siege Bombs or 3-Bounce Torpedoes through Phase Rift A to ambush targets near Phase Rift B.",
       ),
     )
 
@@ -1687,12 +1687,12 @@ object RiftCodex {
       ),
       SpatialAnomalyCodexEntry(
         id = "PHASE_RIFT_PAIR",
-        title = "LINKED PHASE RIFTS (A <-> B)",
+        title = "PAIRED PHASE RIFTS (A <-> B)",
         badge = "WARP",
         accentColorHex = 0xFF00F5D4,
         radiusRule = "Paired Aperture",
-        mechanicsSummary = "Paired spatial wormholes preserving 100% momentum for ships and ordnance.",
-        tacticalCounterplay = "Fire torpedoes through Rift A to ambush enemies near Rift B.",
+        mechanicsSummary = "Paired Phase Rifts preserving 100% momentum for ships and ordnance.",
+        tacticalCounterplay = "Fire torpedoes through Phase Rift A to ambush enemies near Phase Rift B.",
       ),
     )
 
@@ -1919,26 +1919,26 @@ object RiftCodex {
         id = 6,
         name = "Disruptor",
         role = "Stealth & EMP",
-        tacticalLore = "Cloaks invisibly (180 Flux/s) and unleashes a 0-Flux 360° EMP burst on decloak (-25% Max Flux capped at 850 + 2.0s recharge freeze).",
+        tacticalLore = "Cloaks invisibly (36 Flux/s, 20 Flux entry, 50% cloaked AB drain, 4.5s CD) and unleashes a 0-Flux 360° EMP burst on decloak (-25% Max Flux capped at 850 + 2.0s recharge freeze).",
         silhouetteDesc = "Wide stingray hydrofoil with gold-plated arc emitters and a pulsing V-cyan capacitor.",
-        weaponSummary = "PRI: NEEDLER (18 Flux) • CLS: Cloak (180/s) + 0-Flux Decloak EMP (25% Cap 850 • 2.0s Freeze)",
+        weaponSummary = "PRI: NEEDLER (18 Flux) • CLS: Cloak (36/s • 4.5s CD) + 0-Flux Decloak EMP (25% Cap 850 • 2.0s Freeze)",
         primaryTitle = "Twin Ion Needlers",
-        secondaryTitle = "Tactical Cloak (180 Flux/s) + 0-Flux Decloak EMP (25% Cap 850 • 2.0s)",
+        secondaryTitle = "Tactical Cloak (36 Flux/s • 4.5s CD) + 0-Flux Decloak EMP (25% Cap 850 • 2.0s)",
         primaryShortLabel = "NEEDLER",
         secondaryShortLabel = "CLOAK",
-        turnPts = 22,
+        turnPts = 20,
         speedPts = 20,
         rechargePts = 13,
-        thrustPts = 5,
-        maxFluxPts = 5,
+        thrustPts = 6,
+        maxFluxPts = 6,
         primaryPts = 10,
         secondaryPts = 25,
-        maxFlux = computeMaxFlux(5),
+        maxFlux = computeMaxFlux(6),
         rechargeRate = computeRecharge(13),
         topSpeed = computeTopSpeed(20),
         afterburnerSpeed = computeTopSpeed(20) * 1.32f,
-        thrust = computeThrust(5),
-        turnRate = computeTurnRate(22),
+        thrust = computeThrust(6),
+        turnRate = computeTurnRate(20),
         primaryCost = 18f,
         primaryCooldown = 0.13f,
         primaryDamage = 165f,
@@ -1949,7 +1949,7 @@ object RiftCodex {
         hasBomb = true,
         bombType = "CLOAK_EMP",
         bombCost = 0f,
-        bombCooldown = 0.95f,
+        bombCooldown = 4.5f,
         bombDamage = 0f,
         bombBounces = 0,
         bombRecoil = 0f,
@@ -2048,37 +2048,37 @@ object RiftCodex {
         id = 9,
         name = "Eclipse",
         role = "Zone Lockdown",
-        tacticalLore = "Anchors an 8.0s two-way Stasis Bubble (275px radius, 360 Flux, 10.0s CD). Nothing enters or leaves.",
+        tacticalLore = "Anchors a 6.0s two-way Stasis Bubble (275px radius, 320 Flux, 8.5s CD). Nothing enters or leaves.",
         silhouetteDesc = "Twin-ringed amethyst gravimetric cruiser with forward containment prongs and a glowing magenta-cyan singularity core.",
-        weaponSummary = "PRI: PULSE (20 Flux) • SEC: STASIS BUBBLE (360 Flux • 8.0s • 275px • 10.0s CD)",
+        weaponSummary = "PRI: PULSE (20 Flux) • SEC: STASIS BUBBLE (320 Flux • 6.0s • 275px • 8.5s CD)",
         primaryTitle = "Twin Pulse",
-        secondaryTitle = "Stasis Bubble (360 Flux • 8.0s • 10.0s CD)",
+        secondaryTitle = "Stasis Bubble (320 Flux • 6.0s • 8.5s CD)",
         primaryShortLabel = "PULSE",
         secondaryShortLabel = "BUBBLE",
-        speedPts = 11,
+        speedPts = 12,
         thrustPts = 12,
-        turnPts = 9,
+        turnPts = 10,
         maxFluxPts = 18,
         rechargePts = 13,
-        primaryPts = 12,
-        secondaryPts = 25,
+        primaryPts = 13,
+        secondaryPts = 22,
         maxFlux = computeMaxFlux(18),
         rechargeRate = computeRecharge(13),
-        topSpeed = computeTopSpeed(11),
-        afterburnerSpeed = computeTopSpeed(11) * 1.32f,
+        topSpeed = computeTopSpeed(12),
+        afterburnerSpeed = computeTopSpeed(12) * 1.32f,
         thrust = computeThrust(12),
-        turnRate = computeTurnRate(9),
+        turnRate = computeTurnRate(10),
         primaryCost = 20f,
         primaryCooldown = 0.16f,
-        primaryDamage = 112f,
-        primarySpeed = 930f,
+        primaryDamage = 118f,
+        primarySpeed = 940f,
         primaryStreams = 2,
         primarySpreadRad = 0.045f,
         primaryBounces = 1,
         hasBomb = true,
         bombType = "INTERDICTOR_DOME",
-        bombCost = 360f,
-        bombCooldown = 10.0f,
+        bombCost = 320f,
+        bombCooldown = 8.5f,
         bombDamage = 0f,
         bombBounces = 0,
         bombRecoil = 0f,
@@ -2161,7 +2161,7 @@ object RiftCodex {
         title = "STASIS BARRIER (+1 CHARGE • 0 FLUX)",
         dropRatePercent = 7,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
-        effectSummary = "Deploys a permanent 3D hard-light bulkhead wall ahead of your ship that reflects ships & shots!",
+        effectSummary = "Deploys a 45.0s tethered cyan hard-light forcefield wall ahead of your ship that reflects ships & shots!",
         tacticalNote = "Block enemy escape corridors or create instant bank-shot geometry in open space!",
       ),
       PowerUpCodexEntry(

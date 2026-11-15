@@ -97,7 +97,7 @@ fun DossierModal(
   onResetLocalPilotData: (() -> Unit)? = null,
   onCallsignChanged: (String) -> Unit = {},
   onUpdateRiftShards: (Long) -> Unit = {},
-  onCloseModal: () -> Unit,
+  onCloseModal: () -> Unit = {},
 ) {
   BackHandler { onCloseModal() }
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
@@ -119,8 +119,7 @@ fun DossierModal(
   var selectedArmadaTier by remember { mutableIntStateOf(0) } // 0 = ALL, 1 = SOLO, 2..5 = 2..5-MAN ARMADA
   var sortMode by remember { mutableIntStateOf(0) } // 0 = BOUNTY, 1 = PUBLIC WINS, 2 = K/D
 
-  // Deduplicate strictly by permanent userId so editing Callsign never creates ghost rows
-  // and exclude [RFT] Drifters from Official Leaderboards
+  // Deduplicate strictly by permanent userId and enforce 100% Real-Player-Only Sworn Pilot Leaderboards
   val unifiedLeaderboard =
     remember(
       permanentUid,
@@ -143,7 +142,15 @@ fun DossierModal(
       isDrifter,
     ) {
       val byUid = linkedMapOf<String, LeaderboardEntry>()
-      if (!isDrifter && !syndicateTag.equals("RFT", ignoreCase = true)) {
+      val isRealSwornSelf =
+        !isDrifter &&
+          permanentUid.isNotBlank() &&
+          !permanentUid.startsWith("dev_") &&
+          !permanentUid.startsWith("drifter_") &&
+          !syndicateTag.equals("RFT", ignoreCase = true) &&
+          !syndicateTag.equals("BOT", ignoreCase = true) &&
+          !callsign.contains("[BOT]", ignoreCase = true)
+      if (isRealSwornSelf) {
         val shipSpec = RiftCodex.getShipById(shipId)
         val localArmadaBadge = if (activeArmadaName.isNotEmpty()) activeArmadaName else "SOLO"
         val formattedLocalCallsign =
@@ -174,8 +181,16 @@ fun DossierModal(
       }
 
       for (entry in cloudLeaderboardEntries) {
-        val uidKey = entry.userId.ifEmpty { entry.id }
-        if (uidKey.isNotEmpty() && uidKey != permanentUid) {
+        val uidKey = entry.userId.ifEmpty { entry.id }.trim()
+        if (
+          uidKey.isNotEmpty() &&
+            uidKey != permanentUid &&
+            !uidKey.startsWith("dev_") &&
+            !uidKey.startsWith("drifter_") &&
+            !uidKey.startsWith("bot_", ignoreCase = true) &&
+            !entry.callsign.contains("[BOT]", ignoreCase = true) &&
+            !entry.syndicateTag.equals("BOT", ignoreCase = true)
+        ) {
           val cleanCallsign =
             if (entry.callsign.startsWith("[")) {
               entry.callsign
@@ -184,7 +199,7 @@ fun DossierModal(
               if (entry.syndicateTag.isNotBlank()) {
                 "[$armBadge] [${entry.syndicateTag}] ${entry.callsign}"
               } else {
-                "[$armBadge] $callsign"
+                "[$armBadge] ${entry.callsign}"
               }
             }
           byUid[uidKey] = entry.copy(callsign = cleanCallsign)
@@ -194,8 +209,10 @@ fun DossierModal(
       byUid.values
         .filter { entry ->
           !entry.syndicateTag.equals("RFT", ignoreCase = true) &&
+            !entry.syndicateTag.equals("BOT", ignoreCase = true) &&
             !entry.callsign.startsWith("DRIFTER", ignoreCase = true) &&
-            !entry.callsign.contains("[RFT]", ignoreCase = true)
+            !entry.callsign.contains("[RFT]", ignoreCase = true) &&
+            !entry.callsign.contains("[BOT]", ignoreCase = true)
         }
         .filter { entry ->
           val isSelf = entry.userId == permanentUid || entry.id == permanentUid
@@ -221,167 +238,124 @@ fun DossierModal(
       allTimePeakSnapshot ?: currentLifeSnapshot
     }
 
-  val outerPadding =
-    if (isCompactPhone) {
-      PaddingValues(start = 8.dp, end = 8.dp, top = 40.dp, bottom = 4.dp)
-    } else {
-      PaddingValues(horizontal = 18.dp, vertical = 8.dp)
-    }
-  val innerPadding = if (isCompactPhone) 8.dp else 14.dp
-
-  Box(
+  Column(
     modifier =
       Modifier.fillMaxSize()
-        .background(Color(0xB3000000))
-        .clickable { onCloseModal() }
-        .padding(outerPadding)
-        .testTag("dossier_modal"),
-    contentAlignment = Alignment.Center,
+        .padding(8.dp)
+        .testTag("dossier_modal")
   ) {
-    Surface(
-      modifier =
-        Modifier.fillMaxSize()
-          .clickable(enabled = false) {}
-          .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(12.dp)),
-      color = Color(0xF2060D1A),
-      shape = RoundedCornerShape(12.dp),
+    // 1. Unified Compact Embedded Header Row
+    val tierDesc =
+      if (activeArmadaName.isEmpty() || activeArmadaSize <= 1) {
+        "[SOLO]"
+      } else {
+        "${activeArmadaSize}P [$activeArmadaName]"
+      }
+    val syndicatePrefix = if (syndicateTag.isNotBlank()) "[$syndicateTag] " else ""
+    Row(
+      modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 28.dp else 34.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-      Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-        // 1. Unified 30.dp Compact Header Row
-        val tierDesc =
-          if (activeArmadaName.isEmpty() || activeArmadaSize <= 1) {
-            "[SOLO]"
-          } else {
-            "${activeArmadaSize}P [$activeArmadaName]"
-          }
-        val syndicatePrefix = if (syndicateTag.isNotBlank()) "[$syndicateTag] " else ""
-        Row(
-          modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 30.dp else 36.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
+      Row(
+        modifier = Modifier.weight(1f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Text(
+          text = if (isCompactPhone) "📋 PILOT DOSSIER" else "📋 PILOT DOSSIER, HALL OF FAME & SERVICE RECORD",
+          color = Color.White,
+          fontSize = if (isCompactPhone) 12.5.sp else 15.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.SansSerif,
+          letterSpacing = 0.8.sp,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(6.dp))
+              .background(Color(0xFF0A192F))
+              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+              .padding(horizontal = 6.dp, vertical = 2.dp),
         ) {
-          Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          Text(
+            text = "$shortTag • ${syndicatePrefix}$callsign • $tierDesc",
+            color = Color(0xFFFFD700),
+            fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+      }
+
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        if (onResetLocalPilotData != null) {
+          Button(
+            onClick = onResetLocalPilotData,
+            colors =
+              ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF1E293B),
+                contentColor = Color(0xFFF59E0B),
+              ),
+            border = BorderStroke(1.2.dp, Color(0xFFF59E0B)),
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            modifier =
+              Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
+                .shadow(2.dp, RoundedCornerShape(8.dp))
+                .testTag("dossier_reset_pilot_button"),
           ) {
             Text(
-              text = if (isCompactPhone) "📋 PILOT DOSSIER" else "📋 PILOT DOSSIER, HALL OF FAME & SERVICE RECORD",
-              color = Color.White,
-              fontSize = if (isCompactPhone) 12.5.sp else 15.sp,
-              fontWeight = FontWeight.Black,
+              text = "↺ RESET PILOT",
+              fontSize = 9.sp,
+              fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.SansSerif,
-              letterSpacing = 0.8.sp,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
             )
-            Box(
-              modifier =
-                Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(Color(0xFF0A192F))
-                  .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
-                  .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-              Text(
-                text = "$shortTag • ${syndicatePrefix}$callsign • $tierDesc",
-                color = Color(0xFFFFD700),
-                fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-          }
-
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
-            if (onResetLocalPilotData != null) {
-              Button(
-                onClick = onResetLocalPilotData,
-                colors =
-                  ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1E293B),
-                    contentColor = Color(0xFFF59E0B),
-                  ),
-                border = BorderStroke(1.2.dp, Color(0xFFF59E0B)),
-                shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                modifier =
-                  Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
-                    .shadow(2.dp, RoundedCornerShape(8.dp))
-                    .testTag("dossier_reset_pilot_button"),
-              ) {
-                Text(
-                  text = "↺ RESET PILOT",
-                  fontSize = 9.sp,
-                  fontWeight = FontWeight.Bold,
-                  fontFamily = FontFamily.SansSerif,
-                )
-              }
-            }
-
-            Row(
-              modifier =
-                Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
-                  .shadow(2.dp, RoundedCornerShape(8.dp))
-                  .clip(RoundedCornerShape(8.dp))
-                  .background(Color(0xFF1A1405))
-                  .border(1.2.dp, Color(0xFFFFD700), RoundedCornerShape(8.dp))
-                  .clickable { onOpenRiftShardsStore() }
-                  .padding(horizontal = 8.dp)
-                  .testTag("dossier_btn_get_rift_shards"),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-              Text(
-                text = "❖ $riftShards",
-                color = Color(0xFFFFD700),
-                fontSize = if (isCompactPhone) 10.sp else 11.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = FontFamily.Monospace,
-              )
-              Box(
-                modifier =
-                  Modifier.background(Color(0xFFFFD700), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 5.dp, vertical = 1.5.dp),
-              ) {
-                Text(
-                  text = if (isCompactPhone) "+ SHARDS" else "+ GET RIFT SHARDS",
-                  color = Color(0xFF05080E),
-                  fontSize = 8.5.sp,
-                  fontWeight = FontWeight.ExtraBold,
-                  fontFamily = FontFamily.SansSerif,
-                )
-              }
-            }
-
-            Button(
-              onClick = onCloseModal,
-              colors =
-                ButtonDefaults.buttonColors(
-                  containerColor = Color(0xFF28111B),
-                  contentColor = Color(0xFFFF3B4E),
-                ),
-              border = BorderStroke(1.2.dp, Color(0xFFFF3B4E)),
-              shape = RoundedCornerShape(8.dp),
-              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-              modifier =
-                Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
-                  .shadow(2.dp, RoundedCornerShape(8.dp))
-                  .testTag("dossier_close_button"),
-            ) {
-              Text(
-                text = "✕ CLOSE",
-                fontSize = 9.5.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.SansSerif,
-              )
-            }
           }
         }
+
+        Row(
+          modifier =
+            Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
+              .shadow(2.dp, RoundedCornerShape(8.dp))
+              .clip(RoundedCornerShape(8.dp))
+              .background(Color(0xFF1A1405))
+              .border(1.2.dp, Color(0xFFFFD700), RoundedCornerShape(8.dp))
+              .clickable { onOpenRiftShardsStore() }
+              .padding(horizontal = 8.dp)
+              .testTag("dossier_btn_get_rift_shards"),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+          Text(
+            text = "❖ $riftShards",
+            color = Color(0xFFFFD700),
+            fontSize = if (isCompactPhone) 10.sp else 11.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+          )
+          Box(
+            modifier =
+              Modifier.background(Color(0xFFFFD700), RoundedCornerShape(4.dp))
+                .padding(horizontal = 5.dp, vertical = 1.5.dp),
+          ) {
+            Text(
+              text = if (isCompactPhone) "PROGRESSION" else "PROGRESSION FOUNDRY",
+              color = Color(0xFF05080E),
+              fontSize = 8.5.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.SansSerif,
+            )
+          }
+        }
+      }
+    }
 
         Spacer(modifier = Modifier.height(if (isCompactPhone) 3.dp else 5.dp))
 
@@ -760,86 +734,111 @@ fun DossierModal(
 
             Spacer(modifier = Modifier.height(if (isCompactPhone) 3.dp else 5.dp))
 
-            LazyColumn(
-              modifier =
-                Modifier.weight(1f)
-                  .fillMaxWidth()
-                  .background(Color(0x99111C2D), RoundedCornerShape(10.dp))
-                  .padding(if (isCompactPhone) 6.dp else 8.dp),
-              verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-              itemsIndexed(unifiedLeaderboard, key = { _, item -> item.userId.ifEmpty { item.id } }) { index, entry ->
-                val isSelf = entry.userId == permanentUid || entry.id == permanentUid
-                val kills = if (activeTab == 0) entry.pvpKills else entry.allTimeKills
-                val deaths = if (activeTab == 0) entry.pvpDeaths else entry.allTimeDeaths
-                val bounty = if (activeTab == 0) entry.pvpBounty else entry.allTimeBounty
-                val tierBadge =
-                  if (entry.armadaTierSize <= 1) "SOLO" else "${entry.armadaTierSize}-MAN ARMADA"
+            if (unifiedLeaderboard.isEmpty()) {
+              Box(
+                modifier =
+                  Modifier.weight(1f)
+                    .fillMaxWidth()
+                    .background(Color(0x99111C2D), RoundedCornerShape(10.dp))
+                    .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(10.dp))
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text =
+                    if (isDrifter || permanentUid.startsWith("dev_")) {
+                      "NO SWORN PILOTS RECORDED IN THIS TIER YET — SIGN IN WITH GOOGLE TO RANK ON OFFICIAL LEADERBOARDS."
+                    } else {
+                      "NO SWORN PILOTS RECORDED IN THIS TIER YET."
+                    },
+                  color = Color(0xFF94A3B8),
+                  fontSize = 11.5.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            } else {
+              LazyColumn(
+                modifier =
+                  Modifier.weight(1f)
+                    .fillMaxWidth()
+                    .background(Color(0x99111C2D), RoundedCornerShape(10.dp))
+                    .padding(if (isCompactPhone) 6.dp else 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                itemsIndexed(unifiedLeaderboard, key = { _, item -> item.userId.ifEmpty { item.id } }) { index, entry ->
+                  val isSelf = entry.userId == permanentUid || entry.id == permanentUid
+                  val kills = if (activeTab == 0) entry.pvpKills else entry.allTimeKills
+                  val deaths = if (activeTab == 0) entry.pvpDeaths else entry.allTimeDeaths
+                  val bounty = if (activeTab == 0) entry.pvpBounty else entry.allTimeBounty
+                  val tierBadge =
+                    if (entry.armadaTierSize <= 1) "SOLO" else "${entry.armadaTierSize}-MAN ARMADA"
 
-                Row(
-                  modifier =
-                    Modifier.fillMaxWidth()
-                      .background(
-                        if (isSelf) Color(0xCC143152) else Color(0x990D1B30),
-                        RoundedCornerShape(8.dp),
-                      )
-                      .padding(horizontal = 12.dp, vertical = 7.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
                   Row(
+                    modifier =
+                      Modifier.fillMaxWidth()
+                        .background(
+                          if (isSelf) Color(0xCC143152) else Color(0x990D1B30),
+                          RoundedCornerShape(8.dp),
+                        )
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                   ) {
-                    Text(
-                      text = "#${index + 1}",
-                      color = if (index < 3) Color(0xFFFFD700) else Color(0xFF8A99AD),
-                      fontSize = 13.5.sp,
-                      fontWeight = FontWeight.Bold,
-                      fontFamily = FontFamily.Monospace,
-                      modifier = Modifier.width(30.dp),
-                    )
-                    ShipSpritePreview(shipId = entry.shipId.toInt(), sizeDp = 26)
-                    Column {
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                       Text(
-                        text = if (isSelf) "${entry.callsign} (YOU — PINNED)" else entry.callsign,
-                        color = if (isSelf) Color(0xFF00F0FF) else Color.White,
-                        fontSize = 12.5.sp,
+                        text = "#${index + 1}",
+                        color = if (index < 3) Color(0xFFFFD700) else Color(0xFF8A99AD),
+                        fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.SansSerif,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.width(30.dp),
+                      )
+                      ShipSpritePreview(shipId = entry.shipId.toInt(), sizeDp = 26)
+                      Column {
+                        Text(
+                          text = if (isSelf) "${entry.callsign} (YOU — PINNED)" else entry.callsign,
+                          color = if (isSelf) Color(0xFF00F0FF) else Color.White,
+                          fontSize = 12.5.sp,
+                          fontWeight = FontWeight.Bold,
+                          fontFamily = FontFamily.SansSerif,
+                        )
+                        Text(
+                          text =
+                            "TIER: $tierBadge • HULL: ${RiftCodex.getShipById(entry.shipId.toInt()).name.uppercase()}",
+                          color = Color(0xFF8A99AD),
+                          fontSize = 10.sp,
+                          fontFamily = FontFamily.SansSerif,
+                        )
+                      }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                      Text(
+                        text = "PUBLIC WINS: 🏆 ${entry.convergencesWon}",
+                        color = Color(0xFF00E676),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
                       )
                       Text(
-                        text =
-                          "TIER: $tierBadge • HULL: ${RiftCodex.getShipById(entry.shipId.toInt()).name.uppercase()}",
-                        color = Color(0xFF8A99AD),
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.SansSerif,
+                        text = "K/D: $kills / $deaths",
+                        color = Color(0xFF00F0FF),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontFamily = FontFamily.Monospace,
+                      )
+                      Text(
+                        text = "PEAK BOUNTY: $bounty",
+                        color = Color(0xFFFFD700),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontFamily = FontFamily.Monospace,
                       )
                     }
-                  }
-
-                  Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text(
-                      text = "PUBLIC WINS: 🏆 ${entry.convergencesWon}",
-                      color = Color(0xFF00E676),
-                      fontSize = 12.sp,
-                      fontWeight = FontWeight.Bold,
-                      fontFamily = FontFamily.Monospace,
-                    )
-                    Text(
-                      text = "K/D: $kills / $deaths",
-                      color = Color(0xFF00F0FF),
-                      fontSize = 12.sp,
-                      fontWeight = FontWeight.Medium,
-                      fontFamily = FontFamily.Monospace,
-                    )
-                    Text(
-                      text = "PEAK BOUNTY: $bounty",
-                      color = Color(0xFFFFD700),
-                      fontSize = 12.sp,
-                      fontWeight = FontWeight.Medium,
-                      fontFamily = FontFamily.Monospace,
-                    )
                   }
                 }
               }
@@ -857,7 +856,7 @@ fun DossierModal(
           }
 
           2 -> {
-            // DOSSIER UPGRADE 2: SYNDICATE AFFILIATION SERVICE RECORD & DIRECT H2H WAR RANKINGS
+            // DOSSIER UPGRADE 2: SYNDICATE AFFILIATION SERVICE RECORD & SYNDICATE WAR RANKINGS
             SyndicateServiceRecordSection(
               modifier = Modifier.weight(1f).fillMaxWidth(),
               activeSyndicateTag = syndicateTag,
@@ -866,8 +865,6 @@ fun DossierModal(
           }
         }
       }
-    }
-  }
 }
 
 @Composable
@@ -1011,13 +1008,13 @@ private fun PeakBountyAndExecutionerSection(
           DossierStatBox(
             modifier = Modifier.weight(1f),
             label = "DAMAGE DEALT",
-            value = "${snapshot.damageDealt.toInt()} ⚡",
+            value = "${snapshot.damageDealt.toInt()} FLUX",
             color = Color(0xFF00E676),
           )
           DossierStatBox(
             modifier = Modifier.weight(1f),
             label = "DAMAGE TAKEN",
-            value = "${snapshot.damageTaken.toInt()} ⚡",
+            value = "${snapshot.damageTaken.toInt()} FLUX",
             color = Color(0xFFF87171),
           )
           DossierStatBox(
@@ -1165,7 +1162,7 @@ private fun PeakBountyAndExecutionerSection(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(
-          text = "⚡ CURRENT ACTIVE SORTIE (${currentLifeSnapshot.shipFlown}):",
+          text = "🛰️ CURRENT ACTIVE SORTIE (${currentLifeSnapshot.shipFlown}):",
           color = Color(0xFF38BDF8),
           fontSize = 11.sp,
           fontWeight = FontWeight.ExtraBold,
@@ -1173,7 +1170,7 @@ private fun PeakBountyAndExecutionerSection(
         )
         Text(
           text =
-            "BOUNTY: ${currentLifeSnapshot.bountyReached} • SURVIVED: ${currentLifeSnapshot.formattedDuration()} • KILLS: ${currentLifeSnapshot.pvpKills + currentLifeSnapshot.botKills} • DMG: ${currentLifeSnapshot.damageDealt.toInt()}⚡ • ACC: ${currentLifeSnapshot.accuracyPercent()}%",
+            "BOUNTY: ${currentLifeSnapshot.bountyReached} • SURVIVED: ${currentLifeSnapshot.formattedDuration()} • KILLS: ${currentLifeSnapshot.pvpKills + currentLifeSnapshot.botKills} • DMG: ${currentLifeSnapshot.damageDealt.toInt()} FLUX • ACC: ${currentLifeSnapshot.accuracyPercent()}%",
           color = Color.White,
           fontSize = 10.5.sp,
           fontWeight = FontWeight.Bold,
@@ -1208,55 +1205,9 @@ private fun SyndicateServiceRecordSection(
   val (topByWarTrophies, topByCollectiveBounty) =
     remember(cleanActiveTag, entries) {
       val byTag = linkedMapOf<String, SyndicateInfo>()
-      val officialLadder =
-        listOf(
-          SyndicateInfo(
-            id = "syn_aex",
-            tag = "AEX",
-            name = "Apex Vanguard",
-            foundryOrigin = "Sector Command Syndicate",
-            motto = "First into the Rift, last to yield.",
-            memberCount = 18,
-            combinedBounty = 14850L,
-            isCustom = false,
-          ),
-          SyndicateInfo(
-            id = "syn_obs",
-            tag = "OBS",
-            name = "Obsidian Core",
-            foundryOrigin = "Heavy Siege Syndicate",
-            motto = "Unbreakable containment across the sector.",
-            memberCount = 15,
-            combinedBounty = 12400L,
-            isCustom = false,
-          ),
-          SyndicateInfo(
-            id = "syn_sol",
-            tag = "SOL",
-            name = "Solaris Prime",
-            foundryOrigin = "High-Velocity Strike Fleet",
-            motto = "Velocity is the ultimate shield.",
-            memberCount = 14,
-            combinedBounty = 11650L,
-            isCustom = false,
-          ),
-          SyndicateInfo(
-            id = "syn_rft",
-            tag = "RFT",
-            name = "Rift Sentinels",
-            foundryOrigin = "Stasis Breach Guardians",
-            motto = "Hold the line at x = 4000.",
-            memberCount = 12,
-            combinedBounty = 10900L,
-            isCustom = false,
-          ),
-        )
       for (custom in localPrefs.getAllSyndicates()) {
-        byTag[custom.tag.uppercase()] = custom
-      }
-      for (seed in officialLadder) {
-        if (!byTag.containsKey(seed.tag)) {
-          byTag[seed.tag] = seed
+        if (custom.isRealPlayerFoundedSyndicate()) {
+          byTag[custom.tag.uppercase()] = custom
         }
       }
       val allPairs =
@@ -1288,7 +1239,7 @@ private fun SyndicateServiceRecordSection(
         .testTag("dossier_syndicate_history_section"),
     verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
-    // 1. Syndicate Wars Direct Performance Card + 2-Column Ranking Comparison
+    // 1. Syndicate Wars Performance Card + 2-Column Player Syndicate Ranking Comparison
     Column(
       modifier =
         Modifier.fillMaxWidth()
@@ -1304,7 +1255,7 @@ private fun SyndicateServiceRecordSection(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(
-          text = "🏆 SYNDICATE WARS DIRECT PERFORMANCE // [$cleanActiveTag]",
+          text = "🏆 SYNDICATE WARS PERFORMANCE // [$cleanActiveTag]",
           color = Color(0xFFFBBF24),
           fontSize = 11.sp,
           fontWeight = FontWeight.ExtraBold,
@@ -1324,7 +1275,7 @@ private fun SyndicateServiceRecordSection(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        // Column 1: Direct Syndicate War Trophies Ladder
+        // Column 1: Syndicate War Trophies Ladder
         Column(
           modifier =
             Modifier.weight(1f)
@@ -1334,31 +1285,40 @@ private fun SyndicateServiceRecordSection(
           verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
           Text(
-            text = "⚔️ DIRECT H2H WAR TROPHIES (TOP 4)",
+            text = "⚔️ SYNDICATE WAR TROPHIES (TOP 4)",
             color = Color(0xFFFBBF24),
             fontSize = 9.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
           )
-          topByWarTrophies.forEachIndexed { idx, (syn, rec) ->
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-              Text(
-                text = "#${idx + 1} [${syn.tag}] ${syn.name}",
-                color = if (syn.tag == cleanActiveTag) Color(0xFF00F0FF) else Color.White,
-                fontSize = 8.8.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-              )
-              Text(
-                text = "🏆 ${rec.warTrophies} (${rec.warWins}W-${rec.warLosses}L)",
-                color = Color(0xFFFBBF24),
-                fontSize = 8.8.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-              )
+          if (topByWarTrophies.isEmpty()) {
+            Text(
+              text = "No player Syndicates founded yet",
+              color = Color(0xFF64748B),
+              fontSize = 8.5.sp,
+              fontFamily = FontFamily.Monospace,
+            )
+          } else {
+            topByWarTrophies.forEachIndexed { idx, (syn, rec) ->
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+              ) {
+                Text(
+                  text = "#${idx + 1} [${syn.tag}] ${syn.name}",
+                  color = if (syn.tag == cleanActiveTag) Color(0xFF00F0FF) else Color.White,
+                  fontSize = 8.8.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                )
+                Text(
+                  text = "🏆 ${rec.warTrophies} (${rec.warWins}W-${rec.warLosses}L)",
+                  color = Color(0xFFFBBF24),
+                  fontSize = 8.8.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
             }
           }
         }
@@ -1379,25 +1339,34 @@ private fun SyndicateServiceRecordSection(
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
           )
-          topByCollectiveBounty.forEachIndexed { idx, (syn, _) ->
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-              Text(
-                text = "#${idx + 1} [${syn.tag}] ${syn.name}",
-                color = if (syn.tag == cleanActiveTag) Color(0xFFFFD700) else Color.White,
-                fontSize = 8.8.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-              )
-              Text(
-                text = "${syn.combinedBounty} BTY (${syn.memberCount}P)",
-                color = Color(0xFF38BDF8),
-                fontSize = 8.8.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-              )
+          if (topByCollectiveBounty.isEmpty()) {
+            Text(
+              text = "No player Syndicates founded yet",
+              color = Color(0xFF64748B),
+              fontSize = 8.5.sp,
+              fontFamily = FontFamily.Monospace,
+            )
+          } else {
+            topByCollectiveBounty.forEachIndexed { idx, (syn, _) ->
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+              ) {
+                Text(
+                  text = "#${idx + 1} [${syn.tag}] ${syn.name}",
+                  color = if (syn.tag == cleanActiveTag) Color(0xFFFFD700) else Color.White,
+                  fontSize = 8.8.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                )
+                Text(
+                  text = "${syn.combinedBounty} BTY (${syn.memberCount}P)",
+                  color = Color(0xFF38BDF8),
+                  fontSize = 8.8.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
             }
           }
         }

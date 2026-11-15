@@ -126,11 +126,11 @@ class RiftAuditConsistencyTest {
     engine.firePrimaryGun(player)
 
     assertFalse(player.isCloaked)
-    // Only primary gun cost is deducted; EMP Pulse itself costs 0⚡
+    // Only primary gun cost is deducted; EMP Pulse itself costs 0 Flux
     assertEquals(240f - player.spec.primaryCost, player.flux, 0.5f)
     assertTrue(engine.shockwaves.size > shockwavesBefore)
-    assertTrue("Enemy Flux should drop by 35% Max Flux", enemy.flux < enemyStartFlux)
-    assertTrue("Enemy should receive 2.5s EMP recharge lock", enemy.empTimer >= 2.4f)
+    assertTrue("Enemy Flux should drop by 25% Max Flux", enemy.flux < enemyStartFlux)
+    assertTrue("Enemy should receive 2.0s EMP recharge lock", enemy.empTimer >= 1.9f)
   }
 
   @Test
@@ -155,8 +155,8 @@ class RiftAuditConsistencyTest {
     enemy.flux = enemy.maxFlux * 0.5f
     val enemyStartFlux = enemy.flux
 
-    // Tick enough cloak drain to cross <= 150⚡ threshold
-    engine.stepSimulation(0.05f)
+    // Tick enough 36 Flux/s cloak drain (3.6 Flux over 0.10s) to cross <= 150 Flux threshold
+    engine.stepSimulation(0.10f)
     assertFalse(player.isCloaked)
     assertTrue("Forced uncloak must not drain enemy Flux with EMP", enemy.flux >= enemyStartFlux)
     assertTrue("Forced uncloak must not apply EMP recharge lock", enemy.empTimer <= 0.01f)
@@ -238,25 +238,25 @@ class RiftAuditConsistencyTest {
   }
 
   @Test
-  fun `interdictor ship 9 has 100 point parity and deploys two-way containment bubble`() {
-    val interdictor = RiftCodex.getShipById(9)
-    assertEquals("Interdictor", interdictor.name)
-    assertEquals("INTERDICTOR_DOME", interdictor.bombType)
-    assertEquals(380f, interdictor.bombCost, 0.1f)
-    assertEquals(9.0f, interdictor.bombCooldown, 0.1f)
-    assertEquals(5.0f, RiftCalibrationState.interdictorBubbleDuration, 0.1f)
+  fun `eclipse ship 9 has 100 point parity and deploys two-way containment bubble`() {
+    val eclipse = RiftCodex.getShipById(9)
+    assertEquals("Eclipse", eclipse.name)
+    assertEquals("INTERDICTOR_DOME", eclipse.bombType)
+    assertEquals(320f, eclipse.bombCost, 0.1f)
+    assertEquals(8.5f, eclipse.bombCooldown, 0.1f)
+    assertEquals(6.0f, RiftCalibrationState.interdictorBubbleDuration, 0.1f)
     assertEquals(275f, RiftCalibrationState.interdictorBubbleRadius, 0.1f)
     assertEquals(
       100,
-      interdictor.speedPts +
-        interdictor.thrustPts +
-        interdictor.turnPts +
-        interdictor.maxFluxPts +
-        interdictor.rechargePts +
-        interdictor.primaryPts +
-        interdictor.secondaryPts,
+      eclipse.speedPts +
+        eclipse.thrustPts +
+        eclipse.turnPts +
+        eclipse.maxFluxPts +
+        eclipse.rechargePts +
+        eclipse.primaryPts +
+        eclipse.secondaryPts,
     )
-    assertEquals(100, interdictor.totalAllocatedPoints)
+    assertEquals(100, eclipse.totalAllocatedPoints)
 
     val riftFrame = RiftCodex.getShipById(10)
     assertEquals(10, riftFrame.id)
@@ -276,12 +276,12 @@ class RiftAuditConsistencyTest {
     player.flux = player.maxFlux
     player.bombTimer = 0f
 
-    // Deploy Interdictor Stasis Bubble at (2000, 2000)
+    // Deploy Eclipse Stasis Bubble at (2000, 2000)
     engine.fireSecondaryBomb(player, 0f)
     assertEquals(1, engine.interdictorBubbles.size)
     val bubble = engine.interdictorBubbles.first()
     assertEquals(275f, bubble.radius, 0.1f)
-    assertEquals(5.0f, bubble.life, 0.1f)
+    assertEquals(6.0f, bubble.life, 0.1f)
 
     // 1. Inside ship attempting to cross outward beyond (radius - 36f = 239f) is clamped inside and reflected
     player.x = 2235f
@@ -346,14 +346,13 @@ class RiftAuditConsistencyTest {
   }
 
   @Test
-  fun `stasis breach captures eliminated ships and reactor core breakout releases all prisoners`() {
+  fun `stasis breach captures eliminated ships and prisoner core breakout releases all prisoners`() {
     engine.deployToRankedMode(com.example.engine.RankedGameMode.STASIS_BREACH, teamSizeBracket = 10)
-    assertEquals(8000f, engine.westBrigGeneratorHp, 0.1f)
-    assertEquals(8000f, engine.eastBrigGeneratorHp, 0.1f)
+    assertEquals(40000f, engine.westBrigGeneratorHp, 0.1f)
+    assertEquals(40000f, engine.eastBrigGeneratorHp, 0.1f)
 
     val player = engine.localPlayer // freq = 0 (West Horizon)
     val eastVictim = engine.ships.first { it.freq == 1 }
-    val eastRescuer = engine.ships.last { it.freq == 1 && it !== eastVictim }
 
     // Eliminate eastVictim outside the Safe Zone using a bullet from player
     eastVictim.respawnTimer = 0f
@@ -386,12 +385,28 @@ class RiftAuditConsistencyTest {
 
     assertTrue("Eliminated ship in Stasis Breach must be captured in Stasis Brig", eastVictim.isInStasisBrig)
 
-    // Free teammate (eastRescuer) destroys the West Brig Reactor Core (8000f HP) holding East (freq=1) prisoners
-    eastRescuer.isInStasisBrig = false
-    engine.damageBrigReactorCore(targetBrigFreq = 0, attacker = eastRescuer, rawDamage = 8000f)
+    // Prisoner inside the West Brig destroys the 40,000f West Brig Reactor Core at 100% weapon damage
+    engine.damageBrigReactorCore(targetBrigFreq = 0, attacker = eastVictim, rawDamage = 40000f)
 
     assertFalse("Destroyed Brig Reactor Core must release captured prisoner", eastVictim.isInStasisBrig)
-    assertEquals("Brig Reactor Core HP must reset to 8000f after breach", 8000f, engine.westBrigGeneratorHp, 0.1f)
+    assertEquals("Brig Reactor Core HP must reset to 40000f after breach", 40000f, engine.westBrigGeneratorHp, 0.1f)
+  }
+
+  @Test
+  fun `rift control disables safe zone completely and ship lock applies strictly to skirmish and syndicate wars`() {
+    engine.deployToRankedMode(com.example.engine.RankedGameMode.RIFT_CONTROL, teamSizeBracket = 5)
+    assertFalse("Rift Control must have no active Safe Zone", engine.hasActiveSafeZone())
+    assertFalse("Center of arena must not count as Safe Zone in Rift Control", engine.isInsideSafeZone(4000f, 4000f))
+    assertFalse("Rift Control must not lock ship selection", engine.doesModeLockShipSelection())
+
+    assertTrue(engine.doesModeLockShipSelection(com.example.engine.RankedGameMode.RIFT_SKIRMISH))
+    assertTrue(engine.doesModeLockShipSelection(com.example.engine.RankedGameMode.SYNDICATE_WARS))
+    assertFalse(engine.doesModeLockShipSelection(com.example.engine.RankedGameMode.SECTOR_CONVERGENCE))
+    assertFalse(engine.doesModeLockShipSelection(com.example.engine.RankedGameMode.FLUX_CORE))
+    assertFalse(engine.doesModeLockShipSelection(com.example.engine.RankedGameMode.STASIS_BREACH))
+
+    engine.pilotLevel = 20
+    assertEquals("Pilot Level 20 must unlock full 100 customization points", 100, engine.getCustomizationPointsTotal())
   }
 
   @Test
@@ -400,13 +415,13 @@ class RiftAuditConsistencyTest {
     engine.activeArmadaSlots.clear()
     assertFalse("GUEST pilot must not be eligible for Syndicate Wars", engine.canQueueSyndicateWars().first)
 
-    engine.localPlayer.syndicateTag = "AEX"
+    engine.localPlayer.syndicateTag = "KRN"
     engine.activeArmadaSlots.clear()
     engine.activeArmadaSlots.add(
       com.example.data.ArmadaMemberSlot(
         uid = "pilot_1",
         callsign = "PILOT_1",
-        syndicateTag = "AEX",
+        syndicateTag = "KRN",
         shipId = 1,
         isLeader = true,
       )
@@ -414,20 +429,20 @@ class RiftAuditConsistencyTest {
     engine.activeArmadaSlots.add(
       com.example.data.ArmadaMemberSlot(
         uid = "pilot_2",
-        callsign = "WINGMAN_AEX",
-        syndicateTag = "AEX",
+        callsign = "WINGMAN_KRN",
+        syndicateTag = "KRN",
         shipId = 3,
         isLeader = false,
       )
     )
-    assertTrue("All-AEX Armada must be eligible for Syndicate Wars", engine.canQueueSyndicateWars().first)
+    assertTrue("Same-Syndicate Armada must be eligible for Syndicate Wars", engine.canQueueSyndicateWars().first)
 
     // Add a mixed-Syndicate wingman -> must reject
     engine.activeArmadaSlots.add(
       com.example.data.ArmadaMemberSlot(
         uid = "pilot_3",
-        callsign = "RIVAL_VTX",
-        syndicateTag = "VTX",
+        callsign = "RIVAL_ZEN",
+        syndicateTag = "ZEN",
         shipId = 5,
         isLeader = false,
       )
@@ -448,13 +463,13 @@ class RiftAuditConsistencyTest {
       riftShards = 4200L,
       highestMilestoneLevelClaimed = 15,
     )
-    prefs.recordSyndicateWarOutcome(tag = "AEX", won = true, trophyDelta = 35)
+    prefs.recordSyndicateWarOutcome(tag = "KRN", won = true, trophyDelta = 35)
 
     engine.allTimeKills = 42L
     engine.allTimeBountyPeak = 9500L
     engine.localPlayer.bounty = 1800
-    engine.localPlayer.syndicateTag = "AEX"
-    engine.activeArmadaName = "APEX STRIKE"
+    engine.localPlayer.syndicateTag = "KRN"
+    engine.activeArmadaName = "KRONOS STRIKE"
 
     engine.performMasterFreshStartWipe(localPrefs = prefs, uid = "test_uid")
 

@@ -87,7 +87,7 @@ fun SyndicatesModal(
   onJoinSyndicate: (SyndicateInfo) -> Unit,
   onLeaveSyndicate: () -> Unit,
   onCreateCustomSyndicate: (tag: String, name: String, motto: String) -> Unit,
-  onCloseModal: () -> Unit,
+  onCloseModal: () -> Unit = {},
 ) {
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val context = LocalContext.current
@@ -95,119 +95,82 @@ fun SyndicatesModal(
   val isDrifter = remember(currentSyndicateTag) { localPrefs.isGuestBypassEnabled() }
   var activeTab by remember { mutableIntStateOf(0) }
   val isGuestSyndicate =
-    currentSyndicateTag == "GUEST" || currentSyndicateTag == "FREE" || currentSyndicateTag == "RFT"
+    currentSyndicateTag.isBlank() ||
+      currentSyndicateTag == "GUEST" ||
+      currentSyndicateTag == "FREE" ||
+      currentSyndicateTag == "RFT"
 
-  val outerPadding =
-    if (isCompactPhone) {
-      PaddingValues(start = 8.dp, end = 8.dp, top = 40.dp, bottom = 4.dp)
-    } else {
-      PaddingValues(horizontal = 20.dp, vertical = 10.dp)
-    }
-  val innerPadding = if (isCompactPhone) 8.dp else 14.dp
-
-  Box(
+  Column(
     modifier =
       Modifier.fillMaxSize()
-        .background(Color(0xB3000000))
         .imePadding()
-        .padding(outerPadding)
-        .testTag("syndicates_modal"),
-    contentAlignment = Alignment.Center,
+        .padding(8.dp)
+        .testTag("syndicates_modal")
   ) {
-    Surface(
-      modifier =
-        Modifier.fillMaxSize()
-          .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(12.dp)),
-      color = Color(0xF2060D1A),
-      shape = RoundedCornerShape(12.dp),
+    // 1. Unified Compact Embedded Header Row
+    Row(
+      modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 28.dp else 34.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-      Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-        // 1. Unified 30.dp Compact Header Row
-        Row(
-          modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 30.dp else 36.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-          Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            Text(
-              text =
-                if (isCompactPhone) "🏛️ SYNDICATE // [$currentSyndicateTag] $currentSyndicateName"
-                else "🏛️ SYNDICATE COMMAND // [$currentSyndicateTag] $currentSyndicateName",
-              color = Color.White,
-              fontSize = if (isCompactPhone) 12.5.sp else 16.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.SansSerif,
-              letterSpacing = 0.8.sp,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Box(
-              modifier =
-                Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(
-                    if (remainingLockDays > 0 || isGuestSyndicate) Color(0xFF2B1C08)
-                    else Color(0xFF0A192F)
-                  )
-                  .border(
-                    1.dp,
-                    if (remainingLockDays > 0 || isGuestSyndicate) Color(0xFFF59E0B)
-                    else Color(0xFF38BDF8),
-                    RoundedCornerShape(6.dp),
-                  )
-                  .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-              Text(
-                text =
-                  if (remainingLockDays > 0) {
-                    "🔒 LOCK: $remainingLockFormatted"
-                  } else if (isGuestSyndicate) {
-                    "⚠️ [GUEST] ZERO PERKS"
-                  } else {
-                    "🟢 UNLOCKED (15d LOCK)"
-                  },
-                color =
-                  if (remainingLockDays > 0 || isGuestSyndicate) {
-                    Color(0xFFF59E0B)
-                  } else {
-                    Color(0xFF38BDF8)
-                  },
-                fontSize = if (isCompactPhone) 8.2.sp else 9.5.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
+      Row(
+        modifier = Modifier.weight(1f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        val displayTag = currentSyndicateTag.ifBlank { "SOLO" }
+        Text(
+          text =
+            if (isCompactPhone) "🏛️ SYNDICATE // [$displayTag] $currentSyndicateName"
+            else "🏛️ SYNDICATE COMMAND // [$displayTag] $currentSyndicateName",
+          color = Color.White,
+          fontSize = if (isCompactPhone) 12.5.sp else 15.5.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.SansSerif,
+          letterSpacing = 0.8.sp,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(6.dp))
+              .background(
+                if (remainingLockDays > 0 || isGuestSyndicate) Color(0xFF2B1C08)
+                else Color(0xFF0A192F)
               )
-            }
-          }
-
-          Button(
-            onClick = onCloseModal,
-            colors =
-              ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF28111B),
-                contentColor = Color(0xFFEF4444),
-              ),
-            border = BorderStroke(1.2.dp, Color(0xFFEF4444)),
-            shape = RoundedCornerShape(8.dp),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-            modifier =
-              Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
-                .shadow(2.dp, RoundedCornerShape(8.dp))
-                .testTag("syndicates_close_button"),
-          ) {
-            Text(
-              text = "✕ CLOSE",
-              fontSize = 9.5.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
-            )
-          }
+              .border(
+                1.dp,
+                if (remainingLockDays > 0 || isGuestSyndicate) Color(0xFFF59E0B)
+                else Color(0xFF38BDF8),
+                RoundedCornerShape(6.dp),
+              )
+              .padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+          Text(
+            text =
+              if (remainingLockDays > 0) {
+                "🔒 LOCK: $remainingLockFormatted"
+              } else if (isGuestSyndicate) {
+                "🛰️ UNAFFILIATED PILOT"
+              } else {
+                "🟢 UNLOCKED (15d LOCK)"
+              },
+            color =
+              if (remainingLockDays > 0 || isGuestSyndicate) {
+                Color(0xFFF59E0B)
+              } else {
+                Color(0xFF38BDF8)
+              },
+            fontSize = if (isCompactPhone) 8.2.sp else 9.5.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
         }
+      }
+    }
 
-        Spacer(modifier = Modifier.height(if (isCompactPhone) 4.dp else 7.dp))
+    Spacer(modifier = Modifier.height(if (isCompactPhone) 4.dp else 7.dp))
 
         // 4 Dedicated Syndicate Command Tabs (Decoupled from Armada Fleet Deck)
         Row(
@@ -315,6 +278,7 @@ fun SyndicatesModal(
                 remainingLockFormatted = remainingLockFormatted,
                 directoryList = directoryList,
                 onJoinSyndicate = onJoinSyndicate,
+                onSelectCreateTab = { activeTab = 3 },
               )
             1 ->
               MySyndicateRosterPane(
@@ -339,8 +303,6 @@ fun SyndicatesModal(
           }
         }
       }
-    }
-  }
 }
 
 /**
@@ -362,157 +324,120 @@ fun ArmadaFleetModal(
   onInviteFriendToArmada: (FriendPilotEntry) -> Unit,
   onRequestJoinFriendArmada: (FriendPilotEntry) -> Unit,
   onRemoveArmadaMember: (String) -> Unit,
-  onSimulateRosterShift4To2: () -> Unit,
+  onSimulateRosterShift4To2: () -> Unit = {},
   onLeaveArmadaToSolo: () -> Unit,
   onAddFriendByCallsign: (String) -> Unit,
   onBlockPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
   onReportPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
-  onCloseModal: () -> Unit,
+  onCloseModal: () -> Unit = {},
 ) {
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
-  val isDeployedInArmada = activeArmadaName.isNotEmpty() && armadaSlots.size >= 1
-
-  val outerPadding =
-    if (isCompactPhone) {
-      PaddingValues(start = 8.dp, end = 8.dp, top = 40.dp, bottom = 4.dp)
-    } else {
-      PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+  val realArmadaSlots =
+    remember(armadaSlots) {
+      armadaSlots.filter {
+        !it.callsign.contains("[BOT]", ignoreCase = true) &&
+          !it.syndicateTag.equals("BOT", ignoreCase = true)
+      }
     }
-  val innerPadding = if (isCompactPhone) 8.dp else 14.dp
+  val isDeployedInArmada = activeArmadaName.isNotEmpty() && realArmadaSlots.isNotEmpty()
 
-  Box(
+  Column(
     modifier =
       Modifier.fillMaxSize()
-        .background(Color(0xB3000000))
         .imePadding()
-        .padding(outerPadding)
-        .testTag("armada_fleet_modal"),
-    contentAlignment = Alignment.Center,
+        .padding(8.dp)
+        .testTag("armada_fleet_modal")
   ) {
-    Surface(
-      modifier =
-        Modifier.fillMaxSize()
-          .border(1.2.dp, Color(0xFF38BDF8), RoundedCornerShape(12.dp)),
-      color = Color(0xF2060D1A),
-      shape = RoundedCornerShape(12.dp),
+    // 1. Unified Compact Embedded Header Row with Explicit Armada Membership Status Badge
+    Row(
+      modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 28.dp else 34.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-      Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-        // 1. Unified 30.dp Compact Header Row with Explicit Armada Membership Status Badge
-        Row(
-          modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 30.dp else 36.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-          Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            Text(
-              text =
-                if (isCompactPhone) "👥 ARMADA FLEET DECK"
-                else "👥 ARMADA FLEET DECK // 1-TO-5-PLAYER STRIKE TEAM COMMAND",
-              color = Color.White,
-              fontSize = if (isCompactPhone) 12.5.sp else 16.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.SansSerif,
-              letterSpacing = 0.8.sp,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Box(
-              modifier =
-                Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(if (isDeployedInArmada) Color(0xFF06281E) else Color(0xFF0A192F))
-                  .border(
-                    1.dp,
-                    if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF38BDF8),
-                    RoundedCornerShape(6.dp),
-                  )
-                  .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-              Text(
-                text =
-                  if (isDeployedInArmada) {
-                    "🟢 [$activeArmadaName] (${armadaSlots.size}/5 • $armadaTierLabel)"
-                  } else {
-                    "⚡ [SOLO] INDEPENDENT"
-                  },
-                color = if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF60A5FA),
-                fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
+      Row(
+        modifier = Modifier.weight(1f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Text(
+          text =
+            if (isCompactPhone) "👥 ARMADA FLEET DECK"
+            else "👥 ARMADA FLEET DECK // 1-TO-5-PLAYER STRIKE TEAM COMMAND",
+          color = Color.White,
+          fontSize = if (isCompactPhone) 12.5.sp else 15.5.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.SansSerif,
+          letterSpacing = 0.8.sp,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(6.dp))
+              .background(if (isDeployedInArmada) Color(0xFF06281E) else Color(0xFF0A192F))
+              .border(
+                1.dp,
+                if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF38BDF8),
+                RoundedCornerShape(6.dp),
               )
-            }
-          }
-
-          Button(
-            onClick = onCloseModal,
-            colors =
-              ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF28111B),
-                contentColor = Color(0xFFEF4444),
-              ),
-            border = BorderStroke(1.2.dp, Color(0xFFEF4444)),
-            shape = RoundedCornerShape(8.dp),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-            modifier =
-              Modifier.height(if (isCompactPhone) 28.dp else 32.dp)
-                .shadow(2.dp, RoundedCornerShape(8.dp))
-                .testTag("armada_modal_close_button"),
-          ) {
-            Text(
-              text = "✕ CLOSE",
-              fontSize = 9.5.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
-            )
-          }
-        }
-
-        if (!statusBannerMessage.isNullOrBlank()) {
-          Spacer(modifier = Modifier.height(4.dp))
-          Box(
-            modifier =
-              Modifier.fillMaxWidth()
-                .background(Color(0xFF102338), RoundedCornerShape(8.dp))
-                .border(1.dp, Color(0x553B82F6), RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 4.dp)
-          ) {
-            Text(
-              text = statusBannerMessage,
-              color = Color(0xFF60A5FA),
-              fontSize = if (isCompactPhone) 9.5.sp else 11.sp,
-              fontWeight = FontWeight.Medium,
-              fontFamily = FontFamily.SansSerif,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
-        }
-
-        Spacer(modifier = Modifier.height(if (isCompactPhone) 4.dp else 8.dp))
-
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-          ArmadaAndFriendsTabPane(
-            activeArmadaName = activeArmadaName,
-            armadaTierLabel = armadaTierLabel,
-            armadaSlots = armadaSlots,
-            friendsList = friendsList,
-            blockedPilotUids = blockedPilotUids,
-            onCreateOrRenameArmada = onCreateOrRenameArmada,
-            onInviteFriendToArmada = onInviteFriendToArmada,
-            onRequestJoinFriendArmada = onRequestJoinFriendArmada,
-            onRemoveArmadaMember = onRemoveArmadaMember,
-            onSimulateRosterShift4To2 = onSimulateRosterShift4To2,
-            onLeaveArmadaToSolo = onLeaveArmadaToSolo,
-            onAddFriendByCallsign = onAddFriendByCallsign,
-            onBlockPilot = onBlockPilot,
-            onReportPilot = onReportPilot,
+              .padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+          Text(
+            text =
+              if (isDeployedInArmada) {
+                "🟢 [$activeArmadaName] (${realArmadaSlots.size}/5 • $armadaTierLabel)"
+              } else {
+                "🛰️ [SOLO] INDEPENDENT"
+              },
+            color = if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF60A5FA),
+            fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
           )
         }
       }
+    }
+
+    if (!statusBannerMessage.isNullOrBlank()) {
+      Spacer(modifier = Modifier.height(4.dp))
+      Box(
+        modifier =
+          Modifier.fillMaxWidth()
+            .background(Color(0xFF102338), RoundedCornerShape(8.dp))
+            .border(1.dp, Color(0x553B82F6), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+      ) {
+        Text(
+          text = statusBannerMessage,
+          color = Color(0xFF60A5FA),
+          fontSize = if (isCompactPhone) 9.5.sp else 11.sp,
+          fontWeight = FontWeight.Medium,
+          fontFamily = FontFamily.SansSerif,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+    }
+
+    Spacer(modifier = Modifier.height(if (isCompactPhone) 4.dp else 8.dp))
+
+    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+      ArmadaAndFriendsTabPane(
+        activeArmadaName = activeArmadaName,
+        armadaTierLabel = armadaTierLabel,
+        armadaSlots = realArmadaSlots,
+        friendsList = friendsList,
+        blockedPilotUids = blockedPilotUids,
+        onCreateOrRenameArmada = onCreateOrRenameArmada,
+        onInviteFriendToArmada = onInviteFriendToArmada,
+        onRequestJoinFriendArmada = onRequestJoinFriendArmada,
+        onRemoveArmadaMember = onRemoveArmadaMember,
+        onLeaveArmadaToSolo = onLeaveArmadaToSolo,
+        onAddFriendByCallsign = onAddFriendByCallsign,
+        onBlockPilot = onBlockPilot,
+        onReportPilot = onReportPilot,
+      )
     }
   }
 }
@@ -524,67 +449,21 @@ private fun DirectoryAndJoinPane(
   remainingLockFormatted: String,
   directoryList: List<SyndicateInfo>,
   onJoinSyndicate: (SyndicateInfo) -> Unit,
+  onSelectCreateTab: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val localPrefs = remember(context) { LocalPilotPrefs(context) }
-  // 0 = SYNDICATE WARS (DIRECT H2H), 1 = COLLECTIVE MEMBER PRESTIGE
+  // 0 = SYNDICATE WARS LADDER, 1 = COLLECTIVE MEMBER PRESTIGE
   var rankingMode by remember { mutableIntStateOf(0) }
 
   val mergedDirectory =
     remember(directoryList, currentSyndicateTag, rankingMode) {
       val byTag = linkedMapOf<String, SyndicateInfo>()
-      val officialLadder =
-        listOf(
-          SyndicateInfo(
-            id = "syn_aex",
-            tag = "AEX",
-            name = "Apex Vanguard",
-            foundryOrigin = "Sector Command Syndicate",
-            motto = "First into the Rift, last to yield.",
-            memberCount = 18,
-            combinedBounty = 14850L,
-            isCustom = false,
-          ),
-          SyndicateInfo(
-            id = "syn_obs",
-            tag = "OBS",
-            name = "Obsidian Core",
-            foundryOrigin = "Heavy Siege Syndicate",
-            motto = "Unbreakable containment across the sector.",
-            memberCount = 15,
-            combinedBounty = 12400L,
-            isCustom = false,
-          ),
-          SyndicateInfo(
-            id = "syn_sol",
-            tag = "SOL",
-            name = "Solaris Prime",
-            foundryOrigin = "High-Velocity Strike Fleet",
-            motto = "Velocity is the ultimate shield.",
-            memberCount = 14,
-            combinedBounty = 11650L,
-            isCustom = false,
-          ),
-          SyndicateInfo(
-            id = "syn_vtx",
-            tag = "VTX",
-            name = "Vortex Sentinels",
-            foundryOrigin = "Stasis Breach Guardians",
-            motto = "Hold the line at the singularity core.",
-            memberCount = 12,
-            combinedBounty = 10900L,
-            isCustom = false,
-          ),
-        )
       for (item in directoryList) {
         val clean = localPrefs.sanitizeSyndicateTag(item.tag)
-        if (clean.isNotEmpty() && !clean.equals("RFT", ignoreCase = true)) {
-          byTag[clean] = item.copy(tag = clean)
-        }
-      }
-      for (seed in officialLadder) {
-        if (!byTag.containsKey(seed.tag)) {
-          byTag[seed.tag] = seed
+        val normalized = item.copy(tag = clean)
+        if (clean.isNotEmpty() && normalized.isRealPlayerFoundedSyndicate()) {
+          byTag[clean] = normalized
         }
       }
       val mapped =
@@ -613,7 +492,7 @@ private fun DirectoryAndJoinPane(
         .padding(10.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    // Segmented Ranking Mode Toggle: Direct H2H Syndicate Wars vs Collective Member Prestige
+    // Segmented Ranking Mode Toggle: Syndicate Wars vs Collective Member Prestige
     Row(
       modifier = Modifier.fillMaxWidth(),
       horizontalArrangement = Arrangement.SpaceBetween,
@@ -631,10 +510,10 @@ private fun DirectoryAndJoinPane(
               )
               .clickable { rankingMode = 0 }
               .padding(horizontal = 10.dp, vertical = 6.dp)
-              .testTag("syndicate_rank_mode_direct_h2h"),
+              .testTag("syndicate_rank_mode_war_trophies"),
         ) {
           Text(
-            text = "🏆 SYNDICATE WARS (DIRECT H2H)",
+            text = "🏆 SYNDICATE WARS LADDER",
             color = if (rankingMode == 0) Color(0xFF05080E) else Color(0xFFFBBF24),
             fontSize = 10.5.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -667,7 +546,7 @@ private fun DirectoryAndJoinPane(
       Text(
         text =
           if (rankingMode == 0) {
-            "RANKED BY DIRECT H2H WAR TROPHIES (1–5 STRIKE FLEET & 10v10 STASIS BREACH)"
+            "RANKED BY SYNDICATE WAR TROPHIES"
           } else {
             "RANKED BY COMBINED MEMBER BOUNTY & ROSTER SIZE"
           },
@@ -678,11 +557,58 @@ private fun DirectoryAndJoinPane(
       )
     }
 
-    LazyColumn(
-      modifier = Modifier.weight(1f).fillMaxWidth(),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      items(mergedDirectory, key = { it.first.tag }) { (syn, warRecord) ->
+    if (mergedDirectory.isEmpty()) {
+      Box(
+        modifier =
+          Modifier.weight(1f)
+            .fillMaxWidth()
+            .background(Color(0xCC0D1B30), RoundedCornerShape(10.dp))
+            .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(10.dp))
+            .padding(18.dp),
+        contentAlignment = Alignment.Center,
+      ) {
+        Column(
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Text(
+            text = "NO SWORN SYNDICATES CHARTERED IN THIS SECTOR YET",
+            color = Color(0xFF00F5D4),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.SansSerif,
+          )
+          Text(
+            text = "Every Syndicate in RIFT is 100% real-player-founded. Open Tab 4 to charter the first Syndicate!",
+            color = Color(0xFF94A3B8),
+            fontSize = 11.sp,
+            fontFamily = FontFamily.SansSerif,
+          )
+          Button(
+            onClick = onSelectCreateTab,
+            colors =
+              ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFFFD700),
+                contentColor = Color(0xFF05080E),
+              ),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.height(34.dp),
+          ) {
+            Text(
+              text = "🏛️ CHARTER FIRST SYNDICATE",
+              fontSize = 10.5.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.SansSerif,
+            )
+          }
+        }
+      }
+    } else {
+      LazyColumn(
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        items(mergedDirectory, key = { it.first.tag }) { (syn, warRecord) ->
         val isMember = syn.tag.equals(currentSyndicateTag, ignoreCase = true)
         Row(
           modifier =
@@ -791,6 +717,7 @@ private fun DirectoryAndJoinPane(
     }
   }
 }
+}
 
 @Composable
 private fun MySyndicateRosterPane(
@@ -801,6 +728,13 @@ private fun MySyndicateRosterPane(
   rosterMembers: List<SyndicateMemberEntry>,
   onLeaveSyndicate: () -> Unit,
 ) {
+  val humanRoster =
+    remember(rosterMembers) {
+      rosterMembers.filter {
+        !it.callsign.contains("[BOT]", ignoreCase = true) &&
+          !it.tag.equals("BOT", ignoreCase = true)
+      }
+    }
   Column(
     modifier =
       Modifier.fillMaxSize()
@@ -812,8 +746,9 @@ private fun MySyndicateRosterPane(
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween,
     ) {
+      val displayTag = currentSyndicateTag.ifBlank { "SOLO" }
       Text(
-        text = "ACTIVE ROSTER // [$currentSyndicateTag] $currentSyndicateName (${rosterMembers.size} MEMBERS)",
+        text = "ACTIVE ROSTER // [$displayTag] $currentSyndicateName (${humanRoster.size} MEMBERS)",
         color = Color.White,
         fontSize = 16.sp,
         fontWeight = FontWeight.Bold,
@@ -850,7 +785,7 @@ private fun MySyndicateRosterPane(
     }
     Spacer(modifier = Modifier.height(8.dp))
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-      items(rosterMembers, key = { it.uid }) { member ->
+      items(humanRoster, key = { it.uid }) { member ->
         val shipSpec = RiftCodex.getShipById(member.shipId)
         Row(
           modifier =
@@ -1399,7 +1334,6 @@ private fun ArmadaAndFriendsTabPane(
   onInviteFriendToArmada: (FriendPilotEntry) -> Unit,
   onRequestJoinFriendArmada: (FriendPilotEntry) -> Unit,
   onRemoveArmadaMember: (String) -> Unit,
-  onSimulateRosterShift4To2: () -> Unit,
   onLeaveArmadaToSolo: () -> Unit,
   onAddFriendByCallsign: (String) -> Unit,
   onBlockPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
@@ -1454,9 +1388,9 @@ private fun ArmadaAndFriendsTabPane(
       Text(
         text =
           if (activeArmadaName.isEmpty()) {
-            "⚡ [STATUS: OPERATING INDEPENDENTLY]"
+            "🛰️ [STATUS: OPERATING INDEPENDENTLY]"
           } else {
-            "🛡️ [STATUS: DEPLOYED IN ARMADA: $activeArmadaName] (${armadaSlots.size}/5)"
+            "🛡️ [STATUS: DEPLOYED IN ARMADA: $activeArmadaName] (${armadaSlots.size}/5 • $armadaTierLabel)"
           },
         color = if (activeArmadaName.isEmpty()) Color(0xFF60A5FA) else Color(0xFF10B981),
         fontSize = if (isCompactPhone) 10.sp else 11.5.sp,
@@ -1629,36 +1563,12 @@ private fun ArmadaAndFriendsTabPane(
         }
       }
 
-      // Adaptive Roster Shifting & Solo Controls
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        Button(
-          onClick = onSimulateRosterShift4To2,
-          colors =
-            ButtonDefaults.buttonColors(
-              containerColor = Color(0xFF162B46),
-              contentColor = Color(0xFFFFD700),
-            ),
-          border = BorderStroke(1.2.dp, Color(0xFFFFD700)),
-          shape = RoundedCornerShape(8.dp),
-          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-          modifier =
-            Modifier.weight(1f)
-              .height(if (isCompactPhone) 32.dp else 36.dp)
-              .shadow(2.dp, RoundedCornerShape(8.dp))
-              .testTag("simulate_roster_shift_button"),
+      // Solo / Leave Armada Controls (100% Real-Player Armadas Only)
+      if (activeArmadaName.isNotEmpty()) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-          Text(
-            text = "⚡ SHIFT 4➔2 TIER",
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.SansSerif,
-          )
-        }
-
-        if (activeArmadaName.isNotEmpty()) {
           Button(
             onClick = onLeaveArmadaToSolo,
             colors =
@@ -1670,7 +1580,8 @@ private fun ArmadaAndFriendsTabPane(
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
             modifier =
-              Modifier.height(if (isCompactPhone) 32.dp else 36.dp)
+              Modifier.fillMaxWidth()
+                .height(if (isCompactPhone) 32.dp else 36.dp)
                 .shadow(2.dp, RoundedCornerShape(8.dp))
                 .testTag("leave_armada_solo_button"),
           ) {

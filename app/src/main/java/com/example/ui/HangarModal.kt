@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.example.engine.CustomShipLoadoutSlot
 import com.example.engine.RiftCalibrationState
 import com.example.engine.RiftCodex
+import com.example.engine.RiftProgressionCatalog
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.ShipSpec
 import java.util.Locale
@@ -84,6 +85,8 @@ fun HangarModal(
   activeCustomSlot: CustomShipLoadoutSlot = RiftCodex.activeCustomShipSlot,
   slot9BUnlocked: Boolean = false,
   slot9CUnlocked: Boolean = false,
+  slot9DUnlocked: Boolean = false,
+  slot9EUnlocked: Boolean = false,
   onOpenRiftShardsStore: () -> Unit = {},
   onOpenSyndicatesModal: () -> Unit = {},
   onSaveCustomSlot: (CustomShipLoadoutSlot) -> Unit = {},
@@ -95,7 +98,7 @@ fun HangarModal(
   isNexusStreaming: Boolean = false,
   onOpenNexus: () -> Unit = {},
   onDeployPilot: (callsign: String, shipId: Int, mode: String, asGuest: Boolean) -> Unit,
-  onCloseModal: () -> Unit,
+  onCloseModal: () -> Unit = {},
 ) {
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   var callsignInput by remember(initialCallsign) { mutableStateOf(initialCallsign) }
@@ -103,7 +106,7 @@ fun HangarModal(
   val currentMode = "FFA"
   var showPilotIdentityBar by remember { mutableStateOf(false) }
 
-  // Watch customShip9Version so the 3x3 matrix and inspector re-render immediately when AI Hull Forge updates Rift Frame
+  // Watch customShip9Version so the 3x3 matrix and inspector re-render immediately when Hull Forge updates Rift Frame
   val spriteVersion = RiftSpriteBaker.customShip9Version
   val allNineShips = remember(activeCustomSlot, spriteVersion) { RiftCodex.getAllNineShips() }
 
@@ -117,8 +120,12 @@ fun HangarModal(
     }
   }
 
-  BackHandler(enabled = showFullNinthShipForgeModal) {
-    showFullNinthShipForgeModal = false
+  BackHandler {
+    if (showFullNinthShipForgeModal) {
+      showFullNinthShipForgeModal = false
+    } else {
+      onCloseModal()
+    }
   }
 
   val inspectedShip =
@@ -132,14 +139,13 @@ fun HangarModal(
 
   val isNinthUnlocked = pilotLevel >= 20 || unlockFullNinthShipOverride
   val effectivePointBudget =
-    if (unlockFullNinthShipOverride) 100 else pilotLevel.coerceIn(1, 100)
+    RiftProgressionCatalog.getRiftFramePointBudget(pilotLevel, unlockFullNinthShipOverride)
   val pointsAllocatedInSlot = activeCustomSlot.totalAllocatedPoints()
   val pointsRemainingInSlot = (effectivePointBudget - pointsAllocatedInSlot).coerceAtLeast(0)
 
-  Box(
+  Column(
     modifier =
       Modifier.fillMaxSize()
-        .background(Color(0xEB040812))
         .focusRequester(hangarFocusRequester)
         .focusable()
         .onPreviewKeyEvent { keyEvent ->
@@ -237,26 +243,12 @@ fun HangarModal(
             false
           }
         }
-        .clickable(enabled = true, onClick = {})
-        .padding(
-          if (isCompactPhone) PaddingValues(start = 8.dp, end = 8.dp, top = 40.dp, bottom = 4.dp)
-          else PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-        ),
-    contentAlignment = Alignment.Center,
+        .padding(if (isCompactPhone) 4.dp else 8.dp)
+        .testTag("hangar_modal")
   ) {
-    Surface(
-      modifier =
-        Modifier.fillMaxSize()
-          .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(12.dp)),
-      color = Color(0xF2060D1A),
-      shape = RoundedCornerShape(12.dp),
-    ) {
-      Column(
-        modifier = Modifier.fillMaxSize().padding(if (isCompactPhone) 8.dp else 14.dp)
-      ) {
-        // Unified Single 30.dp Top Hangar Header Bar
+        // Unified Single 28.dp Embedded Hangar Subheader Bar
         Row(
-          modifier = Modifier.fillMaxWidth().height(30.dp),
+          modifier = Modifier.fillMaxWidth().height(28.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -265,9 +257,9 @@ fun HangarModal(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             Text(
-              text = if (isCompactPhone) "🚀 HANGAR // 3x3 MATRIX" else "🚀 HANGAR // 3x3 SHIP MATRIX",
+              text = if (isCompactPhone) "🚀 HANGAR // SHIP MATRIX" else "🚀 HANGAR // 10-SHIP TACTICAL MATRIX",
               color = Color(0xFF00F5D4),
-              fontSize = if (isCompactPhone) 11.5.sp else 13.sp,
+              fontSize = if (isCompactPhone) 11.sp else 12.5.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -300,12 +292,6 @@ fun HangarModal(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
-            SwirlingRiftHeaderPill(
-              onClick = onOpenNexus,
-              tag = "btn_hangar_nexus_ai",
-              isStreaming = isNexusStreaming,
-            )
-
             Row(
               modifier =
                 Modifier.background(Color(0xFF0E1B2E), RoundedCornerShape(8.dp))
@@ -316,7 +302,7 @@ fun HangarModal(
             ) {
               Text(
                 text =
-                  if (unlockFullNinthShipOverride) "LVL $pilotLevel (100P)"
+                  if (isNinthUnlocked) "LVL $pilotLevel (100P)"
                   else "LVL $pilotLevel",
                 color = Color(0xFF00F5D4),
                 fontSize = 8.8.sp,
@@ -348,30 +334,10 @@ fun HangarModal(
               contentAlignment = Alignment.Center,
             ) {
               Text(
-                text = if (isCompactPhone) "❖ $riftShards [+]" else "❖ $riftShards [+ GET RIFT SHARDS]",
+                text = if (isCompactPhone) "❖ $riftShards" else "❖ $riftShards [PROGRESSION]",
                 color = Color(0xFFF3E8FF),
                 fontSize = 8.5.sp,
                 fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-
-            Button(
-              onClick = onCloseModal,
-              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-              border = BorderStroke(1.2.dp, Color(0xFF38BDF8)),
-              shape = RoundedCornerShape(8.dp),
-              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-              modifier =
-                Modifier.height(28.dp)
-                  .shadow(2.dp, RoundedCornerShape(8.dp))
-                  .testTag("btn_close_hangar"),
-            ) {
-              Text(
-                "✕ RESUME",
-                color = Color.White,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
               )
             }
@@ -476,8 +442,10 @@ fun HangarModal(
           NinthShipModularForgePanel(
             spec = allNineShips.first { it.id == 10 },
             activeSlot = activeCustomSlot,
-            slot9BUnlocked = slot9BUnlocked || unlockFullNinthShipOverride,
-            slot9CUnlocked = slot9CUnlocked || unlockFullNinthShipOverride,
+            slot9BUnlocked = slot9BUnlocked || unlockFullNinthShipOverride || pilotLevel >= 35,
+            slot9CUnlocked = slot9CUnlocked || unlockFullNinthShipOverride || pilotLevel >= 50,
+            slot9DUnlocked = slot9DUnlocked || unlockFullNinthShipOverride || pilotLevel >= 75,
+            slot9EUnlocked = slot9EUnlocked || unlockFullNinthShipOverride || pilotLevel >= 100,
             pilotLevel = pilotLevel,
             unlockFullNinthShipOverride = unlockFullNinthShipOverride,
             effectivePointBudget = effectivePointBudget,
@@ -493,10 +461,12 @@ fun HangarModal(
               forgeStatusBanner = "✓ SWITCHED ACTIVE LOADOUT TO ${slotId.uppercase(Locale.US)}"
             },
             onUnlockSlot = { slotId ->
+              val gate = RiftProgressionCatalog.getFrameSlotGate(slotId)
               if (onUnlockCustomSlot(slotId)) {
-                forgeStatusBanner = "✓ UNLOCKED ${slotId.uppercase(Locale.US)} (-300❖ RIFT SHARDS)!"
+                forgeStatusBanner = "✓ UNLOCKED ${slotId.uppercase(Locale.US)} (-${gate.shardCost}❖ RIFT SHARDS)!"
               } else {
-                forgeStatusBanner = "⚠️ NEED 300❖ RIFT SHARDS TO UNLOCK ${slotId.uppercase(Locale.US)} (TAP [+ GET RIFT SHARDS])."
+                forgeStatusBanner =
+                  "⚠️ NEED ${gate.shardCost}❖ RIFT SHARDS OR PILOT LV ${gate.freeAtLevel} TO UNLOCK ${slotId.uppercase(Locale.US)}."
               }
             },
             onRespecSlot = {
@@ -513,7 +483,7 @@ fun HangarModal(
             onToggleDevLevel20Or100 = {
               onToggleDevLevel20Or100()
               forgeStatusBanner =
-                "⚡ DEV OVERRIDE TOGGLED: RIFT FRAME UNLOCKED WITH 100 CUSTOMIZATION POINTS!"
+                "✓ DEV OVERRIDE TOGGLED: RIFT FRAME UNLOCKED WITH 100 CUSTOMIZATION POINTS!"
             },
             onDeployNinthShip = {
               if (isNinthUnlocked) {
@@ -703,12 +673,12 @@ fun HangarModal(
                     }
                   }
 
-                  // Blueprint Thumbnails for Frame A / B / C
+                  // Blueprint Thumbnails for Frame A..E
                   Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                   ) {
-                    listOf("FRAME A", "FRAME B", "FRAME C").forEach { frameLbl ->
+                    listOf("FRAME A", "FRAME B", "FRAME C", "FRAME D", "FRAME E").forEach { frameLbl ->
                       val isActiveFrame = normalizedSlot.equals(frameLbl, ignoreCase = true)
                       Box(
                         modifier =
@@ -721,14 +691,14 @@ fun HangarModal(
                               if (isActiveFrame) Color(0xFFEC4899) else Color(0xFF475569),
                               RoundedCornerShape(5.dp),
                             )
-                            .padding(horizontal = 5.dp, vertical = 3.dp),
+                            .padding(horizontal = 4.dp, vertical = 3.dp),
                         contentAlignment = Alignment.Center,
                       ) {
                         Row(
                           verticalAlignment = Alignment.CenterVertically,
-                          horizontalArrangement = Arrangement.spacedBy(3.dp),
+                          horizontalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                          ShipSpritePreview(shipId = 10, sizeDp = 14)
+                          ShipSpritePreview(shipId = 10, sizeDp = 13)
                           Text(
                             text = frameLbl.removePrefix("FRAME "),
                             color = if (isActiveFrame) Color.White else Color(0xFF94A3B8),
@@ -797,8 +767,6 @@ fun HangarModal(
             )
           }
         }
-      }
-    }
   }
 }
 
@@ -1267,7 +1235,7 @@ private fun ShipComparisonInspectorPanel(
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
           Text(
-            text = "HOLO-INSPECTOR // HULL #${ship.id}",
+            text = "HOLO-INSPECTOR // SPEC TELEMETRY",
             color = holoPrimary,
             fontSize = 8.5.sp,
             fontWeight = FontWeight.Black,
@@ -1326,7 +1294,7 @@ private fun ShipComparisonInspectorPanel(
 
           Text(
             text =
-              "Universal Baseline Hull Floor + Progressive Point Growth (Lv 20 = 20 Pts .. Lv 100 = 100 Pts). Full competitive parity with standard hulls.",
+              "Full 100-Point Parity Budget unlocked immediately at Pilot Level 20. Zero pay-to-win — full competitive parity with all signature hulls.",
             color = Color(0xFFCBD5E1),
             fontSize = 12.5.sp,
             lineHeight = 16.sp,
@@ -1339,7 +1307,7 @@ private fun ShipComparisonInspectorPanel(
             modifier = Modifier.fillMaxWidth().height(34.dp).testTag("btn_open_ninth_ship_editor"),
           ) {
             Text(
-              text = "🛠️ CUSTOMIZE RIFT FRAME & AI FORGE",
+              text = "🛠️ CUSTOMIZE RIFT FRAME & HULL FORGE",
               color = Color.White,
               fontSize = 11.sp,
               fontWeight = FontWeight.Black,
@@ -1366,8 +1334,8 @@ private fun ShipComparisonInspectorPanel(
           ) {
             Text(
               text =
-                if (unlockFullNinthShipOverride) "⚡ DEV TEST: FULL 100 PTS ACTIVE (TAP TO OFF)"
-                else "⚡ DEV TEST: TOGGLE LVL 20 / 100 PTS",
+                if (unlockFullNinthShipOverride) "DEV TEST: FULL 100 PTS ACTIVE (TAP TO OFF)"
+                else "DEV TEST: TOGGLE LVL 20 / 100 PTS",
               color = if (unlockFullNinthShipOverride) Color(0xFF6EE7B7) else Color(0xFFE2E8F0),
               fontSize = 10.sp,
               fontWeight = FontWeight.Black,
@@ -1412,7 +1380,7 @@ private fun ShipComparisonInspectorPanel(
             fontFamily = FontFamily.SansSerif,
           )
           Text(
-            text = "${ship.primaryDamage.toInt()} DMG • ${ship.primaryCost.toInt()}⚡ FLUX",
+            text = "${ship.primaryDamage.toInt()} DMG • ${ship.primaryCost.toInt()} FLUX",
             color = Color(0xFF94A3B8),
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
@@ -1445,11 +1413,15 @@ private fun ShipComparisonInspectorPanel(
             text =
               when {
                 ship.bombType == "INTERDICTOR_DOME" ->
-                  "380⚡ FLUX • 275PX TWO-WAY STASIS DOME (8.0S DURATION, 12.0S CD)"
-                ship.bombType == "PHASE_DASH" -> "300⚡ • 2.5s CD • BLINK + I-FRAMES + 35% RAIL"
-                ship.bombType == "CLOAK_EMP" -> "180⚡/s CLOAK • 0⚡ DECLOAK 360° EMP PULSE"
-                ship.supportsNativeMultifire -> "INNATE SPLIT MULTI-SHOT (0⚡ EXTRA COST)"
-                ship.hasBomb -> "${ship.bombDamage.toInt()} DMG • ${ship.bombCost.toInt()}⚡ FLUX"
+                  "320 FLUX • 275PX TWO-WAY STASIS BUBBLE (6.0S DURATION, 8.5S CD)"
+                ship.bombType == "PHASE_DASH" ->
+                  "300 FLUX • 2.5S CD • BLINK + I-FRAMES + 35% RAIL"
+                ship.bombType == "CLOAK_EMP" ->
+                  "36 FLUX/S CLOAK (20 ENTRY) • 0 FLUX 360° EMP (-25% MAX FLUX, 2.0S FREEZE)"
+                ship.supportsNativeMultifire ->
+                  "INNATE SPLIT MULTI-SHOT (0 FLUX EXTRA COST)"
+                ship.hasBomb ->
+                  "${ship.bombDamage.toInt()} DMG • ${ship.bombCost.toInt()} FLUX"
                 else -> "STARTING REPEL CHARGES: ${ship.initialRepels}"
               },
             color = Color(0xFF94A3B8),
@@ -1519,8 +1491,8 @@ private fun ShipComparisonInspectorPanel(
         text =
           when {
             isNinth && !isNinthUnlocked -> "🔒 LVL 20 GATE (TAP TO INSPECT FORGE)"
-            isCurrentShip -> "⚡ RE-DEPLOY $cleanTitle"
-            else -> "⚡ DEPLOY $cleanTitle"
+            isCurrentShip -> "🚀 RE-DEPLOY $cleanTitle"
+            else -> "🚀 DEPLOY $cleanTitle"
           },
         color = Color.White,
         fontSize = 11.5.sp,
@@ -1537,6 +1509,8 @@ private fun NinthShipModularForgePanel(
   activeSlot: CustomShipLoadoutSlot,
   slot9BUnlocked: Boolean,
   slot9CUnlocked: Boolean,
+  slot9DUnlocked: Boolean = false,
+  slot9EUnlocked: Boolean = false,
   pilotLevel: Int,
   unlockFullNinthShipOverride: Boolean,
   effectivePointBudget: Int,
@@ -1613,12 +1587,14 @@ private fun NinthShipModularForgePanel(
           )
         }
 
-        // Loadout Slot Tabs: Frame A (Free), Frame B (300❖), Frame C (300❖)
+        // Loadout Slot Tabs: Frame A..E (Free via Pilot Level OR instant unlock via Rift Shards)
         val slots =
           listOf(
             Triple("Frame A", true, "FRAME A"),
-            Triple("Frame B", slot9BUnlocked, if (slot9BUnlocked) "FRAME B" else "🔒 FRAME B (300❖)"),
-            Triple("Frame C", slot9CUnlocked, if (slot9CUnlocked) "FRAME C" else "🔒 FRAME C (300❖)"),
+            Triple("Frame B", slot9BUnlocked, if (slot9BUnlocked) "FRAME B" else "🔒 B (250❖)"),
+            Triple("Frame C", slot9CUnlocked, if (slot9CUnlocked) "FRAME C" else "🔒 C (400❖)"),
+            Triple("Frame D", slot9DUnlocked, if (slot9DUnlocked) "FRAME D" else "🔒 D (600❖)"),
+            Triple("Frame E", slot9EUnlocked, if (slot9EUnlocked) "FRAME E" else "🔒 E (600❖)"),
           )
         slots.forEach { (slotId, unlocked, label) ->
           val isCurrentSlot = normalizedCurrentSlot == slotId
@@ -1646,7 +1622,7 @@ private fun NinthShipModularForgePanel(
                 .clickable {
                   if (unlocked) onSwitchSlot(slotId) else onUnlockSlot(slotId)
                 }
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(horizontal = 7.dp, vertical = 4.dp)
           ) {
             Text(
               text = label,
@@ -1656,7 +1632,7 @@ private fun NinthShipModularForgePanel(
                   unlocked -> Color(0xFFCBD5E1)
                   else -> Color(0xFFFBBF24)
                 },
-              fontSize = 8.5.sp,
+              fontSize = 8.2.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -1675,7 +1651,7 @@ private fun NinthShipModularForgePanel(
           Text(
             text = "🔄 RESPEC (50❖)",
             color = Color(0xFFFDA4AF),
-            fontSize = 8.5.sp,
+            fontSize = 8.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -1703,10 +1679,10 @@ private fun NinthShipModularForgePanel(
         ) {
           Text(
             text =
-              if (unlockFullNinthShipOverride) "⚡ DEV TEST: 100 PTS ON"
-              else "⚡ DEV TEST: TOGGLE LVL 20 / LVL 100",
+              if (unlockFullNinthShipOverride) "DEV TEST: 100 PTS ON"
+              else "DEV TEST: TOGGLE LVL 20",
             color = if (unlockFullNinthShipOverride) Color(0xFFA7F3D0) else HangarElectricCyan,
-            fontSize = 8.5.sp,
+            fontSize = 8.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -1722,7 +1698,7 @@ private fun NinthShipModularForgePanel(
           modifier = Modifier.height(26.dp).testTag("btn_deploy_9th_ship"),
         ) {
           Text(
-            text = if (isUnlocked) "⚡ DEPLOY RIFT FRAME" else "🔒 LVL 20 GATE",
+            text = if (isUnlocked) "🚀 DEPLOY RIFT FRAME" else "🔒 LVL 20 GATE",
             color = Color.White,
             fontSize = 9.sp,
             fontWeight = FontWeight.Black,
@@ -1825,7 +1801,7 @@ private fun NinthShipModularForgePanel(
         AttributePointRow(
           label = "MAX FLUX",
           pts = activeSlot.maxFluxPts,
-          statReadout = "${spec.maxFlux.toInt()} ⚡ (2200 + 80/pt)",
+          statReadout = "${spec.maxFlux.toInt()} FLUX (2200 + 80/pt)",
           tagPrefix = "stat_flux",
           onDelta = { d ->
             adjustStatPoints(activeSlot.maxFluxPts, d) { activeSlot.copy(maxFluxPts = it) }
@@ -1834,7 +1810,7 @@ private fun NinthShipModularForgePanel(
         AttributePointRow(
           label = "FLUX RECHARGE",
           pts = activeSlot.rechargePts,
-          statReadout = "${spec.rechargeRate.toInt()} ⚡/S (240 + 8/pt)",
+          statReadout = "${spec.rechargeRate.toInt()} FLUX/S (240 + 8/pt)",
           tagPrefix = "stat_recharge",
           onDelta = { d ->
             adjustStatPoints(activeSlot.rechargePts, d) { activeSlot.copy(rechargePts = it) }
@@ -1980,7 +1956,7 @@ private fun NinthShipModularForgePanel(
         }
       }
 
-      // RIGHT COLUMN: AI Hull Forge (<2KB JSON Visual Recipe + Live 3D Preview)
+      // RIGHT COLUMN: Hull Forge (Live 3D Preview & Custom Silhouette Generator)
       Column(
         modifier =
           Modifier.weight(0.46f)
@@ -1992,7 +1968,6 @@ private fun NinthShipModularForgePanel(
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         val recipe = activeSlot.visualRecipe
-        val recipeBytes = remember(recipe) { recipe.toJsonString().toByteArray().size }
         val isFirstFree = activeSlot.aiGenerationsCount == 0
 
         Row(
@@ -2001,14 +1976,14 @@ private fun NinthShipModularForgePanel(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Text(
-            text = "🎨 AI HULL FORGE (PROCEDURAL 3D SHADER)",
+            text = "🎨 HULL FORGE (PROCEDURAL 3D CHASSIS)",
             color = Color(0xFFC084FC),
             fontSize = 9.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
           Text(
-            text = "RECIPE: ${recipeBytes}B (<2KB)",
+            text = "LIVE 3D PREVIEW",
             color = Color(0xFF4ADE80),
             fontSize = 8.sp,
             fontWeight = FontWeight.Bold,
@@ -2052,7 +2027,7 @@ private fun NinthShipModularForgePanel(
               )
             }
             Text(
-              text = "ALLIED (36x36)",
+              text = "ALLIED HULL",
               color = HangarElectricCyan,
               fontSize = 7.sp,
               fontFamily = FontFamily.Monospace,
@@ -2075,7 +2050,7 @@ private fun NinthShipModularForgePanel(
               )
             }
             Text(
-              text = "HOSTILE (36x36)",
+              text = "HOSTILE HULL",
               color = Color(0xFFEF4444),
               fontSize = 7.sp,
               fontFamily = FontFamily.Monospace,
@@ -2084,10 +2059,10 @@ private fun NinthShipModularForgePanel(
 
           Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
           ) {
             Text(
-              text = "SILHOUETTE: ${recipe.silhouette}",
+              text = "SILHOUETTE: ${recipe.silhouette.replace('_', ' ')}",
               color = Color.White,
               fontSize = 8.5.sp,
               fontWeight = FontWeight.Black,
@@ -2095,23 +2070,15 @@ private fun NinthShipModularForgePanel(
             )
             Text(
               text =
-                "SWEEP: ${recipe.wingSweep} • PLATES: ${recipe.chassisPlates} • ENG: ${recipe.engineStyle}",
+                "SWEEP: ${(recipe.wingSweep * 100f).roundToInt()}% • PLATES: ${recipe.chassisPlates} • ENG: ${recipe.engineStyle.replace('_', ' ')}",
               color = Color(0xFFCBD5E1),
               fontSize = 7.5.sp,
               fontFamily = FontFamily.Monospace,
             )
             Text(
-              text =
-                "PALETTE: ${recipe.primaryHex} / ${recipe.trimHex} / ${recipe.coreGlowHex}",
+              text = "FINISH: CUSTOM 3D METALLIC & CORE GLOW",
               color = Color(0xFFC084FC),
               fontSize = 7.5.sp,
-              fontFamily = FontFamily.Monospace,
-            )
-            Text(
-              text = "✓ GUARDRAILS: 36PX HITBOX • L>=0.32 CONTRAST • TEAM RING",
-              color = Color(0xFF4ADE80),
-              fontSize = 7.sp,
-              fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
             )
           }
