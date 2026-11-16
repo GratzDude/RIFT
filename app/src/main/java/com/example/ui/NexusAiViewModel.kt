@@ -7,6 +7,7 @@ import com.example.engine.CustomHullVisualRecipe
 import com.example.engine.RiftCalibrationState
 import com.example.engine.RiftCodex
 import com.example.engine.RiftGameEngine
+import com.example.engine.RiftProgressionCatalog
 import com.example.engine.SpecialBuffRegistryEntry
 import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
@@ -38,9 +39,9 @@ sealed interface NexusStreamState {
 }
 
 /**
- * 100% On-Device NEXUS Tactical Intelligence Engine (`#nexus-ai`), AI Hull Forge, and AI Buff Forge.
+ * 100% On-Device NEXUS Tactical Intelligence Engine (`#nexus-ai`), Hull Forge, and Buff Forge.
  * Operates with zero cloud LLM calls, zero network latency, and full live access to RIFT physics,
- * 100-Point Ship Parity specs, Ranked/Custom Mode rules, and Sworn Pilot Leaderboards.
+ * Rift Conduit Resonance, 100-Point Ship Parity specs, Ranked/Custom Mode rules, and Sworn Pilot Leaderboards.
  */
 class NexusAiViewModel : ViewModel() {
 
@@ -140,18 +141,18 @@ class NexusAiViewModel : ViewModel() {
             accumulated.append(piece)
             val partial = accumulated.toString()
             _streamState.value = NexusStreamState.Streaming(partial)
-            updateStreamingBubble(streamingNexusId, partial, stillStreaming = true)
+            updateStreamingMessage(streamingNexusId, partial, stillStreaming = true)
             idx = end
             delay(12)
           }
           val finalText = fullAnswer.trim()
-          updateStreamingBubble(streamingNexusId, finalText, stillStreaming = false)
+          updateStreamingMessage(streamingNexusId, finalText, stillStreaming = false)
           _streamState.value = NexusStreamState.Success(finalText)
           onStatsMutated()
         } catch (e: CancellationException) {
           throw e
         } catch (e: Exception) {
-          removeBubble(streamingNexusId)
+          removeStreamingMessage(streamingNexusId)
           lastFailedQuestion = question
           _streamState.value =
             NexusStreamState.Error(e.localizedMessage ?: "Local NEXUS telemetry interrupted.")
@@ -236,6 +237,9 @@ class NexusAiViewModel : ViewModel() {
         "ship",
         "flux",
         "shard",
+        "resonance",
+        "conduit",
+        "directive",
         "viper",
         "ricochet",
         "suppressor",
@@ -250,6 +254,7 @@ class NexusAiViewModel : ViewModel() {
         "bounty",
         "syndicate",
         "armada",
+        "strike wing",
         "stasis",
         "skirmish",
         "convergence",
@@ -268,12 +273,34 @@ class NexusAiViewModel : ViewModel() {
         "drifter",
         "build",
         "spectat",
+        "megafat",
       )
     if (nonRiftKeywords.any { lower.contains(it) } && riftContextKeywords.none { lower.contains(it) }) {
-      return "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Ask about RIFT ships, weapons, Flux math, Ranked Modes, Custom Games, or Sworn Pilot Leaderboards."
+      return "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Ask about RIFT ships, weapons, Flux math, Rift Conduit Resonance, Ranked Modes, Custom Games, or Sworn Pilot Leaderboards."
     }
 
-    // 2. Pixel / Laser Geometry Queries
+    // 2. Rift Conduit / Resonance / Starting Bounty / Daily Directives Queries
+    if (
+      lower.contains("resonance") ||
+        lower.contains("conduit") ||
+        lower.contains("directive") ||
+        lower.contains("starting bounty")
+    ) {
+      val liveRes = engine?.liveResonance ?: 0
+      val peakRes = engine?.peakResonance ?: 0
+      val tier = RiftProgressionCatalog.getConduitTierForResonance(liveRes)
+      return buildString {
+        appendLine("NEXUS RIFT CONDUIT TELEMETRY // LIVE & PEAK RESONANCE")
+        appendLine(
+          "• Active Resonance: Live $liveRes (${tier.title}) | Peak $peakRes | Starting Bounty: ${tier.startingBounty} BTY | Shards: ${engine?.riftShards ?: 0L}❖"
+        )
+        appendLine("• Starting Bounty Ladder (100 -> 500 Max): Drift Initiate (0..149 = 100 BTY), Vanguard (150..349 = 150 BTY), Interceptor (350..649 = 225 BTY), Phantom (650..999 = 300 BTY), Rift Commander (1000..1499 = 400 BTY), Apex Archon (1500+ = 500 BTY).")
+        appendLine("• Ranked Gain/Loss Math: Human PvP kills (+18 RES, +28 on HVT shutdown), Ranked match wins (+30 RES), accuracy bonus on life end; deaths/losses adjust Live Resonance while Peak Resonance permanently unlocks cosmetics & Frame B–E. Bot kill Resonance tapers to 0 at 500+ Live Resonance.")
+        append("• 3 Daily Directives: Earn 40❖ + 50❖ + 60❖ plus the +100❖ 3/3 Sweep Chest = 250❖/day (with 1 free directive reroll per UTC day).")
+      }
+    }
+
+    // 3. Pixel / Laser Geometry Queries
     if (lower.contains("pixel") || (lower.contains("suppressor") && lower.contains("laser"))) {
       val projScale = RiftCalibrationState.projectileScale
       val sup = RiftCodex.getShipById(3)
@@ -286,7 +313,7 @@ class NexusAiViewModel : ViewModel() {
         appendLine(
           String.format(
             Locale.US,
-            "• Suppressor Rotary Pulse Speed: %.0f px/s (%.0f Flux cost, %.3fs interval, %.0f Flux damage per bolt).",
+            "• Suppressor Rapid Twin-Ion Speed: %.0f px/s (%.0f Flux cost, %.3fs interval, %.0f Flux damage per bolt).",
             sup.primarySpeed,
             sup.primaryCost,
             sup.primaryCooldown,
@@ -324,7 +351,7 @@ class NexusAiViewModel : ViewModel() {
       }
     }
 
-    // 3. Leaderboard / Top Pilots / Bounties / Executioner Queries
+    // 4. Leaderboard / Top Pilots / Bounties / Executioner Queries
     if (
       lower.contains("leaderboard") ||
         lower.contains("highest bounty") ||
@@ -371,7 +398,7 @@ class NexusAiViewModel : ViewModel() {
               "${p.kills}.00"
             }
           appendLine(
-            "• Your Live Status: [${p.syndicateTag}] ${p.callsign} (${if (isSworn) "Sworn Pilot" else "Drifter"}) | Hull: ${p.spec.name} | Live Bounty: ★ ${p.bounty} | Session K/D: ${p.kills}K/${p.deaths}D ($kd) | Shards: ${engine.riftShards}❖"
+            "• Your Live Status: [${p.syndicateTag}] ${p.callsign} (${if (isSworn) "Sworn Pilot" else "Drifter"}) | Hull: ${p.spec.name} | Live Resonance: ${engine.liveResonance} | Live Bounty: ${p.bounty} BTY | Session K/D: ${p.kills}K/${p.deaths}D ($kd) | Shards: ${engine.riftShards}❖"
           )
         }
         if (swornAllTime.isNotEmpty()) {
@@ -379,7 +406,7 @@ class NexusAiViewModel : ViewModel() {
           swornAllTime.forEachIndexed { i, entry ->
             val tag = if (entry.syndicateTag.isNotBlank()) "[${entry.syndicateTag}] " else ""
             appendLine(
-              "  #${i + 1} $tag${entry.callsign} — Peak ★ ${entry.allTimeBounty} (${entry.allTimeKills}K / ${entry.allTimeDeaths}D)"
+              "  #${i + 1} $tag${entry.callsign} — Peak ${entry.allTimeBounty} BTY (${entry.allTimeKills}K / ${entry.allTimeDeaths}D)"
             )
           }
         } else if (swornPvp.isNotEmpty()) {
@@ -387,7 +414,7 @@ class NexusAiViewModel : ViewModel() {
           swornPvp.forEachIndexed { i, entry ->
             val tag = if (entry.syndicateTag.isNotBlank()) "[${entry.syndicateTag}] " else ""
             appendLine(
-              "  #${i + 1} $tag${entry.callsign} — PvP Peak ★ ${entry.pvpBounty} (${entry.pvpKills}K / ${entry.pvpDeaths}D)"
+              "  #${i + 1} $tag${entry.callsign} — PvP Peak ${entry.pvpBounty} BTY (${entry.pvpKills}K / ${entry.pvpDeaths}D)"
             )
           }
         } else if (liveTelemetrySnapshot.contains("Top Cloud Sworn Pilot")) {
@@ -405,7 +432,7 @@ class NexusAiViewModel : ViewModel() {
       }.trim()
     }
 
-    // 4. 100-Point Rift Frame Theorycrafting / Build Queries
+    // 5. 100-Point Rift Frame Theorycrafting / Build Queries
     if (
       lower.contains("theorycraft") ||
         lower.contains("rift frame") ||
@@ -416,25 +443,25 @@ class NexusAiViewModel : ViewModel() {
     ) {
       val budget = engine?.getCustomizationPointsTotal() ?: 100
       return buildString {
-        appendLine("NEXUS 100-POINT RIFT FRAME THEORYCRAFT // (Active Budget: $budget Pts • Full 100 Pts Unlocked at Lv 20)")
+        appendLine("NEXUS 100-POINT RIFT FRAME THEORYCRAFT // (Active Budget: $budget Pts • Open at 0 Resonance)")
         appendLine("1) 100-PT HYPER-RAIL PHASE SNIPER (Frame A):")
-        appendLine("   • Hull Points (60P): Speed 16P | Thrust 12P | Turn 8P | Max Flux 12P (3,160 Flux) | Recharge 12P (336 Flux/s)")
-        appendLine("   • Weapons (40P): Hyper-Velocity Dual Rail (15P • 25 Flux • 285 Flux DMG @ 1,120 px/s) + Phase Dash (25P • 300 Flux • 2.5s CD • +35% Next-Shot Rail Overcharge)")
-        appendLine("2) 100-PT ECLIPSE BUBBLE BRAWLER (Frame E):")
-        appendLine("   • Hull Points (60P): Speed 10P | Thrust 12P | Turn 10P | Max Flux 16P (3,480 Flux) | Recharge 12P (336 Flux/s)")
-        appendLine("   • Weapons (40P): Parallel Twin-Stream (15P • 22 Flux • 2x135 Flux DMG) + Eclipse Stasis Bubble (25P • 320 Flux • 6.0s 275px two-way dome, 8.5s CD)")
+        appendLine("   • Hull Points (65P): Speed 25P | Thrust 8P | Turn 18P | Max Flux 0P (2,200 Flux) | Recharge 14P (352 Flux/s)")
+        appendLine("   • Weapons (35P): 1-Bounce Rail-Laser (15P • 26 Flux • 225 Flux DMG @ 1,280 px/s) + Phase Dash (20P • 320 Flux • 0.65s CD • +35% Next-Shot Rail Overcharge)")
+        appendLine("2) 100-PT ECLIPSE STASIS ARCHON (Frame E):")
+        appendLine("   • Hull Points (66P): Speed 12P | Thrust 12P | Turn 11P | Max Flux 18P (3,640 Flux) | Recharge 13P (344 Flux/s)")
+        appendLine("   • Weapons (34P): Ricochet Twin-Pulse (12P • 20 Flux • 2x92 Flux DMG) + Two-Way Stasis (22P • 320 Flux • 6.0s 275px two-way Stasis field, 8.5s CD)")
         append(
-          "• Tip: Save up to 5 independent builds across Frame A through Frame E in Hangar & Progression."
+          "• Tip: All 10 hulls are open from 0 Resonance. Save up to 5 independent builds across Frame A through Frame E in Hangar Deck & Rift Conduit."
         )
       }
     }
 
-    // 5. Specific Ship Queries (Ships 1..10)
+    // 6. Specific Ship Queries (Ships 1..10)
     val matchedShips =
       RiftCodex.SHIPS.filter { spec ->
         val nameLower = spec.name.lowercase(Locale.US)
         lower.contains(nameLower) ||
-          (spec.id == 9 && (lower.contains("interdictor") || lower.contains("bubble") || lower.contains("eclipse")))
+          (spec.id == 9 && (lower.contains("interdictor") || lower.contains("stasis") || lower.contains("eclipse")))
       }
     if (matchedShips.isNotEmpty()) {
       return buildString {
@@ -482,7 +509,7 @@ class NexusAiViewModel : ViewModel() {
             appendLine(
               String.format(
                 Locale.US,
-                "• Secondary [%s • %dP]: 320 Flux cost | %.1fs CD | Anchors a %.0fpx radius (%.0fpx diameter) two-way Stasis Bubble for %.1fs. Ships bounce off both sides with 0 Flux wall damage; reflects ordnance inside and outside.",
+                "• Secondary [%s • %dP]: 320 Flux cost | %.1fs CD | Anchors a %.0fpx radius (%.0fpx diameter) two-way Stasis field for %.1fs. Ships bounce off both sides with 0 Flux wall damage; reflects ordnance inside and outside.",
                 s.secondaryTitle,
                 s.secondaryPts,
                 RiftCalibrationState.interdictorBubbleCooldown,
@@ -523,7 +550,7 @@ class NexusAiViewModel : ViewModel() {
       }
     }
 
-    // 6. Game Mode & Custom Game Queries
+    // 7. Game Mode & Custom Game Queries
     if (
       lower.contains("mode") ||
         lower.contains("convergence") ||
@@ -537,21 +564,22 @@ class NexusAiViewModel : ViewModel() {
         lower.contains("tug") ||
         lower.contains("syndicate war") ||
         lower.contains("custom game") ||
+        lower.contains("megafat") ||
         lower.contains("spectat")
     ) {
       return buildString {
-        appendLine("NEXUS SECTOR MODES // 6 RANKED MODES + CLONEABLE CUSTOM GAMES")
+        appendLine("NEXUS SECTOR MODES // 6 RANKED MODES + CLONEABLE CUSTOM RIFTS")
         appendLine("1) SECTOR CONVERGENCE (FFA): 20-pilot open arena (60m cycle). #1 Bounty with >50% presence wins +100❖. Ship switching allowed.")
-        appendLine("2) RIFT SKIRMISH (Team Deathmatch): 2v2–5v5 Best-of-3 rounds. Ship Lock ON. Eliminated pilots use the Interactive Living-Teammate Spectator Bar (◀ / ▶, ally pills, or Gamepad LB/RB). +75❖.")
+        appendLine("2) RIFT SKIRMISH (Team Deathmatch): 2v2–5v5 Best-of-3 rounds. Ship Lock ON. Eliminated pilots use the Living-Teammate Spectator Box (prev/next pills or Gamepad LB/RB). +75❖.")
         appendLine("3) FLUX CORE: Hold the center Flux Core for +15 Bounty/s and up to Tier 10 Overcharge (+50% DMG/Recharge, +40% Speed, 2x pulsing Gold radar beacon). Ship switching allowed.")
-        appendLine("4) STASIS BREACH (10v10 Circular Stasis Jail): Eliminated enemies warp into your team's 360px circular Stasis Bubble Jail. Prisoners deal 100% weapon damage to the 40,000 Flux center Stasis Core to detonate a breakout shockwave! +100❖.")
-        appendLine("5) RIFT CONTROL (Tug-of-War): Contest Rift Alpha & Rift Omega with NO Safe Zone anywhere on the map and a Graphical Dual-Rift Tug-of-War Top HUD Bar. +90❖.")
-        appendLine("6) SYNDICATE WARS: Ranked Syndicate-vs-Syndicate ladder for 100% same-Syndicate Armadas. Ship Lock ON. Awards +125❖ & War Trophies.")
-        append("• CUSTOM GAMES: Clone any mode with custom rules, AI Bots ON/OFF, live Calibration sliders, and [📡 SYNC TO ALL].")
+        appendLine("4) STASIS BREACH (10v10 Circular Stasis Jail): Eliminated enemies warp into your team's circular Stasis Jail. Prisoners deal 100% weapon damage to the center Stasis Core to detonate a breakout shockwave. +100❖.")
+        appendLine("5) RIFT CONTROL (Tug-of-War): Contest Rift Alpha & Rift Omega with NO Safe Zone anywhere on the map and a Graphical Dual-Rift Tug-of-War Top HUD Bar. +85❖.")
+        appendLine("6) SYNDICATE WARS: Ranked Syndicate-vs-Syndicate ladder for 100% same-Syndicate Strike Wings. Ship Lock ON. Awards +75❖/+100❖ & War Trophies.")
+        append("• CUSTOM RIFTS: Clone any mode with public or 6-char private room codes, MegaFat Bullets, AI Bots ON/OFF, and live Calibration sync.")
       }
     }
 
-    // 7. Buffs, Supply Crates & Hull Stat Upgrades Queries
+    // 8. Buffs, Supply Crates & Hull Stat Upgrades Queries
     if (
       lower.contains("buff") ||
         lower.contains("crate") ||
@@ -568,31 +596,34 @@ class NexusAiViewModel : ViewModel() {
         appendLine("  - Plus BNC (+30 Bouncing Primary Shots) & MULTI (+25 Multi-Shot Ammo).")
         appendLine("• 4th Right-Hand Special Buff Slot Pickups:")
         append(
-          "  - Seeker Torpedo (1x • 780 Flux homing 2.5s), Shatter Cone (2x • 3 waves of 9 bouncing shards), Nova Ring (2x • 24 radial ricochet bolts), Stasis Barrier (2x • 45.0s tethered cyan hard-light forcefield), Hyper Surge (2x • 0 Flux 1.65x speed burn), Holo Phantom (2x • decoy clone), and custom AI-Forged Buffs!"
+          "  - Seeker Torpedo (1x • 880 Flux homing 2.5s), Shatter Cone (2x • 3 waves of bouncing shards), Nova Ring (1x • 16 radial ricochet bolts), Stasis Barrier (1x • 45.0s tethered cyan hard-light forcefield), Hyper Surge (1x • 0 Flux speed burn), Holo Phantom (1x • decoy clone), and custom Forged Buffs."
         )
       }
     }
 
-    // 8. General / Meta / Live Status Summary
-    val p = engine?.localPlayer
-    val shipSpec = p?.spec ?: RiftCodex.getShipById(1)
+    // 9. General / Meta / Live Status Summary
     val modeTitle =
-      engine?.currentCustomGame?.let { "Custom Game: ${it.title} (${it.baseMode.title})" }
+      engine?.currentCustomGame?.let { "Custom Rift: ${it.title} (${it.baseMode.title})" }
         ?: engine?.activeRankedMode?.title
         ?: "Sector Convergence"
     return buildString {
       appendLine("NEXUS TACTICAL TELEMETRY // ON-DEVICE CORE READY")
-      if (p != null && engine != null) {
+      if (engine != null) {
+        val p = engine.localPlayer
+        val shipSpec = p.spec
+        val tier = RiftProgressionCatalog.getConduitTierForResonance(engine.liveResonance)
         appendLine(
           String.format(
             Locale.US,
-            "• Active Hull: %s (%s) | Flux: %.0f / %.0f (%.0f Flux/s) | Bounty: ★ %d | Shards: %d❖",
+            "• Active Hull: %s (%s) | Flux: %.0f / %.0f (%.0f Flux/s) | Bounty: %d BTY | Resonance: %d (%s) | Shards: %d❖",
             shipSpec.name,
             shipSpec.role,
             p.flux,
             p.maxFlux,
             shipSpec.rechargeRate,
             p.bounty,
+            engine.liveResonance,
+            tier.title,
             engine.riftShards,
           )
         )
@@ -602,14 +633,14 @@ class NexusAiViewModel : ViewModel() {
           "• Active Sector: $modeTitle | Pilot Status: ${if (isSworn) "Sworn Pilot" else "[RFT] Drifter"}"
         )
       }
-      appendLine("• All 10 Ships (100-Point Parity): Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor (36 Flux/s Cloak + 0 Flux EMP), Valkyrie, Manta, Eclipse (6.0s 275px Stasis Bubble, 320 Flux, 8.5s CD), and modular Rift Frame (100 Pts at Lv 20, Frame A–E).")
+      appendLine("• All 10 Ships (Open at 0 Resonance • 100-Point Parity): Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor (36 Flux/s Cloak + 0 Flux EMP), Valkyrie, Manta, Eclipse (6.0s 275px Two-Way Stasis, 320 Flux, 8.5s CD), and modular Rift Frame (100 Pts + Frame A–E).")
       append(
-        "• Ask about any ship's exact pixel/Flux math, 100-pt Rift Frame builds, Paired Phase Rifts, the 6 Ranked Modes, or Sworn Pilot Leaderboards."
+        "• Ask about any ship's exact pixel/Flux math, Rift Conduit Resonance & 250❖ Daily Directives, 100-pt Rift Frame builds, Paired Phase Rifts, the 6 Ranked Modes, or Sworn Pilot Leaderboards."
       )
     }
   }
 
-  private fun updateStreamingBubble(targetId: Long, newText: String, stillStreaming: Boolean) {
+  private fun updateStreamingMessage(targetId: Long, newText: String, stillStreaming: Boolean) {
     _messages.value =
       _messages.value.map { msg ->
         if (msg.id == targetId) {
@@ -620,7 +651,7 @@ class NexusAiViewModel : ViewModel() {
       }
   }
 
-  private fun removeBubble(targetId: Long) {
+  private fun removeStreamingMessage(targetId: Long) {
     _messages.value = _messages.value.filterNot { it.id == targetId }
   }
 }

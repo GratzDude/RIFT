@@ -9,10 +9,48 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Full 100-Point Rift Frame budget unlocked immediately at Level 20 (or with Developer Override).
+ * Full 100-Point Rift Frame budget unlocked immediately for all pilots from 0 Resonance.
  */
-fun getRiftFramePointBudget(pilotLevel: Int, devOverride: Boolean = false): Int =
-  if (pilotLevel >= 20 || devOverride) 100 else 100
+@Suppress("UNUSED_PARAMETER")
+fun getRiftFramePointBudget(pilotLevel: Int = 1, devOverride: Boolean = false): Int = 100
+
+data class ConduitRankTier(
+  val minResonance: Int,
+  val maxResonance: Int,
+  val title: String,
+  val startingBounty: Int,
+  val accentColorHex: Long,
+)
+
+enum class DailyDirectiveMetric {
+  KILLS_EARNED,
+  HVT_SHUTDOWNS,
+  CRATES_COLLECTED,
+  DAMAGE_DEALT,
+  BOUNTY_PEAK_IN_LIFE,
+  MATCHES_PLAYED,
+}
+
+data class DailyConduitDirective(
+  val slotIndex: Int,
+  val directiveId: String,
+  val title: String,
+  val subtitle: String,
+  val metric: DailyDirectiveMetric,
+  val targetValue: Int,
+  val progressValue: Int = 0,
+  val shardReward: Long,
+  val resonanceReward: Int,
+  val claimed: Boolean = false,
+) {
+  val isComplete: Boolean
+    get() = progressValue >= targetValue
+
+  val progressFraction: Float
+    get() =
+      if (targetValue <= 0) 1f
+      else (progressValue.toFloat() / targetValue.toFloat()).coerceIn(0f, 1f)
+}
 
 data class CosmeticCatalogItem(
   val id: Int,
@@ -22,6 +60,7 @@ data class CosmeticCatalogItem(
   val freeAtLevel: Int,
   val shardCost: Long,
   val accentColorHex: Int,
+  val freeAtResonance: Int = 0,
 )
 
 data class FrameSlotGateInfo(
@@ -30,14 +69,161 @@ data class FrameSlotGateInfo(
   val freeAtLevel: Int,
   val shardCost: Long,
   val summary: String,
+  val freeAtResonance: Int = 0,
 )
 
 /**
- * 6-Pillar Lv 1-100 Career Progression & 3D Rift Shard Foundry Catalog.
- * Every cosmetic and Rift Frame bay unlocks 100% free via gameplay levels OR early via Rift Shards.
+ * Rift Conduit Live & Peak Resonance Catalog, Daily ❖ Directives Generator, and 3D Cosmetic Foundry.
+ * All 10 ships (including modular Rift Frame at full 100-Point parity) are open from 0 Resonance.
  * Zero combat stat boosts are ever sold for currency.
  */
 object RiftProgressionCatalog {
+
+  val CONDUIT_RANK_TIERS: List<ConduitRankTier> =
+    listOf(
+      ConduitRankTier(0, 149, "DRIFT INITIATE", 100, 0xFF38BDF8),
+      ConduitRankTier(150, 349, "VANGUARD", 150, 0xFF00F5D4),
+      ConduitRankTier(350, 649, "INTERCEPTOR", 225, 0xFF34D399),
+      ConduitRankTier(650, 999, "PHANTOM", 300, 0xFFC084FC),
+      ConduitRankTier(1000, 1499, "RIFT COMMANDER", 400, 0xFFF59E0B),
+      ConduitRankTier(1500, Int.MAX_VALUE, "APEX ARCHON", 500, 0xFFEC4899),
+    )
+
+  fun getConduitTierForResonance(liveResonance: Int): ConduitRankTier {
+    val clean = liveResonance.coerceAtLeast(0)
+    return CONDUIT_RANK_TIERS.firstOrNull { clean in it.minResonance..it.maxResonance }
+      ?: CONDUIT_RANK_TIERS.last()
+  }
+
+  fun computeStartingBountyForResonance(liveResonance: Int): Int =
+    getConduitTierForResonance(liveResonance).startingBounty
+
+  fun getConduitProgressFraction(liveResonance: Int): Float {
+    val clean = liveResonance.coerceAtLeast(0)
+    val tier = getConduitTierForResonance(clean)
+    if (tier.maxResonance == Int.MAX_VALUE) return 1f
+    val span = (tier.maxResonance - tier.minResonance + 1).coerceAtLeast(1)
+    return ((clean - tier.minResonance).toFloat() / span.toFloat()).coerceIn(0f, 1f)
+  }
+
+  fun getNextConduitTierThreshold(liveResonance: Int): Pair<Int, String> {
+    val clean = liveResonance.coerceAtLeast(0)
+    val nextTier = CONDUIT_RANK_TIERS.firstOrNull { it.minResonance > clean }
+    return if (nextTier != null) {
+      nextTier.minResonance to nextTier.title
+    } else {
+      1500 to "APEX ARCHON"
+    }
+  }
+
+  private data class DirectiveTemplate(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val metric: DailyDirectiveMetric,
+    val target: Int,
+  )
+
+  private val DIRECTIVE_TEMPLATES: List<DirectiveTemplate> =
+    listOf(
+      DirectiveTemplate(
+        id = "elim_pilots_5",
+        title = "SECTOR SWEEP",
+        subtitle = "Eliminate 5 hostile hulls in any Arena sector.",
+        metric = DailyDirectiveMetric.KILLS_EARNED,
+        target = 5,
+      ),
+      DirectiveTemplate(
+        id = "crates_collect_6",
+        title = "SUPPLY HARVEST",
+        subtitle = "Collect 6 Supply Crates in open sector space.",
+        metric = DailyDirectiveMetric.CRATES_COLLECTED,
+        target = 6,
+      ),
+      DirectiveTemplate(
+        id = "flux_damage_7500",
+        title = "PLASMA BARRAGE",
+        subtitle = "Deal 7,500 Flux weapon damage to hostile ships.",
+        metric = DailyDirectiveMetric.DAMAGE_DEALT,
+        target = 7500,
+      ),
+      DirectiveTemplate(
+        id = "hvt_shutdown_1",
+        title = "APEX BOUNTY HUNT",
+        subtitle = "Shut down 1 High-Value Target (250+ Bounty).",
+        metric = DailyDirectiveMetric.HVT_SHUTDOWNS,
+        target = 1,
+      ),
+      DirectiveTemplate(
+        id = "bounty_peak_300",
+        title = "RESONANCE SURGE",
+        subtitle = "Reach 300+ Bounty in a single Arena sortie.",
+        metric = DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE,
+        target = 300,
+      ),
+      DirectiveTemplate(
+        id = "matches_complete_2",
+        title = "CONVERGENCE DUTY",
+        subtitle = "Complete 2 Arena match cycles or Ranked rounds.",
+        metric = DailyDirectiveMetric.MATCHES_PLAYED,
+        target = 2,
+      ),
+      DirectiveTemplate(
+        id = "elim_pilots_10",
+        title = "STRIKE WING VANGUARD",
+        subtitle = "Eliminate 10 hostile hulls across any mode.",
+        metric = DailyDirectiveMetric.KILLS_EARNED,
+        target = 10,
+      ),
+      DirectiveTemplate(
+        id = "flux_damage_14000",
+        title = "REACTOR BREAKER",
+        subtitle = "Inflict 14,000 cumulative Flux weapon damage.",
+        metric = DailyDirectiveMetric.DAMAGE_DEALT,
+        target = 14000,
+      ),
+    )
+
+  /**
+   * Deterministically generates the 3 Daily Conduit Directives for [utcDay] (100% on-device).
+   * Slot rewards: Slot 0 = 40❖ + 10 RES, Slot 1 = 50❖ + 15 RES, Slot 2 = 60❖ + 20 RES (+100❖ & +25 RES 3/3 Sweep = 250❖/day).
+   */
+  fun generateDailyDirectivesForDay(
+    utcDay: Long,
+    slotRerollCounts: IntArray = intArrayOf(0, 0, 0),
+  ): List<DailyConduitDirective> {
+    val shardRewards = longArrayOf(40L, 50L, 60L)
+    val resRewards = intArrayOf(10, 15, 20)
+    val usedMetrics = mutableSetOf<DailyDirectiveMetric>()
+    val result = ArrayList<DailyConduitDirective>(3)
+
+    for (slot in 0..2) {
+      val rerollSalt = slotRerollCounts.getOrElse(slot) { 0 }.coerceAtLeast(0)
+      val rawHash = abs((utcDay * 1_103_515_245L + slot * 97_531L + rerollSalt * 31_337L).toInt())
+      var chosen = DIRECTIVE_TEMPLATES[rawHash % DIRECTIVE_TEMPLATES.size]
+      var probe = 1
+      while (chosen.metric in usedMetrics && probe < DIRECTIVE_TEMPLATES.size) {
+        chosen = DIRECTIVE_TEMPLATES[(rawHash + probe) % DIRECTIVE_TEMPLATES.size]
+        probe++
+      }
+      usedMetrics.add(chosen.metric)
+      result.add(
+        DailyConduitDirective(
+          slotIndex = slot,
+          directiveId = "${chosen.id}_d${utcDay}_r$rerollSalt",
+          title = chosen.title,
+          subtitle = chosen.subtitle,
+          metric = chosen.metric,
+          targetValue = chosen.target,
+          progressValue = 0,
+          shardReward = shardRewards[slot],
+          resonanceReward = resRewards[slot],
+          claimed = false,
+        )
+      )
+    }
+    return result
+  }
 
   fun getRiftFramePointBudget(pilotLevel: Int, devOverride: Boolean = false): Int =
     com.example.engine.getRiftFramePointBudget(pilotLevel, devOverride)
@@ -70,11 +256,6 @@ object RiftProgressionCatalog {
     }
   }
 
-  /**
-   * Per-Level Rift Shard Rewards:
-   * - Every level 2..100 awards +30 Rift Shards
-   * - Every 5th level awards +150 Milestone Bonus (+300 at Lv 20 Rift Frame unlock!)
-   */
   fun getShardRewardForLevel(level: Int): Long {
     if (level < 2 || level > 100) return 0L
     val base = 30L
@@ -118,6 +299,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 1,
         shardCost = 0L,
         accentColorHex = 0xFF00E5FF.toInt(),
+        freeAtResonance = 0,
       ),
       CosmeticCatalogItem(
         id = 1,
@@ -127,6 +309,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 15,
         shardCost = 250L,
         accentColorHex = 0xFF818CF8.toInt(),
+        freeAtResonance = 200,
       ),
       CosmeticCatalogItem(
         id = 2,
@@ -136,6 +319,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 35,
         shardCost = 450L,
         accentColorHex = 0xFFFFCA28.toInt(),
+        freeAtResonance = 550,
       ),
       CosmeticCatalogItem(
         id = 3,
@@ -145,6 +329,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 60,
         shardCost = 700L,
         accentColorHex = 0xFFC084FC.toInt(),
+        freeAtResonance = 1050,
       ),
       CosmeticCatalogItem(
         id = 4,
@@ -154,6 +339,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 85,
         shardCost = 1000L,
         accentColorHex = 0xFFF43F5E.toInt(),
+        freeAtResonance = 1650,
       ),
     )
 
@@ -167,6 +353,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 1,
         shardCost = 0L,
         accentColorHex = 0xFF38BDF8.toInt(),
+        freeAtResonance = 0,
       ),
       CosmeticCatalogItem(
         id = 1,
@@ -176,6 +363,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 10,
         shardCost = 200L,
         accentColorHex = 0xFF00F5D4.toInt(),
+        freeAtResonance = 150,
       ),
       CosmeticCatalogItem(
         id = 2,
@@ -185,6 +373,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 30,
         shardCost = 400L,
         accentColorHex = 0xFFFACC15.toInt(),
+        freeAtResonance = 450,
       ),
       CosmeticCatalogItem(
         id = 3,
@@ -194,6 +383,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 55,
         shardCost = 650L,
         accentColorHex = 0xFFA855F7.toInt(),
+        freeAtResonance = 950,
       ),
     )
 
@@ -207,6 +397,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 1,
         shardCost = 0L,
         accentColorHex = 0xFF00F5D4.toInt(),
+        freeAtResonance = 0,
       ),
       CosmeticCatalogItem(
         id = 1,
@@ -216,6 +407,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 25,
         shardCost = 300L,
         accentColorHex = 0xFFFFB300.toInt(),
+        freeAtResonance = 350,
       ),
       CosmeticCatalogItem(
         id = 2,
@@ -225,6 +417,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 45,
         shardCost = 500L,
         accentColorHex = 0xFFC084FC.toInt(),
+        freeAtResonance = 750,
       ),
       CosmeticCatalogItem(
         id = 3,
@@ -234,6 +427,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 75,
         shardCost = 800L,
         accentColorHex = 0xFFFB7185.toInt(),
+        freeAtResonance = 1300,
       ),
     )
 
@@ -247,6 +441,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 1,
         shardCost = 0L,
         accentColorHex = 0xFFFACC15.toInt(),
+        freeAtResonance = 0,
       ),
       CosmeticCatalogItem(
         id = 1,
@@ -256,6 +451,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 40,
         shardCost = 450L,
         accentColorHex = 0xFFFFD54F.toInt(),
+        freeAtResonance = 500,
       ),
       CosmeticCatalogItem(
         id = 2,
@@ -265,6 +461,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 65,
         shardCost = 700L,
         accentColorHex = 0xFFA855F7.toInt(),
+        freeAtResonance = 1000,
       ),
       CosmeticCatalogItem(
         id = 3,
@@ -274,6 +471,7 @@ object RiftProgressionCatalog {
         freeAtLevel = 95,
         shardCost = 1100L,
         accentColorHex = 0xFF00F5D4.toInt(),
+        freeAtResonance = 1750,
       ),
     )
 
@@ -282,37 +480,42 @@ object RiftProgressionCatalog {
       FrameSlotGateInfo(
         slotId = "Frame A",
         archetypeTitle = "Rail Interceptor (100 Pts)",
-        freeAtLevel = 20,
+        freeAtLevel = 1,
         shardCost = 0L,
-        summary = "Unlocks automatically at Level 20 with the full 100-Point Parity Budget.",
+        summary = "Open immediately at 0 Resonance with the full 100-Point Parity Budget.",
+        freeAtResonance = 0,
       ),
       FrameSlotGateInfo(
         slotId = "Frame B",
         archetypeTitle = "Scatter Brawler (100 Pts)",
         freeAtLevel = 35,
         shardCost = 250L,
-        summary = "Unlocks free at Lv 35 or instantly for 250 Rift Shards.",
+        summary = "Unlocks free at 300 Peak Resonance or instantly for 250 Rift Shards.",
+        freeAtResonance = 300,
       ),
       FrameSlotGateInfo(
         slotId = "Frame C",
         archetypeTitle = "Bank Specialist (100 Pts)",
         freeAtLevel = 50,
         shardCost = 400L,
-        summary = "Unlocks free at Lv 50 or instantly for 400 Rift Shards.",
+        summary = "Unlocks free at 650 Peak Resonance or instantly for 400 Rift Shards.",
+        freeAtResonance = 650,
       ),
       FrameSlotGateInfo(
         slotId = "Frame D",
         archetypeTitle = "Stealth Phantom (100 Pts)",
         freeAtLevel = 75,
         shardCost = 600L,
-        summary = "Unlocks free at Lv 75 or instantly for 600 Rift Shards.",
+        summary = "Unlocks free at 1,100 Peak Resonance or instantly for 600 Rift Shards.",
+        freeAtResonance = 1100,
       ),
       FrameSlotGateInfo(
         slotId = "Frame E",
         archetypeTitle = "Stasis Archon (100 Pts)",
         freeAtLevel = 100,
         shardCost = 600L,
-        summary = "Unlocks free at Lv 100 or instantly for 600 Rift Shards.",
+        summary = "Unlocks free at 1,600 Peak Resonance or instantly for 600 Rift Shards.",
+        freeAtResonance = 1600,
       ),
     )
 
@@ -1019,11 +1222,11 @@ data class CustomShipLoadoutSlot(
         ),
         SecondaryAbilityOption(
           "INTERDICTOR_DOME",
-          "Stasis Containment Bubble",
-          "BUBBLE",
+          "Two-Way Stasis",
+          "STASIS",
           22,
           "320 Flux • 8.5s CD",
-          "6.0s two-way stasis bubble (275px radius). Nothing enters or leaves.",
+          "6.0s two-way Stasis field (275px radius). Nothing enters or leaves.",
         ),
       )
 
@@ -1572,7 +1775,7 @@ object RiftCodex {
         "SIEGE" ->
           SecondaryTuple("Heavy Siege Bomb (Air-Burst)", "SIEGE BOMB", 650f, 1.20f, 1350f, 1, 360f)
         "INTERDICTOR_DOME" ->
-          SecondaryTuple("Stasis Bubble (320 Flux • 6.0s)", "BUBBLE", 320f, 8.5f, 0f, 0, 0f)
+          SecondaryTuple("Stasis (320 Flux • 6.0s)", "STASIS", 320f, 8.5f, 0f, 0, 0f)
         else ->
           SecondaryTuple("Pure Hull Focus (No Secondary)", "NONE", 0f, 0f, 0f, 0, 0f)
       }
@@ -2048,13 +2251,13 @@ object RiftCodex {
         id = 9,
         name = "Eclipse",
         role = "Zone Lockdown",
-        tacticalLore = "Anchors a 6.0s two-way Stasis Bubble (275px radius, 320 Flux, 8.5s CD). Nothing enters or leaves.",
+        tacticalLore = "Anchors a 6.0s two-way Stasis field (275px radius, 320 Flux, 8.5s CD). Nothing enters or leaves.",
         silhouetteDesc = "Twin-ringed amethyst gravimetric cruiser with forward containment prongs and a glowing magenta-cyan singularity core.",
-        weaponSummary = "PRI: PULSE (20 Flux) • SEC: STASIS BUBBLE (320 Flux • 6.0s • 275px • 8.5s CD)",
+        weaponSummary = "PRI: PULSE (20 Flux) • SEC: STASIS (320 Flux • 6.0s • 275px • 8.5s CD)",
         primaryTitle = "Twin Pulse",
-        secondaryTitle = "Stasis Bubble (320 Flux • 6.0s • 8.5s CD)",
+        secondaryTitle = "Stasis (320 Flux • 6.0s • 8.5s CD)",
         primaryShortLabel = "PULSE",
-        secondaryShortLabel = "BUBBLE",
+        secondaryShortLabel = "STASIS",
         speedPts = 12,
         thrustPts = 12,
         turnPts = 10,

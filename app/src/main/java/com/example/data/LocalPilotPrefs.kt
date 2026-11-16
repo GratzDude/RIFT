@@ -45,7 +45,7 @@ class LocalPilotPrefs(context: Context) {
   /**
    * Starts a brand-new ephemeral Drifter session on launch or guest entry:
    * assigns a fresh session UID, locks tag to [RFT], resets transient session stats,
-   * and picks a random 5–8 char single-word Drifter callsign.
+   * and picks a random 5-8 char single-word Drifter callsign.
    */
   fun startFreshDrifterSession(): String {
     val freshUid = "drifter_" + UUID.randomUUID().toString().replace("-", "").take(12)
@@ -338,11 +338,11 @@ class LocalPilotPrefs(context: Context) {
     userSettingsPrefs.edit().putFloat(KEY_CAMERA_ZOOM, clamped).apply()
   }
 
-  // Active Named Armada (SOLO = "", or named up-to-5-man Armada e.g. "APEX_STRIKE")
+  // Active Named Strike Wing / Armada (SOLO = "", or up-to-14-char Strike Wing tag e.g. "ASTRAL_FLEET")
   fun getActiveArmadaName(): String = prefs.getString(KEY_ARMADA_NAME, "") ?: ""
 
   fun setActiveArmadaName(armadaName: String) {
-    val rawClean = armadaName.trim().uppercase().replace(Regex("[^A-Z0-9_\\-]"), "").take(12)
+    val rawClean = armadaName.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(14)
     val clean = if (UgcModeration.containsProfanity(rawClean)) "APEX_5" else rawClean
     prefs.edit().putString(KEY_ARMADA_NAME, clean).apply()
   }
@@ -354,8 +354,11 @@ class LocalPilotPrefs(context: Context) {
     bounty: Long,
     kills: Long,
   ): List<SyndicateMemberEntry> {
+    if (isGuestBypassEnabled()) return emptyList()
     val tag = getSyndicateTag()
-    if (tag.isBlank()) return emptyList()
+    if (tag.uppercase(Locale.US) in setOf("", "RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED", "BOT")) {
+      return emptyList()
+    }
     val localEntry =
       SyndicateMemberEntry(
         uid = currentUid,
@@ -413,8 +416,8 @@ class LocalPilotPrefs(context: Context) {
 
   /**
    * Startup Boot Preference:
-   * true (default) = open NEXUS Mode Selection Hub on startup so pilots choose their mode before deploying.
-   * false = fast-boot straight into the live arena.
+   * true (default) = open NEXUS CORE Spatial Hub on startup so pilots choose their mode before deploying.
+   * false = fast-boot into Sector Orbit.
    */
   fun getBootToNexusHub(): Boolean {
     val fallback = prefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, true)
@@ -549,10 +552,8 @@ class LocalPilotPrefs(context: Context) {
   fun getPilotLevel(uid: String? = null): Int =
     computeLevelFromTotalXp(getTotalXp(uid))
 
-  fun getCustomizationPointsTotal(uid: String? = null): Int {
-    val lvl = getPilotLevel(uid).coerceIn(1, 100)
-    return if (lvl >= 20) 100 else lvl
-  }
+  @Suppress("UNUSED_PARAMETER")
+  fun getCustomizationPointsTotal(uid: String? = null): Int = 100
 
   fun getSpentCustomizationPoints(uid: String? = null): Int =
     prefs.getInt(uidKey(KEY_SPENT_CUSTOM_POINTS, uid), prefs.getInt(KEY_SPENT_CUSTOM_POINTS, 0))
@@ -644,25 +645,32 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun isCustomSlotUnlocked(slotId: String, uid: String? = null): Boolean {
+    val norm = normalizeCustomSlotId(slotId)
+    if (norm == "Frame A") return true
     val lvl = getPilotLevel(uid)
-    return when (normalizeCustomSlotId(slotId)) {
-      "Frame A" -> true
+    val peakRes = getPeakResonance(uid)
+    val gate = com.example.engine.RiftProgressionCatalog.getFrameSlotGate(norm)
+    return when (norm) {
       "Frame B" ->
         prefs.getBoolean(uidKey(KEY_SLOT_B_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_B_UNLOCKED, false)) ||
           getUnlockedExtraSlots(uid) >= 1 ||
-          lvl >= 35
+          lvl >= 35 ||
+          peakRes >= gate.freeAtResonance
       "Frame C" ->
         prefs.getBoolean(uidKey(KEY_SLOT_C_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_C_UNLOCKED, false)) ||
           getUnlockedExtraSlots(uid) >= 2 ||
-          lvl >= 50
+          lvl >= 50 ||
+          peakRes >= gate.freeAtResonance
       "Frame D" ->
         prefs.getBoolean(uidKey(KEY_SLOT_D_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_D_UNLOCKED, false)) ||
           getUnlockedExtraSlots(uid) >= 3 ||
-          lvl >= 75
+          lvl >= 75 ||
+          peakRes >= gate.freeAtResonance
       "Frame E" ->
         prefs.getBoolean(uidKey(KEY_SLOT_E_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_E_UNLOCKED, false)) ||
           getUnlockedExtraSlots(uid) >= 4 ||
-          lvl >= 100
+          lvl >= 100 ||
+          peakRes >= gate.freeAtResonance
       else -> true
     }
   }
@@ -765,7 +773,9 @@ class LocalPilotPrefs(context: Context) {
     if (itemId <= 0) return true
     val cat = category.trim().uppercase(Locale.US)
     val item = com.example.engine.RiftProgressionCatalog.getCosmeticItem(cat, itemId)
-    if (item != null && pilotLevel >= item.freeAtLevel) return true
+    if (item != null && (pilotLevel >= item.freeAtLevel || getPeakResonance(uid) >= item.freeAtResonance)) {
+      return true
+    }
     val baseKey = "cosmetic_unlocked_${cat}_$itemId"
     return prefs.getBoolean(uidKey(baseKey, uid), prefs.getBoolean(baseKey, false))
   }
@@ -802,7 +812,201 @@ class LocalPilotPrefs(context: Context) {
       .apply()
   }
 
-  // Adaptive Armada Tier Kills (1 = SOLO, 2 = 2-Man, 3 = 3-Man, 4 = 4-Man, 5 = 5-Man Armada)
+  // =========================================================================
+  // RIFT CONDUIT LIVE / PEAK RESONANCE & 3 DAILY ❖ DIRECTIVES (250❖ / DAY)
+  // =========================================================================
+  private fun ensureResonanceMigrated(uid: String? = null) {
+    val scopedKey = uidKey(KEY_RESONANCE_MIGRATED, uid)
+    if (prefs.getBoolean(scopedKey, false)) return
+    val hasLiveKey = prefs.contains(uidKey(KEY_LIVE_RESONANCE, uid)) || prefs.contains(KEY_LIVE_RESONANCE)
+    val lvl = getPilotLevel(uid)
+    val careerKills = getAllTimeKills()
+    if (!hasLiveKey && (careerKills > 0L || lvl > 1)) {
+      val seeded = ((lvl - 1) * 18).coerceAtLeast(0)
+      prefs
+        .edit()
+        .putInt(KEY_LIVE_RESONANCE, seeded)
+        .putInt(uidKey(KEY_LIVE_RESONANCE, uid), seeded)
+        .putInt(KEY_PEAK_RESONANCE, seeded)
+        .putInt(uidKey(KEY_PEAK_RESONANCE, uid), seeded)
+        .putBoolean(scopedKey, true)
+        .apply()
+    } else {
+      prefs.edit().putBoolean(scopedKey, true).apply()
+    }
+  }
+
+  fun getLiveResonance(uid: String? = null): Int {
+    ensureResonanceMigrated(uid)
+    return prefs
+      .getInt(uidKey(KEY_LIVE_RESONANCE, uid), prefs.getInt(KEY_LIVE_RESONANCE, 0))
+      .coerceAtLeast(0)
+  }
+
+  fun setLiveResonance(value: Int, uid: String? = null) {
+    ensureResonanceMigrated(uid)
+    val clean = value.coerceAtLeast(0)
+    val nextPeak = kotlin.math.max(getPeakResonance(uid), clean)
+    prefs
+      .edit()
+      .putInt(KEY_LIVE_RESONANCE, clean)
+      .putInt(uidKey(KEY_LIVE_RESONANCE, uid), clean)
+      .putInt(KEY_PEAK_RESONANCE, nextPeak)
+      .putInt(uidKey(KEY_PEAK_RESONANCE, uid), nextPeak)
+      .apply()
+  }
+
+  fun getPeakResonance(uid: String? = null): Int {
+    ensureResonanceMigrated(uid)
+    val rawPeak =
+      prefs
+        .getInt(uidKey(KEY_PEAK_RESONANCE, uid), prefs.getInt(KEY_PEAK_RESONANCE, 0))
+        .coerceAtLeast(0)
+    val live =
+      prefs
+        .getInt(uidKey(KEY_LIVE_RESONANCE, uid), prefs.getInt(KEY_LIVE_RESONANCE, 0))
+        .coerceAtLeast(0)
+    return kotlin.math.max(rawPeak, live)
+  }
+
+  fun setPeakResonance(value: Int, uid: String? = null) {
+    ensureResonanceMigrated(uid)
+    val clean = kotlin.math.max(getPeakResonance(uid), value.coerceAtLeast(0))
+    prefs
+      .edit()
+      .putInt(KEY_PEAK_RESONANCE, clean)
+      .putInt(uidKey(KEY_PEAK_RESONANCE, uid), clean)
+      .apply()
+  }
+
+  fun applyResonanceDelta(delta: Int, uid: String? = null): Pair<Int, Int> {
+    val nextLive = (getLiveResonance(uid) + delta).coerceAtLeast(0)
+    setLiveResonance(nextLive, uid)
+    return nextLive to getPeakResonance(uid)
+  }
+
+  private fun currentUtcDayIndex(): Long = System.currentTimeMillis() / 86_400_000L
+
+  private fun ensureDailyDirectivesCurrentForToday(uid: String? = null): Long {
+    val today = currentUtcDayIndex()
+    val dayKey = uidKey(KEY_DAILY_DIRECTIVES_UTC_DAY, uid)
+    val savedDay = prefs.getLong(dayKey, -1L)
+    if (savedDay != today) {
+      val ed = prefs.edit().putLong(dayKey, today)
+      for (slot in 0..2) {
+        ed.putInt(uidKey("${KEY_DAILY_DIRECTIVE_PROGRESS_PREFIX}$slot", uid), 0)
+        ed.putBoolean(uidKey("${KEY_DAILY_DIRECTIVE_CLAIMED_PREFIX}$slot", uid), false)
+        ed.putInt(uidKey("${KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX}$slot", uid), 0)
+      }
+      ed.putBoolean(uidKey(KEY_DAILY_DIRECTIVE_REROLL_USED, uid), false)
+      ed.putBoolean(uidKey(KEY_DAILY_SWEEP_CLAIMED, uid), false)
+      ed.apply()
+    }
+    return today
+  }
+
+  fun getDailyDirectives(uid: String? = null): List<com.example.engine.DailyConduitDirective> {
+    val today = ensureDailyDirectivesCurrentForToday(uid)
+    val salts =
+      intArrayOf(
+        prefs.getInt(uidKey("${KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX}0", uid), 0),
+        prefs.getInt(uidKey("${KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX}1", uid), 0),
+        prefs.getInt(uidKey("${KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX}2", uid), 0),
+      )
+    val baseList = com.example.engine.RiftProgressionCatalog.generateDailyDirectivesForDay(today, salts)
+    return baseList.map { dir ->
+      val prog =
+        prefs
+          .getInt(uidKey("${KEY_DAILY_DIRECTIVE_PROGRESS_PREFIX}${dir.slotIndex}", uid), 0)
+          .coerceIn(0, dir.targetValue)
+      val isClaimed =
+        prefs.getBoolean(uidKey("${KEY_DAILY_DIRECTIVE_CLAIMED_PREFIX}${dir.slotIndex}", uid), false)
+      dir.copy(progressValue = prog, claimed = isClaimed)
+    }
+  }
+
+  fun recordDailyDirectiveProgress(
+    metric: com.example.engine.DailyDirectiveMetric,
+    amount: Int,
+    isAbsolutePeak: Boolean = false,
+    uid: String? = null,
+  ) {
+    if (amount <= 0) return
+    val current = getDailyDirectives(uid)
+    val ed = prefs.edit()
+    var mutated = false
+    for (dir in current) {
+      if (dir.metric == metric && !dir.claimed) {
+        val nextProg =
+          if (isAbsolutePeak) {
+            kotlin.math.max(dir.progressValue, amount).coerceAtMost(dir.targetValue)
+          } else {
+            (dir.progressValue + amount).coerceAtMost(dir.targetValue)
+          }
+        if (nextProg != dir.progressValue) {
+          ed.putInt(uidKey("${KEY_DAILY_DIRECTIVE_PROGRESS_PREFIX}${dir.slotIndex}", uid), nextProg)
+          mutated = true
+        }
+      }
+    }
+    if (mutated) {
+      ed.apply()
+    }
+  }
+
+  fun canRerollDailyDirectiveToday(uid: String? = null): Boolean {
+    ensureDailyDirectivesCurrentForToday(uid)
+    return !prefs.getBoolean(uidKey(KEY_DAILY_DIRECTIVE_REROLL_USED, uid), false)
+  }
+
+  fun rerollDailyDirective(slotIndex: Int, uid: String? = null): Boolean {
+    if (slotIndex !in 0..2) return false
+    ensureDailyDirectivesCurrentForToday(uid)
+    if (!canRerollDailyDirectiveToday(uid)) return false
+    val dir = getDailyDirectives(uid).firstOrNull { it.slotIndex == slotIndex } ?: return false
+    if (dir.claimed) return false
+    val saltKey = uidKey("${KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX}$slotIndex", uid)
+    val nextSalt = prefs.getInt(saltKey, 0) + 1
+    prefs
+      .edit()
+      .putInt(saltKey, nextSalt)
+      .putInt(uidKey("${KEY_DAILY_DIRECTIVE_PROGRESS_PREFIX}$slotIndex", uid), 0)
+      .putBoolean(uidKey(KEY_DAILY_DIRECTIVE_REROLL_USED, uid), true)
+      .apply()
+    return true
+  }
+
+  fun claimDailyDirectiveReward(slotIndex: Int, uid: String? = null): Pair<Long, Int>? {
+    if (slotIndex !in 0..2) return null
+    val dir = getDailyDirectives(uid).firstOrNull { it.slotIndex == slotIndex } ?: return null
+    if (!dir.isComplete || dir.claimed) return null
+    val nextShards = getRiftShards(uid) + dir.shardReward
+    setRiftShards(nextShards, uid)
+    applyResonanceDelta(dir.resonanceReward, uid)
+    prefs
+      .edit()
+      .putBoolean(uidKey("${KEY_DAILY_DIRECTIVE_CLAIMED_PREFIX}$slotIndex", uid), true)
+      .apply()
+    return dir.shardReward to dir.resonanceReward
+  }
+
+  fun isDailySweepBonusClaimed(uid: String? = null): Boolean {
+    ensureDailyDirectivesCurrentForToday(uid)
+    return prefs.getBoolean(uidKey(KEY_DAILY_SWEEP_CLAIMED, uid), false)
+  }
+
+  fun claimDailySweepBonus(uid: String? = null): Pair<Long, Int>? {
+    val all = getDailyDirectives(uid)
+    if (all.size < 3 || all.any { !it.claimed } || isDailySweepBonusClaimed(uid)) return null
+    val sweepShards = 100L
+    val sweepRes = 25
+    setRiftShards(getRiftShards(uid) + sweepShards, uid)
+    applyResonanceDelta(sweepRes, uid)
+    prefs.edit().putBoolean(uidKey(KEY_DAILY_SWEEP_CLAIMED, uid), true).apply()
+    return sweepShards to sweepRes
+  }
+
+  // Adaptive Armada Tier Kills (1 = SOLO, 2 = 2-Man, 3 = 3-Man, 4 = 4-Man, 5 = 5-Man Strike Wing)
   fun getArmadaTierKills(tierSize: Int): Long {
     val clamped = tierSize.coerceIn(1, 5)
     return prefs.getLong("armada_tier_${clamped}_kills", 0L)
@@ -849,80 +1053,123 @@ class LocalPilotPrefs(context: Context) {
       .apply()
   }
 
+  private fun isVerifiedRealFriend(entry: FriendPilotEntry): Boolean {
+    val cleanUid = entry.uid.trim()
+    val cleanCallsign = entry.callsign.trim()
+    val cleanTag = entry.syndicateTag.trim().uppercase(Locale.US)
+    if (cleanUid.isBlank() || cleanCallsign.length < 2) return false
+    if (
+      cleanUid.startsWith("friend_custom_", ignoreCase = true) ||
+        cleanUid.startsWith("bot_", ignoreCase = true) ||
+        cleanUid.startsWith("drifter_", ignoreCase = true) ||
+        cleanUid.startsWith("dev_", ignoreCase = true)
+    ) {
+      return false
+    }
+    if (cleanTag == "BOT" || cleanTag == "RFT") return false
+    if (cleanCallsign.contains("[BOT]", ignoreCase = true)) return false
+    if (
+      entry.statusText.contains("Sector B4", ignoreCase = true) ||
+        entry.statusText.contains("Sector E5", ignoreCase = true)
+    ) {
+      return false
+    }
+    return true
+  }
+
+  private fun persistVerifiedFriendsList(list: List<FriendPilotEntry>) {
+    val arr = JSONArray()
+    for (f in list) {
+      if (!isVerifiedRealFriend(f)) continue
+      arr.put(
+        JSONObject().apply {
+          put("uid", f.uid)
+          put("callsign", f.callsign)
+          put("syndicateTag", f.syndicateTag)
+          put("shipId", f.shipId.coerceIn(1, 10))
+          put("statusText", f.statusText)
+          put("isOnline", f.isOnline)
+          put("currentArmadaName", f.currentArmadaName)
+          put("currentArmadaCount", f.currentArmadaCount.coerceIn(1, 5))
+          put("bounty", f.bounty.coerceAtLeast(100))
+        }
+      )
+    }
+    prefs.edit().putString(KEY_CUSTOM_FRIENDS_JSON, arr.toString()).apply()
+  }
+
   fun getFriendsList(): List<FriendPilotEntry> {
-    val tag = getSyndicateTag()
     val customRaw = prefs.getString(KEY_CUSTOM_FRIENDS_JSON, "[]") ?: "[]"
-    val customList = mutableListOf<FriendPilotEntry>()
+    val verifiedList = mutableListOf<FriendPilotEntry>()
+    var purgedStale = false
     try {
       val arr = JSONArray(customRaw)
       for (i in 0 until arr.length()) {
         val obj = arr.getJSONObject(i)
-        customList.add(
+        val entry =
           FriendPilotEntry(
-            uid = obj.optString("uid", "friend_custom_$i"),
-            callsign = obj.optString("callsign", "WINGMAN_$i"),
-            syndicateTag = obj.optString("syndicateTag", tag),
-            shipId = obj.optInt("shipId", 1),
-            statusText = obj.optString("statusText", "In Rift (Sector E5) • [SOLO] Online"),
-            isOnline = true,
-            currentArmadaName = obj.optString("currentArmadaName", ""),
-            currentArmadaCount = obj.optInt("currentArmadaCount", 1),
-            bounty = obj.optInt("bounty", 140),
+            uid = obj.optString("uid", "").trim(),
+            callsign = obj.optString("callsign", "").trim(),
+            syndicateTag = sanitizeSyndicateTag(obj.optString("syndicateTag", "")),
+            shipId = obj.optInt("shipId", 1).coerceIn(1, 10),
+            statusText = obj.optString("statusText", "Verified Sworn Pilot"),
+            isOnline = obj.optBoolean("isOnline", false),
+            currentArmadaName = obj.optString("currentArmadaName", "").take(14),
+            currentArmadaCount = obj.optInt("currentArmadaCount", 1).coerceIn(1, 5),
+            bounty = obj.optInt("bounty", 100).coerceAtLeast(100),
           )
-        )
+        if (isVerifiedRealFriend(entry) && verifiedList.none { it.uid == entry.uid }) {
+          verifiedList.add(entry)
+        } else {
+          purgedStale = true
+        }
       }
     } catch (_: Exception) {}
 
-    return customList
+    if (purgedStale) {
+      persistVerifiedFriendsList(verifiedList)
+    }
+    return verifiedList
   }
 
+  fun saveVerifiedFriendPilot(entry: FriendPilotEntry) {
+    if (!isVerifiedRealFriend(entry)) return
+    val current = getFriendsList().toMutableList()
+    val existingIdx =
+      current.indexOfFirst {
+        it.uid == entry.uid || it.callsign.equals(entry.callsign, ignoreCase = true)
+      }
+    if (existingIdx >= 0) {
+      current[existingIdx] = entry
+    } else {
+      current.add(entry)
+    }
+    persistVerifiedFriendsList(current)
+  }
+
+  fun removeFriendPilot(uidOrCallsign: String) {
+    val clean = uidOrCallsign.trim()
+    if (clean.isEmpty()) return
+    val remaining =
+      getFriendsList().filterNot {
+        it.uid == clean || it.callsign.equals(clean, ignoreCase = true)
+      }
+    persistVerifiedFriendsList(remaining)
+  }
+
+  /**
+   * Returns an already-verified Sworn Pilot friend matching [rawCallsign], or null.
+   * Never fabricates fake local pilots; new pilot discovery goes through Firestore lookup.
+   */
   fun addFriendByCallsign(rawCallsign: String): FriendPilotEntry? {
     val clean =
       rawCallsign
         .trim()
-        .uppercase()
+        .uppercase(Locale.US)
         .replace(Regex("[^A-Z0-9_\\-]"), "")
         .take(14)
-    if (clean.length < 3 || UgcModeration.containsProfanity(clean)) return null
-    val existing = getFriendsList()
-    if (existing.any { it.callsign.equals(clean, ignoreCase = true) }) {
-      return existing.first { it.callsign.equals(clean, ignoreCase = true) }
-    }
-
-    val created =
-      FriendPilotEntry(
-        uid = "friend_custom_${System.currentTimeMillis()}",
-        callsign = clean,
-        syndicateTag = getSyndicateTag(),
-        shipId = ((clean.hashCode().and(0x7FFFFFFF)) % 9) + 1,
-        statusText = "In Rift (Sector B4) • [SOLO] Ready for Armada",
-        isOnline = true,
-        currentArmadaName = "",
-        currentArmadaCount = 1,
-        bounty = 160,
-      )
-
-    val customRaw = prefs.getString(KEY_CUSTOM_FRIENDS_JSON, "[]") ?: "[]"
-    val arr =
-      try {
-        JSONArray(customRaw)
-      } catch (_: Exception) {
-        JSONArray()
-      }
-    arr.put(
-      JSONObject().apply {
-        put("uid", created.uid)
-        put("callsign", created.callsign)
-        put("syndicateTag", created.syndicateTag)
-        put("shipId", created.shipId)
-        put("statusText", created.statusText)
-        put("currentArmadaName", created.currentArmadaName)
-        put("currentArmadaCount", created.currentArmadaCount)
-        put("bounty", created.bounty)
-      }
-    )
-    prefs.edit().putString(KEY_CUSTOM_FRIENDS_JSON, arr.toString()).apply()
-    return created
+    if (clean.length < 2 || UgcModeration.containsProfanity(clean)) return null
+    return getFriendsList().firstOrNull { it.callsign.equals(clean, ignoreCase = true) }
   }
 
   fun getAllSyndicates(): List<SyndicateInfo> {
@@ -933,7 +1180,7 @@ class LocalPilotPrefs(context: Context) {
       val arr = JSONArray(customRaw)
       for (i in 0 until arr.length()) {
         val obj = arr.getJSONObject(i)
-        val parsedTag = obj.optString("tag", "").trim().uppercase()
+        val parsedTag = obj.optString("tag", "").trim().uppercase(Locale.US)
         val parsedOwner = obj.optString("ownerId", "").trim()
         val syn =
           SyndicateInfo(
@@ -988,7 +1235,7 @@ class LocalPilotPrefs(context: Context) {
     val mergedByTag = linkedMapOf<String, SyndicateInfo>()
     for (local in getAllSyndicates()) {
       if (local.isRealPlayerFoundedSyndicate()) {
-        mergedByTag[local.tag.uppercase()] = local
+        mergedByTag[local.tag.uppercase(Locale.US)] = local
       }
     }
     for (cloud in cloudSyndicates) {
@@ -1084,6 +1331,38 @@ class LocalPilotPrefs(context: Context) {
     persistSyndicatesJson(existing + newSyndicate)
     joinOfficialSyndicate(cleanTag, cleanName, apply15DayLock = true, role = "Founder / Commander")
     return Result.success(newSyndicate)
+  }
+
+  fun getSyndicateCrestJson(tag: String = getSyndicateTag()): String? {
+    val cleanTag = sanitizeSyndicateTag(tag)
+    if (cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) return null
+    return prefs.getString("${KEY_SYNDICATE_CREST_PREFIX}$cleanTag", null)?.takeIf { it.isNotBlank() }
+  }
+
+  fun setSyndicateCrestJson(tag: String, crestJson: String) {
+    val cleanTag = sanitizeSyndicateTag(tag)
+    if (cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) return
+    if (crestJson.isBlank()) return
+    prefs.edit().putString("${KEY_SYNDICATE_CREST_PREFIX}$cleanTag", crestJson.trim()).apply()
+  }
+
+  fun mergeCloudSyndicateMeta(meta: CloudSyndicateMeta) {
+    val cleanTag = sanitizeSyndicateTag(meta.tag)
+    if (cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) return
+    if (meta.customChannels.isNotEmpty()) {
+      setSyndicateCustomChannels(cleanTag, meta.customChannels)
+    }
+    val sanitizedGuests =
+      meta.invitedGuests
+        .map { it.trim().take(20) }
+        .filter { it.isNotEmpty() }
+    prefs
+      .edit()
+      .putString("${KEY_SYNDICATE_GUESTS_PREFIX}$cleanTag", sanitizedGuests.joinToString(","))
+      .apply()
+    if (meta.crestJson.isNotBlank()) {
+      setSyndicateCrestJson(cleanTag, meta.crestJson)
+    }
   }
 
   fun getAllTimePeakBountySnapshot(uid: String? = null): PeakBountyRunSnapshot? {
@@ -1310,7 +1589,7 @@ class LocalPilotPrefs(context: Context) {
    * Defaults to listOf("#general", "#tactics", "#war-room").
    */
   fun getSyndicateCustomChannels(syndicateTag: String = getSyndicateTag()): List<String> {
-    val cleanTag = syndicateTag.trim().uppercase()
+    val cleanTag = syndicateTag.trim().uppercase(Locale.US)
     if (cleanTag.isEmpty() || cleanTag == "SOLO") {
       return listOf("#general", "#tactics", "#war-room")
     }
@@ -1337,7 +1616,7 @@ class LocalPilotPrefs(context: Context) {
    * Saves up to 5 clean `#channel-name` strings for [syndicateTag], always keeping `"#general"` at index 0.
    */
   fun setSyndicateCustomChannels(syndicateTag: String, channels: List<String>) {
-    val cleanTag = syndicateTag.trim().uppercase()
+    val cleanTag = syndicateTag.trim().uppercase(Locale.US)
     if (cleanTag.isEmpty()) return
     val sanitized = mutableListOf("#general")
     for (raw in channels) {
@@ -1356,7 +1635,7 @@ class LocalPilotPrefs(context: Context) {
     val stripped =
       raw
         .trim()
-        .lowercase()
+        .lowercase(Locale.US)
         .removePrefix("#")
         .replace(Regex("[^a-z0-9_-]"), "-")
         .replace(Regex("-+"), "-")
@@ -1366,14 +1645,14 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getSyndicateInvitedGuests(syndicateTag: String = getSyndicateTag()): Set<String> {
-    val cleanTag = syndicateTag.trim().uppercase()
+    val cleanTag = syndicateTag.trim().uppercase(Locale.US)
     if (cleanTag.isEmpty() || cleanTag == "SOLO") return emptySet()
     val raw = prefs.getString("${KEY_SYNDICATE_GUESTS_PREFIX}$cleanTag", "") ?: ""
     return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
   }
 
   fun inviteGuestToSyndicateChannels(syndicateTag: String, guestCallsign: String) {
-    val cleanTag = syndicateTag.trim().uppercase()
+    val cleanTag = syndicateTag.trim().uppercase(Locale.US)
     val cleanGuest = guestCallsign.trim().take(20)
     if (cleanTag.isEmpty() || cleanTag == "SOLO" || cleanGuest.isEmpty()) return
     val existing = getSyndicateInvitedGuests(cleanTag).toMutableList()
@@ -1384,7 +1663,7 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun revokeGuestFromSyndicateChannels(syndicateTag: String, guestCallsign: String) {
-    val cleanTag = syndicateTag.trim().uppercase()
+    val cleanTag = syndicateTag.trim().uppercase(Locale.US)
     val cleanGuest = guestCallsign.trim()
     if (cleanTag.isEmpty() || cleanGuest.isEmpty()) return
     val remaining =
@@ -1397,16 +1676,18 @@ class LocalPilotPrefs(context: Context) {
     pilotCallsign: String,
     targetSyndicateTag: String,
   ): Boolean {
-    val targetClean = targetSyndicateTag.trim().uppercase()
-    if (targetClean.isEmpty() || targetClean == "SOLO") return false
-    if (pilotSyndicateTag.trim().equals(targetClean, ignoreCase = true)) return true
+    if (isGuestBypassEnabled()) return false
+    val targetClean = targetSyndicateTag.trim().uppercase(Locale.US)
+    if (targetClean in setOf("", "SOLO", "GUEST", "FREE", "RFT", "BOT", "UNAFFILIATED")) return false
+    val pilotClean = pilotSyndicateTag.trim().uppercase(Locale.US)
+    if (pilotClean == targetClean) return true
     return getSyndicateInvitedGuests(targetClean).any {
       it.equals(pilotCallsign.trim(), ignoreCase = true)
     }
   }
 
   fun getSyndicateWarRecord(tag: String = getSyndicateTag()): SyndicateWarRecord {
-    val cleanTag = tag.trim().uppercase().ifEmpty { "SOLO" }
+    val cleanTag = tag.trim().uppercase(Locale.US).ifEmpty { "SOLO" }
     val raw = prefs.getString(KEY_SYNDICATE_WAR_RECORDS_JSON, "{}") ?: "{}"
     try {
       val root = JSONObject(raw)
@@ -1423,7 +1704,7 @@ class LocalPilotPrefs(context: Context) {
     won: Boolean,
     trophyDelta: Int = if (won) 25 else -15,
   ): SyndicateWarRecord {
-    val cleanTag = tag.trim().uppercase().ifEmpty { "SOLO" }
+    val cleanTag = tag.trim().uppercase(Locale.US).ifEmpty { "SOLO" }
     val current = getSyndicateWarRecord(cleanTag)
     val signedDelta = if (won) kotlin.math.abs(trophyDelta) else -kotlin.math.abs(trophyDelta)
     val updated =
@@ -1449,8 +1730,8 @@ class LocalPilotPrefs(context: Context) {
   /**
    * Master Fresh-Start Wipe:
    * Clears all combat stats, 5 XP sources, peak bounty snapshots, Armada tiers, active Armada,
-   * custom friends, custom Syndicates, Syndicate service history, custom Syndicate channels/guests,
-   * Syndicate War Trophy records, and custom modular ship slots (Frame A/B/C) while resetting Rift Shards to 150.
+   * custom friends, custom Syndicates, Syndicate service history, custom Syndicate channels/guests/crests,
+   * Syndicate War Trophy records, and custom modular ship slots (Frame A..E) while resetting Rift Shards to 150.
    * Preserves Sworn Pilot callsigns and all user audio/BPM/Music Forge preferences in userSettingsPrefs.
    */
   fun wipeAllStatsArmadasAndSyndicates(uid: String? = null) {
@@ -1464,6 +1745,7 @@ class LocalPilotPrefs(context: Context) {
           key.startsWith("syndicate_channels_") ||
           key.startsWith(KEY_SYNDICATE_GUESTS_PREFIX) ||
           key.startsWith("syndicate_guests_") ||
+          key.startsWith(KEY_SYNDICATE_CREST_PREFIX) ||
           key.startsWith("syndicate_war_record_") ||
           key.startsWith(KEY_CUSTOM_SLOT_PREFIX)
       }
@@ -1507,6 +1789,19 @@ class LocalPilotPrefs(context: Context) {
       .putInt(uidKey(KEY_UNLOCKED_EXTRA_SLOTS, uid), 0)
       .putInt(KEY_AI_DESIGN_TOKENS, 0)
       .putInt(uidKey(KEY_AI_DESIGN_TOKENS, uid), 0)
+      .putInt(KEY_LIVE_RESONANCE, 0)
+      .putInt(uidKey(KEY_LIVE_RESONANCE, uid), 0)
+      .putInt(KEY_PEAK_RESONANCE, 0)
+      .putInt(uidKey(KEY_PEAK_RESONANCE, uid), 0)
+      .putBoolean(uidKey(KEY_RESONANCE_MIGRATED, uid), true)
+      .putLong(uidKey(KEY_DAILY_DIRECTIVES_UTC_DAY, uid), -1L)
+      .putBoolean(uidKey(KEY_DAILY_DIRECTIVE_REROLL_USED, uid), false)
+      .putBoolean(uidKey(KEY_DAILY_SWEEP_CLAIMED, uid), false)
+    for (slot in 0..2) {
+      editor.putInt(uidKey("${KEY_DAILY_DIRECTIVE_PROGRESS_PREFIX}$slot", uid), 0)
+      editor.putBoolean(uidKey("${KEY_DAILY_DIRECTIVE_CLAIMED_PREFIX}$slot", uid), false)
+      editor.putInt(uidKey("${KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX}$slot", uid), 0)
+    }
 
     // Peak bounty snapshots
     editor
@@ -1705,6 +2000,7 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_MUSIC_FORGE_PROMPT = "music_forge_prompt"
     private const val KEY_SYNDICATE_CHANNELS_PREFIX = "syndicate_custom_channels_"
     private const val KEY_SYNDICATE_GUESTS_PREFIX = "syndicate_invited_guests_"
+    private const val KEY_SYNDICATE_CREST_PREFIX = "syndicate_crest_json_"
     private const val KEY_SYNDICATE_WAR_RECORDS_JSON = "syndicate_war_records_json"
     private const val KEY_PVP_KILLS = "pvp_kills"
     private const val KEY_PVP_DEATHS = "pvp_deaths"
@@ -1740,6 +2036,15 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_PVP_PEAK_SNAPSHOT = "pvp_peak_bounty_snapshot_json"
     private const val KEY_SYNDICATE_HISTORY_JSON = "syndicate_service_history_json"
     private const val KEY_FIRST_COMMISSION_MS = "pilot_first_commission_ms"
+    private const val KEY_LIVE_RESONANCE = "conduit_live_resonance"
+    private const val KEY_PEAK_RESONANCE = "conduit_peak_resonance"
+    private const val KEY_RESONANCE_MIGRATED = "conduit_resonance_migrated_v57"
+    private const val KEY_DAILY_DIRECTIVES_UTC_DAY = "daily_directives_utc_day"
+    private const val KEY_DAILY_DIRECTIVE_PROGRESS_PREFIX = "daily_directive_prog_"
+    private const val KEY_DAILY_DIRECTIVE_CLAIMED_PREFIX = "daily_directive_claimed_"
+    private const val KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX = "daily_directive_salt_"
+    private const val KEY_DAILY_DIRECTIVE_REROLL_USED = "daily_directive_reroll_used"
+    private const val KEY_DAILY_SWEEP_CLAIMED = "daily_directive_sweep_claimed"
 
     const val FIFTEEN_DAYS_MS = 15L * 24L * 3600L * 1000L
 
@@ -1784,33 +2089,5 @@ class LocalPilotPrefs(context: Context) {
       val frac = (into.toFloat() / span.toFloat()).coerceIn(0f, 1f)
       return Triple(into, span, frac)
     }
-  }
-}
-
-data class SyndicateWarRecord(
-  val tag: String,
-  val warTrophies: Int = 1000,
-  val warWins: Int = 0,
-  val warLosses: Int = 0,
-  val warStreak: Int = 0,
-) {
-  fun toJson(): JSONObject =
-    JSONObject().apply {
-      put("tag", tag)
-      put("warTrophies", warTrophies)
-      put("warWins", warWins)
-      put("warLosses", warLosses)
-      put("warStreak", warStreak)
-    }
-
-  companion object {
-    fun fromJson(tag: String, obj: JSONObject): SyndicateWarRecord =
-      SyndicateWarRecord(
-        tag = obj.optString("tag", tag),
-        warTrophies = obj.optInt("warTrophies", 1000),
-        warWins = obj.optInt("warWins", 0),
-        warLosses = obj.optInt("warLosses", 0),
-        warStreak = obj.optInt("warStreak", 0),
-      )
   }
 }

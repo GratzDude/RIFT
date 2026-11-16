@@ -15,6 +15,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
@@ -152,7 +153,7 @@ data class CustomGameConfig(
   val matchDurationMinutes: Int = 10, // 3..60m
   val allowArmadasInFfa: Boolean = true,
   val botsEnabled: Boolean = true,
-  val bulletSizeMult: Float = 1.0f, // 1.0f = Standard, 2.2f = Fat Bullets
+  val bulletSizeMult: Float = 1.0f, // 1.0f = Standard, 2.2f = MegaFat Bullets
   val damageMult: Float = 1.0f, // 0.5f..2.5f
   val speedMult: Float = 1.0f, // 0.7f..1.8f
   val healthMult: Float = 1.0f, // 0.5f..2.5f
@@ -758,7 +759,9 @@ class RiftGameEngine(
       localPlayer.weaponState = "DISARMED"
       localPlayer.phaseShieldTimer = RiftCalibrationState.exitPhaseShieldSec
     }
+    localPlayer.bounty = getLocalStartingBounty()
     resetCurrentLifeStats()
+    onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
   }
 
   fun getEffectiveProjectileScale(): Float =
@@ -792,6 +795,35 @@ class RiftGameEngine(
   var spentCustomizationPoints: Int = 0
   var unlockedExtraSlots: Int = 0
   var aiShipDesignTokens: Int = 0
+
+  // Rift Conduit Continuous Live & Peak Resonance + Daily Directive Hooks
+  var liveResonance: Int = 0
+  var peakResonance: Int = 0
+  var onDailyDirectiveEvent: (DailyDirectiveMetric, Int, Boolean) -> Unit = { _, _, _ -> }
+
+  fun getLocalStartingBounty(): Int =
+    RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
+
+  fun adjustLocalResonance(delta: Int, reasonLabel: String = "") {
+    if (currentCustomGame != null || delta == 0) return
+    val prev = liveResonance
+    liveResonance = (liveResonance + delta).coerceAtLeast(0)
+    if (liveResonance > peakResonance) {
+      peakResonance = liveResonance
+    }
+    val applied = liveResonance - prev
+    if (applied != 0 && localPlayer.respawnTimer <= 0f) {
+      val sign = if (applied > 0) "+" else ""
+      val suffix = if (reasonLabel.isNotBlank()) " ($reasonLabel)" else ""
+      spawnPooledFct(
+        text = "${sign}${applied} RES$suffix",
+        x = localPlayer.x,
+        y = localPlayer.y - 42f,
+        color = if (applied > 0) Color.parseColor("#00F5D4") else Color.parseColor("#F59E0B"),
+        maxLife = 1.15f,
+      )
+    }
+  }
 
   // Phase 3: Public FFA Match Duration & >50% Presence Ratio Tracking (60-minute public cycle = 3600s)
   var publicMatchDurationSec: Float = 0f
@@ -847,12 +879,14 @@ class RiftGameEngine(
     spentCustomizationPoints = 0
     unlockedExtraSlots = 0
     aiShipDesignTokens = 0
+    liveResonance = 0
+    peakResonance = 0
 
     activeArmadaName = ""
     activeArmadaSlots.clear()
     localPlayer.armadaName = ""
     localPlayer.syndicateTag = "GUEST"
-    localPlayer.bounty = 100
+    localPlayer.bounty = getLocalStartingBounty()
     localPlayer.kills = 0
     localPlayer.deaths = 0
     localPlayer.flux = localPlayer.maxFlux
@@ -872,7 +906,7 @@ class RiftGameEngine(
     resetCurrentLifeStats()
     sfx.playPrize()
     onStatsUpdated()
-    onPrizeToast("🧨 MASTER WIPE COMPLETE: ALL STATS, ARMADAS & SYNDICATES RESET!")
+    onPrizeToast("MASTER WIPE COMPLETE: ALL STATS, ARMADAS & SYNDICATES RESET!")
   }
 
   /**
@@ -886,13 +920,13 @@ class RiftGameEngine(
     buffVersion++
     sfx.playPrize()
     spawnPooledFct(
-      text = "🧪 FORGED: ${entry.shortLabel} [${localPlayer.specialWeaponCharges}]",
+      text = "FORGED: ${entry.shortLabel} [${localPlayer.specialWeaponCharges}]",
       x = localPlayer.x,
       y = localPlayer.y - 32f,
       color = entry.strokeColorInt,
       maxLife = 1.35f,
     )
-    onPrizeToast("🧪 AI BUFF FORGED & EQUIPPED: ${entry.officialName} (${localPlayer.specialWeaponCharges} CHARGES)")
+    onPrizeToast("BUFF FORGED & EQUIPPED: ${entry.officialName} (${localPlayer.specialWeaponCharges} CHARGES)")
   }
 
   fun getTotalXp(): Long =
@@ -902,11 +936,9 @@ class RiftGameEngine(
       xpFromBountyEarned.toLong() +
       xpFromBountyKilled.toLong()
 
-  fun isNinthShipUnlocked(): Boolean =
-    pilotLevel >= 20 || RiftCalibrationState.unlockFullNinthShipOverride
+  fun isNinthShipUnlocked(): Boolean = true
 
-  fun getCustomizationPointsTotal(): Int =
-    if (pilotLevel >= 20 || RiftCalibrationState.unlockFullNinthShipOverride) 100 else pilotLevel.coerceIn(1, 100)
+  fun getCustomizationPointsTotal(): Int = 100
 
   fun getCustomizationPointsAvailable(): Int =
     (getCustomizationPointsTotal() - spentCustomizationPoints).coerceAtLeast(0)
@@ -1034,20 +1066,23 @@ class RiftGameEngine(
     val presencePct = (presenceRatio * 100f).toInt()
     val topShip = ships.maxByOrNull { it.bounty }
 
+    onDailyDirectiveEvent(DailyDirectiveMetric.MATCHES_PLAYED, 1, false)
+
     if (topShip != null && (topShip.isLocalPlayer || localPlayer.bounty >= topShip.bounty)) {
       if (presenceRatio > 0.50f) {
         convergencesWon++
         riftShards += 100L
+        adjustLocalResonance(30, "CONVERGENCE WIN")
         onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
         sfx.playPrize()
         val bannerMsg =
-          "🏆 SECTOR CONVERGENCE VICTORY! #1 BOUNTY (${localPlayer.bounty} BTY • $presencePct% PRESENCE) — +100❖ RIFT SHARDS & NEW FFA MAP!"
+          "SECTOR CONVERGENCE VICTORY! #1 BOUNTY (${localPlayer.bounty} BTY • $presencePct% PRESENCE) — +100❖ RIFT SHARDS & NEW FFA MAP!"
         highBountyShutdownBanner = bannerMsg
         highBountyShutdownTimer = 5.5f
         onPrizeToast(bannerMsg)
       } else {
         val bannerMsg =
-          "🌀 SECTOR CONVERGENCE: #1 BOUNTY ACHIEVED, BUT PRESENCE ($presencePct%) <= 50% — NEW FFA MAP GENERATED!"
+          "SECTOR CONVERGENCE: #1 BOUNTY ACHIEVED, BUT PRESENCE ($presencePct%) <= 50% — NEW FFA MAP GENERATED!"
         highBountyShutdownBanner = bannerMsg
         highBountyShutdownTimer = 4.5f
         onPrizeToast(bannerMsg)
@@ -1056,7 +1091,7 @@ class RiftGameEngine(
       val winnerName = topShip?.callsign ?: "SECTOR ACE"
       val winnerBty = topShip?.bounty ?: 100
       val bannerMsg =
-        "🌀 SECTOR CONVERGENCE: WINNER $winnerName ($winnerBty BTY) — PROCEDURAL NEW FFA MAP ONLINE!"
+        "SECTOR CONVERGENCE: WINNER $winnerName ($winnerBty BTY) — PROCEDURAL NEW FFA MAP ONLINE!"
       highBountyShutdownBanner = bannerMsg
       highBountyShutdownTimer = 4.5f
       onPrizeToast(bannerMsg)
@@ -1078,7 +1113,7 @@ class RiftGameEngine(
     publicMatchDurationSec = 0f
     for (s in ships) {
       s.matchPresenceTimeSec = 0f
-      s.bounty = 100
+      s.bounty = if (s.isLocalPlayer) getLocalStartingBounty() else 100
       s.flux = s.maxFlux
       s.respawnTimer = 0f
       s.vx = 0f
@@ -1119,9 +1154,10 @@ class RiftGameEngine(
       }
     }
     resetCurrentLifeStats()
+    onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
     sfx.playWarp()
     spawnPooledFct(
-      text = "🌀 NEW SECTOR MAP CONVERGED",
+      text = "NEW SECTOR MAP CONVERGED",
       x = localPlayer.x,
       y = localPlayer.y - 38f,
       color = Color.parseColor("#00F0FF"),
@@ -1161,7 +1197,7 @@ class RiftGameEngine(
     activeCustomGames.add(
       CustomGameConfig(
         instanceId = "custom_fat_bullets_ffa",
-        title = "Fat Bullets 5m FFA",
+        title = "MegaFat Bullets 5m FFA",
         hostCallsign = "NEXUS HOST",
         baseMode = RankedGameMode.SECTOR_CONVERGENCE,
         teamSizeBracket = 20,
@@ -1254,7 +1290,7 @@ class RiftGameEngine(
   }
 
   fun formOrJoinArmada(rawName: String, initialWingmen: List<FriendPilotEntry> = emptyList()) {
-    val cleanName = rawName.trim().uppercase().replace(Regex("[^A-Z0-9_\\-]"), "").take(10)
+    val cleanName = rawName.trim().uppercase().replace(Regex("[^A-Z0-9_\\-]"), "").take(14)
     if (cleanName.isEmpty()) return
     activeArmadaName = cleanName
     activeArmadaSlots.clear()
@@ -1273,17 +1309,17 @@ class RiftGameEngine(
       }
     }
     applyArmadaRosterToSectorShips()
-    onPrizeToast("🛡️ ARMADA [$activeArmadaName] ACTIVE (${getCurrentArmadaSize()}/5 PILOTS)")
+    onPrizeToast("STRIKE WING [$activeArmadaName] ACTIVE (${getCurrentArmadaSize()}/5 PILOTS)")
     onStatsUpdated()
   }
 
   fun addMemberToArmada(friend: FriendPilotEntry): Boolean {
     if (activeArmadaName.isEmpty()) {
-      activeArmadaName = "${localPlayer.syndicateTag}_WING"
+      activeArmadaName = "${localPlayer.syndicateTag}_WING".take(14)
       syncLocalArmadaSelfSlot()
     }
     if (activeArmadaSlots.size >= 5) {
-      onPrizeToast("⚠️ ARMADA [$activeArmadaName] IS AT MAX 5-MAN CAPACITY")
+      onPrizeToast("STRIKE WING [$activeArmadaName] IS AT MAX 5-PILOT CAPACITY")
       return false
     }
     if (activeArmadaSlots.any { it.callsign.equals(friend.callsign, ignoreCase = true) }) {
@@ -1597,7 +1633,7 @@ class RiftGameEngine(
     localPlayer.barrelRollTimer = 0f
     updateDynamicArenaGeometryForShipCount(20, regenerateObstacles = true)
     sfx.playMutedClick()
-    onPrizeToast("🛰️ RETURNED TO NEXUS ORBIT")
+    onPrizeToast("RETURNED TO NEXUS ORBIT")
     onStatsUpdated()
   }
 
@@ -1657,7 +1693,7 @@ class RiftGameEngine(
       val (eligible, reason) = canQueueSyndicateWars()
       if (!eligible) {
         sfx.playMutedClick()
-        onPrizeToast("⚠️ $reason")
+        onPrizeToast(reason)
         return
       }
     }
@@ -1709,7 +1745,7 @@ class RiftGameEngine(
     val humanCount = getHumanPilotCountForMode(mode)
     val botCount = (ships.size - humanCount).coerceAtLeast(0)
     onPrizeToast(
-      "🚀 DEPLOYED TO ${mode.title.uppercase()} (${mode.teamFormatBadge}) • $humanCount HUMAN / $botCount AI BOTS"
+      "DEPLOYED TO ${mode.title.uppercase()} (${mode.teamFormatBadge}) • $humanCount HUMAN / $botCount AI BOTS"
     )
     onStatsUpdated()
   }
@@ -2699,7 +2735,7 @@ class RiftGameEngine(
     autoBraking = !autoBraking
     sfx.playMutedClick()
     if (autoBraking) {
-      onPrizeToast("🛑 RETRO-BRAKES ENGAGED")
+      onPrizeToast("RETRO-BRAKES ENGAGED")
     }
   }
 
@@ -3204,14 +3240,14 @@ class RiftGameEngine(
       return
     }
 
-    // 1b. Eclipse Stasis Bubble (Two-Way Containment Dome: 275px radius, 6.0s duration, 320 Flux cost, 8.5s CD)
+    // 1b. Eclipse Stasis (Two-Way Containment Field: 275px radius, 6.0s duration, 320 Flux cost, 8.5s CD)
     if (spec.bombType == "INTERDICTOR_DOME") {
       val bubbleR = RiftCalibrationState.interdictorBubbleRadius
       val safeDist = hypot(ship.x - safeZone.centerX(), ship.y - safeZone.centerY())
       if (hasActiveSafeZone() && safeDist < (safeZone.width() * 0.5f + bubbleR + 30f)) {
         if (ship.isLocalPlayer) {
           sfx.playMutedClick()
-          onPrizeToast("CANNOT ANCHOR STASIS BUBBLE OVER SAFE ZONE PERIMETER")
+          onPrizeToast("CANNOT ANCHOR STASIS OVER SAFE ZONE PERIMETER")
         }
         return
       }
@@ -3242,7 +3278,7 @@ class RiftGameEngine(
         currentLifeStats.shotsFired++
         addTrauma(0.28f)
         spawnPooledFct(
-          text = "🌐 STASIS BUBBLE (${dur.toInt()}s)",
+          text = "STASIS (${dur.toInt()}s)",
           x = ship.x,
           y = ship.y - 30f,
           color = Color.parseColor("#EC4899"),
@@ -3646,7 +3682,7 @@ class RiftGameEngine(
         if (ship.isLocalPlayer) {
           sfx.playMissileLockBeep()
           spawnPooledFct(
-            text = "🎯 SEEKER LOCK: ${target.callsign}",
+            text = "SEEKER LOCK: ${target.callsign}",
             x = ship.x,
             y = ship.y - 28f,
             color = Color.parseColor("#EF4444"),
@@ -3801,7 +3837,7 @@ class RiftGameEngine(
         ship.missileLockWarningTimer = 0f
         if (ship.isLocalPlayer) {
           sfx.playWarp()
-          spawnPooledFct("👥 HOLO PHANTOM (${dur.toInt()}s)", ship.x, ship.y - 28f, Color.parseColor("#2DD4BF"))
+          spawnPooledFct("HOLO PHANTOM (${dur.toInt()}s)", ship.x, ship.y - 28f, Color.parseColor("#2DD4BF"))
         }
       }
       "STASIS_BARRIER" -> {
@@ -3866,7 +3902,7 @@ class RiftGameEngine(
           buffVersion++
           sfx.playWarp()
           addTrauma(0.28f)
-          spawnPooledFct("🚀 HYPER SURGE (${String.format(java.util.Locale.US, "%.1fs", dur)})", ship.x, ship.y - 28f, Color.parseColor("#F43F5E"))
+          spawnPooledFct("HYPER SURGE (${String.format(java.util.Locale.US, "%.1fs", dur)})", ship.x, ship.y - 28f, Color.parseColor("#F43F5E"))
         }
       }
       else -> {
@@ -3935,7 +3971,7 @@ class RiftGameEngine(
               buffVersion++
               sfx.playWarp()
               addTrauma(0.24f)
-              spawnPooledFct("🧪 ${forged.officialName}", ship.x, ship.y - 28f, accent)
+              spawnPooledFct(forged.officialName, ship.x, ship.y - 28f, accent)
             }
           }
           CustomBuffEffect.CLONE -> {
@@ -3963,7 +3999,7 @@ class RiftGameEngine(
             )
             if (ship.isLocalPlayer) {
               sfx.playWarp()
-              spawnPooledFct("🧪 ${forged.officialName}", ship.x, ship.y - 28f, accent)
+              spawnPooledFct(forged.officialName, ship.x, ship.y - 28f, accent)
             }
           }
           else -> {
@@ -3998,7 +4034,7 @@ class RiftGameEngine(
               if (ship.isLocalPlayer) {
                 sfx.playBomb()
                 addTrauma(0.20f)
-                spawnPooledFct("🧪 ${forged.officialName}", ship.x, ship.y - 28f, accent)
+                spawnPooledFct(forged.officialName, ship.x, ship.y - 28f, accent)
               }
             }
           }
@@ -4645,6 +4681,9 @@ class RiftGameEngine(
     if (attackerId == localPlayer.id && !target.isLocalPlayer) {
       currentLifeStats.shotsHit++
       currentLifeStats.damageDealt += effectiveDamage
+      if (effectiveDamage >= 1f) {
+        onDailyDirectiveEvent(DailyDirectiveMetric.DAMAGE_DEALT, effectiveDamage.roundToInt().coerceAtLeast(1), false)
+      }
       if (target.isHuman) currentLifeHadPvp = true
     } else if (target.isLocalPlayer) {
       currentLifeStats.damageTaken += effectiveDamage
@@ -4765,19 +4804,32 @@ class RiftGameEngine(
 
       if (attackerId == localPlayer.id) {
         allTimeKills++
+        onDailyDirectiveEvent(DailyDirectiveMetric.KILLS_EARNED, 1, false)
         if (wasHvt) {
           hvtEliminations++
           currentLifeStats.hvtShutdowns++
+          onDailyDirectiveEvent(DailyDirectiveMetric.HVT_SHUTDOWNS, 1, false)
         }
         allTimeBountyPeak = max(allTimeBountyPeak, localPlayer.bounty.toLong())
         currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, localPlayer.bounty)
+        onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
         if (target.isHuman) {
           pvpKills++
           currentLifeStats.pvpKills++
           currentLifeHadPvp = true
           pvpBountyPeak = max(pvpBountyPeak, localPlayer.bounty.toLong())
+          adjustLocalResonance(if (wasHvt) 28 else 18, if (wasHvt) "HVT SHUTDOWN" else "PVP KILL")
         } else {
           currentLifeStats.botKills++
+          val botResGain =
+            when {
+              liveResonance < 250 -> 6
+              liveResonance < 500 -> 3
+              else -> 0
+            }
+          if (botResGain > 0) {
+            adjustLocalResonance(botResGain, "ROOKIE COMBAT")
+          }
         }
         awardPilotXp(
           bountyEarnedXp = bountyAward * 2f,
@@ -4790,6 +4842,20 @@ class RiftGameEngine(
       } else if (target.isLocalPlayer) {
         allTimeDeaths++
         if (attackerIsHuman) pvpDeaths++
+        val shots = currentLifeStats.shotsFired
+        val accMod =
+          if (shots >= 8) {
+            val accPct = (currentLifeStats.shotsHit * 100) / shots.coerceAtLeast(1)
+            when {
+              accPct >= 45 -> 4
+              accPct < 15 -> -2
+              else -> 0
+            }
+          } else {
+            0
+          }
+        val baseDeathPenalty = if (liveResonance >= 200) -10 else -5
+        adjustLocalResonance(baseDeathPenalty + accMod, "HULL LOST")
         currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, victimPreDeathBounty)
         currentLifeStats.shipId = localPlayer.spec.id
         currentLifeStats.shipFlown = formatShipLabel(localPlayer)
@@ -4902,32 +4968,37 @@ class RiftGameEngine(
     if (skirmishWestRoundWins >= 2 || skirmishEastRoundWins >= 2) {
       val westWonMatch = skirmishWestRoundWins >= 2
       val isClanWar = activeRankedMode == RankedGameMode.SYNDICATE_WARS
+      onDailyDirectiveEvent(DailyDirectiveMetric.MATCHES_PLAYED, 1, false)
       if (westWonMatch) {
         riftShards += 75L
         convergencesWon++
+        adjustLocalResonance(30, if (isClanWar) "SYNDICATE WAR WIN" else "SKIRMISH WIN")
         onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
         if (isClanWar) {
           onSyndicateWarFinished(true, 25)
         }
         val matchTitle =
           if (isClanWar) {
-            "🏆 SYNDICATE WAR VICTORY! [${localPlayer.syndicateTag.ifEmpty { "SOLO" }}] DEFEATED [$rivalSyndicateWarTag] ($skirmishWestRoundWins-$skirmishEastRoundWins) • +75❖ +25 WAR TROPHIES!"
+            "SYNDICATE WAR VICTORY! [${localPlayer.syndicateTag.ifEmpty { "SOLO" }}] DEFEATED [$rivalSyndicateWarTag] ($skirmishWestRoundWins-$skirmishEastRoundWins) • +75❖ +25 WAR TROPHIES!"
           } else {
-            "🏆 RIFT SKIRMISH VICTORY! WEST HORIZON WINS $skirmishWestRoundWins-$skirmishEastRoundWins • +75❖ RIFT SHARDS!"
+            "RIFT SKIRMISH VICTORY! WEST HORIZON WINS $skirmishWestRoundWins-$skirmishEastRoundWins • +75❖ RIFT SHARDS!"
           }
         highBountyShutdownBanner = matchTitle
         highBountyShutdownTimer = 5.2f
         sfx.playPrize()
         onPrizeToast(matchTitle)
       } else {
+        if (liveResonance >= 200) {
+          adjustLocalResonance(-12, "MATCH LOSS")
+        }
         if (isClanWar) {
           onSyndicateWarFinished(false, -15)
         }
         val defeatTitle =
           if (isClanWar) {
-            "⚔️ SYNDICATE WAR CONCLUDED — [$rivalSyndicateWarTag] WON $skirmishEastRoundWins-$skirmishWestRoundWins"
+            "SYNDICATE WAR CONCLUDED — [$rivalSyndicateWarTag] WON $skirmishEastRoundWins-$skirmishWestRoundWins"
           } else {
-            "⚔️ RIFT SKIRMISH CONCLUDED — EAST HORIZON WON $skirmishEastRoundWins-$skirmishWestRoundWins"
+            "RIFT SKIRMISH CONCLUDED — EAST HORIZON WON $skirmishEastRoundWins-$skirmishWestRoundWins"
           }
         highBountyShutdownBanner = defeatTitle
         highBountyShutdownTimer = 4.5f
@@ -4960,6 +5031,7 @@ class RiftGameEngine(
 
     val westWon = allEastJailed
     val isClanWar = activeRankedMode == RankedGameMode.SYNDICATE_WARS
+    onDailyDirectiveEvent(DailyDirectiveMetric.MATCHES_PLAYED, 1, false)
     for (s in ships) {
       s.isInStasisBrig = false
       s.respawnTimer = 0f
@@ -4983,6 +5055,7 @@ class RiftGameEngine(
     if (westWon) {
       riftShards += 100L
       convergencesWon++
+      adjustLocalResonance(30, "STASIS BREACH WIN")
       onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
       if (isClanWar) {
         onSyndicateWarFinished(true, 35)
@@ -4994,6 +5067,9 @@ class RiftGameEngine(
       onPrizeToast(msg)
       onStatsUpdated()
     } else {
+      if (liveResonance >= 200) {
+        adjustLocalResonance(-12, "MATCH LOSS")
+      }
       if (isClanWar) {
         onSyndicateWarFinished(false, -20)
       }
@@ -5002,6 +5078,7 @@ class RiftGameEngine(
       highBountyShutdownTimer = 4.8f
       sfx.playWarp()
       onPrizeToast(msg)
+      onStatsUpdated()
     }
   }
 
@@ -5101,11 +5178,11 @@ class RiftGameEngine(
     addTrauma(0.65f)
     sfx.playWarp()
 
-    val msg = "💥 STASIS CORE DETONATED! $releasedCount PRISONERS FREED!"
+    val msg = "STASIS CORE DETONATED! $releasedCount PRISONERS FREED!"
     highBountyShutdownBanner = msg
     highBountyShutdownTimer = 4.5f
     spawnPooledFct(
-      text = "💥 CORE DETONATED!",
+      text = "CORE DETONATED!",
       x = rx,
       y = ry - 48f,
       color = Color.parseColor("#00F5D4"),
@@ -6301,7 +6378,7 @@ class RiftGameEngine(
           s.y = pos.second
           s.vx = 0f
           s.vy = 0f
-          s.bounty = 100
+          s.bounty = if (s.isLocalPlayer) getLocalStartingBounty() else 100
           s.speedOverchargeStacks = 0
           s.thrustOverchargeStacks = 0
           s.rechargeOverchargeStacks = 0
@@ -6330,6 +6407,7 @@ class RiftGameEngine(
             spectatingTargetShipId = ""
             buffVersion++
             resetCurrentLifeStats()
+            onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
           }
           val inSafe = isInsideSafeZone(s.x, s.y)
           s.wasInSafeZone = inSafe
@@ -6763,6 +6841,8 @@ class RiftGameEngine(
             greensCollected++
             currentLifeStats.buffsCollected++
             currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, localPlayer.bounty)
+            onDailyDirectiveEvent(DailyDirectiveMetric.CRATES_COLLECTED, 1, false)
+            onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
             onSyndicateContribution(0L, localPlayer.bounty.toLong(), 0L)
             val msg =
               when {
@@ -7730,7 +7810,7 @@ class RiftGameEngine(
           nextLocked = 1
           shockwaves.add(ShockwaveEntity(zx, zy, 24f, riftCaptureRadius * 1.3f, Color.parseColor("#EF4444")))
           sfx.playWarp()
-          onPrizeToast("🎯 $zoneLabel CAPTURED BY EAST HORIZON!")
+          onPrizeToast("$zoneLabel CAPTURED BY EAST HORIZON!")
         }
       } else if (westInside == 0 && eastInside == 0 && curLockedBy == -1) {
         if (curControl < 0f) {
@@ -7782,9 +7862,11 @@ class RiftGameEngine(
           eastLocks > westLocks -> false
           else -> (-riftAlphaControlSec - riftOmegaControlSec) >= 0f
         }
+      onDailyDirectiveEvent(DailyDirectiveMetric.MATCHES_PLAYED, 1, false)
       if (westWon) {
         riftShards += 85L
         convergencesWon++
+        adjustLocalResonance(30, "RIFT CONTROL WIN")
         onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
         val msg =
           "RIFT CONTROL VICTORY! WEST HORIZON ${riftControlWestScore.toInt()}-${riftControlEastScore.toInt()} (+85 RIFT SHARDS)"
@@ -7794,12 +7876,16 @@ class RiftGameEngine(
         onPrizeToast(msg)
         onStatsUpdated()
       } else {
+        if (liveResonance >= 200) {
+          adjustLocalResonance(-12, "MATCH LOSS")
+        }
         val msg =
           "RIFT CONTROL CONCLUDED — EAST HORIZON WON ${riftControlEastScore.toInt()}-${riftControlWestScore.toInt()}"
         highBountyShutdownBanner = msg
         highBountyShutdownTimer = 4.5f
         sfx.playWarp()
         onPrizeToast(msg)
+        onStatsUpdated()
       }
       brickWalls.clear()
       shipDebrisChunks.clear()
@@ -7873,6 +7959,7 @@ class RiftGameEngine(
           currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, carrier.bounty)
           allTimeBountyPeak = max(allTimeBountyPeak, carrier.bounty.toLong())
           pvpBountyPeak = max(pvpBountyPeak, carrier.bounty.toLong())
+          onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, carrier.bounty, true)
           onStatsUpdated()
         }
       }
@@ -8218,7 +8305,7 @@ class RiftGameEngine(
                 spawnExplosion(s.x, s.y, Color.parseColor("#C084FC"))
                 if (s.isLocalPlayer) {
                   sfx.playBounce()
-                  spawnPooledFct("⚠️ GRAVITY RIFT: FULL STOP", s.x, s.y - 32f, Color.parseColor("#A855F7"))
+                  spawnPooledFct("GRAVITY RIFT: FULL STOP", s.x, s.y - 32f, Color.parseColor("#A855F7"))
                 }
               }
             } else if (dist < pullRadius) {

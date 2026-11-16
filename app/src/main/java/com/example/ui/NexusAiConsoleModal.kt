@@ -1,30 +1,76 @@
 package com.example.ui
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
-import androidx.compose.foundation.layout.*
+import android.view.KeyEvent
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -46,1830 +92,3594 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.ArmadaMemberSlot
+import com.example.data.LivePilotState
+import com.example.data.RiftCommunityRoles
 import com.example.data.SyndicateChatMessage
 import com.example.data.SyndicateWarRecord
-import com.example.engine.*
+import com.example.engine.CustomGameConfig
+import com.example.engine.RankedGameMode
+import com.example.engine.RiftCalibrationState
+import com.example.engine.RiftCodex
+import com.example.engine.RiftGameEngine
+import java.util.Locale
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
-private val NEXUS_STARTER_CHIPS = listOf(
- "How many pixels are Suppressor's lasers?",
- "Who holds the highest bounty ever?",
- "Theorycraft a 100-pt Rift Frame sniper build",
- "Analyze my Peak Bounty Run & Executioner",
- "Compare Eclipse Stasis Bubble vs Disruptor EMP",
- "Explain Flux Core, Stasis Breach & Rift Control",
+private val NEXUS_STARTER_CHIPS =
+  listOf(
+    "How many pixels are Suppressor's lasers?",
+    "Who holds the highest bounty ever?",
+    "Theorycraft a 100-pt Rift Frame sniper build",
+    "Analyze my Peak Bounty Run & Executioner",
+    "Compare Eclipse Stasis vs Disruptor EMP",
+    "Explain Flux Core, Stasis Breach & Rift Control",
+  )
+
+enum class NexusHubLayoutMode {
+  SPLIT_COMMAND,
+  CHANNELS_ONLY,
+  DECK_ONLY,
+}
+
+enum class NexusCoreNode {
+  ORBITAL_HUB,
+  SUBSPACE_COMMS,
+  CONVERGENCE_GATE,
+  HANGAR_DECK,
+  RIFT_CONDUIT,
+  SYNDICATE_CITADEL,
+  ARCHIVE_CODEX,
+  HELM_SYSTEMS,
+  STAR_FORGE,
+}
+
+enum class SyndicateCitadelSubDeck {
+  SYNDICATES_WARS,
+  STRIKE_WING,
+}
+
+enum class ArchiveCodexSubDeck {
+  PILOT_DOSSIER,
+  TACTICAL_CODEX,
+}
+
+private enum class ConvergenceGateTab {
+  OFFICIAL_RANKED,
+  CUSTOM_RIFT_GATE,
+}
+
+private data class OrbitalNodeSpec(
+  val node: NexusCoreNode,
+  val title: String,
+  val subtitle: String,
+  val xFrac: Float,
+  val yFrac: Float,
+  val accent: Color,
+  val phaseOffset: Float,
+  val testTag: String,
 )
 
-enum class NexusHubLayoutMode { SPLIT_COMMAND, CHANNELS_ONLY, DECK_ONLY }
-
-private data class LocalChannelPost(
- val id: String,
- val senderCallsign: String,
- val senderTag: String,
- val timestamp: String,
- val text: String,
- val accentColor: Color = Color(0xFF38BDF8),
-)
+private val ORBITAL_NODE_SPECS =
+  listOf(
+    OrbitalNodeSpec(
+      node = NexusCoreNode.CONVERGENCE_GATE,
+      title = "CONVERGENCE GATE",
+      subtitle = "6 Ranked + Custom Rifts",
+      xFrac = 0.50f,
+      yFrac = 0.18f,
+      accent = Color(0xFF00F5D4),
+      phaseOffset = 0.0f,
+      testTag = "nexus_node_convergence_gate",
+    ),
+    OrbitalNodeSpec(
+      node = NexusCoreNode.HANGAR_DECK,
+      title = "HANGAR DECK",
+      subtitle = "10 Hulls • Shipwright",
+      xFrac = 0.18f,
+      yFrac = 0.31f,
+      accent = Color(0xFF38BDF8),
+      phaseOffset = 0.9f,
+      testTag = "nexus_node_hangar_deck",
+    ),
+    OrbitalNodeSpec(
+      node = NexusCoreNode.STAR_FORGE,
+      title = "STAR FORGE",
+      subtitle = "Procedural Asset Studio",
+      xFrac = 0.16f,
+      yFrac = 0.64f,
+      accent = Color(0xFFC084FC),
+      phaseOffset = 1.8f,
+      testTag = "nexus_node_star_forge",
+    ),
+    OrbitalNodeSpec(
+      node = NexusCoreNode.RIFT_CONDUIT,
+      title = "RIFT CONDUIT",
+      subtitle = "Resonance & Directives",
+      xFrac = 0.33f,
+      yFrac = 0.84f,
+      accent = Color(0xFFE879F9),
+      phaseOffset = 2.7f,
+      testTag = "nexus_node_rift_conduit",
+    ),
+    OrbitalNodeSpec(
+      node = NexusCoreNode.SYNDICATE_CITADEL,
+      title = "SYNDICATE CITADEL",
+      subtitle = "Clans & Strike Wings",
+      xFrac = 0.82f,
+      yFrac = 0.31f,
+      accent = Color(0xFFFACC15),
+      phaseOffset = 3.6f,
+      testTag = "nexus_node_syndicate_citadel",
+    ),
+    OrbitalNodeSpec(
+      node = NexusCoreNode.ARCHIVE_CODEX,
+      title = "ARCHIVE & CODEX",
+      subtitle = "Dossier & Field Manual",
+      xFrac = 0.84f,
+      yFrac = 0.64f,
+      accent = Color(0xFF34D399),
+      phaseOffset = 4.5f,
+      testTag = "nexus_node_archive_codex",
+    ),
+    OrbitalNodeSpec(
+      node = NexusCoreNode.HELM_SYSTEMS,
+      title = "HELM SYSTEMS",
+      subtitle = "Audio, FOV & Controls",
+      xFrac = 0.67f,
+      yFrac = 0.84f,
+      accent = Color(0xFF94A3B8),
+      phaseOffset = 5.4f,
+      testTag = "nexus_node_helm_systems",
+    ),
+  )
 
 private fun doesModeLockShipSelection(mode: RankedGameMode): Boolean =
- mode == RankedGameMode.RIFT_SKIRMISH || mode == RankedGameMode.SYNDICATE_WARS
+  mode == RankedGameMode.RIFT_SKIRMISH || mode == RankedGameMode.SYNDICATE_WARS
+
+internal fun generateSixCharRoomCode(seedSalt: Long = System.currentTimeMillis()): String {
+  val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+  var v = abs(seedSalt xor 0x5DEECE66DL)
+  val sb = StringBuilder(6)
+  repeat(6) { idx ->
+    val charIdx = ((v + idx * 17L) % alphabet.length).toInt()
+    sb.append(alphabet[charIdx])
+    v = (v * 1103515245L + 12345L) and 0x7FFFFFFFL
+  }
+  return sb.toString()
+}
+
+internal fun extractCustomRoomCode(instanceId: String): String {
+  val parts = instanceId.split("_")
+  if ((parts.firstOrNull() == "priv" || parts.firstOrNull() == "pub") && parts.size >= 2) {
+    val candidate = parts[1].uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(6)
+    if (candidate.length in 4..6) return candidate
+  }
+  return generateSixCharRoomCode(instanceId.hashCode().toLong())
+}
+
+internal fun isPrivateCustomGame(config: CustomGameConfig): Boolean =
+  config.instanceId.startsWith("priv_", ignoreCase = true)
 
 @Composable
 fun SwirlingRiftVortexGlyph(modifier: Modifier = Modifier, isStreaming: Boolean = false) {
- val transition = rememberInfiniteTransition(label = "nexus_rift_vortex")
- val outerDeg by transition.animateFloat(
-  initialValue = 0f, targetValue = 360f,
-  animationSpec = infiniteRepeatable(tween(if (isStreaming) 1250 else 3200, easing = LinearEasing), RepeatMode.Restart),
-  label = "vortex_outer_deg",
- )
- val corePulse by transition.animateFloat(
-  initialValue = 0.76f, targetValue = 1.0f,
-  animationSpec = infiniteRepeatable(tween(if (isStreaming) 420 else 980, easing = LinearEasing), RepeatMode.Reverse),
-  label = "vortex_core_pulse",
- )
+  val transition = rememberInfiniteTransition(label = "nexus_rift_vortex")
+  val outerDeg by
+    transition.animateFloat(
+      initialValue = 0f,
+      targetValue = 360f,
+      animationSpec =
+        infiniteRepeatable(
+          tween(if (isStreaming) 1250 else 3200, easing = LinearEasing),
+          RepeatMode.Restart,
+        ),
+      label = "vortex_outer_deg",
+    )
+  val corePulse by
+    transition.animateFloat(
+      initialValue = 0.76f,
+      targetValue = 1.0f,
+      animationSpec =
+        infiniteRepeatable(
+          tween(if (isStreaming) 420 else 980, easing = LinearEasing),
+          RepeatMode.Reverse,
+        ),
+      label = "vortex_core_pulse",
+    )
 
- Canvas(modifier = modifier) {
-  val r = minOf(size.width, size.height) * 0.5f
-  val c = Offset(size.width * 0.5f, size.height * 0.5f)
-  if (r <= 1f) return@Canvas
-  val phaseRad = outerDeg * (PI.toFloat() / 180f)
+  Canvas(modifier = modifier) {
+    val r = minOf(size.width, size.height) * 0.5f
+    val c = Offset(size.width * 0.5f, size.height * 0.5f)
+    if (r <= 1f) return@Canvas
+    val phaseRad = outerDeg * (PI.toFloat() / 180f)
 
-  drawCircle(
-   brush = Brush.radialGradient(
-    colors = listOf(Color(0xFF02040A), Color(0xFF140B2E), Color(0xAA7C3AED), Color(0x6600F5D4), Color.Transparent),
-    center = c, radius = r * 1.05f,
-   ),
-   radius = r, center = c,
-  )
+    drawCircle(
+      brush =
+        Brush.radialGradient(
+          colors =
+            listOf(
+              Color(0xFF02040A),
+              Color(0xFF140B2E),
+              Color(0xAA7C3AED),
+              Color(0x6600F5D4),
+              Color.Transparent,
+            ),
+          center = c,
+          radius = r * 1.05f,
+        ),
+      radius = r,
+      center = c,
+    )
 
-  for (t in 0 until 24) {
-   val tickRad = (t * 15f - outerDeg * 0.45f) * (PI.toFloat() / 180f)
-   val rIn = r * (if (t % 3 == 0) 0.80f else 0.87f)
-   val rOut = r * 0.96f
-   drawLine(
-    color = if (t % 6 == 0) Color(0xFFFACC15) else Color(0x9938BDF8),
-    start = Offset(c.x + cos(tickRad) * rIn, c.y + sin(tickRad) * rIn),
-    end = Offset(c.x + cos(tickRad) * rOut, c.y + sin(tickRad) * rOut),
-    strokeWidth = (r * 0.055f).coerceAtLeast(1.0f),
-   )
+    for (t in 0 until 24) {
+      val tickRad = (t * 15f - outerDeg * 0.45f) * (PI.toFloat() / 180f)
+      val rIn = r * (if (t % 3 == 0) 0.80f else 0.87f)
+      val rOut = r * 0.96f
+      drawLine(
+        color = if (t % 6 == 0) Color(0xFFFACC15) else Color(0x9938BDF8),
+        start = Offset(c.x + cos(tickRad) * rIn, c.y + sin(tickRad) * rIn),
+        end = Offset(c.x + cos(tickRad) * rOut, c.y + sin(tickRad) * rOut),
+        strokeWidth = (r * 0.055f).coerceAtLeast(1.0f),
+      )
+    }
+
+    val outerInset = r * 0.14f
+    val outerSize = Size((r - outerInset) * 2f, (r - outerInset) * 2f)
+    val outerTopLeft = Offset(c.x - (r - outerInset), c.y - (r - outerInset))
+    for (arm in 0 until 3) {
+      drawArc(
+        color = if (arm % 2 == 0) Color(0xFF00F5D4) else Color(0xFFB388FF),
+        startAngle = outerDeg + arm * 120f,
+        sweepAngle = 68f,
+        useCenter = false,
+        topLeft = outerTopLeft,
+        size = outerSize,
+        style = Stroke(width = (r * 0.11f).coerceAtLeast(1.6f), cap = StrokeCap.Round),
+      )
+    }
+
+    for (arm in 0 until 4) {
+      val armBase = phaseRad * 1.35f + arm * (PI.toFloat() * 0.5f)
+      val path = Path()
+      for (s in 0..14) {
+        val frac = s / 14f
+        val sr = r * (0.16f + 0.68f * frac)
+        val sa = armBase + frac * 2.4f
+        val px = c.x + cos(sa) * sr
+        val py = c.y + sin(sa) * sr
+        if (s == 0) path.moveTo(px, py) else path.lineTo(px, py)
+      }
+      val armCol =
+        when (arm % 3) {
+          0 -> Color(0xFF00F5D4)
+          1 -> Color(0xFFA855F7)
+          else -> Color(0xFF38BDF8)
+        }
+      drawPath(
+        path,
+        armCol.copy(alpha = 0.88f * corePulse),
+        style = Stroke(width = (r * 0.085f).coerceAtLeast(1.3f), cap = StrokeCap.Round),
+      )
+    }
+
+    val ovalW = r * 1.56f
+    val ovalH = r * 0.56f
+    drawArc(
+      color = Color(0xCC00F5D4),
+      startAngle = -outerDeg * 1.5f,
+      sweepAngle = 250f,
+      useCenter = false,
+      topLeft = Offset(c.x - ovalW * 0.5f, c.y - ovalH * 0.5f),
+      size = Size(ovalW, ovalH),
+      style = Stroke(width = (r * 0.075f).coerceAtLeast(1.2f), cap = StrokeCap.Round),
+    )
+    drawCircle(Color(0xFF030712), radius = r * 0.28f, center = c)
+    drawCircle(
+      Color(0xFF00F5D4).copy(alpha = corePulse),
+      radius = r * 0.29f,
+      center = c,
+      style = Stroke(width = (r * 0.09f).coerceAtLeast(1.4f)),
+    )
+    drawCircle(Color.White.copy(alpha = corePulse), radius = r * 0.11f * corePulse, center = c)
   }
-
-  val outerInset = r * 0.14f
-  val outerSize = Size((r - outerInset) * 2f, (r - outerInset) * 2f)
-  val outerTopLeft = Offset(c.x - (r - outerInset), c.y - (r - outerInset))
-  for (arm in 0 until 3) {
-   drawArc(
-    color = if (arm % 2 == 0) Color(0xFF00F5D4) else Color(0xFFB388FF),
-    startAngle = outerDeg + arm * 120f, sweepAngle = 68f, useCenter = false,
-    topLeft = outerTopLeft, size = outerSize,
-    style = Stroke(width = (r * 0.11f).coerceAtLeast(1.6f), cap = StrokeCap.Round),
-   )
-  }
-
-  for (arm in 0 until 4) {
-   val armBase = phaseRad * 1.35f + arm * (PI.toFloat() * 0.5f)
-   val path = Path()
-   for (s in 0..14) {
-    val frac = s / 14f
-    val sr = r * (0.16f + 0.68f * frac)
-    val sa = armBase + frac * 2.4f
-    val px = c.x + cos(sa) * sr
-    val py = c.y + sin(sa) * sr
-    if (s == 0) path.moveTo(px, py) else path.lineTo(px, py)
-   }
-   val armCol = when (arm % 3) {
-    0 -> Color(0xFF00F5D4)
-    1 -> Color(0xFFA855F7)
-    else -> Color(0xFF38BDF8)
-   }
-   drawPath(path, armCol.copy(alpha = 0.88f * corePulse), style = Stroke(width = (r * 0.085f).coerceAtLeast(1.3f), cap = StrokeCap.Round))
-  }
-
-  val ovalW = r * 1.56f
-  val ovalH = r * 0.56f
-  drawArc(
-   color = Color(0xCC00F5D4), startAngle = -outerDeg * 1.5f, sweepAngle = 250f, useCenter = false,
-   topLeft = Offset(c.x - ovalW * 0.5f, c.y - ovalH * 0.5f), size = Size(ovalW, ovalH),
-   style = Stroke(width = (r * 0.075f).coerceAtLeast(1.2f), cap = StrokeCap.Round),
-  )
-  drawCircle(Color(0xFF030712), radius = r * 0.28f, center = c)
-  drawCircle(Color(0xFF00F5D4).copy(alpha = corePulse), radius = r * 0.29f, center = c, style = Stroke(width = (r * 0.09f).coerceAtLeast(1.4f)))
-  drawCircle(Color.White.copy(alpha = corePulse), radius = r * 0.11f * corePulse, center = c)
- }
 }
 
 @Composable
-fun SwirlingRiftHudOrb(modifier: Modifier = Modifier, isStreaming: Boolean = false, onClick: () -> Unit) {
- val desc = stringResource(R.string.nexus_orb_content_desc)
- val unlocked = RiftCalibrationState.isUiUnlockedForDragging
- Box(
-  modifier = modifier.size(38.dp).clip(CircleShape).semantics { contentDescription = desc }
-   .clickable(enabled = !unlocked) { onClick() }.testTag("hud_btn_nexus_orb"),
-  contentAlignment = Alignment.Center,
- ) { SwirlingRiftVortexGlyph(modifier = Modifier.size(34.dp), isStreaming = isStreaming) }
+fun SwirlingRiftHudOrb(
+  modifier: Modifier = Modifier,
+  isStreaming: Boolean = false,
+  onClick: () -> Unit,
+) {
+  val desc = stringResource(R.string.nexus_orb_content_desc)
+  val unlocked = RiftCalibrationState.isUiUnlockedForDragging
+  Box(
+    modifier =
+      modifier
+        .size(38.dp)
+        .clip(CircleShape)
+        .semantics { contentDescription = desc }
+        .clickable(enabled = !unlocked) { onClick() }
+        .testTag("hud_btn_nexus_orb"),
+    contentAlignment = Alignment.Center,
+  ) {
+    SwirlingRiftVortexGlyph(modifier = Modifier.size(34.dp), isStreaming = isStreaming)
+  }
 }
 
 @Composable
 fun SwirlingRiftHeaderPill(onClick: () -> Unit, tag: String, isStreaming: Boolean = false) {
- val desc = stringResource(R.string.nexus_orb_content_desc)
- Row(
-  modifier = Modifier.minimumInteractiveComponentSize().height(34.dp).clip(RoundedCornerShape(8.dp))
-   .background(Brush.horizontalGradient(listOf(Color(0xFF09192F), Color(0xFF1E1038))))
-   .border(1.dp, Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFB388FF))), RoundedCornerShape(8.dp))
-   .semantics { contentDescription = desc }.clickable { onClick() }.padding(horizontal = 9.dp).testTag(tag),
-  verticalAlignment = Alignment.CenterVertically,
-  horizontalArrangement = Arrangement.spacedBy(6.dp),
- ) {
-  SwirlingRiftVortexGlyph(modifier = Modifier.size(18.dp), isStreaming = isStreaming)
-  Text("NEXUS", color = Color(0xFF00F5D4), fontSize = 9.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, letterSpacing = 0.5.sp)
- }
-}
-
-@Composable
-fun NexusAiConsoleModal(
- messages: List<NexusChatMessage>,
- streamState: NexusStreamState,
- lastFailedQuestion: String?,
- activeShipSummary: String,
- pilotLevel: Int,
- pointBudget: Int,
- highestBountySummary: String,
- onSendQuestion: (String) -> Unit,
- onRetryLastQuestion: () -> Unit,
- onClearHistory: () -> Unit,
- onCloseModal: () -> Unit,
- callsign: String = "COMMANDER",
- syndicateTag: String = "GUEST",
- syndicateName: String = "UNAFFILIATED",
- activeShipId: Int = 1,
- bestShipId: Int = 1,
- bootToNexusHub: Boolean = true,
- onToggleBootToNexusHub: (Boolean) -> Unit = {},
- totalOnlinePilots: Int = 1,
- syndicateOnlineCount: Int = 1,
- presetArmadasReadyCount: Int = 0,
- activeArmadaName: String = "",
- armadaSlots: List<ArmadaMemberSlot> = emptyList(),
- onResolvePilotBestShipId: (uid: String, fallbackShipId: Int) -> Int = { _, fb -> fb },
- activeRankedMode: RankedGameMode = RankedGameMode.SECTOR_CONVERGENCE,
- activeTeamSizeBracket: Int = 3,
- humanPilotCountByMode: (RankedGameMode) -> Int = { 0 },
- canQueueSyndicateWars: Pair<Boolean, String> = Pair(false, "Requires enlisted Syndicate"),
- syndicateWarRecord: SyndicateWarRecord = SyndicateWarRecord(tag = "GUEST"),
- onDeployToRankedMode: (RankedGameMode, Int) -> Unit = { _, _ -> },
- onLeaveMatch: () -> Unit = {},
- onOpenArmadaModal: () -> Unit = {},
- onQuickFormSyndicateArmada: () -> Unit = {},
- onOpenSyndicatesModal: () -> Unit = {},
- onOpenSyndicateDirectory: () -> Unit = onOpenSyndicatesModal,
- onOpenHangar: () -> Unit = {},
- onOpenDossier: () -> Unit = {},
- onOpenCodex: () -> Unit = {},
- onOpenSettings: () -> Unit = {},
- onOpenCalibration: () -> Unit = {},
- onOpenForge: () -> Unit = onOpenCalibration,
- onOpenHangarForShip: (Int) -> Unit = {},
- canAccessSyndicateServer: Boolean = false,
- syndicateCustomChannels: List<String> = listOf("#general"),
- syndicateInvitedGuests: Set<String> = emptySet(),
- onAddSyndicateChannel: (String) -> Unit = {},
- onDeleteSyndicateChannel: (String) -> Unit = {},
- onInviteSyndicateGuest: (String) -> Unit = {},
- onRevokeSyndicateGuest: (String) -> Unit = {},
- lobbyMessages: List<SyndicateChatMessage> = emptyList(),
- onSendChannelMessage: (channelKey: String, messageText: String) -> Unit = { _, _ -> },
- onSubmitBugReport: (category: String, description: String) -> Unit = { _, _ -> },
- engine: RiftGameEngine? = null,
- initialLayoutMode: NexusHubLayoutMode = NexusHubLayoutMode.DECK_ONLY,
- activeModuleKey: String = "NEXUS",
- onSelectNexusLobby: () -> Unit = {},
- onOpenProgression: () -> Unit = {},
- isCalibrationLivePeeking: Boolean = false,
- hideTopHeaderForFullScreenStage: Boolean = false,
- embeddedModuleContent: (@Composable () -> Unit)? = null,
-) {
- val context = LocalContext.current
- var selectedChannelKey by remember { mutableStateOf("#nexus-ai") }
- var layoutMode by remember(initialLayoutMode) { mutableStateOf(initialLayoutMode) }
- var inputQuery by remember { mutableStateOf("") }
- var channelChatInput by remember { mutableStateOf("") }
- var skirmishBracket by remember { mutableIntStateOf(activeTeamSizeBracket.coerceIn(2, 5)) }
- var riftControlBracket by remember { mutableIntStateOf(if (activeTeamSizeBracket >= 10) 10 else if (activeTeamSizeBracket >= 5) 5 else 3) }
- var syndicateWarBracket by remember { mutableIntStateOf(if (activeTeamSizeBracket >= 10) 10 else if (activeTeamSizeBracket >= 5) 5 else 3) }
- var lockedTeamShipId by remember(activeShipId, engine?.localPlayer?.spec?.id) {
-  mutableIntStateOf((engine?.localPlayer?.spec?.id ?: activeShipId).coerceIn(1, 10))
- }
- var pendingTeamDeployMode by remember { mutableStateOf<Pair<RankedGameMode, Int>?>(null) }
-
- var showCustomGameBuilder by remember { mutableStateOf(false) }
- var customBaseMode by remember { mutableStateOf(RankedGameMode.SECTOR_CONVERGENCE) }
- var customResetMinutes by remember { mutableIntStateOf(10) }
- var customTeamBracket by remember { mutableIntStateOf(5) }
- var customAllowArmadasInFfa by remember { mutableStateOf(true) }
- var customBotsEnabled by remember { mutableStateOf(true) }
- var customBulletSizeMult by remember { mutableStateOf(1.0f) }
- var customSpeedMult by remember { mutableStateOf(1.0f) }
- var customRechargeMult by remember { mutableStateOf(1.0f) }
- var customDamageMult by remember { mutableStateOf(1.0f) }
- var customCrateSpawnMult by remember { mutableStateOf(1.0f) }
- var customGamesRefreshTick by remember { mutableIntStateOf(0) }
-
- var showChannelManager by remember { mutableStateOf(false) }
- var newChannelDraft by remember { mutableStateOf("") }
- var showGuestManager by remember { mutableStateOf(false) }
- var guestCallsignDraft by remember { mutableStateOf("") }
-
- var bugCategory by remember { mutableStateOf("PHYSICS / COLLISION") }
- var bugDescription by remember { mutableStateOf("") }
- var bugStatusBanner by remember { mutableStateOf<String?>(null) }
-
- val localChannelPosts = remember { mutableStateMapOf<String, MutableList<LocalChannelPost>>() }
- val keyboardController = LocalSoftwareKeyboardController.current
- val listState = rememberLazyListState()
- val isStreaming = streamState is NexusStreamState.Loading || streamState is NexusStreamState.Streaming
-
- val lastMsgTextLen = messages.lastOrNull()?.text?.length ?: 0
- LaunchedEffect(messages.size, lastMsgTextLen, streamState, selectedChannelKey) {
-  if (selectedChannelKey == "#nexus-ai") {
-   val totalItems = listState.layoutInfo.totalItemsCount
-   if (totalItems > 0) listState.animateScrollToItem(totalItems - 1)
-  }
- }
-
- fun submitNexusAiQuery() {
-  val trimmed = inputQuery.trim()
-  if (trimmed.isNotEmpty() && !isStreaming) {
-   inputQuery = ""
-   keyboardController?.hide()
-   onSendQuestion(trimmed)
-  }
- }
-
- fun postToChannel(channelKey: String, rawText: String, accent: Color = Color(0xFF38BDF8)) {
-  val clean = rawText.trim()
-  if (clean.isEmpty()) return
-  val tag = syndicateTag.ifBlank { "GUEST" }
-  val list = localChannelPosts.getOrPut(channelKey) { mutableStateListOf() }
-  list.add(LocalChannelPost("post_${System.currentTimeMillis()}_${list.size}", callsign, tag, "LIVE", clean, accent))
-  onSendChannelMessage(channelKey, clean)
- }
-
- val shipChannels = remember {
-  listOf(1 to "#viper", 2 to "#ricochet", 3 to "#suppressor", 4 to "#goliath", 5 to "#twinfang", 6 to "#disruptor", 7 to "#valkyrie", 8 to "#manta", 9 to "#eclipse", 10 to "#rift-frame")
- }
-
- val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
- val cleanSyndicateTag = if (syndicateTag.isBlank() || syndicateTag in setOf("FREE", "SOLO", "UNAFFILIATED")) "GUEST" else syndicateTag
- val isCalibrationPeekActive = activeModuleKey == "CALIBRATE" && isCalibrationLivePeeking
-
- Box(
-  modifier = Modifier.fillMaxSize()
-   .background(if (isCalibrationPeekActive) Color(0x14020611) else Color(0x78020611))
-   .windowInsetsPadding(WindowInsets.safeDrawing).imePadding()
-   .padding(if (isCompactPhone) PaddingValues(horizontal = 8.dp, vertical = 4.dp) else PaddingValues(horizontal = 10.dp, vertical = 6.dp))
-   .testTag("nexus_ai_console_modal"),
-  contentAlignment = Alignment.Center,
- ) {
-  Surface(
-   modifier = Modifier.fillMaxSize().border(
-    1.2.dp,
-    Brush.linearGradient(listOf(Color(0xFF00F5D4), Color(0xCCB388FF), Color(0xFF38BDF8))),
-    RoundedCornerShape(12.dp),
-   ),
-   color = if (isCalibrationPeekActive) Color(0x40060D1A) else Color(0xF2060D1A),
-   shape = RoundedCornerShape(12.dp),
+  val desc = stringResource(R.string.nexus_orb_content_desc)
+  Row(
+    modifier =
+      Modifier.minimumInteractiveComponentSize()
+        .height(34.dp)
+        .clip(RoundedCornerShape(8.dp))
+        .background(Brush.horizontalGradient(listOf(Color(0xFF09192F), Color(0xFF1E1038))))
+        .border(
+          1.dp,
+          Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFB388FF))),
+          RoundedCornerShape(8.dp),
+        )
+        .semantics { contentDescription = desc }
+        .clickable { onClick() }
+        .padding(horizontal = 9.dp)
+        .testTag(tag),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
   ) {
-   Column(
-    modifier = Modifier.fillMaxSize().padding(if (isCompactPhone) 8.dp else 14.dp),
-    verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 4.dp else 6.dp),
-   ) {
-    val isFullScreenForgeStage = hideTopHeaderForFullScreenStage && activeModuleKey == "FORGE"
-    if (!isFullScreenForgeStage) {
-     Row(
-      modifier = Modifier.fillMaxWidth().then(if (isCompactPhone) Modifier.height(30.dp) else Modifier),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-     ) {
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-       SwirlingRiftVortexGlyph(modifier = Modifier.size(if (isCompactPhone) 24.dp else 32.dp), isStreaming = isStreaming)
-       if (isCompactPhone) {
-        Text("NEXUS // COMMAND HUB", color = Color(0xFF00F5D4), fontSize = 11.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Box(
-         modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF081A2C))
-          .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
-        ) {
-         Text("🟢 $totalOnlinePilots ONLINE • [$cleanSyndicateTag] • LVL $pilotLevel", color = Color(0xFF34D399), fontSize = 8.2.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, maxLines = 1)
-        }
-       } else {
-        Column {
-         Text("NEXUS // SECTOR COMMAND HUB & MATCHMAKING", color = Color(0xFF00F5D4), fontSize = 13.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, letterSpacing = 0.6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState())) {
-          Text("🟢 $totalOnlinePilots PILOTS ONLINE", color = Color(0xFF34D399), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
-          Text("🏛️ $syndicateOnlineCount [$cleanSyndicateTag] MEMBERS ONLINE", color = Color(0xFFFBBF24), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
-          Text("🛡️ $presetArmadasReadyCount PRESET ARMADAS READY", color = Color(0xFF60A5FA), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
-          Text("• LVL $pilotLevel ($pointBudget PTS) • TOP: $highestBountySummary", color = Color(0xFF94A3B8), fontSize = 8.8.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
-         }
-        }
-       }
-      }
-
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-       Box(
-        modifier = Modifier.shadow(2.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))
-         .background(if (bootToNexusHub) Color(0xFF092238) else Color(0xFF231808))
-         .border(1.2.dp, if (bootToNexusHub) Color(0xFF00F5D4) else Color(0xFFF59E0B), RoundedCornerShape(8.dp))
-         .clickable { onToggleBootToNexusHub(!bootToNexusHub) }
-         .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 4.dp else 6.dp)
-         .testTag("nexus_boot_mode_toggle"),
-       ) {
-        Text(
-         if (bootToNexusHub) "⚙️ STARTUP: NEXUS HUB" else "🚀 STARTUP: QUICK-JOIN",
-         color = if (bootToNexusHub) Color(0xFF00F5D4) else Color(0xFFFACC15),
-         fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, maxLines = 1,
-        )
-       }
-
-       if (activeModuleKey == "NEXUS" && messages.isNotEmpty() && selectedChannelKey == "#nexus-ai") {
-        Button(
-         onClick = onClearHistory,
-         colors = ButtonDefaults.buttonColors(containerColor = Color(0xAA0F172A), contentColor = Color(0xFF94A3B8)),
-         border = BorderStroke(1.2.dp, Color(0x66475569)), shape = RoundedCornerShape(8.dp),
-         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-         modifier = Modifier.height(if (isCompactPhone) 28.dp else 32.dp).shadow(2.dp, RoundedCornerShape(8.dp)).testTag("nexus_clear_button"),
-        ) { Text("↺ CLEAR", fontSize = 8.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) }
-       }
-
-       val isInMatch = engine?.hasJoinedMatch == true
-       if (isInMatch) {
-        Button(
-         onClick = onLeaveMatch,
-         colors = ButtonDefaults.buttonColors(containerColor = Color(0xCC2A151B), contentColor = Color(0xFFFB7185)),
-         border = BorderStroke(1.2.dp, Color(0xFFFB7185)), shape = RoundedCornerShape(8.dp),
-         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-         modifier = Modifier.height(if (isCompactPhone) 28.dp else 32.dp).shadow(2.dp, RoundedCornerShape(8.dp)).testTag("nexus_leave_match_button"),
-        ) { Text(if (isCompactPhone) "⏹ LEAVE" else "⏹ LEAVE MATCH", fontSize = 8.8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, maxLines = 1) }
-       }
-
-       Button(
-        onClick = onCloseModal,
-        colors = ButtonDefaults.buttonColors(
-         containerColor = if (isInMatch) Color(0xCC0D2538) else Color(0xCC0B1C2C),
-         contentColor = if (isInMatch) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-        ),
-        border = BorderStroke(1.2.dp, if (isInMatch) Color(0xFF00F5D4) else Color(0xFF38BDF8)),
-        shape = RoundedCornerShape(8.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-        modifier = Modifier.height(if (isCompactPhone) 28.dp else 32.dp).shadow(2.dp, RoundedCornerShape(8.dp)).testTag("nexus_close_button"),
-       ) {
-        Text(
-         when {
-          !isInMatch && isCompactPhone -> "👁️ ORBIT"
-          !isInMatch -> "👁️ VIEW ORBIT"
-          isCompactPhone -> "✕ ARENA"
-          else -> "✕ RETURN TO ARENA"
-         },
-         fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, maxLines = 1,
-        )
-       }
-      }
-     }
-
-     NexusMasterModuleNavigationRibbon(
-      activeModuleKey = activeModuleKey,
-      onSelectNexusLobby = onSelectNexusLobby,
-      onOpenHangar = onOpenHangar,
-      onOpenForge = onOpenForge,
-      onOpenProgression = onOpenProgression,
-      onOpenArmadaModal = onOpenArmadaModal,
-      onOpenSyndicateDirectory = onOpenSyndicateDirectory,
-      onOpenDossier = onOpenDossier,
-      onOpenCodex = onOpenCodex,
-      onOpenSettings = onOpenSettings,
-      onOpenCalibration = onOpenCalibration,
-      showReturnToArenaButton = false,
-      onReturnToArena = onCloseModal,
-     )
-    }
-
-    if (activeModuleKey != "NEXUS" && embeddedModuleContent != null) {
-     Box(modifier = Modifier.weight(1f).fillMaxWidth().testTag("nexus_embedded_module_container")) {
-      embeddedModuleContent()
-     }
-    } else {
-     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-      Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-       NexusViewModeTab("🎯 MODE SELECTION & MATCHMAKING (FULL VIEW)", layoutMode == NexusHubLayoutMode.DECK_ONLY, { layoutMode = NexusHubLayoutMode.DECK_ONLY }, "nexus_tab_deck_view")
-       NexusViewModeTab("💬 COMMS CHANNELS & NEXUS AI", layoutMode == NexusHubLayoutMode.CHANNELS_ONLY, { layoutMode = NexusHubLayoutMode.CHANNELS_ONLY }, "nexus_tab_channels_view")
-       NexusViewModeTab("⊞ SPLIT COMMAND VIEW", layoutMode == NexusHubLayoutMode.SPLIT_COMMAND, { layoutMode = NexusHubLayoutMode.SPLIT_COMMAND }, "nexus_tab_split_view")
-      }
-      val activeCustomTitle = engine?.currentCustomGame?.title
-      Text(
-       when {
-        engine?.hasJoinedMatch != true -> "🛰️ ORBITING NEXUS — NOT IN A MATCH • HULL: $activeShipSummary"
-        activeCustomTitle != null -> "ACTIVE CUSTOM: ${activeCustomTitle.uppercase()} • HULL: $activeShipSummary"
-        else -> "ACTIVE MATCH: ${activeRankedMode.title.uppercase()} • HULL: $activeShipSummary"
-       },
-       color = if (engine?.hasJoinedMatch == true) Color(0xFF00F5D4) else Color(0xFF94A3B8),
-       fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, maxLines = 1,
-      )
-     }
-
-     Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      if (layoutMode != NexusHubLayoutMode.DECK_ONLY) {
-       Column(
-        modifier = Modifier.width(196.dp).fillMaxHeight().clip(RoundedCornerShape(12.dp))
-         .background(Color(0x99040914)).border(1.dp, Color(0x4438BDF8), RoundedCornerShape(12.dp))
-         .padding(8.dp).verticalScroll(rememberScrollState()).testTag("nexus_channel_directory"),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-       ) {
-        ChannelCategoryHeader("// NEXUS CORE")
-        ChannelNavItem("🧠 #nexus-ai", "AI LIVE", selectedChannelKey == "#nexus-ai", Color(0xFF00F5D4), { selectedChannelKey = "#nexus-ai" }, "nexus_ch_nexus_ai")
-        ChannelNavItem("🌐 #main-lobby", "$totalOnlinePilots", selectedChannelKey == "#main-lobby", Color(0xFF38BDF8), { selectedChannelKey = "#main-lobby" }, "nexus_ch_main_lobby")
-        ChannelNavItem("📋 #change-log", "v54.0", selectedChannelKey == "#change-log", Color(0xFFFACC15), { selectedChannelKey = "#change-log" }, "nexus_ch_change_log")
-        ChannelNavItem("📜 #rules", "FAIR", selectedChannelKey == "#rules", Color(0xFFA78BFA), { selectedChannelKey = "#rules" }, "nexus_ch_rules")
-        ChannelNavItem("🛠️ #bug-report", "FORM", selectedChannelKey == "#bug-report", Color(0xFFFB7185), { selectedChannelKey = "#bug-report" }, "nexus_ch_bug_report")
-
-        Spacer(modifier = Modifier.height(4.dp))
-        ChannelCategoryHeader("// [$cleanSyndicateTag] ${syndicateName.take(14)}")
-        if (canAccessSyndicateServer) {
-         syndicateCustomChannels.forEachIndexed { idx, chName ->
-          val key = "syndicate:$chName"
-          ChannelNavItem("🏛️ $chName", if (idx == 0) "CORE" else "CLAN", selectedChannelKey == key, Color(0xFFF59E0B), { selectedChannelKey = key }, "nexus_ch_syndicate_$idx")
-         }
-         Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-          Box(
-           modifier = Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).background(Color(0xFF1E293B))
-            .border(1.dp, Color(0x66F59E0B), RoundedCornerShape(6.dp))
-            .clickable { showChannelManager = !showChannelManager }.padding(vertical = 4.dp)
-            .testTag("nexus_btn_manage_syndicate_channels"),
-           contentAlignment = Alignment.Center,
-          ) { Text("+ CH (${syndicateCustomChannels.size}/5)", color = Color(0xFFFBBF24), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace) }
-          Box(
-           modifier = Modifier.weight(1f).clip(RoundedCornerShape(6.dp)).background(Color(0xFF1E293B))
-            .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(6.dp))
-            .clickable { showGuestManager = !showGuestManager }.padding(vertical = 4.dp)
-            .testTag("nexus_btn_syndicate_guest_pass"),
-           contentAlignment = Alignment.Center,
-          ) { Text("🎟️ GUESTS (${syndicateInvitedGuests.size})", color = Color(0xFF38BDF8), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace) }
-         }
-        } else {
-         ChannelNavItem("🔒 Syndicate Locked", "JOIN", selectedChannelKey == "syndicate:locked", Color(0xFF64748B), { selectedChannelKey = "syndicate:locked" }, "nexus_ch_syndicate_locked")
-        }
-
-        if (armadaSlots.size >= 2 || activeArmadaName.isNotEmpty()) {
-         Spacer(modifier = Modifier.height(4.dp))
-         ChannelCategoryHeader("// ARMADA PARTY COMMS")
-         val armLabel = activeArmadaName.ifEmpty { "SQUAD" }
-         ChannelNavItem("🛡️ #armada-chat ($armLabel)", "${armadaSlots.size.coerceAtLeast(1)}/5", selectedChannelKey == "#armada-chat", Color(0xFF60A5FA), { selectedChannelKey = "#armada-chat" }, "nexus_ch_armada_chat")
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-        ChannelCategoryHeader("// SHIP CHANNELS (1–10)")
-        shipChannels.forEach { (shipId, chHandle) ->
-         ChannelNavItem("🚀 $chHandle", "#$shipId", selectedChannelKey == chHandle, if (shipId == 10) Color(0xFFD8B4FE) else Color(0xFF38BDF8), { selectedChannelKey = chHandle }, "nexus_ch_ship_$shipId")
-        }
-       }
-
-       Column(
-        modifier = Modifier.weight(if (layoutMode == NexusHubLayoutMode.SPLIT_COMMAND) 1.05f else 1f)
-         .fillMaxHeight().clip(RoundedCornerShape(12.dp)).background(Color(0x88040914))
-         .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(12.dp)).padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-       ) {
-        if (showChannelManager && canAccessSyndicateServer) {
-         SyndicateChannelManagerCard(
-          syndicateTag = cleanSyndicateTag, channels = syndicateCustomChannels, newChannelDraft = newChannelDraft,
-          onDraftChange = { newChannelDraft = it },
-          onAddChannel = { if (newChannelDraft.isNotBlank()) { onAddSyndicateChannel(newChannelDraft); newChannelDraft = "" } },
-          onDeleteChannel = onDeleteSyndicateChannel, onClose = { showChannelManager = false },
-         )
-        }
-        if (showGuestManager && canAccessSyndicateServer) {
-         SyndicateGuestPassManagerCard(
-          syndicateTag = cleanSyndicateTag, invitedGuests = syndicateInvitedGuests, guestDraft = guestCallsignDraft,
-          onDraftChange = { guestCallsignDraft = it },
-          onInvite = { if (guestCallsignDraft.isNotBlank()) { onInviteSyndicateGuest(guestCallsignDraft); guestCallsignDraft = "" } },
-          onRevoke = onRevokeSyndicateGuest, onClose = { showGuestManager = false },
-         )
-        }
-
-        when {
-         selectedChannelKey == "#nexus-ai" -> {
-          Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-           NEXUS_STARTER_CHIPS.forEachIndexed { idx, chipPrompt ->
-            Box(
-             modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0x990D1B2E))
-              .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(14.dp))
-              .clickable(enabled = !isStreaming) { onSendQuestion(chipPrompt) }
-              .padding(horizontal = 9.dp, vertical = 5.dp).testTag("nexus_quick_chip_$idx"),
-            ) {
-             Text("✦ $chipPrompt", color = if (isStreaming) Color(0xFF64748B) else Color(0xFFE0F2FE), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            }
-           }
-          }
-
-          LazyColumn(
-           state = listState,
-           modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(10.dp))
-            .background(Color(0x59030712)).border(1.dp, Color(0x3338BDF8), RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp).testTag("nexus_message_list"),
-           verticalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-           if (messages.isEmpty()) item(key = "nexus_zero_state") { NexusWelcomeTelemetryCard() }
-           items(items = messages, key = { it.id }) { msg -> NexusMessageBubble(message = msg) }
-           if (streamState is NexusStreamState.Error) {
-            item(key = "nexus_error_card") {
-             NexusErrorBanner(streamState.message, !lastFailedQuestion.isNullOrBlank(), onRetryLastQuestion)
-            }
-           }
-          }
-
-          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-           Box(
-            modifier = Modifier.weight(1f).height(if (isCompactPhone) 34.dp else 38.dp).clip(RoundedCornerShape(8.dp))
-             .background(Color(0xFF050B14))
-             .border(1.dp, if (isStreaming) Color(0x55475569) else Color(0xFF00F5D4), RoundedCornerShape(8.dp))
-             .padding(horizontal = 10.dp).testTag("nexus_query_input_box"),
-            contentAlignment = Alignment.CenterStart,
-           ) {
-            if (inputQuery.isEmpty()) {
-             Text(stringResource(R.string.nexus_input_placeholder), color = Color(0xFF64748B), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            BasicTextField(
-             value = inputQuery, onValueChange = { inputQuery = it }, enabled = !isStreaming, singleLine = true,
-             cursorBrush = SolidColor(Color(0xFF00F5D4)),
-             textStyle = TextStyle(color = Color.White, fontSize = 11.sp),
-             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-             keyboardActions = KeyboardActions(onSend = { submitNexusAiQuery() }),
-             modifier = Modifier.fillMaxWidth().testTag("nexus_query_input"),
-            )
-           }
-
-           Button(
-            onClick = { submitNexusAiQuery() }, enabled = inputQuery.isNotBlank() && !isStreaming,
-            colors = ButtonDefaults.buttonColors(
-             containerColor = Color(0xFF0E7490), contentColor = Color.White,
-             disabledContainerColor = Color(0x661E293B), disabledContentColor = Color(0xFF64748B),
-            ),
-            border = BorderStroke(1.2.dp, if (inputQuery.isNotBlank() && !isStreaming) Color(0xFF00F5D4) else Color(0x44475569)),
-            shape = RoundedCornerShape(8.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-            modifier = Modifier.height(if (isCompactPhone) 34.dp else 38.dp).shadow(2.dp, RoundedCornerShape(8.dp)).testTag("nexus_send_button"),
-           ) {
-            Text(if (isStreaming) "SYNCING…" else "${stringResource(R.string.nexus_transmit)} ➢", fontSize = 9.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-           }
-          }
-         }
-         selectedChannelKey == "#change-log" -> NexusChangelogChannelView()
-         selectedChannelKey == "#rules" -> NexusRulesChannelView()
-         selectedChannelKey == "#bug-report" -> NexusBugReportChannelView(
-          selectedCategory = bugCategory, onSelectCategory = { bugCategory = it },
-          description = bugDescription, onDescriptionChange = { bugDescription = it },
-          statusBanner = bugStatusBanner,
-          submittedPosts = localChannelPosts["#bug-report"] ?: emptyList(),
-          onSubmit = {
-           val clean = bugDescription.trim()
-           if (clean.isNotEmpty()) {
-            postToChannel("#bug-report", "[$bugCategory] $clean", Color(0xFFFB7185))
-            onSubmitBugReport(bugCategory, clean)
-            bugDescription = ""
-            bugStatusBanner = "✓ ANOMALY LOGGED TO NEXUS CORE TELEMETRY"
-            keyboardController?.hide()
-           }
-          },
-         )
-         selectedChannelKey == "syndicate:locked" -> {
-          Column(
-           modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(Color(0x66091324))
-            .border(1.dp, Color(0x66F59E0B), RoundedCornerShape(10.dp)).padding(18.dp),
-           horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-          ) {
-           Text("🔒 PRIVATE SYNDICATE SERVER", color = Color(0xFFFACC15), fontSize = 14.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-           Spacer(modifier = Modifier.height(6.dp))
-           Text(
-            "ENLIST IN A SYNDICATE OR RECEIVE A GUEST INVITE TO ACCESS PRIVATE [TAG] SYNDICATE CHANNELS & SYNDICATE WARS.",
-            color = Color(0xFFCBD5E1), fontSize = 11.sp, textAlign = TextAlign.Center,
-           )
-           Spacer(modifier = Modifier.height(12.dp))
-           Button(
-            onClick = onOpenSyndicateDirectory,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF78350F), contentColor = Color(0xFFFEF08A)),
-            border = BorderStroke(1.dp, Color(0xFFF59E0B)), shape = RoundedCornerShape(8.dp),
-           ) { Text("🏛️ OPEN SYNDICATE DIRECTORY", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace) }
-          }
-         }
-         shipChannels.any { it.second == selectedChannelKey } -> {
-          val shipId = shipChannels.first { it.second == selectedChannelKey }.first
-          val spec = RiftCodex.getShipById(shipId)
-          NexusShipChannelView(
-           shipId = shipId, channelHandle = selectedChannelKey, spec = spec,
-           posts = localChannelPosts[selectedChannelKey] ?: emptyList(),
-           chatInput = channelChatInput, onChatInputChange = { channelChatInput = it },
-           onSendPost = {
-            postToChannel(selectedChannelKey, channelChatInput, Color(0xFF38BDF8))
-            channelChatInput = ""
-            keyboardController?.hide()
-           },
-           onEquipInHangar = { onOpenHangarForShip(shipId) },
-           onAskNexusAiAboutHull = {
-            selectedChannelKey = "#nexus-ai"
-            onSendQuestion("Give me a complete combat breakdown, 100-pt stat ratios, and tactical tips for ${spec.name}.")
-           },
-          )
-         }
-         else -> {
-          val isSyndicateCh = selectedChannelKey.startsWith("syndicate:")
-          val displayTitle = when {
-           isSyndicateCh -> "🏛️ [$cleanSyndicateTag] ${selectedChannelKey.removePrefix("syndicate:")}"
-           selectedChannelKey == "#armada-chat" -> "🛡️ #armada-chat [${activeArmadaName.ifEmpty { "SQUAD" }}]"
-           else -> "🌐 #main-lobby // GLOBAL SECTOR COMMS"
-          }
-          val accent = if (isSyndicateCh) Color(0xFFF59E0B) else Color(0xFF38BDF8)
-          NexusTextChannelFeedView(
-           channelTitle = displayTitle,
-           channelSubtitle = when {
-            isSyndicateCh -> "Private [$cleanSyndicateTag] $syndicateName Server • Members & Invited Guests (${syndicateInvitedGuests.size} Guests)"
-            selectedChannelKey == "#armada-chat" -> "Encrypted Armada Wingman Comms • Friendly Fire Disabled Across Squad"
-            else -> "Live Cross-Sector Pilot Feed • Zero Bot Clutter ($totalOnlinePilots Humans Online)"
-           },
-           globalComms = if (selectedChannelKey == "#main-lobby") lobbyMessages else emptyList(),
-           localPosts = localChannelPosts[selectedChannelKey] ?: emptyList(),
-           chatInput = channelChatInput, onChatInputChange = { channelChatInput = it },
-           onSend = { postToChannel(selectedChannelKey, channelChatInput, accent); channelChatInput = ""; keyboardController?.hide() },
-           onQuickPing = { pingText -> postToChannel(selectedChannelKey, pingText, accent) },
-          )
-         }
-        }
-       }
-      }
-
-      val renderArmadaDeckShared: @Composable (Boolean) -> Unit = { switchToSplitOnChat ->
-       HolographicArmadaStagingDeck(
-        callsign = callsign, syndicateTag = cleanSyndicateTag, bestShipId = bestShipId,
-        activeArmadaName = activeArmadaName, armadaSlots = armadaSlots,
-        onResolvePilotBestShipId = onResolvePilotBestShipId, onOpenArmadaModal = onOpenArmadaModal,
-        onQuickFormSyndicateArmada = onQuickFormSyndicateArmada,
-        onOpenArmadaChat = { selectedChannelKey = "#armada-chat"; if (switchToSplitOnChat) layoutMode = NexusHubLayoutMode.SPLIT_COMMAND },
-       )
-      }
-      val renderShipLockShared: @Composable () -> Unit = {
-       PreMatchTeamShipLockCard(
-        selectedShipId = lockedTeamShipId, isCurrentlyLockedInMatch = engine?.isShipLockedForMatch == true,
-        pendingTeamMode = pendingTeamDeployMode,
-        onSelectShip = { chosenId ->
-         lockedTeamShipId = chosenId.coerceIn(1, 10)
-         if (engine?.isShipLockedForMatch != true) engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
-        },
-        onConfirmLockAndDeploy = { mode, bracket ->
-         engine?.isShipLockedForMatch = false
-         engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
-         pendingTeamDeployMode = null
-         onDeployToRankedMode(mode, bracket)
-         onCloseModal()
-        },
-        onCancelPending = { pendingTeamDeployMode = null },
-       )
-      }
-      val renderRankedModeCardShared: @Composable (RankedGameMode) -> Unit = { mode ->
-       val humanCount = humanPilotCountByMode(mode).coerceAtLeast(0)
-       val isCurrentMode = engine?.hasJoinedMatch == true && activeRankedMode == mode && engine.currentCustomGame == null
-       val bracketForMode = when (mode) {
-        RankedGameMode.RIFT_SKIRMISH -> skirmishBracket
-        RankedGameMode.RIFT_CONTROL -> riftControlBracket
-        RankedGameMode.SYNDICATE_WARS -> syndicateWarBracket
-        RankedGameMode.STASIS_BREACH -> 10
-        else -> 20
-       }
-       RankedModeDeploymentCard(
-        mode = mode, isCurrentActive = isCurrentMode, humanPilotsActive = humanCount,
-        armadaSize = armadaSlots.size.coerceAtLeast(1), syndicateTag = cleanSyndicateTag,
-        selectedBracket = bracketForMode,
-        onSelectBracket = { newBracket ->
-         when (mode) {
-          RankedGameMode.RIFT_SKIRMISH -> skirmishBracket = newBracket.coerceIn(2, 5)
-          RankedGameMode.RIFT_CONTROL -> riftControlBracket = newBracket
-          RankedGameMode.SYNDICATE_WARS -> syndicateWarBracket = newBracket
-          else -> {}
-         }
-        },
-        canQueueSyndicateWars = canQueueSyndicateWars, syndicateWarRecord = syndicateWarRecord,
-        onDeploy = {
-         if (doesModeLockShipSelection(mode)) {
-          engine?.isShipLockedForMatch = false
-          engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
-         }
-         pendingTeamDeployMode = null
-         onDeployToRankedMode(mode, bracketForMode)
-         onCloseModal()
-        },
-       )
-      }
-      val renderCustomSandboxShared: @Composable () -> Unit = {
-       CustomGamesSectionCard(
-        engine = engine, callsign = callsign, lockedTeamShipId = lockedTeamShipId,
-        refreshTick = customGamesRefreshTick, showBuilder = showCustomGameBuilder,
-        onToggleBuilder = { showCustomGameBuilder = !showCustomGameBuilder },
-        baseMode = customBaseMode, onSelectBaseMode = { customBaseMode = it },
-        resetMinutes = customResetMinutes, onSelectResetMinutes = { customResetMinutes = it },
-        teamBracket = customTeamBracket, onSelectTeamBracket = { customTeamBracket = it },
-        allowArmadasInFfa = customAllowArmadasInFfa, onToggleAllowArmadasInFfa = { customAllowArmadasInFfa = it },
-        botsEnabled = customBotsEnabled, onToggleBotsEnabled = { customBotsEnabled = it },
-        bulletSizeMult = customBulletSizeMult, onSelectBulletSizeMult = { customBulletSizeMult = it },
-        speedMult = customSpeedMult, onSelectSpeedMult = { customSpeedMult = it },
-        rechargeMult = customRechargeMult, onSelectRechargeMult = { customRechargeMult = it },
-        damageMult = customDamageMult, onSelectDamageMult = { customDamageMult = it },
-        crateSpawnMult = customCrateSpawnMult, onSelectCrateSpawnMult = { customCrateSpawnMult = it },
-        onReturnToOfficialRankedFfa = { onDeployToRankedMode(RankedGameMode.SECTOR_CONVERGENCE, 20); customGamesRefreshTick++ },
-        onJoinCustomGame = { instanceId ->
-         val target = engine?.activeCustomGames?.firstOrNull { it.instanceId == instanceId }
-         if (target != null && doesModeLockShipSelection(target.baseMode)) {
-          engine?.isShipLockedForMatch = false
-          engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
-         }
-         engine?.joinCustomGame(instanceId)
-         RiftCalibrationState.applyCalibrationChangesLive(engine, context)
-         customGamesRefreshTick++
-         onCloseModal()
-        },
-        onLaunchCustomGame = {
-         if (doesModeLockShipSelection(customBaseMode)) {
-          engine?.isShipLockedForMatch = false
-          engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
-         }
-         val modeShort = when (customBaseMode) {
-          RankedGameMode.SECTOR_CONVERGENCE -> "FFA"
-          RankedGameMode.RIFT_SKIRMISH -> "Skirmish"
-          RankedGameMode.FLUX_CORE -> "Flux Core"
-          RankedGameMode.STASIS_BREACH -> "Stasis Breach"
-          RankedGameMode.RIFT_CONTROL -> "Rift Control"
-          RankedGameMode.SYNDICATE_WARS -> "Syndicate Wars"
-         }
-         val newConfig = CustomGameConfig(
-          instanceId = "custom_${System.currentTimeMillis()}",
-          title = "${callsign.uppercase()}'S $modeShort SANDBOX",
-          hostCallsign = callsign, baseMode = customBaseMode, teamSizeBracket = customTeamBracket,
-          matchDurationMinutes = customResetMinutes, allowArmadasInFfa = customAllowArmadasInFfa,
-          botsEnabled = customBotsEnabled, bulletSizeMult = customBulletSizeMult,
-          damageMult = customDamageMult, speedMult = customSpeedMult,
-          healthMult = if (customRechargeMult > 1.0f) 1.25f else 1.0f,
-          rechargeMult = customRechargeMult, crateSpawnMult = customCrateSpawnMult,
-         )
-         engine?.createAndJoinCustomGame(newConfig)
-         RiftCalibrationState.botsEnabled = customBotsEnabled
-         RiftCalibrationState.applyCalibrationChangesLive(engine, context)
-         customGamesRefreshTick++
-         showCustomGameBuilder = false
-         onCloseModal()
-        },
-       )
-      }
-
-      if (layoutMode == NexusHubLayoutMode.DECK_ONLY) {
-       Row(modifier = Modifier.weight(1f).fillMaxHeight().testTag("nexus_armada_and_ranked_deck"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(
-         modifier = Modifier.weight(0.43f).fillMaxHeight().clip(RoundedCornerShape(12.dp))
-          .background(Color(0x99040914)).border(1.dp, Color(0x5538BDF8), RoundedCornerShape(12.dp))
-          .padding(10.dp).verticalScroll(rememberScrollState()),
-         verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-         renderArmadaDeckShared(true)
-         renderShipLockShared()
-         renderCustomSandboxShared()
-        }
-
-        Column(
-         modifier = Modifier.weight(0.57f).fillMaxHeight().clip(RoundedCornerShape(12.dp))
-          .background(Color(0x99040914)).border(1.dp, Color(0x6600F5D4), RoundedCornerShape(12.dp))
-          .padding(10.dp).verticalScroll(rememberScrollState()),
-         verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-         Row(
-          modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xCC08182C))
-           .border(1.dp, Color(0x8800F5D4), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
-          horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
-         ) {
-          Column {
-           Text("🎯 SELECT GAME MODE TO DEPLOY // 6 OFFICIAL RANKED QUEUES", color = Color(0xFF00F5D4), fontSize = 10.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-           Text("Tap any mode below to launch directly into the sector with your selected hull & Armada.", color = Color(0xFFCBD5E1), fontSize = 8.4.sp)
-          }
-          Box(
-           modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF142842))
-            .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
-            .clickable { layoutMode = NexusHubLayoutMode.SPLIT_COMMAND }.padding(horizontal = 8.dp, vertical = 4.dp),
-          ) { Text("💬 SHOW COMMS", color = Color(0xFFE0F2FE), fontSize = 8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
-         }
-
-         val modeChunks = if (isCompactPhone) RankedGameMode.entries.map { listOf(it) } else RankedGameMode.entries.chunked(2)
-         modeChunks.forEach { rowModes ->
-          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-           rowModes.forEach { mode -> Box(modifier = Modifier.weight(1f)) { renderRankedModeCardShared(mode) } }
-          }
-         }
-        }
-       }
-      } else if (layoutMode != NexusHubLayoutMode.CHANNELS_ONLY) {
-       Column(
-        modifier = Modifier.weight(1.1f).fillMaxHeight().clip(RoundedCornerShape(12.dp))
-         .background(Color(0x99040914)).border(1.dp, Color(0x5500F5D4), RoundedCornerShape(12.dp))
-         .padding(10.dp).verticalScroll(rememberScrollState()).testTag("nexus_armada_and_ranked_deck"),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-       ) {
-        renderArmadaDeckShared(false)
-        renderShipLockShared()
-        Text("🎯 6 OFFICIAL RANKED ARENA QUEUES (100% FACTORY DEFAULTS)", color = Color(0xFF00F5D4), fontSize = 9.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-        RankedGameMode.entries.forEach { mode -> renderRankedModeCardShared(mode) }
-        renderCustomSandboxShared()
-       }
-      }
-     }
-    }
-   }
+    SwirlingRiftVortexGlyph(modifier = Modifier.size(18.dp), isStreaming = isStreaming)
+    Text(
+      "NEXUS CORE",
+      color = Color(0xFF00F5D4),
+      fontSize = 9.5.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+      letterSpacing = 0.5.sp,
+    )
   }
- }
 }
 
 @Composable
 fun NexusMasterModuleNavigationRibbon(
- activeModuleKey: String,
- onSelectNexusLobby: () -> Unit,
- onOpenHangar: () -> Unit,
- onOpenForge: () -> Unit = {},
- onOpenProgression: () -> Unit = {},
- onOpenArmadaModal: () -> Unit,
- onOpenSyndicateDirectory: () -> Unit,
- onOpenDossier: () -> Unit,
- onOpenCodex: () -> Unit,
- onOpenSettings: () -> Unit,
- onOpenCalibration: () -> Unit = onOpenForge,
- showReturnToArenaButton: Boolean = false,
- onReturnToArena: () -> Unit = {},
+  activeModuleKey: String,
+  onSelectNexusLobby: () -> Unit,
+  onOpenHangar: () -> Unit,
+  onOpenForge: () -> Unit = {},
+  onOpenProgression: () -> Unit = {},
+  onOpenArmadaModal: () -> Unit,
+  onOpenSyndicateDirectory: () -> Unit,
+  onOpenDossier: () -> Unit,
+  onOpenCodex: () -> Unit,
+  onOpenSettings: () -> Unit,
+  onOpenCalibration: () -> Unit = onOpenForge,
+  showReturnToArenaButton: Boolean = false,
+  onReturnToArena: () -> Unit = {},
 ) {
- val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
- Row(
-  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xF2060D1A))
-   .border(1.2.dp, Color(0x9900F5D4), RoundedCornerShape(10.dp))
-   .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 3.dp else 5.dp)
-   .horizontalScroll(rememberScrollState()).testTag("nexus_master_module_bar"),
-  horizontalArrangement = Arrangement.spacedBy(6.dp),
-  verticalAlignment = Alignment.CenterVertically,
- ) {
-  NexusMasterModulePill("🌐 COMMAND & LOBBY", activeModuleKey == "NEXUS", Color(0xFF00F5D4), "nexus_module_pill_lobby", onSelectNexusLobby)
-  NexusMasterModulePill("🚀 HANGAR", activeModuleKey == "HANGAR", Color(0xFF38BDF8), "nexus_module_pill_hangar", onOpenHangar)
-  NexusMasterModulePill("🛠️ FORGE", activeModuleKey == "FORGE", Color(0xFFC084FC), "nexus_module_pill_forge", onOpenForge)
-  NexusMasterModulePill("❖ PROGRESSION", activeModuleKey == "PROGRESSION", Color(0xFFE879F9), "nexus_module_pill_progression", onOpenProgression)
-  NexusMasterModulePill("🛡️ ARMADA FLEET", activeModuleKey == "ARMADA", Color(0xFF60A5FA), "nexus_module_pill_armada", onOpenArmadaModal)
-  NexusMasterModulePill("🏛️ SYNDICATES", activeModuleKey == "SYNDICATES", Color(0xFFF59E0B), "nexus_module_pill_syndicates", onOpenSyndicateDirectory)
-  NexusMasterModulePill("📊 DOSSIER", activeModuleKey == "DOSSIER", Color(0xFFA78BFA), "nexus_module_pill_dossier", onOpenDossier)
-  NexusMasterModulePill("📖 CODEX", activeModuleKey == "CODEX", Color(0xFF34D399), "nexus_module_pill_codex", onOpenCodex)
-  NexusMasterModulePill("⚙️ SETTINGS", activeModuleKey == "SETTINGS", Color(0xFF94A3B8), "nexus_module_pill_settings", onOpenSettings)
- }
-}
-
-@Composable
-private fun NexusMasterModulePill(label: String, selected: Boolean, accentColor: Color, testTag: String, onClick: () -> Unit) {
- val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
- Box(
-  modifier = Modifier.shadow(2.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp))
-   .background(if (selected) accentColor.copy(alpha = 0.24f) else Color(0xCC0B1528))
-   .border(if (selected) 1.3.dp else 1.dp, if (selected) accentColor else accentColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-   .clickable { onClick() }
-   .padding(horizontal = if (isCompactPhone) 8.dp else 10.dp, vertical = if (isCompactPhone) 3.dp else 5.dp)
-   .testTag(testTag),
-  contentAlignment = Alignment.Center,
- ) {
-  Text(label, color = if (selected) Color.White else accentColor, fontSize = if (isCompactPhone) 8.5.sp else 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, maxLines = 1)
- }
-}
-
-@Composable
-private fun NexusViewModeTab(label: String, selected: Boolean, onClick: () -> Unit, tag: String) {
- Box(
-  modifier = Modifier.clip(RoundedCornerShape(8.dp))
-   .background(if (selected) Color(0xFF0E3A5A) else Color(0x880B1324))
-   .border(1.dp, if (selected) Color(0xFF00F5D4) else Color(0x44475569), RoundedCornerShape(8.dp))
-   .clickable { onClick() }.padding(horizontal = 10.dp, vertical = 5.dp).testTag(tag),
- ) { Text(label, color = if (selected) Color(0xFF00F5D4) else Color(0xFF94A3B8), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace) }
-}
-
-@Composable
-private fun ChannelCategoryHeader(title: String) {
- Text(title, color = Color(0xFF64748B), fontSize = 8.2.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
-}
-
-@Composable
-private fun ChannelNavItem(label: String, badge: String, selected: Boolean, accent: Color, onClick: () -> Unit, tag: String) {
- Row(
-  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
-   .background(if (selected) accent.copy(alpha = 0.18f) else Color.Transparent)
-   .border(1.dp, if (selected) accent else Color.Transparent, RoundedCornerShape(7.dp))
-   .clickable { onClick() }.padding(horizontal = 7.dp, vertical = 5.dp).testTag(tag),
-  horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
- ) {
-  Text(label, color = if (selected) Color.White else Color(0xFFCBD5E1), fontSize = 9.5.sp, fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-  Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(accent.copy(alpha = 0.22f)).padding(horizontal = 4.dp, vertical = 1.dp)) {
-   Text(badge, color = accent, fontSize = 7.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(10.dp))
+        .background(Color(0xF2060D1A))
+        .border(1.2.dp, Color(0x9900F5D4), RoundedCornerShape(10.dp))
+        .padding(horizontal = 8.dp, vertical = 4.dp)
+        .horizontalScroll(rememberScrollState())
+        .testTag("nexus_master_module_bar"),
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    NexusRibbonPill("NEXUS CORE", activeModuleKey == "NEXUS", Color(0xFF00F5D4), "nexus_module_pill_lobby", onSelectNexusLobby)
+    NexusRibbonPill("HANGAR DECK", activeModuleKey == "HANGAR", Color(0xFF38BDF8), "nexus_module_pill_hangar", onOpenHangar)
+    NexusRibbonPill("STAR FORGE", activeModuleKey == "FORGE", Color(0xFFC084FC), "nexus_module_pill_forge", onOpenForge)
+    NexusRibbonPill("RIFT CONDUIT", activeModuleKey == "PROGRESSION", Color(0xFFE879F9), "nexus_module_pill_progression", onOpenProgression)
+    NexusRibbonPill("STRIKE WING", activeModuleKey == "ARMADA", Color(0xFF60A5FA), "nexus_module_pill_armada", onOpenArmadaModal)
+    NexusRibbonPill("SYNDICATES", activeModuleKey == "SYNDICATES", Color(0xFFF59E0B), "nexus_module_pill_syndicates", onOpenSyndicateDirectory)
+    NexusRibbonPill("PILOT DOSSIER", activeModuleKey == "DOSSIER", Color(0xFFA78BFA), "nexus_module_pill_dossier", onOpenDossier)
+    NexusRibbonPill("TACTICAL CODEX", activeModuleKey == "CODEX", Color(0xFF34D399), "nexus_module_pill_codex", onOpenCodex)
+    NexusRibbonPill("HELM SYSTEMS", activeModuleKey == "SETTINGS", Color(0xFF94A3B8), "nexus_module_pill_settings", onOpenSettings)
+    if (showReturnToArenaButton) {
+      NexusRibbonPill("WARP TO ARENA", false, Color(0xFF00F5D4), "nexus_module_pill_return", onReturnToArena)
+    }
   }
- }
 }
 
 @Composable
-private fun HolographicArmadaStagingDeck(
- callsign: String,
- syndicateTag: String,
- bestShipId: Int,
- activeArmadaName: String,
- armadaSlots: List<ArmadaMemberSlot>,
- onResolvePilotBestShipId: (uid: String, fallbackShipId: Int) -> Int,
- onOpenArmadaModal: () -> Unit,
- onQuickFormSyndicateArmada: () -> Unit,
- onOpenArmadaChat: () -> Unit,
+private fun NexusRibbonPill(
+  label: String,
+  selected: Boolean,
+  accentColor: Color,
+  testTag: String,
+  onClick: () -> Unit,
 ) {
- val effectiveSlots = remember(armadaSlots, callsign, syndicateTag, bestShipId) {
-  val humanOnly = armadaSlots.filter { !it.callsign.contains("[BOT]", ignoreCase = true) && !it.uid.startsWith("bot_", ignoreCase = true) }
-  humanOnly.ifEmpty { listOf(ArmadaMemberSlot("local_player", callsign, syndicateTag, bestShipId, isLeader = true)) }
- }
-
- Column(
-  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-   .background(Brush.verticalGradient(listOf(Color(0xFF0A192F), Color(0xFF060E1E))))
-   .border(1.dp, Color(0x8838BDF8), RoundedCornerShape(12.dp)).padding(9.dp)
-   .testTag("nexus_holographic_armada_deck"),
-  verticalArrangement = Arrangement.spacedBy(7.dp),
- ) {
-  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-   Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(8.dp))
+        .background(if (selected) accentColor.copy(alpha = 0.24f) else Color(0xCC0B1528))
+        .border(
+          if (selected) 1.3.dp else 1.dp,
+          if (selected) accentColor else accentColor.copy(alpha = 0.5f),
+          RoundedCornerShape(8.dp),
+        )
+        .clickable { onClick() }
+        .padding(horizontal = 9.dp, vertical = 4.dp)
+        .testTag(testTag),
+    contentAlignment = Alignment.Center,
+  ) {
     Text(
-     if (activeArmadaName.isNotEmpty()) "🛡️ ARMADA STAGING // [$activeArmadaName] (${effectiveSlots.size}/5)" else "🛡️ ARMADA STAGING BAY (${effectiveSlots.size}/5)",
-     color = Color(0xFF38BDF8), fontSize = 9.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis,
+      label,
+      color = if (selected) Color.White else accentColor,
+      fontSize = 8.8.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+      maxLines = 1,
     )
-    Text("Real-pilot wingmen deploy together into any Ranked Queue", color = Color(0xFF94A3B8), fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-   }
-   Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-    Box(
-     modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF0E3A5A)).border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
-      .clickable { onOpenArmadaModal() }.padding(horizontal = 7.dp, vertical = 5.dp).testTag("nexus_btn_manage_armada"),
-    ) { Text("+ ARMADA", color = Color(0xFFE0F2FE), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, maxLines = 1) }
-    Box(
-     modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF1E1B4B)).border(1.dp, Color(0xFF818CF8), RoundedCornerShape(6.dp))
-      .clickable { onOpenArmadaChat() }.padding(horizontal = 7.dp, vertical = 5.dp).testTag("nexus_btn_open_armada_chat"),
-    ) { Text("💬 CHAT", color = Color(0xFFC7D2FE), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, maxLines = 1) }
-   }
   }
-
-  Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-   for (slotIdx in 0 until 5) {
-    val member = effectiveSlots.getOrNull(slotIdx)
-    if (member != null) {
-     val resolvedBestHullId = if (member.isLeader) bestShipId.coerceIn(1, 10) else onResolvePilotBestShipId(member.uid, member.shipId).coerceIn(1, 10)
-     val bestHullSpec = RiftCodex.getShipById(resolvedBestHullId)
-     val tagStr = member.syndicateTag.ifBlank { "RFT" }
-     val holoRingColor = when {
-      member.isLeader -> Color(0xFFF59E0B)
-      resolvedBestHullId == 10 || resolvedBestHullId == 9 -> Color(0xFFA855F7)
-      else -> Color(0xFF00F5D4)
-     }
-
-     Column(
-      modifier = Modifier.width(108.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xD9060E1C))
-       .border(1.dp, holoRingColor.copy(alpha = 0.72f), RoundedCornerShape(10.dp)).padding(6.dp),
-      horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp),
-     ) {
-      Text(if (member.isLeader) "★ LEADER • READY" else "● WINGMAN • READY", color = holoRingColor, fontSize = 7.2.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-      Box(modifier = Modifier.size(width = 58.dp, height = 52.dp), contentAlignment = Alignment.Center) {
-       Canvas(modifier = Modifier.fillMaxSize()) {
-        val w = size.width; val h = size.height; val baseCx = w * 0.5f; val baseCy = h * 0.80f
-        val conePath = Path().apply {
-         moveTo(baseCx - w * 0.36f, baseCy); lineTo(baseCx - w * 0.44f, h * 0.16f)
-         lineTo(baseCx + w * 0.44f, h * 0.16f); lineTo(baseCx + w * 0.36f, baseCy); close()
-        }
-        drawPath(conePath, Brush.verticalGradient(listOf(holoRingColor.copy(alpha = 0.03f), holoRingColor.copy(alpha = 0.25f)), startY = h * 0.16f, endY = baseCy))
-        drawOval(holoRingColor.copy(alpha = 0.28f), Offset(baseCx - w * 0.42f, baseCy - h * 0.12f), Size(w * 0.84f, h * 0.24f))
-        drawOval(holoRingColor, Offset(baseCx - w * 0.42f, baseCy - h * 0.12f), Size(w * 0.84f, h * 0.24f), style = Stroke(width = 1.5.dp.toPx()))
-        drawOval(Color.White.copy(alpha = 0.78f), Offset(baseCx - w * 0.24f, baseCy - h * 0.07f), Size(w * 0.48f, h * 0.14f), style = Stroke(width = 1.dp.toPx()))
-       }
-       Box(modifier = Modifier.offset(y = (-4).dp)) { ShipSpritePreview(shipId = resolvedBestHullId, sizeDp = 38) }
-      }
-      Column(
-       modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(5.dp)).background(Color(0xFF040914))
-        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(5.dp)).padding(horizontal = 4.dp, vertical = 2.dp),
-       horizontalAlignment = Alignment.CenterHorizontally,
-      ) {
-       Text("[$tagStr] ${member.callsign}", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-       Text("HULL: ${bestHullSpec.name.uppercase()}", color = holoRingColor, fontSize = 7.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-      }
-     }
-    } else {
-     Column(
-      modifier = Modifier.width(96.dp).height(110.dp).clip(RoundedCornerShape(10.dp)).background(Color(0x55071122))
-       .border(1.dp, Color(0x44475569), RoundedCornerShape(10.dp)).clickable { onQuickFormSyndicateArmada() }.padding(6.dp),
-      horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-     ) {
-      Text("＋", color = Color(0xFF00F5D4), fontSize = 16.sp, fontWeight = FontWeight.Black)
-      Text("ADD WINGMAN", color = Color(0xFF94A3B8), fontSize = 7.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-      Text("SLOT ${slotIdx + 1}/5", color = Color(0xFF64748B), fontSize = 7.sp, fontFamily = FontFamily.Monospace)
-     }
-    }
-   }
-  }
- }
 }
 
 @Composable
-private fun RankedModeDeploymentCard(
- mode: RankedGameMode,
- isCurrentActive: Boolean,
- humanPilotsActive: Int,
- armadaSize: Int,
- syndicateTag: String,
- selectedBracket: Int,
- onSelectBracket: (Int) -> Unit,
- canQueueSyndicateWars: Pair<Boolean, String>,
- syndicateWarRecord: SyndicateWarRecord,
- onDeploy: () -> Unit,
+fun NexusAiConsoleModal(
+  messages: List<NexusChatMessage>,
+  streamState: NexusStreamState,
+  lastFailedQuestion: String?,
+  activeShipSummary: String,
+  pilotLevel: Int,
+  pointBudget: Int,
+  highestBountySummary: String,
+  onSendQuestion: (String) -> Unit,
+  onRetryLastQuestion: () -> Unit,
+  onClearHistory: () -> Unit,
+  onCloseModal: () -> Unit,
+  callsign: String = "COMMANDER",
+  syndicateTag: String = "GUEST",
+  syndicateName: String = "UNAFFILIATED",
+  activeShipId: Int = 1,
+  bestShipId: Int = 1,
+  riftShards: Long = 0L,
+  unreadCommsCount: Int = 0,
+  currentUserId: String = "",
+  bootToNexusHub: Boolean = true,
+  onToggleBootToNexusHub: (Boolean) -> Unit = {},
+  totalOnlinePilots: Int = 0,
+  syndicateOnlineCount: Int = 0,
+  presetArmadasReadyCount: Int = 0,
+  activeArmadaName: String = "",
+  armadaSlots: List<ArmadaMemberSlot> = emptyList(),
+  onlineHumanPilots: List<LivePilotState> = emptyList(),
+  onResolvePilotBestShipId: (uid: String, fallbackShipId: Int) -> Int = { _, fb -> fb },
+  activeRankedMode: RankedGameMode = RankedGameMode.SECTOR_CONVERGENCE,
+  activeTeamSizeBracket: Int = 3,
+  humanPilotCountByMode: (RankedGameMode) -> Int = { 0 },
+  canQueueSyndicateWars: Pair<Boolean, String> = Pair(false, "Requires enlisted Syndicate"),
+  syndicateWarRecord: SyndicateWarRecord = SyndicateWarRecord(tag = "GUEST"),
+  onDeployToRankedMode: (RankedGameMode, Int) -> Unit = { _, _ -> },
+  onLeaveMatch: () -> Unit = {},
+  onOpenArmadaModal: () -> Unit = {},
+  onQuickFormSyndicateArmada: () -> Unit = {},
+  onOpenSyndicatesModal: () -> Unit = {},
+  onOpenSyndicateDirectory: () -> Unit = onOpenSyndicatesModal,
+  onOpenHangar: () -> Unit = {},
+  onOpenDossier: () -> Unit = {},
+  onOpenCodex: () -> Unit = {},
+  onOpenSettings: () -> Unit = {},
+  onOpenCalibration: () -> Unit = {},
+  onOpenForge: () -> Unit = onOpenCalibration,
+  onOpenHangarForShip: (Int) -> Unit = {},
+  canAccessSyndicateServer: Boolean = false,
+  syndicateCustomChannels: List<String> = listOf("#general"),
+  syndicateInvitedGuests: Set<String> = emptySet(),
+  onAddSyndicateChannel: (String) -> Unit = {},
+  onDeleteSyndicateChannel: (String) -> Unit = {},
+  onInviteSyndicateGuest: (String) -> Unit = {},
+  onRevokeSyndicateGuest: (String) -> Unit = {},
+  lobbyMessages: List<SyndicateChatMessage> = emptyList(),
+  onSendChannelMessage: (channelKey: String, messageText: String) -> Unit = { _, _ -> },
+  onSubmitBugReport: (category: String, description: String) -> Unit = { _, _ -> },
+  onShareActiveRiftFrameBuild: () -> Unit = {},
+  onLoadSharedRiftFrameBuild: (String) -> Unit = {},
+  onPostStrikeWingInvite: () -> Unit = {},
+  onPostPrivateRoomInvite: (roomCode: String, modeTitle: String) -> Unit = { _, _ -> },
+  onJoinSharedStrikeWing: (SyndicateChatMessage) -> Unit = {},
+  onAddOnlinePilotFriend: (String) -> Unit = {},
+  onInviteOnlinePilotToWing: (LivePilotState) -> Unit = {},
+  engine: RiftGameEngine? = null,
+  initialLayoutMode: NexusHubLayoutMode = NexusHubLayoutMode.DECK_ONLY,
+  activeModuleKey: String = "NEXUS",
+  activeNode: NexusCoreNode = NexusCoreNode.ORBITAL_HUB,
+  onSelectNode: (NexusCoreNode) -> Unit = {},
+  syndicateSubDeck: SyndicateCitadelSubDeck = SyndicateCitadelSubDeck.SYNDICATES_WARS,
+  onSelectSyndicateSubDeck: (SyndicateCitadelSubDeck) -> Unit = {},
+  archiveSubDeck: ArchiveCodexSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER,
+  onSelectArchiveSubDeck: (ArchiveCodexSubDeck) -> Unit = {},
+  onSelectNexusLobby: () -> Unit = { onSelectNode(NexusCoreNode.ORBITAL_HUB) },
+  onOpenProgression: () -> Unit = {},
+  isCalibrationLivePeeking: Boolean = false,
+  hideTopHeaderForFullScreenStage: Boolean = false,
+  embeddedModuleContent: (@Composable () -> Unit)? = null,
 ) {
- val modeAccent = when (mode) {
-  RankedGameMode.SECTOR_CONVERGENCE, RankedGameMode.RIFT_CONTROL -> Color(0xFF00F5D4)
-  RankedGameMode.RIFT_SKIRMISH, RankedGameMode.FLUX_CORE -> Color(0xFFF59E0B)
-  RankedGameMode.STASIS_BREACH, RankedGameMode.SYNDICATE_WARS -> Color(0xFFA855F7)
- }
- val displayTitle = if (mode == RankedGameMode.RIFT_CONTROL) "RIFT CONTROL (TUG-OF-WAR)" else mode.title.uppercase()
- val modeDescription = when (mode) {
-  RankedGameMode.SECTOR_CONVERGENCE -> "20-Pilot FFA / 1–5 Armada Bounty • Ongoing 60m cycle • +100❖ Rift Shards for #1 Bounty with >50% presence."
-  RankedGameMode.RIFT_SKIRMISH -> "Best-of-3 Team Deathmatch (3m Rounds • No Respawn) • Opposite West/East Warp Gates • +75❖ Rift Shards on match win."
-  RankedGameMode.FLUX_CORE -> "20-Pilot Singularity Carrier FFA • +1 Overcharge Tier / 5s (up to +50% Dmg/Recharge & +40% Speed) + 15 Bounty/s • 30s Safe-Zone Eject."
-  RankedGameMode.STASIS_BREACH -> "10v10 Circular Stasis Jailbreak • Kills send victims to enemy Stasis Jail • Prisoners destroy 8,000 Flux Center Core to break out!"
-  RankedGameMode.RIFT_CONTROL -> "No Safe Zone • Hold a Rift uncontested for 30s to lock it • 3m match timer or instant win when both Rifts lock."
-  RankedGameMode.SYNDICATE_WARS -> "Ranked [$syndicateTag] Clan-vs-Clan Ladder • Record: 🏆 ${syndicateWarRecord.warTrophies} WAR TROPHIES (${syndicateWarRecord.warWins}W - ${syndicateWarRecord.warLosses}L)."
- }
-
- val isSyndicateWarsLocked = mode == RankedGameMode.SYNDICATE_WARS && !canQueueSyndicateWars.first
- val locksShipSelection = doesModeLockShipSelection(mode)
-
- Box(
-  modifier = Modifier.fillMaxWidth().height(152.dp).clip(RoundedCornerShape(10.dp))
-   .background(if (isCurrentActive) Color(0xE60B1D33) else Color(0xD907101F))
-   .border(if (isCurrentActive) 1.6.dp else 1.dp, if (isCurrentActive) modeAccent else modeAccent.copy(alpha = 0.52f), RoundedCornerShape(10.dp))
-   .testTag("nexus_mode_card_${mode.id}"),
- ) {
-  Canvas(modifier = Modifier.matchParentSize()) {
-   val bLen = 10.dp.toPx(); val bStroke = 2.dp.toPx()
-   drawLine(modeAccent, Offset.Zero, Offset(bLen, 0f), bStroke)
-   drawLine(modeAccent, Offset.Zero, Offset(0f, bLen), bStroke)
-   drawLine(modeAccent, Offset(size.width - bLen, 0f), Offset(size.width, 0f), bStroke)
-   drawLine(modeAccent, Offset(size.width, 0f), Offset(size.width, bLen), bStroke)
-   drawLine(modeAccent, Offset(0f, size.height), Offset(bLen, size.height), bStroke)
-   drawLine(modeAccent, Offset(0f, size.height - bLen), Offset(0f, size.height), bStroke)
-   drawLine(modeAccent, Offset(size.width - bLen, size.height), Offset(size.width, size.height), bStroke)
-   drawLine(modeAccent, Offset(size.width, size.height - bLen), Offset(size.width, size.height), bStroke)
+  val context = LocalContext.current
+  val keyboardController = LocalSoftwareKeyboardController.current
+  val listState = rememberLazyListState()
+  val isStreaming = streamState is NexusStreamState.Loading || streamState is NexusStreamState.Streaming
+  val cleanSyndicateTag =
+    if (syndicateTag.isBlank() || syndicateTag in setOf("FREE", "SOLO", "UNAFFILIATED")) "GUEST"
+    else syndicateTag.uppercase(Locale.US)
+  val isLocalArchitect = remember(currentUserId, callsign) {
+    RiftCommunityRoles.isDeveloperArchitect(currentUserId, callsign)
   }
 
-  Column(modifier = Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
-   Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.weight(1f)) {
-     Box(
-      modifier = Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF040914)).border(1.dp, modeAccent, RoundedCornerShape(6.dp)),
-      contentAlignment = Alignment.Center,
-     ) {
-      Canvas(modifier = Modifier.size(16.dp)) {
-       val r = size.minDimension * 0.42f; val c = Offset(size.width * 0.5f, size.height * 0.5f)
-       when (mode) {
-        RankedGameMode.SECTOR_CONVERGENCE -> { drawCircle(modeAccent, r, c, style = Stroke(1.6f)); drawCircle(modeAccent, r * 0.38f, c) }
-        RankedGameMode.RIFT_SKIRMISH -> { drawLine(modeAccent, Offset(c.x - r, c.y - r), Offset(c.x + r, c.y + r), 2f); drawLine(modeAccent, Offset(c.x + r, c.y - r), Offset(c.x - r, c.y + r), 2f) }
-        RankedGameMode.FLUX_CORE -> { drawCircle(modeAccent, r * 0.85f, c, style = Stroke(1.8f)); drawCircle(Color.White, r * 0.40f, c) }
-        RankedGameMode.STASIS_BREACH -> {
-         drawCircle(modeAccent, r, c, style = Stroke(1.8f))
-         drawLine(modeAccent, Offset(c.x - r * 0.5f, c.y), Offset(c.x + r * 0.5f, c.y), 1.6f)
-         drawLine(modeAccent, Offset(c.x, c.y - r * 0.5f), Offset(c.x, c.y + r * 0.5f), 1.6f)
-        }
-        RankedGameMode.RIFT_CONTROL -> {
-         drawCircle(modeAccent, r * 0.52f, Offset(c.x - r * 0.42f, c.y), style = Stroke(1.6f))
-         drawCircle(modeAccent, r * 0.52f, Offset(c.x + r * 0.42f, c.y), style = Stroke(1.6f))
-        }
-        RankedGameMode.SYNDICATE_WARS -> {
-         val shield = Path().apply {
-          moveTo(c.x, c.y - r); lineTo(c.x + r, c.y - r * 0.35f); lineTo(c.x + r * 0.65f, c.y + r * 0.55f)
-          lineTo(c.x, c.y + r); lineTo(c.x - r * 0.65f, c.y + r * 0.55f); lineTo(c.x - r, c.y - r * 0.35f); close()
-         }
-         drawPath(shield, modeAccent, style = Stroke(1.8f))
-        }
-       }
-      }
-     }
-     Text(displayTitle, color = modeAccent, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-     Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(modeAccent.copy(alpha = 0.18f)).padding(horizontal = 5.dp, vertical = 2.dp)) {
-      Text(mode.teamFormatBadge, color = modeAccent, fontSize = 7.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, maxLines = 1)
-     }
+  var selectedChannelKey by remember { mutableStateOf("#nexus-ai") }
+  var showOnlineRosterPane by remember { mutableStateOf(true) }
+  var inputQuery by remember { mutableStateOf("") }
+  var channelChatInput by remember { mutableStateOf("") }
+
+  var gateTab by remember { mutableStateOf(ConvergenceGateTab.OFFICIAL_RANKED) }
+  var skirmishBracket by remember { mutableIntStateOf(activeTeamSizeBracket.coerceIn(2, 5)) }
+  var riftControlBracket by remember {
+    mutableIntStateOf(if (activeTeamSizeBracket >= 10) 10 else if (activeTeamSizeBracket >= 5) 5 else 3)
+  }
+  var syndicateWarBracket by remember {
+    mutableIntStateOf(if (activeTeamSizeBracket >= 10) 10 else if (activeTeamSizeBracket >= 5) 5 else 3)
+  }
+  var lockedTeamShipId by
+    remember(activeShipId, engine?.localPlayer?.spec?.id) {
+      mutableIntStateOf((engine?.localPlayer?.spec?.id ?: activeShipId).coerceIn(1, 10))
     }
 
-    val hasActiveHumans = humanPilotsActive > 0
-    Box(
-     modifier = Modifier.clip(RoundedCornerShape(6.dp))
-      .background(if (hasActiveHumans) Color(0xFF06281E) else Color(0xFF0F172A))
-      .border(1.dp, if (hasActiveHumans) Color(0xFF10B981) else Color(0xFF334155), RoundedCornerShape(6.dp))
-      .padding(horizontal = 6.dp, vertical = 2.dp),
+  var customIsPrivateRoom by remember { mutableStateOf(false) }
+  var generatedRoomCode by remember { mutableStateOf(generateSixCharRoomCode()) }
+  var joinRoomCodeDraft by remember { mutableStateOf("") }
+  var roomCodeBanner by remember { mutableStateOf<String?>(null) }
+  val unlockedPrivateCodes = remember { mutableStateListOf<String>() }
+
+  var customBaseMode by remember { mutableStateOf(RankedGameMode.SECTOR_CONVERGENCE) }
+  var customResetMinutes by remember { mutableIntStateOf(10) }
+  var customTeamBracket by remember { mutableIntStateOf(5) }
+  var customAllowArmadasInFfa by remember { mutableStateOf(true) }
+  var customBotsEnabled by remember { mutableStateOf(true) }
+  var customBulletSizeMult by remember { mutableFloatStateOf(1.0f) }
+  var customSpeedMult by remember { mutableFloatStateOf(1.0f) }
+  var customRechargeMult by remember { mutableFloatStateOf(1.0f) }
+  var customDamageMult by remember { mutableFloatStateOf(1.0f) }
+  var customCrateSpawnMult by remember { mutableFloatStateOf(1.0f) }
+  var customGamesRefreshTick by remember { mutableIntStateOf(0) }
+
+  var showChannelManager by remember { mutableStateOf(false) }
+  var newChannelDraft by remember { mutableStateOf("") }
+  var showGuestManager by remember { mutableStateOf(false) }
+  var guestCallsignDraft by remember { mutableStateOf("") }
+
+  var bugCategory by remember { mutableStateOf("PHYSICS / COLLISION") }
+  var bugDescription by remember { mutableStateOf("") }
+  var bugStatusBanner by remember { mutableStateOf<String?>(null) }
+
+  var focusedOrbitalIndex by remember { mutableIntStateOf(0) }
+  val localEchoMessages = remember { mutableStateMapOf<String, MutableList<SyndicateChatMessage>>() }
+
+  val lastMsgTextLen = messages.lastOrNull()?.text?.length ?: 0
+  LaunchedEffect(messages.size, lastMsgTextLen, streamState, selectedChannelKey) {
+    if (selectedChannelKey == "#nexus-ai") {
+      val totalItems = listState.layoutInfo.totalItemsCount
+      if (totalItems > 0) listState.animateScrollToItem(totalItems - 1)
+    }
+  }
+
+  fun submitNexusAiQuery() {
+    val trimmed = inputQuery.trim()
+    if (trimmed.isNotEmpty() && !isStreaming) {
+      inputQuery = ""
+      keyboardController?.hide()
+      onSendQuestion(trimmed)
+    }
+  }
+
+  fun postToCloudChannel(channelKey: String, rawText: String) {
+    val clean = rawText.trim()
+    if (clean.isEmpty()) return
+    val normalizedKey = channelKey.trim().lowercase(Locale.US)
+    val echo =
+      SyndicateChatMessage(
+        id = "local_${System.currentTimeMillis()}",
+        senderUid = currentUserId,
+        senderCallsign = callsign,
+        senderSyndicateTag = cleanSyndicateTag,
+        timestampLabel = channelKey.uppercase(Locale.US).take(24),
+        messageText = clean,
+        createdAtMs = System.currentTimeMillis(),
+      )
+    localEchoMessages.getOrPut(normalizedKey) { mutableStateListOf() }.add(echo)
+    onSendChannelMessage(channelKey, clean)
+  }
+
+  fun joinCustomByRoomCode(rawCode: String) {
+    val cleanCode = rawCode.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(6)
+    if (cleanCode.length < 4) {
+      roomCodeBanner = "ENTER A VALID 6-CHARACTER RIFT ROOM CODE."
+      return
+    }
+    if (cleanCode !in unlockedPrivateCodes) unlockedPrivateCodes.add(cleanCode)
+    val matching =
+      engine?.activeCustomGames?.firstOrNull {
+        extractCustomRoomCode(it.instanceId).equals(cleanCode, ignoreCase = true)
+      }
+    if (matching != null) {
+      if (doesModeLockShipSelection(matching.baseMode)) {
+        engine.isShipLockedForMatch = false
+        engine.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
+      }
+      engine.joinCustomGame(matching.instanceId)
+      RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+      customGamesRefreshTick++
+      roomCodeBanner = "JOINED ROOM [$cleanCode] // ${matching.title}"
+      onCloseModal()
+    } else if (engine != null) {
+      val created =
+        CustomGameConfig(
+          instanceId = "priv_${cleanCode}_${System.currentTimeMillis()}",
+          title = "PRIVATE RIFT [$cleanCode]",
+          hostCallsign = callsign,
+          baseMode = customBaseMode,
+          teamSizeBracket = customTeamBracket,
+          matchDurationMinutes = customResetMinutes,
+          allowArmadasInFfa = customAllowArmadasInFfa,
+          botsEnabled = customBotsEnabled,
+          bulletSizeMult = customBulletSizeMult,
+          damageMult = customDamageMult,
+          speedMult = customSpeedMult,
+          healthMult = if (customRechargeMult > 1.0f) 1.25f else 1.0f,
+          rechargeMult = customRechargeMult,
+          crateSpawnMult = customCrateSpawnMult,
+        )
+      engine.createAndJoinCustomGame(created)
+      RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+      customGamesRefreshTick++
+      roomCodeBanner = "DEPLOYED TO PRIVATE RIFT [$cleanCode]"
+      onCloseModal()
+    }
+  }
+
+  val isCalibrationPeekActive =
+    (activeNode == NexusCoreNode.STAR_FORGE || activeModuleKey == "FORGE" || activeModuleKey == "CALIBRATE") &&
+      isCalibrationLivePeeking
+  val isFullScreenForgeStage =
+    hideTopHeaderForFullScreenStage &&
+      (activeNode == NexusCoreNode.STAR_FORGE || activeModuleKey == "FORGE")
+
+  // Full-bleed #02050B container BEFORE safeDrawing so zero Arena entities bleed around screen edges
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .background(if (isCalibrationPeekActive) Color(0x1802050B) else Color(0xFF02050B))
+        .onPreviewKeyEvent { keyEvent ->
+          if (activeNode != NexusCoreNode.ORBITAL_HUB) return@onPreviewKeyEvent false
+          val native = keyEvent.nativeKeyEvent
+          if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
+            val totalTargets = ORBITAL_NODE_SPECS.size + 1 // index 0 = Center Eye, 1..7 = Orbital Nodes
+            when (native.keyCode) {
+              KeyEvent.KEYCODE_DPAD_RIGHT,
+              KeyEvent.KEYCODE_DPAD_DOWN -> {
+                focusedOrbitalIndex = (focusedOrbitalIndex + 1) % totalTargets
+                true
+              }
+              KeyEvent.KEYCODE_DPAD_LEFT,
+              KeyEvent.KEYCODE_DPAD_UP -> {
+                focusedOrbitalIndex =
+                  if (focusedOrbitalIndex <= 0) totalTargets - 1 else focusedOrbitalIndex - 1
+                true
+              }
+              KeyEvent.KEYCODE_BUTTON_A,
+              KeyEvent.KEYCODE_DPAD_CENTER,
+              KeyEvent.KEYCODE_ENTER -> {
+                val targetNode =
+                  if (focusedOrbitalIndex == 0) NexusCoreNode.SUBSPACE_COMMS
+                  else ORBITAL_NODE_SPECS[(focusedOrbitalIndex - 1).coerceIn(0, ORBITAL_NODE_SPECS.lastIndex)].node
+                onSelectNode(targetNode)
+                true
+              }
+              else -> false
+            }
+          } else {
+            false
+          }
+        }
+        .windowInsetsPadding(WindowInsets.safeDrawing)
+        .imePadding()
+        .testTag("nexus_ai_console_modal"),
+    contentAlignment = Alignment.Center,
+  ) {
+    if (!isCalibrationPeekActive && !isFullScreenForgeStage) {
+      AbyssalNexusCoreCanvas(
+        modifier = Modifier.fillMaxSize(),
+        isHubView = activeNode == NexusCoreNode.ORBITAL_HUB,
+        isStreaming = isStreaming,
+      )
+    }
+
+    when {
+      isFullScreenForgeStage && embeddedModuleContent != null -> {
+        Box(modifier = Modifier.fillMaxSize().testTag("nexus_embedded_module_container")) {
+          embeddedModuleContent()
+        }
+      }
+      activeNode == NexusCoreNode.ORBITAL_HUB -> {
+        OrbitalHubSpatialStage(
+          callsign = callsign,
+          syndicateTag = cleanSyndicateTag,
+          pilotLevel = pilotLevel,
+          riftShards = riftShards,
+          totalOnlinePilots = totalOnlinePilots,
+          unreadCommsCount = unreadCommsCount,
+          bootToNexusHub = bootToNexusHub,
+          isInMatch = engine?.hasJoinedMatch == true,
+          isStreaming = isStreaming,
+          focusedOrbitalIndex = focusedOrbitalIndex,
+          onToggleBootToNexusHub = onToggleBootToNexusHub,
+          onLeaveMatch = onLeaveMatch,
+          onCloseModal = onCloseModal,
+          onSelectNode = onSelectNode,
+        )
+      }
+      else -> {
+        Surface(
+          modifier =
+            Modifier.fillMaxWidth(0.96f)
+              .fillMaxHeight(0.95f)
+              .border(
+                1.3.dp,
+                Brush.linearGradient(listOf(Color(0xFF00F5D4), Color(0xFFA855F7), Color(0xFF38BDF8))),
+                RoundedCornerShape(14.dp),
+              ),
+          color = if (isCalibrationPeekActive) Color(0x40060D1A) else Color(0xF2060D1A),
+          shape = RoundedCornerShape(14.dp),
+        ) {
+          Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            GlassTerminalTopHeader(
+              activeNode = activeNode,
+              syndicateSubDeck = syndicateSubDeck,
+              onSelectSyndicateSubDeck = onSelectSyndicateSubDeck,
+              archiveSubDeck = archiveSubDeck,
+              onSelectArchiveSubDeck = onSelectArchiveSubDeck,
+              armadaCount = armadaSlots.size.coerceAtLeast(1),
+              showClearAi = activeNode == NexusCoreNode.SUBSPACE_COMMS && selectedChannelKey == "#nexus-ai" && messages.isNotEmpty(),
+              isInMatch = engine?.hasJoinedMatch == true,
+              onBackToHub = { onSelectNode(NexusCoreNode.ORBITAL_HUB) },
+              onClearAi = onClearHistory,
+              onLeaveMatch = onLeaveMatch,
+              onCloseToArena = onCloseModal,
+            )
+
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+              when {
+                activeNode == NexusCoreNode.CONVERGENCE_GATE -> {
+                  ConvergenceGateZeroScrollDeck(
+                    gateTab = gateTab,
+                    onSelectGateTab = { gateTab = it },
+                    callsign = callsign,
+                    syndicateTag = cleanSyndicateTag,
+                    activeArmadaName = activeArmadaName,
+                    armadaSize = armadaSlots.size.coerceAtLeast(1),
+                    lockedTeamShipId = lockedTeamShipId,
+                    onSelectLockedShip = { chosen ->
+                      lockedTeamShipId = chosen.coerceIn(1, 10)
+                      if (engine?.isShipLockedForMatch != true) {
+                        engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
+                      }
+                    },
+                    onOpenStrikeWing = {
+                      onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.STRIKE_WING)
+                      onSelectNode(NexusCoreNode.SYNDICATE_CITADEL)
+                    },
+                    activeRankedMode = activeRankedMode,
+                    skirmishBracket = skirmishBracket,
+                    onSelectSkirmishBracket = { skirmishBracket = it.coerceIn(2, 5) },
+                    riftControlBracket = riftControlBracket,
+                    onSelectRiftControlBracket = { riftControlBracket = it },
+                    syndicateWarBracket = syndicateWarBracket,
+                    onSelectSyndicateWarBracket = { syndicateWarBracket = it },
+                    humanPilotCountByMode = humanPilotCountByMode,
+                    canQueueSyndicateWars = canQueueSyndicateWars,
+                    syndicateWarRecord = syndicateWarRecord,
+                    onDeployRanked = { mode, bracket ->
+                      if (doesModeLockShipSelection(mode)) {
+                        engine?.isShipLockedForMatch = false
+                        engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
+                      }
+                      onDeployToRankedMode(mode, bracket)
+                      onCloseModal()
+                    },
+                    engine = engine,
+                    customIsPrivateRoom = customIsPrivateRoom,
+                    onTogglePrivateRoom = {
+                      customIsPrivateRoom = it
+                      generatedRoomCode = generateSixCharRoomCode()
+                    },
+                    generatedRoomCode = generatedRoomCode,
+                    joinRoomCodeDraft = joinRoomCodeDraft,
+                    onJoinRoomCodeDraftChange = { raw ->
+                      joinRoomCodeDraft = raw.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(6)
+                    },
+                    roomCodeBanner = roomCodeBanner,
+                    unlockedPrivateCodes = unlockedPrivateCodes,
+                    onJoinByRoomCode = { joinCustomByRoomCode(joinRoomCodeDraft) },
+                    onShareRoomToLfg = {
+                      onPostPrivateRoomInvite(generatedRoomCode, customBaseMode.title)
+                      roomCodeBanner = "SHARED ROOM CODE [$generatedRoomCode] TO #STRIKE-LFG"
+                    },
+                    customRefreshTick = customGamesRefreshTick,
+                    customBaseMode = customBaseMode,
+                    onSelectCustomBaseMode = { customBaseMode = it },
+                    customResetMinutes = customResetMinutes,
+                    onSelectCustomResetMinutes = { customResetMinutes = it },
+                    customTeamBracket = customTeamBracket,
+                    onSelectCustomTeamBracket = { customTeamBracket = it },
+                    customAllowArmadasInFfa = customAllowArmadasInFfa,
+                    onToggleAllowArmadasInFfa = { customAllowArmadasInFfa = it },
+                    customBotsEnabled = customBotsEnabled,
+                    onToggleBotsEnabled = { customBotsEnabled = it },
+                    customBulletSizeMult = customBulletSizeMult,
+                    onSelectBulletSizeMult = { customBulletSizeMult = it },
+                    customSpeedMult = customSpeedMult,
+                    onSelectSpeedMult = { customSpeedMult = it },
+                    customRechargeMult = customRechargeMult,
+                    onSelectRechargeMult = { customRechargeMult = it },
+                    customDamageMult = customDamageMult,
+                    onSelectDamageMult = { customDamageMult = it },
+                    customCrateSpawnMult = customCrateSpawnMult,
+                    onSelectCrateSpawnMult = { customCrateSpawnMult = it },
+                    onReturnToRankedFfa = {
+                      onDeployToRankedMode(RankedGameMode.SECTOR_CONVERGENCE, 20)
+                      customGamesRefreshTick++
+                    },
+                    onJoinCustomInstance = { instanceId ->
+                      val target = engine?.activeCustomGames?.firstOrNull { it.instanceId == instanceId }
+                      if (target != null && doesModeLockShipSelection(target.baseMode)) {
+                        engine.isShipLockedForMatch = false
+                        engine.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
+                      }
+                      engine?.joinCustomGame(instanceId)
+                      RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                      customGamesRefreshTick++
+                      onCloseModal()
+                    },
+                    onLaunchCustomGame = {
+                      if (doesModeLockShipSelection(customBaseMode)) {
+                        engine?.isShipLockedForMatch = false
+                        engine?.switchLocalPlayerShip(lockedTeamShipId, forceFromHangar = true)
+                      }
+                      val prefix = if (customIsPrivateRoom) "priv" else "pub"
+                      val code = generatedRoomCode
+                      if (customIsPrivateRoom && code !in unlockedPrivateCodes) {
+                        unlockedPrivateCodes.add(code)
+                      }
+                      val modeShort = customBaseMode.title.uppercase(Locale.US)
+                      val cfg =
+                        CustomGameConfig(
+                          instanceId = "${prefix}_${code}_${System.currentTimeMillis()}",
+                          title = "${callsign.uppercase(Locale.US)} $modeShort [$code]",
+                          hostCallsign = callsign,
+                          baseMode = customBaseMode,
+                          teamSizeBracket = customTeamBracket,
+                          matchDurationMinutes = customResetMinutes,
+                          allowArmadasInFfa = customAllowArmadasInFfa,
+                          botsEnabled = customBotsEnabled,
+                          bulletSizeMult = customBulletSizeMult,
+                          damageMult = customDamageMult,
+                          speedMult = customSpeedMult,
+                          healthMult = if (customRechargeMult > 1.0f) 1.25f else 1.0f,
+                          rechargeMult = customRechargeMult,
+                          crateSpawnMult = customCrateSpawnMult,
+                        )
+                      engine?.createAndJoinCustomGame(cfg)
+                      RiftCalibrationState.botsEnabled = customBotsEnabled
+                      RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                      customGamesRefreshTick++
+                      onCloseModal()
+                    },
+                  )
+                }
+                activeNode == NexusCoreNode.SUBSPACE_COMMS -> {
+                  SubspaceCommsDiscordDeck(
+                    selectedChannelKey = selectedChannelKey,
+                    onSelectChannel = { selectedChannelKey = it },
+                    messages = messages,
+                    streamState = streamState,
+                    isStreaming = isStreaming,
+                    lastFailedQuestion = lastFailedQuestion,
+                    listState = listState,
+                    inputQuery = inputQuery,
+                    onInputQueryChange = { inputQuery = it },
+                    onSubmitAiQuery = { submitNexusAiQuery() },
+                    onSendStarterQuestion = onSendQuestion,
+                    onRetryLastQuestion = onRetryLastQuestion,
+                    callsign = callsign,
+                    cleanSyndicateTag = cleanSyndicateTag,
+                    syndicateName = syndicateName,
+                    isLocalArchitect = isLocalArchitect,
+                    activeArmadaName = activeArmadaName,
+                    armadaSlots = armadaSlots,
+                    canAccessSyndicateServer = canAccessSyndicateServer,
+                    syndicateCustomChannels = syndicateCustomChannels,
+                    syndicateInvitedGuests = syndicateInvitedGuests,
+                    showChannelManager = showChannelManager,
+                    onToggleChannelManager = { showChannelManager = !showChannelManager },
+                    newChannelDraft = newChannelDraft,
+                    onNewChannelDraftChange = { newChannelDraft = it },
+                    onAddSyndicateChannel = {
+                      if (newChannelDraft.isNotBlank()) {
+                        onAddSyndicateChannel(newChannelDraft)
+                        newChannelDraft = ""
+                      }
+                    },
+                    onDeleteSyndicateChannel = onDeleteSyndicateChannel,
+                    showGuestManager = showGuestManager,
+                    onToggleGuestManager = { showGuestManager = !showGuestManager },
+                    guestCallsignDraft = guestCallsignDraft,
+                    onGuestDraftChange = { guestCallsignDraft = it },
+                    onInviteGuest = {
+                      if (guestCallsignDraft.isNotBlank()) {
+                        onInviteSyndicateGuest(guestCallsignDraft)
+                        guestCallsignDraft = ""
+                      }
+                    },
+                    onRevokeGuest = onRevokeSyndicateGuest,
+                    onOpenSyndicateCitadel = {
+                      onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.SYNDICATES_WARS)
+                      onSelectNode(NexusCoreNode.SYNDICATE_CITADEL)
+                    },
+                    lobbyMessages = lobbyMessages,
+                    localEchoMessages = localEchoMessages,
+                    channelChatInput = channelChatInput,
+                    onChannelChatInputChange = { channelChatInput = it },
+                    onSendToChannel = { key, txt ->
+                      postToCloudChannel(key, txt)
+                      channelChatInput = ""
+                      keyboardController?.hide()
+                    },
+                    bugCategory = bugCategory,
+                    onSelectBugCategory = { bugCategory = it },
+                    bugDescription = bugDescription,
+                    onBugDescriptionChange = { bugDescription = it },
+                    bugStatusBanner = bugStatusBanner,
+                    onSubmitBug = {
+                      val clean = bugDescription.trim()
+                      if (clean.isNotEmpty()) {
+                        onSubmitBugReport(bugCategory, clean)
+                        bugDescription = ""
+                        bugStatusBanner = "ANOMALY LOGGED TO CLOUD SECTOR TELEMETRY [$bugCategory]"
+                        keyboardController?.hide()
+                      }
+                    },
+                    activeCustomRoomCode = engine?.currentCustomGame?.let { extractCustomRoomCode(it.instanceId) },
+                    activeCustomModeTitle = engine?.currentCustomGame?.baseMode?.title,
+                    onShareRiftFrameBuild = onShareActiveRiftFrameBuild,
+                    onLoadSharedBuild = onLoadSharedRiftFrameBuild,
+                    onAskAiAboutBuild = { prompt ->
+                      selectedChannelKey = "#nexus-ai"
+                      onSendQuestion(prompt)
+                    },
+                    onPostStrikeWingInvite = onPostStrikeWingInvite,
+                    onPostPrivateRoomInvite = onPostPrivateRoomInvite,
+                    onJoinSharedStrikeWing = onJoinSharedStrikeWing,
+                    onJoinCustomRoomCode = { code -> joinCustomByRoomCode(code) },
+                    onlineHumanPilots = onlineHumanPilots,
+                    totalOnlinePilots = totalOnlinePilots,
+                    showOnlineRosterPane = showOnlineRosterPane,
+                    onToggleOnlineRosterPane = { showOnlineRosterPane = !showOnlineRosterPane },
+                    onAddOnlinePilotFriend = onAddOnlinePilotFriend,
+                    onInviteOnlinePilotToWing = onInviteOnlinePilotToWing,
+                  )
+                }
+                embeddedModuleContent != null -> {
+                  Box(modifier = Modifier.fillMaxSize().testTag("nexus_embedded_module_container")) {
+                    embeddedModuleContent()
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun AbyssalNexusCoreCanvas(
+  modifier: Modifier,
+  isHubView: Boolean,
+  isStreaming: Boolean,
+) {
+  val transition = rememberInfiniteTransition(label = "abyssal_nexus_core")
+  val outerPhase by
+    transition.animateFloat(
+      initialValue = 0f,
+      targetValue = (2.0 * PI).toFloat(),
+      animationSpec = infiniteRepeatable(tween(16000, easing = LinearEasing), RepeatMode.Restart),
+      label = "abyssal_outer_phase",
+    )
+  val spinDeg by
+    transition.animateFloat(
+      initialValue = 0f,
+      targetValue = 360f,
+      animationSpec =
+        infiniteRepeatable(
+          tween(if (isStreaming) 3200 else 7600, easing = LinearEasing),
+          RepeatMode.Restart,
+        ),
+      label = "abyssal_spin_deg",
+    )
+  val pulse by
+    transition.animateFloat(
+      initialValue = 0.80f,
+      targetValue = 1.0f,
+      animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing), RepeatMode.Reverse),
+      label = "abyssal_pulse",
+    )
+
+  Canvas(modifier = modifier) {
+    val w = size.width
+    val h = size.height
+    if (w <= 1f || h <= 1f) return@Canvas
+    val center = Offset(w * 0.50f, h * 0.52f)
+
+    // 1. Deep Abyssal radial depth over #02050B void
+    drawRect(
+      brush =
+        Brush.radialGradient(
+          colors = listOf(Color(0xFF0A162D), Color(0xFF040914), Color(0xFF02050B)),
+          center = center,
+          radius = maxOf(w, h) * 0.72f,
+        )
+    )
+
+    // 2. Angled volumetric starbeams
+    val beams =
+      listOf(
+        Triple(0.16f, 0.48f, Color(0x1400F5D4)),
+        Triple(0.50f, 0.72f, Color(0x1238BDF8)),
+        Triple(0.84f, 0.42f, Color(0x146366F1)),
+      )
+    beams.forEachIndexed { idx, (topFrac, botFrac, col) ->
+      val drift = sin(outerPhase + idx * 1.9f) * w * 0.022f
+      val topX = w * topFrac + drift
+      val botX = w * botFrac - drift * 0.5f
+      val p =
+        Path().apply {
+          moveTo(topX - w * 0.05f, 0f)
+          lineTo(topX + w * 0.05f, 0f)
+          lineTo(botX + w * 0.13f, h)
+          lineTo(botX - w * 0.13f, h)
+          close()
+        }
+      drawPath(
+        p,
+        Brush.verticalGradient(listOf(col, col.copy(alpha = 0.02f), Color.Transparent), 0f, h),
+      )
+    }
+
+    // 3. Dual-sine interfering Rift caustics
+    for (band in 0 until 2) {
+      val path = Path()
+      val steps = 40
+      for (s in 0..steps) {
+        val t = s / steps.toFloat()
+        val px = t * w
+        val py =
+          h * (0.25f + band * 0.48f) +
+            sin(t * 5.6f + outerPhase + band * 1.5f) * (h * 0.04f) +
+            cos(t * 9.4f - outerPhase * 1.25f) * (h * 0.016f)
+        if (s == 0) path.moveTo(px, py) else path.lineTo(px, py)
+      }
+      drawPath(
+        path,
+        color = if (band == 0) Color(0x1C00F5D4) else Color(0x1AA855F7),
+        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
+      )
+    }
+
+    // 4. 48 Parallax bioluminescent Rift motes
+    for (i in 0 until 48) {
+      val sx = (((i * 67 + 13) % 101) / 101f) * w
+      val sy = (((i * 43 + 29) % 97) / 97f) * h
+      val dx = sin(outerPhase + i * 0.55f) * 16.dp.toPx()
+      val dy = cos(outerPhase * 0.8f + i * 0.75f) * 12.dp.toPx()
+      val alpha = (0.16f + 0.30f * (0.5f + 0.5f * sin(outerPhase * 2f + i))) * (if (isHubView) 1f else 0.45f)
+      val col =
+        when (i % 4) {
+          0 -> Color(0xFF00F5D4).copy(alpha = alpha)
+          1 -> Color(0xFF38BDF8).copy(alpha = alpha)
+          2 -> Color(0xFFA855F7).copy(alpha = alpha)
+          else -> Color(0xFFFACC15).copy(alpha = alpha * 0.8f)
+        }
+      drawCircle(
+        col,
+        radius = (1.1f + (i % 3) * 0.8f).dp.toPx(),
+        center = Offset((sx + dx).coerceIn(0f, w), (sy + dy).coerceIn(0f, h)),
+      )
+    }
+
+    if (!isHubView) return@Canvas
+
+    // 5. Hairline orbital tether arcs from Singularity to the 7 Orbital Nodes
+    ORBITAL_NODE_SPECS.forEachIndexed { idx, spec ->
+      val bob = sin(outerPhase * 2f + spec.phaseOffset) * 4.5.dp.toPx()
+      val target = Offset(w * spec.xFrac, h * spec.yFrac + bob)
+      val mid =
+        Offset(
+          (center.x + target.x) * 0.5f + sin(idx.toFloat()) * 18.dp.toPx(),
+          (center.y + target.y) * 0.5f - cos(idx.toFloat()) * 14.dp.toPx(),
+        )
+      val tether =
+        Path().apply {
+          moveTo(center.x, center.y)
+          quadraticTo(mid.x, mid.y, target.x, target.y)
+        }
+      drawPath(
+        tether,
+        brush = Brush.linearGradient(listOf(Color(0x3800F5D4), spec.accent.copy(alpha = 0.24f)), center, target),
+        style = Stroke(width = 1.1.dp.toPx(), cap = StrokeCap.Round),
+      )
+    }
+
+    // 6. Central 3D NEXUS Singularity (beveled containment rings, 6 logarithmic filaments, photon rim)
+    val baseR = minOf(w, h) * 0.145f
+    drawCircle(
+      brush =
+        Brush.radialGradient(
+          colors =
+            listOf(
+              Color(0x5500F5D4),
+              Color(0x38A855F7),
+              Color(0x1838BDF8),
+              Color.Transparent,
+            ),
+          center = center,
+          radius = baseR * 1.55f,
+        ),
+      radius = baseR * 1.55f,
+      center = center,
+    )
+
+    for (t in 0 until 36) {
+      val deg = t * 10f + spinDeg * 0.35f
+      val rad = deg * (PI.toFloat() / 180f)
+      val rIn = baseR * (if (t % 3 == 0) 0.90f else 0.96f)
+      val rOut = baseR * 1.04f
+      drawLine(
+        color = if (t % 9 == 0) Color(0xCCFACC15) else Color(0x6638BDF8),
+        start = Offset(center.x + cos(rad) * rIn, center.y + sin(rad) * rIn),
+        end = Offset(center.x + cos(rad) * rOut, center.y + sin(rad) * rOut),
+        strokeWidth = 1.4.dp.toPx(),
+      )
+    }
+
+    drawCircle(
+      color = Color(0x5500F5D4),
+      radius = baseR * 0.86f,
+      center = center,
+      style = Stroke(width = 2.0.dp.toPx()),
+    )
+
+    val filamentPalette =
+      listOf(
+        Color(0xFF00F5D4),
+        Color(0xFF38BDF8),
+        Color(0xFFA855F7),
+        Color(0xFFEC4899),
+        Color(0xFFFACC15),
+        Color(0xFF00F5D4),
+      )
+    val spinRad = spinDeg * (PI.toFloat() / 180f)
+    for (arm in 0 until 6) {
+      val armBase = spinRad * 1.2f + arm * (PI.toFloat() / 3f)
+      val p = Path()
+      for (s in 0..18) {
+        val frac = s / 18f
+        val sr = baseR * (0.18f + 0.66f * frac)
+        val sa = armBase + frac * 2.55f
+        val px = center.x + cos(sa) * sr
+        val py = center.y + sin(sa) * sr
+        if (s == 0) p.moveTo(px, py) else p.lineTo(px, py)
+      }
+      drawPath(
+        p,
+        color = filamentPalette[arm].copy(alpha = 0.85f * pulse),
+        style = Stroke(width = (baseR * 0.055f).coerceAtLeast(1.8f), cap = StrokeCap.Round),
+      )
+    }
+
+    drawCircle(Color(0xFF02050B), radius = baseR * 0.27f, center = center)
+    drawCircle(
+      brush = Brush.sweepGradient(listOf(Color(0xFF00F5D4), Color(0xFFA855F7), Color(0xFFFACC15), Color(0xFF00F5D4)), center),
+      radius = baseR * 0.28f,
+      center = center,
+      style = Stroke(width = 2.6.dp.toPx()),
+    )
+    drawCircle(Color.White.copy(alpha = 0.92f * pulse), radius = baseR * 0.085f * pulse, center = center)
+  }
+}
+
+@Composable
+private fun OrbitalHubSpatialStage(
+  callsign: String,
+  syndicateTag: String,
+  pilotLevel: Int,
+  riftShards: Long,
+  totalOnlinePilots: Int,
+  unreadCommsCount: Int,
+  bootToNexusHub: Boolean,
+  isInMatch: Boolean,
+  isStreaming: Boolean,
+  focusedOrbitalIndex: Int,
+  onToggleBootToNexusHub: (Boolean) -> Unit,
+  onLeaveMatch: () -> Unit,
+  onCloseModal: () -> Unit,
+  onSelectNode: (NexusCoreNode) -> Unit,
+) {
+  val bobTransition = rememberInfiniteTransition(label = "orbital_node_bob")
+  val bobPhase by
+    bobTransition.animateFloat(
+      initialValue = 0f,
+      targetValue = (2.0 * PI).toFloat(),
+      animationSpec = infiniteRepeatable(tween(3300, easing = LinearEasing), RepeatMode.Restart),
+      label = "orbital_bob_phase",
+    )
+
+  Column(modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
+    // Slim Top Telemetry Bar
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(38.dp)
+          .clip(RoundedCornerShape(10.dp))
+          .background(Color(0xD9050C1A))
+          .border(1.dp, Color(0x5500F5D4), RoundedCornerShape(10.dp))
+          .padding(horizontal = 10.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-     Text(
-      if (hasActiveHumans) "🔥 $humanPilotsActive PILOTS IN MATCH" else "0 PILOTS IN MATCH",
-      color = if (hasActiveHumans) Color(0xFF34D399) else Color(0xFF94A3B8),
-      fontSize = 7.8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, maxLines = 1,
-     )
-    }
-   }
-
-   Text(modeDescription, color = Color(0xFFCBD5E1), fontSize = 8.8.sp, lineHeight = 12.sp, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
-
-   Row(modifier = Modifier.fillMaxWidth().height(24.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-    when (mode) {
-     RankedGameMode.RIFT_SKIRMISH -> {
-      Text("BRACKET:", color = Color(0xFF94A3B8), fontSize = 7.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-      listOf(2, 3, 4, 5).forEach { sz -> ModeBracketChip("${sz}v${sz}", selectedBracket == sz, modeAccent) { onSelectBracket(sz) } }
-     }
-     RankedGameMode.RIFT_CONTROL -> {
-      Text("BRACKET:", color = Color(0xFF94A3B8), fontSize = 7.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-      listOf(3 to "3v3", 5 to "5v5", 10 to "10v10").forEach { (sz, lbl) -> ModeBracketChip(lbl, selectedBracket == sz, modeAccent) { onSelectBracket(sz) } }
-     }
-     RankedGameMode.SYNDICATE_WARS -> {
-      Text("WAR FORMAT:", color = Color(0xFF94A3B8), fontSize = 7.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-      listOf(3 to "3v3 STRIKE", 5 to "5v5 STRIKE", 10 to "10v10 BREACH").forEach { (sz, lbl) -> ModeBracketChip(lbl, selectedBracket == sz, modeAccent) { onSelectBracket(sz) } }
-     }
-     else -> {
-      val formatPills = when (mode) {
-       RankedGameMode.SECTOR_CONVERGENCE -> listOf("20-PILOT FFA", "1–5 ARMADA", "FREE HULL SWAP")
-       RankedGameMode.FLUX_CORE -> listOf("20-PILOT CARRIER", "OVERCHARGE TIERS", "FREE HULL SWAP")
-       else -> listOf("10v10 JAILBREAK", "8,000 FLUX CORE", "FREE HULL SWAP")
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.weight(1f),
+      ) {
+        SwirlingRiftVortexGlyph(modifier = Modifier.size(22.dp), isStreaming = isStreaming)
+        Text(
+          text = "NEXUS CORE // SECTOR ORBIT",
+          color = Color(0xFF00F5D4),
+          fontSize = 11.5.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(5.dp))
+              .background(Color(0xFF07221B))
+              .border(1.dp, Color(0xFF10B981), RoundedCornerShape(5.dp))
+              .padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+          Text(
+            text = "$totalOnlinePilots PILOTS ONLINE",
+            color = Color(0xFF34D399),
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+        Text(
+          text = "[$syndicateTag] $callsign • RES LVL $pilotLevel • ❖ $riftShards",
+          color = Color(0xFFE2E8F0),
+          fontSize = 9.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
       }
-      Text("FORMAT:", color = Color(0xFF94A3B8), fontSize = 7.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-      formatPills.forEach { pillText ->
-       Box(modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(Color(0xFF0F172A)).border(1.dp, modeAccent.copy(alpha = 0.45f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.5.dp)) {
-        Text(pillText, color = Color(0xFFE2E8F0), fontSize = 7.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-       }
-      }
-     }
-    }
-   }
 
-   Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-    if (isSyndicateWarsLocked) {
-     Text(
-      "🔒 REQUIRES ENLISTED SYNDICATE & 100% [$syndicateTag] ARMADA",
-      color = Color(0xFFF87171), fontSize = 7.8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace,
-      maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(end = 6.dp),
-     )
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(7.dp))
+              .background(if (bootToNexusHub) Color(0xFF092238) else Color(0xFF231808))
+              .border(
+                1.dp,
+                if (bootToNexusHub) Color(0xFF00F5D4) else Color(0xFFF59E0B),
+                RoundedCornerShape(7.dp),
+              )
+              .clickable { onToggleBootToNexusHub(!bootToNexusHub) }
+              .padding(horizontal = 8.dp, vertical = 5.dp)
+              .testTag("nexus_boot_mode_toggle"),
+        ) {
+          Text(
+            text = if (bootToNexusHub) "STARTUP: NEXUS CORE" else "STARTUP: ORBIT",
+            color = if (bootToNexusHub) Color(0xFF00F5D4) else Color(0xFFFACC15),
+            fontSize = 8.2.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+        if (isInMatch) {
+          Button(
+            onClick = onLeaveMatch,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xCC2A151B), contentColor = Color(0xFFFB7185)),
+            border = BorderStroke(1.dp, Color(0xFFFB7185)),
+            shape = RoundedCornerShape(7.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            modifier = Modifier.height(28.dp).testTag("nexus_leave_match_button"),
+          ) {
+            Text("LEAVE MATCH", fontSize = 8.4.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+          }
+        }
+        Button(
+          onClick = onCloseModal,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = Color(0xFF0A2438),
+              contentColor = Color(0xFF00F5D4),
+            ),
+          border = BorderStroke(1.dp, Color(0xFF00F5D4)),
+          shape = RoundedCornerShape(7.dp),
+          contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+          modifier = Modifier.height(28.dp).testTag("nexus_close_button"),
+        ) {
+          Text(
+            text = if (isInMatch) "WARP TO ARENA >" else "VIEW SECTOR ORBIT >",
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
+    }
+
+    // Spatial Orbital Nodes + Center Swirling NEXUS Eye
+    BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+      val stageW = maxWidth
+      val stageH = maxHeight
+
+      // Center Swirling NEXUS Eye -> SUBSPACE COMMS & NEXUS AI
+      val eyeW = 224.dp
+      val eyeH = 88.dp
+      val eyeFocused = focusedOrbitalIndex == 0
+      Column(
+        modifier =
+          Modifier.width(eyeW)
+            .offset(
+              x = (stageW * 0.50f) - (eyeW * 0.5f),
+              y = (stageH * 0.50f) - (eyeH * 0.5f),
+            )
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xCC040B18))
+            .border(
+              if (eyeFocused || unreadCommsCount > 0) 1.8.dp else 1.2.dp,
+              if (unreadCommsCount > 0) Color(0xFFFACC15) else Color(0xFF00F5D4),
+              RoundedCornerShape(16.dp),
+            )
+            .clickable { onSelectNode(NexusCoreNode.SUBSPACE_COMMS) }
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag("nexus_node_subspace_comms"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          SwirlingRiftVortexGlyph(modifier = Modifier.size(22.dp), isStreaming = true)
+          Text(
+            text = "SUBSPACE COMMS",
+            color = Color(0xFF00F5D4),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          if (unreadCommsCount > 0) {
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(6.dp))
+                  .background(Color(0xFFFACC15))
+                  .padding(horizontal = 5.dp, vertical = 1.dp),
+            ) {
+              Text(
+                text = "$unreadCommsCount NEW",
+                color = Color(0xFF02050B),
+                fontSize = 7.5.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+        }
+        Text(
+          text = "NEXUS AI • CHANNELS • $totalOnlinePilots ONLINE",
+          color = Color(0xFFE2E8F0),
+          fontSize = 8.2.sp,
+          fontWeight = FontWeight.SemiBold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+      }
+
+      // 7 Fixed-Position Gently Bobbing Orbital Nodes
+      val cardW = 188.dp
+      val cardH = 54.dp
+      ORBITAL_NODE_SPECS.forEachIndexed { idx, spec ->
+        val bobDp = (sin(bobPhase + spec.phaseOffset) * 4.5f).dp
+        val isFocused = focusedOrbitalIndex == idx + 1
+        Row(
+          modifier =
+            Modifier.width(cardW)
+              .height(cardH)
+              .offset(
+                x = (stageW * spec.xFrac) - (cardW * 0.5f),
+                y = (stageH * spec.yFrac) - (cardH * 0.5f) + bobDp,
+              )
+              .shadow(6.dp, RoundedCornerShape(12.dp))
+              .clip(RoundedCornerShape(12.dp))
+              .background(Color(0xE8060E1E))
+              .border(
+                if (isFocused) 1.8.dp else 1.2.dp,
+                if (isFocused) Color.White else spec.accent,
+                RoundedCornerShape(12.dp),
+              )
+              .clickable { onSelectNode(spec.node) }
+              .padding(horizontal = 10.dp, vertical = 6.dp)
+              .testTag(spec.testTag),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          OrbitalNodeVectorGlyph(node = spec.node, accent = spec.accent, sizeDp = 26)
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = spec.title,
+              color = spec.accent,
+              fontSize = 9.6.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+              text = spec.subtitle,
+              color = Color(0xFFCBD5E1),
+              fontSize = 7.8.sp,
+              fontFamily = FontFamily.SansSerif,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun OrbitalNodeVectorGlyph(node: NexusCoreNode, accent: Color, sizeDp: Int = 22) {
+  Box(
+    modifier =
+      Modifier.size(sizeDp.dp)
+        .clip(RoundedCornerShape(7.dp))
+        .background(Color(0xFF030812))
+        .border(1.dp, accent.copy(alpha = 0.7f), RoundedCornerShape(7.dp)),
+    contentAlignment = Alignment.Center,
+  ) {
+    Canvas(modifier = Modifier.size((sizeDp * 0.68f).dp)) {
+      val r = size.minDimension * 0.44f
+      val c = Offset(size.width * 0.5f, size.height * 0.5f)
+      when (node) {
+        NexusCoreNode.CONVERGENCE_GATE -> {
+          drawCircle(accent, r, c, style = Stroke(1.8f))
+          drawCircle(accent, r * 0.42f, c)
+        }
+        NexusCoreNode.HANGAR_DECK -> {
+          val p =
+            Path().apply {
+              moveTo(c.x, c.y - r)
+              lineTo(c.x + r * 0.85f, c.y + r * 0.85f)
+              lineTo(c.x, c.y + r * 0.42f)
+              lineTo(c.x - r * 0.85f, c.y + r * 0.85f)
+              close()
+            }
+          drawPath(p, accent, style = Stroke(1.8f))
+        }
+        NexusCoreNode.STAR_FORGE -> {
+          val p =
+            Path().apply {
+              moveTo(c.x, c.y - r)
+              lineTo(c.x + r * 0.35f, c.y - r * 0.35f)
+              lineTo(c.x + r, c.y)
+              lineTo(c.x + r * 0.35f, c.y + r * 0.35f)
+              lineTo(c.x, c.y + r)
+              lineTo(c.x - r * 0.35f, c.y + r * 0.35f)
+              lineTo(c.x - r, c.y)
+              lineTo(c.x - r * 0.35f, c.y - r * 0.35f)
+              close()
+            }
+          drawPath(p, accent, style = Stroke(1.7f))
+        }
+        NexusCoreNode.RIFT_CONDUIT -> {
+          val p =
+            Path().apply {
+              moveTo(c.x, c.y - r)
+              lineTo(c.x + r * 0.72f, c.y)
+              lineTo(c.x, c.y + r)
+              lineTo(c.x - r * 0.72f, c.y)
+              close()
+            }
+          drawPath(p, accent, style = Stroke(1.8f))
+          drawCircle(Color.White, r * 0.22f, c)
+        }
+        NexusCoreNode.SYNDICATE_CITADEL -> {
+          val shield =
+            Path().apply {
+              moveTo(c.x, c.y - r)
+              lineTo(c.x + r * 0.85f, c.y - r * 0.38f)
+              lineTo(c.x + r * 0.62f, c.y + r * 0.55f)
+              lineTo(c.x, c.y + r)
+              lineTo(c.x - r * 0.62f, c.y + r * 0.55f)
+              lineTo(c.x - r * 0.85f, c.y - r * 0.38f)
+              close()
+            }
+          drawPath(shield, accent, style = Stroke(1.8f))
+        }
+        NexusCoreNode.ARCHIVE_CODEX -> {
+          drawRect(
+            color = accent,
+            topLeft = Offset(c.x - r * 0.78f, c.y - r * 0.85f),
+            size = Size(r * 1.56f, r * 1.7f),
+            style = Stroke(1.7f),
+          )
+          drawLine(accent, Offset(c.x - r * 0.45f, c.y - r * 0.3f), Offset(c.x + r * 0.45f, c.y - r * 0.3f), 1.6f)
+          drawLine(accent, Offset(c.x - r * 0.45f, c.y + r * 0.15f), Offset(c.x + r * 0.45f, c.y + r * 0.15f), 1.6f)
+        }
+        NexusCoreNode.HELM_SYSTEMS -> {
+          drawCircle(accent, r * 0.68f, c, style = Stroke(1.8f))
+          for (k in 0 until 6) {
+            val a = (k * 60f) * (PI.toFloat() / 180f)
+            drawLine(
+              accent,
+              Offset(c.x + cos(a) * r * 0.68f, c.y + sin(a) * r * 0.68f),
+              Offset(c.x + cos(a) * r, c.y + sin(a) * r),
+              1.8f,
+            )
+          }
+        }
+        else -> {
+          drawCircle(accent, r * 0.8f, c, style = Stroke(1.8f))
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun GlassTerminalTopHeader(
+  activeNode: NexusCoreNode,
+  syndicateSubDeck: SyndicateCitadelSubDeck,
+  onSelectSyndicateSubDeck: (SyndicateCitadelSubDeck) -> Unit,
+  archiveSubDeck: ArchiveCodexSubDeck,
+  onSelectArchiveSubDeck: (ArchiveCodexSubDeck) -> Unit,
+  armadaCount: Int,
+  showClearAi: Boolean,
+  isInMatch: Boolean,
+  onBackToHub: () -> Unit,
+  onClearAi: () -> Unit,
+  onLeaveMatch: () -> Unit,
+  onCloseToArena: () -> Unit,
+) {
+  val (title, accent) =
+    when (activeNode) {
+      NexusCoreNode.SUBSPACE_COMMS -> "SUBSPACE COMMS & NEXUS AI" to Color(0xFF00F5D4)
+      NexusCoreNode.CONVERGENCE_GATE -> "CONVERGENCE GATE" to Color(0xFF00F5D4)
+      NexusCoreNode.HANGAR_DECK -> "HANGAR DECK" to Color(0xFF38BDF8)
+      NexusCoreNode.RIFT_CONDUIT -> "RIFT CONDUIT" to Color(0xFFE879F9)
+      NexusCoreNode.SYNDICATE_CITADEL -> "SYNDICATE CITADEL" to Color(0xFFFACC15)
+      NexusCoreNode.ARCHIVE_CODEX -> "ARCHIVE & CODEX" to Color(0xFF34D399)
+      NexusCoreNode.HELM_SYSTEMS -> "HELM SYSTEMS" to Color(0xFF94A3B8)
+      NexusCoreNode.STAR_FORGE -> "STAR FORGE" to Color(0xFFC084FC)
+      NexusCoreNode.ORBITAL_HUB -> "NEXUS CORE" to Color(0xFF00F5D4)
+    }
+
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .height(36.dp)
+        .clip(RoundedCornerShape(9.dp))
+        .background(Color(0xFF071122))
+        .border(1.dp, accent.copy(alpha = 0.55f), RoundedCornerShape(9.dp))
+        .padding(horizontal = 8.dp),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFF0D2238))
+            .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+            .clickable { onBackToHub() }
+            .padding(horizontal = 9.dp, vertical = 4.dp)
+            .testTag("nexus_btn_back_to_hub"),
+      ) {
+        Text(
+          text = "< NEXUS CORE",
+          color = Color(0xFF00F5D4),
+          fontSize = 8.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
+      OrbitalNodeVectorGlyph(node = activeNode, accent = accent, sizeDp = 22)
+      Text(
+        text = title,
+        color = accent,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+      )
+
+      if (activeNode == NexusCoreNode.SYNDICATE_CITADEL) {
+        HeaderSubDeckPill(
+          label = "SYNDICATES & WARS",
+          selected = syndicateSubDeck == SyndicateCitadelSubDeck.SYNDICATES_WARS,
+          accent = Color(0xFFFACC15),
+          tag = "citadel_sub_syndicates",
+          onClick = { onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.SYNDICATES_WARS) },
+        )
+        HeaderSubDeckPill(
+          label = "STRIKE WING ($armadaCount/5)",
+          selected = syndicateSubDeck == SyndicateCitadelSubDeck.STRIKE_WING,
+          accent = Color(0xFF38BDF8),
+          tag = "citadel_sub_strike_wing",
+          onClick = { onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.STRIKE_WING) },
+        )
+      } else if (activeNode == NexusCoreNode.ARCHIVE_CODEX) {
+        HeaderSubDeckPill(
+          label = "PILOT DOSSIER",
+          selected = archiveSubDeck == ArchiveCodexSubDeck.PILOT_DOSSIER,
+          accent = Color(0xFFA78BFA),
+          tag = "archive_sub_dossier",
+          onClick = { onSelectArchiveSubDeck(ArchiveCodexSubDeck.PILOT_DOSSIER) },
+        )
+        HeaderSubDeckPill(
+          label = "TACTICAL CODEX",
+          selected = archiveSubDeck == ArchiveCodexSubDeck.TACTICAL_CODEX,
+          accent = Color(0xFF34D399),
+          tag = "archive_sub_codex",
+          onClick = { onSelectArchiveSubDeck(ArchiveCodexSubDeck.TACTICAL_CODEX) },
+        )
+      }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+      if (showClearAi) {
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(6.dp))
+              .background(Color(0xFF131F33))
+              .border(1.dp, Color(0xFF475569), RoundedCornerShape(6.dp))
+              .clickable { onClearAi() }
+              .padding(horizontal = 8.dp, vertical = 4.dp)
+              .testTag("nexus_clear_button"),
+        ) {
+          Text("CLEAR AI", color = Color(0xFF94A3B8), fontSize = 8.2.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        }
+      }
+      if (isInMatch) {
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(6.dp))
+              .background(Color(0xCC2A151B))
+              .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(6.dp))
+              .clickable { onLeaveMatch() }
+              .padding(horizontal = 8.dp, vertical = 4.dp)
+              .testTag("nexus_leave_match_button"),
+        ) {
+          Text("LEAVE MATCH", color = Color(0xFFFB7185), fontSize = 8.2.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+        }
+      }
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFF0A283E))
+            .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+            .clickable { onCloseToArena() }
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .testTag("nexus_close_button"),
+      ) {
+        Text(
+          text = if (isInMatch) "WARP TO ARENA >" else "VIEW ORBIT >",
+          color = Color(0xFF00F5D4),
+          fontSize = 8.5.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun HeaderSubDeckPill(
+  label: String,
+  selected: Boolean,
+  accent: Color,
+  tag: String,
+  onClick: () -> Unit,
+) {
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(6.dp))
+        .background(if (selected) accent.copy(alpha = 0.24f) else Color(0xFF0B1629))
+        .border(1.dp, if (selected) accent else Color(0xFF334155), RoundedCornerShape(6.dp))
+        .clickable { onClick() }
+        .padding(horizontal = 8.dp, vertical = 3.dp)
+        .testTag(tag),
+  ) {
+    Text(
+      text = label,
+      color = if (selected) Color.White else Color(0xFF94A3B8),
+      fontSize = 8.2.sp,
+      fontWeight = FontWeight.ExtraBold,
+      fontFamily = FontFamily.Monospace,
+    )
+  }
+}
+
+@Composable
+private fun ConvergenceGateZeroScrollDeck(
+  gateTab: ConvergenceGateTab,
+  onSelectGateTab: (ConvergenceGateTab) -> Unit,
+  callsign: String,
+  syndicateTag: String,
+  activeArmadaName: String,
+  armadaSize: Int,
+  lockedTeamShipId: Int,
+  onSelectLockedShip: (Int) -> Unit,
+  onOpenStrikeWing: () -> Unit,
+  activeRankedMode: RankedGameMode,
+  skirmishBracket: Int,
+  onSelectSkirmishBracket: (Int) -> Unit,
+  riftControlBracket: Int,
+  onSelectRiftControlBracket: (Int) -> Unit,
+  syndicateWarBracket: Int,
+  onSelectSyndicateWarBracket: (Int) -> Unit,
+  humanPilotCountByMode: (RankedGameMode) -> Int,
+  canQueueSyndicateWars: Pair<Boolean, String>,
+  syndicateWarRecord: SyndicateWarRecord,
+  onDeployRanked: (RankedGameMode, Int) -> Unit,
+  engine: RiftGameEngine?,
+  customIsPrivateRoom: Boolean,
+  onTogglePrivateRoom: (Boolean) -> Unit,
+  generatedRoomCode: String,
+  joinRoomCodeDraft: String,
+  onJoinRoomCodeDraftChange: (String) -> Unit,
+  roomCodeBanner: String?,
+  unlockedPrivateCodes: List<String>,
+  onJoinByRoomCode: () -> Unit,
+  onShareRoomToLfg: () -> Unit,
+  customRefreshTick: Int,
+  customBaseMode: RankedGameMode,
+  onSelectCustomBaseMode: (RankedGameMode) -> Unit,
+  customResetMinutes: Int,
+  onSelectCustomResetMinutes: (Int) -> Unit,
+  customTeamBracket: Int,
+  onSelectCustomTeamBracket: (Int) -> Unit,
+  customAllowArmadasInFfa: Boolean,
+  onToggleAllowArmadasInFfa: (Boolean) -> Unit,
+  customBotsEnabled: Boolean,
+  onToggleBotsEnabled: (Boolean) -> Unit,
+  customBulletSizeMult: Float,
+  onSelectBulletSizeMult: (Float) -> Unit,
+  customSpeedMult: Float,
+  onSelectSpeedMult: (Float) -> Unit,
+  customRechargeMult: Float,
+  onSelectRechargeMult: (Float) -> Unit,
+  customDamageMult: Float,
+  onSelectDamageMult: (Float) -> Unit,
+  customCrateSpawnMult: Float,
+  onSelectCrateSpawnMult: (Float) -> Unit,
+  onReturnToRankedFfa: () -> Unit,
+  onJoinCustomInstance: (String) -> Unit,
+  onLaunchCustomGame: () -> Unit,
+) {
+  val lockedHullSpec = RiftCodex.getShipById(lockedTeamShipId.coerceIn(1, 10))
+  Column(
+    modifier = Modifier.fillMaxSize().testTag("nexus_armada_and_ranked_deck"),
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    // Slim Sub-Bar: Official Ranked vs Custom Rift Gate + Strike Wing Chip + Compact Hull Lock Strip
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(34.dp)
+          .clip(RoundedCornerShape(8.dp))
+          .background(Color(0xFF081426))
+          .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(8.dp))
+          .padding(horizontal = 8.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        HeaderSubDeckPill(
+          label = "OFFICIAL RANKED (6)",
+          selected = gateTab == ConvergenceGateTab.OFFICIAL_RANKED,
+          accent = Color(0xFF00F5D4),
+          tag = "gate_tab_official_ranked",
+          onClick = { onSelectGateTab(ConvergenceGateTab.OFFICIAL_RANKED) },
+        )
+        HeaderSubDeckPill(
+          label = "CUSTOM RIFT GATE",
+          selected = gateTab == ConvergenceGateTab.CUSTOM_RIFT_GATE,
+          accent = Color(0xFFC084FC),
+          tag = "gate_tab_custom_rift",
+          onClick = { onSelectGateTab(ConvergenceGateTab.CUSTOM_RIFT_GATE) },
+        )
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(6.dp))
+              .background(Color(0xFF0D2036))
+              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+              .clickable { onOpenStrikeWing() }
+              .padding(horizontal = 7.dp, vertical = 3.dp)
+              .testTag("nexus_btn_manage_armada"),
+        ) {
+          val wingText =
+            if (activeArmadaName.isNotBlank()) "STRIKE WING: [$activeArmadaName] ($armadaSize/5)"
+            else "STRIKE WING: SOLO (1/5)"
+          Text(wingText, color = Color(0xFF38BDF8), fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        }
+      }
+
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = Modifier.horizontalScroll(rememberScrollState()).testTag("nexus_pre_match_ship_lock_picker"),
+      ) {
+        Text(
+          text = "HULL LOCK (${lockedHullSpec.name.uppercase()}):",
+          color = Color(0xFFE9D5FF),
+          fontSize = 7.8.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+        )
+        for (id in 1..10) {
+          val spec = RiftCodex.getShipById(id)
+          val sel = lockedTeamShipId == id
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(5.dp))
+                .background(if (sel) Color(0x44A855F7) else Color(0xFF0E182B))
+                .border(1.dp, if (sel) Color(0xFF00F5D4) else Color(0xFF334155), RoundedCornerShape(5.dp))
+                .clickable { onSelectLockedShip(id) }
+                .padding(horizontal = 5.dp, vertical = 2.dp)
+                .testTag("nexus_team_lock_ship_$id"),
+          ) {
+            Text(
+              text = spec.name.take(5).uppercase(Locale.US),
+              color = if (sel) Color.White else Color(0xFF94A3B8),
+              fontSize = 7.4.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+    }
+
+    if (gateTab == ConvergenceGateTab.OFFICIAL_RANKED) {
+      // Fixed 2x3 Non-Scrolling Grid across all 6 Ranked Modes
+      val rows = RankedGameMode.entries.chunked(2)
+      Column(
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        rows.forEach { rowModes ->
+          Row(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            rowModes.forEach { mode ->
+              val bracket =
+                when (mode) {
+                  RankedGameMode.RIFT_SKIRMISH -> skirmishBracket
+                  RankedGameMode.RIFT_CONTROL -> riftControlBracket
+                  RankedGameMode.SYNDICATE_WARS -> syndicateWarBracket
+                  RankedGameMode.STASIS_BREACH -> 10
+                  else -> 20
+                }
+              val isCurrent =
+                engine?.hasJoinedMatch == true && activeRankedMode == mode && engine.currentCustomGame == null
+              Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                ZeroScrollRankedModeCard(
+                  mode = mode,
+                  isCurrentActive = isCurrent,
+                  humanCount = humanPilotCountByMode(mode).coerceAtLeast(0),
+                  armadaSize = armadaSize,
+                  syndicateTag = syndicateTag,
+                  selectedBracket = bracket,
+                  onSelectBracket = { nb ->
+                    when (mode) {
+                      RankedGameMode.RIFT_SKIRMISH -> onSelectSkirmishBracket(nb)
+                      RankedGameMode.RIFT_CONTROL -> onSelectRiftControlBracket(nb)
+                      RankedGameMode.SYNDICATE_WARS -> onSelectSyndicateWarBracket(nb)
+                      else -> {}
+                    }
+                  },
+                  canQueueSyndicateWars = canQueueSyndicateWars,
+                  syndicateWarRecord = syndicateWarRecord,
+                  onDeploy = { onDeployRanked(mode, bracket) },
+                )
+              }
+            }
+          }
+        }
+      }
     } else {
-     Text(
-      when {
-       isCurrentActive -> "● CURRENTLY DEPLOYED IN THIS SECTOR"
-       locksShipSelection -> "🔒 LOCKS SELECTED HULL FOR MATCH"
-       else -> "✓ FREE HULL SWAP • DROP-IN QUEUE"
-      },
-      color = if (isCurrentActive) modeAccent else Color(0xFF64748B),
-      fontSize = 7.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
-      maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(end = 6.dp),
-     )
+      // Fixed 2-Column Custom Rift Gate: Left = 6-Char Room Code Join + Public Browser, Right = 10-Rule Sandbox Cloner
+      val activeCustom = remember(engine?.currentCustomGame, customRefreshTick) { engine?.currentCustomGame }
+      val visibleCustomGames =
+        remember(engine?.activeCustomGames?.size, customRefreshTick, unlockedPrivateCodes.size) {
+          (engine?.activeCustomGames?.toList() ?: emptyList()).filter { g ->
+            val code = extractCustomRoomCode(g.instanceId)
+            !isPrivateCustomGame(g) || activeCustom?.instanceId == g.instanceId || code in unlockedPrivateCodes
+          }
+        }
+
+      Row(
+        modifier = Modifier.weight(1f).fillMaxWidth().testTag("nexus_custom_games_section"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        // Left Pane: 6-Char Code Joiner + Public Custom Rift Browser
+        Column(
+          modifier =
+            Modifier.weight(0.45f)
+              .fillMaxHeight()
+              .clip(RoundedCornerShape(10.dp))
+              .background(Color(0xCC07101F))
+              .border(1.dp, Color(0x6600F5D4), RoundedCornerShape(10.dp))
+              .padding(8.dp),
+          verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          Text(
+            text = "PRIVATE RIFT ROOM CODE (6-CHAR)",
+            color = Color(0xFF00F5D4),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+              modifier =
+                Modifier.weight(1f)
+                  .height(32.dp)
+                  .clip(RoundedCornerShape(7.dp))
+                  .background(Color(0xFF040914))
+                  .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(7.dp))
+                  .padding(horizontal = 8.dp),
+              contentAlignment = Alignment.CenterStart,
+            ) {
+              if (joinRoomCodeDraft.isEmpty()) {
+                Text("ENTER 6-CHAR CODE…", color = Color(0xFF64748B), fontSize = 8.5.sp, fontFamily = FontFamily.Monospace)
+              }
+              BasicTextField(
+                value = joinRoomCodeDraft,
+                onValueChange = onJoinRoomCodeDraftChange,
+                singleLine = true,
+                cursorBrush = SolidColor(Color(0xFF00F5D4)),
+                textStyle = TextStyle(color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
+                modifier = Modifier.fillMaxWidth().testTag("nexus_custom_room_code_input"),
+              )
+            }
+            Button(
+              onClick = onJoinByRoomCode,
+              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0E7490), contentColor = Color.White),
+              border = BorderStroke(1.dp, Color(0xFF00F5D4)),
+              shape = RoundedCornerShape(7.dp),
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+              modifier = Modifier.height(32.dp).testTag("nexus_btn_join_room_code"),
+            ) {
+              Text("JOIN CODE", fontSize = 8.4.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+            }
+          }
+          if (roomCodeBanner != null) {
+            Text(roomCodeBanner, color = Color(0xFF34D399), fontSize = 7.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+          }
+
+          if (activeCustom != null && engine?.hasJoinedMatch == true) {
+            Row(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .clip(RoundedCornerShape(7.dp))
+                  .background(Color(0xFF06281E))
+                  .border(1.dp, Color(0xFF10B981), RoundedCornerShape(7.dp))
+                  .padding(6.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                text = "ACTIVE: ${activeCustom.title}",
+                color = Color(0xFF34D399),
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+              )
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(5.dp))
+                    .background(Color(0xFF0F172A))
+                    .border(1.dp, Color(0xFF34D399), RoundedCornerShape(5.dp))
+                    .clickable { onReturnToRankedFfa() }
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                    .testTag("nexus_btn_return_official_ranked"),
+              ) {
+                Text("RANKED FFA", color = Color(0xFF34D399), fontSize = 7.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+              }
+            }
+          }
+
+          Text(
+            text = "PUBLIC CUSTOM RIFT DIRECTORY (${visibleCustomGames.size})",
+            color = Color(0xFF94A3B8),
+            fontSize = 8.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+          ) {
+            if (visibleCustomGames.isEmpty()) {
+              item {
+                Text(
+                  "0 public custom Rifts active. Configure rules on the right to launch a Public or Private Rift.",
+                  color = Color(0xFF64748B),
+                  fontSize = 8.4.sp,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+            items(visibleCustomGames, key = { it.instanceId }) { game ->
+              val isJoined = engine?.hasJoinedMatch == true && activeCustom?.instanceId == game.instanceId
+              val count = engine?.getHumanPilotCountForCustomGame(game.instanceId) ?: 0
+              val code = extractCustomRoomCode(game.instanceId)
+              Row(
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(if (isJoined) Color(0xCC0D2638) else Color(0x99060E1C))
+                    .border(1.dp, if (isJoined) Color(0xFF00F5D4) else Color(0xFF334155), RoundedCornerShape(7.dp))
+                    .padding(6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = "${game.title} • $count PILOTS",
+                    color = if (isJoined) Color(0xFF00F5D4) else Color.White,
+                    fontSize = 8.2.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                  )
+                  Text(
+                    text = "${game.baseMode.title} • CODE: $code • Bots: ${if (game.botsEnabled) "ON" else "OFF"}",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 7.4.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                  )
+                }
+                Box(
+                  modifier =
+                    Modifier.clip(RoundedCornerShape(6.dp))
+                      .background(if (isJoined) Color(0xFF065F46) else Color(0xFF1E293B))
+                      .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+                      .clickable { onJoinCustomInstance(game.instanceId) }
+                      .padding(horizontal = 8.dp, vertical = 4.dp)
+                      .testTag("nexus_join_custom_${game.instanceId}"),
+                ) {
+                  Text(
+                    text = if (isJoined) "ACTIVE" else "JOIN",
+                    color = Color.White,
+                    fontSize = 7.8.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
+              }
+            }
+          }
+        }
+
+        // Right Pane: 10-Rule Custom Rift Sandbox Cloner (Public or Private 6-Char Room Code)
+        Column(
+          modifier =
+            Modifier.weight(0.55f)
+              .fillMaxHeight()
+              .clip(RoundedCornerShape(10.dp))
+              .background(Color(0xCC07101F))
+              .border(1.dp, Color(0x66C084FC), RoundedCornerShape(10.dp))
+              .padding(8.dp),
+          verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+              HeaderSubDeckPill("PUBLIC ROOM", !customIsPrivateRoom, Color(0xFF00F5D4), "custom_vis_public") {
+                onTogglePrivateRoom(false)
+              }
+              HeaderSubDeckPill("PRIVATE [$generatedRoomCode]", customIsPrivateRoom, Color(0xFFFACC15), "custom_vis_private") {
+                onTogglePrivateRoom(true)
+              }
+            }
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(6.dp))
+                  .background(Color(0xFF13263A))
+                  .border(1.dp, Color(0xFF34D399), RoundedCornerShape(6.dp))
+                  .clickable { onShareRoomToLfg() }
+                  .padding(horizontal = 7.dp, vertical = 3.dp)
+                  .testTag("nexus_btn_share_room_lfg"),
+            ) {
+              Text("SHARE TO #STRIKE-LFG", color = Color(0xFF34D399), fontSize = 7.6.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+            }
+          }
+
+          Column(
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            CustomRuleChipRow(
+              "BASE MODE:",
+              listOf(
+                RankedGameMode.SECTOR_CONVERGENCE to "Convergence",
+                RankedGameMode.RIFT_SKIRMISH to "Skirmish",
+                RankedGameMode.FLUX_CORE to "Flux Core",
+                RankedGameMode.STASIS_BREACH to "Stasis Breach",
+                RankedGameMode.RIFT_CONTROL to "Rift Control",
+              ),
+              customBaseMode,
+              onSelectCustomBaseMode,
+            )
+            CustomRuleChipRow(
+              "TIMER & SIZE:",
+              listOf(5 to "5m", 10 to "10m", 15 to "15m", 30 to "30m", 0 to "INF"),
+              customResetMinutes,
+              onSelectCustomResetMinutes,
+            )
+            CustomRuleChipRow(
+              "TEAM BRACKET:",
+              listOf(2 to "2v2", 3 to "3v3", 5 to "5v5", 10 to "10v10"),
+              customTeamBracket,
+              onSelectCustomTeamBracket,
+            )
+            CustomRuleChipRow(
+              "FFA WINGS:",
+              listOf(true to "Strike Wings ON", false to "Solo Only"),
+              customAllowArmadasInFfa,
+              onToggleAllowArmadasInFfa,
+            )
+            CustomRuleChipRow(
+              "AI BOTS:",
+              listOf(true to "Backfill [BOT]", false to "Humans Only"),
+              customBotsEnabled,
+              onToggleBotsEnabled,
+            )
+            CustomRuleChipRow(
+              "BULLET SIZE:",
+              listOf(1.0f to "1.0x Standard", 1.5f to "1.5x Heavy", 2.2f to "2.2x MegaFat Bullets"),
+              customBulletSizeMult,
+              onSelectBulletSizeMult,
+            )
+            CustomRuleChipRow(
+              "SHIP SPEED:",
+              listOf(0.8f to "0.8x Tactical", 1.0f to "1.0x Standard", 1.4f to "1.4x Overdrive"),
+              customSpeedMult,
+              onSelectSpeedMult,
+            )
+            CustomRuleChipRow(
+              "FLUX RECHARGE:",
+              listOf(1.0f to "1.0x Standard", 1.5f to "1.5x Surge", 2.5f to "2.5x Hyper"),
+              customRechargeMult,
+              onSelectRechargeMult,
+            )
+            CustomRuleChipRow(
+              "WEAPON DMG:",
+              listOf(0.75f to "0.75x Armored", 1.0f to "1.0x Standard", 1.5f to "1.5x Lethal"),
+              customDamageMult,
+              onSelectDamageMult,
+            )
+            CustomRuleChipRow(
+              "RIFTS/CRATES:",
+              listOf(0.5f to "0.5x Sparse", 1.0f to "1.0x Standard", 2.0f to "2.0x Dense"),
+              customCrateSpawnMult,
+              onSelectCrateSpawnMult,
+            )
+          }
+
+          Button(
+            onClick = onLaunchCustomGame,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0E7490), contentColor = Color.White),
+            border = BorderStroke(1.dp, Color(0xFF00F5D4)),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth().height(32.dp).testTag("nexus_btn_launch_custom_game"),
+          ) {
+            Text(
+              text =
+                if (customIsPrivateRoom) "LAUNCH PRIVATE RIFT [$generatedRoomCode] (${lockedHullSpec.name.uppercase()})"
+                else "LAUNCH PUBLIC CUSTOM RIFT (${lockedHullSpec.name.uppercase()})",
+              fontSize = 8.6.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ZeroScrollRankedModeCard(
+  mode: RankedGameMode,
+  isCurrentActive: Boolean,
+  humanCount: Int,
+  armadaSize: Int,
+  syndicateTag: String,
+  selectedBracket: Int,
+  onSelectBracket: (Int) -> Unit,
+  canQueueSyndicateWars: Pair<Boolean, String>,
+  syndicateWarRecord: SyndicateWarRecord,
+  onDeploy: () -> Unit,
+) {
+  val accent =
+    when (mode) {
+      RankedGameMode.SECTOR_CONVERGENCE,
+      RankedGameMode.RIFT_CONTROL -> Color(0xFF00F5D4)
+      RankedGameMode.RIFT_SKIRMISH,
+      RankedGameMode.FLUX_CORE -> Color(0xFFF59E0B)
+      RankedGameMode.STASIS_BREACH,
+      RankedGameMode.SYNDICATE_WARS -> Color(0xFFA855F7)
+    }
+  val title = if (mode == RankedGameMode.RIFT_CONTROL) "RIFT CONTROL" else mode.title.uppercase(Locale.US)
+  val desc =
+    when (mode) {
+      RankedGameMode.SECTOR_CONVERGENCE -> "20-Pilot FFA / 1-5 Strike Wing • Circular Rift Safe Zone • +100❖ #1 Bounty."
+      RankedGameMode.RIFT_SKIRMISH -> "Best-of-3 Team Rounds • Opposite Warp Gates • Locks selected Hull."
+      RankedGameMode.FLUX_CORE -> "20-Pilot Carrier FFA • +1 Overcharge Tier / 5s • 30s Safe-Zone Eject."
+      RankedGameMode.STASIS_BREACH -> "10v10 Stasis Jailbreak • No Safe Zone • Destroy 8,000 Flux Jail Core to free allies."
+      RankedGameMode.RIFT_CONTROL -> "Dual-Rift Tug-of-War • No Safe Zone • Hold uncontested 30s to lock Rifts."
+      RankedGameMode.SYNDICATE_WARS -> "[$syndicateTag] Clan Ladder • ${syndicateWarRecord.warTrophies} War Trophies (${syndicateWarRecord.warWins}W-${syndicateWarRecord.warLosses}L)."
+    }
+  val isLocked = mode == RankedGameMode.SYNDICATE_WARS && !canQueueSyndicateWars.first
+
+  Column(
+    modifier =
+      Modifier.fillMaxSize()
+        .clip(RoundedCornerShape(10.dp))
+        .background(if (isCurrentActive) Color(0xE60B1D33) else Color(0xD907101F))
+        .border(
+          if (isCurrentActive) 1.5.dp else 1.dp,
+          if (isCurrentActive) accent else accent.copy(alpha = 0.50f),
+          RoundedCornerShape(10.dp),
+        )
+        .padding(horizontal = 9.dp, vertical = 6.dp)
+        .testTag("nexus_mode_card_${mode.id}"),
+    verticalArrangement = Arrangement.SpaceBetween,
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.weight(1f),
+      ) {
+        Text(
+          text = title,
+          color = accent,
+          fontSize = 9.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(4.dp))
+              .background(accent.copy(alpha = 0.18f))
+              .padding(horizontal = 5.dp, vertical = 1.dp),
+        ) {
+          Text(mode.teamFormatBadge, color = accent, fontSize = 7.2.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        }
+      }
+      Text(
+        text = "$humanCount PILOTS",
+        color = if (humanCount > 0) Color(0xFF34D399) else Color(0xFF64748B),
+        fontSize = 7.8.sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontFamily = FontFamily.Monospace,
+      )
     }
 
-    Button(
-     onClick = onDeploy, enabled = !isSyndicateWarsLocked,
-     colors = ButtonDefaults.buttonColors(
-      containerColor = modeAccent.copy(alpha = 0.24f), contentColor = Color.White,
-      disabledContainerColor = Color(0x551E293B), disabledContentColor = Color(0xFF64748B),
-     ),
-     border = BorderStroke(1.2.dp, if (isSyndicateWarsLocked) Color(0xFF475569) else modeAccent),
-     shape = RoundedCornerShape(8.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-     modifier = Modifier.height(30.dp).shadow(2.dp, RoundedCornerShape(8.dp)).testTag("nexus_deploy_${mode.id}"),
+    Text(
+      text = desc,
+      color = Color(0xFFCBD5E1),
+      fontSize = 8.2.sp,
+      lineHeight = 11.sp,
+      maxLines = 2,
+      overflow = TextOverflow.Ellipsis,
+    )
+
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-     Text(
-      when {
-       locksShipSelection -> "✅ LOCK SHIP & DEPLOY"
-       armadaSize >= 2 -> "🚀 DEPLOY ARMADA ($armadaSize)"
-       else -> "🚀 DEPLOY"
-      },
-      fontSize = 8.4.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, maxLines = 1,
-     )
+      Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        when (mode) {
+          RankedGameMode.RIFT_SKIRMISH ->
+            listOf(2, 3, 4, 5).forEach { sz ->
+              ModeBracketChip("${sz}v${sz}", selectedBracket == sz, accent) { onSelectBracket(sz) }
+            }
+          RankedGameMode.RIFT_CONTROL,
+          RankedGameMode.SYNDICATE_WARS ->
+            listOf(3, 5, 10).forEach { sz ->
+              ModeBracketChip("${sz}v${sz}", selectedBracket == sz, accent) { onSelectBracket(sz) }
+            }
+          else -> {
+            Text(
+              text = if (isCurrentActive) "ACTIVE SECTOR" else "DROP-IN READY",
+              color = if (isCurrentActive) accent else Color(0xFF64748B),
+              fontSize = 7.5.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+
+      Button(
+        onClick = onDeploy,
+        enabled = !isLocked,
+        colors =
+          ButtonDefaults.buttonColors(
+            containerColor = accent.copy(alpha = 0.24f),
+            contentColor = Color.White,
+            disabledContainerColor = Color(0x551E293B),
+            disabledContentColor = Color(0xFF64748B),
+          ),
+        border = BorderStroke(1.dp, if (isLocked) Color(0xFF475569) else accent),
+        shape = RoundedCornerShape(7.dp),
+        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp),
+        modifier = Modifier.height(26.dp).testTag("nexus_deploy_${mode.id}"),
+      ) {
+        Text(
+          text =
+            when {
+              isLocked -> "SYNDICATE REQ"
+              doesModeLockShipSelection(mode) -> "LOCK & DEPLOY"
+              armadaSize >= 2 -> "DEPLOY ($armadaSize)"
+              else -> "DEPLOY >"
+            },
+          fontSize = 7.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
     }
-   }
   }
- }
 }
 
 @Composable
 private fun ModeBracketChip(label: String, selected: Boolean, accent: Color, onClick: () -> Unit) {
- Box(
-  modifier = Modifier.clip(RoundedCornerShape(5.dp))
-   .background(if (selected) accent.copy(alpha = 0.25f) else Color(0xFF0F172A))
-   .border(1.dp, if (selected) accent else Color(0xFF334155), RoundedCornerShape(5.dp))
-   .clickable { onClick() }.padding(horizontal = 7.dp, vertical = 2.5.dp),
- ) { Text(label, color = if (selected) Color.White else Color(0xFF94A3B8), fontSize = 7.8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace) }
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(5.dp))
+        .background(if (selected) accent.copy(alpha = 0.25f) else Color(0xFF0F172A))
+        .border(1.dp, if (selected) accent else Color(0xFF334155), RoundedCornerShape(5.dp))
+        .clickable { onClick() }
+        .padding(horizontal = 5.dp, vertical = 2.dp),
+  ) {
+    Text(label, color = if (selected) Color.White else Color(0xFF94A3B8), fontSize = 7.4.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+  }
 }
 
 @Composable
-private fun PreMatchTeamShipLockCard(
- selectedShipId: Int,
- isCurrentlyLockedInMatch: Boolean,
- pendingTeamMode: Pair<RankedGameMode, Int>?,
- onSelectShip: (Int) -> Unit,
- onConfirmLockAndDeploy: (RankedGameMode, Int) -> Unit,
- onCancelPending: () -> Unit,
+private fun <T> CustomRuleChipRow(
+  label: String,
+  options: List<Pair<T, String>>,
+  selected: T,
+  onSelect: (T) -> Unit,
 ) {
- val selectedSpec = RiftCodex.getShipById(selectedShipId.coerceIn(1, 10))
- Column(
-  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xCC091526))
-   .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(10.dp)).padding(9.dp)
-   .testTag("nexus_pre_match_ship_lock_picker"),
-  verticalArrangement = Arrangement.spacedBy(6.dp),
- ) {
-  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-   Text("🔒 SELECT HULL FOR SKIRMISH & SYNDICATE WARS", color = Color(0xFFE9D5FF), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-   Text(
-    if (isCurrentlyLockedInMatch) "LOCKED: ${selectedSpec.name.uppercase()}" else "READY: ${selectedSpec.name.uppercase()}",
-    color = Color(0xFF00F5D4), fontSize = 8.2.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace,
-   )
+  Row(
+    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+    horizontalArrangement = Arrangement.spacedBy(4.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(
+      label,
+      color = Color(0xFF94A3B8),
+      fontSize = 7.5.sp,
+      fontWeight = FontWeight.Bold,
+      fontFamily = FontFamily.Monospace,
+      modifier = Modifier.width(88.dp),
+    )
+    options.forEach { (value, text) ->
+      val isSel = selected == value
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(5.dp))
+            .background(if (isSel) Color(0x3300F5D4) else Color(0xFF0F172A))
+            .border(1.dp, if (isSel) Color(0xFF00F5D4) else Color(0xFF334155), RoundedCornerShape(5.dp))
+            .clickable { onSelect(value) }
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+      ) {
+        Text(
+          text,
+          color = if (isSel) Color.White else Color(0xFF94A3B8),
+          fontSize = 7.4.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
+    }
   }
+}
 
-  Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-   for (shipId in 1..10) {
-    val spec = RiftCodex.getShipById(shipId)
-    val isSelected = selectedShipId == shipId
+@Composable
+private fun SubspaceCommsDiscordDeck(
+  selectedChannelKey: String,
+  onSelectChannel: (String) -> Unit,
+  messages: List<NexusChatMessage>,
+  streamState: NexusStreamState,
+  isStreaming: Boolean,
+  lastFailedQuestion: String?,
+  listState: androidx.compose.foundation.lazy.LazyListState,
+  inputQuery: String,
+  onInputQueryChange: (String) -> Unit,
+  onSubmitAiQuery: () -> Unit,
+  onSendStarterQuestion: (String) -> Unit,
+  onRetryLastQuestion: () -> Unit,
+  callsign: String,
+  cleanSyndicateTag: String,
+  syndicateName: String,
+  isLocalArchitect: Boolean,
+  activeArmadaName: String,
+  armadaSlots: List<ArmadaMemberSlot>,
+  canAccessSyndicateServer: Boolean,
+  syndicateCustomChannels: List<String>,
+  syndicateInvitedGuests: Set<String>,
+  showChannelManager: Boolean,
+  onToggleChannelManager: () -> Unit,
+  newChannelDraft: String,
+  onNewChannelDraftChange: (String) -> Unit,
+  onAddSyndicateChannel: () -> Unit,
+  onDeleteSyndicateChannel: (String) -> Unit,
+  showGuestManager: Boolean,
+  onToggleGuestManager: () -> Unit,
+  guestCallsignDraft: String,
+  onGuestDraftChange: (String) -> Unit,
+  onInviteGuest: () -> Unit,
+  onRevokeGuest: (String) -> Unit,
+  onOpenSyndicateCitadel: () -> Unit,
+  lobbyMessages: List<SyndicateChatMessage>,
+  localEchoMessages: Map<String, List<SyndicateChatMessage>>,
+  channelChatInput: String,
+  onChannelChatInputChange: (String) -> Unit,
+  onSendToChannel: (String, String) -> Unit,
+  bugCategory: String,
+  onSelectBugCategory: (String) -> Unit,
+  bugDescription: String,
+  onBugDescriptionChange: (String) -> Unit,
+  bugStatusBanner: String?,
+  onSubmitBug: () -> Unit,
+  activeCustomRoomCode: String?,
+  activeCustomModeTitle: String?,
+  onShareRiftFrameBuild: () -> Unit,
+  onLoadSharedBuild: (String) -> Unit,
+  onAskAiAboutBuild: (String) -> Unit,
+  onPostStrikeWingInvite: () -> Unit,
+  onPostPrivateRoomInvite: (String, String) -> Unit,
+  onJoinSharedStrikeWing: (SyndicateChatMessage) -> Unit,
+  onJoinCustomRoomCode: (String) -> Unit,
+  onlineHumanPilots: List<LivePilotState>,
+  totalOnlinePilots: Int,
+  showOnlineRosterPane: Boolean,
+  onToggleOnlineRosterPane: () -> Unit,
+  onAddOnlinePilotFriend: (String) -> Unit,
+  onInviteOnlinePilotToWing: (LivePilotState) -> Unit,
+) {
+  val strikeWingKey = "strike:${activeArmadaName.ifBlank { "SQUAD" }.uppercase(Locale.US)}"
+
+  Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // 1. Left Channel Directory (Zero RAM-only #ship channels)
     Column(
-     modifier = Modifier.width(68.dp).clip(RoundedCornerShape(8.dp))
-      .background(if (isSelected) Color(0x44A855F7) else Color(0x9907101E))
-      .border(if (isSelected) 1.5.dp else 1.dp, if (isSelected) Color(0xFF00F5D4) else Color(0xFF334155), RoundedCornerShape(8.dp))
-      .clickable { onSelectShip(shipId) }.padding(vertical = 5.dp, horizontal = 4.dp)
-      .testTag("nexus_team_lock_ship_$shipId"),
-     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),
+      modifier =
+        Modifier.width(188.dp)
+          .fillMaxHeight()
+          .clip(RoundedCornerShape(10.dp))
+          .background(Color(0xB8040914))
+          .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(10.dp))
+          .padding(7.dp)
+          .verticalScroll(rememberScrollState())
+          .testTag("nexus_channel_directory"),
+      verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-     ShipSpritePreview(shipId = shipId, sizeDp = 28)
-     Text(spec.name, color = if (isSelected) Color.White else Color(0xFF94A3B8), fontSize = 7.5.sp, fontWeight = if (isSelected) FontWeight.Black else FontWeight.SemiBold, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-   }
-  }
+      ChannelCategoryHeader("// NEXUS INTEL")
+      ChannelNavItem("#nexus-ai", "AI", selectedChannelKey == "#nexus-ai", Color(0xFF00F5D4), { onSelectChannel("#nexus-ai") }, "nexus_ch_nexus_ai")
+      ChannelNavItem("#announcements", "DEV", selectedChannelKey == "#announcements", Color(0xFFFACC15), { onSelectChannel("#announcements") }, "nexus_ch_announcements")
+      ChannelNavItem("#patch-log", "v1.0.57", selectedChannelKey == "#patch-log", Color(0xFF38BDF8), { onSelectChannel("#patch-log") }, "nexus_ch_change_log")
+      ChannelNavItem("#bug-reports", "CLOUD", selectedChannelKey == "#bug-reports", Color(0xFFFB7185), { onSelectChannel("#bug-reports") }, "nexus_ch_bug_report")
+      ChannelNavItem("#rules", "FAIR", selectedChannelKey == "#rules", Color(0xFFA78BFA), { onSelectChannel("#rules") }, "nexus_ch_rules")
 
-  if (pendingTeamMode != null) {
-   Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-    Text("Queue: ${pendingTeamMode.first.title} (${pendingTeamMode.second}v${pendingTeamMode.second})", color = Color(0xFFFACC15), fontSize = 8.2.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-     Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF1E293B)).clickable { onCancelPending() }.padding(horizontal = 8.dp, vertical = 4.dp)) {
-      Text("CANCEL", color = Color(0xFF94A3B8), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
-     }
-     Box(
-      modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF0E7490))
-       .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
-       .clickable { onConfirmLockAndDeploy(pendingTeamMode.first, pendingTeamMode.second) }
-       .padding(horizontal = 8.dp, vertical = 4.dp),
-     ) { Text("✅ LOCK SHIP & DEPLOY", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
+      Spacer(modifier = Modifier.height(3.dp))
+      ChannelCategoryHeader("// COMMUNITY")
+      ChannelNavItem("#sector-lounge", "$totalOnlinePilots", selectedChannelKey == "#sector-lounge", Color(0xFF38BDF8), { onSelectChannel("#sector-lounge") }, "nexus_ch_main_lobby")
+      ChannelNavItem("#shipwright-meta", "100PT", selectedChannelKey == "#shipwright-meta", Color(0xFFC084FC), { onSelectChannel("#shipwright-meta") }, "nexus_ch_shipwright_meta")
+      ChannelNavItem("#strike-lfg", "LFG", selectedChannelKey == "#strike-lfg", Color(0xFF34D399), { onSelectChannel("#strike-lfg") }, "nexus_ch_strike_lfg")
+
+      Spacer(modifier = Modifier.height(3.dp))
+      ChannelCategoryHeader("// SYNDICATE SERVER")
+      if (canAccessSyndicateServer) {
+        syndicateCustomChannels.forEachIndexed { idx, chName ->
+          val cleanCh = if (chName.startsWith("#")) chName else "#$chName"
+          val key = "syn:$cleanSyndicateTag:$cleanCh".lowercase(Locale.US)
+          ChannelNavItem(
+            label = "[$cleanSyndicateTag] $cleanCh",
+            badge = if (idx == 0) "CORE" else "CLAN",
+            selected = selectedChannelKey.equals(key, ignoreCase = true),
+            accent = Color(0xFFF59E0B),
+            onClick = { onSelectChannel(key) },
+            tag = "nexus_ch_syndicate_$idx",
+          )
+        }
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+          Box(
+            modifier =
+              Modifier.weight(1f)
+                .clip(RoundedCornerShape(5.dp))
+                .background(Color(0xFF1E293B))
+                .border(1.dp, Color(0x66F59E0B), RoundedCornerShape(5.dp))
+                .clickable { onToggleChannelManager() }
+                .padding(vertical = 3.dp)
+                .testTag("nexus_btn_manage_syndicate_channels"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text("+ CH (${syndicateCustomChannels.size}/5)", color = Color(0xFFFBBF24), fontSize = 7.6.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+          }
+          Box(
+            modifier =
+              Modifier.weight(1f)
+                .clip(RoundedCornerShape(5.dp))
+                .background(Color(0xFF1E293B))
+                .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(5.dp))
+                .clickable { onToggleGuestManager() }
+                .padding(vertical = 3.dp)
+                .testTag("nexus_btn_syndicate_guest_pass"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text("GUESTS (${syndicateInvitedGuests.size})", color = Color(0xFF38BDF8), fontSize = 7.6.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+          }
+        }
+      } else {
+        ChannelNavItem("Syndicate Locked", "ENLIST", selectedChannelKey == "syndicate:locked", Color(0xFF64748B), { onSelectChannel("syndicate:locked") }, "nexus_ch_syndicate_locked")
+      }
+
+      Spacer(modifier = Modifier.height(3.dp))
+      ChannelCategoryHeader("// STRIKE WING")
+      ChannelNavItem(
+        label = "#strike-wing",
+        badge = "${armadaSlots.size.coerceAtLeast(1)}/5",
+        selected = selectedChannelKey.equals(strikeWingKey, ignoreCase = true),
+        accent = Color(0xFF60A5FA),
+        onClick = { onSelectChannel(strikeWingKey) },
+        tag = "nexus_ch_armada_chat",
+      )
     }
-   }
+
+    // 2. Center Live Channel Feed & Composer
+    Column(
+      modifier =
+        Modifier.weight(1f)
+          .fillMaxHeight()
+          .clip(RoundedCornerShape(10.dp))
+          .background(Color(0x99040914))
+          .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(10.dp))
+          .padding(8.dp),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      if (showChannelManager && canAccessSyndicateServer) {
+        SyndicateChannelManagerCard(
+          syndicateTag = cleanSyndicateTag,
+          channels = syndicateCustomChannels,
+          newChannelDraft = newChannelDraft,
+          onDraftChange = onNewChannelDraftChange,
+          onAddChannel = onAddSyndicateChannel,
+          onDeleteChannel = onDeleteSyndicateChannel,
+          onClose = onToggleChannelManager,
+        )
+      }
+      if (showGuestManager && canAccessSyndicateServer) {
+        SyndicateGuestPassManagerCard(
+          syndicateTag = cleanSyndicateTag,
+          invitedGuests = syndicateInvitedGuests,
+          guestDraft = guestCallsignDraft,
+          onDraftChange = onGuestDraftChange,
+          onInvite = onInviteGuest,
+          onRevoke = onRevokeGuest,
+          onClose = onToggleGuestManager,
+        )
+      }
+
+      val normSelected = selectedChannelKey.trim().lowercase(Locale.US)
+      val mergedChannelMessages =
+        remember(lobbyMessages.size, normSelected, localEchoMessages[normSelected]?.size) {
+          val fromCloud = lobbyMessages.filter { it.resolvedChannelKey() == normSelected }
+          val cloudTexts = fromCloud.map { "${it.senderCallsign}|${it.messageText}" }.toSet()
+          val echoes =
+            (localEchoMessages[normSelected] ?: emptyList()).filterNot {
+              "${it.senderCallsign}|${it.messageText}" in cloudTexts
+            }
+          (fromCloud + echoes).sortedBy { it.createdAtMs }
+        }
+
+      when {
+        normSelected == "#nexus-ai" -> {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Row(
+              modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              NEXUS_STARTER_CHIPS.forEachIndexed { idx, chipPrompt ->
+                Box(
+                  modifier =
+                    Modifier.clip(RoundedCornerShape(12.dp))
+                      .background(Color(0x990D1B2E))
+                      .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(12.dp))
+                      .clickable(enabled = !isStreaming) { onSendStarterQuestion(chipPrompt) }
+                      .padding(horizontal = 8.dp, vertical = 4.dp)
+                      .testTag("nexus_quick_chip_$idx"),
+                ) {
+                  Text(chipPrompt, color = if (isStreaming) Color(0xFF64748B) else Color(0xFFE0F2FE), fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                }
+              }
+            }
+            Spacer(modifier = Modifier.width(6.dp))
+            OnlineRosterToggleButton(onlineHumanPilots.size, showOnlineRosterPane, onToggleOnlineRosterPane)
+          }
+
+          LazyColumn(
+            state = listState,
+            modifier =
+              Modifier.weight(1f)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0x59030712))
+                .border(1.dp, Color(0x3338BDF8), RoundedCornerShape(8.dp))
+                .padding(8.dp)
+                .testTag("nexus_message_list"),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            if (messages.isEmpty()) item(key = "nexus_zero_state") { NexusWelcomeTelemetryCard() }
+            items(items = messages, key = { it.id }) { msg -> NexusMessageBubble(message = msg) }
+            if (streamState is NexusStreamState.Error) {
+              item(key = "nexus_error_card") {
+                NexusErrorBanner(streamState.message, !lastFailedQuestion.isNullOrBlank(), onRetryLastQuestion)
+              }
+            }
+          }
+
+          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(
+              modifier =
+                Modifier.weight(1f)
+                  .height(34.dp)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(Color(0xFF050B14))
+                  .border(1.dp, if (isStreaming) Color(0x55475569) else Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                  .padding(horizontal = 10.dp)
+                  .testTag("nexus_query_input_box"),
+              contentAlignment = Alignment.CenterStart,
+            ) {
+              if (inputQuery.isEmpty()) {
+                Text(stringResource(R.string.nexus_input_placeholder), color = Color(0xFF64748B), fontSize = 9.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+              }
+              BasicTextField(
+                value = inputQuery,
+                onValueChange = onInputQueryChange,
+                enabled = !isStreaming,
+                singleLine = true,
+                cursorBrush = SolidColor(Color(0xFF00F5D4)),
+                textStyle = TextStyle(color = Color.White, fontSize = 10.5.sp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { onSubmitAiQuery() }),
+                modifier = Modifier.fillMaxWidth().testTag("nexus_query_input"),
+              )
+            }
+            Button(
+              onClick = onSubmitAiQuery,
+              enabled = inputQuery.isNotBlank() && !isStreaming,
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = Color(0xFF0E7490),
+                  contentColor = Color.White,
+                  disabledContainerColor = Color(0x661E293B),
+                  disabledContentColor = Color(0xFF64748B),
+                ),
+              border = BorderStroke(1.dp, if (inputQuery.isNotBlank() && !isStreaming) Color(0xFF00F5D4) else Color(0x44475569)),
+              shape = RoundedCornerShape(8.dp),
+              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+              modifier = Modifier.height(34.dp).testTag("nexus_send_button"),
+            ) {
+              Text(if (isStreaming) "SYNCING…" else stringResource(R.string.nexus_transmit), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+            }
+          }
+        }
+        normSelected == "#patch-log" -> NexusChangelogChannelView()
+        normSelected == "#rules" -> NexusRulesChannelView()
+        normSelected == "#bug-reports" -> {
+          val bugFeed =
+            remember(lobbyMessages.size, localEchoMessages["#bug-reports"]?.size) {
+              lobbyMessages.filter { it.isBugReportCard() }
+            }
+          NexusBugReportChannelView(
+            selectedCategory = bugCategory,
+            onSelectCategory = onSelectBugCategory,
+            description = bugDescription,
+            onDescriptionChange = onBugDescriptionChange,
+            statusBanner = bugStatusBanner,
+            cloudBugCards = bugFeed,
+            onSubmit = onSubmitBug,
+          )
+        }
+        normSelected == "syndicate:locked" -> {
+          Column(
+            modifier =
+              Modifier.fillMaxSize()
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0x66091324))
+                .border(1.dp, Color(0x66F59E0B), RoundedCornerShape(10.dp))
+                .padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+          ) {
+            Text("SYNDICATE LOCKED // ENLIST IN SYNDICATE CITADEL", color = Color(0xFFFACC15), fontSize = 12.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+              "Enlist in or charter a real-player Syndicate to unlock private [TAG] channels, Syndicate Crests, and Ranked Syndicate Wars.",
+              color = Color(0xFFCBD5E1),
+              fontSize = 10.sp,
+              textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Button(
+              onClick = onOpenSyndicateCitadel,
+              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF78350F), contentColor = Color(0xFFFEF08A)),
+              border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+              shape = RoundedCornerShape(8.dp),
+            ) {
+              Text("OPEN SYNDICATE CITADEL", fontSize = 9.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+            }
+          }
+        }
+        else -> {
+          val isAnnouncements = normSelected == "#announcements"
+          val isShipwright = normSelected == "#shipwright-meta"
+          val isLfg = normSelected == "#strike-lfg"
+          val isSyndicateCh = normSelected.startsWith("syn:")
+          val isStrikeWingCh = normSelected.startsWith("strike:")
+
+          val headerTitle =
+            when {
+              isAnnouncements -> "#announcements // ARCHITECT & SECTOR DISPATCH"
+              isShipwright -> "#shipwright-meta // 100-PT RIFT FRAME LOADOUT EXCHANGE"
+              isLfg -> "#strike-lfg // STRIKE WING & PRIVATE RIFT RECRUITMENT"
+              isSyndicateCh -> "[$cleanSyndicateTag] ${selectedChannelKey.substringAfterLast(':')} // $syndicateName"
+              isStrikeWingCh -> "#strike-wing // [${activeArmadaName.ifBlank { "SQUAD" }}] ENCRYPTED COMMS"
+              else -> "#sector-lounge // LIVE CROSS-SECTOR PILOT FEED"
+            }
+
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xAA091426))
+                .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(8.dp))
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text = headerTitle,
+              color = Color(0xFF00F5D4),
+              fontSize = 9.5.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+              if (isShipwright) {
+                ActionHeaderChip("SHARE RIFT FRAME BUILD", Color(0xFFC084FC), "nexus_btn_share_build", onShareRiftFrameBuild)
+              }
+              if (isLfg) {
+                ActionHeaderChip("POST STRIKE WING INVITE", Color(0xFF34D399), "nexus_btn_post_wing_lfg", onPostStrikeWingInvite)
+                if (!activeCustomRoomCode.isNullOrBlank()) {
+                  ActionHeaderChip(
+                    "POST ROOM [$activeCustomRoomCode]",
+                    Color(0xFFFACC15),
+                    "nexus_btn_post_room_lfg",
+                  ) {
+                    onPostPrivateRoomInvite(activeCustomRoomCode, activeCustomModeTitle ?: "Custom Rift")
+                  }
+                }
+              }
+              OnlineRosterToggleButton(onlineHumanPilots.size, showOnlineRosterPane, onToggleOnlineRosterPane)
+            }
+          }
+
+          LazyColumn(
+            modifier =
+              Modifier.weight(1f)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0x55030712))
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            if (isAnnouncements) {
+              item(key = "pinned_architect_dispatch") {
+                Column(
+                  modifier =
+                    Modifier.fillMaxWidth()
+                      .clip(RoundedCornerShape(8.dp))
+                      .background(Color(0xCC1B1608))
+                      .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(8.dp))
+                      .padding(8.dp),
+                  verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                  Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    DevArchitectBadge()
+                    Text("ARCHITECT // BUILD #57 SECTOR DISPATCH", color = Color(0xFFFACC15), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                  }
+                  Text(
+                    "Welcome to NEXUS CORE & SUBSPACE COMMS. All 10 Hulls operate at 100-Point Parity from 0 Resonance. Share Rift Frame builds in #shipwright-meta, form Strike Wings in #strike-lfg, and log live telemetry in #bug-reports.",
+                    color = Color(0xFFF1F5F9),
+                    fontSize = 9.2.sp,
+                    lineHeight = 13.sp,
+                  )
+                }
+              }
+            }
+            if (mergedChannelMessages.isEmpty() && !isAnnouncements) {
+              item {
+                Text(
+                  "Frequency online. Transmit a message or action card to connected Sworn Pilots.",
+                  color = Color(0xFF64748B),
+                  fontSize = 9.sp,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+            items(mergedChannelMessages, key = { it.id }) { msg ->
+              CloudChannelMessageCard(
+                msg = msg,
+                onLoadSharedBuild = onLoadSharedBuild,
+                onAskAiAboutBuild = onAskAiAboutBuild,
+                onJoinSharedStrikeWing = onJoinSharedStrikeWing,
+                onJoinCustomRoomCode = onJoinCustomRoomCode,
+              )
+            }
+          }
+
+          if (isStrikeWingCh || isSyndicateCh) {
+            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+              TacticalQuickPingChip("ATTACK HVT", Color(0xFFFB7185), "nexus_quick_ping_attack_hvt") {
+                onSendToChannel(selectedChannelKey, "[TACTICAL PING] CONVERGE ON SECTOR HVT NOW!")
+              }
+              TacticalQuickPingChip("FORM ON ME", Color(0xFF38BDF8), "nexus_quick_ping_form_on_me") {
+                onSendToChannel(selectedChannelKey, "[TACTICAL PING] FORM UP ON MY STRIKE WING!")
+              }
+              TacticalQuickPingChip("LOW FLUX", Color(0xFFFACC15), "nexus_quick_ping_low_flux") {
+                onSendToChannel(selectedChannelKey, "[TACTICAL PING] LOW FLUX — NEED STASIS / BARRIER COVER!")
+              }
+            }
+          }
+
+          if (isAnnouncements && !isLocalArchitect) {
+            Text(
+              "READ-ONLY ARCHITECT DISPATCH // POST FEEDBACK IN #SECTOR-LOUNGE OR #BUG-REPORTS",
+              color = Color(0xFF94A3B8),
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+          } else {
+            ChannelInputComposer(
+              placeholder = "Transmit to $selectedChannelKey…",
+              value = channelChatInput,
+              onValueChange = onChannelChatInputChange,
+              onSend = { onSendToChannel(selectedChannelKey, channelChatInput) },
+            )
+          }
+        }
+      }
+    }
+
+    // 3. Right Collapsible Live Online Pilots Roster
+    if (showOnlineRosterPane) {
+      Column(
+        modifier =
+          Modifier.width(184.dp)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xB8040914))
+            .border(1.dp, Color(0x4410B981), RoundedCornerShape(10.dp))
+            .padding(7.dp)
+            .testTag("nexus_online_pilots_drawer"),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+      ) {
+        Text(
+          text = "ONLINE PILOTS (${onlineHumanPilots.size})",
+          color = Color(0xFF34D399),
+          fontSize = 8.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+        LazyColumn(
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+          if (onlineHumanPilots.isEmpty()) {
+            item {
+              Text(
+                "No other human pilots broadcasting in active sectors right now.",
+                color = Color(0xFF64748B),
+                fontSize = 8.sp,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+          items(onlineHumanPilots, key = { it.userId.ifBlank { it.id } }) { pilot ->
+            val pTag = pilot.syndicateTag.trim().ifBlank { "SOLO" }
+            Column(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .clip(RoundedCornerShape(7.dp))
+                  .background(Color(0xCC091426))
+                  .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(7.dp))
+                  .padding(6.dp),
+              verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+              Text(
+                text = "[$pTag] ${pilot.callsign}",
+                color = Color.White,
+                fontSize = 8.2.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Text(
+                text = "${pilot.sectorId} • BTY ${pilot.bounty}",
+                color = Color(0xFF94A3B8),
+                fontSize = 7.4.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+              Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(
+                  modifier =
+                    Modifier.weight(1f)
+                      .clip(RoundedCornerShape(4.dp))
+                      .background(Color(0xFF0E3A5A))
+                      .clickable { onAddOnlinePilotFriend(pilot.callsign) }
+                      .padding(vertical = 2.dp),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Text("+ FRIEND", color = Color(0xFF38BDF8), fontSize = 7.2.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                }
+                Box(
+                  modifier =
+                    Modifier.weight(1f)
+                      .clip(RoundedCornerShape(4.dp))
+                      .background(Color(0xFF064E3B))
+                      .clickable { onInviteOnlinePilotToWing(pilot) }
+                      .padding(vertical = 2.dp),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Text("+ WING", color = Color(0xFF34D399), fontSize = 7.2.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
- }
 }
 
 @Composable
-private fun CustomGamesSectionCard(
- engine: RiftGameEngine?,
- callsign: String,
- lockedTeamShipId: Int,
- refreshTick: Int,
- showBuilder: Boolean,
- onToggleBuilder: () -> Unit,
- baseMode: RankedGameMode,
- onSelectBaseMode: (RankedGameMode) -> Unit,
- resetMinutes: Int,
- onSelectResetMinutes: (Int) -> Unit,
- teamBracket: Int,
- onSelectTeamBracket: (Int) -> Unit,
- allowArmadasInFfa: Boolean,
- onToggleAllowArmadasInFfa: (Boolean) -> Unit,
- botsEnabled: Boolean,
- onToggleBotsEnabled: (Boolean) -> Unit,
- bulletSizeMult: Float,
- onSelectBulletSizeMult: (Float) -> Unit,
- speedMult: Float,
- onSelectSpeedMult: (Float) -> Unit,
- rechargeMult: Float,
- onSelectRechargeMult: (Float) -> Unit,
- damageMult: Float,
- onSelectDamageMult: (Float) -> Unit,
- crateSpawnMult: Float,
- onSelectCrateSpawnMult: (Float) -> Unit,
- onReturnToOfficialRankedFfa: () -> Unit,
- onJoinCustomGame: (String) -> Unit,
- onLaunchCustomGame: () -> Unit,
+private fun OnlineRosterToggleButton(count: Int, expanded: Boolean, onToggle: () -> Unit) {
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(6.dp))
+        .background(if (expanded) Color(0xFF06281E) else Color(0xFF0F172A))
+        .border(1.dp, Color(0xFF10B981), RoundedCornerShape(6.dp))
+        .clickable { onToggle() }
+        .padding(horizontal = 7.dp, vertical = 3.dp)
+        .testTag("nexus_btn_toggle_online_roster"),
+  ) {
+    Text(
+      text = "ONLINE ($count)",
+      color = Color(0xFF34D399),
+      fontSize = 7.8.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+    )
+  }
+}
+
+@Composable
+private fun ActionHeaderChip(label: String, accent: Color, tag: String, onClick: () -> Unit) {
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(6.dp))
+        .background(accent.copy(alpha = 0.18f))
+        .border(1.dp, accent, RoundedCornerShape(6.dp))
+        .clickable { onClick() }
+        .padding(horizontal = 7.dp, vertical = 3.dp)
+        .testTag(tag),
+  ) {
+    Text(label, color = Color.White, fontSize = 7.6.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+  }
+}
+
+@Composable
+private fun DevArchitectBadge() {
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(4.dp))
+        .background(Color(0xFFFACC15))
+        .padding(horizontal = 5.dp, vertical = 1.dp),
+  ) {
+    Text(
+      text = "DEV // ARCHITECT",
+      color = Color(0xFF02050B),
+      fontSize = 7.2.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+    )
+  }
+}
+
+@Composable
+private fun CloudChannelMessageCard(
+  msg: SyndicateChatMessage,
+  onLoadSharedBuild: (String) -> Unit,
+  onAskAiAboutBuild: (String) -> Unit,
+  onJoinSharedStrikeWing: (SyndicateChatMessage) -> Unit,
+  onJoinCustomRoomCode: (String) -> Unit,
 ) {
- val activeCustomGame = remember(engine?.currentCustomGame, refreshTick) { engine?.currentCustomGame }
- val customGamesList = remember(engine?.activeCustomGames?.size, refreshTick) { engine?.activeCustomGames?.toList() ?: emptyList() }
+  val isDev = RiftCommunityRoles.isDeveloperArchitect(msg.senderUid, msg.senderCallsign)
+  val tag = msg.senderSyndicateTag.ifBlank { "SOLO" }
+  val buildPayload = msg.parsedBuildShareRecipeJson()
+  val roomCode = msg.parsedRoomCode()
 
- Column(
-  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xCC071224))
-   .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(12.dp)).padding(10.dp)
-   .testTag("nexus_custom_games_section"),
-  verticalArrangement = Arrangement.spacedBy(8.dp),
- ) {
-  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-   Column(modifier = Modifier.weight(1f)) {
-    Text("🧪 CUSTOM GAMES — LIVE CALIBRATION & [📡 SYNC TO ALL] ENABLED", color = Color(0xFF00F5D4), fontSize = 9.2.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-    Text("Clone any mode with custom rules • Live Physics Calibration & Multi-Tester Sync unlocked", color = Color(0xFF94A3B8), fontSize = 8.sp)
-   }
-   Box(
-    modifier = Modifier.clip(RoundedCornerShape(7.dp))
-     .background(if (showBuilder) Color(0xFF311042) else Color(0xFF0E7490))
-     .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(7.dp))
-     .clickable { onToggleBuilder() }.padding(horizontal = 8.dp, vertical = 5.dp)
-     .testTag("nexus_btn_toggle_custom_game_builder"),
-   ) {
-    Text(if (showBuilder) "✕ CLOSE CLONER" else "+ CREATE / CLONE CUSTOM GAME", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-   }
-  }
-
-  if (activeCustomGame != null && engine?.hasJoinedMatch == true) {
-   Row(
-    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF06281E))
-     .border(1.dp, Color(0xFF10B981), RoundedCornerShape(8.dp)).padding(8.dp),
-    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
-   ) {
-    Column(modifier = Modifier.weight(1f)) {
-     Text("🧪 PLAYING CUSTOM GAME: ${activeCustomGame.title}", color = Color(0xFF34D399), fontSize = 8.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-     Text("Base: ${activeCustomGame.baseMode.title} • Bots: ${if (activeCustomGame.botsEnabled) "ON" else "OFF"} • Live Calibration Active", color = Color(0xFFA7F3D0), fontSize = 7.8.sp, fontFamily = FontFamily.Monospace)
+  Column(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(7.dp))
+        .background(if (isDev) Color(0xCC191508) else Color(0x990B1528))
+        .border(
+          1.dp,
+          when {
+            isDev -> Color(0xFFFACC15)
+            buildPayload != null -> Color(0xFFC084FC)
+            msg.isArmadaRecruitBanner || roomCode != null -> Color(0xFF34D399)
+            else -> Color(0xFF1E293B)
+          },
+          RoundedCornerShape(7.dp),
+        )
+        .padding(horizontal = 8.dp, vertical = 6.dp),
+    verticalArrangement = Arrangement.spacedBy(4.dp),
+  ) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+      if (isDev) DevArchitectBadge()
+      Text(
+        text = "[$tag] ${msg.senderCallsign}",
+        color = if (isDev) Color(0xFFFACC15) else Color(0xFF38BDF8),
+        fontSize = 8.8.sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontFamily = FontFamily.Monospace,
+      )
     }
-    Box(
-     modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF0F172A)).border(1.dp, Color(0xFF34D399), RoundedCornerShape(6.dp))
-      .clickable { onReturnToOfficialRankedFfa() }.padding(horizontal = 8.dp, vertical = 4.dp)
-      .testTag("nexus_btn_return_official_ranked"),
-    ) { Text("↩ RETURN TO OFFICIAL RANKED FFA", color = Color(0xFF34D399), fontSize = 7.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
-   }
-  }
+    Text(text = msg.messageText, color = Color(0xFFF1F5F9), fontSize = 9.5.sp, lineHeight = 13.sp)
 
-  if (showBuilder) {
-   Column(
-    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(Color(0xEE040B16))
-     .border(1.dp, Color(0x8838BDF8), RoundedCornerShape(9.dp)).padding(9.dp),
-    verticalArrangement = Arrangement.spacedBy(6.dp),
-   ) {
-    Text("⚙️ CONFIGURE 10 CUSTOM GAME RULES (HOST: ${callsign.uppercase()})", color = Color(0xFFFACC15), fontSize = 8.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-    CustomRuleChipRow("1. BASE MODE:", listOf(RankedGameMode.SECTOR_CONVERGENCE to "FFA", RankedGameMode.RIFT_SKIRMISH to "Skirmish", RankedGameMode.FLUX_CORE to "Flux Core", RankedGameMode.STASIS_BREACH to "Stasis Breach", RankedGameMode.RIFT_CONTROL to "Rift Control"), baseMode, onSelectBaseMode)
-    CustomRuleChipRow("2. RESET TIMER:", listOf(5 to "5m", 10 to "10m", 15 to "15m", 30 to "30m", 60 to "60m", 0 to "∞"), resetMinutes, onSelectResetMinutes)
-    CustomRuleChipRow("3. TEAM SIZE:", listOf(2 to "2v2", 3 to "3v3", 5 to "5v5", 10 to "10v10"), teamBracket, onSelectTeamBracket)
-    CustomRuleChipRow("4. ARMADAS IN FFA:", listOf(true to "Allowed", false to "Solo Only"), allowArmadasInFfa, onToggleAllowArmadasInFfa)
-    CustomRuleChipRow("5. AI BOTS:", listOf(true to "ON", false to "OFF"), botsEnabled, onToggleBotsEnabled)
-    CustomRuleChipRow("6. BULLET SIZE:", listOf(1.0f to "1.0x Normal", 1.5f to "1.5x Fat", 2.2f to "2.2x Giant"), bulletSizeMult, onSelectBulletSizeMult)
-    CustomRuleChipRow("7. SHIP SPEED:", listOf(0.8f to "0.8x Tactical", 1.0f to "1.0x Standard", 1.4f to "1.4x Turbo"), speedMult, onSelectSpeedMult)
-    CustomRuleChipRow("8. FLUX RECHARGE:", listOf(1.0f to "1.0x Standard", 1.5f to "1.5x Overcharged", 2.5f to "2.5x Rapid"), rechargeMult, onSelectRechargeMult)
-    CustomRuleChipRow("9. DAMAGE / BOUNCE:", listOf(0.75f to "0.75x Tanky", 1.0f to "1.0x Standard", 1.5f to "1.5x Lethal"), damageMult, onSelectDamageMult)
-    CustomRuleChipRow("10. RIFTS & CRATES:", listOf(0.5f to "0.5x Sparse", 1.0f to "1.0x Standard", 2.0f to "2.0x Dense"), crateSpawnMult, onSelectCrateSpawnMult)
-
-    Button(
-     onClick = onLaunchCustomGame,
-     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0E7490), contentColor = Color.White),
-     border = BorderStroke(1.dp, Color(0xFF00F5D4)), shape = RoundedCornerShape(8.dp),
-     modifier = Modifier.fillMaxWidth().height(34.dp).testTag("nexus_btn_launch_custom_game"),
-    ) {
-     val readyHullName = RiftCodex.getShipById(lockedTeamShipId.coerceIn(1, 10)).name.uppercase()
-     Text("🚀 LAUNCH CUSTOM GAME ($readyHullName READY)", fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+    if (buildPayload != null) {
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ActionHeaderChip("LOAD INTO BAY", Color(0xFFC084FC), "btn_load_build_${msg.id}") {
+          onLoadSharedBuild(buildPayload)
+        }
+        ActionHeaderChip("ANALYZE IN #NEXUS-AI", Color(0xFF00F5D4), "btn_ai_build_${msg.id}") {
+          onAskAiAboutBuild("Evaluate this shared 100-Pt Rift Frame loadout and suggest tactical matchups: ${msg.messageText}")
+        }
+      }
+    } else if (roomCode != null) {
+      ActionHeaderChip("JOIN PRIVATE RIFT [$roomCode]", Color(0xFFFACC15), "btn_join_room_${msg.id}") {
+        onJoinCustomRoomCode(roomCode)
+      }
+    } else if (msg.isArmadaRecruitBanner && msg.armadaName.isNotBlank()) {
+      ActionHeaderChip(
+        "JOIN STRIKE WING [${msg.armadaName}] (${msg.armadaCurrentSize}/${msg.armadaMaxSize})",
+        Color(0xFF34D399),
+        "btn_join_wing_${msg.id}",
+      ) {
+        onJoinSharedStrikeWing(msg)
+      }
     }
-   }
   }
-
-  customGamesList.forEach { game ->
-   val isJoined = engine?.hasJoinedMatch == true && activeCustomGame?.instanceId == game.instanceId
-   val customHumanCount = engine?.getHumanPilotCountForCustomGame(game.instanceId) ?: 0
-   val timerLabel = if (game.matchDurationMinutes == 0) "∞" else "${game.matchDurationMinutes}m"
-   Row(
-    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-     .background(if (isJoined) Color(0xCC0D2638) else Color(0x99060E1C))
-     .border(1.dp, if (isJoined) Color(0xFF00F5D4) else Color(0xFF334155), RoundedCornerShape(8.dp)).padding(8.dp),
-    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
-   ) {
-    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-      Text("🧪 ${game.title.uppercase()}", color = if (isJoined) Color(0xFF00F5D4) else Color.White, fontSize = 8.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-      Text("• $customHumanCount PILOTS IN MATCH", color = if (customHumanCount > 0) Color(0xFF34D399) else Color(0xFF94A3B8), fontSize = 7.8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
-     }
-     Text("${game.baseMode.title} • Host: ${game.hostCallsign} • Timer: $timerLabel • Bots: ${if (game.botsEnabled) "ON" else "OFF"} • Bullets: ${game.bulletSizeMult}x • Speed: ${game.speedMult}x", color = Color(0xFF94A3B8), fontSize = 7.6.sp, fontFamily = FontFamily.Monospace)
-    }
-    Button(
-     onClick = { onJoinCustomGame(game.instanceId) },
-     colors = ButtonDefaults.buttonColors(containerColor = if (isJoined) Color(0xFF065F46) else Color(0xFF1E293B), contentColor = Color.White),
-     border = BorderStroke(1.dp, Color(0xFF00F5D4)), shape = RoundedCornerShape(7.dp),
-     contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp),
-     modifier = Modifier.height(28.dp).testTag("nexus_join_custom_${game.instanceId}"),
-    ) { Text(if (isJoined) "● ACTIVE" else "🚀 JOIN CUSTOM GAME", fontSize = 7.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
-   }
-  }
- }
 }
 
 @Composable
-private fun <T> CustomRuleChipRow(label: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
- Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-  Text(label, color = Color(0xFF94A3B8), fontSize = 7.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.width(105.dp))
-  options.forEach { (value, text) ->
-   val isSel = selected == value
-   Box(
-    modifier = Modifier.clip(RoundedCornerShape(5.dp))
-     .background(if (isSel) Color(0x3300F5D4) else Color(0xFF0F172A))
-     .border(1.dp, if (isSel) Color(0xFF00F5D4) else Color(0xFF334155), RoundedCornerShape(5.dp))
-     .clickable { onSelect(value) }.padding(horizontal = 7.dp, vertical = 3.dp),
-   ) { Text(text, color = if (isSel) Color.White else Color(0xFF94A3B8), fontSize = 7.6.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace) }
+private fun ChannelCategoryHeader(title: String) {
+  Text(
+    title,
+    color = Color(0xFF64748B),
+    fontSize = 7.8.sp,
+    fontWeight = FontWeight.Black,
+    fontFamily = FontFamily.Monospace,
+    modifier = Modifier.padding(top = 3.dp, bottom = 1.dp),
+  )
+}
+
+@Composable
+private fun ChannelNavItem(
+  label: String,
+  badge: String,
+  selected: Boolean,
+  accent: Color,
+  onClick: () -> Unit,
+  tag: String,
+) {
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(6.dp))
+        .background(if (selected) accent.copy(alpha = 0.20f) else Color.Transparent)
+        .border(1.dp, if (selected) accent else Color.Transparent, RoundedCornerShape(6.dp))
+        .clickable { onClick() }
+        .padding(horizontal = 6.dp, vertical = 4.dp)
+        .testTag(tag),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(
+      label,
+      color = if (selected) Color.White else Color(0xFFCBD5E1),
+      fontSize = 8.8.sp,
+      fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
+      fontFamily = FontFamily.Monospace,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+      modifier = Modifier.weight(1f),
+    )
+    Box(
+      modifier =
+        Modifier.clip(RoundedCornerShape(4.dp))
+          .background(accent.copy(alpha = 0.22f))
+          .padding(horizontal = 4.dp, vertical = 1.dp),
+    ) {
+      Text(badge, color = accent, fontSize = 7.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+    }
   }
- }
 }
 
 @Composable
 private fun SyndicateChannelManagerCard(
- syndicateTag: String,
- channels: List<String>,
- newChannelDraft: String,
- onDraftChange: (String) -> Unit,
- onAddChannel: () -> Unit,
- onDeleteChannel: (String) -> Unit,
- onClose: () -> Unit,
+  syndicateTag: String,
+  channels: List<String>,
+  newChannelDraft: String,
+  onDraftChange: (String) -> Unit,
+  onAddChannel: () -> Unit,
+  onDeleteChannel: (String) -> Unit,
+  onClose: () -> Unit,
 ) {
- Column(
-  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xEE0B1528))
-   .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp)).padding(8.dp),
-  verticalArrangement = Arrangement.spacedBy(5.dp),
- ) {
-  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-   Text("🏛️ [$syndicateTag] CUSTOM CHANNELS (${channels.size}/5 MAX)", color = Color(0xFFFACC15), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-   Text("✕", color = Color(0xFF94A3B8), fontSize = 10.sp, modifier = Modifier.clickable { onClose() }.padding(horizontal = 4.dp))
-  }
-  Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-   channels.forEachIndexed { idx, ch ->
-    Row(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF1E293B)).padding(horizontal = 6.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-     Text(ch, color = Color.White, fontSize = 8.2.sp, fontFamily = FontFamily.Monospace)
-     if (idx > 0) Text("✕", color = Color(0xFFEF4444), fontSize = 8.5.sp, fontWeight = FontWeight.Black, modifier = Modifier.clickable { onDeleteChannel(ch) })
+  Column(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(8.dp))
+        .background(Color(0xEE0B1528))
+        .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp))
+        .padding(8.dp),
+    verticalArrangement = Arrangement.spacedBy(5.dp),
+  ) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+      Text("[$syndicateTag] CLOUD SYNDICATE CHANNELS (${channels.size}/5)", color = Color(0xFFFACC15), fontSize = 8.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+      Text("CLOSE", color = Color(0xFF94A3B8), fontSize = 8.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable { onClose() })
     }
-   }
-  }
-  if (channels.size < 5) {
-   Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-    Box(
-     modifier = Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF050B14))
-      .border(1.dp, Color(0x66F59E0B), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp),
-     contentAlignment = Alignment.CenterStart,
-    ) {
-     if (newChannelDraft.isEmpty()) Text("New channel (e.g. #war-room)", color = Color(0xFF64748B), fontSize = 9.sp)
-     BasicTextField(
-      value = newChannelDraft, onValueChange = onDraftChange, singleLine = true,
-      cursorBrush = SolidColor(Color(0xFFFACC15)),
-      textStyle = TextStyle(color = Color.White, fontSize = 9.5.sp, fontFamily = FontFamily.Monospace),
-      modifier = Modifier.fillMaxWidth(),
-     )
+    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+      channels.forEachIndexed { idx, ch ->
+        Row(
+          modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(Color(0xFF1E293B)).padding(horizontal = 6.dp, vertical = 3.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          Text(ch, color = Color.White, fontSize = 8.sp, fontFamily = FontFamily.Monospace)
+          if (idx > 0) {
+            Text("X", color = Color(0xFFEF4444), fontSize = 8.sp, fontWeight = FontWeight.Black, modifier = Modifier.clickable { onDeleteChannel(ch) })
+          }
+        }
+      }
     }
-    Button(
-     onClick = onAddChannel, border = BorderStroke(1.2.dp, Color(0xFFF59E0B)), shape = RoundedCornerShape(8.dp),
-     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-     modifier = Modifier.height(34.dp).shadow(2.dp, RoundedCornerShape(8.dp)),
-    ) { Text("ADD", fontSize = 8.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
-   }
+    if (channels.size < 5) {
+      ChannelInputComposer("New channel (e.g. #war-room)…", newChannelDraft, onDraftChange, onAddChannel)
+    }
   }
- }
 }
 
 @Composable
 private fun SyndicateGuestPassManagerCard(
- syndicateTag: String,
- invitedGuests: Set<String>,
- guestDraft: String,
- onDraftChange: (String) -> Unit,
- onInvite: () -> Unit,
- onRevoke: (String) -> Unit,
- onClose: () -> Unit,
+  syndicateTag: String,
+  invitedGuests: Set<String>,
+  guestDraft: String,
+  onDraftChange: (String) -> Unit,
+  onInvite: () -> Unit,
+  onRevoke: (String) -> Unit,
+  onClose: () -> Unit,
 ) {
- Column(
-  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xEE0B1528))
-   .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp)).padding(8.dp),
-  verticalArrangement = Arrangement.spacedBy(5.dp),
- ) {
-  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-   Text("🎟️ [$syndicateTag] INVITED SYNDICATE GUEST PASSES (${invitedGuests.size})", color = Color(0xFF38BDF8), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-   Text("✕", color = Color(0xFF94A3B8), fontSize = 10.sp, modifier = Modifier.clickable { onClose() }.padding(horizontal = 4.dp))
-  }
-  if (invitedGuests.isNotEmpty()) {
-   Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-    invitedGuests.forEach { guest ->
-     Row(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF1E293B)).padding(horizontal = 6.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-      Text(guest, color = Color.White, fontSize = 8.2.sp, fontFamily = FontFamily.Monospace)
-      Text("✕", color = Color(0xFFEF4444), fontSize = 8.5.sp, fontWeight = FontWeight.Black, modifier = Modifier.clickable { onRevoke(guest) })
-     }
+  Column(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(8.dp))
+        .background(Color(0xEE0B1528))
+        .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
+        .padding(8.dp),
+    verticalArrangement = Arrangement.spacedBy(5.dp),
+  ) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+      Text("[$syndicateTag] SYNDICATE GUEST PASSES (${invitedGuests.size})", color = Color(0xFF38BDF8), fontSize = 8.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+      Text("CLOSE", color = Color(0xFF94A3B8), fontSize = 8.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable { onClose() })
     }
-   }
-  }
-  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-   Box(
-    modifier = Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF050B14))
-     .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp),
-    contentAlignment = Alignment.CenterStart,
-   ) {
-    if (guestDraft.isEmpty()) Text("Invite pilot callsign to [$syndicateTag] channels…", color = Color(0xFF64748B), fontSize = 9.sp)
-    BasicTextField(
-     value = guestDraft, onValueChange = onDraftChange, singleLine = true,
-     cursorBrush = SolidColor(Color(0xFF38BDF8)),
-     textStyle = TextStyle(color = Color.White, fontSize = 9.5.sp, fontFamily = FontFamily.Monospace),
-     modifier = Modifier.fillMaxWidth(),
-    )
-   }
-   Button(
-    onClick = onInvite, border = BorderStroke(1.2.dp, Color(0xFF38BDF8)), shape = RoundedCornerShape(8.dp),
-    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-    modifier = Modifier.height(34.dp).shadow(2.dp, RoundedCornerShape(8.dp)),
-   ) { Text("INVITE", fontSize = 8.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
-  }
- }
-}
-
-@Composable
-private fun NexusShipChannelView(
- shipId: Int,
- channelHandle: String,
- spec: ShipSpec,
- posts: List<LocalChannelPost>,
- chatInput: String,
- onChatInputChange: (String) -> Unit,
- onSendPost: () -> Unit,
- onEquipInHangar: () -> Unit,
- onAskNexusAiAboutHull: () -> Unit,
-) {
- Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-  Row(
-   modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xCC0A1628))
-    .border(1.dp, Color(0x8838BDF8), RoundedCornerShape(10.dp)).padding(8.dp),
-   verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-  ) {
-   ShipSpritePreview(shipId = shipId, sizeDp = 42)
-   Column(modifier = Modifier.weight(1f)) {
-    Text("$channelHandle // ${spec.name.uppercase()} (${spec.role.uppercase()})", color = Color(0xFF00F5D4), fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-    Text("MAX FLUX: ${spec.maxFlux.toInt()} FLUX • RECHARGE: ${spec.rechargeRate.toInt()} FLUX/s • SPEED: ${spec.topSpeed.toInt()} px/s • THRUST: ${spec.thrust.toInt()}", color = Color(0xFFFACC15), fontSize = 8.2.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-    Text("PRIMARY: ${spec.primaryTitle} (${spec.primaryCost.toInt()} FLUX) • SECONDARY: ${spec.secondaryTitle} (${spec.bombCost.toInt()} FLUX)", color = Color(0xFFCBD5E1), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
-   }
-   Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF0E7490)).clickable { onEquipInHangar() }.padding(horizontal = 7.dp, vertical = 4.dp)) {
-     Text("🚀 EQUIP HULL", color = Color.White, fontSize = 7.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+    if (invitedGuests.isNotEmpty()) {
+      Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        invitedGuests.forEach { guest ->
+          Row(
+            modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(Color(0xFF1E293B)).padding(horizontal = 6.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            Text(guest, color = Color.White, fontSize = 8.sp, fontFamily = FontFamily.Monospace)
+            Text("X", color = Color(0xFFEF4444), fontSize = 8.sp, fontWeight = FontWeight.Black, modifier = Modifier.clickable { onRevoke(guest) })
+          }
+        }
+      }
     }
-    Box(
-     modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF311042))
-      .border(1.dp, Color(0xFFB388FF), RoundedCornerShape(6.dp)).clickable { onAskNexusAiAboutHull() }.padding(horizontal = 7.dp, vertical = 4.dp),
-    ) { Text("🤖 ASK #NEXUS-AI", color = Color(0xFFE9D5FF), fontSize = 7.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
-   }
+    ChannelInputComposer("Grant [$syndicateTag] guest pass to callsign…", guestDraft, onDraftChange, onInvite)
   }
-
-  LazyColumn(
-   modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0x55030712)).padding(8.dp),
-   verticalArrangement = Arrangement.spacedBy(6.dp),
-  ) {
-   item { Text("📌 PINNED // ${spec.name} Tactical Notes: ${spec.primaryTitle} + ${spec.secondaryTitle}. Share loadouts, bank shots, and matchup tips below.", color = Color(0xFF94A3B8), fontSize = 9.sp) }
-   items(posts, key = { it.id }) { post -> ChannelPostRow(post) }
-  }
-
-  ChannelInputComposer("Post to $channelHandle pilot channel…", chatInput, onChatInputChange, onSendPost)
- }
-}
-
-@Composable
-private fun NexusTextChannelFeedView(
- channelTitle: String,
- channelSubtitle: String,
- globalComms: List<SyndicateChatMessage>,
- localPosts: List<LocalChannelPost>,
- chatInput: String,
- onChatInputChange: (String) -> Unit,
- onSend: () -> Unit,
- onQuickPing: (String) -> Unit = {},
-) {
- Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-  Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xAA091426)).border(1.dp, Color(0x4438BDF8), RoundedCornerShape(8.dp)).padding(8.dp)) {
-   Text(channelTitle, color = Color(0xFF00F5D4), fontSize = 10.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-   Text(channelSubtitle, color = Color(0xFF94A3B8), fontSize = 8.5.sp)
-  }
-
-  LazyColumn(
-   modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0x55030712)).padding(8.dp),
-   verticalArrangement = Arrangement.spacedBy(6.dp),
-  ) {
-   if (globalComms.isEmpty() && localPosts.isEmpty()) {
-    item { Text("Channel frequency online. Transmit a message to all connected pilots in this channel.", color = Color(0xFF64748B), fontSize = 9.5.sp, fontFamily = FontFamily.Monospace) }
-   }
-   items(globalComms, key = { "g_${it.id}" }) { msg ->
-    val text = if (msg.isArmadaRecruitBanner) "🛡️ ARMADA RECRUIT [${msg.armadaName}] (${msg.armadaCurrentSize}/${msg.armadaMaxSize}) — ${msg.armadaObjective}" else msg.messageText
-    ChannelPostRow(LocalChannelPost(msg.id, msg.senderCallsign, msg.senderSyndicateTag.ifBlank { "GUEST" }, msg.timestampLabel, text, Color(0xFF38BDF8)))
-   }
-   items(localPosts, key = { it.id }) { post -> ChannelPostRow(post) }
-  }
-
-  Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-   TacticalQuickPingChip("🔴 ATTACK HVT", Color(0xFFFB7185), "nexus_quick_ping_attack_hvt") { onQuickPing("🔴 [TACTICAL PING] CONVERGE ON SECTOR HVT NOW!") }
-   TacticalQuickPingChip("🛡️ FORM ON ME", Color(0xFF38BDF8), "nexus_quick_ping_form_on_me") { onQuickPing("🛡️ [TACTICAL PING] FORM UP ON MY WING!") }
-   TacticalQuickPingChip("🔋 LOW FLUX", Color(0xFFFACC15), "nexus_quick_ping_low_flux") { onQuickPing("🔋 [TACTICAL PING] LOW FLUX — NEED COVER!") }
-  }
-
-  ChannelInputComposer("Transmit message to $channelTitle…", chatInput, onChatInputChange, onSend)
- }
 }
 
 @Composable
 private fun TacticalQuickPingChip(label: String, accent: Color, tag: String, onClick: () -> Unit) {
- Box(
-  modifier = Modifier.clip(RoundedCornerShape(7.dp)).background(accent.copy(alpha = 0.16f))
-   .border(1.dp, accent.copy(alpha = 0.7f), RoundedCornerShape(7.dp)).clickable { onClick() }
-   .padding(horizontal = 8.dp, vertical = 4.dp).testTag(tag),
- ) { Text(label, color = accent, fontSize = 8.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
-}
-
-@Composable
-private fun ChannelPostRow(post: LocalChannelPost) {
- Row(
-  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(Color(0x880B1528)).padding(horizontal = 8.dp, vertical = 5.dp),
-  horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top,
- ) {
-  Text("[${post.senderTag}] ${post.senderCallsign}:", color = post.accentColor, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
-  Text(post.text, color = Color(0xFFF1F5F9), fontSize = 9.5.sp, modifier = Modifier.weight(1f))
- }
-}
-
-@Composable
-private fun ChannelInputComposer(placeholder: String, value: String, onValueChange: (String) -> Unit, onSend: () -> Unit) {
- val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
- Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
   Box(
-   modifier = Modifier.weight(1f).height(if (isCompactPhone) 34.dp else 38.dp).clip(RoundedCornerShape(8.dp))
-    .background(Color(0xFF050B14)).border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp),
-   contentAlignment = Alignment.CenterStart,
+    modifier =
+      Modifier.clip(RoundedCornerShape(6.dp))
+        .background(accent.copy(alpha = 0.16f))
+        .border(1.dp, accent.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
+        .clickable { onClick() }
+        .padding(horizontal = 8.dp, vertical = 3.dp)
+        .testTag(tag),
   ) {
-   if (value.isEmpty()) Text(placeholder, color = Color(0xFF64748B), fontSize = 9.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-   BasicTextField(
-    value = value, onValueChange = onValueChange, singleLine = true,
-    cursorBrush = SolidColor(Color(0xFF00F5D4)),
-    textStyle = TextStyle(color = Color.White, fontSize = 10.5.sp),
-    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-    keyboardActions = KeyboardActions(onSend = { onSend() }),
-    modifier = Modifier.fillMaxWidth(),
-   )
+    Text(label, color = accent, fontSize = 8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
   }
-  Button(
-   onClick = onSend, enabled = value.isNotBlank(), border = BorderStroke(1.2.dp, Color(0xFF00F5D4)),
-   shape = RoundedCornerShape(8.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-   modifier = Modifier.height(if (isCompactPhone) 34.dp else 38.dp).shadow(2.dp, RoundedCornerShape(8.dp)),
-  ) { Text("SEND ➢", fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
- }
+}
+
+@Composable
+private fun ChannelInputComposer(
+  placeholder: String,
+  value: String,
+  onValueChange: (String) -> Unit,
+  onSend: () -> Unit,
+) {
+  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Box(
+      modifier =
+        Modifier.weight(1f)
+          .height(34.dp)
+          .clip(RoundedCornerShape(8.dp))
+          .background(Color(0xFF050B14))
+          .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
+          .padding(horizontal = 10.dp),
+      contentAlignment = Alignment.CenterStart,
+    ) {
+      if (value.isEmpty()) {
+        Text(placeholder, color = Color(0xFF64748B), fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      }
+      BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        cursorBrush = SolidColor(Color(0xFF00F5D4)),
+        textStyle = TextStyle(color = Color.White, fontSize = 10.sp),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+        keyboardActions = KeyboardActions(onSend = { onSend() }),
+        modifier = Modifier.fillMaxWidth(),
+      )
+    }
+    Button(
+      onClick = onSend,
+      enabled = value.isNotBlank(),
+      border = BorderStroke(1.dp, Color(0xFF00F5D4)),
+      shape = RoundedCornerShape(8.dp),
+      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+      modifier = Modifier.height(34.dp),
+    ) {
+      Text("SEND >", fontSize = 8.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+    }
+  }
 }
 
 @Composable
 private fun NexusChangelogChannelView() {
- Column(
-  modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(0x66030712)).padding(10.dp).verticalScroll(rememberScrollState()),
-  verticalArrangement = Arrangement.spacedBy(8.dp),
- ) {
-  Text("📋 #change-log // RIFT BUILD #54 — NEXUS FORGE STUDIO, UNIFIED SHELL & 3D RIFTS", color = Color(0xFFFACC15), fontSize = 11.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-  listOf(
-   "🛠️ NEXUS FORGE STUDIO: Ship & Cosmetic 360° Turntable, Track A–C Soundtrack & SFX Lab (60–180 BPM), Custom Buff Forge, Syndicate Crest Forge, and Interactive Playfield & HUD Studio.",
-   "🌐 UNIFIED 9-TAB NEXUS MASTER SHELL: Command & Lobby, Hangar, Forge, Progression, Armada Fleet, Syndicates, Dossier, Codex, and Settings swap instantaneously inside one persistent glass window.",
-   "❖ 6-PILLAR PROGRESSION & RIFT FRAME AT LV 20: Ship 10 (Rift Frame) unlocks its full 100-Point Parity Budget at Pilot Level 20, alongside Frame A–E bays and cosmetics.",
-   "🌀 3D PLAYFIELD RIFTS & TUG-OF-WAR BAR: Codex Rifts render live 60fps Playfield Rifts, Rift Control uses open combat + Graphical Dual-Rift Tug-of-War HUD, and Stasis Breach Jail Cores default to 8,000 Flux.",
-   "👁️ INTERACTIVE TEAMMATE SPECTATOR & REAL-PLAYER SYNDICATES: Cycle living teammates while awaiting respawn in team modes, and compete on 100% real-player-founded Syndicate War ladders.",
-  ).forEach { line -> Text("• $line", color = Color(0xFFE2E8F0), fontSize = 9.5.sp, lineHeight = 14.sp) }
- }
+  Column(
+    modifier =
+      Modifier.fillMaxSize()
+        .clip(RoundedCornerShape(8.dp))
+        .background(Color(0x66030712))
+        .padding(10.dp)
+        .verticalScroll(rememberScrollState()),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Text(
+      "#patch-log // RIFT v1.0.$CURRENT_RIFT_BUILD_VERSION (BUILD #$CURRENT_RIFT_BUILD_VERSION)",
+      color = Color(0xFFFACC15),
+      fontSize = 10.5.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+    )
+    RIFT_FULL_CHANGELOG.first().highlights.forEach { line ->
+      Text("> $line", color = Color(0xFFE2E8F0), fontSize = 9.2.sp, lineHeight = 13.5.sp)
+    }
+  }
 }
 
 @Composable
 private fun NexusRulesChannelView() {
- Column(
-  modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(0x66030712)).padding(10.dp).verticalScroll(rememberScrollState()),
-  verticalArrangement = Arrangement.spacedBy(8.dp),
- ) {
-  Text("📜 #rules // OFFICIAL RIFT SECTOR DIRECTIVES & FAIR-PLAY CODE", color = Color(0xFFA78BFA), fontSize = 11.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-  listOf(
-   "1. HUMAN-ONLY TELEMETRY: Online pilot counters in NEXUS and Ranked Mode cards strictly count real human pilots — AI bots are never counted as human players.",
-   "2. SEAMLESS BOT REPLACEMENT: Every 20-ship arena sector backfills empty slots with AI bots and immediately replaces 1 AI bot per joining human pilot.",
-   "3. SYNDICATE WARS ELIGIBILITY: Queuing for Ranked Syndicate Wars requires an enlisted [TAG] Syndicate and 100% same-Syndicate Armada wingmen.",
-   "4. SAFE ZONE & OPEN-SPACE ANTI-AFK: Center Safe Zone disarms weapons and warps out idle ships after 15.0s. Open-space inactivity triggers -5% Max Flux/s drain.",
-   "5. 100-POINT UNIVERSAL PARITY: All 9 standard hulls and the #10 Rift Frame adhere strictly to the 100-point budget over the Universal Baseline Hull Floor.",
-  ).forEach { rule -> Text(rule, color = Color(0xFFE2E8F0), fontSize = 9.5.sp, lineHeight = 14.sp) }
- }
+  Column(
+    modifier =
+      Modifier.fillMaxSize()
+        .clip(RoundedCornerShape(8.dp))
+        .background(Color(0x66030712))
+        .padding(10.dp)
+        .verticalScroll(rememberScrollState()),
+    verticalArrangement = Arrangement.spacedBy(7.dp),
+  ) {
+    Text(
+      "#rules // OFFICIAL RIFT SECTOR DIRECTIVES & FAIR-PLAY CODE",
+      color = Color(0xFFA78BFA),
+      fontSize = 10.5.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+    )
+    listOf(
+      "1. HUMAN-ONLY TELEMETRY: Online pilot counters strictly count real human pilots — AI bots carry [BOT] and never inflate counts or leaderboards.",
+      "2. 100% NON-PAY-TO-WIN PARITY: All 10 Hulls (including Rift Frame at full 100-Point Budget) are unlocked from 0 Resonance.",
+      "3. SYNDICATE WARS ELIGIBILITY: Queuing for Ranked Syndicate Wars requires an enlisted real-player Syndicate and 100% same-Syndicate Strike Wing.",
+      "4. CIRCULAR RIFT SAFE ZONE & ANTI-AFK: Active strictly in Sector Convergence and Flux Core (disabled in Rift Control and Stasis Breach).",
+    ).forEach { rule -> Text(rule, color = Color(0xFFE2E8F0), fontSize = 9.2.sp, lineHeight = 13.5.sp) }
+  }
 }
 
 @Composable
 private fun NexusBugReportChannelView(
- selectedCategory: String,
- onSelectCategory: (String) -> Unit,
- description: String,
- onDescriptionChange: (String) -> Unit,
- statusBanner: String?,
- submittedPosts: List<LocalChannelPost>,
- onSubmit: () -> Unit,
+  selectedCategory: String,
+  onSelectCategory: (String) -> Unit,
+  description: String,
+  onDescriptionChange: (String) -> Unit,
+  statusBanner: String?,
+  cloudBugCards: List<SyndicateChatMessage>,
+  onSubmit: () -> Unit,
 ) {
- val categories = listOf("PHYSICS / COLLISION", "UI / HUD", "WEAPONS / BALANCE", "MULTIPLAYER / SYNC")
- Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-  Text("🛠️ #bug-report // SUBMIT SECTOR ANOMALY OR BUG TELEMETRY", color = Color(0xFFFB7185), fontSize = 10.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-  Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-   categories.forEach { cat ->
-    val sel = selectedCategory == cat
-    Box(
-     modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(if (sel) Color(0xFF4C0519) else Color(0xFF0F172A))
-      .border(1.dp, if (sel) Color(0xFFFB7185) else Color(0xFF334155), RoundedCornerShape(6.dp))
-      .clickable { onSelectCategory(cat) }.padding(horizontal = 8.dp, vertical = 4.dp),
-    ) { Text(cat, color = if (sel) Color.White else Color(0xFF94A3B8), fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) }
-   }
+  val categories =
+    listOf("PHYSICS / COLLISION", "UI / HUD", "WEAPONS / BALANCE", "MULTIPLAYER / SYNC", "CONTROLS / AUDIO")
+  Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Text(
+      "#bug-reports // CLOUD SECTOR TELEMETRY & LIVE ISSUE TRACKER",
+      color = Color(0xFFFB7185),
+      fontSize = 10.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+    )
+    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+      categories.forEach { cat ->
+        val sel = selectedCategory == cat
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(6.dp))
+              .background(if (sel) Color(0xFF4C0519) else Color(0xFF0F172A))
+              .border(1.dp, if (sel) Color(0xFFFB7185) else Color(0xFF334155), RoundedCornerShape(6.dp))
+              .clickable { onSelectCategory(cat) }
+              .padding(horizontal = 7.dp, vertical = 3.dp),
+        ) {
+          Text(cat, color = if (sel) Color.White else Color(0xFF94A3B8), fontSize = 7.6.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        }
+      }
+    }
+    if (statusBanner != null) {
+      Text(statusBanner, color = Color(0xFF34D399), fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+    }
+    LazyColumn(
+      modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0x55030712)).padding(8.dp),
+      verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+      if (cloudBugCards.isEmpty()) {
+        item {
+          Text(
+            "Submit any physics, HUD, weapon, or sync anomaly below. Reports write structured telemetry to Firestore sector_bug_reports.",
+            color = Color(0xFF64748B),
+            fontSize = 8.8.sp,
+          )
+        }
+      }
+      items(cloudBugCards, key = { it.id }) { card ->
+        val meta = card.armadaObjective.removePrefix("BUG|").replace("|", " • ")
+        Column(
+          modifier =
+            Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(6.dp))
+              .background(Color(0x99190B14))
+              .border(1.dp, Color(0x66FB7185), RoundedCornerShape(6.dp))
+              .padding(7.dp),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          Text(
+            text = "[${card.senderSyndicateTag.ifBlank { "SOLO" }}] ${card.senderCallsign} • $meta",
+            color = Color(0xFFFB7185),
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+          )
+          Text(text = card.messageText, color = Color(0xFFF1F5F9), fontSize = 9.sp)
+        }
+      }
+    }
+    ChannelInputComposer("Describe bug or telemetry anomaly ($selectedCategory)…", description, onDescriptionChange, onSubmit)
   }
-  if (statusBanner != null) Text(statusBanner, color = Color(0xFF34D399), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
-  LazyColumn(
-   modifier = Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0x55030712)).padding(8.dp),
-   verticalArrangement = Arrangement.spacedBy(5.dp),
-  ) {
-   if (submittedPosts.isEmpty()) item { Text("Describe any physics, controller, or HUD issue below to log it directly to the channel.", color = Color(0xFF64748B), fontSize = 9.sp) }
-   items(submittedPosts, key = { it.id }) { post -> ChannelPostRow(post) }
-  }
-  ChannelInputComposer("Describe bug or anomaly ($selectedCategory)…", description, onDescriptionChange, onSubmit)
- }
 }
 
 @Composable
 private fun NexusWelcomeTelemetryCard() {
- Column(
-  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0x8C0B172A))
-   .border(1.dp, Color(0x55B388FF), RoundedCornerShape(10.dp)).padding(12.dp),
-  verticalArrangement = Arrangement.spacedBy(5.dp),
- ) {
-  Text("✦ NEXUS CORE TELEMETRY LINK ESTABLISHED", color = Color(0xFF00F5D4), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
-  Text(
-   "I am NEXUS, the omniscient Rift Core tactical intelligence inside your Sector Command Hub. Ask me anything about RIFT — exact laser pixel dimensions, Newtonian drift & wall-bounce equations, 100-point Interdictor & Rift Frame theorycrafting, Flux Core & Stasis Breach tactics, or global highest bounty records.",
-   color = Color(0xFFE2E8F0), fontSize = 11.sp, lineHeight = 15.5.sp,
-  )
-  Text("Tap a starter query above, switch channels on the left, or deploy your Armada on the right.", color = Color(0xFFC4B5FD), fontSize = 9.5.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace)
- }
+  Column(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(10.dp))
+        .background(Color(0x8C0B172A))
+        .border(1.dp, Color(0x55B388FF), RoundedCornerShape(10.dp))
+        .padding(10.dp),
+    verticalArrangement = Arrangement.spacedBy(4.dp),
+  ) {
+    Text("NEXUS CORE TELEMETRY LINK ESTABLISHED", color = Color(0xFF00F5D4), fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+    Text(
+      "Ask NEXUS anything about RIFT — exact weapon dimensions, Newtonian drift & bounce raycasts, 100-point Rift Frame theorycrafting, Eclipse Stasis vs Disruptor EMP, Paired Phase Rifts, or Peak Resonance records.",
+      color = Color(0xFFE2E8F0),
+      fontSize = 10.sp,
+      lineHeight = 14.5.sp,
+    )
+  }
 }
 
 @Composable
 private fun NexusMessageBubble(message: NexusChatMessage) {
- val isUser = message.role == NexusRole.USER
- val shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = if (isUser) 12.dp else 3.dp, bottomEnd = if (isUser) 3.dp else 12.dp)
- Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
-  Column(
-   modifier = Modifier.widthIn(max = 590.dp).clip(shape)
-    .background(if (isUser) Color(0xB80E2A47) else Color(0xBF091324))
-    .border(1.dp, if (isUser) Color(0x8838BDF8) else Color(0x8800F5D4), shape)
-    .padding(horizontal = 12.dp, vertical = 8.dp),
-   verticalArrangement = Arrangement.spacedBy(4.dp),
-  ) {
-   Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-    Text(if (isUser) "PILOT QUERY" else "NEXUS // RIFT CORE", color = if (isUser) Color(0xFF38BDF8) else Color(0xFF00F5D4), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
-    if (message.isStreaming) Text("● STREAMING TELEMETRY", color = Color(0xFFD8B4FE), fontSize = 8.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-   }
-   if (message.text.isEmpty() && message.isStreaming) {
-    Text("Scanning live Rift Core engine matrices & leaderboard records…", color = Color(0xFF94A3B8), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-   } else {
-    val formatted = remember(message.text) { formatNexusMarkdown(message.text) }
-    Text(formatted, color = Color(0xFFF1F5F9), fontSize = 11.sp, lineHeight = 16.sp)
-   }
+  val isUser = message.role == NexusRole.USER
+  val shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = if (isUser) 12.dp else 3.dp, bottomEnd = if (isUser) 3.dp else 12.dp)
+  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
+    Column(
+      modifier =
+        Modifier.widthIn(max = 560.dp)
+          .clip(shape)
+          .background(if (isUser) Color(0xB80E2A47) else Color(0xBF091324))
+          .border(1.dp, if (isUser) Color(0x8838BDF8) else Color(0x8800F5D4), shape)
+          .padding(horizontal = 10.dp, vertical = 7.dp),
+      verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+          if (isUser) "PILOT QUERY" else "NEXUS // RIFT CORE",
+          color = if (isUser) Color(0xFF38BDF8) else Color(0xFF00F5D4),
+          fontSize = 8.5.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+        )
+        if (message.isStreaming) {
+          Text("STREAMING TELEMETRY", color = Color(0xFFD8B4FE), fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        }
+      }
+      if (message.text.isEmpty() && message.isStreaming) {
+        Text("Scanning Rift Core physics & sector records…", color = Color(0xFF94A3B8), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+      } else {
+        val formatted = remember(message.text) { formatNexusMarkdown(message.text) }
+        Text(formatted, color = Color(0xFFF1F5F9), fontSize = 10.5.sp, lineHeight = 15.sp)
+      }
+    }
   }
- }
 }
 
 @Composable
 private fun NexusErrorBanner(errorMessage: String, canRetry: Boolean, onRetry: () -> Unit) {
- Row(
-  modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xCC2A0A12))
-   .border(1.dp, Color(0xFFFF3B4E), RoundedCornerShape(10.dp)).padding(horizontal = 12.dp, vertical = 8.dp)
-   .testTag("nexus_error_banner"),
-  verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
- ) {
-  Column(modifier = Modifier.weight(1f)) {
-   Text("⚠ RIFT CORE LINK INTERRUPTED", color = Color(0xFFFF3B4E), fontSize = 9.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
-   Spacer(modifier = Modifier.height(2.dp))
-   Text(errorMessage, color = Color(0xFFFECDD3), fontSize = 10.5.sp)
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(10.dp))
+        .background(Color(0xCC2A0A12))
+        .border(1.dp, Color(0xFFFF3B4E), RoundedCornerShape(10.dp))
+        .padding(horizontal = 10.dp, vertical = 7.dp)
+        .testTag("nexus_error_banner"),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.SpaceBetween,
+  ) {
+    Column(modifier = Modifier.weight(1f)) {
+      Text("RIFT CORE LINK INTERRUPTED", color = Color(0xFFFF3B4E), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+      Text(errorMessage, color = Color(0xFFFECDD3), fontSize = 9.5.sp)
+    }
+    if (canRetry) {
+      Button(
+        onClick = onRetry,
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4C0519), contentColor = Color(0xFFFECDD3)),
+        border = BorderStroke(1.dp, Color(0xFFFF3B4E)),
+        shape = RoundedCornerShape(7.dp),
+        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp),
+        modifier = Modifier.height(30.dp).testTag("nexus_retry_button"),
+      ) {
+        Text(stringResource(R.string.nexus_retry), fontSize = 8.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+      }
+    }
   }
-  if (canRetry) {
-   Spacer(modifier = Modifier.width(8.dp))
-   Button(
-    onClick = onRetry,
-    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4C0519), contentColor = Color(0xFFFECDD3)),
-    border = BorderStroke(1.dp, Color(0xFFFF3B4E)), shape = RoundedCornerShape(8.dp),
-    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-    modifier = Modifier.minimumInteractiveComponentSize().height(36.dp).testTag("nexus_retry_button"),
-   ) { Text("↻ ${stringResource(R.string.nexus_retry)}", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) }
-  }
- }
 }
 
 private fun formatNexusMarkdown(raw: String): AnnotatedString = buildAnnotatedString {
- var i = 0
- val n = raw.length
- while (i < n) {
-  if (i + 1 < n && raw[i] == '*' && raw[i + 1] == '*') {
-   val close = raw.indexOf("**", i + 2)
-   if (close != -1) {
-    withStyle(SpanStyle(color = Color(0xFFFFE800), fontWeight = FontWeight.Bold)) { append(raw.substring(i + 2, close)) }
-    i = close + 2
-    continue
-   }
+  var i = 0
+  val n = raw.length
+  while (i < n) {
+    if (i + 1 < n && raw[i] == '*' && raw[i + 1] == '*') {
+      val close = raw.indexOf("**", i + 2)
+      if (close != -1) {
+        withStyle(SpanStyle(color = Color(0xFFFFE800), fontWeight = FontWeight.Bold)) {
+          append(raw.substring(i + 2, close))
+        }
+        i = close + 2
+        continue
+      }
+    }
+    if (raw[i] == '`') {
+      val close = raw.indexOf('`', i + 1)
+      if (close != -1 && close > i + 1) {
+        withStyle(SpanStyle(color = Color(0xFF00F5D4), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)) {
+          append(raw.substring(i + 1, close))
+        }
+        i = close + 1
+        continue
+      }
+    }
+    append(raw[i])
+    i++
   }
-  if (raw[i] == '`') {
-   val close = raw.indexOf('`', i + 1)
-   if (close != -1 && close > i + 1) {
-    withStyle(SpanStyle(color = Color(0xFF00F5D4), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)) { append(raw.substring(i + 1, close)) }
-    i = close + 1
-    continue
-   }
-  }
-  append(raw[i])
-  i++
- }
 }

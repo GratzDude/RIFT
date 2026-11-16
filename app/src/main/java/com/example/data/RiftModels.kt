@@ -4,6 +4,20 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.ServerTimestamp
+import java.util.Locale
+import org.json.JSONObject
+
+object RiftCommunityRoles {
+  val VERIFIED_DEV_CALLSIGNS: Set<String> = setOf("GRATZ", "GRATZDUDE", "ARCHITECT")
+  val VERIFIED_DEV_UIDS: MutableSet<String> = mutableSetOf()
+
+  fun isDeveloperArchitect(uid: String, callsign: String): Boolean {
+    val cleanUid = uid.trim()
+    if (cleanUid.isNotBlank() && cleanUid in VERIFIED_DEV_UIDS) return true
+    val cleanCallsign = callsign.trim().uppercase(Locale.US)
+    return cleanCallsign in VERIFIED_DEV_CALLSIGNS
+  }
+}
 
 @IgnoreExtraProperties
 data class PilotDossier(
@@ -92,16 +106,43 @@ data class SyndicateInfo(
   @ServerTimestamp val updatedAt: Timestamp? = null,
 ) {
   fun isRealPlayerFoundedSyndicate(): Boolean {
-    val cleanTag = tag.trim().uppercase()
+    val cleanId = id.trim().lowercase(Locale.US)
+    val cleanTag = tag.trim().uppercase(Locale.US)
     val cleanOwner = ownerId.trim()
     if (!isCustom) return false
-    if (cleanOwner.isEmpty() || cleanOwner.startsWith("dev_") || cleanOwner.startsWith("drifter_")) {
+    if (cleanId in setOf("syn_aex", "syn_obs", "syn_sol", "syn_vtx", "syn_rft")) return false
+    if (
+      cleanOwner.isEmpty() ||
+        cleanOwner.startsWith("dev_", ignoreCase = true) ||
+        cleanOwner.startsWith("drifter_", ignoreCase = true) ||
+        cleanOwner.startsWith("guest_", ignoreCase = true) ||
+        cleanOwner.startsWith("bot_", ignoreCase = true)
+    ) {
       return false
     }
     if (cleanTag.length !in 1..4) return false
-    if (cleanTag in setOf("BOT", "RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED")) return false
+    if (
+      cleanTag in
+        setOf(
+          "BOT",
+          "RFT",
+          "GUEST",
+          "FREE",
+          "SOLO",
+          "UNAFFILIATED",
+          "NONE",
+          "KSTL",
+          "AURL",
+          "VRTX",
+          "RUST",
+        )
+    ) {
+      return false
+    }
     return true
   }
+
+  fun isValidRealPlayerSyndicate(): Boolean = isRealPlayerFoundedSyndicate()
 }
 
 data class SyndicateMemberEntry(
@@ -130,9 +171,9 @@ data class FriendPilotEntry(
   val callsign: String,
   val syndicateTag: String,
   val shipId: Int,
-  val statusText: String, // e.g. "In Rift (Sector D4)", "In Hangar", "In Armada [NOVA_5]"
+  val statusText: String,
   val isOnline: Boolean,
-  val currentArmadaName: String, // "" if SOLO
+  val currentArmadaName: String,
   val currentArmadaCount: Int,
   val bounty: Int,
 )
@@ -161,6 +202,87 @@ data class SyndicateChatMessage(
   val requestSent: Boolean = false,
   val createdAtMs: Long = System.currentTimeMillis(),
   @ServerTimestamp val createdAt: Timestamp? = null,
+) {
+  fun normalizedChannelKey(): String {
+    val raw = timestampLabel.trim().uppercase(Locale.US)
+    return when {
+      raw.isEmpty() || raw == "JUST NOW" || raw == "LIVE" || raw == "#MAIN-LOBBY" || raw == "MAIN-LOBBY" ->
+        "#SECTOR-LOUNGE"
+      raw == "#CHANGE-LOG" || raw == "CHANGE-LOG" || raw == "#PATCH-LOG" -> "#PATCH-LOG"
+      raw == "#BUG-REPORT" || raw == "BUG-REPORT" || raw == "#BUG-REPORTS" -> "#BUG-REPORTS"
+      raw == "#ARMADA-CHAT" || raw == "ARMADA-CHAT" ->
+        if (armadaName.isNotBlank()) "STRIKE:${armadaName.trim().uppercase(Locale.US)}".take(24)
+        else "STRIKE:SQUAD"
+      raw.startsWith("SYNDICATE:") -> {
+        val sub = raw.removePrefix("SYNDICATE:").trim().let { if (it.startsWith("#")) it else "#$it" }
+        val tag = senderSyndicateTag.trim().uppercase(Locale.US).take(4).ifEmpty { "SYN" }
+        "SYN:$tag:$sub".take(24)
+      }
+      raw.startsWith("SYN:") || raw.startsWith("STRIKE:") -> raw.take(24)
+      raw.startsWith("#") -> raw.take(24)
+      else -> "#$raw".take(24)
+    }
+  }
+
+  fun resolvedChannelKey(): String = normalizedChannelKey().lowercase(Locale.US)
+
+  fun isBugReportCard(): Boolean =
+    resolvedChannelKey() == "#bug-reports" || armadaObjective.startsWith("BUG|", ignoreCase = true)
+
+  fun isBuildShareCard(): Boolean = armadaObjective.startsWith("BUILD|", ignoreCase = true)
+
+  fun isPrivateRoomInviteCard(): Boolean = armadaObjective.startsWith("ROOM|", ignoreCase = true)
+
+  fun parsedBuildShareRecipeJson(): String? {
+    if (!isBuildShareCard()) return null
+    val fromObjective = armadaObjective.substringAfter("|", "").trim()
+    if (fromObjective.startsWith("{") && fromObjective.endsWith("}")) return fromObjective
+    val braceStart = messageText.indexOf('{')
+    val braceEnd = messageText.lastIndexOf('}')
+    if (braceStart >= 0 && braceEnd > braceStart) {
+      return messageText.substring(braceStart, braceEnd + 1).trim()
+    }
+    return fromObjective.takeIf { it.isNotEmpty() }
+  }
+
+  fun parsedRoomCode(): String? {
+    if (!isPrivateRoomInviteCard()) return null
+    val parts = armadaObjective.split("|")
+    val fromObj =
+      parts
+        .getOrNull(1)
+        ?.trim()
+        ?.uppercase(Locale.US)
+        ?.replace(Regex("[^A-Z0-9]"), "")
+        ?.take(6)
+        .orEmpty()
+    if (fromObj.length in 4..6) return fromObj
+    val regexMatch = Regex("\\b([A-Z0-9]{6})\\b").find(messageText.uppercase(Locale.US))
+    return regexMatch?.groupValues?.getOrNull(1)
+  }
+}
+
+data class SectorBugReport(
+  val id: String = "",
+  val reporterUid: String = "",
+  val reporterCallsign: String = "",
+  val syndicateTag: String = "",
+  val category: String = "PHYSICS / COLLISION",
+  val description: String = "",
+  val buildVersion: Int = 57,
+  val activeMode: String = "NEXUS_LOBBY",
+  val activeShipId: Int = 1,
+  val screenDpSummary: String = "",
+  val createdAtMs: Long = System.currentTimeMillis(),
+)
+
+data class CloudSyndicateMeta(
+  val tag: String = "",
+  val ownerId: String = "",
+  val crestJson: String = "",
+  val customChannels: List<String> = listOf("#general"),
+  val invitedGuests: Set<String> = emptySet(),
+  val updatedAtMs: Long = 0L,
 )
 
 data class ExecutionerTelemetry(
@@ -172,8 +294,8 @@ data class ExecutionerTelemetry(
   val killerBountyAtKill: Int = 0,
   val bountyEarnedFromYou: Int = 0,
 ) {
-  fun toJson(): org.json.JSONObject =
-    org.json.JSONObject().apply {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
       put("survivedToConvergence", survivedToConvergence)
       put("killerCallsign", killerCallsign)
       put("killerSyndicateTag", killerSyndicateTag)
@@ -184,9 +306,9 @@ data class ExecutionerTelemetry(
     }
 
   companion object {
-    fun fromJson(obj: org.json.JSONObject?): ExecutionerTelemetry {
+    fun fromJson(obj: JSONObject?): ExecutionerTelemetry {
       if (obj == null) return ExecutionerTelemetry()
-      val rawTag = obj.optString("killerSyndicateTag", "GUEST").uppercase()
+      val rawTag = obj.optString("killerSyndicateTag", "GUEST").uppercase(Locale.US)
       val cleanTag = if (rawTag in setOf("KSTL", "AURL", "VRTX", "RUST", "")) "GUEST" else rawTag
       return ExecutionerTelemetry(
         survivedToConvergence = obj.optBoolean("survivedToConvergence", false),
@@ -277,11 +399,11 @@ data class PeakBountyRunSnapshot(
     val totalSec = timeSurvivedSec.toInt().coerceAtLeast(0)
     val mins = totalSec / 60
     val secs = totalSec % 60
-    return java.util.Locale.US.let { String.format(it, "%dm %02ds", mins, secs) }
+    return String.format(Locale.US, "%dm %02ds", mins, secs)
   }
 
   fun toJsonString(): String =
-    org.json.JSONObject().apply {
+    JSONObject().apply {
       put("bountyReached", bountyReached)
       put("shipId", shipId)
       put("shipFlown", shipFlown)
@@ -302,7 +424,7 @@ data class PeakBountyRunSnapshot(
     fun fromJsonString(raw: String?): PeakBountyRunSnapshot? {
       if (raw.isNullOrBlank()) return null
       return try {
-        val obj = org.json.JSONObject(raw)
+        val obj = JSONObject(raw)
         PeakBountyRunSnapshot(
           bountyReached = obj.optInt("bountyReached", 100),
           shipId = obj.optInt("shipId", 1),
@@ -329,9 +451,9 @@ data class PeakBountyRunSnapshot(
 data class SyndicateServiceEntry(
   val syndicateTag: String,
   val syndicateName: String,
-  val role: String = "Pilot", // "Founder / Commander", "Officer", or "Pilot"
+  val role: String = "Pilot",
   val joinedTimestamp: Long,
-  val leftTimestamp: Long = 0L, // 0L = ACTIVE
+  val leftTimestamp: Long = 0L,
   val totalKills: Long = 0L,
   val peakBountyAchieved: Long = 100L,
   val publicGameWins: Long = 0L,
@@ -346,11 +468,11 @@ data class SyndicateServiceEntry(
     val days = totalMinutes / (24L * 60L)
     val hours = (totalMinutes / 60L) % 24L
     val mins = totalMinutes % 60L
-    return String.format(java.util.Locale.US, "%dd %dh %dm", days, hours, mins)
+    return String.format(Locale.US, "%dd %dh %dm", days, hours, mins)
   }
 
-  fun toJson(): org.json.JSONObject =
-    org.json.JSONObject().apply {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
       put("syndicateTag", syndicateTag)
       put("syndicateName", syndicateName)
       put("role", role)
@@ -362,8 +484,8 @@ data class SyndicateServiceEntry(
     }
 
   companion object {
-    fun fromJson(obj: org.json.JSONObject): SyndicateServiceEntry {
-      val rawTag = obj.optString("syndicateTag", "GUEST").uppercase()
+    fun fromJson(obj: JSONObject): SyndicateServiceEntry {
+      val rawTag = obj.optString("syndicateTag", "GUEST").uppercase(Locale.US)
       val cleanTag = if (rawTag in setOf("KSTL", "AURL", "VRTX", "RUST", "")) "GUEST" else rawTag
       val rawName = obj.optString("syndicateName", "Guest Tracking Framework")
       val cleanName =
@@ -391,3 +513,30 @@ data class SyndicateServiceEntry(
   }
 }
 
+data class SyndicateWarRecord(
+  val tag: String,
+  val warTrophies: Int = 1000,
+  val warWins: Int = 0,
+  val warLosses: Int = 0,
+  val warStreak: Int = 0,
+) {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
+      put("tag", tag)
+      put("warTrophies", warTrophies)
+      put("warWins", warWins)
+      put("warLosses", warLosses)
+      put("warStreak", warStreak)
+    }
+
+  companion object {
+    fun fromJson(tag: String, obj: JSONObject): SyndicateWarRecord =
+      SyndicateWarRecord(
+        tag = obj.optString("tag", tag),
+        warTrophies = obj.optInt("warTrophies", 1000),
+        warWins = obj.optInt("warWins", 0),
+        warLosses = obj.optInt("warLosses", 0),
+        warStreak = obj.optInt("warStreak", 0),
+      )
+  }
+}

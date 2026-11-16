@@ -3,16 +3,23 @@ package com.example.ui
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.CloudSyndicateMeta
+import com.example.data.FriendPilotEntry
 import com.example.data.LeaderboardEntry
 import com.example.data.LivePilotState
+import com.example.data.LocalPilotPrefs
 import com.example.data.PilotDossier
 import com.example.data.RiftRepository
+import com.example.data.SectorBugReport
 import com.example.data.SyndicateChatMessage
 import com.example.data.SyndicateInfo
+import com.example.data.UgcModeration
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestoreException
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -117,6 +124,28 @@ class RiftViewModel(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
         initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(emptyList()),
+      )
+
+  val allOnlineHumansState: StateFlow<List<LivePilotState>> =
+    (if (isCloudSessionReady()) {
+        repository
+          .observeAllOnlineHumanPilots()
+          .catch { error ->
+            val firestoreError =
+              generateSequence(error) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreError == null && error is CancellationException) throw error
+            Log.w(TAG, "Error observing all online human pilots", firestoreError ?: error)
+            emit(emptyList())
+          }
+      } else {
+        flowOf(emptyList())
+      })
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        initialValue = emptyList(),
       )
 
   val cloudSyndicatesState: StateFlow<UiState<List<SyndicateInfo>>> =
@@ -236,6 +265,48 @@ class RiftViewModel(
     }
   }
 
+  fun observeSyndicateMeta(tag: String): Flow<CloudSyndicateMeta?> {
+    val cleanTag = tag.trim().uppercase(Locale.US)
+    if (!isCloudSessionReady() || cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) {
+      return flowOf(null)
+    }
+    return repository.observeCloudSyndicateMeta(cleanTag).catch { error ->
+      if (error is CancellationException) throw error
+      Log.w(TAG, "Error observing syndicate meta for $cleanTag", error)
+      emit(null)
+    }
+  }
+
+  fun syncSyndicateMetaToCloud(
+    tag: String,
+    crestJson: String,
+    channels: List<String>,
+    invitedGuests: Set<String>,
+  ) {
+    val cleanTag = tag.trim().uppercase(Locale.US)
+    if (!isCloudSessionReady() || cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) {
+      return
+    }
+    viewModelScope.launch {
+      try {
+        repository.saveCloudSyndicateMeta(
+          CloudSyndicateMeta(
+            tag = cleanTag,
+            ownerId = currentUserId,
+            crestJson = crestJson,
+            customChannels = channels,
+            invitedGuests = invitedGuests,
+            updatedAtMs = System.currentTimeMillis(),
+          )
+        )
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        Log.w(TAG, "Failed to sync cloud syndicate meta", e)
+      }
+    }
+  }
+
   fun createCloudSyndicate(syndicate: SyndicateInfo) {
     if (!isCloudSessionReady()) return
     viewModelScope.launch {
@@ -254,6 +325,153 @@ class RiftViewModel(
         repository.postSectorCommMessage(msg)
       } catch (e: Exception) {
         Log.w(TAG, "Failed to post sector comm message", e)
+      }
+    }
+  }
+
+  fun postStructuredChannelMessage(
+    senderCallsign: String,
+    senderSyndicateTag: String,
+    channelKey: String,
+    messageText: String,
+    armadaName: String = "",
+    armadaCurrentSize: Int = 1,
+    armadaMaxSize: Int = 5,
+    armadaObjective: String = "",
+    isArmadaRecruitBanner: Boolean = false,
+  ): SyndicateChatMessage {
+    val now = System.currentTimeMillis()
+    val safeChannelLabel = channelKey.trim().uppercase(Locale.US).take(24).ifEmpty { "#SECTOR-LOUNGE" }
+    val safeMessage = UgcModeration.sanitizeUgcText(messageText).take(240)
+    val safeObjective =
+      (if (
+        armadaObjective.startsWith("BUILD|", ignoreCase = true) ||
+          armadaObjective.startsWith("ROOM|", ignoreCase = true) ||
+          armadaObjective.startsWith("BUG|", ignoreCase = true)
+      ) {
+        armadaObjective.trim()
+      } else {
+        UgcModeration.sanitizeUgcText(armadaObjective)
+      }).take(120)
+
+    val msg =
+      SyndicateChatMessage(
+        id = "comm_${now}_${(100..999).random()}",
+        senderUid = currentUserId,
+        senderCallsign = senderCallsign,
+        senderSyndicateTag = senderSyndicateTag,
+        timestampLabel = safeChannelLabel,
+        messageText = safeMessage,
+        isArmadaRecruitBanner = isArmadaRecruitBanner,
+        armadaName = armadaName.trim().uppercase(Locale.US).take(12),
+        armadaCurrentSize = armadaCurrentSize.coerceIn(1, 5),
+        armadaMaxSize = armadaMaxSize.coerceIn(1, 5),
+        armadaObjective = safeObjective,
+        requestSent = false,
+        createdAtMs = now,
+      )
+
+    if (isCloudSessionReady()) {
+      viewModelScope.launch {
+        try {
+          repository.postSectorCommMessage(msg)
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          Log.w(TAG, "Failed to post structured channel message", e)
+        }
+      }
+    }
+    return msg
+  }
+
+  fun submitCloudBugReport(
+    reporterCallsign: String,
+    syndicateTag: String,
+    category: String,
+    description: String,
+    buildVersion: Int,
+    activeMode: String,
+    activeShipId: Int,
+    screenDpSummary: String,
+    onResult: (Boolean) -> Unit = {},
+  ) {
+    val now = System.currentTimeMillis()
+    val report =
+      SectorBugReport(
+        id = "bug_${now}_${(100..999).random()}",
+        reporterUid = currentUserId,
+        reporterCallsign = reporterCallsign,
+        syndicateTag = syndicateTag,
+        category = category,
+        description = description,
+        buildVersion = buildVersion,
+        activeMode = activeMode,
+        activeShipId = activeShipId,
+        screenDpSummary = screenDpSummary,
+        createdAtMs = now,
+      )
+    viewModelScope.launch {
+      val ok =
+        try {
+          repository.submitBugReportToCloud(report).isSuccess
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          Log.w(TAG, "Failed to submit cloud bug report", e)
+          false
+        }
+      onResult(ok)
+    }
+  }
+
+  fun lookupAndAddRealFriendByCallsign(
+    rawCallsign: String,
+    localPrefs: LocalPilotPrefs,
+    onResult: (FriendPilotEntry?, String) -> Unit,
+  ) {
+    val cleanTarget =
+      rawCallsign
+        .trim()
+        .uppercase(Locale.US)
+        .replace(Regex("[^A-Z0-9_\\-]"), "")
+        .take(14)
+    if (cleanTarget.length < 2 || UgcModeration.containsProfanity(cleanTarget)) {
+      onResult(null, "INVALID OR RESTRICTED CALLSIGN.")
+      return
+    }
+    if (cleanTarget.equals(initialCallsign, ignoreCase = true)) {
+      onResult(null, "CANNOT ADD YOUR OWN CALLSIGN TO STRIKE WING ROSTER.")
+      return
+    }
+    val existingLocal = localPrefs.addFriendByCallsign(cleanTarget)
+    if (existingLocal != null) {
+      onResult(
+        existingLocal,
+        "VERIFIED PILOT [${existingLocal.syndicateTag.ifEmpty { "SOLO" }}] ${existingLocal.callsign} ALREADY IN ROSTER.",
+      )
+      return
+    }
+    if (!isCloudSessionReady()) {
+      onResult(null, "LINK GOOGLE ACCOUNT IN HELM SYSTEMS TO SEARCH LIVE SWORN PILOTS.")
+      return
+    }
+    viewModelScope.launch {
+      val found =
+        try {
+          repository.findRealSwornPilotByCallsign(cleanTarget, excludeUid = currentUserId)
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          Log.w(TAG, "Failed to lookup sworn pilot by callsign", e)
+          null
+        }
+      if (found != null) {
+        localPrefs.saveVerifiedFriendPilot(found)
+        val badge = found.syndicateTag.ifEmpty { "SOLO" }
+        onResult(found, "VERIFIED SWORN PILOT [$badge] ${found.callsign} ADDED TO ROSTER.")
+      } else {
+        onResult(null, "NO VERIFIED SWORN PILOT FOUND FOR CALLSIGN $cleanTarget.")
       }
     }
   }
@@ -539,7 +757,6 @@ class RiftViewModel(
     val nowMs = System.currentTimeMillis()
     pilotsList.forEach { p ->
       val updatedMs = p.updatedAt?.toDate()?.time ?: nowMs
-      // Include active human pilots seen within the last 60 seconds
       if (p.userId != currentUserId && (nowMs - updatedMs) <= 60_000L) {
         pilotsArray.put(
           JSONObject().apply {
