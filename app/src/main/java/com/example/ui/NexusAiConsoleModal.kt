@@ -1,13 +1,11 @@
 package com.example.ui
 
-import android.graphics.Color as AndroidColor
-import android.graphics.Paint as NativePaint
-import android.graphics.RuntimeShader
-import android.os.Build
 import android.view.KeyEvent
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -16,10 +14,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -62,23 +60,25 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -94,8 +94,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.example.R
 import com.example.data.ArmadaMemberSlot
 import com.example.data.LivePilotState
@@ -106,121 +109,14 @@ import com.example.engine.CustomGameConfig
 import com.example.engine.RankedGameMode
 import com.example.engine.RiftCalibrationState
 import com.example.engine.RiftGameEngine
-import com.example.engine.RiftSpriteBaker
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
-private const val RING_SPACE_SHADER_SRC =
-  """
-uniform float2 uResolution;
-uniform float uTime;
-uniform float uHubFactor;
-
-float hash21(float2 p) {
-  p = fract(p * float2(127.1, 311.7));
-  p += dot(p, p + 34.23);
-  return fract(p.x * p.y);
-}
-
-float noise2(float2 p) {
-  float2 i = floor(p);
-  float2 f = fract(p);
-  float2 u = f * f * (3.0 - 2.0 * f);
-  float a = hash21(i);
-  float b = hash21(i + float2(1.0, 0.0));
-  float c = hash21(i + float2(0.0, 1.0));
-  float d = hash21(i + float2(1.0, 1.0));
-  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-
-float fbm5(float2 p) {
-  float v = 0.0;
-  float amp = 0.5;
-  float2 shift = float2(23.1, 41.7);
-  for (int i = 0; i < 5; i++) {
-    v += amp * noise2(p);
-    p = float2(p.x * 1.64 - p.y * 1.16, p.x * 1.16 + p.y * 1.64) + shift;
-    amp *= 0.5;
-  }
-  return v;
-}
-
-half4 main(float2 fragCoord) {
-  float2 res = max(uResolution, float2(1.0, 1.0));
-  float2 centerPx = float2(res.x * 0.50, res.y * 0.51);
-  float minDim = min(res.x, res.y);
-  float2 uv = (fragCoord - centerPx) / minDim;
-  float dist = length(uv);
-  float r2 = dot(uv, uv);
-
-  // Curved 3D interior projection of the Ring-Space containment sphere
-  float sphereZ = sqrt(max(0.05, 1.0 - r2 * 0.72));
-  float2 sphereUv = uv / (0.58 + 0.42 * sphereZ);
-
-  float t = uTime * 0.20;
-  float flowA = fbm5(sphereUv * 2.35 + float2(t * 0.52, -t * 0.34));
-  float flowB = fbm5(sphereUv * 3.90 + float2(flowA * 1.45 - t * 0.38, flowA * 1.20 + t * 0.29));
-  float ridge = pow(max(0.0, 1.0 - abs(flowB * 2.0 - 1.0)), 3.6);
-
-  // Curved Ring-Space boundary membrane & concentric gravity-wave ripples from Nexus Hub
-  float containmentShell = exp(-16.0 * pow(dist - 0.58, 2.0)) + 0.45 * exp(-26.0 * pow(dist - 0.78, 2.0));
-  float gravWave = 0.5 + 0.5 * sin(dist * 26.0 - uTime * 1.65 + flowA * 3.2);
-  float gravEnv = exp(-3.4 * dist) * gravWave * 0.14;
-
-  // Interfering Ring-Space caustics & volumetric shafts
-  float caustic = 0.5 + 0.5 * sin(sphereUv.x * 10.5 + flowA * 5.2 + uTime * 0.85) * cos(sphereUv.y * 8.4 - uTime * 0.65);
-  float shaftA = exp(-7.5 * pow(uv.x * 0.78 + uv.y * 0.34 - 0.10 * sin(uTime * 0.35), 2.0));
-  float shaftB = exp(-8.5 * pow(uv.x * 0.72 - uv.y * 0.40 + 0.12 * cos(uTime * 0.28), 2.0));
-
-  float3 voidCol = float3(0.008, 0.020, 0.043);
-  float3 cyanCol = float3(0.00, 0.96, 0.83);
-  float3 cobaltCol = float3(0.22, 0.74, 0.97);
-  float3 indigoCol = float3(0.31, 0.27, 0.90);
-  float3 amethystCol = float3(0.66, 0.33, 0.97);
-
-  float intensity = mix(0.54, 1.0, clamp(uHubFactor, 0.0, 1.0));
-  float3 col = voidCol;
-  col += indigoCol * (flowB * 0.30 * intensity);
-  col += cobaltCol * ((flowA * 0.20 + shaftA * 0.13 + shaftB * 0.10) * intensity);
-  col += cyanCol * ((ridge * 0.34 + containmentShell * 0.26 + gravEnv + caustic * 0.05) * intensity);
-  col += amethystCol * ((pow(flowB, 2.3) * 0.28 + containmentShell * 0.16) * intensity);
-
-  // Central Nexus Hub singularity warm-cyan core glow
-  float hubGlow = exp(-12.0 * r2) * 0.22 * intensity;
-  col += mix(cyanCol, amethystCol, 0.42) * hubGlow;
-
-  float edgeDepth = clamp(1.10 - r2 * 0.56, 0.16, 1.0);
-  col *= edgeDepth;
-  return half4(clamp(col, 0.0, 1.0), 1.0);
-}
-"""
-
-private const val RIFT_LENS_AURA_SHADER_SRC =
-  """
-uniform float2 uResolution;
-uniform float uTime;
-uniform float3 uAccent;
-
-half4 main(float2 fragCoord) {
-  float2 res = max(uResolution, float2(1.0, 1.0));
-  float2 p = (fragCoord - 0.5 * res) / (0.5 * min(res.x, res.y));
-  float r = length(p);
-  if (r >= 1.0) {
-    return half4(0.0, 0.0, 0.0, 0.0);
-  }
-  float ang = atan(p.y, p.x);
-  float swirl = 0.5 + 0.5 * sin(ang * 4.0 - r * 9.5 + uTime * 2.8);
-  float counter = 0.5 + 0.5 * cos(ang * 3.0 + r * 7.0 - uTime * 2.1);
-  float lensRim = exp(-18.0 * pow(r - 0.58, 2.0));
-  float falloff = pow(max(0.0, 1.0 - r), 1.85);
-  float alpha = clamp((falloff * (0.28 + 0.34 * swirl * counter) + lensRim * 0.36), 0.0, 0.82);
-  float3 col = mix(uAccent, float3(1.0, 1.0, 1.0), lensRim * 0.42 + swirl * 0.16);
-  return half4(col * alpha, alpha);
-}
-"""
 
 private val NEXUS_STARTER_CHIPS =
   listOf(
@@ -265,114 +161,6 @@ private enum class ConvergenceGateTab {
   CUSTOM_RIFT_GATE,
 }
 
-private data class SpatialRiftSpec(
-  val node: NexusCoreNode,
-  val title: String,
-  val subtitle: String,
-  val xFrac: Float,
-  val yFrac: Float,
-  val accent: Color,
-  val outerColorInt: Int,
-  val midColorInt: Int,
-  val coreColorInt: Int,
-  val phaseOffset: Float,
-  val testTag: String,
-)
-
-private val SPATIAL_RIFT_SPECS =
-  listOf(
-    SpatialRiftSpec(
-      node = NexusCoreNode.CONVERGENCE_GATE,
-      title = "CONVERGENCE GATE",
-      subtitle = "6 Ranked + Custom Rifts",
-      xFrac = 0.50f,
-      yFrac = 0.19f,
-      accent = Color(0xFF00F5D4),
-      outerColorInt = AndroidColor.rgb(0, 245, 212),
-      midColorInt = AndroidColor.rgb(14, 165, 233),
-      coreColorInt = AndroidColor.rgb(224, 255, 250),
-      phaseOffset = 0.0f,
-      testTag = "nexus_node_convergence_gate",
-    ),
-    SpatialRiftSpec(
-      node = NexusCoreNode.HANGAR_DECK,
-      title = "HANGAR DECK",
-      subtitle = "10 Hulls • Shipwright",
-      xFrac = 0.17f,
-      yFrac = 0.32f,
-      accent = Color(0xFF38BDF8),
-      outerColorInt = AndroidColor.rgb(56, 189, 248),
-      midColorInt = AndroidColor.rgb(59, 130, 246),
-      coreColorInt = AndroidColor.rgb(224, 242, 254),
-      phaseOffset = 0.9f,
-      testTag = "nexus_node_hangar_deck",
-    ),
-    SpatialRiftSpec(
-      node = NexusCoreNode.STAR_FORGE,
-      title = "STAR FORGE",
-      subtitle = "1:1 Playfield Studio",
-      xFrac = 0.15f,
-      yFrac = 0.66f,
-      accent = Color(0xFFC084FC),
-      outerColorInt = AndroidColor.rgb(192, 132, 252),
-      midColorInt = AndroidColor.rgb(124, 58, 237),
-      coreColorInt = AndroidColor.rgb(245, 208, 254),
-      phaseOffset = 1.8f,
-      testTag = "nexus_node_star_forge",
-    ),
-    SpatialRiftSpec(
-      node = NexusCoreNode.RIFT_CONDUIT,
-      title = "RIFT CONDUIT",
-      subtitle = "Resonance & Directives",
-      xFrac = 0.33f,
-      yFrac = 0.83f,
-      accent = Color(0xFFE879F9),
-      outerColorInt = AndroidColor.rgb(232, 121, 249),
-      midColorInt = AndroidColor.rgb(168, 85, 247),
-      coreColorInt = AndroidColor.rgb(253, 244, 255),
-      phaseOffset = 2.7f,
-      testTag = "nexus_node_rift_conduit",
-    ),
-    SpatialRiftSpec(
-      node = NexusCoreNode.SYNDICATE_CITADEL,
-      title = "SYNDICATE CITADEL",
-      subtitle = "Clans & Strike Wings",
-      xFrac = 0.83f,
-      yFrac = 0.32f,
-      accent = Color(0xFFFACC15),
-      outerColorInt = AndroidColor.rgb(250, 204, 21),
-      midColorInt = AndroidColor.rgb(245, 158, 11),
-      coreColorInt = AndroidColor.rgb(254, 249, 195),
-      phaseOffset = 3.6f,
-      testTag = "nexus_node_syndicate_citadel",
-    ),
-    SpatialRiftSpec(
-      node = NexusCoreNode.ARCHIVE_CODEX,
-      title = "ARCHIVE & CODEX",
-      subtitle = "Dossier & Field Manual",
-      xFrac = 0.85f,
-      yFrac = 0.66f,
-      accent = Color(0xFF34D399),
-      outerColorInt = AndroidColor.rgb(52, 211, 153),
-      midColorInt = AndroidColor.rgb(16, 185, 129),
-      coreColorInt = AndroidColor.rgb(209, 250, 229),
-      phaseOffset = 4.5f,
-      testTag = "nexus_node_archive_codex",
-    ),
-    SpatialRiftSpec(
-      node = NexusCoreNode.HELM_SYSTEMS,
-      title = "HELM SYSTEMS",
-      subtitle = "Audio, FOV & Controls",
-      xFrac = 0.67f,
-      yFrac = 0.83f,
-      accent = Color(0xFF94A3B8),
-      outerColorInt = AndroidColor.rgb(148, 163, 184),
-      midColorInt = AndroidColor.rgb(56, 189, 248),
-      coreColorInt = AndroidColor.rgb(241, 245, 249),
-      phaseOffset = 5.4f,
-      testTag = "nexus_node_helm_systems",
-    ),
-  )
 
 internal fun generateSixCharRoomCode(seedSalt: Long = System.currentTimeMillis()): String {
   val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -400,124 +188,80 @@ internal fun isPrivateCustomGame(config: CustomGameConfig): Boolean =
 
 @Composable
 fun SwirlingRiftVortexGlyph(modifier: Modifier = Modifier, isStreaming: Boolean = false) {
-  val transition = rememberInfiniteTransition(label = "nexus_rift_vortex")
-  val outerDeg by
+  val transition = rememberInfiniteTransition(label = "nexus_rift_tear_glyph")
+  val phaseRad by
     transition.animateFloat(
       initialValue = 0f,
-      targetValue = 360f,
+      targetValue = (2.0 * PI).toFloat(),
       animationSpec =
         infiniteRepeatable(
-          tween(if (isStreaming) 1250 else 3200, easing = LinearEasing),
+          tween(if (isStreaming) 950 else 2400, easing = LinearEasing),
           RepeatMode.Restart,
         ),
-      label = "vortex_outer_deg",
+      label = "tear_phase_rad",
     )
-  val corePulse by
+  val cracklePulse by
     transition.animateFloat(
-      initialValue = 0.76f,
+      initialValue = 0.78f,
       targetValue = 1.0f,
       animationSpec =
         infiniteRepeatable(
-          tween(if (isStreaming) 420 else 980, easing = LinearEasing),
+          tween(if (isStreaming) 320 else 760, easing = LinearEasing),
           RepeatMode.Reverse,
         ),
-      label = "vortex_core_pulse",
+      label = "tear_crackle_pulse",
     )
 
   Canvas(modifier = modifier) {
-    val r = minOf(size.width, size.height) * 0.5f
-    val c = Offset(size.width * 0.5f, size.height * 0.5f)
-    if (r <= 1f) return@Canvas
-    val phaseRad = outerDeg * (PI.toFloat() / 180f)
+    val w = size.width
+    val h = size.height
+    if (w <= 1f || h <= 1f) return@Canvas
+    val cx = w * 0.5f
+    val cy = h * 0.5f
+    val halfW = w * 0.46f
+    val halfH = h * 0.28f
 
-    drawCircle(
+    // Jagged crackling spacetime Rift Tear path with pure #000000 interior (never a mechanical ring)
+    val tearPath = Path()
+    val steps = 16
+    for (s in 0..steps) {
+      val nx = (s.toFloat() / steps.toFloat()) * 2f - 1f
+      val env = (1f - nx * nx).coerceAtLeast(0f).pow(0.62f)
+      val jag = sin(nx * 5.2f + phaseRad * 2f) * (halfH * 0.22f) * (1f - abs(nx))
+      val px = cx + nx * halfW
+      val py = cy - (halfH * env + jag)
+      if (s == 0) tearPath.moveTo(px, py) else tearPath.lineTo(px, py)
+    }
+    for (s in steps downTo 0) {
+      val nx = (s.toFloat() / steps.toFloat()) * 2f - 1f
+      val env = (1f - nx * nx).coerceAtLeast(0f).pow(0.62f)
+      val jag = cos(nx * 4.8f - phaseRad * 1.8f) * (halfH * 0.22f) * (1f - abs(nx))
+      val px = cx + nx * halfW
+      val py = cy + (halfH * env + jag)
+      tearPath.lineTo(px, py)
+    }
+    tearPath.close()
+
+    drawPath(
+      path = tearPath,
       brush =
-        Brush.radialGradient(
+        Brush.horizontalGradient(
           colors =
             listOf(
-              Color(0xFF02040A),
-              Color(0xFF140B2E),
-              Color(0xAA7C3AED),
-              Color(0x6600F5D4),
-              Color.Transparent,
+              Color(0xFF00F5D4).copy(alpha = 0.85f * cracklePulse),
+              Color(0xFFA855F7).copy(alpha = 0.92f * cracklePulse),
+              Color(0xFFEC4899).copy(alpha = 0.88f * cracklePulse),
+              Color(0xFFFACC15).copy(alpha = 0.90f * cracklePulse),
             ),
-          center = c,
-          radius = r * 1.05f,
         ),
-      radius = r,
-      center = c,
+      style = Stroke(width = (minOf(w, h) * 0.14f).coerceAtLeast(1.8f), cap = StrokeCap.Round),
     )
-
-    for (t in 0 until 24) {
-      val tickRad = (t * 15f - outerDeg * 0.45f) * (PI.toFloat() / 180f)
-      val rIn = r * (if (t % 3 == 0) 0.80f else 0.87f)
-      val rOut = r * 0.96f
-      drawLine(
-        color = if (t % 6 == 0) Color(0xFFFACC15) else Color(0x9938BDF8),
-        start = Offset(c.x + cos(tickRad) * rIn, c.y + sin(tickRad) * rIn),
-        end = Offset(c.x + cos(tickRad) * rOut, c.y + sin(tickRad) * rOut),
-        strokeWidth = (r * 0.055f).coerceAtLeast(1.0f),
-      )
-    }
-
-    val outerInset = r * 0.14f
-    val outerSize = Size((r - outerInset) * 2f, (r - outerInset) * 2f)
-    val outerTopLeft = Offset(c.x - (r - outerInset), c.y - (r - outerInset))
-    for (arm in 0 until 3) {
-      drawArc(
-        color = if (arm % 2 == 0) Color(0xFF00F5D4) else Color(0xFFB388FF),
-        startAngle = outerDeg + arm * 120f,
-        sweepAngle = 68f,
-        useCenter = false,
-        topLeft = outerTopLeft,
-        size = outerSize,
-        style = Stroke(width = (r * 0.11f).coerceAtLeast(1.6f), cap = StrokeCap.Round),
-      )
-    }
-
-    for (arm in 0 until 4) {
-      val armBase = phaseRad * 1.35f + arm * (PI.toFloat() * 0.5f)
-      val path = Path()
-      for (s in 0..14) {
-        val frac = s / 14f
-        val sr = r * (0.16f + 0.68f * frac)
-        val sa = armBase + frac * 2.4f
-        val px = c.x + cos(sa) * sr
-        val py = c.y + sin(sa) * sr
-        if (s == 0) path.moveTo(px, py) else path.lineTo(px, py)
-      }
-      val armCol =
-        when (arm % 3) {
-          0 -> Color(0xFF00F5D4)
-          1 -> Color(0xFFA855F7)
-          else -> Color(0xFF38BDF8)
-        }
-      drawPath(
-        path,
-        armCol.copy(alpha = 0.88f * corePulse),
-        style = Stroke(width = (r * 0.085f).coerceAtLeast(1.3f), cap = StrokeCap.Round),
-      )
-    }
-
-    val ovalW = r * 1.56f
-    val ovalH = r * 0.56f
-    drawArc(
-      color = Color(0xCC00F5D4),
-      startAngle = -outerDeg * 1.5f,
-      sweepAngle = 250f,
-      useCenter = false,
-      topLeft = Offset(c.x - ovalW * 0.5f, c.y - ovalH * 0.5f),
-      size = Size(ovalW, ovalH),
-      style = Stroke(width = (r * 0.075f).coerceAtLeast(1.2f), cap = StrokeCap.Round),
+    drawPath(path = tearPath, color = Color.Black)
+    drawPath(
+      path = tearPath,
+      color = Color.White.copy(alpha = 0.85f * cracklePulse),
+      style = Stroke(width = (minOf(w, h) * 0.045f).coerceAtLeast(0.9f), cap = StrokeCap.Round),
     )
-    drawCircle(Color(0xFF030712), radius = r * 0.28f, center = c)
-    drawCircle(
-      Color(0xFF00F5D4).copy(alpha = corePulse),
-      radius = r * 0.29f,
-      center = c,
-      style = Stroke(width = (r * 0.09f).coerceAtLeast(1.4f)),
-    )
-    drawCircle(Color.White.copy(alpha = corePulse), radius = r * 0.11f * corePulse, center = c)
   }
 }
 
@@ -924,6 +668,32 @@ fun NexusAiConsoleModal(
     hideTopHeaderForFullScreenStage &&
       (activeNode == NexusCoreNode.STAR_FORGE || activeModuleKey == "FORGE")
 
+  var glViewRef by remember { mutableStateOf<NexusSpaceGlView?>(null) }
+  LaunchedEffect(activeNode, focusedOrbitalIndex, glViewRef) {
+    val view = glViewRef ?: return@LaunchedEffect
+    if (activeNode == NexusCoreNode.ORBITAL_HUB) {
+      view.dimFactor = 1.0f
+      view.focusedTearIndex = focusedOrbitalIndex
+      view.resetCameraDive()
+    } else {
+      view.dimFactor = 0.44f
+      view.focusedTearIndex = -1
+    }
+  }
+
+  val terminalScale by
+    animateFloatAsState(
+      targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 0.94f else 1.0f,
+      animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+      label = "terminal_emerge_scale",
+    )
+  val terminalAlpha by
+    animateFloatAsState(
+      targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 0.0f else 1.0f,
+      animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
+      label = "terminal_emerge_alpha",
+    )
+
   // Full-bleed #02050B container BEFORE safeDrawing so zero Arena entities bleed around screen edges
   Box(
     modifier =
@@ -933,7 +703,7 @@ fun NexusAiConsoleModal(
           if (activeNode != NexusCoreNode.ORBITAL_HUB) return@onPreviewKeyEvent false
           val native = keyEvent.nativeKeyEvent
           if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
-            val totalTargets = SPATIAL_RIFT_SPECS.size + 1 // index 0 = Central Nexus Hub Station, 1..7 = 3D Rifts
+            val totalTargets = NEXUS_3D_RIFT_TEARS.size
             when (native.keyCode) {
               KeyEvent.KEYCODE_DPAD_RIGHT,
               KeyEvent.KEYCODE_DPAD_DOWN -> {
@@ -949,10 +719,9 @@ fun NexusAiConsoleModal(
               KeyEvent.KEYCODE_BUTTON_A,
               KeyEvent.KEYCODE_DPAD_CENTER,
               KeyEvent.KEYCODE_ENTER -> {
-                val targetNode =
-                  if (focusedOrbitalIndex == 0) NexusCoreNode.SUBSPACE_COMMS
-                  else SPATIAL_RIFT_SPECS[(focusedOrbitalIndex - 1).coerceIn(0, SPATIAL_RIFT_SPECS.lastIndex)].node
-                onSelectNode(targetNode)
+                val chosenIdx = focusedOrbitalIndex.coerceIn(0, NEXUS_3D_RIFT_TEARS.lastIndex)
+                glViewRef?.triggerDiveIntoTear(chosenIdx)
+                onSelectNode(NEXUS_3D_RIFT_TEARS[chosenIdx].node)
                 true
               }
               else -> false
@@ -964,11 +733,23 @@ fun NexusAiConsoleModal(
         .testTag("nexus_ai_console_modal"),
     contentAlignment = Alignment.Center,
   ) {
-    // Full-screen GPU AGSL Ring-Space Containment Sphere rendered edge-to-edge before safeDrawing insets
-    if (!isCalibrationPeekActive && !isFullScreenForgeStage) {
-      RingSpaceNexusCanvas(
+    // Native OpenGL ES 3.0 3D Volumetric NEXUS Space + Multi-Pass HDR Bloom + 8 Crackling Spacetime Rift Tears
+    if (!isCalibrationPeekActive && !isFullScreenForgeStage && !isHeadlessGlEnvironment()) {
+      AndroidView(
+        factory = { ctx ->
+          NexusSpaceGlView(ctx).apply {
+            isSplashMode = false
+            dimFactor = if (activeNode == NexusCoreNode.ORBITAL_HUB) 1.0f else 0.44f
+            focusedTearIndex = if (activeNode == NexusCoreNode.ORBITAL_HUB) focusedOrbitalIndex else -1
+            glViewRef = this
+          }
+        },
+        update = { view ->
+          glViewRef = view
+          view.isSplashMode = false
+          view.dimFactor = if (activeNode == NexusCoreNode.ORBITAL_HUB) 1.0f else 0.44f
+        },
         modifier = Modifier.fillMaxSize(),
-        isHubView = activeNode == NexusCoreNode.ORBITAL_HUB,
       )
     }
 
@@ -997,10 +778,14 @@ fun NexusAiConsoleModal(
             isInMatch = engine?.hasJoinedMatch == true,
             isStreaming = isStreaming,
             focusedOrbitalIndex = focusedOrbitalIndex,
+            glViewRef = glViewRef,
             onToggleBootToNexusHub = onToggleBootToNexusHub,
             onLeaveMatch = onLeaveMatch,
             onCloseModal = onCloseModal,
-            onSelectNode = onSelectNode,
+            onSelectNode = { tearIdx, node ->
+              glViewRef?.triggerDiveIntoTear(tearIdx)
+              onSelectNode(node)
+            },
           )
         }
         else -> {
@@ -1008,6 +793,11 @@ fun NexusAiConsoleModal(
             modifier =
               Modifier.fillMaxWidth(0.96f)
                 .fillMaxHeight(0.95f)
+                .graphicsLayer {
+                  scaleX = terminalScale
+                  scaleY = terminalScale
+                  alpha = terminalAlpha
+                }
                 .border(
                   1.3.dp,
                   Brush.linearGradient(listOf(Color(0xFF00F5D4), Color(0xFFA855F7), Color(0xFF38BDF8))),
@@ -1238,157 +1028,6 @@ fun NexusAiConsoleModal(
 }
 
 @Composable
-private fun RingSpaceNexusCanvas(
-  modifier: Modifier,
-  isHubView: Boolean,
-) {
-  val transition = rememberInfiniteTransition(label = "ring_space_nexus_sphere")
-  val shaderClockSec by
-    transition.animateFloat(
-      initialValue = 0f,
-      targetValue = 180f,
-      animationSpec = infiniteRepeatable(tween(180000, easing = LinearEasing), RepeatMode.Restart),
-      label = "ring_space_clock",
-    )
-  val outerPhase by
-    transition.animateFloat(
-      initialValue = 0f,
-      targetValue = (2.0 * PI).toFloat(),
-      animationSpec = infiniteRepeatable(tween(16000, easing = LinearEasing), RepeatMode.Restart),
-      label = "ring_space_outer_phase",
-    )
-
-  val agslRingShader = remember {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      runCatching { RuntimeShader(RING_SPACE_SHADER_SRC) to NativePaint(NativePaint.ANTI_ALIAS_FLAG) }.getOrNull()
-    } else {
-      null
-    }
-  }
-
-  Canvas(modifier = modifier) {
-    val w = size.width
-    val h = size.height
-    if (w <= 1f || h <= 1f) return@Canvas
-    val center = Offset(w * 0.50f, h * 0.51f)
-
-    var drewShader = false
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && agslRingShader != null) {
-      val (shader, paint) = agslRingShader
-      drewShader =
-        runCatching {
-            shader.setFloatUniform("uResolution", w, h)
-            shader.setFloatUniform("uTime", shaderClockSec)
-            shader.setFloatUniform("uHubFactor", if (isHubView) 1.0f else 0.52f)
-            paint.shader = shader
-            drawContext.canvas.nativeCanvas.drawRect(0f, 0f, w, h, paint)
-            true
-          }
-          .getOrDefault(false)
-    }
-
-    if (!drewShader) {
-      // Multi-layered procedural Ring-Space containment sphere fallback (API 24-32 & JVM tests)
-      drawRect(
-        brush =
-          Brush.radialGradient(
-            colors =
-              if (isHubView) {
-                listOf(Color(0xFF0E2140), Color(0xFF071226), Color(0xFF02050B))
-              } else {
-                listOf(Color(0xFF081428), Color(0xFF040914), Color(0xFF02050B))
-              },
-            center = center,
-            radius = maxOf(w, h) * 0.78f,
-          )
-      )
-
-      val sphereRadius = minOf(w, h) * 0.58f
-      drawCircle(
-        brush =
-          Brush.radialGradient(
-            colors =
-              listOf(
-                Color.Transparent,
-                Color(0x1600F5D4),
-                Color(0x22A855F7),
-                Color.Transparent,
-              ),
-            center = center,
-            radius = sphereRadius * 1.24f,
-          ),
-        radius = sphereRadius * 1.24f,
-        center = center,
-      )
-
-      val beams =
-        listOf(
-          Triple(0.16f, 0.48f, Color(0x1400F5D4)),
-          Triple(0.50f, 0.72f, Color(0x1238BDF8)),
-          Triple(0.84f, 0.42f, Color(0x146366F1)),
-        )
-      beams.forEachIndexed { idx, (topFrac, botFrac, col) ->
-        val drift = sin(outerPhase + idx * 1.9f) * w * 0.022f
-        val topX = w * topFrac + drift
-        val botX = w * botFrac - drift * 0.5f
-        val p =
-          Path().apply {
-            moveTo(topX - w * 0.05f, 0f)
-            lineTo(topX + w * 0.05f, 0f)
-            lineTo(botX + w * 0.13f, h)
-            lineTo(botX - w * 0.13f, h)
-            close()
-          }
-        drawPath(
-          p,
-          Brush.verticalGradient(listOf(col, col.copy(alpha = 0.02f), Color.Transparent), 0f, h),
-        )
-      }
-
-      for (band in 0 until 2) {
-        val path = Path()
-        val steps = 40
-        for (s in 0..steps) {
-          val t = s / steps.toFloat()
-          val px = t * w
-          val py =
-            h * (0.24f + band * 0.50f) +
-              sin(t * 5.6f + outerPhase + band * 1.5f) * (h * 0.038f) +
-              cos(t * 9.4f - outerPhase * 1.25f) * (h * 0.015f)
-          if (s == 0) path.moveTo(px, py) else path.lineTo(px, py)
-        }
-        drawPath(
-          path,
-          color = if (band == 0) Color(0x1C00F5D4) else Color(0x1AA855F7),
-          style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
-        )
-      }
-    }
-
-    // 56 Parallax bioluminescent Ring-Space motes drifting inside the containment sphere (zero tether lines)
-    for (i in 0 until 56) {
-      val sx = (((i * 67 + 13) % 101) / 101f) * w
-      val sy = (((i * 43 + 29) % 97) / 97f) * h
-      val dx = sin(outerPhase + i * 0.55f) * 16.dp.toPx()
-      val dy = cos(outerPhase * 0.8f + i * 0.75f) * 12.dp.toPx()
-      val alpha = (0.18f + 0.32f * (0.5f + 0.5f * sin(outerPhase * 2f + i))) * (if (isHubView) 1f else 0.42f)
-      val col =
-        when (i % 4) {
-          0 -> Color(0xFF00F5D4).copy(alpha = alpha)
-          1 -> Color(0xFF38BDF8).copy(alpha = alpha)
-          2 -> Color(0xFFA855F7).copy(alpha = alpha)
-          else -> Color(0xFFFACC15).copy(alpha = alpha * 0.8f)
-        }
-      drawCircle(
-        col,
-        radius = (1.1f + (i % 3) * 0.8f).dp.toPx(),
-        center = Offset((sx + dx).coerceIn(0f, w), (sy + dy).coerceIn(0f, h)),
-      )
-    }
-  }
-}
-
-@Composable
 private fun OrbitalHubSpatialStage(
   callsign: String,
   syndicateTag: String,
@@ -1400,51 +1039,36 @@ private fun OrbitalHubSpatialStage(
   isInMatch: Boolean,
   isStreaming: Boolean,
   focusedOrbitalIndex: Int,
+  glViewRef: NexusSpaceGlView?,
   onToggleBootToNexusHub: (Boolean) -> Unit,
   onLeaveMatch: () -> Unit,
   onCloseModal: () -> Unit,
-  onSelectNode: (NexusCoreNode) -> Unit,
+  onSelectNode: (Int, NexusCoreNode) -> Unit,
 ) {
-  val hubTransition = rememberInfiniteTransition(label = "nexus_ring_space_stage")
-  val bobPhase by
-    hubTransition.animateFloat(
-      initialValue = 0f,
-      targetValue = (2.0 * PI).toFloat(),
-      animationSpec = infiniteRepeatable(tween(3600, easing = LinearEasing), RepeatMode.Restart),
-      label = "rift_bob_phase",
-    )
-  val riftSpinRad by
-    hubTransition.animateFloat(
-      initialValue = 0f,
-      targetValue = (2.0 * PI).toFloat(),
-      animationSpec = infiniteRepeatable(tween(6800, easing = LinearEasing), RepeatMode.Restart),
-      label = "rift_spin_rad",
-    )
-  val stationDeg by
-    hubTransition.animateFloat(
-      initialValue = 0f,
-      targetValue = 360f,
-      animationSpec = infiniteRepeatable(tween(15000, easing = LinearEasing), RepeatMode.Restart),
-      label = "nexus_station_deg",
-    )
-  val lensTimeSec by
-    hubTransition.animateFloat(
-      initialValue = 0f,
-      targetValue = 60f,
-      animationSpec = infiniteRepeatable(tween(60000, easing = LinearEasing), RepeatMode.Restart),
-      label = "rift_lens_clock",
-    )
+  val density = LocalDensity.current
+  var stageOriginInRoot by remember { mutableStateOf(Offset.Zero) }
+  var stageSizePx by remember { mutableStateOf(IntSize.Zero) }
+  var projectedStates by remember { mutableStateOf<List<ProjectedRiftTearScreenState>>(emptyList()) }
 
-  val riftLensShaderHolder = remember {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      runCatching { RuntimeShader(RIFT_LENS_AURA_SHADER_SRC) to NativePaint(NativePaint.ANTI_ALIAS_FLAG) }.getOrNull()
-    } else {
-      null
+  LaunchedEffect(glViewRef, stageSizePx) {
+    while (true) {
+      withFrameNanos {
+        val glW = glViewRef?.width ?: 0
+        val glH = glViewRef?.height ?: 0
+        projectedStates =
+          if (glViewRef != null && glW > 0 && glH > 0) {
+            glViewRef.computeProjectedTearStates(glW.toFloat(), glH.toFloat())
+          } else if (stageSizePx.width > 0 && stageSizePx.height > 0) {
+            computeStaticProjectedTearStates(stageSizePx.width.toFloat(), stageSizePx.height.toFloat())
+          } else {
+            emptyList()
+          }
+      }
     }
   }
 
   Column(modifier = Modifier.fillMaxSize()) {
-    // Sleek frameless translucent horizon telemetry bar
+    // Sleek frameless translucent horizon telemetry strip
     Box(
       modifier =
         Modifier.fillMaxWidth()
@@ -1467,12 +1091,12 @@ private fun OrbitalHubSpatialStage(
         ) {
           SwirlingRiftVortexGlyph(modifier = Modifier.size(22.dp), isStreaming = isStreaming)
           Text(
-            text = "NEXUS // RING SPACE",
+            text = "NEXUS",
             color = Color(0xFF00F5D4),
-            fontSize = 12.sp,
+            fontSize = 12.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
-            letterSpacing = 0.8.sp,
+            letterSpacing = 1.2.sp,
           )
           Text(
             text = "• $totalOnlinePilots PILOTS ONLINE",
@@ -1535,514 +1159,135 @@ private fun OrbitalHubSpatialStage(
       }
     }
 
-    // Spatial 3D Stage: Central 3D NEXUS HUB Orbital Station + 7 Frameless Swirling 3D Rifts (Zero Boxes / Zero Wires)
-    BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
-      val stageW = maxWidth
-      val stageH = maxHeight
-
-      // Central 3D NEXUS HUB Orbital Station -> opens SUBSPACE COMMS & NEXUS AI
-      val hubNodeW = 208.dp
-      val hubNodeH = 152.dp
-      val hubX = ((stageW * 0.50f) - (hubNodeW * 0.5f)).coerceIn(0.dp, (stageW - hubNodeW).coerceAtLeast(0.dp))
-      val hubY = ((stageH * 0.50f) - (hubNodeH * 0.5f)).coerceIn(0.dp, (stageH - hubNodeH).coerceAtLeast(0.dp))
-      NexusHubCentralStationNode(
-        stationDeg = stationDeg,
-        riftSpinRad = riftSpinRad,
-        bobPhase = bobPhase,
-        unreadCommsCount = unreadCommsCount,
-        totalOnlinePilots = totalOnlinePilots,
-        isFocused = focusedOrbitalIndex == 0,
-        onClick = { onSelectNode(NexusCoreNode.SUBSPACE_COMMS) },
-        modifier =
-          Modifier.width(hubNodeW)
-            .height(hubNodeH)
-            .offset(x = hubX, y = hubY)
-            .testTag("nexus_node_subspace_comms"),
-      )
-
-      // 7 Surrounding Living 3D Swirling Rifts
-      val riftNodeW = 152.dp
-      val riftNodeH = 132.dp
-      SPATIAL_RIFT_SPECS.forEachIndexed { idx, spec ->
-        val bobDp = (sin(bobPhase + spec.phaseOffset) * 4.5f).dp
-        val rawX = (stageW * spec.xFrac) - (riftNodeW * 0.5f)
-        val rawY = (stageH * spec.yFrac) - (riftNodeH * 0.5f) + bobDp
-        val clampedX = rawX.coerceIn(2.dp, (stageW - riftNodeW - 2.dp).coerceAtLeast(2.dp))
-        val clampedY = rawY.coerceIn(0.dp, (stageH - riftNodeH).coerceAtLeast(0.dp))
-
-        SpatialRiftNode(
-          spec = spec,
-          riftSpinRad = riftSpinRad + spec.phaseOffset,
-          pulsePhase = bobPhase + spec.phaseOffset,
-          lensTimeSec = lensTimeSec + idx * 3.7f,
-          riftLensShaderHolder = riftLensShaderHolder,
-          isFocused = focusedOrbitalIndex == idx + 1,
-          onClick = { onSelectNode(spec.node) },
-          modifier =
-            Modifier.width(riftNodeW)
-              .height(riftNodeH)
-              .offset(x = clampedX, y = clampedY)
-              .testTag(spec.testTag),
-        )
-      }
-    }
-  }
-}
-
-@Composable
-private fun NexusHubCentralStationNode(
-  stationDeg: Float,
-  riftSpinRad: Float,
-  bobPhase: Float,
-  unreadCommsCount: Int,
-  totalOnlinePilots: Int,
-  isFocused: Boolean,
-  onClick: () -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  val calloutShadow = remember {
-    Shadow(color = Color(0xEE02050B), offset = Offset(0f, 2f), blurRadius = 8f)
-  }
-  Column(
-    modifier =
-      modifier
-        .clip(CircleShape)
-        .clickable(onClick = onClick),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.Center,
-  ) {
-    Canvas(modifier = Modifier.width(184.dp).height(112.dp)) {
-      val cx = size.width * 0.5f
-      val cy = size.height * 0.52f
-      val baseR = minOf(size.width, size.height) * 0.42f
-      val pulse = 0.86f + 0.14f * sin(bobPhase * 2f)
-
-      // 1. Volumetric multicolored NEXUS Singularity aura
-      drawCircle(
-        brush =
-          Brush.radialGradient(
-            colors =
-              listOf(
-                Color(0x6600F5D4),
-                Color(0x44A855F7),
-                Color(0x1E38BDF8),
-                Color.Transparent,
-              ),
-            center = Offset(cx, cy),
-            radius = baseR * 1.95f,
-          ),
-        radius = baseR * 1.95f,
-        center = Offset(cx, cy),
-      )
-
-      // 2. Living 3D Playfield Rift vortex behind the orbital station
-      RiftSpriteBaker.draw3dPlayfieldRift(
-        canvas = drawContext.canvas.nativeCanvas,
-        cx = cx,
-        cy = cy,
-        r = baseR * 0.86f,
-        spinAngle = riftSpinRad * 1.25f,
-        outerColor = AndroidColor.rgb(0, 245, 212),
-        midColor = AndroidColor.rgb(168, 85, 247),
-        coreColor = AndroidColor.rgb(254, 249, 195),
-        darkVoidCenter = true,
-        inwardSpiral = true,
-        fadeAlpha = 0.96f,
-        pulsePhaseOverride = bobPhase,
-      )
-
-      // 3. Back arcs of the two counter-rotating 3D-tilted habitat rings (foreshortened 0.54f)
-      val outerRx = baseR * 1.48f
-      val outerRy = outerRx * 0.54f
-      val innerRx = baseR * 1.06f
-      val innerRy = innerRx * 0.54f
-
-      rotate(degrees = -14f, pivot = Offset(cx, cy)) {
-        drawArc(
-          color = Color(0xAA1E3A5F),
-          startAngle = 180f,
-          sweepAngle = 180f,
-          useCenter = false,
-          topLeft = Offset(cx - outerRx, cy - outerRy),
-          size = Size(outerRx * 2f, outerRy * 2f),
-          style = Stroke(width = 5.2.dp.toPx(), cap = StrokeCap.Round),
-        )
-        drawArc(
-          color = Color(0xBB38BDF8),
-          startAngle = 186f,
-          sweepAngle = 168f,
-          useCenter = false,
-          topLeft = Offset(cx - outerRx, cy - outerRy),
-          size = Size(outerRx * 2f, outerRy * 2f),
-          style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round),
-        )
-      }
-
-      rotate(degrees = 16f, pivot = Offset(cx, cy)) {
-        drawArc(
-          color = Color(0xAA312E81),
-          startAngle = 180f,
-          sweepAngle = 180f,
-          useCenter = false,
-          topLeft = Offset(cx - innerRx, cy - innerRy),
-          size = Size(innerRx * 2f, innerRy * 2f),
-          style = Stroke(width = 4.0.dp.toPx(), cap = StrokeCap.Round),
-        )
-      }
-
-      // 4. 6 Radial docking spires & central vertical command spire
-      for (s in 0 until 6) {
-        val spireRad = (stationDeg + s * 60f) * (PI.toFloat() / 180f)
-        val sx0 = cx + cos(spireRad) * (baseR * 0.32f)
-        val sy0 = cy + sin(spireRad) * (baseR * 0.32f) * 0.54f
-        val sx1 = cx + cos(spireRad) * outerRx
-        val sy1 = cy + sin(spireRad) * outerRy
-        drawLine(
-          color = Color(0xCC64748B),
-          start = Offset(sx0, sy0),
-          end = Offset(sx1, sy1),
-          strokeWidth = 2.0.dp.toPx(),
-        )
-        drawCircle(
-          color = if (s % 2 == 0) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          radius = 2.1.dp.toPx(),
-          center = Offset(sx1, sy1),
-        )
-      }
-
-      // Vertical command spire & central singularity core
-      drawLine(
-        brush = Brush.verticalGradient(listOf(Color(0xFF00F5D4), Color.White, Color(0xFFA855F7))),
-        start = Offset(cx, cy - baseR * 0.88f),
-        end = Offset(cx, cy + baseR * 0.78f),
-        strokeWidth = 2.6.dp.toPx(),
-        cap = StrokeCap.Round,
-      )
-      drawCircle(Color(0xFF030712), radius = baseR * 0.28f, center = Offset(cx, cy))
-      drawCircle(
-        color = Color(0xFF00F5D4),
-        radius = baseR * 0.30f,
-        center = Offset(cx, cy),
-        style = Stroke(width = 2.0.dp.toPx()),
-      )
-      drawCircle(Color.White.copy(alpha = pulse), radius = baseR * 0.14f * pulse, center = Offset(cx, cy))
-
-      // 5. Front arcs of the counter-rotating 3D-tilted habitat rings + illuminated docking windows
-      rotate(degrees = 16f, pivot = Offset(cx, cy)) {
-        drawArc(
-          color = Color(0xEE4C1D95),
-          startAngle = 8f,
-          sweepAngle = 164f,
-          useCenter = false,
-          topLeft = Offset(cx - innerRx, cy - innerRy),
-          size = Size(innerRx * 2f, innerRy * 2f),
-          style = Stroke(width = 4.4.dp.toPx(), cap = StrokeCap.Round),
-        )
-        drawArc(
-          color = Color(0xFFE879F9),
-          startAngle = 14f,
-          sweepAngle = 152f,
-          useCenter = false,
-          topLeft = Offset(cx - innerRx, cy - innerRy),
-          size = Size(innerRx * 2f, innerRy * 2f),
-          style = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round),
-        )
-      }
-
-      rotate(degrees = -14f, pivot = Offset(cx, cy)) {
-        drawArc(
-          color = Color(0xF00F2942),
-          startAngle = 6f,
-          sweepAngle = 168f,
-          useCenter = false,
-          topLeft = Offset(cx - outerRx, cy - outerRy),
-          size = Size(outerRx * 2f, outerRy * 2f),
-          style = Stroke(width = 5.8.dp.toPx(), cap = StrokeCap.Round),
-        )
-        drawArc(
-          color = Color(0xFF00F5D4),
-          startAngle = 10f,
-          sweepAngle = 160f,
-          useCenter = false,
-          topLeft = Offset(cx - outerRx, cy - outerRy),
-          size = Size(outerRx * 2f, outerRy * 2f),
-          style = Stroke(width = 1.9.dp.toPx(), cap = StrokeCap.Round),
-        )
-        // Illuminated habitat windows rotating along front beveled ring
-        for (wIdx in 0 until 9) {
-          val deg = ((wIdx * 20f + stationDeg * 1.4f) % 160f) + 10f
-          val rad = deg * (PI.toFloat() / 180f)
-          val wx = cx + cos(rad) * outerRx
-          val wy = cy + sin(rad) * outerRy
-          drawCircle(
-            color = if (wIdx % 3 == 0) Color(0xFFFACC15) else Color(0xFF7DD3FC),
-            radius = 1.5.dp.toPx(),
-            center = Offset(wx, wy),
-          )
-        }
-      }
-
-      if (unreadCommsCount > 0 || isFocused) {
-        drawCircle(
-          color = if (unreadCommsCount > 0) Color(0xCCFACC15) else Color.White.copy(alpha = 0.85f),
-          radius = baseR * 1.56f,
-          center = Offset(cx, cy),
-          style = Stroke(width = 1.5.dp.toPx()),
-        )
-      }
-    }
-
-    // Frameless diegetic holographic station projection (zero rectangular box)
-    Text(
-      text = if (unreadCommsCount > 0) "NEXUS HUB • $unreadCommsCount NEW" else "NEXUS HUB",
-      color = if (unreadCommsCount > 0) Color(0xFFFACC15) else Color(0xFF00F5D4),
-      fontSize = 11.sp,
-      fontWeight = FontWeight.Black,
-      fontFamily = FontFamily.Monospace,
-      letterSpacing = 1.0.sp,
-      maxLines = 1,
-      style = TextStyle(shadow = calloutShadow),
-    )
-    Text(
-      text = "SUBSPACE COMMS • AI • $totalOnlinePilots ONLINE",
-      color = Color(0xFFE2E8F0),
-      fontSize = 8.sp,
-      fontWeight = FontWeight.Bold,
-      fontFamily = FontFamily.Monospace,
-      maxLines = 1,
-      style = TextStyle(shadow = calloutShadow),
-    )
-  }
-}
-
-@Composable
-private fun SpatialRiftNode(
-  spec: SpatialRiftSpec,
-  riftSpinRad: Float,
-  pulsePhase: Float,
-  lensTimeSec: Float,
-  riftLensShaderHolder: Pair<RuntimeShader, NativePaint>?,
-  isFocused: Boolean,
-  onClick: () -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  val labelShadow = remember {
-    Shadow(color = Color(0xF002050B), offset = Offset(0f, 2f), blurRadius = 7f)
-  }
-  Column(
-    modifier =
-      modifier
-        .clip(CircleShape)
-        .clickable(onClick = onClick),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.Center,
-  ) {
-    Canvas(modifier = Modifier.size(94.dp)) {
-      val w = size.width
-      val h = size.height
-      val cx = w * 0.5f
-      val cy = h * 0.5f
-      val riftR = minOf(w, h) * 0.36f
-
-      // 1. Native AGSL lensing plasma aura on API 33+ (or smooth radial halo fallback on API 24-32)
-      var drewLensShader = false
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && riftLensShaderHolder != null) {
-        val (shader, paint) = riftLensShaderHolder
-        drewLensShader =
-          runCatching {
-              shader.setFloatUniform("uResolution", w, h)
-              shader.setFloatUniform("uTime", lensTimeSec)
-              shader.setFloatUniform("uAccent", spec.accent.red, spec.accent.green, spec.accent.blue)
-              paint.shader = shader
-              drawContext.canvas.nativeCanvas.drawRect(0f, 0f, w, h, paint)
-              true
+    // 3D Volumetric Rift Tear Stage: 8 Crackling Spacetime Tears with Diegetic Button Text Inside Pure #000000 Cores
+    Box(
+      modifier =
+        Modifier.weight(1f)
+          .fillMaxWidth()
+          .onGloballyPositioned { coords ->
+            stageOriginInRoot = coords.positionInRoot()
+            stageSizePx = coords.size
+          }
+          .pointerInput(glViewRef) {
+            detectDragGestures(
+              onDragEnd = { glViewRef?.releaseCameraLookSpring() },
+              onDragCancel = { glViewRef?.releaseCameraLookSpring() },
+            ) { change, dragAmount ->
+              change.consume()
+              glViewRef?.addCameraLookDelta(dragAmount.x, dragAmount.y)
             }
-            .getOrDefault(false)
-      }
-      if (!drewLensShader) {
-        drawCircle(
-          brush =
-            Brush.radialGradient(
-              colors =
-                listOf(
-                  spec.accent.copy(alpha = 0.42f),
-                  spec.accent.copy(alpha = 0.14f),
-                  Color.Transparent,
-                ),
-              center = Offset(cx, cy),
-              radius = minOf(w, h) * 0.48f,
-            ),
-          radius = minOf(w, h) * 0.48f,
-          center = Offset(cx, cy),
-        )
-      }
-
-      // 2. Multi-layered 3D Playfield Rift vortex
-      RiftSpriteBaker.draw3dPlayfieldRift(
-        canvas = drawContext.canvas.nativeCanvas,
-        cx = cx,
-        cy = cy,
-        r = riftR,
-        spinAngle = riftSpinRad,
-        outerColor = spec.outerColorInt,
-        midColor = spec.midColorInt,
-        coreColor = spec.coreColorInt,
-        darkVoidCenter = true,
-        inwardSpiral = true,
-        fadeAlpha = 1.0f,
-        pulsePhaseOverride = pulsePhase,
-      )
-
-      // 3. Glowing holographic silhouette suspended inside the dark Rift eye
-      drawRiftEyeHologram(
-        node = spec.node,
-        accent = spec.accent,
-        center = Offset(cx, cy),
-        radius = riftR * 0.38f,
-      )
-
-      if (isFocused) {
-        drawCircle(
-          color = Color.White,
-          radius = riftR * 1.18f,
-          center = Offset(cx, cy),
-          style = Stroke(width = 1.8.dp.toPx()),
-        )
-      }
-    }
-
-    // Frameless floating diegetic holographic callout (zero rectangular box)
-    Text(
-      text = spec.title,
-      color = if (isFocused) Color.White else spec.accent,
-      fontSize = 9.4.sp,
-      fontWeight = FontWeight.Black,
-      fontFamily = FontFamily.Monospace,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
-      textAlign = TextAlign.Center,
-      style = TextStyle(shadow = labelShadow),
-    )
-    Text(
-      text = spec.subtitle,
-      color = Color(0xFFD6E4F0),
-      fontSize = 7.6.sp,
-      fontWeight = FontWeight.SemiBold,
-      fontFamily = FontFamily.SansSerif,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
-      textAlign = TextAlign.Center,
-      style = TextStyle(shadow = labelShadow),
-    )
-  }
-}
-
-private fun DrawScope.drawRiftEyeHologram(
-  node: NexusCoreNode,
-  accent: Color,
-  center: Offset,
-  radius: Float,
-) {
-  val strokeW = (radius * 0.16f).coerceAtLeast(1.5f)
-  when (node) {
-    NexusCoreNode.CONVERGENCE_GATE -> {
-      drawCircle(Color.White, radius = radius * 0.92f, center = center, style = Stroke(strokeW))
-      drawArc(
-        color = accent,
-        startAngle = -35f,
-        sweepAngle = 250f,
-        useCenter = false,
-        topLeft = Offset(center.x - radius * 1.18f, center.y - radius * 0.52f),
-        size = Size(radius * 2.36f, radius * 1.04f),
-        style = Stroke(strokeW, cap = StrokeCap.Round),
-      )
-      drawCircle(Color.White, radius = radius * 0.24f, center = center)
-    }
-    NexusCoreNode.HANGAR_DECK -> {
-      val hull =
-        Path().apply {
-          moveTo(center.x, center.y - radius)
-          lineTo(center.x + radius * 0.88f, center.y + radius * 0.82f)
-          lineTo(center.x, center.y + radius * 0.36f)
-          lineTo(center.x - radius * 0.88f, center.y + radius * 0.82f)
-          close()
+          }
+    ) {
+      val activeProjections =
+        if (projectedStates.size == NEXUS_3D_RIFT_TEARS.size) {
+          projectedStates
+        } else if (stageSizePx.width > 0 && stageSizePx.height > 0) {
+          computeStaticProjectedTearStates(stageSizePx.width.toFloat(), stageSizePx.height.toFloat())
+        } else {
+          computeStaticProjectedTearStates(1280f, 720f)
         }
-      drawPath(hull, accent.copy(alpha = 0.40f))
-      drawPath(hull, Color.White, style = Stroke(strokeW))
-    }
-    NexusCoreNode.STAR_FORGE -> {
-      val star =
-        Path().apply {
-          moveTo(center.x, center.y - radius)
-          lineTo(center.x + radius * 0.34f, center.y - radius * 0.34f)
-          lineTo(center.x + radius, center.y)
-          lineTo(center.x + radius * 0.34f, center.y + radius * 0.34f)
-          lineTo(center.x, center.y + radius)
-          lineTo(center.x - radius * 0.34f, center.y + radius * 0.34f)
-          lineTo(center.x - radius, center.y)
-          lineTo(center.x - radius * 0.34f, center.y - radius * 0.34f)
-          close()
+
+      val usingGlRootCoords = glViewRef != null && glViewRef.width > 0 && glViewRef.height > 0
+
+      NEXUS_3D_RIFT_TEARS.forEachIndexed { idx, spec ->
+        val proj = activeProjections.getOrNull(idx) ?: return@forEachIndexed
+        if (!proj.visible && stageSizePx.width > 0) return@forEachIndexed
+
+        val localCenterX =
+          if (usingGlRootCoords) proj.screenCenterX - stageOriginInRoot.x else proj.screenCenterX
+        val localCenterY =
+          if (usingGlRootCoords) proj.screenCenterY - stageOriginInRoot.y else proj.screenCenterY
+
+        val minHitPx = with(density) { 48.dp.toPx() }
+        val hitW = proj.projectedWidthPx.coerceAtLeast(minHitPx * 2.2f)
+        val hitH = proj.projectedHeightPx.coerceAtLeast(minHitPx)
+        val hitWdp = with(density) { hitW.toDp() }
+        val hitHdp = with(density) { hitH.toDp() }
+
+        val stageW = stageSizePx.width.toFloat().coerceAtLeast(hitW)
+        val stageH = stageSizePx.height.toFloat().coerceAtLeast(hitH)
+        val offsetX = (localCenterX - hitW * 0.5f).coerceIn(0f, (stageW - hitW).coerceAtLeast(0f))
+        val offsetY = (localCenterY - hitH * 0.5f).coerceIn(0f, (stageH - hitH).coerceAtLeast(0f))
+
+        val isPrimaryNexus = idx == 0
+        val isFocused = focusedOrbitalIndex == idx
+        val primaryGlow =
+          remember(spec.accentColor, isFocused) {
+            Shadow(
+              color = if (isFocused) Color.White else spec.accentColor.copy(alpha = 0.85f),
+              offset = Offset.Zero,
+              blurRadius = if (isPrimaryNexus) 10f else 7f,
+            )
+          }
+
+        // Frameless, borderless, zero-background hit target positioned strictly inside the pure #000000 tear void
+        Box(
+          modifier =
+            Modifier.minimumInteractiveComponentSize()
+              .width(hitWdp)
+              .height(hitHdp)
+              .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+              .clickable { onSelectNode(idx, spec.node) }
+              .testTag(spec.testTag),
+          contentAlignment = Alignment.Center,
+        ) {
+          Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 6.dp),
+          ) {
+            if (isPrimaryNexus) {
+              val primaryLabel =
+                if (unreadCommsCount > 0) "NEXUS • $unreadCommsCount" else "NEXUS"
+              Text(
+                text = primaryLabel,
+                color = if (unreadCommsCount > 0) Color(0xFFFACC15) else Color.White,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.6.sp,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                style = TextStyle(shadow = primaryGlow),
+              )
+              Text(
+                text = "COMMS & AI • $totalOnlinePilots ONLINE",
+                color = if (isFocused) Color.White else Color(0xFFA5F3FC),
+                fontSize = 7.4.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.4.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+              )
+            } else {
+              Text(
+                text = spec.title,
+                color = Color.White,
+                fontSize = 9.0.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.6.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                style = TextStyle(shadow = primaryGlow),
+              )
+              Text(
+                text = spec.subtitle,
+                color = if (isFocused) Color.White else spec.accentColor,
+                fontSize = 6.9.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+              )
+            }
+          }
         }
-      drawPath(star, accent.copy(alpha = 0.35f))
-      drawPath(star, Color.White, style = Stroke(strokeW))
-    }
-    NexusCoreNode.RIFT_CONDUIT -> {
-      for (i in 0 until 3) {
-        drawArc(
-          color = if (i == 0) Color.White else accent,
-          startAngle = i * 120f + 15f,
-          sweepAngle = 82f,
-          useCenter = false,
-          topLeft = Offset(center.x - radius * 0.92f, center.y - radius * 0.92f),
-          size = Size(radius * 1.84f, radius * 1.84f),
-          style = Stroke(strokeW, cap = StrokeCap.Round),
-        )
       }
-      drawCircle(Color.White, radius = radius * 0.28f, center = center)
-    }
-    NexusCoreNode.SYNDICATE_CITADEL -> {
-      val crest =
-        Path().apply {
-          moveTo(center.x, center.y - radius)
-          lineTo(center.x + radius * 0.86f, center.y - radius * 0.36f)
-          lineTo(center.x + radius * 0.62f, center.y + radius * 0.56f)
-          lineTo(center.x, center.y + radius)
-          lineTo(center.x - radius * 0.62f, center.y + radius * 0.56f)
-          lineTo(center.x - radius * 0.86f, center.y - radius * 0.36f)
-          close()
-        }
-      drawPath(crest, accent.copy(alpha = 0.36f))
-      drawPath(crest, Color.White, style = Stroke(strokeW))
-    }
-    NexusCoreNode.ARCHIVE_CODEX -> {
-      drawCircle(Color.White, radius = radius * 0.88f, center = center, style = Stroke(strokeW))
-      drawLine(
-        Color.White,
-        Offset(center.x - radius * 0.46f, center.y - radius * 0.22f),
-        Offset(center.x + radius * 0.46f, center.y - radius * 0.22f),
-        strokeW,
-      )
-      drawLine(
-        accent,
-        Offset(center.x - radius * 0.46f, center.y + radius * 0.22f),
-        Offset(center.x + radius * 0.46f, center.y + radius * 0.22f),
-        strokeW,
-      )
-    }
-    NexusCoreNode.HELM_SYSTEMS -> {
-      drawCircle(Color.White, radius = radius * 0.64f, center = center, style = Stroke(strokeW))
-      for (k in 0 until 6) {
-        val a = (k * 60f) * (PI.toFloat() / 180f)
-        drawLine(
-          Color.White,
-          Offset(center.x + cos(a) * radius * 0.64f, center.y + sin(a) * radius * 0.64f),
-          Offset(center.x + cos(a) * radius, center.y + sin(a) * radius),
-          strokeW,
-        )
-      }
-    }
-    else -> {
-      drawCircle(Color.White, radius = radius * 0.78f, center = center, style = Stroke(strokeW))
     }
   }
 }
@@ -2050,10 +1295,28 @@ private fun DrawScope.drawRiftEyeHologram(
 @Composable
 private fun GlassTerminalHeaderGlyph(node: NexusCoreNode, accent: Color, sizeDp: Int = 22) {
   Canvas(modifier = Modifier.size(sizeDp.dp)) {
-    val c = Offset(size.width * 0.5f, size.height * 0.5f)
-    val r = size.minDimension * 0.44f
-    drawCircle(accent.copy(alpha = 0.22f), radius = r, center = c)
-    drawRiftEyeHologram(node = node, accent = accent, center = c, radius = r * 0.78f)
+    val w = size.width
+    val h = size.height
+    if (w <= 1f || h <= 1f) return@Canvas
+    val cx = w * 0.5f
+    val cy = h * 0.5f
+    val hw = w * 0.44f
+    val hh = h * 0.26f
+    val slit =
+      Path().apply {
+        moveTo(cx - hw, cy)
+        lineTo(cx - hw * 0.35f, cy - hh)
+        lineTo(cx + hw * 0.28f, cy - hh * 0.82f)
+        lineTo(cx + hw, cy)
+        lineTo(cx + hw * 0.32f, cy + hh)
+        lineTo(cx - hw * 0.30f, cy + hh * 0.84f)
+        close()
+      }
+    drawPath(slit, accent, style = Stroke(width = (w * 0.12f).coerceAtLeast(1.5f), cap = StrokeCap.Round))
+    drawPath(slit, Color.Black)
+    if (node == NexusCoreNode.SUBSPACE_COMMS) {
+      drawLine(Color(0xFFFACC15), Offset(cx - hw * 0.55f, cy), Offset(cx + hw * 0.55f, cy), strokeWidth = 1.1f)
+    }
   }
 }
 
@@ -3149,7 +2412,7 @@ private fun SubspaceCommsDiscordDeck(
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             if (messages.isEmpty()) item(key = "nexus_zero_state") { NexusWelcomeTelemetryCard() }
-            items(items = messages, key = { it.id }) { msg -> NexusMessageBubble(message = msg) }
+            items(items = messages, key = { it.id }) { msg -> NexusAiMessageCard(message = msg) }
             if (streamState is NexusStreamState.Error) {
               item(key = "nexus_error_card") {
                 NexusErrorBanner(streamState.message, !lastFailedQuestion.isNullOrBlank(), onRetryLastQuestion)
@@ -3259,7 +2522,7 @@ private fun SubspaceCommsDiscordDeck(
 
           val headerTitle =
             when {
-              isAnnouncements -> "#announcements // ARCHITECT & RING SPACE DISPATCH"
+              isAnnouncements -> "#announcements // ARCHITECT & NEXUS SECTOR DISPATCH"
               isShipwright -> "#shipwright-meta // 100-PT RIFT FRAME LOADOUT EXCHANGE"
               isLfg -> "#strike-lfg // STRIKE WING & PRIVATE RIFT RECRUITMENT"
               isSyndicateCh -> "[$cleanSyndicateTag] ${selectedChannelKey.substringAfterLast(':')} // $syndicateName"
@@ -3329,10 +2592,10 @@ private fun SubspaceCommsDiscordDeck(
                 ) {
                   Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     DevArchitectBadge()
-                    Text("ARCHITECT // BUILD #$CURRENT_RIFT_BUILD_VERSION RING SPACE DISPATCH", color = Color(0xFFFACC15), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                    Text("ARCHITECT // BUILD #$CURRENT_RIFT_BUILD_VERSION NEXUS DISPATCH", color = Color(0xFFFACC15), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
                   }
                   Text(
-                    "Welcome to NEXUS (Threshold Dynamics Studio, LLC). Select any of the 7 living 3D Rifts around the central NEXUS HUB Station. All 10 Hulls operate at 100-Point Parity from 0 Resonance — share Rift Frame builds in #shipwright-meta, form Strike Wings in #strike-lfg, and log live telemetry in #bug-reports.",
+                    "Welcome to NEXUS (Threshold Dynamics Studio, LLC). Drag across 3D volumetric space to look around and dive into the central NEXUS Tear or any of the 7 crackling Spacetime Rift Tears. All 10 Hulls operate at 100-Point Parity from 0 Resonance — share Rift Frame builds in #shipwright-meta, form Strike Wings in #strike-lfg, and log live telemetry in #bug-reports.",
                     color = Color(0xFFF1F5F9),
                     fontSize = 9.2.sp,
                     lineHeight = 13.sp,
@@ -3844,7 +3107,7 @@ private fun NexusRulesChannelView() {
     verticalArrangement = Arrangement.spacedBy(7.dp),
   ) {
     Text(
-      "#rules // OFFICIAL NEXUS RING SPACE DIRECTIVES & FAIR-PLAY CODE",
+      "#rules // OFFICIAL NEXUS SECTOR DIRECTIVES & FAIR-PLAY CODE",
       color = Color(0xFFA78BFA),
       fontSize = 10.5.sp,
       fontWeight = FontWeight.Black,
@@ -3947,7 +3210,7 @@ private fun NexusWelcomeTelemetryCard() {
         .padding(10.dp),
     verticalArrangement = Arrangement.spacedBy(4.dp),
   ) {
-    Text("NEXUS HUB TELEMETRY LINK ESTABLISHED", color = Color(0xFF00F5D4), fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+    Text("NEXUS TELEMETRY LINK ESTABLISHED", color = Color(0xFF00F5D4), fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
     Text(
       "Ask NEXUS AI anything — exact weapon dimensions, Newtonian drift & bounce raycasts, 100-point Rift Frame theorycrafting, Eclipse Stasis vs Disruptor EMP, Paired Phase Rifts, or Peak Resonance records.",
       color = Color(0xFFE2E8F0),
@@ -3958,7 +3221,7 @@ private fun NexusWelcomeTelemetryCard() {
 }
 
 @Composable
-private fun NexusMessageBubble(message: NexusChatMessage) {
+private fun NexusAiMessageCard(message: NexusChatMessage) {
   val isUser = message.role == NexusRole.USER
   val shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = if (isUser) 12.dp else 3.dp, bottomEnd = if (isUser) 3.dp else 12.dp)
   Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
@@ -3973,7 +3236,7 @@ private fun NexusMessageBubble(message: NexusChatMessage) {
     ) {
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-          if (isUser) "PILOT QUERY" else "NEXUS // RING SPACE AI",
+          if (isUser) "PILOT QUERY" else "NEXUS // TACTICAL AI",
           color = if (isUser) Color(0xFF38BDF8) else Color(0xFF00F5D4),
           fontSize = 8.5.sp,
           fontWeight = FontWeight.ExtraBold,
@@ -3984,7 +3247,7 @@ private fun NexusMessageBubble(message: NexusChatMessage) {
         }
       }
       if (message.text.isEmpty() && message.isStreaming) {
-        Text("Scanning Ring Space physics & sector records…", color = Color(0xFF94A3B8), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Text("Scanning NEXUS sector physics & records…", color = Color(0xFF94A3B8), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
       } else {
         val formatted = remember(message.text) { formatNexusMarkdown(message.text) }
         Text(formatted, color = Color(0xFFF1F5F9), fontSize = 10.5.sp, lineHeight = 15.sp)

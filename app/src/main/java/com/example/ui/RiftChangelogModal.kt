@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 61
+const val CURRENT_RIFT_BUILD_VERSION = 62
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 62,
+      versionTag = "v1.0.62 // BUILD #62",
+      releaseDate = "Nov 17, 2026",
+      headline = "Native OpenGL ES 3.0 3D Volumetric NEXUS Space, Multi-Pass HDR Bloom & 8 Crackling Spacetime Rift Tears with Pure #000000 Cores",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Built NexusSpaceGlView on native OpenGL ES 3.0 (TextureView + EGL14 + GLES30) rendering raymarched 3D FBM volumetric NEXUS space, 260 3D parallax GL_POINTS space motes, half-resolution bright-pass HDR Gaussian bloom, and ACES filmic tone-mapping.",
+          "Removed all 2D circles, obstacle sprites, and mechanical Hub station graphics in favor of 8 crackling jagged 3D Spacetime Rift Tears ripped directly into volumetric space (central primary multicolored NEXUS Tear + 7 surrounding module Tears) with gravitational ray-pinch lensing and branching electric lightning.",
+          "Enforced strict pure #000000 void interiors (alpha-masked against both 3D space motes and HDR bloom) holding crisp diegetic button text projected 1:1 in 3D perspective, with 1-finger 3D look-around sway, 3D camera dive transitions, and matching OpenGL ES 3.0 Splash & Rift Tear brand emblem on AuthScreen.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 61,
       versionTag = "v1.0.61 // BUILD #61",
       releaseDate = "Nov 16, 2026",
       headline = "GPU AGSL Rift-Cloud Storm Boundary & Proximity Lightning, Wall-less 3D Nexus Safe-Zone Rift, Unstable Rift & Swarm Shaders + Regression Suite",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "AGSL STORM & SAFE RIFT",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
