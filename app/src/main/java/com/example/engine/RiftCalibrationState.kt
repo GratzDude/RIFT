@@ -231,6 +231,7 @@ object RiftCalibrationState {
   var calibrationBtnOffset by mutableStateOf(Offset.Zero)
   var nexusBtnOffset by mutableStateOf(Offset.Zero)
   var toastContainerOffset by mutableStateOf(Offset.Zero)
+  var spectatorBoxOffset by mutableStateOf(Offset.Zero)
   var idleWarningBannerOffset by mutableStateOf(Offset.Zero)
 
   // 2. Flight Physics & Safe Zone Rules (Tab 1)
@@ -768,9 +769,9 @@ object RiftCalibrationState {
       key = "interdictorBubbleRadius",
       tabIndex = 3,
       shipIdFilter = 0,
-      title = "Eclipse Bubble: Radius",
+      title = "Eclipse Stasis: Radius",
       unit = "px",
-      description = "Radius of Eclipse's two-way stasis bubble (default 275px).",
+      description = "Radius of Eclipse's two-way Stasis containment field (default 275px).",
       min = 180f, max = 480f, step = 5f, decimals = 0,
       getter = { interdictorBubbleRadius }, setter = { interdictorBubbleRadius = it.coerceIn(180f, 480f) },
     )
@@ -778,9 +779,9 @@ object RiftCalibrationState {
       key = "interdictorBubbleDuration",
       tabIndex = 3,
       shipIdFilter = 0,
-      title = "Eclipse Bubble: Duration",
+      title = "Eclipse Stasis: Duration",
       unit = "s",
-      description = "Seconds an Eclipse Stasis Bubble stays active (default 6.0s).",
+      description = "Seconds an Eclipse Stasis containment field stays active (default 6.0s).",
       min = 2.0f, max = 15.0f, step = 0.5f, decimals = 1,
       getter = { interdictorBubbleDuration }, setter = { interdictorBubbleDuration = it.coerceIn(2.0f, 15.0f) },
     )
@@ -788,9 +789,9 @@ object RiftCalibrationState {
       key = "interdictorBubbleCooldown",
       tabIndex = 3,
       shipIdFilter = 0,
-      title = "Eclipse Bubble: Cooldown",
+      title = "Eclipse Stasis: Cooldown",
       unit = "s",
-      description = "Cooldown between Eclipse Stasis Bubbles (default 8.5s).",
+      description = "Cooldown between Eclipse Stasis deployments (default 8.5s).",
       min = 4.0f, max = 25.0f, step = 0.5f, decimals = 1,
       getter = { interdictorBubbleCooldown },
       setter = {
@@ -1683,6 +1684,7 @@ object RiftCalibrationState {
     calibrationBtnOffset = readOffset("calibrationBtn")
     nexusBtnOffset = readOffset("nexusBtn")
     toastContainerOffset = readOffset("toastContainer")
+    spectatorBoxOffset = readOffset("spectatorBox")
     idleWarningBannerOffset = readOffset("idleWarningBanner")
     unlockFullNinthShipOverride = prefs.getBoolean("unlockFullNinthShipOverride", false)
     botsEnabled = prefs.getBoolean("bots_enabled", true)
@@ -1809,6 +1811,7 @@ object RiftCalibrationState {
     writeOffset("calibrationBtn", calibrationBtnOffset)
     writeOffset("nexusBtn", nexusBtnOffset)
     writeOffset("toastContainer", toastContainerOffset)
+    writeOffset("spectatorBox", spectatorBoxOffset)
     writeOffset("idleWarningBanner", idleWarningBannerOffset)
     editor.putBoolean("unlockFullNinthShipOverride", unlockFullNinthShipOverride)
     editor.putBoolean("bots_enabled", botsEnabled)
@@ -1914,6 +1917,7 @@ object RiftCalibrationState {
     calibrationBtnOffset = Offset.Zero
     nexusBtnOffset = Offset.Zero
     toastContainerOffset = Offset.Zero
+    spectatorBoxOffset = Offset.Zero
     idleWarningBannerOffset = Offset.Zero
 
     buffModeOverride = "FFA"
@@ -1960,6 +1964,7 @@ object RiftCalibrationState {
         put("calibrationBtn", offsetJson(calibrationBtnOffset))
         put("nexusBtn", offsetJson(nexusBtnOffset))
         put("toastContainer", offsetJson(toastContainerOffset))
+        put("spectatorBox", offsetJson(spectatorBoxOffset))
         put("idleWarningBanner", offsetJson(idleWarningBannerOffset))
       }
 
@@ -2038,6 +2043,7 @@ object RiftCalibrationState {
         calibrationBtnOffset = parseOff("calibrationBtn", calibrationBtnOffset)
         nexusBtnOffset = parseOff("nexusBtn", nexusBtnOffset)
         toastContainerOffset = parseOff("toastContainer", toastContainerOffset)
+        spectatorBoxOffset = parseOff("spectatorBox", spectatorBoxOffset)
         idleWarningBannerOffset = parseOff("idleWarningBanner", idleWarningBannerOffset)
       }
 
@@ -2103,7 +2109,7 @@ object RiftCalibrationState {
       val rec = RiftVisualForgeState.getRecipe(target)
       if (!rec.isFactoryDefault) {
         diffs +=
-          "  - [VISUAL FORGE] ${target.key} (${target.title}): primary=${rec.primaryHex}, trim=${rec.trimHex}, glow=${rec.glowHex}, style=${rec.geometryStyle}, scale=${rec.pixelScale}x, glowInt=${rec.glowIntensity}x (\"${rec.promptUsed}\")"
+          "  - [VISUAL FORGE] ${target.key} (${target.title}): primary=${rec.primaryHex}, trim=${rec.trimHex}, glow=${rec.glowHex}, style=${rec.geometryStyle}, scale=${rec.pixelScale}x, glowInt=${rec.glowIntensity}x, turb=${rec.shaderTurbulence}x (\"${rec.promptUsed}\")"
       }
     }
 

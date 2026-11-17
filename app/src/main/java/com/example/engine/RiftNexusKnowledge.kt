@@ -10,22 +10,22 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /**
- * Dynamically compiles the complete, authoritative RIFT Engine, Pixel-Rendering,
- * 100-Point Ship Math, Rift Conduit Resonance, Daily Directives, Buff Registry,
- * Calibration, Pilot Dossier, and Cloud Leaderboard Ground-Truth Snapshot for NEXUS
- * (100% On-Device Tactical Intelligence).
+ * Dynamically compiles the complete, authoritative NEXUS (Threshold Dynamics Studio, LLC) Engine,
+ * AGSL Shader & Pixel-Rendering, 100-Point Ship Math, Rift Conduit Resonance, Daily Directives,
+ * 12-Buff Supply Registry, Unstable Rift Convergence, Destructible Crystal Asteroids, Station Novas,
+ * Calibration, Pilot Dossier, and Cloud Leaderboard Ground-Truth Snapshot for `#nexus-ai`.
  */
 object RiftNexusKnowledge {
 
   const val NEXUS_SYSTEM_INSTRUCTION: String =
     """
-You are NEXUS, the omniscient Rift Core tactical intelligence embedded inside SUBSPACE COMMS (`#nexus-ai` channel) of RIFT, a mobile-first competitive 120Hz 2D Newtonian space arena game on Android.
+You are NEXUS, the omniscient Ring-Space tactical intelligence stationed at the central Nexus Hub inside SUBSPACE COMMS (`#nexus-ai` channel) of NEXUS (developed by Threshold Dynamics Studio, LLC), a mobile-first competitive 120Hz 2D Newtonian space arena game on Android.
 
 CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
-1. EXCLUSIVE RIFT-ONLY KNOWLEDGE BASE: Your ONLY knowledge base is RIFT itself — its physics, pixel-level rendering math, 10 ship classes (all 10 ships unlocked from 0 Resonance: Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, Eclipse, and modular custom ship Rift Frame at full 100-Point parity + Frame A through Frame E), Rift Conduit Live Resonance & Peak Resonance (scaling Starting Bounty from 100 to 500 Max + 3 Daily Directives paying up to 250❖/day), Supply Buff pool + custom forged buffs, Playfield Rifts (Plasma Rift, Repulsor Rift, Gravity Rift, and Paired Phase Rifts — Node A & B), Safe Zone & AFK rules (with NO Safe Zone in Rift Control and Stasis Breach), Calibration parameters, the full-screen Abyssal NEXUS CORE spatial hub (`SUBSPACE COMMS`, `CONVERGENCE GATE`, `HANGAR DECK`, `RIFT CONDUIT`, `SYNDICATE CITADEL`, `ARCHIVE & CODEX`, `HELM SYSTEMS`, `STAR FORGE`), all 6 Official Ranked Modes (`SECTOR CONVERGENCE`, `RIFT SKIRMISH`, `FLUX CORE`, `STASIS BREACH`, `RIFT CONTROL`, and `SYNDICATE WARS`), Custom Rule `MegaFat Bullets`, Syndicate War Trophies, Pilot Dossier & Executioner telemetry, and Sworn Pilot Cloud Leaderboard records.
-2. REFUSE NON-RIFT TOPICS IN CHARACTER: If the user asks about anything outside RIFT, briefly decline in character: "RIFT CORE TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Submit a query regarding RIFT ships, pixel/physics telemetry, custom builds, Rift Conduit Resonance, Ranked Modes, buffs, or bounty records."
-3. PINPOINT NUMERICAL & PIXEL PRECISION: Cite exact live engine numbers, world-pixel dimensions, DPS, Flux costs (HP + weapon energy, floored at 1 Flux on self-drain), Rift Shards (❖) economy, Live & Peak Resonance, custom frames (`Frame A–E`), Eclipse two-way `Stasis` (6.0s duration, 275px radius), Ranked Mode telemetry, Calibration overrides, and Sworn Pilot Leaderboard records. Never use decorative emojis; write "Flux" for ship energy/HP and ❖ strictly for Rift Shards.
-4. ANDROID TOUCH HUD & TWIN-STICK CONTROLLER TERMINOLOGY ONLY: Support native Android Landscape Touch HUD (Left Movement Stick, Manual [BRAKE], Right Primary Fire Stick, Secondary, Special Buff, Repel, Native Multi-Shot, Collapsible Living-Teammate Spectator Box, Graphical Dual-Rift Tug-of-War Top Bar in Rift Control, and Bottom Console with circular minimap) AND Bluetooth/USB Twin-Stick Controllers (including LB/RB teammate spectator cycling). Never mention PC keyboard shortcuts.
+1. EXCLUSIVE NEXUS & RIFT-SECTOR KNOWLEDGE BASE: Your ONLY knowledge base is NEXUS itself — its Newtonian physics, GPU AGSL shaders & pixel-level rendering math, 10 ship classes (all 10 ships unlocked from 0 Resonance: Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, Eclipse, and modular custom ship Rift Frame at full 100-Point parity + Frame A through Frame E), Rift Conduit Live Resonance & Peak Resonance (scaling Starting Bounty from 100 to 500 Max + 3 Daily Directives paying up to 250❖/day, plus 999,999❖ non-depleting Tester Shards while commercial Play Billing is dormant), 12-item Supply Buff pool (including 5-drone zig-zagging SWARM and N-stacking Stasis Barriers) + custom forged buffs, Playfield Rifts (Plasma Rift, Repulsor Rift with supersonic inner-core slingshot, Gravity Rift with 420px max-size obstacle/barrier pull, Paired Phase Rifts A & B, and live 10.0s Unstable Rift convergence dealing 75% Max Flux Doomsday detonation + shattering Crystal Asteroids), destructible 2,400 HP Crystal Asteroids (guaranteed Supply Crate drop + 20.0s respawn), 10-hit Orbital/Asteroid Station 16-bolt 360-degree Defense Novas, wall-less circular 3D Safe-Zone Rift & Open-Space Anti-AFK rules (active ONLY in Sector Convergence and Flux Core; disabled in Rift Control, Stasis Breach, Rift Skirmish, and Syndicate Wars), Rippling 3D Rift-Cloud Storm Boundary + 220px proximity arc lightning, Ring-Space NEXUS CORE (`NEXUS HUB` + 7 swirling 3D Rifts: `CONVERGENCE GATE`, `HANGAR DECK`, `STAR FORGE`, `RIFT CONDUIT`, `SYNDICATE CITADEL`, `ARCHIVE & CODEX`, `HELM SYSTEMS`), `Mode -> Hangar Deck -> Enter Rift` Swirling NEXUS hull lock-in & `APEX` halo, all 6 Official Ranked Modes, Custom Rifts (`speedMult` & `damageMult` missile/ordnance scaling + `MegaFat Bullets` + `100` custom starting bounty), Syndicate War Trophies, Pilot Dossier & Executioner telemetry, and Sworn Pilot Cloud Leaderboard records.
+2. REFUSE NON-NEXUS TOPICS IN CHARACTER: If the user asks about anything outside NEXUS, briefly decline in character: "NEXUS CORE TELEMETRY BOUNDARY // Query falls outside NEXUS sector parameters. Submit a query regarding NEXUS ships, pixel/physics telemetry, custom builds, Rift Conduit Resonance, Playfield Rifts, Ranked Modes, buffs, or bounty records."
+3. PINPOINT NUMERICAL & PIXEL PRECISION: Cite exact live engine numbers, world-pixel dimensions, DPS, Flux costs (HP + weapon energy, floored at 1 Flux on self-drain), Rift Shards (❖) economy, Live & Peak Resonance, custom frames (`Frame A-E`), Eclipse two-way `Stasis` (6.0s duration, 275px radius, 320 Flux cost, 8.5s CD), Unstable Rift 10.0s timer & 75% Max Flux Doomsday blast, Ranked Mode telemetry, Calibration overrides, and Sworn Pilot Leaderboard records. Never use decorative emojis or literal star icons; write "Flux" for ship energy/HP and ❖ strictly for Rift Shards.
+4. ANDROID TOUCH HUD & TWIN-STICK CONTROLLER TERMINOLOGY ONLY: Support native Android Landscape Touch HUD (Left Movement Stick, Manual [BRAKE], Right Primary Fire Stick, Secondary, Special Buff, Repel, Native Multi-Shot, Collapsible Living-Teammate Spectator Box, Graphical Dual-Rift Tug-of-War Top Bar in Rift Control, and Bottom Console with 3D AGSL Plasma Flux Ring wrapping the 1:1 circular minimap) AND Bluetooth/USB Twin-Stick Controllers (including LB/RB teammate spectator cycling). Never mention PC keyboard shortcuts.
 5. PURE TEXT Q&A & THEORYCRAFTING: Deliver clear, structured tactical answers and 100-point Rift Frame theorycrafting breakdowns (all 10 ships and full 100-point parity open from 0 Resonance).
 """
 
@@ -66,19 +66,25 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     pvpPeakSnapshot: PeakBountyRunSnapshot?,
     syndicateHistory: List<SyndicateServiceEntry>,
   ): String {
-    val sb = StringBuilder(14_000)
+    val sb = StringBuilder(16_000)
     val camScale = engine.effectiveCameraScale()
     val projScale = RiftCalibrationState.projectileScale
     val shipVisScale = RiftCalibrationState.shipScale
     val crateVisScale = RiftCalibrationState.crateScale
     val anomVisScale = RiftCalibrationState.anomalyScale
+    val customSpdMult = engine.currentCustomGame?.speedMult ?: 1.0f
+    val customDmgMult = engine.currentCustomGame?.damageMult ?: 1.0f
 
-    sb.appendLine("=== [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT] ===")
+    sb.appendLine("=== [LIVE NEXUS GROUND-TRUTH TELEMETRY SNAPSHOT — BUILD #61] ===")
 
     sb.appendLine()
-    sb.appendLine("[1. EXACT PIXEL, SPRITE & ARENA RENDERING SPECIFICATIONS]")
-    sb.appendLine("- World Arena Size: 8000 x 8000 world pixels (8x8 sectors A1..H8, each sector = 1000 x 1000 world px; circular perimeter radius = ${engine.arenaRadius.toInt()} world px).")
-    sb.appendLine("- Central Safe Zone: Active in SECTOR CONVERGENCE and FLUX CORE; completely disabled in RIFT CONTROL and STASIS BREACH (hasActiveSafeZone() == false).")
+    sb.appendLine("[1. EXACT PIXEL, SHADER & ARENA BOUNDARY SPECIFICATIONS]")
+    sb.appendLine(
+      "- World Arena & Rippling Rift-Cloud Storm Wall: 8000 x 8000 world pixels (8x8 sectors A1..H8, each sector = 1000 x 1000 world px; circular perimeter radius = ${engine.arenaRadius.toInt()} world px). Outer boundary renders a GPU AGSL 3D Rift-Cloud Storm Wall bleeding 260px inward with live branching proximity arc lightning striking ships within 220px of the perimeter."
+    )
+    sb.appendLine(
+      "- Wall-Less Circular 3D Nexus Safe-Zone Rift: Radius = ${engine.getSafeZoneRadius().toInt()} world px centered at (${engine.arenaCenterX.toInt()}, ${engine.arenaCenterY.toInt()}); zero physical hard-light box walls. Active ONLY in SECTOR CONVERGENCE and FLUX CORE (live hasActiveSafeZone() = ${engine.hasActiveSafeZone()}); completely disabled in RIFT CONTROL, STASIS BREACH, RIFT SKIRMISH, and SYNDICATE WARS. Open-Space Anti-AFK Flux drain is likewise restricted strictly to SECTOR CONVERGENCE and FLUX CORE."
+    )
     sb.appendLine(
       String.format(
         Locale.US,
@@ -101,7 +107,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Primary Laser / Bolt Exact Pixel Formula: Shaft Vector Length = primarySpeed * 0.036 world px; Outer Colored Glow Width = %.2f world px; Inner White Core Width = %.2f world px.",
+        "- Primary Laser / Bolt Exact Pixel Formula: Shaft Vector Length = primarySpeed * 0.036 world px; Outer Colored Glow Width = %.2f world px; Inner White Core Width = %.2f world px; swept segment-vs-AABB collision prevents point-blank wall bleed.",
         6.4f * projScale,
         2.8f * projScale,
       )
@@ -109,8 +115,10 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Secondary Warhead & Ability Specs (scaled by projectileScale %.2fx): Viper Phase Dash = 135 world px spatial blink + %.0f px/s dodge burst (320 Flux cost, 0.65s CD, +%.0f%% next-shot rail overcharge); Siege Bomb = %.1f world px radius; Bounce & Prox Flak Bomb = %.1f world px radius (Prox Flak fuse = %.0f world px); Disruptor Cloak & 360° EMP = 20 Flux entry, %.0f Flux/s cloak drain (50%% cloaked afterburner drain, 4.5s CD), 0 Flux manual decloak %.0f world px EMP draining %.0f%% Max Flux (capped at 850 Flux) + %.1fs recharge freeze; Proximity Mine = %.1f world px radius (max %d mines, 30s life); Seeker Torpedo = %.1f world px radius (%.0f px/s, %.1fs flight); Stasis Barrier = %.0f world px Tethered Cyan Hard-Light Forcefield (%.1fs duration); Eclipse Stasis (INTERDICTOR_DOME) = %.0f world px radius (%.0f world px diameter) two-way Stasis field active for %.1fs (320 Flux cost, %.1fs CD).",
+        "- Secondary Warhead & Ability Specs (scaled by projectileScale %.2fx, Custom speedMult %.2fx, Custom damageMult %.2fx): Viper Phase Dash = 135 world px spatial blink + %.0f px/s dodge burst (320 Flux cost, 0.65s CD, +%.0f%% next-shot rail overcharge); Siege Bomb = %.1f world px radius; Bounce & Prox Flak Bomb = %.1f world px radius (Prox Flak fuse = %.0f world px); Disruptor Cloak & 360-deg EMP = 20 Flux entry, %.0f Flux/s cloak drain (50%% cloaked afterburner drain, 4.5s CD, 150 Flux safety floor), 0 Flux manual decloak %.0f world px EMP draining %.0f%% Max Flux (capped at 850 Flux) + %.1fs recharge freeze; Proximity Mine = %.1f world px radius (max %d mines, 30s life); Fast Predictive Seeker Torpedo = %.1f world px radius (%.0f px/s cruise * speedMult, proportional intercept lead, %.1fs flight); Stackable Stasis Barrier = %.0f world px Tethered Cyan Hard-Light Forcefield (%.1fs duration, deploys within 78px stack as BARRIER xN); SWARM = 5 autonomous zig-zagging hunter drones (210 Flux dmg * damageMult each, 560 px/s * speedMult, 6.5s life); Eclipse Stasis (INTERDICTOR_DOME) = %.0f world px radius (%.0f world px diameter) two-way Stasis field active for %.1fs (320 Flux cost, %.1fs CD).",
         projScale,
+        customSpdMult,
+        customDmgMult,
         RiftCalibrationState.phaseDashImpulse,
         RiftCalibrationState.phaseOverchargeBonusPct * 100f,
         24f * projScale,
@@ -136,19 +144,20 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Supply Crates & Interior Obstacles: Supply Crate world size = %.2f world px; Circular Radar Minimap aligns 1:1 with arenaRadius, highlights the Flux Core carrier at 2x pulsing Gold (#FFD700), and renders above the Buff Bar when expanded.",
+        "- Destructible Crystal Asteroids & 10-Hit Station Defense Novas: Crystal Asteroids have 2,400 HP with an on-rock circular Flux integrity ring; shattering one drops a guaranteed Supply Crate and schedules a 20.0s respawn (%d pending respawns). Orbital & Asteroid Stations track weapon impacts with a 10-segment charge ring and unleash a 16-bolt 360-degree Station Defense Nova every 10 hits (damaging all frequencies). Supply Crate world size = %.2f world px; 3D AGSL Plasma Flux Ring wraps the 1:1 arenaRadius Circular Minimap.",
+        engine.pendingAsteroidRespawns.size,
         78.32f * crateVisScale,
       )
     )
 
     sb.appendLine()
-    sb.appendLine("[2. RIFT CONDUIT RESONANCE, STARTING BOUNTY (100–500) & RANKED MODES]")
+    sb.appendLine("[2. RIFT CONDUIT RESONANCE, STARTING BOUNTY (100-500) & RANKED/CUSTOM MODES]")
     val liveRes = engine.liveResonance
     val peakRes = engine.peakResonance
     val conduitTier = RiftProgressionCatalog.getConduitTierForResonance(liveRes)
-    val startBty = RiftProgressionCatalog.computeStartingBountyForResonance(liveRes)
+    val startBty = engine.getLocalStartingBounty()
     sb.appendLine(
-      "- Rift Conduit Resonance: Live Resonance = $liveRes (${conduitTier.title}) | Peak Resonance = $peakRes | Starting Bounty = $startBty (scales 100 -> 150 -> 225 -> 300 -> 400 -> 500 Max across Drift Initiate, Vanguard, Interceptor, Phantom, Rift Commander, and Apex Archon)."
+      "- Rift Conduit Resonance: Live Resonance = $liveRes (${conduitTier.title}) | Peak Resonance = $peakRes | Effective Starting Bounty = $startBty (Ranked scales 100 -> 150 -> 225 -> 300 -> 400 -> 500 Max across Drift Initiate, Vanguard, Interceptor, Phantom, Rift Commander, and Apex Archon; Custom Rifts standardize starting bounty to 100)."
     )
     val directives = localPrefs.getDailyDirectives(currentUserId)
     val directivesSummary =
@@ -175,7 +184,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Public FFA Sector Convergence & Bounty Math: %.0f-minute cycle (%.0fs remaining). Local pilot spawns at %d Starting Bounty (scaled by Live Resonance); HVT crown at >= %d Bounty; killing awards +%.0f%% victim Bounty; Supply Crates +%d Bounty. Winning with >50%% presence awards +100❖ Rift Shards.",
+        "- Public FFA Sector Convergence & Bounty Math: %.0f-minute cycle (%.0fs remaining). Local pilot spawns at %d Starting Bounty; HVT crown at >= %d Bounty; killing awards +%.0f%% victim Bounty; Supply Crates +%d Bounty. Winning with >50%% presence awards +100❖ Rift Shards.",
         engine.publicMatchCycleLimitSec / 60f,
         matchRemainingSec,
         startBty,
@@ -184,32 +193,32 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
         RiftCalibrationState.cratePickupBounty,
       )
     )
-    sb.appendLine("- 6 Official Ranked Modes + Cloneable Custom Rifts (including MegaFat Bullets):")
-    sb.appendLine("  • 1) SECTOR CONVERGENCE: 20-Pilot Ranked FFA / 1-5 Strike Wing Bounty • 60-minute cycle • +100❖.")
-    sb.appendLine("  • 2) RIFT SKIRMISH: Ranked 2v2–5v5 Best-of-3 Rounds Team Deathmatch • Ship Lock ON • Teammate Spectator • +75❖.")
+    sb.appendLine("- 6 Official Ranked Modes + Cloneable Custom Rifts (Mode -> Hangar Hull Staging -> Enter Rift):")
+    sb.appendLine("  - 1) SECTOR CONVERGENCE: 20-Pilot Ranked FFA / 1-5 Strike Wing Bounty | Circular Safe-Zone Rift ON | +100❖.")
+    sb.appendLine("  - 2) RIFT SKIRMISH: Ranked 2v2-5v5 Best-of-3 Rounds Team Deathmatch | Safe Zone OFF | Ship Lock ON | Teammate Spectator | +75❖.")
     sb.appendLine(
       String.format(
         Locale.US,
-        "  • 3) FLUX CORE: 20-Pilot Ranked Powerball FFA • Tier 1–10 Overcharge (+15 Bounty/s; 2x pulsing Gold radar beacon) • Ejects at %.0f px/s on death or Safe Zone entry.",
+        "  - 3) FLUX CORE: 20-Pilot Ranked Powerball FFA | Circular Safe-Zone Rift ON | Tier 1-10 Overcharge (+15 Bounty/s; 2x pulsing Gold radar beacon) | Ejects at %.0f px/s on death or Safe Zone entry.",
         RiftCalibrationState.fluxCoreEjectSpeed,
       )
     )
     sb.appendLine(
       String.format(
         Locale.US,
-        "  • 4) STASIS BREACH: Ranked 10v10 Circular Stasis Jailbreak • Prisoners inside deal 100%% weapon damage to the %.0f Flux Stasis Core to detonate a radial shockwave and break everyone out • +100❖ (Live Cores: West=%.0f Flux, East=%.0f Flux).",
+        "  - 4) STASIS BREACH: Ranked 10v10 Circular Stasis Jailbreak | Safe Zone OFF | Prisoners inside deal 100%% weapon damage to the %.0f Flux Stasis Core to detonate a radial shockwave and break everyone out | +100❖ (Live Cores: West=%.0f Flux, East=%.0f Flux).",
         RiftCalibrationState.stasisBrigReactorMaxHp,
         engine.westBrigGeneratorHp,
         engine.eastBrigGeneratorHp,
       )
     )
-    sb.appendLine("  • 5) RIFT CONTROL: Ranked Tug-of-War over Rift Alpha & Rift Omega • NO Safe Zone • Graphical Dual-Rift Tug-of-War Top HUD Bar • +85❖.")
+    sb.appendLine("  - 5) RIFT CONTROL: Ranked Tug-of-War over Rift Alpha & Rift Omega | Safe Zone OFF | Graphical Dual-Rift Tug-of-War Top HUD Bar | +85❖.")
     val myWarRec = localPrefs.getSyndicateWarRecord(syndicateTag)
     sb.appendLine(
-      "  • 6) SYNDICATE WARS: Ranked Direct Syndicate-vs-Syndicate Ladder • Ship Lock ON • Requires a Sworn Pilot Syndicate and 100% same-Syndicate Strike Wing • Ranked by Syndicate War Trophies (Active Syndicate [$syndicateTag] Record: ${myWarRec.warTrophies} War Trophies, ${myWarRec.warWins}W-${myWarRec.warLosses}L, Streak ${myWarRec.warStreak})."
+      "  - 6) SYNDICATE WARS: Ranked Direct Syndicate-vs-Syndicate Ladder | Safe Zone OFF | Ship Lock ON | Requires a Sworn Pilot Syndicate and 100% same-Syndicate Strike Wing | Ranked by Syndicate War Trophies (Active Syndicate [$syndicateTag] Record: ${myWarRec.warTrophies} War Trophies, ${myWarRec.warWins}W-${myWarRec.warLosses}L, Streak ${myWarRec.warStreak})."
     )
     sb.appendLine(
-      "  • Active Ranked Mode Right Now: ${engine.activeRankedMode.title} (${engine.activeRankedMode.id}, Bracket=${engine.activeTeamSizeBracket}, Human Pilots in Mode=${engine.getHumanPilotCountForMode(engine.activeRankedMode)}, ShipLocked=${engine.doesModeLockShipSelection()})."
+      "  - Active Ranked Mode Right Now: ${engine.activeRankedMode.title} (${engine.activeRankedMode.id}, Bracket=${engine.activeTeamSizeBracket}, Human Pilots in Mode=${engine.getHumanPilotCountForMode(engine.activeRankedMode)}, ShipLocked=${engine.doesModeLockShipSelection()})."
     )
 
     sb.appendLine()
@@ -242,7 +251,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
       sb.appendLine(
         String.format(
           Locale.US,
-          "  - Hull: MaxFlux=%.0f Flux, Recharge=%.0f Flux/s, TopSpeed=%.0f px/s (Afterburner=%.0f px/s), Thrust=%.0f px/s², TurnRate=%.2f rad/s.",
+          "  - Hull: MaxFlux=%.0f Flux, Recharge=%.0f Flux/s, TopSpeed=%.0f px/s (Afterburner=%.0f px/s), Thrust=%.0f px/s^2, TurnRate=%.2f rad/s.",
           spec.maxFlux,
           spec.rechargeRate,
           spec.topSpeed,
@@ -286,39 +295,41 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     }
 
     sb.appendLine()
-    sb.appendLine("[4. RIFT FRAME 100-POINT PARITY (OPEN AT 0 RESONANCE) & SAVED FRAMES A–E]")
-    sb.appendLine("- All 10 ships including Rift Frame (100/100 Customization Points + Frame A) are open immediately at 0 Resonance. Peak Resonance unlocks 3D Hull Trims, Kill Finishers, Warp Signatures, HVT Crown Halos, and extra Loadout Bays Frame B–E.")
+    sb.appendLine("[4. RIFT FRAME 100-POINT PARITY (OPEN AT 0 RESONANCE) & SAVED FRAMES A-E]")
+    sb.appendLine("- All 10 ships including Rift Frame (100/100 Customization Points + Frame A) are open immediately at 0 Resonance. Peak Resonance unlocks 3D Hull Trims, Kill Finishers, Warp Signatures, HVT Crown Halos, and extra Loadout Bays Frame B-E.")
     val activeSlotId = localPrefs.getActiveCustomSlotId(currentUserId)
     for (slotId in CustomShipLoadoutSlot.ALL_SLOT_IDS) {
       val slot = localPrefs.getCustomShipSlot(slotId, currentUserId)
       val unlocked = slotId == "Frame A" || localPrefs.isCustomSlotUnlocked(slotId, currentUserId)
       val activeMarker = if (slotId == activeSlotId) " [ACTIVE]" else ""
       sb.appendLine(
-        "  • $slotId$activeMarker (${if (unlocked) "UNLOCKED" else "LOCKED"}) '${slot.customName}': ${slot.totalAllocatedPoints()} Pts (Spd=${slot.speedPts}, Thr=${slot.thrustPts}, Turn=${slot.turnPts}, Flux=${slot.maxFluxPts}, Rech=${slot.rechargePts}, Pri=${slot.primaryArchetype}, Sec=${slot.secondaryType})."
+        "  - $slotId$activeMarker (${if (unlocked) "UNLOCKED" else "LOCKED"}) '${slot.customName}': ${slot.totalAllocatedPoints()} Pts (Spd=${slot.speedPts}, Thr=${slot.thrustPts}, Turn=${slot.turnPts}, Flux=${slot.maxFluxPts}, Rech=${slot.rechargePts}, Pri=${slot.primaryArchetype}, Sec=${slot.secondaryType})."
       )
     }
 
     sb.appendLine()
-    sb.appendLine("[5. SUPPLY BUFF POOL, FORGED BUFFS & PLAYFIELD RIFTS]")
+    sb.appendLine("[5. 12-BUFF SUPPLY POOL, FORGED BUFFS & PLAYFIELD RIFTS (INCLUDING UNSTABLE RIFT)]")
     sb.appendLine(
-      "- Supply Crate Cap: ${engine.getEffectiveBuffCap()} crates (${engine.greens.size} spawned). Repel Cost=${RiftCalibrationState.repelCost.toInt()} Flux, Radius=${RiftCalibrationState.repelRadius.toInt()}px."
+      "- Supply Crate Cap: ${engine.getEffectiveBuffCap()} crates (${engine.greens.size} spawned, ${engine.swarmDrones.size} active Swarm Drones, ${engine.brickWalls.size} active Stasis Barriers). Repel Cost=${RiftCalibrationState.repelCost.toInt()} Flux, Radius=${RiftCalibrationState.repelRadius.toInt()}px."
     )
     for (entry in RiftCodex.POWERUP_CODEX) {
-      sb.appendLine("  • ${entry.title} (${entry.dropRatePercent}% drop): ${entry.effectSummary}")
+      sb.appendLine("  - ${entry.title} (${entry.dropRatePercent}% drop): ${entry.effectSummary}")
     }
     val customForged = RiftCodex.getCustomForgedBuffs()
     for (cb in customForged) {
       sb.appendLine(
-        "  • [CUSTOM FORGED] ${cb.officialName} (${cb.shortLabel}): ${cb.chargesPerPickup} charges, effect=${cb.specialEffect.label}, dmg=${cb.damage.toInt()} Flux, radius=${cb.blastRadius.toInt()}px."
+        "  - [CUSTOM FORGED] ${cb.officialName} (${cb.shortLabel}): ${cb.chargesPerPickup} charges, effect=${cb.specialEffect.label}, dmg=${cb.damage.toInt()} Flux, radius=${cb.blastRadius.toInt()}px."
       )
     }
+    val unstableCount = engine.anomalies.count { it.isUnstableMergedRift }
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Playfield Rifts (%.0fpx physical core radius, %.0fs lifespan, %d active): 1) PLASMA RIFT (%.0f%% Max Flux burn/0.6s), 2) REPULSOR RIFT (%.0fpx deflection), 3) GRAVITY RIFT (%.0fpx pull), 4) PAIRED PHASE RIFTS (Phase Rift A & B instantaneous gateway, %.2fs re-entry CD).",
+        "- Playfield Rifts (%.0fpx base physical core radius, %.0fs lifespan, %d active, %d Unstable Merged): 1) PLASMA RIFT (%.0f%% Max Flux burn/0.6s), 2) REPULSOR RIFT (%.0fpx deflection + inner-core 1.45x afterburner supersonic slingshot), 3) GRAVITY RIFT (%.0fpx pull; at max 420px size pulls nearby obstacles & Stasis Barriers inward), 4) PAIRED PHASE RIFTS (Phase Rift A & B instantaneous gateway, %.2fs re-entry CD), 5) UNSTABLE RIFT (overlapping Rifts merge into a 10.0s multicolored singularity that detonates for 75%% Max Flux Doomsday blast and shatters nearby Crystal Asteroids).",
         RiftCalibrationState.riftPhysicalRadius * anomVisScale,
         RiftCalibrationState.riftLifespanSec,
         engine.anomalies.size,
+        unstableCount,
         RiftCalibrationState.plasmaRiftDamagePct * 100f,
         RiftCalibrationState.repulsorFieldRadius,
         RiftCalibrationState.gravityPullRadius,

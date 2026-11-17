@@ -26,17 +26,17 @@ enum class ForgeElementTarget(
  val layer: ForgeElementLayer,
  val presetPrompts: List<Pair<String, String>>,
 ) {
- SAFE_ZONE_WALL("safe_zone_wall", "Safe Zone Barrier Wall", "Center sanctuary hard-light forcefield & emitter nodes", ForgeElementLayer.WORLD, listOf(
-  "Cyan Hard-Light" to "Crisp tethered cyan hard-light plasma forcefield with obsidian emitter pylons",
-  "Sovereign Gold" to "Imperial gold energy shield barrier with bright amber emitter nodes",
-  "Cryo Ice Lattice" to "Glacial ice-blue crystalline shield wall with frost-white rim",
-  "Crimson Lockdown" to "High-voltage crimson containment laser wall with deep obsidian anchors",
+ SAFE_ZONE_WALL("safe_zone_wall", "Safe Zone Rift Rim", "Circular wall-less Rift rim & sanctuary boundary", ForgeElementLayer.WORLD, listOf(
+  "Cyan Horizon" to "Crisp circular cyan Ring-Space Rift rim with luminous containment ticks",
+  "Sovereign Gold" to "Imperial gold circular Rift sanctuary rim with warm amber corona",
+  "Cryo Horizon" to "Glacial ice-blue circular Rift rim with frost-white horizon shimmer",
+  "Crimson Lockdown" to "High-energy crimson circular Rift containment rim with deep obsidian edge",
  )),
- SAFE_ZONE_PAD("safe_zone_pad", "Safe Zone Sanctuary Pad", "Interior recharge floor grid & holographic insignia", ForgeElementLayer.WORLD, listOf(
-  "Obsidian Deck" to "Sleek pitch-black obsidian sanctuary deck with subtle teal recharge grid",
-  "Deep Sapphire" to "Luminous deep sapphire reactor floor with bright sky-cyan circuit rings",
-  "Golden Citadel" to "Regal dark bronze sanctuary floor with warm sovereign gold trim",
-  "Minimal Stealth" to "Ultra-clean translucent void floor with razor-thin cyan perimeter",
+ SAFE_ZONE_PAD("safe_zone_pad", "Safe Zone Nexus Aperture", "Swirling dimensional Rift looking into Nexus Hub", ForgeElementLayer.WORLD, listOf(
+  "Ring-Space Cyan" to "Deep cyan-indigo Ring-Space aperture looking down into the glowing Nexus Hub",
+  "Deep Sapphire" to "Luminous sapphire dimensional Rift aperture with sky-cyan caustic rings",
+  "Golden Citadel" to "Regal amber-gold dimensional Rift aperture with warm sovereign Hub core",
+  "Minimal Void" to "Ultra-clean translucent void Rift aperture with razor-thin cyan horizon",
  )),
  PLACED_STASIS_BARRIER("placed_stasis_barrier", "Placed Stasis Barrier", "45.0s deployed tethered hard-light forcefield", ForgeElementLayer.WORLD, listOf(
   "Tethered Cyan" to "Tethered electric cyan hard-light forcefield beam with twin emitter nodes",
@@ -68,11 +68,11 @@ enum class ForgeElementTarget(
   "Rift Conduit" to "Shattered violet phase-gate strut with glowing magenta arc",
   "Cryo Bulkhead" to "Frosted titanium hull rib with pale ice-blue specular edge",
  )),
- ARENA_PERIMETER_RING("arena_perimeter_ring", "Sector Containment Ring", "Outer circular sector boundary wall & warning field", ForgeElementLayer.WORLD, listOf(
-  "Cyan Containment" to "Crisp electric-cyan sector containment ring with dark obsidian ticks",
-  "Crimson Hazard" to "High-alert crimson boundary laser ring with pulsing rose halo",
-  "Violet Horizon" to "Deep amethyst event-horizon boundary ring with indigo glow",
-  "Gold Sovereign" to "Tournament gold arena perimeter ring with crisp white ticks",
+ ARENA_PERIMETER_RING("arena_perimeter_ring", "Playfield Rift Storm Wall", "Rippling outer Rift clouds, mist & proximity lightning", ForgeElementLayer.WORLD, listOf(
+  "Cyan Storm Cloud" to "Billowing electric-cyan Rift storm cloud wall with inward plasma mist and arc lightning",
+  "Crimson Tempest" to "High-voltage crimson Rift storm cloud boundary with branching rose lightning",
+  "Violet Horizon" to "Deep amethyst Ring-Space storm wall with indigo mist and electric arcs",
+  "Gold Sovereign" to "Solar-gold Rift storm cloud perimeter with crisp white lightning filaments",
  )),
  BACKGROUND_NEBULA("background_nebula", "Deep-Space Nebula & Stars", "Parallax starfield, cosmic dust & volumetric nebula", ForgeElementLayer.WORLD, listOf(
   "Abyssal Cyan" to "Deep pitch-black void with subtle cyan and indigo nebula clouds",
@@ -98,11 +98,11 @@ enum class ForgeElementTarget(
   "Crimson Collapse" to "Collapsed crimson star singularity with dark void center",
   "Abyssal Teal" to "Cold deep-sea cyan accretion spiral around pitch-black core",
  )),
- RIFT_PHASE_PAIR("rift_phase_pair", "Paired Phase Rifts", "Linked Phase Rift A & B instant warp portals", ForgeElementLayer.WORLD, listOf(
-  "Teal & Violet" to "Paired teal-cyan and violet phase portals with dark warp aperture",
-  "Gold & Azure" to "Paired sovereign gold and electric blue phase warp gates",
-  "Emerald & Magenta" to "High-contrast emerald and neon magenta linked phase rifts",
-  "Ice & Obsidian" to "Crisp glacier-white and cyan phase portals with razor ticks",
+ RIFT_PHASE_PAIR("rift_phase_pair", "Paired Phase Rifts", "Linked Phase Rift A & B instant warp rifts", ForgeElementLayer.WORLD, listOf(
+  "Teal & Violet" to "Paired teal-cyan and violet Phase Rifts with dark warp singularity",
+  "Gold & Azure" to "Paired sovereign gold and electric blue Phase Rifts with twin rings",
+  "Emerald & Magenta" to "High-contrast emerald and neon magenta linked Phase Rifts",
+  "Ice & Obsidian" to "Crisp glacier-white and cyan Phase Rifts with razor ticks",
  )),
  SUPPLY_CRATE("supply_crate", "Supply Crate", "Floating 3D octagonal tactical pickup pod", ForgeElementLayer.WORLD, listOf(
   "Tactical Pod" to "Dark metallic octagonal supply pod with glowing cyan-emerald rim",
@@ -122,11 +122,11 @@ enum class ForgeElementTarget(
   "Cryo Charge" to "Faceted ice-cyan stasis bomb with bright sky-blue sensor ring",
   "Stealth Mine" to "Low-profile gunmetal tactical mine with sharp red strobe core",
  )),
- ECLIPSE_STASIS_BUBBLE("eclipse_stasis_bubble", "Eclipse Stasis Bubble", "Two-way 275px containment dome & perimeter rim", ForgeElementLayer.WORLD, listOf(
-  "Amethyst Dome" to "Two-way magenta-violet gravimetric stasis dome with cyan inner rim",
-  "Cryo Containment" to "Translucent glacier-cyan containment sphere with white hex rim",
-  "Solar Quarantine" to "Golden-amber hard-light containment dome with crisp edge",
-  "Void Horizon" to "Deep indigo void bubble with electric violet boundary ring",
+ ECLIPSE_STASIS_BUBBLE("eclipse_stasis_bubble", "Eclipse Stasis", "Two-way 275px Stasis containment field (6.0s)", ForgeElementLayer.WORLD, listOf(
+  "Amethyst Stasis" to "Two-way magenta-violet gravimetric Stasis field with cyan inner horizon",
+  "Cryo Stasis" to "Translucent glacier-cyan Stasis containment field with white hex rim",
+  "Solar Quarantine" to "Golden-amber hard-light Stasis containment field with crisp edge",
+  "Void Horizon" to "Deep indigo void Stasis horizon with electric violet boundary ring",
  )),
  FLUX_CORE_ORB("flux_core_orb", "Volatile Flux Core", "Golden singularity orb & carrier crown aura", ForgeElementLayer.WORLD, listOf(
   "Sovereign Gold" to "Pulsing golden singularity orb with radiant solar corona",
@@ -155,7 +155,7 @@ enum class ForgeElementTarget(
  HUD_NEXUS_BUTTON("hud_nexus_button", "NEXUS Command Button", "Top-left NEXUS console launcher button", ForgeElementLayer.HUD, listOf(
   "Cyan Command" to "Beveled obsidian NEXUS button with electric-cyan emblem glow",
   "Gold Crest" to "Armored command button with sovereign gold border and bright core",
-  "Violet Portal" to "Rift-violet command launcher with glowing magenta trim",
+  "Violet Singularity" to "Rift-violet command launcher with glowing magenta trim",
   "Stealth Slate" to "Compact dark titanium button with subtle sky-blue rim",
  )),
  HUD_MINIMAP_CONSOLE("hud_minimap_console", "Circular Radar & Telemetry", "1:1 circular minimap, Flux readout & pilot LVL bar", ForgeElementLayer.HUD, listOf(
@@ -188,7 +188,7 @@ enum class ForgeElementTarget(
   "Gold Ordnance" to "Sovereign gold weapon gimbal with crisp degree marks",
   "Ghost Reticle" to "Translucent pro-grade aim stick with razor-thin ring",
  )),
- HUD_SECONDARY_BTN("hud_secondary_btn", "Secondary Ability Button", "Ship class bomb, cloak, dash or bubble trigger", ForgeElementLayer.HUD, listOf(
+ HUD_SECONDARY_BTN("hud_secondary_btn", "Secondary Ability Button", "Ship class bomb, cloak, dash or Stasis trigger", ForgeElementLayer.HUD, listOf(
   "Amber Ordnance" to "Beveled obsidian ability button with blazing amber-gold ring",
   "Violet Class" to "Amethyst-trimmed secondary trigger with bright magenta glow",
   "Crimson Strike" to "Heavy crimson warhead trigger button with bold border",
@@ -230,11 +230,11 @@ enum class ForgeElementTarget(
   "Cyan Notice" to "Cool electric-cyan status alert pill with crisp rim",
   "Compact Alert" to "Sleek compact warning pill with subtle red edge",
  )),
- CURRENCY_FLUX_ICON("currency_flux_icon", "Flux Prism Emblem", "6-facet beveled Flux reactor icon", ForgeElementLayer.HUD, listOf(
-  "Canonical Cyan" to "Crisp 6-facet beveled cyan-sapphire Flux Prism with white crown",
-  "Overcharged Teal" to "Radiant mint-teal diamond Flux Prism with intense reactor halo",
-  "Cobalt Crystal" to "Deep royal-blue faceted Flux Prism with icy specular ridges",
-  "Golden Reactor" to "Solar-gold and cyan hybrid reactor prism with bright core",
+ CURRENCY_FLUX_ICON("currency_flux_icon", "Swirling Plasma Flux Toroid", "3D tri-arc magnetic fusion Flux coil icon", ForgeElementLayer.HUD, listOf(
+  "Canonical Toroid" to "3D swirling cyan-sapphire plasma toroid with counter-rotating magnetic containment arcs",
+  "Overcharged Coil" to "Radiant mint-teal tri-arc fusion Flux coil with intense plasma core",
+  "Cobalt Vortex" to "Deep royal-blue swirling magnetic Flux toroid with icy plasma filaments",
+  "Golden Fusion" to "Solar-gold and cyan hybrid magnetic fusion toroid with bright core",
  )),
  CURRENCY_SHARD_ICON("currency_shard_icon", "Rift Shard Crystal Icon", "3D faceted amethyst Rift Shard spire icon", ForgeElementLayer.HUD, listOf(
   "Amethyst Spire" to "3D faceted amethyst crystal spire emerging from a cyan-violet Rift ring",
@@ -264,6 +264,7 @@ data class VisualElementRecipe(
  val surfaceOpacity: Float = 0.90f,
  val rimLightDepth: Float = 0.70f,
  val detailDensity: Float = 0.70f,
+ val shaderTurbulence: Float = 0.75f,
  val promptUsed: String = "Factory Default",
 ) {
  val primaryColorInt: Int get() = parseHexColorSafe(primaryHex, 0xFF040914.toInt())
@@ -283,7 +284,8 @@ data class VisualElementRecipe(
     abs(glowIntensity - def.glowIntensity) < 0.005f &&
     abs(surfaceOpacity - def.surfaceOpacity) < 0.005f &&
     abs(rimLightDepth - def.rimLightDepth) < 0.005f &&
-    abs(detailDensity - def.detailDensity) < 0.005f
+    abs(detailDensity - def.detailDensity) < 0.005f &&
+    abs(shaderTurbulence - def.shaderTurbulence) < 0.005f
   }
 
  fun toJson(): JSONObject = JSONObject().apply {
@@ -298,6 +300,7 @@ data class VisualElementRecipe(
   put("surfaceOpacity", ((surfaceOpacity.coerceIn(0.15f, 1.00f) * 100f).roundToInt() / 100.0))
   put("rimLightDepth", ((rimLightDepth.coerceIn(0.00f, 1.50f) * 100f).roundToInt() / 100.0))
   put("detailDensity", ((detailDensity.coerceIn(0.00f, 1.50f) * 100f).roundToInt() / 100.0))
+  put("shaderTurbulence", ((shaderTurbulence.coerceIn(0.00f, 2.00f) * 100f).roundToInt() / 100.0))
   put("promptUsed", promptUsed.take(120))
  }
 
@@ -363,6 +366,7 @@ data class VisualElementRecipe(
     surfaceOpacity = obj.optDouble("surfaceOpacity", def.surfaceOpacity.toDouble()).toFloat().coerceIn(0.15f, 1.00f),
     rimLightDepth = obj.optDouble("rimLightDepth", def.rimLightDepth.toDouble()).toFloat().coerceIn(0.00f, 1.50f),
     detailDensity = obj.optDouble("detailDensity", def.detailDensity.toDouble()).toFloat().coerceIn(0.00f, 1.50f),
+    shaderTurbulence = obj.optDouble("shaderTurbulence", def.shaderTurbulence.toDouble()).toFloat().coerceIn(0.00f, 2.00f),
     promptUsed = obj.optString("promptUsed", def.promptUsed).ifBlank { def.promptUsed }.take(120),
    )
   }
@@ -446,11 +450,18 @@ data class VisualElementRecipe(
     hasAny("clean", "minimal", "smooth", "pure", "simple") -> 0.38f
     else -> def.detailDensity
    }
+   val turbulence = when {
+    hasAny("storm", "tempest", "swirl", "chaotic", "turbulent", "arc", "lightning", "unstable", "vortex") -> 1.45f
+    hasAny("calm", "still", "smooth", "minimal", "pure", "laminar") -> 0.28f
+    variationSalt > 0 -> 0.45f + ((hash % 110) / 100f)
+    else -> def.shaderTurbulence
+   }
    return VisualElementRecipe(
     targetKey = target.key, primaryHex = primary, trimHex = trim, glowHex = glow, geometryStyle = style,
     pixelScale = scale.coerceIn(0.50f, 2.00f), borderWeight = border.coerceIn(0.40f, 2.50f),
     glowIntensity = glowAmt.coerceIn(0.00f, 2.50f), surfaceOpacity = opacity.coerceIn(0.15f, 1.00f),
     rimLightDepth = rimDepth.coerceIn(0.00f, 1.50f), detailDensity = density.coerceIn(0.00f, 1.50f),
+    shaderTurbulence = turbulence.coerceIn(0.00f, 2.00f),
     promptUsed = cleaned.take(120),
    )
   }
@@ -476,7 +487,7 @@ data class SyndicateCrestRecipe(
 
  val emblemGlyphLabel: String
   get() = when (emblemGlyph.coerceIn(0, 5)) {
-   1 -> "Twin Blades"; 2 -> "Crown Spire"; 3 -> "Vortex Eye"; 4 -> "Winged Falcon"; 5 -> "Tactician Visor"; else -> "Rift Star"
+   1 -> "Twin Blades"; 2 -> "Crown Spire"; 3 -> "Vortex Eye"; 4 -> "Winged Falcon"; 5 -> "Tactician Visor"; else -> "Rift Singularity"
   }
 
  fun toJson(): JSONObject = JSONObject().apply {
@@ -610,7 +621,7 @@ object RiftVisualForgeState {
   ForgeElementTarget.HUD_REPEL_BTN -> RiftCalibrationState.repelBtnOffset
   ForgeElementTarget.HUD_BRAKE_BTN -> RiftCalibrationState.brakeBtnOffset
   ForgeElementTarget.HUD_MULTI_BTN -> RiftCalibrationState.multiBtnOffset
-  ForgeElementTarget.HUD_SPECTATOR_BOX -> RiftCalibrationState.toastContainerOffset
+  ForgeElementTarget.HUD_SPECTATOR_BOX -> RiftCalibrationState.spectatorBoxOffset
   ForgeElementTarget.HUD_WARNING_BANNER -> RiftCalibrationState.idleWarningBannerOffset
   else -> null
  }
@@ -630,7 +641,7 @@ object RiftVisualForgeState {
    ForgeElementTarget.HUD_REPEL_BTN -> RiftCalibrationState.repelBtnOffset = offset
    ForgeElementTarget.HUD_BRAKE_BTN -> RiftCalibrationState.brakeBtnOffset = offset
    ForgeElementTarget.HUD_MULTI_BTN -> RiftCalibrationState.multiBtnOffset = offset
-   ForgeElementTarget.HUD_SPECTATOR_BOX -> RiftCalibrationState.toastContainerOffset = offset
+   ForgeElementTarget.HUD_SPECTATOR_BOX -> RiftCalibrationState.spectatorBoxOffset = offset
    ForgeElementTarget.HUD_WARNING_BANNER -> RiftCalibrationState.idleWarningBannerOffset = offset
    else -> Unit
   }

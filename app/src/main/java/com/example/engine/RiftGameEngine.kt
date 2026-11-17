@@ -31,12 +31,16 @@ enum class SpaceObstacleStyle {
 typealias SpaceObstacleType = SpaceObstacleStyle
 
 data class WallRect(
-  val x: Float,
-  val y: Float,
+  var x: Float,
+  var y: Float,
   val w: Float,
   val h: Float,
   val style: SpaceObstacleStyle = SpaceObstacleStyle.ORBITAL_STATION,
   val variantSeed: Int = 0,
+  var hp: Float = 2400f,
+  val maxHp: Float = 2400f,
+  var stationHitCounter: Int = 0,
+  var hitFlashTimer: Float = 0f,
 ) {
   val type: SpaceObstacleType
     get() = style
@@ -48,7 +52,7 @@ data class GreenCrate(
   var x: Float,
   var y: Float,
   var spinPhase: Float,
-  val buffType: Int = 0, // 0=Burst, 1=Shotgun, 2=Missile, 3=Decoy, 4=Brick, 5=Rocket, 6=Full Flux, 7=Repel, 8=Multi-Shot(+25), 9=Bouncing Bullets(+30), 10=Overcharge Surge(+8%)
+  val buffType: Int = 0, // 0=Burst, 1=Shotgun, 2=Missile, 3=Decoy, 4=Brick, 5=Rocket, 6=Full Flux, 7=Repel, 8=Multi-Shot(+25), 9=Bouncing Bullets(+30), 10=Overcharge Surge(+8%), 11=Swarm(5 Drones)
   var vx: Float = 0f,
   var vy: Float = 0f,
 )
@@ -76,12 +80,13 @@ data class BrickWallEntity(
   val id: String,
   val ownerId: String,
   val freq: Int,
-  val x: Float,
-  val y: Float,
+  var x: Float,
+  var y: Float,
   val w: Float,
   val h: Float,
   var life: Float = 45.0f,
   val maxLife: Float = 45.0f,
+  var stackCount: Int = 1,
 )
 
 enum class RankedGameMode(
@@ -352,10 +357,42 @@ data class SpatialAnomalyEntity(
   var y: Float,
   var physicalRadius: Float = 180f, // Exactly 5x standard ship radius (36f * 5 = 180f)
   var life: Float = 45.0f,
-  val maxLife: Float = 45.0f,
+  var maxLife: Float = 45.0f,
   var spinAngle: Float = 0f,
   var partnerId: String = "",
   var absorbedWeaponCount: Int = 0,
+  var isUnstableMergedRift: Boolean = false,
+)
+
+data class PendingAsteroidRespawn(
+  val x: Float,
+  val y: Float,
+  val w: Float,
+  val h: Float,
+  val variantSeed: Int,
+  var timerSec: Float = 20.0f,
+)
+
+data class SwarmDroneEntity(
+  val id: String,
+  val ownerId: String,
+  val ownerCallsign: String,
+  val ownerSyndicateTag: String,
+  val ownerArmadaName: String,
+  val ownerIsHuman: Boolean,
+  val ownerShipLabel: String,
+  val freq: Int,
+  var x: Float,
+  var y: Float,
+  var vx: Float,
+  var vy: Float,
+  var angle: Float,
+  var life: Float = 6.5f,
+  val maxLife: Float = 6.5f,
+  val damage: Float = 210f,
+  var zigPhase: Float = 0f,
+  var targetShipId: String = "",
+  var phaseRiftCooldownTimer: Float = 0f,
 )
 
 data class ParticleEntity(
@@ -465,6 +502,15 @@ private data class RaycastHit(
   val normalY: Float,
 )
 
+private data class SweptWallImpact(
+  val t: Float,
+  val hitX: Float,
+  val hitY: Float,
+  val normalX: Float,
+  val normalY: Float,
+  val wallIndex: Int,
+)
+
 class RiftGameEngine(
   val sfx: RiftSoundSynthesizer,
   var onStatsUpdated: () -> Unit = {},
@@ -522,12 +568,22 @@ class RiftGameEngine(
   val walls = mutableListOf<WallRect>()
   val brickWalls = mutableListOf<BrickWallEntity>()
   val decoys = mutableListOf<DecoyEntity>()
+  val swarmDrones = mutableListOf<SwarmDroneEntity>()
+  val pendingAsteroidRespawns = mutableListOf<PendingAsteroidRespawn>()
   private var nextDecoyBrickId: Long = 1L
-  val safeZone = RectF(3600f, 3600f, 4400f, 4400f)
+  private var nextSwarmDroneId: Long = 1L
+  private var gravityRadarBakeTimer: Float = 0f
+  val safeZone = RectF(3620f, 3620f, 4380f, 4380f)
   val greens = mutableListOf<GreenCrate>()
   val recentBuffSpawnLocations = ArrayDeque<Pair<Float, Float>>()
   val pendingBuffSpawns = mutableListOf<Float>()
   var radarBgBitmap: Bitmap? = null
+
+  fun getSafeZoneRadius(): Float {
+    val r = 380f * RiftCalibrationState.safeZoneScale.coerceIn(0.5f, 2.0f)
+    safeZone.set(arenaCenterX - r, arenaCenterY - r, arenaCenterX + r, arenaCenterY + r)
+    return r
+  }
 
   fun getEffectiveBuffCap(): Int {
     val mult = (currentCustomGame?.crateSpawnMult ?: 1.0f).coerceIn(0f, 3f)
@@ -802,7 +858,11 @@ class RiftGameEngine(
   var onDailyDirectiveEvent: (DailyDirectiveMetric, Int, Boolean) -> Unit = { _, _, _ -> }
 
   fun getLocalStartingBounty(): Int =
-    RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
+    if (currentCustomGame != null) {
+      100
+    } else {
+      RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
+    }
 
   fun adjustLocalResonance(delta: Int, reasonLabel: String = "") {
     if (currentCustomGame != null || delta == 0) return
@@ -977,23 +1037,23 @@ class RiftGameEngine(
         riftShards += milestoneBonusShards
         sfx.playPrize()
         spawnPooledFct(
-          text = "★ LVL $pilotLevel! +${milestoneBonusShards}❖ SHARDS",
+          text = "LVL $pilotLevel! +${milestoneBonusShards}❖ SHARDS",
           x = localPlayer.x,
           y = localPlayer.y - 38f,
           color = Color.parseColor("#FFD700"),
           maxLife = 1.45f,
         )
-        onPrizeToast("★ MILESTONE PILOT LVL $pilotLevel: +1 CUSTOM PT & +${milestoneBonusShards}❖ RIFT SHARDS!")
+        onPrizeToast("MILESTONE PILOT LVL $pilotLevel: +1 CUSTOM PT & +${milestoneBonusShards}❖ RIFT SHARDS!")
       } else {
         sfx.playPrize()
         spawnPooledFct(
-          text = "★ PILOT LVL $pilotLevel (+1 PT)",
+          text = "PILOT LVL $pilotLevel (+1 PT)",
           x = localPlayer.x,
           y = localPlayer.y - 36f,
           color = Color.parseColor("#00F0FF"),
           maxLife = 1.25f,
         )
-        onPrizeToast("★ PILOT LEVEL UP! LVL $pilotLevel (+1 CUSTOMIZATION POINT • ${pilotLevel}/100 PTS)")
+        onPrizeToast("PILOT LEVEL UP! LVL $pilotLevel (+1 CUSTOMIZATION POINT • ${pilotLevel}/100 PTS)")
       }
       if (notifyChange) {
         onStatsUpdated()
@@ -1005,7 +1065,7 @@ class RiftGameEngine(
 
   fun simulatePilotLevelUp() {
     if (pilotLevel >= 100) {
-      onPrizeToast("★ MAX PILOT LEVEL 100 REACHED (100/100 CUSTOMIZATION POINTS)")
+      onPrizeToast("MAX PILOT LEVEL 100 REACHED (100/100 CUSTOMIZATION POINTS)")
       return
     }
     val nextLvl = (pilotLevel + 1).coerceAtMost(100)
@@ -1102,6 +1162,7 @@ class RiftGameEngine(
     bullets.clear()
     bombs.clear()
     decoys.clear()
+    swarmDrones.clear()
     brickWalls.clear()
     shockwaves.clear()
     shipDebrisChunks.clear()
@@ -1439,7 +1500,10 @@ class RiftGameEngine(
   fun isRiftControlRulesActive(): Boolean =
     effectiveModeRules() == RankedGameMode.RIFT_CONTROL
 
-  fun hasActiveSafeZone(): Boolean = !isRiftControlRulesActive()
+  fun hasActiveSafeZone(): Boolean {
+    val m = effectiveModeRules()
+    return m == RankedGameMode.SECTOR_CONVERGENCE || m == RankedGameMode.FLUX_CORE
+  }
 
   fun doesModeLockShipSelection(targetMode: RankedGameMode = effectiveModeRules()): Boolean =
     targetMode == RankedGameMode.RIFT_SKIRMISH || targetMode == RankedGameMode.SYNDICATE_WARS
@@ -1530,6 +1594,7 @@ class RiftGameEngine(
     bullets.clear()
     bombs.clear()
     decoys.clear()
+    swarmDrones.clear()
     brickWalls.clear()
     shipDebrisChunks.clear()
     interdictorBubbles.clear()
@@ -1620,6 +1685,7 @@ class RiftGameEngine(
     bullets.clear()
     bombs.clear()
     decoys.clear()
+    swarmDrones.clear()
     brickWalls.clear()
     interdictorBubbles.clear()
     killFeed.clear()
@@ -1734,6 +1800,7 @@ class RiftGameEngine(
     bullets.clear()
     bombs.clear()
     decoys.clear()
+    swarmDrones.clear()
     brickWalls.clear()
     shipDebrisChunks.clear()
     interdictorBubbles.clear()
@@ -1758,9 +1825,10 @@ class RiftGameEngine(
     fluxCoreOrb.overchargeTier = 0
     fluxCoreOrb.ejectDecelTimerSec = 0f
     fluxCoreOrb.pickupImmunitySec = 0.5f
-    // Place just outside the North Safe Zone gate so pilots can immediately contest it in open space
-    fluxCoreOrb.x = WORLD_SIZE * 0.5f
-    fluxCoreOrb.y = safeZone.top - 320f
+    // Place just outside the North Safe Zone rim so pilots can immediately contest it in open space
+    val safeR = getSafeZoneRadius()
+    fluxCoreOrb.x = arenaCenterX
+    fluxCoreOrb.y = arenaCenterY - safeR - 320f
     fluxCoreOrb.vx = 0f
     fluxCoreOrb.vy = 0f
   }
@@ -1799,8 +1867,9 @@ class RiftGameEngine(
       fluxCoreOrb.y = cy + ((fluxCoreOrb.y - cy) / distFromCenter) * maxOrbDist
     }
     if (isInsideSafeZone(fluxCoreOrb.x, fluxCoreOrb.y)) {
-      fluxCoreOrb.x = cx + cos(baseAng) * (safeZone.width() * 0.5f + 90f)
-      fluxCoreOrb.y = cy + sin(baseAng) * (safeZone.height() * 0.5f + 90f)
+      val pushR = getSafeZoneRadius() + 90f
+      fluxCoreOrb.x = cx + cos(baseAng) * pushR
+      fluxCoreOrb.y = cy + sin(baseAng) * pushR
     }
     fluxCoreOrb.vx = cos(baseAng) * ejectSp
     fluxCoreOrb.vy = sin(baseAng) * ejectSp
@@ -1845,6 +1914,7 @@ class RiftGameEngine(
   }
 
   fun isBulletAlliedWithShip(b: BulletEntity, s: ShipEntity): Boolean {
+    if (b.ownerId == "station_defense") return false
     if (b.ownerId == s.id) return true
     if (isTeamBasedRankedMode()) return b.freq == s.freq
     val allowFfaArmadas = currentCustomGame?.allowArmadasInFfa ?: true
@@ -1884,6 +1954,26 @@ class RiftGameEngine(
     return false
   }
 
+  fun isDroneAlliedWithShip(dr: SwarmDroneEntity, s: ShipEntity): Boolean {
+    if (dr.ownerId == s.id) return true
+    if (isTeamBasedRankedMode()) return dr.freq == s.freq
+    val allowFfaArmadas = currentCustomGame?.allowArmadasInFfa ?: true
+    if (!allowFfaArmadas) return false
+    if (dr.ownerArmadaName.isNotEmpty() && dr.ownerArmadaName == s.armadaName) return true
+    if (
+      dr.ownerSyndicateTag.isNotEmpty() &&
+        dr.ownerSyndicateTag != "FREE" &&
+        dr.ownerSyndicateTag != "GUEST" &&
+        dr.ownerSyndicateTag != "BOT" &&
+        dr.ownerSyndicateTag != "UNAFFILIATED" &&
+        dr.ownerSyndicateTag != "RFT" &&
+        dr.ownerSyndicateTag == s.syndicateTag
+    ) {
+      return true
+    }
+    return false
+  }
+
   private fun rectOverlapsProtectedZone(rx: Float, ry: Float, rw: Float, rh: Float): Boolean {
     val rRight = rx + rw
     val rBottom = ry + rh
@@ -1892,13 +1982,10 @@ class RiftGameEngine(
     val halfDiag = hypot(rw * 0.5f, rh * 0.5f)
     // Must fit comfortably inside circular sector containment ring
     if (hypot(rCx - arenaCenterX, rCy - arenaCenterY) + halfDiag > arenaRadius - 190f) return true
-    // Protect Safe Zone + docking clearance when active
+    // Protect circular Safe Zone + docking clearance when active
     if (
       hasActiveSafeZone() &&
-        rRight >= safeZone.left - 180f &&
-        rx <= safeZone.right + 180f &&
-        rBottom >= safeZone.top - 180f &&
-        ry <= safeZone.bottom + 180f
+        hypot(rCx - arenaCenterX, rCy - arenaCenterY) < getSafeZoneRadius() + halfDiag + 180f
     ) {
       return true
     }
@@ -1920,21 +2007,12 @@ class RiftGameEngine(
   fun generateSectorArena(seed: Int) {
     currentArenaSeed = seed
     walls.clear()
+    pendingAsteroidRespawns.clear()
+    swarmDrones.clear()
+    getSafeZoneRadius()
 
     val cx = arenaCenterX
     val cy = arenaCenterY
-    // Center Safe Zone Tethered Hard-Light Forcefield Barriers around (4000, 4000) — omitted completely in RIFT_CONTROL
-    if (hasActiveSafeZone()) {
-      walls.add(WallRect(cx - 448f, cy - 448f, 256f, 68f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 101))
-      walls.add(WallRect(cx + 192f, cy - 448f, 256f, 68f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 102))
-      walls.add(WallRect(cx - 448f, cy + 380f, 256f, 68f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 103))
-      walls.add(WallRect(cx + 192f, cy + 380f, 256f, 68f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 104))
-
-      walls.add(WallRect(cx - 448f, cy - 380f, 68f, 192f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 105))
-      walls.add(WallRect(cx - 448f, cy + 188f, 68f, 192f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 106))
-      walls.add(WallRect(cx + 380f, cy - 380f, 68f, 192f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 107))
-      walls.add(WallRect(cx + 380f, cy + 188f, 68f, 192f, SpaceObstacleStyle.PERMANENT_BARRIER, seed xor 108))
-    }
 
     var rng = seed
     fun nextRand(): Float {
@@ -2014,18 +2092,20 @@ class RiftGameEngine(
     c.drawCircle(half, half, half - 1.5f, borderPaint)
 
     if (hasActiveSafeZone()) {
+      val safeRadPx = getSafeZoneRadius() * scale
       val safePaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
           style = Paint.Style.FILL
-          color = Color.argb(55, 16, 185, 129)
+          color = Color.argb(55, 0, 245, 212)
         }
-      c.drawRect(
-        half + (safeZone.left - arenaCenterX) * scale,
-        half + (safeZone.top - arenaCenterY) * scale,
-        half + (safeZone.right - arenaCenterX) * scale,
-        half + (safeZone.bottom - arenaCenterY) * scale,
-        safePaint,
-      )
+      c.drawCircle(half, half, safeRadPx, safePaint)
+      val safeRingPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          style = Paint.Style.STROKE
+          strokeWidth = 1.4f
+          color = Color.argb(140, 0, 245, 212)
+        }
+      c.drawCircle(half, half, safeRadPx, safeRingPaint)
     }
 
     val stationPaint =
@@ -2070,16 +2150,14 @@ class RiftGameEngine(
 
   fun isInsideSafeZone(x: Float, y: Float): Boolean {
     if (!hasActiveSafeZone()) return false
-    return x >= safeZone.left && x <= safeZone.right && y >= safeZone.top && y <= safeZone.bottom
+    val r = getSafeZoneRadius()
+    return hypot(x - arenaCenterX, y - arenaCenterY) <= r
   }
 
   fun isWithinBotBanPerimeter(x: Float, y: Float): Boolean {
     if (!hasActiveSafeZone()) return false
     val margin = RiftCalibrationState.botSafeZoneBanMargin
-    return x >= safeZone.left - margin &&
-      x <= safeZone.right + margin &&
-      y >= safeZone.top - margin &&
-      y <= safeZone.bottom + margin
+    return hypot(x - arenaCenterX, y - arenaCenterY) <= getSafeZoneRadius() + margin
   }
 
   fun circleIntersectsWalls(cx: Float, cy: Float, r: Float): Boolean {
@@ -2161,23 +2239,7 @@ class RiftGameEngine(
     }
     recentBuffSpawnLocations.addLast(Pair(chosenX, chosenY))
 
-    val customIndices = RiftCodex.getCustomForgedBuffs().map { it.buffTypeIndex }
-    val chosenBuffType =
-      if (customIndices.isNotEmpty() && Random.nextFloat() < 0.16f) {
-        customIndices[Random.nextInt(customIndices.size)]
-      } else {
-        when (val baseRoll = Random.nextInt(11)) {
-          10 ->
-            when (Random.nextInt(5)) {
-              0 -> -10 // Speed Overcharge (+8% Top Speed)
-              1 -> -11 // Thrust Overcharge (+8% Thrust)
-              2 -> -12 // Reactor Overcharge (+8% Flux Recharge)
-              3 -> -13 // Turn Overcharge (+12% Turn Rate)
-              else -> -14 // Capacitor Overcharge (+10% Max Flux)
-            }
-          else -> baseRoll
-        }
-      }
+    val chosenBuffType = rollRandomCrateBuffType()
 
     greens.add(
       GreenCrate(
@@ -2188,6 +2250,25 @@ class RiftGameEngine(
       )
     )
     return true
+  }
+
+  private fun rollRandomCrateBuffType(): Int {
+    val customIndices = RiftCodex.getCustomForgedBuffs().map { it.buffTypeIndex }
+    return if (customIndices.isNotEmpty() && Random.nextFloat() < 0.16f) {
+      customIndices[Random.nextInt(customIndices.size)]
+    } else {
+      when (val baseRoll = Random.nextInt(12)) {
+        10 ->
+          when (Random.nextInt(5)) {
+            0 -> -10 // Speed Overcharge (+8% Top Speed)
+            1 -> -11 // Thrust Overcharge (+8% Thrust)
+            2 -> -12 // Reactor Overcharge (+8% Flux Recharge)
+            3 -> -13 // Turn Overcharge (+12% Turn Rate)
+            else -> -14 // Capacitor Overcharge (+10% Max Flux)
+          }
+        else -> baseRoll
+      }
+    }
   }
 
   fun findRandomAnomalyPosition(existingAnomalies: List<SpatialAnomalyEntity> = emptyList()): Pair<Float, Float> {
@@ -2201,10 +2282,7 @@ class RiftGameEngine(
       val y = arenaCenterY + sin(ang) * dist
       val inSafePadded =
         hasActiveSafeZone() &&
-          x >= safeZone.left - 280f &&
-          x <= safeZone.right + 280f &&
-          y >= safeZone.top - 280f &&
-          y <= safeZone.bottom + 280f
+          hypot(x - arenaCenterX, y - arenaCenterY) < getSafeZoneRadius() + 280f
       if (inSafePadded) continue
       if (circleIntersectsWalls(x, y, 140f)) continue
 
@@ -2283,9 +2361,10 @@ class RiftGameEngine(
   }
 
   private fun getSafeZoneSpawnPosition(): Pair<Float, Float> {
-    val x = safeZone.left + 80f + Random.nextFloat() * (safeZone.width() - 160f)
-    val y = safeZone.top + 80f + Random.nextFloat() * (safeZone.height() - 160f)
-    return x to y
+    val rMax = (getSafeZoneRadius() - 72f).coerceAtLeast(60f)
+    val ang = Random.nextFloat() * PI.toFloat() * 2f
+    val dist = sqrt(Random.nextFloat()) * rMax
+    return (arenaCenterX + cos(ang) * dist) to (arenaCenterY + sin(ang) * dist)
   }
 
   private fun getSkirmishGateSpawnPosition(freq: Int): Pair<Float, Float> {
@@ -2334,13 +2413,7 @@ class RiftGameEngine(
     mode = resolvedMode.id
 
     val isTeamMode = isTeamBasedRankedMode()
-    val prevWallsEmpty = walls.isEmpty()
     isShipLockedForMatch = doesModeLockShipSelection(resolvedMode)
-    // Regenerate center Safe Zone barriers immediately when entering or leaving RIFT_CONTROL
-    val hadCenterSafeBarriers = walls.any { it.style == SpaceObstacleStyle.PERMANENT_BARRIER }
-    if (!prevWallsEmpty && hadCenterSafeBarriers != hasActiveSafeZone()) {
-      generateSectorArena(currentArenaSeed)
-    }
     val perTeamTarget =
       when (resolvedMode) {
         RankedGameMode.RIFT_SKIRMISH -> activeTeamSizeBracket.coerceIn(2, 5)
@@ -2528,7 +2601,7 @@ class RiftGameEngine(
     )
     if (victimBounty > 1000 && triggerAnnouncement) {
       highBountyShutdownBanner =
-        "★ HIGH BOUNTY SHUTDOWN: $killerName ELIMINATED $victimName ($victimBounty BOUNTY) ★"
+        "HIGH BOUNTY SHUTDOWN: $killerName ELIMINATED $victimName ($victimBounty BOUNTY)"
       highBountyShutdownTimer = 4.2f
     }
     while (killFeed.size > 8) {
@@ -2981,7 +3054,9 @@ class RiftGameEngine(
         if (isInsideSafeZone(bx, by)) continue
         val bvx = ship.vx * 0.35f + cos(baseFireAngle) * bulletSpeed
         val bvy = ship.vy * 0.35f + sin(baseFireAngle) * bulletSpeed
-        bullets.add(
+        spawnBulletWithMuzzleCheck(
+          ship.x,
+          ship.y,
           BulletEntity(
             ownerId = ship.id,
             ownerShipId = ship.spec.id,
@@ -3001,7 +3076,7 @@ class RiftGameEngine(
             isHeavyBurst = bounces > 0 || overcharged,
             ownerShipLabel = shipLbl,
             weaponLabel = wepLbl,
-          )
+          ),
         )
       }
       return
@@ -3016,7 +3091,9 @@ class RiftGameEngine(
       val bvx = ship.vx * 0.35f + cos(a) * bulletSpeed
       val bvy = ship.vy * 0.35f + sin(a) * bulletSpeed
 
-      bullets.add(
+      spawnBulletWithMuzzleCheck(
+        ship.x,
+        ship.y,
         BulletEntity(
           ownerId = ship.id,
           ownerShipId = ship.spec.id,
@@ -3036,7 +3113,7 @@ class RiftGameEngine(
           isHeavyBurst = bounces > 0 || overcharged,
           ownerShipLabel = shipLbl,
           weaponLabel = wepLbl,
-        )
+        ),
       )
     }
   }
@@ -3243,8 +3320,8 @@ class RiftGameEngine(
     // 1b. Eclipse Stasis (Two-Way Containment Field: 275px radius, 6.0s duration, 320 Flux cost, 8.5s CD)
     if (spec.bombType == "INTERDICTOR_DOME") {
       val bubbleR = RiftCalibrationState.interdictorBubbleRadius
-      val safeDist = hypot(ship.x - safeZone.centerX(), ship.y - safeZone.centerY())
-      if (hasActiveSafeZone() && safeDist < (safeZone.width() * 0.5f + bubbleR + 30f)) {
+      val safeDist = hypot(ship.x - arenaCenterX, ship.y - arenaCenterY)
+      if (hasActiveSafeZone() && safeDist < (getSafeZoneRadius() + bubbleR + 30f)) {
         if (ship.isLocalPlayer) {
           sfx.playMutedClick()
           onPrizeToast("CANNOT ANCHOR STASIS OVER SAFE ZONE PERIMETER")
@@ -3321,10 +3398,7 @@ class RiftGameEngine(
         val blockedBySafeLockout =
           hasActiveSafeZone() &&
             ship.safeZoneLockoutTimer > 0f &&
-            candX >= safeZone.left - ship.radius - 6f &&
-            candX <= safeZone.right + ship.radius + 6f &&
-            candY >= safeZone.top - ship.radius - 6f &&
-            candY <= safeZone.bottom + ship.radius + 6f
+            hypot(candX - arenaCenterX, candY - arenaCenterY) <= getSafeZoneRadius() + ship.radius + 6f
         var crossesBubbleWall = false
         for (ib in interdictorBubbles) {
           val startDist = hypot(startX - ib.x, startY - ib.y)
@@ -3439,6 +3513,9 @@ class RiftGameEngine(
       ship.vy -= sin(fireAngle) * spec.bombRecoil
     }
 
+    val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
+    val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+
     // 3. 8-Manta Proximity Mines
     if (spec.bombType == "MINE") {
       val mx = ship.x - cos(ship.angle) * 44f
@@ -3465,7 +3542,7 @@ class RiftGameEngine(
           y = my,
           vx = 0f,
           vy = 0f,
-          damage = spec.bombDamage,
+          damage = spec.bombDamage * customDmgMult,
           bouncesLeft = 0,
           passWalls = false,
           life = 30.0f,
@@ -3503,7 +3580,7 @@ class RiftGameEngine(
     val by = ship.y + sin(fireAngle) * 52f
     if (isInsideSafeZone(bx, by)) return
 
-    val speed = if (spec.bombType == "SIEGE") 540f else 640f
+    val speed = (if (spec.bombType == "SIEGE") 540f else 640f) * customSpdMult
     val warheadRadius = if (spec.bombType == "SIEGE") 24f else 17f
     val warheadTitle =
       when (spec.bombType) {
@@ -3512,7 +3589,9 @@ class RiftGameEngine(
         "PROX" -> "Proximity Flak Bomb"
         else -> spec.secondaryShortLabel
       }
-    bombs.add(
+    spawnBombWithMuzzleCheck(
+      ship.x,
+      ship.y,
       BombEntity(
         ownerId = ship.id,
         ownerCallsign = ship.callsign,
@@ -3525,14 +3604,14 @@ class RiftGameEngine(
         y = by,
         vx = ship.vx * 0.25f + cos(fireAngle) * speed,
         vy = ship.vy * 0.25f + sin(fireAngle) * speed,
-        damage = spec.bombDamage,
+        damage = spec.bombDamage * customDmgMult,
         bouncesLeft = spec.bombBounces,
         passWalls = false,
         life = 30.0f,
         radius = warheadRadius,
         ownerShipLabel = shipLbl,
         weaponLabel = warheadTitle,
-      )
+      ),
     )
   }
 
@@ -3558,13 +3637,20 @@ class RiftGameEngine(
       sfx.playLaser()
       addTrauma(0.25f)
     }
+    val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+    val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
     val count = RiftCalibrationState.novaBoltCount.coerceIn(6, 64)
-    val boltSpeed = RiftCalibrationState.novaBoltSpeed
-    val boltDmg = RiftCalibrationState.novaBoltDamage
+    val boltSpeed = RiftCalibrationState.novaBoltSpeed * customSpdMult
+    val boltDmg = RiftCalibrationState.novaBoltDamage * customDmgMult
     val shipLbl = formatShipLabel(ship)
     for (i in 0 until count) {
       val a = (PI.toFloat() * 2f * i) / count
-      bullets.add(
+      val bx = ship.x + cos(a) * 44f
+      val by = ship.y + sin(a) * 44f
+      if (isInsideSafeZone(bx, by)) continue
+      spawnBulletWithMuzzleCheck(
+        ship.x,
+        ship.y,
         BulletEntity(
           ownerId = ship.id,
           ownerShipId = ship.spec.id,
@@ -3573,8 +3659,8 @@ class RiftGameEngine(
           ownerArmadaName = ship.armadaName,
           ownerIsHuman = ship.isHuman,
           freq = ship.freq,
-          x = ship.x + cos(a) * 44f,
-          y = ship.y + sin(a) * 44f,
+          x = bx,
+          y = by,
           vx = cos(a) * boltSpeed,
           vy = sin(a) * boltSpeed,
           damage = boltDmg,
@@ -3584,7 +3670,7 @@ class RiftGameEngine(
           isHeavyBurst = true,
           ownerShipLabel = shipLbl,
           weaponLabel = "Nova Ring",
-        )
+        ),
       )
     }
   }
@@ -3597,8 +3683,10 @@ class RiftGameEngine(
     if (ship.isLocalPlayer) {
       sfx.playShotgun()
     }
+    val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+    val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
     val pelletCount = RiftCalibrationState.shatterPelletsPerWave.coerceIn(3, 24)
-    val pelletDmg = RiftCalibrationState.shatterPelletDamage
+    val pelletDmg = RiftCalibrationState.shatterPelletDamage * customDmgMult
     val coneRad = (PI.toFloat() / 3f) // 60-degree cone
     val isFriendlyToLocal = areAllied(localPlayer, ship)
     val pelletColor = if (isFriendlyToLocal) Color.parseColor("#FB7185") else Color.parseColor("#EF4444")
@@ -3610,8 +3698,10 @@ class RiftGameEngine(
       val bx = ship.x + cos(a) * 40f
       val by = ship.y + sin(a) * 40f
       if (isInsideSafeZone(bx, by)) continue
-      val speed = 880f + (Random.nextFloat() - 0.5f) * 60f
-      bullets.add(
+      val speed = (880f + (Random.nextFloat() - 0.5f) * 60f) * customSpdMult
+      spawnBulletWithMuzzleCheck(
+        ship.x,
+        ship.y,
         BulletEntity(
           ownerId = ship.id,
           ownerShipId = ship.spec.id,
@@ -3631,7 +3721,7 @@ class RiftGameEngine(
           isHeavyBurst = false,
           ownerShipLabel = shipLbl,
           weaponLabel = "Shatter Cone",
-        )
+        ),
       )
     }
   }
@@ -3641,20 +3731,26 @@ class RiftGameEngine(
       sfx.playBomb()
       addTrauma(0.20f)
     }
+    val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+    val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
+    val seekerSpd = max(RiftCalibrationState.seekerSpeed, 560f) * customSpdMult
+    val seekerLife = RiftCalibrationState.seekerFlightTime
+    val seekerDmg = RiftCalibrationState.seekerDamage * customDmgMult
     val target = findMissileLockTarget(ship, aimAngle)
     val launchAngle =
       if (target != null) {
-        atan2(target.y - ship.y, target.x - ship.x)
+        val dist = hypot(target.x - ship.x, target.y - ship.y)
+        val leadT = (dist / seekerSpd.coerceAtLeast(1f)).coerceIn(0f, 0.55f)
+        atan2((target.y + target.vy * leadT) - ship.y, (target.x + target.vx * leadT) - ship.x)
       } else {
         aimAngle
       }
-    val seekerSpd = RiftCalibrationState.seekerSpeed
-    val seekerLife = RiftCalibrationState.seekerFlightTime
-    val seekerDmg = RiftCalibrationState.seekerDamage
     val mx = ship.x + cos(launchAngle) * 48f
     val my = ship.y + sin(launchAngle) * 48f
     if (!isInsideSafeZone(mx, my)) {
-      bombs.add(
+      spawnBombWithMuzzleCheck(
+        ship.x,
+        ship.y,
         BombEntity(
           ownerId = ship.id,
           ownerCallsign = ship.callsign,
@@ -3675,7 +3771,7 @@ class RiftGameEngine(
           targetShipId = target?.id ?: "",
           ownerShipLabel = formatShipLabel(ship),
           weaponLabel = "Seeker Torpedo",
-        )
+        ),
       )
       if (target != null) {
         target.missileLockWarningTimer = seekerLife
@@ -3696,10 +3792,16 @@ class RiftGameEngine(
    * Spawns a 7-Valkyrie Proximity Flak 8-pellet shrapnel burst at (bx, by).
    */
   private fun spawnProximityFlakShrapnel(bomb: BombEntity) {
+    val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+    val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
+    val shrapSpd = 760f * customSpdMult
+    val shrapDmg = 145f * customDmgMult
     val shrapnelCount = 8
     for (i in 0 until shrapnelCount) {
       val a = (PI.toFloat() * 2f * i) / shrapnelCount
-      bullets.add(
+      spawnBulletWithMuzzleCheck(
+        bomb.x,
+        bomb.y,
         BulletEntity(
           ownerId = bomb.ownerId,
           ownerShipId = 7,
@@ -3710,16 +3812,16 @@ class RiftGameEngine(
           freq = bomb.freq,
           x = bomb.x + cos(a) * 18f,
           y = bomb.y + sin(a) * 18f,
-          vx = cos(a) * 760f,
-          vy = sin(a) * 760f,
-          damage = 145f,
+          vx = cos(a) * shrapSpd,
+          vy = sin(a) * shrapSpd,
+          damage = shrapDmg,
           bouncesLeft = 1,
           life = 0.42f,
           color = Color.parseColor("#FF7043"),
           isHeavyBurst = true,
           ownerShipLabel = bomb.ownerShipLabel,
           weaponLabel = "Proximity Flak Shrapnel",
-        )
+        ),
       )
     }
   }
@@ -3754,9 +3856,85 @@ class RiftGameEngine(
     return bestTarget
   }
 
+  private fun deployOrStackStasisBarrier(
+    ship: ShipEntity,
+    deployAngle: Float,
+    span: Float,
+    barDur: Float,
+    accent: Int,
+    labelTitle: String,
+  ) {
+    val thickness = 48f
+    val deployDist = 98f
+    var cx = ship.x + cos(deployAngle) * deployDist
+    var cy = ship.y + sin(deployAngle) * deployDist
+    val dCenter = hypot(cx - arenaCenterX, cy - arenaCenterY)
+    val maxBarrierDist = (arenaRadius - span * 0.5f - 48f).coerceAtLeast(620f)
+    if (dCenter > maxBarrierDist) {
+      cx = arenaCenterX + ((cx - arenaCenterX) / dCenter) * maxBarrierDist
+      cy = arenaCenterY + ((cy - arenaCenterY) / dCenter) * maxBarrierDist
+    }
+    if (isInsideSafeZone(cx, cy)) return
+
+    val stackMate =
+      brickWalls.firstOrNull { bw ->
+        (bw.ownerId == ship.id || (isTeamBasedRankedMode() && bw.freq == ship.freq)) &&
+          hypot((bw.x + bw.w * 0.5f) - cx, (bw.y + bw.h * 0.5f) - cy) <= 78f
+      }
+    if (stackMate != null) {
+      stackMate.stackCount = (stackMate.stackCount + 1).coerceAtMost(9)
+      stackMate.life = max(stackMate.life, barDur * (1f + 0.25f * (stackMate.stackCount - 1)))
+      val mCx = stackMate.x + stackMate.w * 0.5f
+      val mCy = stackMate.y + stackMate.h * 0.5f
+      shockwaves.add(ShockwaveEntity(mCx, mCy, 14f, 130f, accent))
+      bakeStaticRadarBitmap()
+      if (ship.isLocalPlayer) {
+        sfx.playBounce()
+        spawnPooledFct("BARRIER STACK x${stackMate.stackCount}", mCx, mCy - 26f, accent)
+      }
+      return
+    }
+
+    val horizPerp = kotlin.math.abs(sin(deployAngle)) >= kotlin.math.abs(cos(deployAngle))
+    val w = if (horizPerp) span else thickness
+    val h = if (horizPerp) thickness else span
+    val bx = cx - w * 0.5f
+    val by = cy - h * 0.5f
+    brickWalls.add(
+      BrickWallEntity(
+        id = "brick_${nextDecoyBrickId++}",
+        ownerId = ship.id,
+        freq = ship.freq,
+        x = bx,
+        y = by,
+        w = w,
+        h = h,
+        life = barDur,
+        maxLife = barDur,
+        stackCount = 1,
+      )
+    )
+    val closestX = ship.x.coerceIn(bx, bx + w)
+    val closestY = ship.y.coerceIn(by, by + h)
+    val dx = ship.x - closestX
+    val dy = ship.y - closestY
+    val dist = hypot(dx, dy)
+    if (dist < ship.radius + 4f) {
+      val pushAng = if (dist > 0.5f) atan2(dy, dx) else (deployAngle + PI.toFloat())
+      ship.x = closestX + cos(pushAng) * (ship.radius + 6f)
+      ship.y = closestY + sin(pushAng) * (ship.radius + 6f)
+    }
+    bakeStaticRadarBitmap()
+    shockwaves.add(ShockwaveEntity(cx, cy, 12f, 110f, accent))
+    if (ship.isLocalPlayer) {
+      sfx.playBounce()
+      spawnPooledFct("$labelTitle (${barDur.toInt()}s)", cx, cy - 24f, accent)
+    }
+  }
+
   /**
    * Activates a Bucket A Special Buff Slot charge (0 Flux Cost) for any ship (Local Player or AI Bot),
-   * including both the 6 core BUFF_REGISTRY items and live AI-Forged Custom Buffs!
+   * including the 7 core BUFF_REGISTRY items (with 5-drone SWARM) and live AI-Forged Custom Buffs!
    */
   fun activateShipSpecialBuff(ship: ShipEntity) {
     if (ship.respawnTimer > 0f || ship.specialWeaponCharges <= 0 || ship.specialWeaponType == "NONE") return
@@ -3804,6 +3982,51 @@ class RiftGameEngine(
       "SEEKER_TORPEDO" -> {
         launchLockOnBouncingMissile(ship, aimAngle)
       }
+      "SWARM_DRONES" -> {
+        val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+        val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
+        val droneSpd = 560f * customSpdMult
+        val droneDmg = 210f * customDmgMult
+        val droneLife = 6.5f
+        val shipLbl = formatShipLabel(ship)
+        val lockTgt = findMissileLockTarget(ship, aimAngle)
+        for (idx in 0 until 5) {
+          val fanOff = (idx - 2) * 0.26f
+          val launchAng = aimAngle + fanOff
+          val sx = ship.x + cos(launchAng) * 42f
+          val sy = ship.y + sin(launchAng) * 42f
+          if (!isInsideSafeZone(sx, sy)) {
+            swarmDrones.add(
+              SwarmDroneEntity(
+                id = "swarm_${nextSwarmDroneId++}",
+                ownerId = ship.id,
+                ownerCallsign = ship.callsign,
+                ownerSyndicateTag = ship.syndicateTag,
+                ownerArmadaName = ship.armadaName,
+                ownerIsHuman = ship.isHuman,
+                ownerShipLabel = shipLbl,
+                freq = ship.freq,
+                x = sx,
+                y = sy,
+                vx = cos(launchAng) * droneSpd,
+                vy = sin(launchAng) * droneSpd,
+                angle = launchAng,
+                life = droneLife,
+                maxLife = droneLife,
+                damage = droneDmg,
+                zigPhase = idx * 1.25f,
+                targetShipId = lockTgt?.id ?: "",
+              )
+            )
+          }
+        }
+        shockwaves.add(ShockwaveEntity(ship.x, ship.y, 16f, 165f, Color.parseColor("#00F5D4")))
+        if (ship.isLocalPlayer) {
+          sfx.playWarp()
+          addTrauma(0.22f)
+          spawnPooledFct("SWARM DEPLOYED (5 DRONES)", ship.x, ship.y - 28f, Color.parseColor("#00F5D4"))
+        }
+      }
       "HOLO_PHANTOM" -> {
         val dur = RiftCalibrationState.holoPhantomDuration
         val divSign = if (Random.nextBoolean()) 1f else -1f
@@ -3834,6 +4057,11 @@ class RiftGameEngine(
             bm.targetShipId = decoyId
           }
         }
+        for (dr in swarmDrones) {
+          if (dr.targetShipId == ship.id) {
+            dr.targetShipId = decoyId
+          }
+        }
         ship.missileLockWarningTimer = 0f
         if (ship.isLocalPlayer) {
           sfx.playWarp()
@@ -3841,60 +4069,20 @@ class RiftGameEngine(
         }
       }
       "STASIS_BARRIER" -> {
-        val span = RiftCalibrationState.stasisBarrierLength
-        val thickness = 48f
-        val deployDist = 98f
-        var cx = ship.x + cos(ship.angle) * deployDist
-        var cy = ship.y + sin(ship.angle) * deployDist
-        val dCenter = hypot(cx - arenaCenterX, cy - arenaCenterY)
-        val maxBarrierDist = (arenaRadius - span * 0.5f - 48f).coerceAtLeast(620f)
-        if (dCenter > maxBarrierDist) {
-          cx = arenaCenterX + ((cx - arenaCenterX) / dCenter) * maxBarrierDist
-          cy = arenaCenterY + ((cy - arenaCenterY) / dCenter) * maxBarrierDist
-        }
-        if (!isInsideSafeZone(cx, cy)) {
-          val horizPerp = kotlin.math.abs(sin(ship.angle)) >= kotlin.math.abs(cos(ship.angle))
-          val w = if (horizPerp) span else thickness
-          val h = if (horizPerp) thickness else span
-          val bx = cx - w * 0.5f
-          val by = cy - h * 0.5f
-          val barDur = RiftCalibrationState.stasisBarrierDuration.coerceAtLeast(5.0f)
-          brickWalls.add(
-            BrickWallEntity(
-              id = "brick_${nextDecoyBrickId++}",
-              ownerId = ship.id,
-              freq = ship.freq,
-              x = bx,
-              y = by,
-              w = w,
-              h = h,
-              life = barDur,
-              maxLife = barDur,
-            )
-          )
-          val closestX = ship.x.coerceIn(bx, bx + w)
-          val closestY = ship.y.coerceIn(by, by + h)
-          val dx = ship.x - closestX
-          val dy = ship.y - closestY
-          val dist = hypot(dx, dy)
-          if (dist < ship.radius + 4f) {
-            val pushAng = if (dist > 0.5f) atan2(dy, dx) else (ship.angle + PI.toFloat())
-            ship.x = closestX + cos(pushAng) * (ship.radius + 6f)
-            ship.y = closestY + sin(pushAng) * (ship.radius + 6f)
-          }
-          bakeStaticRadarBitmap()
-          shockwaves.add(ShockwaveEntity(cx, cy, 12f, 110f, Color.parseColor("#00F5D4")))
-          if (ship.isLocalPlayer) {
-            sfx.playBounce()
-            spawnPooledFct("STASIS BARRIER (${barDur.toInt()}s)", cx, cy - 24f, Color.parseColor("#00F5D4"))
-          }
-        }
+        deployOrStackStasisBarrier(
+          ship = ship,
+          deployAngle = ship.angle,
+          span = RiftCalibrationState.stasisBarrierLength,
+          barDur = RiftCalibrationState.stasisBarrierDuration.coerceAtLeast(5.0f),
+          accent = Color.parseColor("#00F5D4"),
+          labelTitle = "STASIS BARRIER",
+        )
       }
       "HYPER_SURGE" -> {
         val dur = RiftCalibrationState.hyperSurgeDuration
         val mult = RiftCalibrationState.hyperSurgeSpeedMult
         ship.rocketBoostTimer = dur
-        val boostSpd = ship.spec.topSpeed * mult
+        val boostSpd = ship.spec.topSpeed * mult * (currentCustomGame?.speedMult ?: 1.0f)
         ship.vx = cos(ship.angle) * boostSpd
         ship.vy = sin(ship.angle) * boostSpd
         shockwaves.add(ShockwaveEntity(ship.x, ship.y, 18f, 180f, Color.parseColor("#F43F5E")))
@@ -3909,60 +4097,22 @@ class RiftGameEngine(
         // Custom AI-Forged Buff execution from BUFF_REGISTRY!
         val forged = RiftCodex.getBuffRegistryEntry(activeType) ?: return
         val accent = forged.strokeColorInt
+        val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+        val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
         when (forged.specialEffect) {
           CustomBuffEffect.BARRIER -> {
-            val span = forged.blastRadius.coerceIn(90f, 320f)
-            val thickness = 48f
-            val deployDist = 98f
-            var cx = ship.x + cos(aimAngle) * deployDist
-            var cy = ship.y + sin(aimAngle) * deployDist
-            val dCenter = hypot(cx - arenaCenterX, cy - arenaCenterY)
-            val maxBarrierDist = (arenaRadius - span * 0.5f - 48f).coerceAtLeast(620f)
-            if (dCenter > maxBarrierDist) {
-              cx = arenaCenterX + ((cx - arenaCenterX) / dCenter) * maxBarrierDist
-              cy = arenaCenterY + ((cy - arenaCenterY) / dCenter) * maxBarrierDist
-            }
-            if (!isInsideSafeZone(cx, cy)) {
-              val horizPerp = kotlin.math.abs(sin(aimAngle)) >= kotlin.math.abs(cos(aimAngle))
-              val w = if (horizPerp) span else thickness
-              val h = if (horizPerp) thickness else span
-              val bx = cx - w * 0.5f
-              val by = cy - h * 0.5f
-              val forgedBarDur = RiftCalibrationState.stasisBarrierDuration.coerceAtLeast(5.0f)
-              brickWalls.add(
-                BrickWallEntity(
-                  id = "brick_${nextDecoyBrickId++}",
-                  ownerId = ship.id,
-                  freq = ship.freq,
-                  x = bx,
-                  y = by,
-                  w = w,
-                  h = h,
-                  life = forgedBarDur,
-                  maxLife = forgedBarDur,
-                )
-              )
-              val closestX = ship.x.coerceIn(bx, bx + w)
-              val closestY = ship.y.coerceIn(by, by + h)
-              val dx = ship.x - closestX
-              val dy = ship.y - closestY
-              val dist = hypot(dx, dy)
-              if (dist < ship.radius + 4f) {
-                val pushAng = if (dist > 0.5f) atan2(dy, dx) else (aimAngle + PI.toFloat())
-                ship.x = closestX + cos(pushAng) * (ship.radius + 6f)
-                ship.y = closestY + sin(pushAng) * (ship.radius + 6f)
-              }
-              bakeStaticRadarBitmap()
-              shockwaves.add(ShockwaveEntity(cx, cy, 14f, span * 0.8f, accent))
-              if (ship.isLocalPlayer) {
-                sfx.playBounce()
-                spawnPooledFct("${forged.officialName} (${forgedBarDur.toInt()}s)", cx, cy - 26f, accent)
-              }
-            }
+            deployOrStackStasisBarrier(
+              ship = ship,
+              deployAngle = aimAngle,
+              span = forged.blastRadius.coerceIn(90f, 320f),
+              barDur = RiftCalibrationState.stasisBarrierDuration.coerceAtLeast(5.0f),
+              accent = accent,
+              labelTitle = forged.officialName,
+            )
           }
           CustomBuffEffect.SPEED_BOOST -> {
             ship.rocketBoostTimer = forged.flightDuration
-            val boostSpd = max(ship.spec.topSpeed * 1.65f, forged.projectileSpeed)
+            val boostSpd = max(ship.spec.topSpeed * 1.65f, forged.projectileSpeed) * customSpdMult
             ship.vx = cos(aimAngle) * boostSpd
             ship.vy = sin(aimAngle) * boostSpd
             ship.angle = aimAngle
@@ -3976,7 +4126,7 @@ class RiftGameEngine(
           }
           CustomBuffEffect.CLONE -> {
             val decoyAngle = aimAngle + 0.38f
-            val speed = max(ship.spec.topSpeed * 0.95f, forged.projectileSpeed * 0.7f)
+            val speed = max(ship.spec.topSpeed * 0.95f, forged.projectileSpeed * 0.7f) * customSpdMult
             val decoyId = "decoy_${nextDecoyBrickId++}"
             decoys.add(
               DecoyEntity(
@@ -4006,7 +4156,9 @@ class RiftGameEngine(
             val ox = ship.x + cos(aimAngle) * 50f
             val oy = ship.y + sin(aimAngle) * 50f
             if (!isInsideSafeZone(ox, oy)) {
-              bombs.add(
+              spawnBombWithMuzzleCheck(
+                ship.x,
+                ship.y,
                 BombEntity(
                   ownerId = ship.id,
                   ownerCallsign = ship.callsign,
@@ -4017,9 +4169,9 @@ class RiftGameEngine(
                   type = "CUSTOM_ORB",
                   x = ox,
                   y = oy,
-                  vx = ship.vx * 0.2f + cos(aimAngle) * forged.projectileSpeed,
-                  vy = ship.vy * 0.2f + sin(aimAngle) * forged.projectileSpeed,
-                  damage = forged.damage,
+                  vx = ship.vx * 0.2f + cos(aimAngle) * (forged.projectileSpeed * customSpdMult),
+                  vy = ship.vy * 0.2f + sin(aimAngle) * (forged.projectileSpeed * customSpdMult),
+                  damage = forged.damage * customDmgMult,
                   bouncesLeft = forged.wallBounces,
                   passWalls = false,
                   life = forged.flightDuration,
@@ -4029,7 +4181,7 @@ class RiftGameEngine(
                   customColor = accent,
                   customEffect = forged.specialEffect,
                   customBlastRadius = forged.blastRadius,
-                )
+                ),
               )
               if (ship.isLocalPlayer) {
                 sfx.playBomb()
@@ -4121,6 +4273,18 @@ class RiftGameEngine(
           bm.vy = (dy / dist) * sp
         }
       }
+      // 3b. Repel ALL Swarm Drones
+      for (dr in swarmDrones) {
+        val dx = dr.x - localPlayer.x
+        val dy = dr.y - localPlayer.y
+        val dist = hypot(dx, dy)
+        if (dist < repelRadius && dist > 1f) {
+          val sp = max(620f, hypot(dr.vx, dr.vy))
+          dr.vx = (dx / dist) * sp
+          dr.vy = (dy / dist) * sp
+          dr.angle = atan2(dr.vy, dr.vx)
+        }
+      }
       // 4. Repel ALL Supply Crates so they blast outward and smoothly damp to a stop
       for (g in greens) {
         val dx = g.x - localPlayer.x
@@ -4132,6 +4296,303 @@ class RiftGameEngine(
           g.vy += (dy / dist) * push
         }
       }
+    }
+  }
+
+  /**
+   * Swept Segment-vs-AABB Anti-Bleed Raycast across all arena obstacles (`walls`) and deployed barriers (`brickWalls`).
+   * Eliminates high-speed / point-blank projectile tunneling through stations, asteroids, and stacked barriers.
+   */
+  private fun segmentFirstWallHit(
+    x0: Float,
+    y0: Float,
+    x1: Float,
+    y1: Float,
+    pad: Float = 0f,
+  ): SweptWallImpact? {
+    val dx = x1 - x0
+    val dy = y1 - y0
+    var bestHit: SweptWallImpact? = null
+    var bestT = 1.0001f
+
+    fun testBox(left: Float, top: Float, right: Float, bottom: Float, wallIdx: Int) {
+      // Handle start-point already inside expanded box (point-blank muzzle against wall face)
+      if (x0 >= left && x0 <= right && y0 >= top && y0 <= bottom) {
+        val dLeft = x0 - left
+        val dRight = right - x0
+        val dTop = y0 - top
+        val dBottom = bottom - y0
+        val minEdge = min(min(dLeft, dRight), min(dTop, dBottom))
+        val (hx, hy, nx, ny) =
+          when (minEdge) {
+            dLeft -> arrayOf(left, y0, -1f, 0f)
+            dRight -> arrayOf(right, y0, 1f, 0f)
+            dTop -> arrayOf(x0, top, 0f, -1f)
+            else -> arrayOf(x0, bottom, 0f, 1f)
+          }
+        if (0f < bestT) {
+          bestT = 0f
+          bestHit = SweptWallImpact(0f, hx, hy, nx, ny, wallIdx)
+        }
+        return
+      }
+
+      var tMin = 0f
+      var tMax = 1f
+      var hitNx = 0f
+      var hitNy = 0f
+
+      if (kotlin.math.abs(dx) < 1e-6f) {
+        if (x0 < left || x0 > right) return
+      } else {
+        val invDx = 1f / dx
+        var t1 = (left - x0) * invDx
+        var t2 = (right - x0) * invDx
+        var n1x = -1f
+        if (t1 > t2) {
+          val tmp = t1
+          t1 = t2
+          t2 = tmp
+          n1x = 1f
+        }
+        if (t1 > tMin) {
+          tMin = t1
+          hitNx = n1x
+          hitNy = 0f
+        }
+        if (t2 < tMax) tMax = t2
+        if (tMin > tMax) return
+      }
+
+      if (kotlin.math.abs(dy) < 1e-6f) {
+        if (y0 < top || y0 > bottom) return
+      } else {
+        val invDy = 1f / dy
+        var t1 = (top - y0) * invDy
+        var t2 = (bottom - y0) * invDy
+        var n1y = -1f
+        if (t1 > t2) {
+          val tmp = t1
+          t1 = t2
+          t2 = tmp
+          n1y = 1f
+        }
+        if (t1 > tMin) {
+          tMin = t1
+          hitNx = 0f
+          hitNy = n1y
+        }
+        if (t2 < tMax) tMax = t2
+        if (tMin > tMax) return
+      }
+
+      if (tMin in 0f..1f && tMin < bestT) {
+        if (hitNx == 0f && hitNy == 0f) {
+          hitNx = if (dx >= 0f) -1f else 1f
+        }
+        bestT = tMin
+        bestHit =
+          SweptWallImpact(
+            t = tMin,
+            hitX = x0 + dx * tMin,
+            hitY = y0 + dy * tMin,
+            normalX = hitNx,
+            normalY = hitNy,
+            wallIndex = wallIdx,
+          )
+      }
+    }
+
+    for (idx in walls.indices) {
+      val w = walls[idx]
+      testBox(w.x - pad, w.y - pad, w.x + w.w + pad, w.y + w.h + pad, idx)
+    }
+    for (bw in brickWalls) {
+      testBox(bw.x - pad, bw.y - pad, bw.x + bw.w + pad, bw.y + bw.h + pad, -1)
+    }
+    return bestHit
+  }
+
+  /**
+   * Applies projectile impact telemetry to arena obstacles:
+   * - `CRYSTAL_ASTEROID` (`2,400 HP`): shatters at `0 HP`, drops a guaranteed `GreenCrate`, and respawns after `20.0s`.
+   * - `ORBITAL_STATION` / `ASTEROID_STATION`: increments `stationHitCounter`; every `10` hits fires a 16-bolt `360°` Station Defense Nova!
+   */
+  private fun onObstacleProjectileHit(wallIndex: Int, damage: Float, hitX: Float, hitY: Float) {
+    if (wallIndex !in walls.indices) return
+    val w = walls[wallIndex]
+    w.hitFlashTimer = 0.16f
+    val cx = w.x + w.w * 0.5f
+    val cy = w.y + w.h * 0.5f
+
+    if (w.style == SpaceObstacleStyle.CRYSTAL_ASTEROID) {
+      w.hp -= damage.coerceAtLeast(1f)
+      if (w.hp <= 0f) {
+        pendingAsteroidRespawns.add(
+          PendingAsteroidRespawn(
+            x = w.x,
+            y = w.y,
+            w = w.w,
+            h = w.h,
+            variantSeed = w.variantSeed,
+            timerSec = 20.0f,
+          )
+        )
+        walls.removeAt(wallIndex)
+        greens.add(
+          GreenCrate(
+            x = cx,
+            y = cy,
+            spinPhase = Random.nextFloat() * (PI.toFloat() * 2f),
+            buffType = rollRandomCrateBuffType(),
+          )
+        )
+        shockwaves.add(ShockwaveEntity(cx, cy, 18f, 220f, Color.parseColor("#A855F7")))
+        shockwaves.add(ShockwaveEntity(cx, cy, 12f, 150f, Color.parseColor("#00F5D4")))
+        spawnExplosion(cx, cy, Color.parseColor("#C084FC"))
+        if (hypot(cx - localPlayer.x, cy - localPlayer.y) < 1300f) {
+          sfx.playExplosion()
+          addTrauma(0.26f)
+        }
+        spawnPooledFct(
+          text = "ASTEROID SHATTERED • SUPPLY DROP",
+          x = cx,
+          y = cy - 28f,
+          color = Color.parseColor("#C084FC"),
+          maxLife = 1.25f,
+        )
+        bakeStaticRadarBitmap()
+      }
+    } else if (
+      w.style == SpaceObstacleStyle.ORBITAL_STATION ||
+        w.style == SpaceObstacleStyle.ASTEROID_STATION
+    ) {
+      w.stationHitCounter++
+      if (w.stationHitCounter >= 10) {
+        w.stationHitCounter = 0
+        val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+        val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
+        val novaSpeed = 820f * customSpdMult
+        val novaDamage = 165f * customDmgMult
+        val exitR = hypot(w.w * 0.5f, w.h * 0.5f) + 10f
+        for (k in 0 until 16) {
+          val a = (PI.toFloat() * 2f * k) / 16f
+          val sx = cx + cos(a) * exitR
+          val sy = cy + sin(a) * exitR
+          if (isInsideSafeZone(sx, sy)) continue
+          bullets.add(
+            BulletEntity(
+              ownerId = "station_defense",
+              ownerShipId = 0,
+              ownerCallsign = "STATION DEFENSE",
+              ownerSyndicateTag = "SECTOR",
+              ownerArmadaName = "",
+              ownerIsHuman = false,
+              freq = -999,
+              x = sx,
+              y = sy,
+              vx = cos(a) * novaSpeed,
+              vy = sin(a) * novaSpeed,
+              damage = novaDamage,
+              bouncesLeft = 1,
+              life = 1.85f,
+              color = Color.parseColor("#FACC15"),
+              isHeavyBurst = true,
+              ownerShipLabel = "Orbital Station",
+              weaponLabel = "Station Defense Nova",
+            )
+          )
+        }
+        shockwaves.add(ShockwaveEntity(cx, cy, 24f, 260f, Color.parseColor("#FACC15")))
+        shockwaves.add(ShockwaveEntity(cx, cy, 14f, 180f, Color.parseColor("#EF4444")))
+        if (hypot(cx - localPlayer.x, cy - localPlayer.y) < 1400f) {
+          sfx.playLaser()
+          addTrauma(0.24f)
+        }
+        spawnPooledFct(
+          text = "STATION DEFENSE NOVA!",
+          x = cx,
+          y = cy - 34f,
+          color = Color.parseColor("#FACC15"),
+          maxLife = 1.2f,
+        )
+      }
+    }
+  }
+
+  private fun spawnBulletWithMuzzleCheck(originX: Float, originY: Float, bullet: BulletEntity) {
+    val hit = segmentFirstWallHit(originX, originY, bullet.x, bullet.y, pad = 1.5f)
+    if (hit == null) {
+      bullets.add(bullet)
+      return
+    }
+    if (hit.wallIndex >= 0) {
+      onObstacleProjectileHit(hit.wallIndex, bullet.damage, hit.hitX, hit.hitY)
+    }
+    if (bullet.bouncesLeft > 0) {
+      bullet.bouncesLeft--
+      bullet.x = hit.hitX + hit.normalX * 3f
+      bullet.y = hit.hitY + hit.normalY * 3f
+      val dot = bullet.vx * hit.normalX + bullet.vy * hit.normalY
+      if (dot < 0f) {
+        bullet.vx -= 2f * dot * hit.normalX
+        bullet.vy -= 2f * dot * hit.normalY
+      }
+      bullets.add(bullet)
+    } else if (particles.size < 130) {
+      particles.add(
+        ParticleEntity(
+          x = hit.hitX,
+          y = hit.hitY,
+          vx = hit.normalX * 80f,
+          vy = hit.normalY * 80f,
+          life = 0.18f,
+          maxLife = 0.18f,
+          size = 3.2f,
+          color = bullet.color,
+        )
+      )
+    }
+  }
+
+  private fun spawnBombWithMuzzleCheck(originX: Float, originY: Float, bomb: BombEntity) {
+    if (bomb.passWalls) {
+      bombs.add(bomb)
+      return
+    }
+    val hit = segmentFirstWallHit(originX, originY, bomb.x, bomb.y, pad = 3.5f)
+    if (hit == null) {
+      bombs.add(bomb)
+      return
+    }
+    if (hit.wallIndex >= 0) {
+      onObstacleProjectileHit(hit.wallIndex, bomb.damage, hit.hitX, hit.hitY)
+    }
+    if (bomb.bouncesLeft > 0) {
+      bomb.bouncesLeft--
+      val rest = if (bomb.type == "MISSILE" || bomb.type == "BOUNCE" || bomb.type == "CUSTOM_ORB") 1.0f else 0.85f
+      bomb.x = hit.hitX + hit.normalX * 4f
+      bomb.y = hit.hitY + hit.normalY * 4f
+      val dot = bomb.vx * hit.normalX + bomb.vy * hit.normalY
+      if (dot < 0f) {
+        bomb.vx = (bomb.vx - 2f * dot * hit.normalX) * rest
+        bomb.vy = (bomb.vy - 2f * dot * hit.normalY) * rest
+      }
+      bombs.add(bomb)
+    } else {
+      bomb.x = hit.hitX + hit.normalX * 2f
+      bomb.y = hit.hitY + hit.normalY * 2f
+      if (bomb.type == "PROX") spawnProximityFlakShrapnel(bomb)
+      spawnExplosion(
+        bomb.x,
+        bomb.y,
+        when (bomb.type) {
+          "CUSTOM_ORB" -> if (bomb.customColor != 0) bomb.customColor else Color.parseColor("#22D3EE")
+          "EMP" -> Color.parseColor("#B388FF")
+          "MISSILE" -> Color.parseColor("#EF4444")
+          else -> Color.parseColor("#F59E0B")
+        },
+      )
     }
   }
 
@@ -4775,7 +5236,7 @@ class RiftGameEngine(
       )
 
       spawnPooledFct(
-        text = if (wasHvt) "★ +$bountyAward HVT!" else "+$bountyAward BTY",
+        text = if (wasHvt) "+$bountyAward HVT!" else "+$bountyAward BTY",
         x = target.x,
         y = target.y - 26f,
         color = if (wasHvt) Color.parseColor("#F59E0B") else Color.parseColor("#10B981"),
@@ -4960,6 +5421,7 @@ class RiftGameEngine(
     }
     bullets.clear()
     bombs.clear()
+    swarmDrones.clear()
     brickWalls.clear()
     shipDebrisChunks.clear()
     interdictorBubbles.clear()
@@ -5046,6 +5508,7 @@ class RiftGameEngine(
       s.y = sp.second
       s.phaseShieldTimer = 3.0f
     }
+    swarmDrones.clear()
     brickWalls.clear()
     shipDebrisChunks.clear()
     bakeStaticRadarBitmap()
@@ -5200,10 +5663,7 @@ class RiftGameEngine(
       val y = arenaCenterY + sin(ang) * dist
       val inSafePadded =
         hasActiveSafeZone() &&
-          x >= safeZone.left - 180f &&
-          x <= safeZone.right + 180f &&
-          y >= safeZone.top - 180f &&
-          y <= safeZone.bottom + 180f
+          hypot(x - arenaCenterX, y - arenaCenterY) < getSafeZoneRadius() + 180f
       if (inSafePadded) continue
       if (circleIntersectsWalls(x, y, 56f)) continue
       return x to y
@@ -5476,14 +5936,13 @@ class RiftGameEngine(
   ): GreenCrate? {
     var bestCrate: GreenCrate? = null
     var bestDist = maxSearchDist
+    val safeR = getSafeZoneRadius()
     for (g in greens) {
       if (isInsideSafeZone(g.x, g.y) || isWithinBotBanPerimeter(g.x, g.y)) continue
       if (
         extraSafeMargin > 0f &&
-          g.x >= safeZone.left - extraSafeMargin &&
-          g.x <= safeZone.right + extraSafeMargin &&
-          g.y >= safeZone.top - extraSafeMargin &&
-          g.y <= safeZone.bottom + extraSafeMargin
+          hasActiveSafeZone() &&
+          hypot(g.x - arenaCenterX, g.y - arenaCenterY) <= safeR + extraSafeMargin
       ) {
         continue
       }
@@ -5610,10 +6069,8 @@ class RiftGameEngine(
     // Mode 3 (FLUX_CORE) Carrier Hard Guardrail: NEVER enter within 280px of safeZone!
     val nearSafeForCarrier =
       isBotFluxCoreCarrier &&
-        bot.x >= safeZone.left - 280f &&
-        bot.x <= safeZone.right + 280f &&
-        bot.y >= safeZone.top - 280f &&
-        bot.y <= safeZone.bottom + 280f
+        hasActiveSafeZone() &&
+        hypot(bot.x - arenaCenterX, bot.y - arenaCenterY) <= getSafeZoneRadius() + 280f
 
     if (nearSafeForCarrier || (!lowFluxRetreat && insideSafeBanZone)) {
       val cx = WORLD_SIZE / 2f
@@ -5797,7 +6254,7 @@ class RiftGameEngine(
               (isFluxCoreMode && fluxCoreCarrierEntityId.isEmpty()) ||
               (primaryTarget != null && primaryTargetDist in 620f..1600f)
           "SHATTER_CONE", "NOVA_RING" -> primaryTarget != null && primaryTargetDist < 480f
-          "SEEKER_TORPEDO" -> primaryTarget != null && primaryTargetDist < 1150f
+          "SEEKER_TORPEDO", "SWARM_DRONES" -> primaryTarget != null && primaryTargetDist < 1150f
           else ->
             RiftCodex.getBuffRegistryEntry(bot.specialWeaponType)?.isCustomForged == true &&
               primaryTarget != null &&
@@ -6226,6 +6683,63 @@ class RiftGameEngine(
       bakeStaticRadarBitmap()
     }
 
+    // Step obstacle hit-flash timers & 20.0s shattered Crystal Asteroid respawns
+    if (gravityRadarBakeTimer > 0f) {
+      gravityRadarBakeTimer = max(0f, gravityRadarBakeTimer - rawDt)
+    }
+    for (w in walls) {
+      if (w.hitFlashTimer > 0f) {
+        w.hitFlashTimer = max(0f, w.hitFlashTimer - rawDt)
+      }
+    }
+    if (pendingAsteroidRespawns.isNotEmpty()) {
+      var respawnedAny = false
+      for (paIdx in pendingAsteroidRespawns.indices.reversed()) {
+        val pa = pendingAsteroidRespawns[paIdx]
+        pa.timerSec -= rawDt
+        if (pa.timerSec <= 0f) {
+          val blockedByShip =
+            ships.any { s ->
+              s.respawnTimer <= 0f &&
+                s.x >= pa.x - 40f &&
+                s.x <= pa.x + pa.w + 40f &&
+                s.y >= pa.y - 40f &&
+                s.y <= pa.y + pa.h + 40f
+            }
+          if (blockedByShip) {
+            pa.timerSec = 1.0f
+          } else {
+            walls.add(
+              WallRect(
+                x = pa.x,
+                y = pa.y,
+                w = pa.w,
+                h = pa.h,
+                style = SpaceObstacleStyle.CRYSTAL_ASTEROID,
+                variantSeed = pa.variantSeed,
+                hp = 2400f,
+                maxHp = 2400f,
+              )
+            )
+            shockwaves.add(
+              ShockwaveEntity(
+                pa.x + pa.w * 0.5f,
+                pa.y + pa.h * 0.5f,
+                16f,
+                195f,
+                Color.parseColor("#A855F7"),
+              )
+            )
+            pendingAsteroidRespawns.removeAt(paIdx)
+            respawnedAny = true
+          }
+        }
+      }
+      if (respawnedAny) {
+        bakeStaticRadarBitmap()
+      }
+    }
+
     // Step Interdictor Stasis Bubbles (15s two-way containment domes)
     for (ibIdx in interdictorBubbles.indices.reversed()) {
       val ib = interdictorBubbles[ibIdx]
@@ -6520,20 +7034,26 @@ class RiftGameEngine(
         if (s.safeZoneLockoutTimer > 0f) {
           s.safeZoneLockoutTimer = max(0f, s.safeZoneLockoutTimer - rawDt)
         }
-        val curSpeed = hypot(s.vx, s.vy)
-        val hasThrustInput = if (s.isLocalPlayer) (leftStickActive && leftStickMag > 0.08f) else (curSpeed > 12f)
-        val isMoving = curSpeed > 12f
-        if (hasThrustInput || isMoving) {
+        // Open-Space Anti-AFK Flux Drain runs ONLY in modes with an active Safe Zone (SECTOR_CONVERGENCE & FLUX_CORE)
+        if (!hasActiveSafeZone()) {
           s.playfieldIdleTimer = 0f
           s.isIdleDraining = false
         } else {
-          s.playfieldIdleTimer += rawDt
-          if (s.playfieldIdleTimer >= RiftCalibrationState.playfieldIdleLimitSec) {
-            s.isIdleDraining = true
-            s.flux -= s.maxFlux * RiftCalibrationState.playfieldIdleDrainPctPerSec * rawDt
-            if (s.flux <= 0f) {
-              destroyShipFromIdleDrain(s)
-              continue
+          val curSpeed = hypot(s.vx, s.vy)
+          val hasThrustInput = if (s.isLocalPlayer) (leftStickActive && leftStickMag > 0.08f) else (curSpeed > 12f)
+          val isMoving = curSpeed > 12f
+          if (hasThrustInput || isMoving) {
+            s.playfieldIdleTimer = 0f
+            s.isIdleDraining = false
+          } else {
+            s.playfieldIdleTimer += rawDt
+            if (s.playfieldIdleTimer >= RiftCalibrationState.playfieldIdleLimitSec) {
+              s.isIdleDraining = true
+              s.flux -= s.maxFlux * RiftCalibrationState.playfieldIdleDrainPctPerSec * rawDt
+              if (s.flux <= 0f) {
+                destroyShipFromIdleDrain(s)
+                continue
+              }
             }
           }
         }
@@ -6699,33 +7219,25 @@ class RiftGameEngine(
         }
       }
 
-      // Safe Zone 15-Second Re-Entry Lockout & Strong Outward Repulsion Barrier:
+      // Circular Wall-less Safe Zone 15-Second Re-Entry Lockout & Outward Radial Repulsion:
+      val szRadius = getSafeZoneRadius()
+      val szDx = s.x - arenaCenterX
+      val szDy = s.y - arenaCenterY
+      val szDist = hypot(szDx, szDy)
       if (
         hasActiveSafeZone() &&
           s.safeZoneLockoutTimer > 0f &&
-          s.x >= safeZone.left - s.radius &&
-          s.x <= safeZone.right + s.radius &&
-          s.y >= safeZone.top - s.radius &&
-          s.y <= safeZone.bottom + s.radius
+          szDist <= szRadius + s.radius
       ) {
-        val szCx = safeZone.centerX()
-        val szCy = safeZone.centerY()
-        val dx = s.x - szCx
-        val dy = s.y - szCy
-        val dist = hypot(dx, dy).coerceAtLeast(0.001f)
-        val nx = dx / dist
-        val ny = dy / dist
+        val distSafe = szDist.coerceAtLeast(0.001f)
+        val nx = if (szDist > 0.001f) szDx / distSafe else 0f
+        val ny = if (szDist > 0.001f) szDy / distSafe else -1f
         val preVx = s.vx
         val preVy = s.vy
 
-        // Clamp ship cleanly outside the closest Safe Zone perimeter axis
-        val halfW = safeZone.width() * 0.5f + s.radius + 4f
-        val halfH = safeZone.height() * 0.5f + s.radius + 4f
-        if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) {
-          s.x = szCx + (if (dx >= 0f) halfW else -halfW)
-        } else {
-          s.y = szCy + (if (dy >= 0f) halfH else -halfH)
-        }
+        val pushOutR = szRadius + s.radius + 6f
+        s.x = arenaCenterX + nx * pushOutR
+        s.y = arenaCenterY + ny * pushOutR
 
         val repelForce = RiftCalibrationState.safeZoneRepelForce
         s.vx = nx * repelForce
@@ -6792,7 +7304,7 @@ class RiftGameEngine(
             val effectiveDelay = baseDelay / RiftCalibrationState.buffRespawnFrequency
             pendingBuffSpawns.add(effectiveDelay)
           }
-          val customForgedEntry = if (gr.buffType >= 11) RiftCodex.getBuffRegistryByIndex(gr.buffType) else null
+          val customForgedEntry = if (gr.buffType >= 12) RiftCodex.getBuffRegistryByIndex(gr.buffType) else null
           val pickupBty =
             if (gr.buffType == 6) RiftCalibrationState.fullChargeCrateBounty else RiftCalibrationState.cratePickupBounty
           s.bounty += pickupBty
@@ -6805,6 +7317,7 @@ class RiftGameEngine(
             gr.buffType == 3 -> grantSpecialBuffWeapon(s, "HOLO_PHANTOM", RiftCodex.BUFF_REGISTRY["HOLO_PHANTOM"]?.chargesPerPickup ?: 1)
             gr.buffType == 4 -> grantSpecialBuffWeapon(s, "STASIS_BARRIER", RiftCodex.BUFF_REGISTRY["STASIS_BARRIER"]?.chargesPerPickup ?: 1)
             gr.buffType == 5 -> grantSpecialBuffWeapon(s, "HYPER_SURGE", RiftCodex.BUFF_REGISTRY["HYPER_SURGE"]?.chargesPerPickup ?: 1)
+            gr.buffType == 11 -> grantSpecialBuffWeapon(s, "SWARM_DRONES", RiftCodex.BUFF_REGISTRY["SWARM_DRONES"]?.chargesPerPickup ?: 1)
             gr.buffType == 6 -> s.flux = s.maxFlux
             gr.buffType == 7 -> s.repels = min(6, s.repels + 1)
             gr.buffType == 8 -> {
@@ -6878,6 +7391,10 @@ class RiftGameEngine(
                 gr.buffType == 5 -> {
                   spawnPooledFct("SURGE [${s.specialWeaponCharges}] (0 FLUX)", s.x, s.y - 24f, Color.parseColor("#F43F5E"))
                   "SPECIAL BUFF: HYPER SURGE (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0 FLUX)"
+                }
+                gr.buffType == 11 -> {
+                  spawnPooledFct("SWARM [${s.specialWeaponCharges}] (0 FLUX)", s.x, s.y - 24f, Color.parseColor("#00F5D4"))
+                  "SPECIAL BUFF: SWARM (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 5 AUTONOMOUS DRONES)"
                 }
                 gr.buffType == 6 -> {
                   spawnPooledFct("FULL FLUX +$pickupBty BTY", s.x, s.y - 24f, Color.parseColor("#10B981"))
@@ -6972,32 +7489,23 @@ class RiftGameEngine(
         continue
       }
       var hitWall = false
-      for (w in walls) {
-        if (nx >= w.x && nx <= w.x + w.w && ny >= w.y && ny <= w.y + w.h) {
-          hitWall = true
-          if (b.bouncesLeft > 0) {
-            b.bouncesLeft--
-            val prevInX = b.x >= w.x && b.x <= w.x + w.w
-            if (!prevInX) b.vx = -b.vx else b.vy = -b.vy
-          } else {
-            bullets.removeAt(i)
-          }
-          break
+      val bulletWallHit = segmentFirstWallHit(b.x, b.y, nx, ny, pad = 1.0f)
+      if (bulletWallHit != null) {
+        hitWall = true
+        if (bulletWallHit.wallIndex >= 0) {
+          onObstacleProjectileHit(bulletWallHit.wallIndex, b.damage, bulletWallHit.hitX, bulletWallHit.hitY)
         }
-      }
-      if (!hitWall) {
-        for (bw in brickWalls) {
-          if (nx >= bw.x && nx <= bw.x + bw.w && ny >= bw.y && ny <= bw.y + bw.h) {
-            hitWall = true
-            if (b.bouncesLeft > 0) {
-              b.bouncesLeft--
-              val prevInX = b.x >= bw.x && b.x <= bw.x + bw.w
-              if (!prevInX) b.vx = -b.vx else b.vy = -b.vy
-            } else {
-              bullets.removeAt(i)
-            }
-            break
+        if (b.bouncesLeft > 0) {
+          b.bouncesLeft--
+          b.x = bulletWallHit.hitX + bulletWallHit.normalX * 2.5f
+          b.y = bulletWallHit.hitY + bulletWallHit.normalY * 2.5f
+          val dot = b.vx * bulletWallHit.normalX + b.vy * bulletWallHit.normalY
+          if (dot < 0f) {
+            b.vx -= 2f * dot * bulletWallHit.normalX
+            b.vy -= 2f * dot * bulletWallHit.normalY
           }
+        } else {
+          bullets.removeAt(i)
         }
       }
       if (!hitWall) {
@@ -7144,9 +7652,10 @@ class RiftGameEngine(
       }
     }
 
-    // 4. Step Bombs, Proximity Flak, Mines, Seeker Torpedoes & Custom AI-Forged Orbs
-    val seekerCruiseSpeed = RiftCalibrationState.seekerSpeed
-    val seekerMaxTurnRad = RiftCalibrationState.seekerTurnRate
+    // 4. Step Bombs, Proximity Flak, Mines, Predictive Seeker Torpedoes & Custom AI-Forged Orbs
+    val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+    val seekerCruiseSpeed = max(RiftCalibrationState.seekerSpeed, 560f) * customSpdMult
+    val seekerMaxTurnRad = max(RiftCalibrationState.seekerTurnRate, 6.2f) * customSpdMult
     for (i in bombs.indices.reversed()) {
       val b = bombs[i]
       b.life -= dt
@@ -7250,12 +7759,14 @@ class RiftGameEngine(
           val dx = nearestEnemy.x - b.x
           val dy = nearestEnemy.y - b.y
           val dSafe = hypot(dx, dy).coerceAtLeast(1f)
-          b.vx += (dx / dSafe) * 420f * dt
-          b.vy += (dy / dSafe) * 420f * dt
+          val mineAccel = 420f * customSpdMult
+          val mineMaxSpd = 340f * customSpdMult
+          b.vx += (dx / dSafe) * mineAccel * dt
+          b.vy += (dy / dSafe) * mineAccel * dt
           val sp = hypot(b.vx, b.vy)
-          if (sp > 340f) {
-            b.vx = (b.vx / sp) * 340f
-            b.vy = (b.vy / sp) * 340f
+          if (sp > mineMaxSpd) {
+            b.vx = (b.vx / sp) * mineMaxSpd
+            b.vy = (b.vy / sp) * mineMaxSpd
           }
         } else {
           val damp = 0.25.pow(dt.toDouble()).toFloat()
@@ -7297,11 +7808,15 @@ class RiftGameEngine(
         }
       }
 
-      // Seeker Torpedo homing (checks Holo Phantom decoys first, then uncloaked ships!)
+      // Predictive Seeker Torpedo homing (checks Holo Phantom decoys first, then uncloaked ships with velocity lead!)
       if (b.type == "MISSILE") {
         val lockedDecoy = decoys.firstOrNull { it.id == b.targetShipId }
         if (lockedDecoy != null) {
-          val desiredAngle = atan2(lockedDecoy.y - b.y, lockedDecoy.x - b.x)
+          val dist = hypot(lockedDecoy.x - b.x, lockedDecoy.y - b.y)
+          val leadT = (dist / seekerCruiseSpeed.coerceAtLeast(1f)).coerceIn(0f, 0.55f)
+          val aimX = lockedDecoy.x + lockedDecoy.vx * leadT
+          val aimY = lockedDecoy.y + lockedDecoy.vy * leadT
+          val desiredAngle = atan2(aimY - b.y, aimX - b.x)
           val curAngle = atan2(b.vy, b.vx)
           val diff = atan2(sin(desiredAngle - curAngle), cos(desiredAngle - curAngle))
           val maxTurn = seekerMaxTurnRad * dt
@@ -7317,7 +7832,7 @@ class RiftGameEngine(
               !isInsideSafeZone(it.x, it.y)
           }
           if (lockedTarget == null) {
-            var nearestDist = 1800f
+            var nearestDist = 1850f
             for (cand in ships) {
               if (
                 !(isInLobbyStaging && cand.isLocalPlayer) &&
@@ -7344,7 +7859,11 @@ class RiftGameEngine(
               lockedTarget.missileBeepCooldown = 0.38f
               sfx.playMissileLockBeep()
             }
-            val desiredAngle = atan2(lockedTarget.y - b.y, lockedTarget.x - b.x)
+            val dist = hypot(lockedTarget.x - b.x, lockedTarget.y - b.y)
+            val leadT = (dist / seekerCruiseSpeed.coerceAtLeast(1f)).coerceIn(0f, 0.55f)
+            val aimX = lockedTarget.x + lockedTarget.vx * leadT
+            val aimY = lockedTarget.y + lockedTarget.vy * leadT
+            val desiredAngle = atan2(aimY - b.y, aimX - b.x)
             val curAngle = atan2(b.vy, b.vx)
             val diff = atan2(sin(desiredAngle - curAngle), cos(desiredAngle - curAngle))
             val maxTurn = seekerMaxTurnRad * dt
@@ -7368,47 +7887,40 @@ class RiftGameEngine(
       var hitWall = false
 
       if (!b.passWalls && (b.vx != 0f || b.vy != 0f)) {
-        for (w in walls) {
-          if (nx >= w.x && nx <= w.x + w.w && ny >= w.y && ny <= w.y + w.h) {
-            hitWall = true
-            if (b.bouncesLeft > 0) {
-              b.bouncesLeft--
-              val prevInX = b.x >= w.x && b.x <= w.x + w.w
-              val bounceRestitution = if (b.type == "MISSILE" || b.type == "BOUNCE" || b.type == "CUSTOM_ORB") 1.0f else 0.85f
-              if (!prevInX) b.vx = -b.vx * bounceRestitution else b.vy = -b.vy * bounceRestitution
-            } else {
-              if (b.type == "PROX") spawnProximityFlakShrapnel(b)
-              bombs.removeAt(i)
-              spawnExplosion(
-                b.x,
-                b.y,
-                when (b.type) {
-                  "CUSTOM_ORB" -> if (b.customColor != 0) b.customColor else Color.parseColor("#22D3EE")
-                  "EMP" -> Color.parseColor("#B388FF")
-                  "MISSILE" -> Color.parseColor("#EF4444")
-                  else -> Color.parseColor("#F59E0B")
-                },
-              )
-            }
-            break
+        val bombWallHit = segmentFirstWallHit(b.x, b.y, nx, ny, pad = (b.radius * 0.35f).coerceAtMost(8f))
+        if (bombWallHit != null) {
+          hitWall = true
+          if (bombWallHit.wallIndex >= 0) {
+            onObstacleProjectileHit(bombWallHit.wallIndex, b.damage, bombWallHit.hitX, bombWallHit.hitY)
           }
-        }
-        if (!hitWall) {
-          for (bw in brickWalls) {
-            if (nx >= bw.x && nx <= bw.x + bw.w && ny >= bw.y && ny <= bw.y + bw.h) {
-              hitWall = true
-              if (b.bouncesLeft > 0) {
-                b.bouncesLeft--
-                val prevInX = b.x >= bw.x && b.x <= bw.x + bw.w
-                val bounceRestitution = if (b.type == "MISSILE" || b.type == "BOUNCE" || b.type == "CUSTOM_ORB") 1.0f else 0.85f
-                if (!prevInX) b.vx = -b.vx * bounceRestitution else b.vy = -b.vy * bounceRestitution
-              } else {
-                if (b.type == "PROX") spawnProximityFlakShrapnel(b)
-                bombs.removeAt(i)
-                spawnExplosion(b.x, b.y, Color.parseColor("#38BDF8"))
-              }
-              break
+          if (b.bouncesLeft > 0) {
+            b.bouncesLeft--
+            val bounceRestitution = if (b.type == "MISSILE" || b.type == "BOUNCE" || b.type == "CUSTOM_ORB") 1.0f else 0.85f
+            b.x = bombWallHit.hitX + bombWallHit.normalX * 3.5f
+            b.y = bombWallHit.hitY + bombWallHit.normalY * 3.5f
+            val dot = b.vx * bombWallHit.normalX + b.vy * bombWallHit.normalY
+            if (dot < 0f) {
+              b.vx = (b.vx - 2f * dot * bombWallHit.normalX) * bounceRestitution
+              b.vy = (b.vy - 2f * dot * bombWallHit.normalY) * bounceRestitution
+            } else {
+              b.vx *= bounceRestitution
+              b.vy *= bounceRestitution
             }
+          } else {
+            b.x = bombWallHit.hitX
+            b.y = bombWallHit.hitY
+            if (b.type == "PROX") spawnProximityFlakShrapnel(b)
+            bombs.removeAt(i)
+            spawnExplosion(
+              bombWallHit.hitX,
+              bombWallHit.hitY,
+              when (b.type) {
+                "CUSTOM_ORB" -> if (b.customColor != 0) b.customColor else Color.parseColor("#22D3EE")
+                "EMP" -> Color.parseColor("#B388FF")
+                "MISSILE" -> Color.parseColor("#EF4444")
+                else -> Color.parseColor("#F59E0B")
+              },
+            )
           }
         }
         if (!hitWall) {
@@ -7618,6 +8130,181 @@ class RiftGameEngine(
               },
             )
             bombs.removeAt(i)
+            break
+          }
+        }
+      }
+    }
+
+    // 4b. Step Autonomous Zig-Zagging Swarm Drones (5-Drone SWARM Special Buff)
+    val droneCruiseSpeed = 560f * customSpdMult
+    val droneTurnRate = 8.4f * customSpdMult
+    for (drIdx in swarmDrones.indices.reversed()) {
+      val dr = swarmDrones[drIdx]
+      dr.life -= dt
+      dr.zigPhase += dt
+      if (dr.life <= 0f || isInsideSafeZone(dr.x, dr.y)) {
+        if (dr.life <= 0f) {
+          spawnExplosion(dr.x, dr.y, Color.parseColor("#00F5D4"))
+        }
+        swarmDrones.removeAt(drIdx)
+        continue
+      }
+
+      // Target nearest hostile decoy first, else nearest living uncloaked hostile ship within 1550px
+      val decoyTarget =
+        decoys
+          .filter { it.ownerId != dr.ownerId && it.freq != dr.freq && !isInsideSafeZone(it.x, it.y) }
+          .minByOrNull { hypot(it.x - dr.x, it.y - dr.y) }
+      if (decoyTarget != null && hypot(decoyTarget.x - dr.x, decoyTarget.y - dr.y) <= 1550f) {
+        val baseAng = atan2(decoyTarget.y - dr.y, decoyTarget.x - dr.x)
+        val weaveAng = baseAng + sin(dr.zigPhase * 11.5f) * 0.62f
+        val diff = atan2(sin(weaveAng - dr.angle), cos(weaveAng - dr.angle))
+        val maxTurn = droneTurnRate * dt
+        dr.angle += diff.coerceIn(-maxTurn, maxTurn)
+      } else {
+        var lockedShip =
+          ships.firstOrNull {
+            !(isInLobbyStaging && it.isLocalPlayer) &&
+              it.id == dr.targetShipId &&
+              !isDroneAlliedWithShip(dr, it) &&
+              it.respawnTimer <= 0f &&
+              !it.isCloaked &&
+              !isInsideSafeZone(it.x, it.y)
+          }
+        if (lockedShip == null) {
+          var bestDist = 1550f
+          for (cand in ships) {
+            if (
+              !(isInLobbyStaging && cand.isLocalPlayer) &&
+                !isDroneAlliedWithShip(dr, cand) &&
+                cand.respawnTimer <= 0f &&
+                !cand.isCloaked &&
+                !isInsideSafeZone(cand.x, cand.y)
+            ) {
+              val d = hypot(cand.x - dr.x, cand.y - dr.y)
+              if (d < bestDist) {
+                bestDist = d
+                lockedShip = cand
+              }
+            }
+          }
+          dr.targetShipId = lockedShip?.id ?: ""
+        }
+        if (lockedShip != null) {
+          val d = hypot(lockedShip.x - dr.x, lockedShip.y - dr.y)
+          val leadT = (d / droneCruiseSpeed.coerceAtLeast(1f)).coerceIn(0f, 0.42f)
+          val aimX = lockedShip.x + lockedShip.vx * leadT
+          val aimY = lockedShip.y + lockedShip.vy * leadT
+          val baseAng = atan2(aimY - dr.y, aimX - dr.x)
+          val weaveAmp = if (d < 220f) 0.24f else 0.62f
+          val weaveAng = baseAng + sin(dr.zigPhase * 11.5f) * weaveAmp
+          val diff = atan2(sin(weaveAng - dr.angle), cos(weaveAng - dr.angle))
+          val maxTurn = droneTurnRate * dt
+          dr.angle += diff.coerceIn(-maxTurn, maxTurn)
+        } else {
+          dr.angle += sin(dr.zigPhase * 8.5f) * 2.2f * dt
+        }
+      }
+
+      dr.vx = cos(dr.angle) * droneCruiseSpeed
+      dr.vy = sin(dr.angle) * droneCruiseSpeed
+      val dnx = dr.x + dr.vx * dt
+      val dny = dr.y + dr.vy * dt
+
+      if (isInsideSafeZone(dnx, dny)) {
+        swarmDrones.removeAt(drIdx)
+        continue
+      }
+
+      val droneWallHit = segmentFirstWallHit(dr.x, dr.y, dnx, dny, pad = 6f)
+      if (droneWallHit != null) {
+        if (droneWallHit.wallIndex >= 0) {
+          onObstacleProjectileHit(droneWallHit.wallIndex, dr.damage * 0.35f, droneWallHit.hitX, droneWallHit.hitY)
+        }
+        dr.x = droneWallHit.hitX + droneWallHit.normalX * 4f
+        dr.y = droneWallHit.hitY + droneWallHit.normalY * 4f
+        val dot = dr.vx * droneWallHit.normalX + dr.vy * droneWallHit.normalY
+        if (dot < 0f) {
+          dr.vx -= 2f * dot * droneWallHit.normalX
+          dr.vy -= 2f * dot * droneWallHit.normalY
+        }
+        dr.angle = atan2(dr.vy, dr.vx)
+        continue
+      }
+
+      val nextPerimDist = hypot(dnx - arenaCenterX, dny - arenaCenterY)
+      if (nextPerimDist + 12f >= arenaRadius) {
+        val dSafe = nextPerimDist.coerceAtLeast(0.001f)
+        val rnx = (dnx - arenaCenterX) / dSafe
+        val rny = (dny - arenaCenterY) / dSafe
+        dr.x = arenaCenterX + rnx * (arenaRadius - 15f)
+        dr.y = arenaCenterY + rny * (arenaRadius - 15f)
+        val dot = dr.vx * rnx + dr.vy * rny
+        if (dot > 0f) {
+          dr.vx -= 2f * dot * rnx
+          dr.vy -= 2f * dot * rny
+        }
+        dr.angle = atan2(dr.vy, dr.vx)
+        continue
+      }
+
+      var droneReflected = false
+      for (ib in interdictorBubbles) {
+        val prevDist = hypot(dr.x - ib.x, dr.y - ib.y)
+        val curDist = hypot(dnx - ib.x, dny - ib.y)
+        if ((prevDist <= ib.radius && curDist >= ib.radius) || (prevDist > ib.radius && curDist <= ib.radius)) {
+          val dSafe = curDist.coerceAtLeast(0.001f)
+          val rnx = (dnx - ib.x) / dSafe
+          val rny = (dny - ib.y) / dSafe
+          dr.x = ib.x + rnx * (if (prevDist <= ib.radius) ib.radius - 4f else ib.radius + 4f)
+          dr.y = ib.y + rny * (if (prevDist <= ib.radius) ib.radius - 4f else ib.radius + 4f)
+          val dot = dr.vx * rnx + dr.vy * rny
+          dr.vx -= 2f * dot * rnx
+          dr.vy -= 2f * dot * rny
+          dr.angle = atan2(dr.vy, dr.vx)
+          droneReflected = true
+          break
+        }
+      }
+      if (!droneReflected) {
+        dr.x = dnx
+        dr.y = dny
+      }
+
+      // Check Decoy soak
+      var droneSoaked = false
+      for (decIdx in decoys.indices.reversed()) {
+        val dec = decoys[decIdx]
+        if (dec.ownerId != dr.ownerId && dec.freq != dr.freq && hypot(dec.x - dr.x, dec.y - dr.y) < 38f) {
+          spawnExplosion(dec.x, dec.y, Color.parseColor("#00F5D4"))
+          decoys.removeAt(decIdx)
+          swarmDrones.removeAt(drIdx)
+          droneSoaked = true
+          break
+        }
+      }
+      if (droneSoaked) continue
+
+      // Check hostile ship impact
+      for (s in ships) {
+        if (!(isInLobbyStaging && s.isLocalPlayer) && !isDroneAlliedWithShip(dr, s) && s.respawnTimer <= 0f && !isInsideSafeZone(s.x, s.y)) {
+          if (hypot(s.x - dr.x, s.y - dr.y) < s.radius + 16f) {
+            val incAngle = atan2(dr.y - s.y, dr.x - s.x)
+            applyProjectileDamage(
+              target = s,
+              attackerId = dr.ownerId,
+              attackerIsHuman = dr.ownerIsHuman,
+              rawDamage = dr.damage,
+              impactAngle = incAngle,
+              isHeavyImpact = true,
+              isEmp = false,
+              attackerShipLabel = dr.ownerShipLabel,
+              weaponLabel = "Swarm Drone",
+            )
+            shockwaves.add(ShockwaveEntity(dr.x, dr.y, 12f, 110f, Color.parseColor("#00F5D4")))
+            spawnExplosion(dr.x, dr.y, Color.parseColor("#00F5D4"))
+            swarmDrones.removeAt(drIdx)
             break
           }
         }
@@ -7887,6 +8574,7 @@ class RiftGameEngine(
         onPrizeToast(msg)
         onStatsUpdated()
       }
+      swarmDrones.clear()
       brickWalls.clear()
       shipDebrisChunks.clear()
       bakeStaticRadarBitmap()
@@ -7999,10 +8687,24 @@ class RiftGameEngine(
           fluxCoreOrb.y = arenaCenterY + rny * maxOrbDist
           bounced = true
         }
-        if (!bounced && isInsideSafeZone(nx, ny)) {
-          val prevInX = fluxCoreOrb.x >= safeZone.left && fluxCoreOrb.x <= safeZone.right
-          if (!prevInX) fluxCoreOrb.vx = -fluxCoreOrb.vx else fluxCoreOrb.vy = -fluxCoreOrb.vy
-          bounced = true
+        if (!bounced && hasActiveSafeZone()) {
+          val szLimit = getSafeZoneRadius() + orbR + 4f
+          val szDx = nx - arenaCenterX
+          val szDy = ny - arenaCenterY
+          val szDist = hypot(szDx, szDy)
+          if (szDist <= szLimit) {
+            val dSafe = szDist.coerceAtLeast(0.001f)
+            val rnx = if (szDist > 0.001f) szDx / dSafe else 0f
+            val rny = if (szDist > 0.001f) szDy / dSafe else -1f
+            val dot = fluxCoreOrb.vx * rnx + fluxCoreOrb.vy * rny
+            if (dot < 0f) {
+              fluxCoreOrb.vx -= 2f * dot * rnx
+              fluxCoreOrb.vy -= 2f * dot * rny
+            }
+            fluxCoreOrb.x = arenaCenterX + rnx * (szLimit + 2f)
+            fluxCoreOrb.y = arenaCenterY + rny * (szLimit + 2f)
+            bounced = true
+          }
         }
         if (!bounced) {
           for (w in walls) {
@@ -8065,7 +8767,7 @@ class RiftGameEngine(
   }
 
   private fun stepSpatialAnomalies(dt: Float, rawDt: Float) {
-    // 1. Update cooldown timers on all ships
+    // 1. Update cooldown timers on all ships & entities
     for (s in ships) {
       if (s.blackHoleImmunityTimer > 0f) {
         s.blackHoleImmunityTimer = max(0f, s.blackHoleImmunityTimer - dt)
@@ -8089,14 +8791,268 @@ class RiftGameEngine(
         d.phaseRiftCooldownTimer = max(0f, d.phaseRiftCooldownTimer - dt)
       }
     }
+    for (dr in swarmDrones) {
+      if (dr.phaseRiftCooldownTimer > 0f) {
+        dr.phaseRiftCooldownTimer = max(0f, dr.phaseRiftCooldownTimer - dt)
+      }
+    }
 
-    // 2. Step anomaly life, rotation, physics fields
+    // 1b. Live Unstable Rift Convergence: when any two non-partnered Rifts expand/overlap, merge into a 10.0s Unstable Rift!
+    var mergedPairFound = true
+    while (mergedPairFound && anomalies.size >= 2) {
+      mergedPairFound = false
+      outer@ for (i in 0 until anomalies.size - 1) {
+        val a = anomalies[i]
+        for (j in i + 1 until anomalies.size) {
+          val b = anomalies[j]
+          if (a.partnerId.isNotEmpty() && a.partnerId == b.id) continue
+          if (b.partnerId.isNotEmpty() && b.partnerId == a.id) continue
+          if (a.isUnstableMergedRift && b.isUnstableMergedRift) continue
+          val overlapThreshold = (a.physicalRadius + b.physicalRadius) * 0.88f
+          if (hypot(a.x - b.x, a.y - b.y) <= overlapThreshold) {
+            val mx = (a.x + b.x) * 0.5f
+            val my = (a.y + b.y) * 0.5f
+            val mergedRadius = (max(a.physicalRadius, b.physicalRadius) * 1.30f).coerceIn(235f, 380f)
+            val removedIdA = a.id
+            val removedIdB = b.id
+            a.x = mx
+            a.y = my
+            a.isUnstableMergedRift = true
+            a.life = 10.0f
+            a.maxLife = 10.0f
+            a.physicalRadius = mergedRadius
+            a.partnerId = ""
+            anomalies.removeAt(j)
+            for (rem in anomalies) {
+              if (rem.partnerId == removedIdA || rem.partnerId == removedIdB) {
+                rem.partnerId = ""
+              }
+            }
+            shockwaves.add(ShockwaveEntity(mx, my, 28f, mergedRadius * 1.85f, Color.parseColor("#FACC15")))
+            shockwaves.add(ShockwaveEntity(mx, my, 18f, mergedRadius * 1.35f, Color.parseColor("#EC4899")))
+            shockwaves.add(ShockwaveEntity(mx, my, 12f, mergedRadius * 0.95f, Color.parseColor("#00F5D4")))
+            if (hasJoinedMatch && !isInLobbyStaging) {
+              highBountyShutdownBanner = "UNSTABLE RIFT CONVERGED • 10.0s DOOMSDAY!"
+              highBountyShutdownTimer = 4.2f
+              sfx.playWarp()
+              addTrauma(0.35f)
+              onPrizeToast("UNSTABLE RIFT CONVERGED! CLEAR THE BLAST RADIUS BEFORE 10.0s DETONATION!")
+            }
+            mergedPairFound = true
+            break@outer
+          }
+        }
+      }
+    }
+
+    // 2. Step anomaly life, rotation, physics fields & Unstable Rift Doomsday
     val expiredPairsToRespawn = mutableListOf<AnomalyType>()
     val expiredSinglesToRespawn = mutableListOf<AnomalyType>()
+    var unstableDetonatedThisStep = false
 
     for (aIdx in anomalies.indices.reversed()) {
       val anom = anomalies[aIdx]
       anom.life -= rawDt
+
+      if (anom.isUnstableMergedRift) {
+        anom.spinAngle = (anom.spinAngle + 4.6f * dt) % (PI.toFloat() * 2f)
+        anom.physicalRadius = (anom.physicalRadius + 6f * rawDt).coerceAtMost(420f)
+        if (Random.nextFloat() < 0.65f && particles.size < 130) {
+          val pAngle = Random.nextFloat() * (PI.toFloat() * 2f)
+          val pDist = anom.physicalRadius * (0.25f + Random.nextFloat() * 0.95f)
+          val pCol =
+            when (Random.nextInt(4)) {
+              0 -> Color.parseColor("#00F5D4")
+              1 -> Color.parseColor("#EC4899")
+              2 -> Color.parseColor("#FACC15")
+              else -> Color.parseColor("#A855F7")
+            }
+          particles.add(
+            ParticleEntity(
+              x = anom.x + cos(pAngle) * pDist,
+              y = anom.y + sin(pAngle) * pDist,
+              vx = -sin(pAngle) * 115f,
+              vy = cos(pAngle) * 115f,
+              life = 0.36f,
+              maxLife = 0.36f,
+              size = 4.2f,
+              color = pCol,
+            )
+          )
+        }
+
+        // 10.0s Doomsday Detonation: 75% Max Flux blast + shatters nearby Crystal Asteroids!
+        if (anom.life <= 0f) {
+          val blastR = anom.physicalRadius * 2.15f
+          shockwaves.add(ShockwaveEntity(anom.x, anom.y, 36f, blastR, Color.parseColor("#FACC15")))
+          shockwaves.add(ShockwaveEntity(anom.x, anom.y, 24f, blastR * 0.78f, Color.parseColor("#EC4899")))
+          shockwaves.add(ShockwaveEntity(anom.x, anom.y, 16f, blastR * 0.52f, Color.parseColor("#00F5D4")))
+          spawnExplosion(anom.x, anom.y, Color.parseColor("#FACC15"))
+          spawnExplosion(anom.x + 48f, anom.y - 36f, Color.parseColor("#EC4899"))
+          spawnExplosion(anom.x - 48f, anom.y + 36f, Color.parseColor("#00F5D4"))
+
+          for (s in ships) {
+            if ((isInLobbyStaging && s.isLocalPlayer) || s.respawnTimer > 0f || isInsideSafeZone(s.x, s.y)) continue
+            val dx = s.x - anom.x
+            val dy = s.y - anom.y
+            val dist = hypot(dx, dy)
+            if (dist <= blastR + s.radius) {
+              val dSafe = dist.coerceAtLeast(1f)
+              val nx = dx / dSafe
+              val ny = dy / dSafe
+              s.vx += nx * 1150f
+              s.vy += ny * 1150f
+              s.rocketBoostTimer = max(s.rocketBoostTimer, 0.40f)
+              val doomsdayDmg = s.maxFlux * 0.75f
+              applyProjectileDamage(
+                target = s,
+                attackerId = "unstable_rift",
+                attackerIsHuman = false,
+                rawDamage = doomsdayDmg,
+                impactAngle = atan2(anom.y - s.y, anom.x - s.x),
+                isHeavyImpact = true,
+                isEmp = false,
+                attackerShipLabel = "Unstable Rift",
+                weaponLabel = "Unstable Rift Doomsday",
+              )
+            }
+          }
+
+          // Shatter all destructible Crystal Asteroids inside blast radius
+          var shatteredAnyRock = false
+          for (wIdx in walls.indices.reversed()) {
+            val w = walls[wIdx]
+            if (w.style != SpaceObstacleStyle.CRYSTAL_ASTEROID) continue
+            val wCx = w.x + w.w * 0.5f
+            val wCy = w.y + w.h * 0.5f
+            if (hypot(wCx - anom.x, wCy - anom.y) <= blastR + 120f) {
+              pendingAsteroidRespawns.add(
+                PendingAsteroidRespawn(
+                  x = w.x,
+                  y = w.y,
+                  w = w.w,
+                  h = w.h,
+                  variantSeed = w.variantSeed,
+                  timerSec = 20.0f,
+                )
+              )
+              walls.removeAt(wIdx)
+              greens.add(
+                GreenCrate(
+                  x = wCx,
+                  y = wCy,
+                  spinPhase = Random.nextFloat() * (PI.toFloat() * 2f),
+                  buffType = rollRandomCrateBuffType(),
+                )
+              )
+              spawnExplosion(wCx, wCy, Color.parseColor("#C084FC"))
+              shatteredAnyRock = true
+            }
+          }
+          if (shatteredAnyRock) {
+            bakeStaticRadarBitmap()
+          }
+          if (hasJoinedMatch && !isInLobbyStaging) {
+            sfx.playExplosion()
+            addTrauma(0.65f)
+            spawnPooledFct(
+              text = "UNSTABLE RIFT DOOMSDAY (-75% MAX FLUX)",
+              x = anom.x,
+              y = anom.y - 36f,
+              color = Color.parseColor("#FACC15"),
+              maxLife = 1.45f,
+            )
+          }
+          anomalies.removeAt(aIdx)
+          unstableDetonatedThisStep = true
+          continue
+        }
+
+        // Unstable Rift active 10.0s shear & pull field
+        val pullR = anom.physicalRadius * 2.15f
+        val shearR = anom.physicalRadius * 0.68f
+        for (s in ships) {
+          if (s.respawnTimer > 0f || isInsideSafeZone(s.x, s.y)) continue
+          val dx = anom.x - s.x
+          val dy = anom.y - s.y
+          val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+          if (dist < pullR) {
+            val nx = dx / dist
+            val ny = dy / dist
+            val pullMag = 840f * (1f - dist / pullR).coerceIn(0.22f, 1f)
+            s.vx += nx * pullMag * dt
+            s.vy += ny * pullMag * dt
+          }
+          if (dist < shearR + s.radius * 0.4f && s.plasmaRiftTickTimer <= 0f) {
+            s.plasmaRiftTickTimer = 0.55f
+            val dmg = s.maxFlux * 0.12f
+            s.flux -= dmg
+            if (s.isLocalPlayer) {
+              currentLifeStats.damageTaken += dmg
+              addTrauma(0.20f)
+            }
+            if (s.flux <= 0f) {
+              destroyShipFromPlasmaRift(s)
+            }
+          }
+        }
+        for (bIdx in bullets.indices.reversed()) {
+          val b = bullets[bIdx]
+          val dx = anom.x - b.x
+          val dy = anom.y - b.y
+          val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+          if (dist < anom.physicalRadius * 0.42f) {
+            bullets.removeAt(bIdx)
+            anom.physicalRadius = (anom.physicalRadius + 4f).coerceAtMost(420f)
+          } else if (dist < pullR * 0.9f) {
+            val nx = dx / dist
+            val ny = dy / dist
+            val sp = hypot(b.vx, b.vy).coerceAtLeast(320f)
+            b.vx += nx * 1650f * dt
+            b.vy += ny * 1650f * dt
+            val newSp = hypot(b.vx, b.vy).coerceAtLeast(1f)
+            b.vx = (b.vx / newSp) * sp
+            b.vy = (b.vy / newSp) * sp
+          }
+        }
+        for (bmIdx in bombs.indices.reversed()) {
+          val bm = bombs[bmIdx]
+          val dx = anom.x - bm.x
+          val dy = anom.y - bm.y
+          val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+          if (dist < anom.physicalRadius * 0.44f) {
+            bombs.removeAt(bmIdx)
+            anom.physicalRadius = (anom.physicalRadius + 12f).coerceAtMost(420f)
+          } else if (dist < pullR * 0.9f) {
+            val nx = dx / dist
+            val ny = dy / dist
+            val sp = hypot(bm.vx, bm.vy).coerceAtLeast(220f)
+            bm.vx += nx * 1250f * dt
+            bm.vy += ny * 1250f * dt
+            val newSp = hypot(bm.vx, bm.vy).coerceAtLeast(1f)
+            bm.vx = (bm.vx / newSp) * sp
+            bm.vy = (bm.vy / newSp) * sp
+          }
+        }
+        for (drIdx in swarmDrones.indices.reversed()) {
+          val dr = swarmDrones[drIdx]
+          val dx = anom.x - dr.x
+          val dy = anom.y - dr.y
+          val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+          if (dist < anom.physicalRadius * 0.44f) {
+            swarmDrones.removeAt(drIdx)
+            anom.physicalRadius = (anom.physicalRadius + 6f).coerceAtMost(420f)
+          } else if (dist < pullR * 0.9f) {
+            val nx = dx / dist
+            val ny = dy / dist
+            dr.vx += nx * 1150f * dt
+            dr.vy += ny * 1150f * dt
+            dr.angle = atan2(dr.vy, dr.vx)
+          }
+        }
+        continue
+      }
+
       val spinSpeed = when (anom.type) {
         AnomalyType.PLASMA_RIFT -> 2.2f
         AnomalyType.REPULSOR_RIFT -> 1.8f
@@ -8134,7 +9090,6 @@ class RiftGameEngine(
 
       // Check lifespan expiration (45s)
       if (anom.life <= 0f) {
-        // Despawn particle burst
         spawnExplosion(anom.x, anom.y, when (anom.type) {
           AnomalyType.PLASMA_RIFT -> Color.parseColor("#EF4444")
           AnomalyType.REPULSOR_RIFT -> Color.WHITE
@@ -8188,7 +9143,7 @@ class RiftGameEngine(
               }
             }
           }
-          // Incinerate Holo Phantoms entering the Plasma Rift core
+          // Incinerate Holo Phantoms & Swarm Drones entering the Plasma Rift core
           for (dIdx in decoys.indices.reversed()) {
             val d = decoys[dIdx]
             if (hypot(d.x - anom.x, d.y - anom.y) < tearRadius + 18f) {
@@ -8196,11 +9151,20 @@ class RiftGameEngine(
               spawnExplosion(d.x, d.y, Color.parseColor("#EF4444"))
             }
           }
+          for (drIdx in swarmDrones.indices.reversed()) {
+            val dr = swarmDrones[drIdx]
+            if (hypot(dr.x - anom.x, dr.y - anom.y) < tearRadius + 14f) {
+              swarmDrones.removeAt(drIdx)
+              spawnExplosion(dr.x, dr.y, Color.parseColor("#EF4444"))
+            }
+          }
         }
 
         AnomalyType.REPULSOR_RIFT -> {
           val fieldRadius = RiftCalibrationState.repulsorFieldRadius
-          val baseRepulse = RiftCalibrationState.repulsorBaseForce
+          val baseRepulse = max(RiftCalibrationState.repulsorBaseForce, 1480f)
+          val slingshotCoreRadius = anom.physicalRadius * 0.58f
+          val customSpd = currentCustomGame?.speedMult ?: 1.0f
           for (s in ships) {
             if (s.respawnTimer > 0f) continue
             val dx = s.x - anom.x
@@ -8210,12 +9174,25 @@ class RiftGameEngine(
               val nx = dx / dist
               val ny = dy / dist
               val approachSpeed = -(s.vx * nx + s.vy * ny)
-              val slingshotBonus = if (approachSpeed > 0f) approachSpeed * 2.8f else 0f
-              val forceMag = (baseRepulse + slingshotBonus) * (1f - dist / fieldRadius).coerceIn(0.2f, 1f)
-              s.vx += nx * forceMag * dt
-              s.vy += ny * forceMag * dt
+              if (dist < slingshotCoreRadius) {
+                // Supersonic Inner-Core Slingshot: instant radial catapult exceeding max afterburner velocity!
+                val catapultSpeed = s.spec.afterburnerSpeed * 1.45f * customSpd
+                s.vx = nx * catapultSpeed
+                s.vy = ny * catapultSpeed
+                s.rocketBoostTimer = max(s.rocketBoostTimer, 0.45f)
+                shockwaves.add(ShockwaveEntity(anom.x, anom.y, 16f, anom.physicalRadius * 1.15f, Color.parseColor("#38BDF8")))
+                if (s.isLocalPlayer) {
+                  sfx.playBounce()
+                  spawnPooledFct("REPULSOR SLINGSHOT!", s.x, s.y - 28f, Color.parseColor("#38BDF8"))
+                }
+              } else {
+                val slingshotBonus = if (approachSpeed > 0f) approachSpeed * 3.1f else 0f
+                val forceMag = (baseRepulse + slingshotBonus) * (1f - dist / fieldRadius).coerceIn(0.28f, 1f)
+                s.vx += nx * forceMag * dt
+                s.vy += ny * forceMag * dt
+              }
 
-              val maxAllowed = s.spec.afterburnerSpeed * 1.35f
+              val maxAllowed = s.spec.afterburnerSpeed * 1.48f * customSpd
               val curSp = hypot(s.vx, s.vy)
               if (curSp > maxAllowed) {
                 s.vx = (s.vx / curSp) * maxAllowed
@@ -8227,7 +9204,7 @@ class RiftGameEngine(
             }
           }
 
-          // Slingshot Holo Phantoms outward just like ships
+          // Slingshot Holo Phantoms & Swarm Drones outward
           for (d in decoys) {
             val dx = d.x - anom.x
             val dy = d.y - anom.y
@@ -8237,17 +9214,29 @@ class RiftGameEngine(
               val ny = dy / dist
               val approachSpeed = -(d.vx * nx + d.vy * ny)
               val slingshotBonus = if (approachSpeed > 0f) approachSpeed * 2.8f else 0f
-              val forceMag = (baseRepulse + slingshotBonus) * (1f - dist / fieldRadius).coerceIn(0.2f, 1f)
+              val forceMag = (baseRepulse + slingshotBonus) * (1f - dist / fieldRadius).coerceIn(0.25f, 1f)
               d.vx += nx * forceMag * dt
               d.vy += ny * forceMag * dt
               val sp = hypot(d.vx, d.vy)
-              if (sp > 920f) {
-                d.vx = (d.vx / sp) * 920f
-                d.vy = (d.vy / sp) * 920f
+              if (sp > 960f) {
+                d.vx = (d.vx / sp) * 960f
+                d.vy = (d.vy / sp) * 960f
               }
               if (sp > 20f) {
                 d.angle = atan2(d.vy, d.vx)
               }
+            }
+          }
+          for (dr in swarmDrones) {
+            val dx = dr.x - anom.x
+            val dy = dr.y - anom.y
+            val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+            if (dist < fieldRadius * 0.85f) {
+              val nx = dx / dist
+              val ny = dy / dist
+              dr.vx += nx * 1350f * dt
+              dr.vy += ny * 1350f * dt
+              dr.angle = atan2(dr.vy, dr.vx)
             }
           }
 
@@ -8319,7 +9308,7 @@ class RiftGameEngine(
             }
           }
 
-          // Pull and absorb Holo Phantoms into the Gravity Rift (feeding its growth)
+          // Pull and absorb Holo Phantoms & Swarm Drones into the Gravity Rift (feeding its growth)
           for (dIdx in decoys.indices.reversed()) {
             val d = decoys[dIdx]
             val dx = anom.x - d.x
@@ -8339,6 +9328,25 @@ class RiftGameEngine(
               if (hypot(d.vx, d.vy) > 20f) {
                 d.angle = atan2(d.vy, d.vx)
               }
+            }
+          }
+
+          for (drIdx in swarmDrones.indices.reversed()) {
+            val dr = swarmDrones[drIdx]
+            val dx = anom.x - dr.x
+            val dy = anom.y - dr.y
+            val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+            if (dist < coreRadius + 14f) {
+              swarmDrones.removeAt(drIdx)
+              anom.absorbedWeaponCount++
+              anom.physicalRadius = (anom.physicalRadius + 8f).coerceAtMost(420f)
+              spawnExplosion(dr.x, dr.y, Color.parseColor("#C084FC"))
+            } else if (dist < pullRadius) {
+              val nx = dx / dist
+              val ny = dy / dist
+              dr.vx += nx * pullStrength * dt
+              dr.vy += ny * pullStrength * dt
+              dr.angle = atan2(dr.vy, dr.vx)
             }
           }
 
@@ -8388,16 +9396,81 @@ class RiftGameEngine(
               bm.vy = (bm.vy / newSp) * sp
             }
           }
+
+          // Max-Size Gravity Rift (420px cap, >= 395px): pulls nearby Arena Obstacles & Stasis Barriers inward!
+          if (anom.physicalRadius >= 395f) {
+            val obstaclePullRange = anom.physicalRadius * 2.25f
+            var movedAnyObstacle = false
+            for (w in walls) {
+              val wCx = w.x + w.w * 0.5f
+              val wCy = w.y + w.h * 0.5f
+              val halfDiag = hypot(w.w * 0.5f, w.h * 0.5f)
+              val dx = anom.x - wCx
+              val dy = anom.y - wCy
+              val dist = hypot(dx, dy)
+              val minStop = coreRadius + halfDiag + 10f
+              if (dist > minStop && dist <= obstaclePullRange) {
+                val step = min(dist - minStop, 165f * dt)
+                val nextX = w.x + (dx / dist) * step
+                val nextY = w.y + (dy / dist) * step
+                if (!rectOverlapsProtectedZone(nextX, nextY, w.w, w.h)) {
+                  w.x = nextX
+                  w.y = nextY
+                  movedAnyObstacle = true
+                }
+              }
+            }
+            for (bw in brickWalls) {
+              val bCx = bw.x + bw.w * 0.5f
+              val bCy = bw.y + bw.h * 0.5f
+              val halfDiag = hypot(bw.w * 0.5f, bw.h * 0.5f)
+              val dx = anom.x - bCx
+              val dy = anom.y - bCy
+              val dist = hypot(dx, dy)
+              val minStop = coreRadius + halfDiag + 8f
+              if (dist > minStop && dist <= obstaclePullRange) {
+                val step = min(dist - minStop, 190f * dt)
+                val nextX = bw.x + (dx / dist) * step
+                val nextY = bw.y + (dy / dist) * step
+                if (!rectOverlapsProtectedZone(nextX, nextY, bw.w, bw.h)) {
+                  bw.x = nextX
+                  bw.y = nextY
+                  movedAnyObstacle = true
+                }
+              }
+            }
+            if (movedAnyObstacle && gravityRadarBakeTimer <= 0f) {
+              gravityRadarBakeTimer = 0.45f
+              bakeStaticRadarBitmap()
+            }
+          }
+
+          // Supermassive Gravity Rift gravitational attraction toward nearby non-partnered Rifts (enables live convergence)
+          if (anom.physicalRadius >= 360f) {
+            val nearbyOther =
+              anomalies.firstOrNull {
+                it.id != anom.id &&
+                  !it.isUnstableMergedRift &&
+                  hypot(it.x - anom.x, it.y - anom.y) <= 980f
+              }
+            if (nearbyOther != null) {
+              val dx = nearbyOther.x - anom.x
+              val dy = nearbyOther.y - anom.y
+              val d = hypot(dx, dy).coerceAtLeast(1f)
+              anom.x += (dx / d) * 22f * dt
+              anom.y += (dy / d) * 22f * dt
+            }
+          }
         }
 
         AnomalyType.PHASE_RIFT_A, AnomalyType.PHASE_RIFT_B -> {
-          val portalRadius = anom.physicalRadius * 0.52f
+          val nodeRadius = anom.physicalRadius * 0.52f
           val phaseCd = RiftCalibrationState.phaseRiftCooldownSec
           val partner = anomalies.firstOrNull { it.id == anom.partnerId }
           if (partner != null) {
             for (s in ships) {
               if (s.respawnTimer > 0f) continue
-              if (s.phaseRiftCooldownTimer <= 0f && hypot(s.x - anom.x, s.y - anom.y) < portalRadius + s.radius * 0.5f) {
+              if (s.phaseRiftCooldownTimer <= 0f && hypot(s.x - anom.x, s.y - anom.y) < nodeRadius + s.radius * 0.5f) {
                 s.x = partner.x
                 s.y = partner.y
                 s.phaseRiftCooldownTimer = phaseCd
@@ -8410,9 +9483,8 @@ class RiftGameEngine(
               }
             }
 
-            // Teleport Holo Phantoms through paired Phase Rifts at full momentum
             for (d in decoys) {
-              if (d.phaseRiftCooldownTimer <= 0f && hypot(d.x - anom.x, d.y - anom.y) < portalRadius + 18f) {
+              if (d.phaseRiftCooldownTimer <= 0f && hypot(d.x - anom.x, d.y - anom.y) < nodeRadius + 18f) {
                 d.x = partner.x
                 d.y = partner.y
                 d.phaseRiftCooldownTimer = phaseCd
@@ -8421,8 +9493,18 @@ class RiftGameEngine(
               }
             }
 
+            for (dr in swarmDrones) {
+              if (dr.phaseRiftCooldownTimer <= 0f && hypot(dr.x - anom.x, dr.y - anom.y) < nodeRadius + 14f) {
+                dr.x = partner.x
+                dr.y = partner.y
+                dr.phaseRiftCooldownTimer = phaseCd
+                spawnExplosion(anom.x, anom.y, Color.parseColor("#00F5D4"))
+                spawnExplosion(partner.x, partner.y, Color.parseColor("#00F5D4"))
+              }
+            }
+
             for (b in bullets) {
-              if (b.phaseRiftCooldownTimer <= 0f && hypot(b.x - anom.x, b.y - anom.y) < portalRadius) {
+              if (b.phaseRiftCooldownTimer <= 0f && hypot(b.x - anom.x, b.y - anom.y) < nodeRadius) {
                 b.x = partner.x
                 b.y = partner.y
                 b.phaseRiftCooldownTimer = phaseCd
@@ -8430,7 +9512,7 @@ class RiftGameEngine(
             }
 
             for (bm in bombs) {
-              if (bm.phaseRiftCooldownTimer <= 0f && hypot(bm.x - anom.x, bm.y - anom.y) < portalRadius) {
+              if (bm.phaseRiftCooldownTimer <= 0f && hypot(bm.x - anom.x, bm.y - anom.y) < nodeRadius) {
                 bm.x = partner.x
                 bm.y = partner.y
                 bm.phaseRiftCooldownTimer = phaseCd
@@ -8441,14 +9523,25 @@ class RiftGameEngine(
       }
     }
 
-    // Cleanly respawn expired Rifts on 45s cycles
+    // Cleanly respawn expired Rifts on 45s cycles & replenish sector Rifts after Unstable Rift Doomsday
     for (singleType in expiredSinglesToRespawn) {
       spawnSingleAnomaly(singleType)
     }
     if (expiredPairsToRespawn.isNotEmpty()) {
-      // Remove any lingering orphan partner
-      anomalies.removeAll { it.type == AnomalyType.PHASE_RIFT_A || it.type == AnomalyType.PHASE_RIFT_B }
+      anomalies.removeAll { !it.isUnstableMergedRift && (it.type == AnomalyType.PHASE_RIFT_A || it.type == AnomalyType.PHASE_RIFT_B) }
       spawnPhaseRiftPair()
+    }
+    if (unstableDetonatedThisStep) {
+      for (reqType in listOf(AnomalyType.PLASMA_RIFT, AnomalyType.REPULSOR_RIFT, AnomalyType.GRAVITY_RIFT)) {
+        if (anomalies.none { !it.isUnstableMergedRift && it.type == reqType }) {
+          spawnSingleAnomaly(reqType)
+        }
+      }
+      val activePhaseNodes = anomalies.count { !it.isUnstableMergedRift && (it.type == AnomalyType.PHASE_RIFT_A || it.type == AnomalyType.PHASE_RIFT_B) && it.partnerId.isNotEmpty() }
+      if (activePhaseNodes < 2) {
+        anomalies.removeAll { !it.isUnstableMergedRift && (it.type == AnomalyType.PHASE_RIFT_A || it.type == AnomalyType.PHASE_RIFT_B) }
+        spawnPhaseRiftPair()
+      }
     }
   }
 }

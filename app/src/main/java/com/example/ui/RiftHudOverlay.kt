@@ -258,12 +258,29 @@ fun RiftHudOverlay(
    if (coords.size.width > 0 && coords.size.height > 0) rootScreenSize = coords.size
   }
  ) {
-  if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE || engine.isCustomGameActive()) {
+  val topBarRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_TOP_BAR) }
+  val topBarEffScale = (RiftCalibrationState.topBarScale * topBarRec.pixelScale).coerceIn(0.6f, 1.8f)
+  if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE || engine.isCustomGameActive() || uiUnlocked) {
    val mode = engine.effectiveModeRules()
-   if (mode == RankedGameMode.RIFT_CONTROL) {
-    RiftControlTugOfWarHudBar(engine, textScale, onOpenNexus, Modifier.align(Alignment.TopCenter).padding(top = 6.dp).zIndex(11f))
+   val topBarDragMod =
+    Modifier.align(Alignment.TopCenter)
+     .padding(top = 6.dp)
+     .offset { IntOffset(RiftCalibrationState.topBarOffset.x.roundToInt(), RiftCalibrationState.topBarOffset.y.roundToInt()) }
+     .graphicsLayer { scaleX = topBarEffScale; scaleY = topBarEffScale; transformOrigin = TransformOrigin(0.5f, 0f) }
+     .then(
+      if (uiUnlocked) {
+       Modifier.pointerInput(Unit) {
+        detectDragGestures(
+         onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
+         onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
+        ) { change, dragAmount -> change.consume(); RiftCalibrationState.topBarOffset += dragAmount }
+       }.wysiwygUnlockOutline(enabled = true, cornerRadius = 9.dp)
+      } else Modifier
+     )
+   if (mode == RankedGameMode.RIFT_CONTROL && !uiUnlocked) {
+    RiftControlTugOfWarHudBar(engine, textScale, onOpenNexus, topBarDragMod.zIndex(11f), topBarRec)
    } else {
-    val modeAccent = when (mode) {
+    val defaultAccent = when (mode) {
      RankedGameMode.RIFT_SKIRMISH -> Color(0xFFF59E0B)
      RankedGameMode.FLUX_CORE -> Color(0xFF00F5D4)
      RankedGameMode.STASIS_BREACH -> Color(0xFFA855F7)
@@ -271,6 +288,8 @@ fun RiftHudOverlay(
      RankedGameMode.SYNDICATE_WARS -> Color(0xFFEF4444)
      RankedGameMode.SECTOR_CONVERGENCE -> Color(0xFF38BDF8)
     }
+    val modeAccent = if (topBarRec.isFactoryDefault) defaultAccent else Color(topBarRec.trimColorInt)
+    val topBarBg = if (topBarRec.isFactoryDefault) Color(0xD9060E1C) else Color(topBarRec.primaryColorInt).copy(alpha = topBarRec.surfaceOpacity.coerceIn(0.25f, 0.98f))
     val baseModeSummaryText = when (mode) {
      RankedGameMode.RIFT_SKIRMISH ->
       "RIFT SKIRMISH (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • RND ${engine.skirmishCurrentRound} (${engine.skirmishRoundTimerSec.toInt()}s) • WEST ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} EAST"
@@ -294,14 +313,14 @@ fun RiftHudOverlay(
      }
      RankedGameMode.SYNDICATE_WARS ->
       "SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • [${player.syndicateTag}] ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} [${engine.rivalSyndicateWarTag}] • ${engine.skirmishRoundTimerSec.toInt()}s"
-     RankedGameMode.SECTOR_CONVERGENCE -> mode.title
+     RankedGameMode.SECTOR_CONVERGENCE -> "SECTOR CONVERGENCE • TOP STATUS BAR"
     }
     val modeSummaryText = if (engine.isCustomGameActive()) "CUSTOM: ${engine.currentCustomGame?.title ?: "Custom Match"} • $baseModeSummaryText" else baseModeSummaryText
 
     Box(
-     modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp).clip(RoundedCornerShape(9.dp))
-      .background(Color(0xD9060E1C)).border(1.dp, modeAccent, RoundedCornerShape(9.dp))
-      .clickable { onOpenNexus() }.padding(horizontal = (8f * textScale).dp, vertical = (3.5f * textScale).dp)
+     modifier = topBarDragMod.zIndex(11f).clip(RoundedCornerShape(9.dp))
+      .background(topBarBg).border((1.0f * topBarRec.borderWeight).dp, modeAccent, RoundedCornerShape(9.dp))
+      .clickable(enabled = !uiUnlocked) { onOpenNexus() }.padding(horizontal = (8f * textScale).dp, vertical = (3.5f * textScale).dp)
       .testTag("hud_ranked_mode_banner"),
      contentAlignment = Alignment.Center,
     ) {
@@ -330,6 +349,8 @@ fun RiftHudOverlay(
    }
   }
 
+  val killFeedRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_KILL_FEED) }
+  val killFeedEffScale = (RiftCalibrationState.killLogScale * killFeedRec.pixelScale).coerceIn(0.55f, 1.85f)
   Column(
    modifier = Modifier.align(Alignment.TopEnd)
     .offset { IntOffset(RiftCalibrationState.killLogOffset.x.roundToInt(), RiftCalibrationState.killLogOffset.y.roundToInt()) }
@@ -344,13 +365,24 @@ fun RiftHudOverlay(
      } else Modifier
     )
     .graphicsLayer {
-     scaleX = RiftCalibrationState.killLogScale; scaleY = RiftCalibrationState.killLogScale
+     scaleX = killFeedEffScale; scaleY = killFeedEffScale
      transformOrigin = TransformOrigin(1f, 0f)
     }
-    .padding(top = 6.dp, end = 8.dp).width(236.dp).padding(horizontal = 4.dp, vertical = 2.dp)
+    .padding(top = 6.dp, end = 8.dp).width(236.dp)
+    .then(
+     if (!killFeedRec.isFactoryDefault) {
+      Modifier.clip(RoundedCornerShape(8.dp))
+       .background(Color(killFeedRec.primaryColorInt).copy(alpha = (killFeedRec.surfaceOpacity * 0.65f).coerceIn(0.15f, 0.85f)))
+       .border((0.9f * killFeedRec.borderWeight).dp, Color(killFeedRec.trimColorInt).copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+     } else Modifier
+    )
+    .padding(horizontal = 4.dp, vertical = 2.dp)
     .testTag("hud_kill_log_window"),
    verticalArrangement = Arrangement.spacedBy(2.dp),
   ) {
+   if (uiUnlocked && engine.killFeed.isEmpty()) {
+    Text("TACTICAL KILL FEED", color = Color(0xFF7DD3FC), fontSize = 7.4.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+   }
    engine.killFeed.take(8).forEachIndexed { index, entry ->
     KillFeedRow(entry = entry, alpha = ((8 - index) / 8.0f).coerceIn(0.15f, 1.0f))
    }
@@ -410,9 +442,14 @@ fun RiftHudOverlay(
     }
    }
 
+   val effectiveWarnBg = if (warnRec.isFactoryDefault) promptBg else Color(warnRec.primaryColorInt).copy(alpha = warnRec.surfaceOpacity.coerceIn(0.25f, 0.98f))
+   val effectiveWarnBorder = if (warnRec.isFactoryDefault) promptBorder else Color(warnRec.trimColorInt).copy(alpha = pulseWave)
+   val effectiveWarnText = if (warnRec.isFactoryDefault) promptTextColor else Color(warnRec.glowColorInt)
+   val combinedWarnOffset = RiftCalibrationState.toastContainerOffset + RiftCalibrationState.idleWarningBannerOffset
+
    Box(
     modifier = Modifier.align(Alignment.TopCenter).padding(top = if (levelUpBannerLevel > 1) 76.dp else 44.dp)
-     .offset { IntOffset(RiftCalibrationState.toastContainerOffset.x.roundToInt(), RiftCalibrationState.toastContainerOffset.y.roundToInt()) }
+     .offset { IntOffset(combinedWarnOffset.x.roundToInt(), combinedWarnOffset.y.roundToInt()) }
      .graphicsLayer { scaleX = warnScale; scaleY = warnScale }
      .then(
       if (uiUnlocked) {
@@ -420,19 +457,19 @@ fun RiftHudOverlay(
         detectDragGestures(
          onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
          onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
-        ) { change, dragAmount -> change.consume(); RiftCalibrationState.toastContainerOffset += dragAmount }
+        ) { change, dragAmount -> change.consume(); RiftCalibrationState.idleWarningBannerOffset += dragAmount }
        }
       } else Modifier
      )
-     .wrapContentSize().clip(RoundedCornerShape(10.dp)).background(promptBg)
-     .border(1.2.dp, promptBorder, RoundedCornerShape(10.dp))
+     .wrapContentSize().clip(RoundedCornerShape(10.dp)).background(effectiveWarnBg)
+     .border((1.2f * warnRec.borderWeight).dp, effectiveWarnBorder, RoundedCornerShape(10.dp))
      .wysiwygUnlockOutline(enabled = uiUnlocked, cornerRadius = 10.dp)
      .padding(horizontal = (11f * textScale).dp, vertical = (5f * textScale).dp)
      .testTag("hud_tactical_toast"),
     contentAlignment = Alignment.Center,
    ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy((1.5f * textScale).dp)) {
-     Text(promptTitle, color = promptTextColor, fontSize = (11.0f * textScale).sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+     Text(promptTitle, color = effectiveWarnText, fontSize = (11.0f * textScale).sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
      if (promptSubtitle != null) {
       Text(promptSubtitle, color = Color(0xFFF87171), fontSize = (8.5f * textScale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
      }
@@ -486,6 +523,8 @@ fun RiftHudOverlay(
     label = "buff_bar_tap_enlarge",
    )
 
+   val buffRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_BUFF_STRIP) }
+   val buffStripEffScale = (RiftCalibrationState.buffBarScale * buffRec.pixelScale * buffBarTapScale).coerceIn(0.55f, 2.2f)
    Box(
     modifier = Modifier.zIndex(if ((isBuffBarEnlarged || buffBarTapScale > 1.02f) && !isRadarOnTop) 18f else 4f)
      .offset { IntOffset(RiftCalibrationState.buffBarOffset.x.roundToInt(), RiftCalibrationState.buffBarOffset.y.roundToInt()) }
@@ -502,14 +541,14 @@ fun RiftHudOverlay(
       }
      )
      .graphicsLayer {
-      scaleX = RiftCalibrationState.buffBarScale * buffBarTapScale
-      scaleY = RiftCalibrationState.buffBarScale * buffBarTapScale
+      scaleX = buffStripEffScale
+      scaleY = buffStripEffScale
       transformOrigin = TransformOrigin(0.5f, 1f)
      }
      .padding(bottom = 4.dp).testTag("hud_active_powerups_dock"),
     contentAlignment = Alignment.Center,
    ) {
-    ActivePowerupsDock(player, engine.buffVersion, tickRead, textScale, uiUnlocked)
+    ActivePowerupsDock(player, engine.buffVersion, tickRead, textScale, uiUnlocked, buffRec)
    }
 
    SymmetricBottomConsoleLayout(
@@ -531,18 +570,33 @@ fun RiftHudOverlay(
    )
   }
 
+  val brakeRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_BRAKE_BTN) }
+  val brakeEffScale = (RiftCalibrationState.bottomConsoleScale * brakeRec.pixelScale).coerceIn(0.55f, 2.0f)
   val brakingActive = engine.autoBraking && speed > 0
   UnifiedThreeRingCockpitButton(
    title = "BRAKE",
    sub = if (brakingActive) "ACTIVE" else "STOP",
-   strokeColor = if (brakingActive) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-   fillColor = if (brakingActive) Color(0xFF0284C7) else Color(0xCC09182C),
-   subColor = if (brakingActive) Color(0xFFFEF08A) else Color(0xFFE0F2FE),
+   strokeColor = when {
+    brakingActive -> Color(0xFF00F5D4)
+    !brakeRec.isFactoryDefault -> Color(brakeRec.trimColorInt)
+    else -> Color(0xFF38BDF8)
+   },
+   fillColor = when {
+    brakingActive -> Color(0xFF0284C7)
+    !brakeRec.isFactoryDefault -> Color(brakeRec.primaryColorInt).copy(alpha = brakeRec.surfaceOpacity.coerceIn(0.25f, 0.98f))
+    else -> Color(0xCC09182C)
+   },
+   subColor = when {
+    brakingActive -> Color(0xFFFEF08A)
+    !brakeRec.isFactoryDefault -> Color(brakeRec.glowColorInt)
+    else -> Color(0xFFE0F2FE)
+   },
+   borderWeight = brakeRec.borderWeight,
    sizeDp = 50.dp,
    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp, end = bottomConsoleSpreadDp)
     .offset { IntOffset(RiftCalibrationState.brakeBtnOffset.x.roundToInt(), RiftCalibrationState.brakeBtnOffset.y.roundToInt()) }
     .graphicsLayer {
-     scaleX = RiftCalibrationState.bottomConsoleScale; scaleY = RiftCalibrationState.bottomConsoleScale
+     scaleX = brakeEffScale; scaleY = brakeEffScale
      transformOrigin = TransformOrigin(0.5f, 0.5f)
     }
     .then(
@@ -562,6 +616,8 @@ fun RiftHudOverlay(
 
   val isNativeMulti = player.spec.supportsNativeMultifire
   if (isNativeMulti || uiUnlocked || RiftCalibrationState.forceAllButtonsVisible) {
+   val multiRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_MULTI_BTN) }
+   val multiEffScale = (RiftCalibrationState.bottomConsoleScale * multiRec.pixelScale).coerceIn(0.55f, 2.0f)
    val multiCharges = player.multiShotCharges
    val topMultiLabel = if (player.spec.isParallelTwin) "TWIN" else "MULTI"
    val subLabel = when {
@@ -571,14 +627,30 @@ fun RiftHudOverlay(
    }
    UnifiedThreeRingCockpitButton(
     title = topMultiLabel, sub = subLabel,
-    strokeColor = when { player.multifireOn && isNativeMulti -> Color(0xFFFACC15); isNativeMulti -> Color(0xFF38BDF8); else -> Color(0xFF475569) },
-    fillColor = when { player.multifireOn && isNativeMulti -> Color(0xFF713F12); isNativeMulti -> Color(0xCC09182C); else -> Color(0xFF1E293B) },
-    subColor = when { player.multifireOn && isNativeMulti -> Color(0xFFFEF08A); isNativeMulti -> Color.White; else -> Color(0xFF94A3B8) },
+    strokeColor = when {
+     player.multifireOn && isNativeMulti -> if (multiRec.isFactoryDefault) Color(0xFFFACC15) else Color(multiRec.glowColorInt)
+     !multiRec.isFactoryDefault -> Color(multiRec.trimColorInt)
+     isNativeMulti -> Color(0xFF38BDF8)
+     else -> Color(0xFF475569)
+    },
+    fillColor = when {
+     player.multifireOn && isNativeMulti -> Color(0xFF713F12)
+     !multiRec.isFactoryDefault -> Color(multiRec.primaryColorInt).copy(alpha = multiRec.surfaceOpacity.coerceIn(0.25f, 0.98f))
+     isNativeMulti -> Color(0xCC09182C)
+     else -> Color(0xFF1E293B)
+    },
+    subColor = when {
+     player.multifireOn && isNativeMulti -> Color(0xFFFEF08A)
+     !multiRec.isFactoryDefault -> Color(multiRec.glowColorInt)
+     isNativeMulti -> Color.White
+     else -> Color(0xFF94A3B8)
+    },
+    borderWeight = multiRec.borderWeight,
     sizeDp = 50.dp,
     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp, start = bottomConsoleSpreadDp)
      .offset { IntOffset(RiftCalibrationState.multiBtnOffset.x.roundToInt(), RiftCalibrationState.multiBtnOffset.y.roundToInt()) }
      .graphicsLayer {
-      scaleX = RiftCalibrationState.bottomConsoleScale; scaleY = RiftCalibrationState.bottomConsoleScale
+      scaleX = multiEffScale; scaleY = multiEffScale
       transformOrigin = TransformOrigin(0.5f, 0.5f)
      }
      .then(
@@ -597,19 +669,50 @@ fun RiftHudOverlay(
    )
   }
 
-  if (engine.isActivelySpectatingTeammates() && !uiUnlocked) {
+  if (engine.isActivelySpectatingTeammates() || uiUnlocked) {
+   val specRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_SPECTATOR_BOX) }
+   val specScale = specRec.pixelScale.coerceIn(0.6f, 1.8f)
+   val specBg = if (specRec.isFactoryDefault) Color(0xEE06101F) else Color(specRec.primaryColorInt).copy(alpha = specRec.surfaceOpacity.coerceIn(0.25f, 0.98f))
+   val specBorder = if (specRec.isFactoryDefault) Color(0xAA38BDF8) else Color(specRec.trimColorInt)
+   val specGlow = if (specRec.isFactoryDefault) Color(0xFF00F5D4) else Color(specRec.glowColorInt)
    val livingAllies = engine.getLivingSpectatableTeammates()
    val activeTarget = livingAllies.firstOrNull { it.id == engine.spectatingTargetShipId } ?: livingAllies.firstOrNull()
-   Box(modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 104.dp).zIndex(35f)) {
-    if (isSpectatorCardCollapsed) {
+   Box(
+    modifier = Modifier.align(Alignment.BottomEnd)
+     .padding(end = 12.dp, bottom = 104.dp)
+     .offset { IntOffset(RiftCalibrationState.spectatorBoxOffset.x.roundToInt(), RiftCalibrationState.spectatorBoxOffset.y.roundToInt()) }
+     .graphicsLayer { scaleX = specScale; scaleY = specScale; transformOrigin = TransformOrigin(1f, 1f) }
+     .then(
+      if (uiUnlocked) {
+       Modifier.pointerInput(Unit) {
+        detectDragGestures(
+         onDragEnd = { RiftCalibrationState.savePersistedLayout(context) },
+         onDragCancel = { RiftCalibrationState.savePersistedLayout(context) },
+        ) { change, dragAmount -> change.consume(); RiftCalibrationState.spectatorBoxOffset += dragAmount }
+       }.wysiwygUnlockOutline(enabled = true, cornerRadius = 12.dp)
+      } else Modifier
+     )
+     .zIndex(35f),
+   ) {
+    if (uiUnlocked && !engine.isActivelySpectatingTeammates()) {
+     Column(
+      modifier = Modifier.widthIn(min = 216.dp, max = 310.dp).clip(RoundedCornerShape(12.dp)).background(specBg)
+       .border((1.2f * specRec.borderWeight).dp, specBorder, RoundedCornerShape(12.dp)).padding(horizontal = 9.dp, vertical = 7.dp)
+       .testTag("hud_ally_spectator_box"),
+      verticalArrangement = Arrangement.spacedBy(3.dp),
+     ) {
+      Text("TEAMMATE SPECTATOR SWITCHER", color = specGlow, fontSize = (8.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
+      Text("DRAG TO POSITION INDEPENDENT SPECTATOR PANEL", color = Color(0xFFBAE6FD), fontSize = (7.0f * textScale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
+     }
+    } else if (isSpectatorCardCollapsed) {
      Row(
-      modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xEE06101F))
-       .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(10.dp))
-       .clickable { isSpectatorCardCollapsed = false }.padding(horizontal = 10.dp, vertical = 7.dp)
+      modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(specBg)
+       .border((1.2f * specRec.borderWeight).dp, specGlow, RoundedCornerShape(10.dp))
+       .clickable(enabled = !uiUnlocked) { isSpectatorCardCollapsed = false }.padding(horizontal = 10.dp, vertical = 7.dp)
        .testTag("pill_expand_spectator_box"),
       verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
      ) {
-      Text("SPECTATING: ${activeTarget?.callsign ?: "ALLY"}", color = Color(0xFF00F5D4), fontSize = (8.4f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+      Text("SPECTATING: ${activeTarget?.callsign ?: "ALLY"}", color = specGlow, fontSize = (8.4f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
       Text("[^]", color = Color(0xFFE0F2FE), fontSize = (8.2f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
      }
     } else {
@@ -617,6 +720,7 @@ fun RiftHudOverlay(
       livingAllies = livingAllies, activeTarget = activeTarget, respawnTimerSec = player.respawnTimer,
       isRoundEliminated = engine.isSkirmishRulesActive() && player.respawnTimer > 0f,
       isStasisCaptured = player.isInStasisBrig, textScale = textScale,
+      bgColor = specBg, borderColor = specBorder, accentColor = specGlow, borderWeight = specRec.borderWeight,
       onSelectAlly = { allyId -> engine.selectSpectatorTarget(allyId) },
       onCyclePrev = { engine.cycleSpectatorTarget(-1) },
       onCycleNext = { engine.cycleSpectatorTarget(1) },
@@ -629,15 +733,23 @@ fun RiftHudOverlay(
 }
 
 @Composable
-private fun RiftControlTugOfWarHudBar(engine: RiftGameEngine, textScale: Float, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun RiftControlTugOfWarHudBar(
+ engine: RiftGameEngine,
+ textScale: Float,
+ onClick: () -> Unit,
+ modifier: Modifier = Modifier,
+ topBarRec: VisualElementRecipe = RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_TOP_BAR),
+) {
  val totalSec = engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)
  val timerFormatted = String.format(Locale.US, "%d:%02d", totalSec / 60, totalSec % 60)
  val westScore = engine.riftControlWestScore.toInt().coerceIn(0, 1000)
  val eastScore = engine.riftControlEastScore.toInt().coerceIn(0, 1000)
+ val barBg = if (topBarRec.isFactoryDefault) Color(0xEA050D1A) else Color(topBarRec.primaryColorInt).copy(alpha = topBarRec.surfaceOpacity.coerceIn(0.25f, 0.98f))
+ val barBorder = if (topBarRec.isFactoryDefault) Color(0xFF38BDF8) else Color(topBarRec.trimColorInt)
 
  Row(
-  modifier = modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xEA050D1A))
-   .border(1.1.dp, Color(0xFF38BDF8), RoundedCornerShape(10.dp)).clickable { onClick() }
+  modifier = modifier.clip(RoundedCornerShape(10.dp)).background(barBg)
+   .border((1.1f * topBarRec.borderWeight).dp, barBorder, RoundedCornerShape(10.dp)).clickable { onClick() }
    .padding(horizontal = (8f * textScale).dp, vertical = (4f * textScale).dp)
    .testTag("hud_rift_control_tug_bar"),
   verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((8f * textScale).dp),
@@ -730,6 +842,10 @@ private fun AllySpectatorSelectorCard(
  isRoundEliminated: Boolean,
  isStasisCaptured: Boolean,
  textScale: Float,
+ bgColor: Color = Color(0xEE06101F),
+ borderColor: Color = Color(0xAA38BDF8),
+ accentColor: Color = Color(0xFF00F5D4),
+ borderWeight: Float = 1.0f,
  onSelectAlly: (String) -> Unit,
  onCyclePrev: () -> Unit,
  onCycleNext: () -> Unit,
@@ -742,14 +858,14 @@ private fun AllySpectatorSelectorCard(
  }
 
  Column(
-  modifier = Modifier.widthIn(min = 216.dp, max = 310.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xEE06101F))
-   .border(1.2.dp, Color(0xAA38BDF8), RoundedCornerShape(12.dp)).padding(horizontal = 9.dp, vertical = 7.dp)
+  modifier = Modifier.widthIn(min = 216.dp, max = 310.dp).clip(RoundedCornerShape(12.dp)).background(bgColor)
+   .border((1.2f * borderWeight).dp, borderColor, RoundedCornerShape(12.dp)).padding(horizontal = 9.dp, vertical = 7.dp)
    .testTag("hud_ally_spectator_box"),
   verticalArrangement = Arrangement.spacedBy(6.dp),
  ) {
   Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
    Column {
-    Text("TEAMMATE SPECTATOR (${livingAllies.size})", color = Color(0xFF00F5D4), fontSize = (8.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
+    Text("TEAMMATE SPECTATOR (${livingAllies.size})", color = accentColor, fontSize = (8.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
     Text(statusLabel, color = Color(0xFFFACC15), fontSize = (7.2f * textScale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
    }
    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -934,7 +1050,16 @@ private fun SymmetricBottomConsoleLayout(
      }
     }
    }
-   Box(modifier = Modifier.testTag("hud_btn_nexus")) {
+   val nexusBtnRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_NEXUS_BUTTON) }
+   Box(
+    modifier = Modifier
+     .offset { IntOffset(RiftCalibrationState.nexusBtnOffset.x.roundToInt(), RiftCalibrationState.nexusBtnOffset.y.roundToInt()) }
+     .graphicsLayer {
+      val ns = nexusBtnRec.pixelScale.coerceIn(0.65f, 1.65f)
+      scaleX = ns; scaleY = ns
+     }
+     .testTag("hud_btn_nexus"),
+   ) {
     SwirlingRiftHudOrb(isStreaming = isNexusStreaming, onClick = onOpenNexus)
    }
   }
@@ -1267,6 +1392,7 @@ private fun UnifiedThreeRingCockpitButton(
  strokeColor: Color,
  fillColor: Color,
  subColor: Color,
+ borderWeight: Float = 1.0f,
  sizeDp: Dp = 50.dp,
  modifier: Modifier = Modifier,
 ) {
@@ -1274,7 +1400,7 @@ private fun UnifiedThreeRingCockpitButton(
   Canvas(modifier = Modifier.fillMaxSize()) {
    val cx = size.width * 0.5f; val cy = size.height * 0.5f; val r = size.minDimension * 0.47f
    drawCircle(Color(0xEB070F1E), r * 1.05f, Offset(cx, cy))
-   drawCircle(strokeColor, r, Offset(cx, cy), style = Stroke(width = 2.0.dp.toPx()))
+   drawCircle(strokeColor, r, Offset(cx, cy), style = Stroke(width = (2.0f * borderWeight).dp.toPx()))
    for (tick in 0 until 4) {
     val a = tick * (Math.PI.toFloat() * 0.5f)
     drawLine(strokeColor, Offset(cx + cos(a) * (r * 0.88f), cy + sin(a) * (r * 0.88f)), Offset(cx + cos(a) * (r * 1.03f), cy + sin(a) * (r * 1.03f)), 1.3.dp.toPx(), StrokeCap.Round)
@@ -1321,7 +1447,14 @@ data class PermanentUpgradeSlot(
 )
 
 @Composable
-private fun ActivePowerupsDock(player: ShipEntity, buffVersion: Int, frameTick: Int, textScale: Float, uiUnlocked: Boolean) {
+private fun ActivePowerupsDock(
+ player: ShipEntity,
+ buffVersion: Int,
+ frameTick: Int,
+ textScale: Float,
+ uiUnlocked: Boolean,
+ buffRec: VisualElementRecipe = RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_BUFF_STRIP),
+) {
  val unusedTick = frameTick + buffVersion
  val pctPerStack = RiftCalibrationState.overchargeSurgePctPerStack
  val spdPct = (player.speedOverchargeStacks * pctPerStack * 100f).roundToInt()
@@ -1329,6 +1462,8 @@ private fun ActivePowerupsDock(player: ShipEntity, buffVersion: Int, frameTick: 
  val turnPct = player.turnOverchargeStacks * 12
  val maxFluxPct = player.maxFluxOverchargeStacks * 10
  val rchPct = (player.rechargeOverchargeStacks * pctPerStack * 100f).roundToInt()
+ val dockBg = if (buffRec.isFactoryDefault) Color(0xD9080E18) else Color(buffRec.primaryColorInt).copy(alpha = buffRec.surfaceOpacity.coerceIn(0.25f, 0.98f))
+ val dockBorder = if (buffRec.isFactoryDefault) Color(0x4D38BDF8) else Color(buffRec.trimColorInt)
 
  val slots = listOf(
   PermanentUpgradeSlot(9, "BNC", when { player.hasBouncingBulletsUpgrade -> "ON"; player.spec.primaryBounces > 0 -> "NAT"; else -> "OFF" }, player.hasBouncingBulletsUpgrade || player.spec.primaryBounces > 0, Color(0xFFA855F7)),
@@ -1340,8 +1475,8 @@ private fun ActivePowerupsDock(player: ShipEntity, buffVersion: Int, frameTick: 
  )
 
  Row(
-  modifier = Modifier.wrapContentSize().clip(RoundedCornerShape(9.dp)).background(Color(0xD9080E18))
-   .border(0.85.dp, Color(0x4D38BDF8), RoundedCornerShape(9.dp))
+  modifier = Modifier.wrapContentSize().clip(RoundedCornerShape(9.dp)).background(dockBg)
+   .border((0.85f * buffRec.borderWeight).dp, dockBorder, RoundedCornerShape(9.dp))
    .wysiwygUnlockOutline(enabled = uiUnlocked, cornerRadius = 9.dp)
    .padding(horizontal = (6.0f * textScale).dp, vertical = (2.6f * textScale).dp),
   verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((5.5f * textScale).dp),

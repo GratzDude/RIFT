@@ -1591,9 +1591,9 @@ object RiftCodex {
           aimMode = BuffAimMode.AIM_DIRECTIONAL,
           strokeColorHex = "#EF4444",
           fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#EF4444"),
-          summary = "Launches a homing Seeker Torpedo that steers onto hostile targets.",
+          summary = "Launches a fast predictive homing Seeker Torpedo that leads hostile targets.",
           isCustomForged = false,
-          projectileSpeed = 620f,
+          projectileSpeed = 680f,
           flightDuration = 2.5f,
           damage = 880f,
           blastRadius = 160f,
@@ -1608,7 +1608,7 @@ object RiftCodex {
           aimMode = BuffAimMode.AIM_DIRECTIONAL,
           strokeColorHex = "#2DD4BF",
           fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#2DD4BF"),
-          summary = "Projects a mirrored holographic decoy ship and cloaks your hull.",
+          summary = "Projects a mirrored holographic phantom ship and cloaks your hull.",
           isCustomForged = false,
           projectileSpeed = 520f,
           flightDuration = 4.5f,
@@ -1626,7 +1626,7 @@ object RiftCodex {
           aimMode = BuffAimMode.AIM_DIRECTIONAL,
           strokeColorHex = "#38BDF8",
           fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#38BDF8"),
-          summary = "Deploys a 45.0s tethered cyan hard-light forcefield ahead of your ship.",
+          summary = "Deploys a 45.0s tethered cyan hard-light forcefield ahead of your ship; stacks N× on the same spot.",
           isCustomForged = false,
           projectileSpeed = 0f,
           flightDuration = 45.0f,
@@ -1652,6 +1652,23 @@ object RiftCodex {
           blastRadius = 190f,
           specialEffect = CustomBuffEffect.SPEED_BOOST,
         ),
+      "SWARM_DRONES" to
+        SpecialBuffRegistryEntry(
+          id = "SWARM_DRONES",
+          buffTypeIndex = 11,
+          officialName = "SWARM",
+          shortLabel = "SWARM",
+          chargesPerPickup = 1,
+          aimMode = BuffAimMode.AIM_DIRECTIONAL,
+          strokeColorHex = "#00F5D4",
+          fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#00F5D4"),
+          summary = "Deploys 5 zig-zagging hunter micro-drones that weave onto hostile hulls at 0 Flux cost.",
+          isCustomForged = false,
+          projectileSpeed = 560f,
+          flightDuration = 6.5f,
+          damage = 210f,
+          blastRadius = 110f,
+        ),
     )
 
   val BUFF_REGISTRY: MutableMap<String, SpecialBuffRegistryEntry> = createCoreBuffRegistry()
@@ -1665,6 +1682,7 @@ object RiftCodex {
       "DECOY", "PHANTOM", "HOLO_PHANTOM" -> "HOLO_PHANTOM"
       "BRICK", "BARRIER", "STASIS_BARRIER" -> "STASIS_BARRIER"
       "ROCKET", "SURGE", "HYPER_SURGE", "PHASE_BLINK" -> "HYPER_SURGE"
+      "SWARM", "DRONES", "SWARM_DRONES" -> "SWARM_DRONES"
       else -> clean
     }
   }
@@ -1683,13 +1701,19 @@ object RiftCodex {
   }
 
   fun nextCustomBuffTypeIndex(): Int {
-    val maxExisting = BUFF_REGISTRY.values.maxOfOrNull { it.buffTypeIndex } ?: 10
-    return max(11, maxExisting + 1)
+    val maxExisting = BUFF_REGISTRY.values.maxOfOrNull { it.buffTypeIndex } ?: 11
+    return max(12, maxExisting + 1)
   }
 
   fun registerCustomBuff(entry: SpecialBuffRegistryEntry) {
-    BUFF_REGISTRY[entry.id] = entry
-    RiftSpriteBaker.invalidateCustomBuffIcon(entry.buffTypeIndex)
+    val safeEntry =
+      if (entry.isCustomForged && entry.buffTypeIndex <= 11) {
+        entry.copy(buffTypeIndex = nextCustomBuffTypeIndex())
+      } else {
+        entry
+      }
+    BUFF_REGISTRY[safeEntry.id] = safeEntry
+    RiftSpriteBaker.invalidateCustomBuffIcon(safeEntry.buffTypeIndex)
   }
 
   fun removeCustomBuff(id: String) {
@@ -1843,19 +1867,19 @@ object RiftCodex {
         id = "repulsor_rift",
         title = "REPULSOR RIFT",
         classification = "KINETIC DEFLECTOR",
-        specBadge = "180px • SLINGSHOT",
+        specBadge = "180px • SUPERSONIC SLINGSHOT",
         accentHex = "#38BDF8",
-        effectSummary = "Inverted gravimetric field that violently deflects ships and curves incoming ordnance outward.",
-        tacticalNote = "Graze the outer cyan rim to slingshot across the sector at supersonic intercept speed.",
+        effectSummary = "Inverted gravimetric field that violently deflects ships outward and slingshots hulls grazing its inner core faster than Afterburner thrust.",
+        tacticalNote = "Dive across the inner cyan core to catapult across the sector at 1.45x Afterburner speed.",
       ),
       RiftAnomalyCodexEntry(
         id = "gravity_rift",
         title = "GRAVITY RIFT",
         classification = "GROWING SINGULARITY",
-        specBadge = "UP TO 420px • PULL",
+        specBadge = "UP TO 420px • OBSTACLE PULL",
         accentHex = "#C084FC",
-        effectSummary = "Pulls ships, bullets (+6px), bombs (+18px), and Holo Phantoms (+14px) inward, growing up to 420px radius.",
-        tacticalNote = "Ignite Afterburners tangential to the horizon to escape, or bank shots around its gravity lens.",
+        effectSummary = "Pulls ships, bullets (+6px), bombs (+18px), Swarm drones (+8px), and Holo Phantoms (+14px) inward up to 420px, dragging nearby obstacles and Stasis Barriers at max size.",
+        tacticalNote = "At 420px max horizon, watch nearby asteroids and forcefields creep inward toward the violet core.",
       ),
       RiftAnomalyCodexEntry(
         id = "phase_rift",
@@ -1865,6 +1889,15 @@ object RiftCodex {
         accentHex = "#34D399",
         effectSummary = "Linked Paired Phase Rifts (Phase Rift A & Phase Rift B) that teleport ships, lasers, and bombs across quadrants while preserving 100% velocity.",
         tacticalNote = "Fire Siege Bombs or 3-Bounce Torpedoes through Phase Rift A to ambush targets near Phase Rift B.",
+      ),
+      RiftAnomalyCodexEntry(
+        id = "unstable_rift",
+        title = "UNSTABLE RIFT",
+        classification = "CONVERGED DOOMSDAY",
+        specBadge = "10.0s • 75% MAX FLUX",
+        accentHex = "#FACC15",
+        effectSummary = "Formed when two non-paired Playfield Rifts touch or expand into each other, fusing into a volatile 10.0s multicolored singularity that detonates for 75% Max Flux and shatters nearby Crystal Asteroids.",
+        tacticalNote = "Burn Afterburners or Phase Dash outside its 2.15x blast ring before the 10.0s countdown reaches zero!",
       ),
     )
 
@@ -2326,7 +2359,7 @@ object RiftCodex {
         id = "special_nova_ring",
         buffTypeIndex = 0,
         title = "NOVA RING (+1 CHARGE • 0 FLUX)",
-        dropRatePercent = 9,
+        dropRatePercent = 8,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
         effectSummary = "Loads +1 Nova Ring charge (up to 3) into your 4th Special Buff Button. Fires 16 1-bounce plasma bolts in a full 360° ring at 0 Flux cost!",
         tacticalNote = "Picking up another Nova Ring crate stacks up to 3 charges; picking up a different Special Buff swaps your active slot!",
@@ -2335,7 +2368,7 @@ object RiftCodex {
         id = "special_shatter_cone",
         buffTypeIndex = 1,
         title = "SHATTER CONE (+2 CHARGES • 0 FLUX)",
-        dropRatePercent = 9,
+        dropRatePercent = 8,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
         effectSummary = "Loads +2 Shatter Cone charges (up to 4) into your Special Buff Button. Unleashes a close-quarters kinetic fan blast!",
         tacticalNote = "Devastating point-blank ambush tool—melts heavy hulls in two zero-Flux pulls!",
@@ -2344,9 +2377,9 @@ object RiftCodex {
         id = "special_seeker_torpedo",
         buffTypeIndex = 2,
         title = "SEEKER TORPEDO (+1 CHARGE • 0 FLUX)",
-        dropRatePercent = 9,
+        dropRatePercent = 8,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
-        effectSummary = "Loads +1 Homing Seeker Torpedo into your Special Buff Button. Actively steers toward the nearest enemy signature!",
+        effectSummary = "Loads +1 Predictive Homing Seeker Torpedo into your Special Buff Button. Leads enemy velocity vectors at high speed!",
         tacticalNote = "Forces evasive hulls to burn a Repel or duck behind sector stations!",
       ),
       PowerUpCodexEntry(
@@ -2364,23 +2397,32 @@ object RiftCodex {
         title = "STASIS BARRIER (+1 CHARGE • 0 FLUX)",
         dropRatePercent = 7,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
-        effectSummary = "Deploys a 45.0s tethered cyan hard-light forcefield wall ahead of your ship that reflects ships & shots!",
-        tacticalNote = "Block enemy escape corridors or create instant bank-shot geometry in open space!",
+        effectSummary = "Deploys a 45.0s tethered cyan hard-light forcefield ahead of your ship that reflects ships & shots and stacks N× on the same spot!",
+        tacticalNote = "Deploy multiple barriers on the same chokepoint to build a stacked BARRIER xN fortification!",
       ),
       PowerUpCodexEntry(
         id = "special_hyper_surge",
         buffTypeIndex = 5,
         title = "HYPER SURGE (+1 CHARGE • 0 FLUX)",
-        dropRatePercent = 8,
+        dropRatePercent = 7,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
         effectSummary = "Ignites hyper-thrusters for supersonic intercept velocity at 0 Flux cost!",
         tacticalNote = "Escape gravity wells or chase down fleeing High-Value Targets!",
       ),
       PowerUpCodexEntry(
+        id = "special_swarm_drones",
+        buffTypeIndex = 11,
+        title = "SWARM (+1 CHARGE • 0 FLUX)",
+        dropRatePercent = 8,
+        category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
+        effectSummary = "Loads +1 Swarm charge (up to 3) into your Special Buff Button. Launches 5 zig-zagging hunter micro-drones (210 Flux each) at 0 Flux cost!",
+        tacticalNote = "Unleash all 5 weaving micro-drones down corridors to overwhelm evasive interceptors!",
+      ),
+      PowerUpCodexEntry(
         id = "flux_restore",
         buffTypeIndex = 6,
         title = "FLUX SURGE (+750 FLUX)",
-        dropRatePercent = 12,
+        dropRatePercent = 11,
         category = "BUCKET B: INSTANT SHIP ENHANCER",
         effectSummary = "Instantly restores +750 Flux to your ship's health/ammo capacitor.",
         tacticalNote = "Grab mid-dogfight to survive lethal volleys without retreating to Safe Zone.",
@@ -2389,7 +2431,7 @@ object RiftCodex {
         id = "repel_charge",
         buffTypeIndex = 7,
         title = "REPEL CHARGE (+1 CHARGE)",
-        dropRatePercent = 10,
+        dropRatePercent = 9,
         category = "BUCKET B: INSTANT SHIP ENHANCER",
         effectSummary = "Adds +1 Repel Shockwave charge (up to 4 max).",
         tacticalNote = "Deflects enemy bombs, mines, seekers, and ships within 250px!",
@@ -2398,7 +2440,7 @@ object RiftCodex {
         id = "multi_fire_unlock",
         buffTypeIndex = 8,
         title = "MULTI-SHOT (+25 SHOTS)",
-        dropRatePercent = 7,
+        dropRatePercent = 6,
         category = "BUCKET B: INSTANT SHIP ENHANCER",
         effectSummary = "Unlocks angled multi-shot side barrels on ANY ship!",
         tacticalNote = "Turns Viper into a 3-beam rail prism or Goliath into a 4-stream siege wall!",
@@ -2410,13 +2452,13 @@ object RiftCodex {
         dropRatePercent = 6,
         category = "BUCKET B: INSTANT SHIP ENHANCER",
         effectSummary = "Grants wall-bounce capability to primary weapons for +30 shots.",
-        tacticalNote = "Bank shots around orbital stations and permanent barriers!",
+        tacticalNote = "Bank shots around orbital stations and hard-light barriers!",
       ),
       PowerUpCodexEntry(
         id = "hull_stat_tuning",
         buffTypeIndex = 10,
         title = "5-STAT HULL TUNING (+1..+3 STACKS)",
-        dropRatePercent = 15,
+        dropRatePercent = 14,
         category = "BUCKET B: ALL-5-STAT HULL UPGRADES",
         effectSummary = "Awards +1 stack (up to +3 max per life) to Speed, Thrust, Turn Rate, Max Flux, or Flux Recharge!",
         tacticalNote = "Each of the 5 hull stats drops as its own color-coded tuning icon on the HUD buff bar!",

@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 58
+const val CURRENT_RIFT_BUILD_VERSION = 61
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,53 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 61,
+      versionTag = "v1.0.61 // BUILD #61",
+      releaseDate = "Nov 16, 2026",
+      headline = "GPU AGSL Rift-Cloud Storm Boundary & Proximity Lightning, Wall-less 3D Nexus Safe-Zone Rift, Unstable Rift & Swarm Shaders + Regression Suite",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Upgraded the outer circular arenaRadius perimeter with a native GPU AGSL RuntimeShader (and multi-octave procedural fallback) billowing 3D Rift Storm Cloud Wall that bleeds mist inward and strikes live branching plasma lightning arcs onto any ship within 220px.",
+          "Rebuilt the central Safe Zone (active only in SECTOR CONVERGENCE and FLUX CORE) as a wall-less circular 3D Dimensional Rift Aperture looking down into the glowing rotating Nexus Hub Station with crisp zoom-compensated world overhead banners.",
+          "Added multicolored 3D Unstable Rift convergence rendering + live countdown ring, 5-drone zig-zagging Swarm fuselage shaders, circular Asteroid Flux integrity rings, 10-segment Station Nova charge arcs, BARRIER xN stack callouts, #nexus-ai telemetry sync, and full Stage 5 regression unit tests.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 60,
+      versionTag = "v1.0.60 // BUILD #60",
+      releaseDate = "Nov 16, 2026",
+      headline = "Wall-less Circular Safe-Zone Physics, Unstable Rift 10.0s Doomsday Merge, 5-Drone Swarm, Destructible Asteroids, 10-Hit Station Novas & Stacked Anti-Bleed Barriers",
+      badgeLabel = "COMBAT & RIFTS",
+      accentColorHex = "#FACC15",
+      highlights =
+        listOf(
+          "Removed Safe-Zone box walls in favor of a wall-less circular Safe-Zone Rift active strictly in SECTOR CONVERGENCE and FLUX CORE (with Open-Space Anti-AFK Flux drain restricted to those two modes), and tied Seeker/Missile/Bomb/Swarm speeds and turn rates directly to Custom Game speedMult.",
+          "Added live overlapping Rift fusion into a 10.0s Unstable Rift that detonates a 75% Max Flux Doomsday blast shattering nearby asteroids, Max-Size 420px Gravity Rift obstacle/barrier pull, Repulsor inner-core supersonic slingshot, and fast predictive Seeker lead-homing.",
+          "Added the 5-Drone zig-zagging SWARM Special Buff (0 Flux), 2,400-Flux destructible Crystal Asteroids (dropping a Supply Crate + 20s respawn), 10-Hit Orbital/Asteroid Station 360° 16-bolt Defense Novas, N× Stasis Barrier stacking, and exact swept segment raycasting fixing point-blank barrier bleed.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 59,
+      versionTag = "v1.0.59 // BUILD #59",
+      releaseDate = "Nov 16, 2026",
+      headline = "STAR FORGE Full-Screen 1:1 Playfield Studio, 95% Glass Tap-to-Edit AGSL Inspector & Independent Spectator HUD Wiring",
+      badgeLabel = "STAR FORGE 1:1",
+      accentColorHex = "#C084FC",
+      highlights =
+        listOf(
+          "Rebuilt STAR FORGE's Playfield Studio into an edge-to-edge 1:1 Frozen Playfield Showcase with Scenic Camera Bookmarks, true world-scale 3D AGSL/FBM Safe Zone Nexus Aperture, Playfield Rift Storm Wall, Eclipse Stasis, obstacles, Rifts, ordnance, and live 120Hz Test Flight.",
+          "Added a 95% Obsidian-Glass Tap-to-Edit Element Reforge Inspector across all 36 World & HUD targets with GPU AGSL/FBM shader turbulence, rim-light depth, detail density, palette swatches, and bound engine physics sliders.",
+          "Separated HUD_SPECTATOR_BOX onto its own persisted spectatorBoxOffset independent of toastContainerOffset and wired forged VisualElementRecipes live across Top Bar, Spectator Switcher, Kill Feed, Buff Strip, Tactical Alert Banner, Retro-Brake, and Multi-Shot HUD controls.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 58,
       versionTag = "v1.0.58 // BUILD #58",
       releaseDate = "Nov 16, 2026",
       headline = "NEXUS Ring-Space 3D Shader Overhaul, Central Nexus Hub Station & 7 Living 3D Rifts",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "RING SPACE 3D",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

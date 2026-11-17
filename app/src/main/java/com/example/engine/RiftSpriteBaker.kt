@@ -85,7 +85,7 @@ object RiftSpriteBaker {
     customShip9FlashBitmap = bakeSolidWhiteFlashBitmap(customShip9AlliedBitmap)
 
     val buffs = mutableMapOf<Int, Bitmap>()
-    for (buffType in 0..10) {
+    for (buffType in 0..11) {
       buffs[buffType] = bakeBuffIconBitmap(buffType, 68)
     }
     buffs[-10] = bakeBuffIconBitmap(-10, 68) // Speed Overcharge
@@ -105,6 +105,7 @@ object RiftSpriteBaker {
       "gravity_rift" to bakeRiftAnomalyIconBitmap("gravity_rift", 96),
       "phase_rift" to bakeRiftAnomalyIconBitmap("phase_rift", 96),
       "phase_rift_pair" to bakeRiftAnomalyIconBitmap("phase_rift", 96),
+      "unstable_rift" to bakeRiftAnomalyIconBitmap("unstable_rift", 96),
     )
 
   /**
@@ -1025,7 +1026,7 @@ object RiftSpriteBaker {
   }
 
   fun getBuffIconBitmap(buffType: Int): Bitmap {
-    if (buffType in 0..10 || buffType in -14..-10) {
+    if (buffType in 0..11 || buffType in -14..-10) {
       return buffIconBitmaps[buffType] ?: buffIconBitmaps[10]!!
     }
     customBuffIconCache[buffType]?.let { return it }
@@ -1035,7 +1036,7 @@ object RiftSpriteBaker {
       customBuffIconCache[buffType] = baked
       return baked
     }
-    return buffIconBitmaps[buffType.mod(11)] ?: buffIconBitmaps[0]!!
+    return buffIconBitmaps[buffType.mod(12)] ?: buffIconBitmaps[0]!!
   }
 
   fun bakeCustomBuffIconBitmap(entry: SpecialBuffRegistryEntry, sizePx: Int = 68): Bitmap {
@@ -1177,6 +1178,7 @@ object RiftSpriteBaker {
         7 -> Color.parseColor("#00F5D4") // Repel Charge
         8 -> Color.parseColor("#FACC15") // Shot-Limited Multi-Shot (+25)
         9 -> Color.parseColor("#A855F7") // Bouncing Bullets (Permanent Life Upgrade)
+        11 -> Color.parseColor("#00F5D4") // 5-Drone SWARM
         -10 -> Color.parseColor("#38BDF8") // Speed Overcharge (+8% x3)
         -11 -> Color.parseColor("#F59E0B") // Thrust Overcharge (+8% x3)
         -12 -> Color.parseColor("#10B981") // Reactor Overcharge (+8% x3)
@@ -1367,6 +1369,39 @@ object RiftSpriteBaker {
         c.drawPath(ricochet, glyphStrokePaint)
         c.drawPath(ricochet, glyphCoreStroke)
         c.drawCircle(cx - r * 0.05f, cy - r * 0.44f, 3.5f, glyphFillPaint)
+      }
+      11 -> {
+        // SWARM (5-DRONE HUNTER FORMATION): 5 crisp V-wing micro-drones + weaving exhaust trails
+        val droneOffsets =
+          listOf(
+            0f to -r * 0.44f,
+            -r * 0.34f to -r * 0.14f,
+            r * 0.34f to -r * 0.14f,
+            -r * 0.22f to r * 0.28f,
+            r * 0.22f to r * 0.28f,
+          )
+        val trailPaint =
+          Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 1.5f
+            strokeCap = Paint.Cap.ROUND
+            color = Color.argb(170, 56, 189, 248)
+          }
+        for ((dx, dy) in droneOffsets) {
+          val ux = cx + dx
+          val uy = cy + dy
+          c.drawLine(ux, uy + r * 0.08f, ux, uy + r * 0.24f, trailPaint)
+          val dronePath =
+            Path().apply {
+              moveTo(ux, uy - r * 0.15f)
+              lineTo(ux + r * 0.13f, uy + r * 0.11f)
+              lineTo(ux, uy + r * 0.04f)
+              lineTo(ux - r * 0.13f, uy + r * 0.11f)
+              close()
+            }
+          c.drawPath(dronePath, glyphStrokePaint)
+          c.drawPath(dronePath, glyphFillPaint)
+        }
       }
       -11 -> {
         // THRUST OVERCHARGE (+8% x3): Twin vector thruster nozzles with high-impulse flare
@@ -2122,6 +2157,85 @@ object RiftSpriteBaker {
     }
   }
 
+  /**
+   * Renders the converged 10.0s multicolored `Unstable Rift` singularity:
+   * Counter-rotating crimson/gold/cyan/violet plasma ribbons + crackling fracture arcs + blazing white-gold core.
+   */
+  fun drawUnstableMergedRiftOnCanvas(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    r: Float,
+    spinAngle: Float,
+    pulsePhase: Float = 0.5f,
+    fadeAlpha: Float = 1f,
+  ) {
+    if (r <= 1f || fadeAlpha <= 0.01f) return
+    // Base inward violet-gold vortex
+    draw3dPlayfieldRiftColors(
+      canvas = canvas,
+      cx = cx,
+      cy = cy,
+      r = r,
+      spinAngle = spinAngle,
+      fadeAlpha = fadeAlpha,
+      outerColor = Color.rgb(250, 204, 21),
+      midColor = Color.rgb(239, 68, 68),
+      coreColor = Color.rgb(255, 255, 255),
+      darkVoidCenter = true,
+      inwardSpiral = true,
+      pulsePhaseOverride = pulsePhase,
+    )
+    // Counter-rotating cyan/amethyst shear vortex overlay
+    draw3dPlayfieldRiftColors(
+      canvas = canvas,
+      cx = cx,
+      cy = cy,
+      r = r * 0.84f,
+      spinAngle = -spinAngle * 1.35f,
+      fadeAlpha = fadeAlpha * 0.82f,
+      outerColor = Color.rgb(0, 245, 212),
+      midColor = Color.rgb(168, 85, 247),
+      coreColor = Color.rgb(254, 240, 138),
+      darkVoidCenter = false,
+      inwardSpiral = true,
+      pulsePhaseOverride = (1f - pulsePhase).coerceIn(0f, 1f),
+    )
+    // Radial instability lightning filaments
+    val arcPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeWidth = (r * 0.045f).coerceAtLeast(1.4f)
+      }
+    val arcColors =
+      intArrayOf(
+        Color.argb((230 * fadeAlpha).toInt().coerceIn(0, 255), 250, 204, 21),
+        Color.argb((230 * fadeAlpha).toInt().coerceIn(0, 255), 0, 245, 212),
+        Color.argb((230 * fadeAlpha).toInt().coerceIn(0, 255), 244, 63, 94),
+        Color.argb((230 * fadeAlpha).toInt().coerceIn(0, 255), 192, 132, 252),
+      )
+    val bolt = Path()
+    for (i in 0 until 6) {
+      val a0 = spinAngle * 1.4f + i * (Math.PI.toFloat() / 3f)
+      val r0 = r * 0.28f
+      val rMid = r * 0.66f
+      val r1 = r * 1.04f
+      val x0 = cx + kotlin.math.cos(a0) * r0
+      val y0 = cy + kotlin.math.sin(a0) * r0
+      val xm = cx + kotlin.math.cos(a0 + 0.24f) * rMid
+      val ym = cy + kotlin.math.sin(a0 + 0.24f) * rMid
+      val x1 = cx + kotlin.math.cos(a0 - 0.14f) * r1
+      val y1 = cy + kotlin.math.sin(a0 - 0.14f) * r1
+      bolt.reset()
+      bolt.moveTo(x0, y0)
+      bolt.lineTo(xm, ym)
+      bolt.lineTo(x1, y1)
+      arcPaint.color = arcColors[i % arcColors.size]
+      canvas.drawPath(bolt, arcPaint)
+    }
+  }
+
   private fun bakeRiftAnomalyIconBitmap(riftId: String, sizePx: Int = 96): Bitmap {
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
@@ -2136,12 +2250,14 @@ object RiftSpriteBaker {
         draw3dPlayfieldRift(c, AnomalyType.REPULSOR_RIFT, cx, cy, r, spinAngle = 0.55f, pulsePhaseOverride = 0.42f)
       "gravity_rift" ->
         draw3dPlayfieldRift(c, AnomalyType.GRAVITY_RIFT, cx, cy, r, spinAngle = 0.55f, pulsePhaseOverride = 0.42f)
+      "unstable_rift" ->
+        drawUnstableMergedRiftOnCanvas(c, cx, cy, r * 1.05f, spinAngle = 0.65f, pulsePhase = 0.48f)
       else -> {
         val c1x = sizePx * 0.32f
         val c1y = sizePx * 0.36f
         val c2x = sizePx * 0.68f
         val c2y = sizePx * 0.64f
-        val portalR = sizePx * 0.21f
+        val nodeR = sizePx * 0.21f
         val bridgeGlow =
           Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
@@ -2165,8 +2281,8 @@ object RiftSpriteBaker {
           }
         c.drawPath(bridgePath, bridgeGlow)
         c.drawPath(bridgePath, bridgeCore)
-        draw3dPlayfieldRift(c, AnomalyType.PHASE_RIFT_A, c1x, c1y, portalR, spinAngle = 0.45f, pulsePhaseOverride = 0.38f)
-        draw3dPlayfieldRift(c, AnomalyType.PHASE_RIFT_B, c2x, c2y, portalR, spinAngle = -0.45f, pulsePhaseOverride = 0.62f)
+        draw3dPlayfieldRift(c, AnomalyType.PHASE_RIFT_A, c1x, c1y, nodeR, spinAngle = 0.45f, pulsePhaseOverride = 0.38f)
+        draw3dPlayfieldRift(c, AnomalyType.PHASE_RIFT_B, c2x, c2y, nodeR, spinAngle = -0.45f, pulsePhaseOverride = 0.62f)
       }
     }
     return bmp

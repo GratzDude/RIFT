@@ -266,7 +266,7 @@ fun CodexModal(
                 modifier = Modifier.weight(1f),
                 title = "SPECIAL BUFF SLOT (0 FLUX)",
                 body =
-                  "Nova Ring, Shatter Cone, Seeker Torpedo, Holo Phantom, Stasis Barrier & Hyper Surge equip to the 4th button at 0 Flux cost.",
+                  "Nova Ring, Shatter Cone, Seeker Torpedo, Holo Phantom, Stasis Barrier, Hyper Surge & 5-Drone Swarm equip to the 4th button at 0 Flux cost.",
                 bgColor = Color(0xFF092318),
                 borderColor = Color(0xFF10B981),
                 bodyColor = Color(0xFFD1FAE5),
@@ -343,9 +343,9 @@ fun CodexModal(
               )
               CodexHighlightCard(
                 modifier = Modifier.weight(1f),
-                title = "GRAVITY & HOLO PHANTOMS",
+                title = "MAX GRAVITY & UNSTABLE RIFT",
                 body =
-                  "Gravity Rifts expand up to 420px as they absorb ordnance and Holo Phantoms. Overlapping Rifts fuse into a 10.0s Unstable Rift.",
+                  "420px Gravity Rifts pull nearby obstacles & barriers. Touching non-paired Rifts fuse into a 10.0s Unstable Rift (75% Max Flux blast).",
                 bgColor = Color(0xFF0A2229),
                 borderColor = Color(0xFF2DD4BF),
                 bodyColor = Color(0xFFCCFBF1),
@@ -539,6 +539,7 @@ private fun CodexSupplyBuffCard(
       7 -> Color(0xFF60A5FA)
       8 -> Color(0xFFFACC15)
       9 -> Color(0xFFC084FC)
+      11 -> Color(0xFF00F5D4)
       -10 -> Color(0xFF38BDF8)
       -11 -> Color(0xFFF59E0B)
       -12 -> Color(0xFF10B981)
@@ -1007,6 +1008,15 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
               darkVoidCenter = true,
               inwardSpiral = true,
               pulsePhaseOverride = pulsePhase,
+            )
+          "unstable_rift" ->
+            RiftSpriteBaker.drawUnstableMergedRiftOnCanvas(
+              nc,
+              cx,
+              cy,
+              minDim * 0.39f,
+              spinAngle * 2.1f,
+              pulsePhase,
             )
           else -> {
             val nodeR = minDim * 0.22f
