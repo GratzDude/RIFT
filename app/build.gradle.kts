@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.riftarena.vxpqzm"
     minSdk = 24
     targetSdk = 36
-    versionCode = 66
-    versionName = "1.0.66"
+    versionCode = 67
+    versionName = "1.0.67"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -85,6 +85,7 @@ secrets {
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
 tasks.withType<Test> {
+  maxHeapSize = "1536m"
   failFast = true
   timeout.set(Duration.ofMinutes(2))
   systemProperty("robolectric.offline", "true")

@@ -371,6 +371,7 @@ data class PendingAsteroidRespawn(
   val h: Float,
   val variantSeed: Int,
   var timerSec: Float = 20.0f,
+  val style: SpaceObstacleStyle = SpaceObstacleStyle.CRYSTAL_ASTEROID,
 )
 
 data class SwarmDroneEntity(
@@ -6868,7 +6869,7 @@ class RiftGameEngine(
                 y = pa.y,
                 w = pa.w,
                 h = pa.h,
-                style = SpaceObstacleStyle.CRYSTAL_ASTEROID,
+                style = pa.style,
                 variantSeed = pa.variantSeed,
                 hp = 2400f,
                 maxHp = 2400f,
@@ -9468,17 +9469,40 @@ class RiftGameEngine(
             }
           }
 
-          // Pull and absorb Holo Phantoms & Swarm Drones into the Gravity Rift (feeding its growth)
+          fun sweptDistToRift(x0: Float, y0: Float, x1: Float, y1: Float): Float {
+            val sx = x1 - x0
+            val sy = y1 - y0
+            val segLenSq = sx * sx + sy * sy
+            if (segLenSq <= 1e-4f) return hypot(anom.x - x1, anom.y - y1)
+            val t = (((anom.x - x0) * sx + (anom.y - y0) * sy) / segLenSq).coerceIn(0f, 1f)
+            val cx = x0 + sx * t
+            val cy = y0 + sy * t
+            return hypot(anom.x - cx, anom.y - cy)
+          }
+
+          // Pull and absorb Holo Phantoms & Swarm Drones across 0.92x visible Gravity Rift radius (+14px up to 440px)
           for (dIdx in decoys.indices.reversed()) {
             val d = decoys[dIdx]
+            val prevX = d.x - d.vx * dt
+            val prevY = d.y - d.vy * dt
+            val sweptDist = sweptDistToRift(prevX, prevY, d.x, d.y)
             val dx = anom.x - d.x
             val dy = anom.y - d.y
             val dist = hypot(dx, dy).coerceAtLeast(0.01f)
-            if (dist < coreRadius + 16f) {
+            if (sweptDist <= anom.physicalRadius * 0.92f) {
               decoys.removeAt(dIdx)
               anom.absorbedWeaponCount++
-              anom.physicalRadius = (anom.physicalRadius + 14f).coerceAtMost(420f)
+              anom.physicalRadius = (anom.physicalRadius + 14f).coerceAtMost(440f)
               spawnExplosion(d.x, d.y, Color.parseColor("#C084FC"))
+              shockwaves.add(
+                ShockwaveEntity(
+                  anom.x,
+                  anom.y,
+                  anom.physicalRadius * 0.36f,
+                  anom.physicalRadius * 1.08f,
+                  Color.parseColor("#A855F7"),
+                )
+              )
             } else if (dist < pullRadius) {
               val nx = dx / dist
               val ny = dy / dist
@@ -9493,14 +9517,26 @@ class RiftGameEngine(
 
           for (drIdx in swarmDrones.indices.reversed()) {
             val dr = swarmDrones[drIdx]
+            val prevX = dr.x - dr.vx * dt
+            val prevY = dr.y - dr.vy * dt
+            val sweptDist = sweptDistToRift(prevX, prevY, dr.x, dr.y)
             val dx = anom.x - dr.x
             val dy = anom.y - dr.y
             val dist = hypot(dx, dy).coerceAtLeast(0.01f)
-            if (dist < coreRadius + 14f) {
+            if (sweptDist <= anom.physicalRadius * 0.92f) {
               swarmDrones.removeAt(drIdx)
               anom.absorbedWeaponCount++
-              anom.physicalRadius = (anom.physicalRadius + 8f).coerceAtMost(420f)
+              anom.physicalRadius = (anom.physicalRadius + 14f).coerceAtMost(440f)
               spawnExplosion(dr.x, dr.y, Color.parseColor("#C084FC"))
+              shockwaves.add(
+                ShockwaveEntity(
+                  anom.x,
+                  anom.y,
+                  anom.physicalRadius * 0.36f,
+                  anom.physicalRadius * 1.08f,
+                  Color.parseColor("#A855F7"),
+                )
+              )
             } else if (dist < pullRadius) {
               val nx = dx / dist
               val ny = dy / dist
@@ -9510,17 +9546,30 @@ class RiftGameEngine(
             }
           }
 
-          // Pull and absorb live bullets into the Gravity Rift; each absorbed bullet expands the Black Hole!
+          // Swept-segment bullet absorption across 0.92x visible physicalRadius (+18px per bullet up to 440px + violet accretion pulse)
           for (bIdx in bullets.indices.reversed()) {
             val b = bullets[bIdx]
+            if (b.ownerId == "station_defense") continue
+            val prevX = b.x - b.vx * dt
+            val prevY = b.y - b.vy * dt
+            val sweptDist = sweptDistToRift(prevX, prevY, b.x, b.y)
             val dx = anom.x - b.x
             val dy = anom.y - b.y
             val dist = hypot(dx, dy).coerceAtLeast(0.01f)
-            if (dist < coreRadius + 12f) {
+            if (sweptDist <= anom.physicalRadius * 0.92f) {
               bullets.removeAt(bIdx)
               anom.absorbedWeaponCount++
-              anom.physicalRadius = (anom.physicalRadius + 6f).coerceAtMost(420f)
+              anom.physicalRadius = (anom.physicalRadius + 18f).coerceAtMost(440f)
               spawnExplosion(b.x, b.y, Color.parseColor("#A855F7"))
+              shockwaves.add(
+                ShockwaveEntity(
+                  anom.x,
+                  anom.y,
+                  anom.physicalRadius * 0.34f,
+                  anom.physicalRadius * 1.06f,
+                  Color.parseColor("#C084FC"),
+                )
+              )
             } else if (dist < pullRadius * 0.85f) {
               val nx = dx / dist
               val ny = dy / dist
@@ -9533,18 +9582,29 @@ class RiftGameEngine(
             }
           }
 
-          // Pull and absorb bombs/torpedoes into the Gravity Rift; heavy ordnance expands the Black Hole even more!
+          // Swept-segment bomb/torpedo absorption across 0.95x visible physicalRadius (+40px per bomb up to 440px + heavy accretion shockwave)
           for (bmIdx in bombs.indices.reversed()) {
             val bm = bombs[bmIdx]
+            val prevX = bm.x - bm.vx * dt
+            val prevY = bm.y - bm.vy * dt
+            val sweptDist = sweptDistToRift(prevX, prevY, bm.x, bm.y)
             val dx = anom.x - bm.x
             val dy = anom.y - bm.y
             val dist = hypot(dx, dy).coerceAtLeast(0.01f)
-            if (dist < coreRadius + 18f) {
+            if (sweptDist <= anom.physicalRadius * 0.95f) {
               bombs.removeAt(bmIdx)
               anom.absorbedWeaponCount += 3
-              anom.physicalRadius = (anom.physicalRadius + 18f).coerceAtMost(420f)
+              anom.physicalRadius = (anom.physicalRadius + 40f).coerceAtMost(440f)
               spawnExplosion(bm.x, bm.y, Color.parseColor("#C084FC"))
-              shockwaves.add(ShockwaveEntity(anom.x, anom.y, coreRadius * 0.6f, anom.physicalRadius * 1.15f, Color.parseColor("#A855F7")))
+              shockwaves.add(
+                ShockwaveEntity(
+                  anom.x,
+                  anom.y,
+                  anom.physicalRadius * 0.42f,
+                  anom.physicalRadius * 1.18f,
+                  Color.parseColor("#A855F7"),
+                )
+              )
             } else if (dist < pullRadius * 0.90f) {
               val nx = dx / dist
               val ny = dy / dist
@@ -9557,49 +9617,156 @@ class RiftGameEngine(
             }
           }
 
-          // Max-Size Gravity Rift (420px cap, >= 395px): pulls nearby Arena Obstacles & Stasis Barriers inward!
-          if (anom.physicalRadius >= 395f) {
-            val obstaclePullRange = anom.physicalRadius * 2.25f
+          // Swollen Gravity Rift (>= 260px): drags Asteroids, Orbital/Asteroid Stations, Debris & Stasis Barriers straight into the core (zero minStop!) with 950/s tidal crush implosion
+          if (anom.physicalRadius >= 260f) {
+            val obstaclePullRange = anom.physicalRadius * 2.35f
             var movedAnyObstacle = false
-            for (w in walls) {
-              val wCx = w.x + w.w * 0.5f
-              val wCy = w.y + w.h * 0.5f
+            var implodedAnyObstacle = false
+            for (wIdx in walls.indices.reversed()) {
+              val w = walls[wIdx]
+              if (w.style == SpaceObstacleStyle.PERMANENT_BARRIER) continue
+              var wCx = w.x + w.w * 0.5f
+              var wCy = w.y + w.h * 0.5f
               val halfDiag = hypot(w.w * 0.5f, w.h * 0.5f)
               val dx = anom.x - wCx
               val dy = anom.y - wCy
-              val dist = hypot(dx, dy)
-              val minStop = coreRadius + halfDiag + 10f
-              if (dist > minStop && dist <= obstaclePullRange) {
-                val step = min(dist - minStop, 165f * dt)
-                val nextX = w.x + (dx / dist) * step
-                val nextY = w.y + (dy / dist) * step
-                if (!rectOverlapsProtectedZone(nextX, nextY, w.w, w.h)) {
-                  w.x = nextX
-                  w.y = nextY
-                  movedAnyObstacle = true
+              var dist = hypot(dx, dy)
+              if (dist <= obstaclePullRange) {
+                if (dist > 0.5f) {
+                  val pullSpeed = 185f + 135f * (1f - (dist / obstaclePullRange).coerceIn(0f, 1f))
+                  val step = min(dist, pullSpeed * dt)
+                  val nextX = w.x + (dx / dist) * step
+                  val nextY = w.y + (dy / dist) * step
+                  if (!rectOverlapsProtectedZone(nextX, nextY, w.w, w.h)) {
+                    w.x = nextX
+                    w.y = nextY
+                    wCx = w.x + w.w * 0.5f
+                    wCy = w.y + w.h * 0.5f
+                    dist = hypot(anom.x - wCx, anom.y - wCy)
+                    movedAnyObstacle = true
+                  }
+                }
+
+                // Tidal crush inside 0.95x physicalRadius (plus obstacle rim overlap)
+                if (dist <= anom.physicalRadius * 0.95f + halfDiag * 0.35f) {
+                  w.hp -= 950f * dt
+                  w.hitFlashTimer = max(w.hitFlashTimer, 0.08f)
+                }
+
+                if (w.hp <= 0f || dist <= anom.physicalRadius * 0.42f) {
+                  val isStation =
+                    w.style == SpaceObstacleStyle.ORBITAL_STATION ||
+                      w.style == SpaceObstacleStyle.ASTEROID_STATION
+                  pendingAsteroidRespawns.add(
+                    PendingAsteroidRespawn(
+                      x = w.x,
+                      y = w.y,
+                      w = w.w,
+                      h = w.h,
+                      variantSeed = w.variantSeed,
+                      timerSec = 20.0f,
+                      style = w.style,
+                    )
+                  )
+                  walls.removeAt(wIdx)
+                  greens.add(
+                    GreenCrate(
+                      x = wCx,
+                      y = wCy,
+                      spinPhase = Random.nextFloat() * (PI.toFloat() * 2f),
+                      buffType = rollRandomCrateBuffType(),
+                    )
+                  )
+                  if (isStation) {
+                    val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+                    val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
+                    val novaSpeed = 820f * customSpdMult
+                    val novaDamage = 165f * customDmgMult
+                    val exitR = halfDiag + 12f
+                    for (k in 0 until 16) {
+                      val a = (PI.toFloat() * 2f * k) / 16f
+                      val sx = wCx + cos(a) * exitR
+                      val sy = wCy + sin(a) * exitR
+                      if (isInsideSafeZone(sx, sy)) continue
+                      bullets.add(
+                        BulletEntity(
+                          ownerId = "station_defense",
+                          ownerShipId = 0,
+                          ownerCallsign = "STATION DEFENSE",
+                          ownerSyndicateTag = "SECTOR",
+                          ownerArmadaName = "",
+                          ownerIsHuman = false,
+                          freq = -999,
+                          x = sx,
+                          y = sy,
+                          vx = cos(a) * novaSpeed,
+                          vy = sin(a) * novaSpeed,
+                          damage = novaDamage,
+                          bouncesLeft = 1,
+                          life = 1.85f,
+                          color = Color.parseColor("#FACC15"),
+                          isHeavyBurst = true,
+                          ownerShipLabel = "Orbital Station",
+                          weaponLabel = "Station Overload Nova",
+                        )
+                      )
+                    }
+                    shockwaves.add(ShockwaveEntity(wCx, wCy, 28f, 290f, Color.parseColor("#FACC15")))
+                  }
+                  shockwaves.add(ShockwaveEntity(anom.x, anom.y, 22f, anom.physicalRadius * 1.22f, Color.parseColor("#A855F7")))
+                  shockwaves.add(ShockwaveEntity(wCx, wCy, 14f, 185f, Color.parseColor("#00F5D4")))
+                  spawnExplosion(wCx, wCy, Color.parseColor("#C084FC"))
+                  if (hypot(wCx - localPlayer.x, wCy - localPlayer.y) < 1400f) {
+                    sfx.playExplosion()
+                    addTrauma(if (isStation) 0.36f else 0.28f)
+                  }
+                  spawnPooledFct(
+                    text =
+                      if (isStation) "STATION IMPLODED • OVERLOAD NOVA!"
+                      else "RIFT IMPLOSION • SUPPLY DROP",
+                    x = wCx,
+                    y = wCy - 32f,
+                    color = if (isStation) Color.parseColor("#FACC15") else Color.parseColor("#C084FC"),
+                    maxLife = 1.35f,
+                  )
+                  implodedAnyObstacle = true
                 }
               }
             }
-            for (bw in brickWalls) {
-              val bCx = bw.x + bw.w * 0.5f
-              val bCy = bw.y + bw.h * 0.5f
-              val halfDiag = hypot(bw.w * 0.5f, bw.h * 0.5f)
+
+            for (bwIdx in brickWalls.indices.reversed()) {
+              val bw = brickWalls[bwIdx]
+              var bCx = bw.x + bw.w * 0.5f
+              var bCy = bw.y + bw.h * 0.5f
               val dx = anom.x - bCx
               val dy = anom.y - bCy
-              val dist = hypot(dx, dy)
-              val minStop = coreRadius + halfDiag + 8f
-              if (dist > minStop && dist <= obstaclePullRange) {
-                val step = min(dist - minStop, 190f * dt)
-                val nextX = bw.x + (dx / dist) * step
-                val nextY = bw.y + (dy / dist) * step
-                if (!rectOverlapsProtectedZone(nextX, nextY, bw.w, bw.h)) {
-                  bw.x = nextX
-                  bw.y = nextY
-                  movedAnyObstacle = true
+              var dist = hypot(dx, dy)
+              if (dist <= obstaclePullRange) {
+                if (dist > 0.5f) {
+                  val step = min(dist, 215f * dt)
+                  val nextX = bw.x + (dx / dist) * step
+                  val nextY = bw.y + (dy / dist) * step
+                  if (!rectOverlapsProtectedZone(nextX, nextY, bw.w, bw.h)) {
+                    bw.x = nextX
+                    bw.y = nextY
+                    bCx = bw.x + bw.w * 0.5f
+                    bCy = bw.y + bw.h * 0.5f
+                    dist = hypot(anom.x - bCx, anom.y - bCy)
+                    movedAnyObstacle = true
+                  }
+                }
+                if (dist <= anom.physicalRadius * 0.95f) {
+                  bw.life -= 8.5f * dt
+                }
+                if (bw.life <= 0f || dist <= anom.physicalRadius * 0.42f) {
+                  brickWalls.removeAt(bwIdx)
+                  shockwaves.add(ShockwaveEntity(bCx, bCy, 14f, 165f, Color.parseColor("#A855F7")))
+                  spawnExplosion(bCx, bCy, Color.parseColor("#C084FC"))
                 }
               }
             }
-            if (movedAnyObstacle && gravityRadarBakeTimer <= 0f) {
+
+            if (implodedAnyObstacle || (movedAnyObstacle && gravityRadarBakeTimer <= 0f)) {
               gravityRadarBakeTimer = 0.45f
               bakeStaticRadarBitmap()
             }

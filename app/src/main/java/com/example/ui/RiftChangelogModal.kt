@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 66
+const val CURRENT_RIFT_BUILD_VERSION = 67
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,17 +62,32 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
-      buildNumber = 66,
-      versionTag = "v1.0.66 // BUILD #66",
+      buildNumber = 67,
+      versionTag = "v1.0.67 // BUILD #67",
       releaseDate = "Nov 17, 2026",
-      headline = "OpenGL ES 3.0 NEXUS Renderer Link Fix (Cross-Stage Uniform Precision Alignment & FBO/Surface Hardening)",
+      headline = "Google Play Console Release Version Sync (versionCode 67 / v1.0.67)",
       badgeLabel = "LATEST RELEASE",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
-          "Fixed a strict GLSL ES 3.00 program link failure in progHoloRing where uConeMode defaulted to highp int in the vertex shader and mediump int in the fragment shader, which caused initEglAndGl() to abort on hardware mobile GPUs.",
-          "Standardized explicit precision highp float and precision highp int qualifiers across all OpenGL ES 3.0 vertex and fragment shaders in NexusSpaceGlView and switched uConeMode to a highp float uniform.",
-          "Aligned split-resolution 0.62x fboPlasma dimensions to even pixel boundaries, preserved premultiplied-alpha brightness on the 3D Station Holographic Text Ring, added GLSL info-log diagnostics, and hardened TextureView re-attachment.",
+          "Incremented Android release versionCode to 67 (v1.0.67) in 1:1 sync with CURRENT_RIFT_BUILD_VERSION for Google Play Console publishing while preserving com.aistudio.riftarena.vxpqzm and all BUILD #66 Breached-Terminal NEXUS, 3-Tier Winged Vortex Crest, Safe-Harbor 3D Station, and Gravity Rift systems intact.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 66,
+      versionTag = "v1.0.66 // BUILD #66",
+      releaseDate = "Nov 17, 2026",
+      headline = "Breached-Terminal NEXUS Hub + Giant Center PLAY Rift, 3-Tier Winged Vortex Crest, [? HOW TO PLAY] Schematic, Safe-Harbor 3D Station, Seamless Storm Wall & Gravity Rift Implosion",
+      badgeLabel = "BREACHED NEXUS",
+      accentColorHex = "#38BDF8",
+      highlights =
+        listOf(
+          "Rebuilt the NEXUS main screen as a full-screen #060D1A Tactical Cockpit Terminal physically punched open at center (~52% width) by a colossal VSYNC-smooth GLES30 Rift Singularity with real 128x128 Playfield ships banking into the breach, bold PLAY // ENTER THE RIFT callout, and plain-English Left/Right Tactical Terminal Columns.",
+          "Added the official 3-Tier Gunmetal & Solar-Gold Winged Vortex Crest across ic_launcher_foreground.xml (108dp vector adaptive icon inside the 66dp safe zone) and live-spinning NexusMergedBrandEmblem, paired with crisp ResonanceCrestIcon and RiftShardGemIcon header readouts.",
+          "Added the zero-cartoon 3-Panel Animated Vector [? HOW TO PLAY] Cockpit Schematic (1. LEFT STICK: DRIFT & BOOST, 2. RIGHT STICK: SHARED FLUX, 3. RIFTS & SAFE HARBOR in <= 6 words per caption, auto-shown once for first-time pilots) plus a dismissible live 3-step Flight Checklist inside PRACTICE RIFT.",
+          "Reforged the Safe Zone (active strictly in SECTOR CONVERGENCE & FLUX CORE) into a calm sanctuary anchored by the multi-ring 3D NEXUS Orbital Station projecting 8 golden-cyan stabilizer beams to brace the outer shield rim against inward-pressing volatile Rift tendrils, and eliminated the West ±π seam in STORM_BOUNDARY_AGSL using seamless 2D world-space direction vectors.",
+          "Upgraded Gravity Rifts to absorb weapons across 0.92x visible physicalRadius via swept segment checks (+18px bullet, +40px bomb/torpedo, +14px drone/phantom up to 440px with violet accretion pulses & crackling rim lightning), and enabled swollen (>= 260px) Gravity Rifts to drag Asteroids, Orbital/Asteroid Stations, Debris, and Stasis Barriers straight into the core with zero minStop brake—dealing 950/s tidal crush damage on circular integrity rings until implosion (+ Supply Crate, 20s respawn, and 360° overload Station Defense Nova).",
+          "Standardized explicit precision highp float and precision highp int qualifiers across all OpenGL ES 3.0 vertex/fragment shaders and even-aligned 0.62x linear fboPlasma dimensions for 100% mobile GPU link reliability.",
         ),
     ),
     RiftVersionLogEntry(
@@ -80,7 +95,7 @@ val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
       versionTag = "v1.0.65 // BUILD #65",
       releaseDate = "Nov 17, 2026",
       headline = "Choreographer Hardware VSYNC & Paused Background Arena, 3D Station Holographic Text Ring, Inward-Sucking Feathered Rift Throats, Minimal Top Bar & Ephemeral Solo PRACTICE RIFT",
-      badgeLabel = "VSYNC & PRACTICE RIFT",
+      badgeLabel = "VSYNC & PRACTICE",
       accentColorHex = "#38BDF8",
       highlights =
         listOf(

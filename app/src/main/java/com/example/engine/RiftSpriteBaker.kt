@@ -2116,12 +2116,11 @@ object RiftSpriteBaker {
         )
       }
       AnomalyType.GRAVITY_RIFT -> {
-        val growthScale = 1f + (absorbedCount.coerceIn(0, 12) * 0.015f)
         draw3dPlayfieldRift(
           canvas = canvas,
           cx = cx,
           cy = cy,
-          r = rScaled * growthScale,
+          r = rScaled,
           spinAngle = spinAngle * 1.35f,
           fadeAlpha = effFade,
           outerColor = if (useCustomColors) rec!!.trimColorInt else Color.rgb(168, 85, 247),
@@ -2131,6 +2130,51 @@ object RiftSpriteBaker {
           inwardSpiral = true,
           pulsePhaseOverride = pulsePhaseOverride,
         )
+        val arcCount = kotlin.math.min(8, absorbedCount.coerceAtLeast(0))
+        if (arcCount > 0 && rScaled > 8f) {
+          val arcPaint =
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+              style = Paint.Style.STROKE
+              strokeCap = Paint.Cap.ROUND
+            }
+          val outerArcCol = if (useCustomColors) rec!!.trimColorInt else Color.rgb(192, 132, 252)
+          for (idx in 0 until arcCount) {
+            val baseAng =
+              -spinAngle * 1.85f + idx * (Math.PI.toFloat() * 2f / arcCount.toFloat())
+            val rOuterRim = rScaled * 1.04f
+            val rMidA = rScaled * 0.80f
+            val rMidB = rScaled * 0.58f
+            val rInnerThroat = rScaled * 0.38f
+            val jagA = 0.14f * kotlin.math.sin(spinAngle * 6.2f + idx * 2.1f)
+            val jagB = -0.16f * kotlin.math.cos(spinAngle * 5.4f - idx * 1.7f)
+            val x0 = cx + kotlin.math.cos(baseAng) * rOuterRim
+            val y0 = cy + kotlin.math.sin(baseAng) * rOuterRim
+            val x1 = cx + kotlin.math.cos(baseAng + jagA) * rMidA
+            val y1 = cy + kotlin.math.sin(baseAng + jagA) * rMidA
+            val x2 = cx + kotlin.math.cos(baseAng + jagB) * rMidB
+            val y2 = cy + kotlin.math.sin(baseAng + jagB) * rMidB
+            val x3 = cx + kotlin.math.cos(baseAng + jagA * 0.5f) * rInnerThroat
+            val y3 = cy + kotlin.math.sin(baseAng + jagA * 0.5f) * rInnerThroat
+
+            arcPaint.strokeWidth = (rScaled * 0.042f).coerceAtLeast(2.4f)
+            arcPaint.color =
+              Color.argb(
+                (175 * effFade).toInt().coerceIn(0, 255),
+                Color.red(outerArcCol),
+                Color.green(outerArcCol),
+                Color.blue(outerArcCol),
+              )
+            canvas.drawLine(x0, y0, x1, y1, arcPaint)
+            canvas.drawLine(x1, y1, x2, y2, arcPaint)
+            canvas.drawLine(x2, y2, x3, y3, arcPaint)
+
+            arcPaint.strokeWidth = (rScaled * 0.018f).coerceAtLeast(1.2f)
+            arcPaint.color = Color.argb((245 * effFade).toInt().coerceIn(0, 255), 250, 245, 255)
+            canvas.drawLine(x0, y0, x1, y1, arcPaint)
+            canvas.drawLine(x1, y1, x2, y2, arcPaint)
+            canvas.drawLine(x2, y2, x3, y3, arcPaint)
+          }
+        }
       }
       AnomalyType.PHASE_RIFT_A -> {
         draw3dPlayfieldRift(

@@ -2696,7 +2696,7 @@ class RiftArenaView(
     val szCX = engine.arenaCenterX
     val szCY = engine.arenaCenterY
     val szR = engine.getSafeZoneRadius() * szPadRec.pixelScale.coerceIn(0.6f, 1.6f)
-    if (szCX + szR + 80f < viewLeft || szCX - szR - 80f > viewRight || szCY + szR + 80f < viewTop || szCY - szR - 80f > viewBottom) {
+    if (szCX + szR * 1.35f < viewLeft || szCX - szR * 1.35f > viewRight || szCY + szR * 1.35f < viewTop || szCY - szR * 1.35f > viewBottom) {
       return
     }
 
@@ -2705,7 +2705,7 @@ class RiftArenaView(
     val padTrim = VisualElementRecipe.parseHexColorSafe(szPadRec.trimHex, Color.rgb(56, 189, 248))
     val opScale = szPadRec.surfaceOpacity.coerceIn(0.30f, 1.0f)
 
-    // Layer 1: GPU AGSL Ring-Space Dimensional Rift Membrane (API 33+) or Multi-Layered Abyssal Fallback
+    // Layer 1: Calm #030A16 Sanctuary Inside (r < szR) + Collapsing Outer Rift Storm Tendrils Pressing Inward Outside (r in szR..szR*1.30f)
     var drewAgsl = false
     if (Build.VERSION.SDK_INT >= 33) {
       val rt = safeNexusRuntimeShader as? RuntimeShader
@@ -2716,107 +2716,197 @@ class RiftArenaView(
         rt.setFloatUniform("uLocked", if (isLockedOut) 1.0f else 0.0f)
         rt.setFloatUniform("uOpacity", opScale)
         safeNexusShaderPaint.shader = rt
-        canvas.drawCircle(szCX, szCY, szR * 1.05f, safeNexusShaderPaint)
+        canvas.drawCircle(szCX, szCY, szR * 1.32f, safeNexusShaderPaint)
         drewAgsl = true
       }
     }
     if (!drewAgsl) {
+      // Fallback outer collapsing Rift collar pressing inward against szR
+      anomalyRingPaint.strokeWidth = (szR * 0.22f).coerceAtLeast(18f)
+      anomalyRingPaint.color =
+        if (isLockedOut) Color.argb(66, 239, 68, 68) else Color.argb((62 * opScale).toInt().coerceIn(22, 110), 168, 85, 247)
+      canvas.drawCircle(szCX, szCY, szR * 1.12f, anomalyRingPaint)
+      // Calm clear #030A16 sanctuary interior
       anomalyFillPaint.color =
-        if (isLockedOut) Color.argb(68, 127, 29, 29) else Color.argb((74 * opScale).toInt().coerceIn(28, 120), 2, 12, 28)
+        if (isLockedOut) Color.argb(72, 69, 10, 10) else Color.argb((128 * opScale).toInt().coerceIn(55, 185), 3, 10, 22)
       canvas.drawCircle(szCX, szCY, szR, anomalyFillPaint)
-      anomalyFillPaint.color =
-        if (isLockedOut) Color.argb(38, 239, 68, 68)
-        else Color.argb((34 * opScale).toInt().coerceIn(14, 72), Color.red(padGlow), Color.green(padGlow), Color.blue(padGlow))
-      canvas.drawCircle(szCX, szCY, szR * 0.82f, anomalyFillPaint)
-      anomalyFillPaint.color = Color.argb((115 * opScale).toInt().coerceIn(45, 165), 2, 6, 16)
-      canvas.drawCircle(szCX, szCY, szR * 0.56f, anomalyFillPaint)
     }
 
-    // Layer 2: Foreshortened 3D NEXUS HUB Orbital Station visible deep inside the circular Rift aperture
-    val hubBaseR = szR * 0.44f
-    val rotSlow = tSec * 0.34f
-    val rotCounter = -tSec * 0.52f
-    val hubAccent =
-      if (isLockedOut) Color.parseColor("#EF4444") else padGlow
-    val hubSecondary =
-      if (isLockedOut) Color.parseColor("#F59E0B") else padTrim
-
-    // Outer Habitat Ring + 6 Docking Spokes looking down into NEXUS
-    anomalyRingPaint.strokeWidth = 4.2f
-    anomalyRingPaint.color = Color.argb((145 * opScale).toInt().coerceIn(50, 210), Color.red(hubSecondary), Color.green(hubSecondary), Color.blue(hubSecondary))
-    canvas.drawCircle(szCX, szCY, hubBaseR, anomalyRingPaint)
-    anomalyRingPaint.strokeWidth = 2.2f
-    for (sp in 0 until 6) {
-      val sa = rotSlow + sp * (PI.toFloat() / 3f)
-      val x0 = szCX + cos(sa) * (hubBaseR * 0.30f)
-      val y0 = szCY + sin(sa) * (hubBaseR * 0.30f)
-      val x1 = szCX + cos(sa) * hubBaseR
-      val y1 = szCY + sin(sa) * hubBaseR
-      canvas.drawLine(x0, y0, x1, y1, anomalyRingPaint)
-      obstacleBeaconPaint.color = Color.argb((185 * opScale).toInt().coerceIn(60, 235), Color.red(hubAccent), Color.green(hubAccent), Color.blue(hubAccent))
-      canvas.drawCircle(x1, y1, 4.4f, obstacleBeaconPaint)
-    }
-
-    // Counter-rotating inner Ring-Space gimbal arcs + multicolored Singularity core
-    val innerGimbalR = hubBaseR * 0.62f
-    arcRect.set(szCX - innerGimbalR, szCY - innerGimbalR, szCX + innerGimbalR, szCY + innerGimbalR)
-    anomalyRingPaint.strokeWidth = 3.2f
-    anomalyRingPaint.color = Color.argb((190 * opScale).toInt().coerceIn(60, 240), Color.red(hubAccent), Color.green(hubAccent), Color.blue(hubAccent))
-    val degCounter = rotCounter * (180f / PI.toFloat())
-    for (seg in 0 until 4) {
-      canvas.drawArc(arcRect, degCounter + seg * 90f, 54f, false, anomalyRingPaint)
-    }
-    RiftSpriteBaker.drawUnstableMergedRiftOnCanvas(
-      canvas = canvas,
-      cx = szCX,
-      cy = szCY,
-      r = (hubBaseR * 0.30f).coerceAtLeast(24f),
-      spinAngle = rotSlow * 2.4f,
-      fadeAlpha = (0.72f * opScale).coerceIn(0.28f, 0.88f),
-    )
-
-    // Layer 3: Open Wall-less Circular Rift Horizon Rim (zero physical walls, zero square brackets)
     val rimPulse = 0.5f + 0.5f * sin(tSec * (if (isLockedOut) 9.5f else 2.6f))
-    val rimColor =
+    val hubAccent =
       if (isLockedOut) {
         if (rimPulse > 0.5f) Color.parseColor("#EF4444") else Color.parseColor("#F59E0B")
       } else {
-        hubAccent
+        padGlow
       }
-    anomalyRingPaint.strokeWidth = 3.4f
-    anomalyRingPaint.color = Color.argb((195 * opScale).toInt().coerceIn(70, 245), Color.red(rimColor), Color.green(rimColor), Color.blue(rimColor))
-    canvas.drawCircle(szCX, szCY, szR, anomalyRingPaint)
+    val hubSecondary = if (isLockedOut) Color.parseColor("#F59E0B") else padTrim
+    val goldCol = if (isLockedOut) Color.parseColor("#EF4444") else Color.parseColor("#FACC15")
 
-    arcRect.set(szCX - szR * 0.96f, szCY - szR * 0.96f, szCX + szR * 0.96f, szCY + szR * 0.96f)
-    anomalyRingPaint.strokeWidth = 2.0f
-    anomalyRingPaint.color = Color.argb((135 * opScale).toInt().coerceIn(45, 200), Color.red(hubSecondary), Color.green(hubSecondary), Color.blue(hubSecondary))
-    val rimSpinDeg = (tSec * 14f) % 360f
-    for (seg in 0 until 12) {
-      canvas.drawArc(arcRect, rimSpinDeg + seg * 30f, 16f, false, anomalyRingPaint)
+    // Subtle serene concentric harbor guide rings inside the calm sanctuary
+    anomalyRingPaint.strokeWidth = 1.4f
+    anomalyRingPaint.color = Color.argb((42 * opScale).toInt().coerceIn(18, 72), Color.red(hubSecondary), Color.green(hubSecondary), Color.blue(hubSecondary))
+    canvas.drawCircle(szCX, szCY, szR * 0.72f, anomalyRingPaint)
+
+    // Layer 2: High-Contrast Multi-Ring 3D NEXUS Orbital Station Bracing the Outer Shield Rim with 8 Stabilizer Beams
+    val stationOuterR = (szR * 0.40f).coerceAtLeast(38f)
+    val rotSlow = tSec * 0.28f
+    val rotCounter = -tSec * 0.44f
+
+    // 8 Golden-Cyan Stabilizer Beams projecting from the 3D Station outward to brace the szR Containment Ring + 8 Outward Emitter Chevrons
+    for (i in 0 until 8) {
+      val ang = i * (PI.toFloat() * 0.25f) + sin(tSec * 0.4f) * 0.02f
+      val ca = cos(ang)
+      val sa = sin(ang)
+      val bStartR = stationOuterR * 0.88f
+      val bEndR = szR - 3f
+      val x0 = szCX + ca * bStartR
+      val y0 = szCY + sa * bStartR
+      val x1 = szCX + ca * bEndR
+      val y1 = szCY + sa * bEndR
+
+      // Outer beam halo
+      anomalyRingPaint.strokeWidth = 5.4f
+      anomalyRingPaint.color =
+        Color.argb((58 * opScale).toInt().coerceIn(22, 95), Color.red(hubAccent), Color.green(hubAccent), Color.blue(hubAccent))
+      canvas.drawLine(x0, y0, x1, y1, anomalyRingPaint)
+
+      // Crisp golden-cyan stabilizer beam core
+      anomalyRingPaint.strokeWidth = 2.1f
+      val beamTint = if (i % 2 == 0) hubAccent else goldCol
+      anomalyRingPaint.color =
+        Color.argb((185 * opScale).toInt().coerceIn(70, 235), Color.red(beamTint), Color.green(beamTint), Color.blue(beamTint))
+      canvas.drawLine(x0, y0, x1, y1, anomalyRingPaint)
+
+      // Outward-facing bracing emitter chevron on szR physically holding back the collapsing Rift tendrils
+      val perpX = -sa
+      val perpY = ca
+      val chevBaseX = szCX + ca * (szR - 4f)
+      val chevBaseY = szCY + sa * (szR - 4f)
+      val chevTipX = szCX + ca * (szR + 13f)
+      val chevTipY = szCY + sa * (szR + 13f)
+      val wingSpan = 10.5f
+      anomalyRingPaint.strokeWidth = 2.8f
+      anomalyRingPaint.color =
+        Color.argb((230 * opScale).toInt().coerceIn(90, 255), Color.red(goldCol), Color.green(goldCol), Color.blue(goldCol))
+      canvas.drawLine(chevBaseX + perpX * wingSpan, chevBaseY + perpY * wingSpan, chevTipX, chevTipY, anomalyRingPaint)
+      canvas.drawLine(chevBaseX - perpX * wingSpan, chevBaseY - perpY * wingSpan, chevTipX, chevTipY, anomalyRingPaint)
+      obstacleBeaconPaint.color = Color.WHITE
+      canvas.drawCircle(chevTipX, chevTipY, 2.6f, obstacleBeaconPaint)
     }
 
-    // Layer 4: Readable Zoom-Compensated Safe-Zone Banner
+    // 3D-Tilted Outer Sovereign Docking Ring (elliptical foreshortening + 6 radial structural spokes)
+    canvas.save()
+    canvas.translate(szCX, szCY)
+    canvas.rotate((rotSlow * 180f / PI.toFloat()) % 360f)
+    val outerRx = stationOuterR
+    val outerRy = stationOuterR * 0.72f
+    arcRect.set(-outerRx, -outerRy, outerRx, outerRy)
+    anomalyRingPaint.strokeWidth = 7.2f
+    anomalyRingPaint.color = Color.argb((225 * opScale).toInt().coerceIn(95, 250), 15, 23, 42)
+    canvas.drawOval(arcRect, anomalyRingPaint)
+    anomalyRingPaint.strokeWidth = 2.6f
+    anomalyRingPaint.color =
+      Color.argb((220 * opScale).toInt().coerceIn(90, 250), Color.red(hubSecondary), Color.green(hubSecondary), Color.blue(hubSecondary))
+    canvas.drawOval(arcRect, anomalyRingPaint)
+    for (sp in 0 until 6) {
+      val sa = sp * (PI.toFloat() / 3f)
+      val sx0 = cos(sa) * (outerRx * 0.34f)
+      val sy0 = sin(sa) * (outerRy * 0.34f)
+      val sx1 = cos(sa) * outerRx
+      val sy1 = sin(sa) * outerRy
+      anomalyRingPaint.strokeWidth = 3.0f
+      anomalyRingPaint.color = Color.argb((215 * opScale).toInt().coerceIn(85, 245), 30, 41, 59)
+      canvas.drawLine(sx0, sy0, sx1, sy1, anomalyRingPaint)
+      obstacleBeaconPaint.color = if (sp % 2 == 0) goldCol else hubAccent
+      canvas.drawCircle(sx1, sy1, 4.2f, obstacleBeaconPaint)
+    }
+    canvas.restore()
+
+    // 3D Cross-Tilted Counter-Rotating Inner Gyro Ring
+    canvas.save()
+    canvas.translate(szCX, szCY)
+    canvas.rotate((rotCounter * 180f / PI.toFloat() + 38f) % 360f)
+    val innerRx = stationOuterR * 0.64f
+    val innerRy = stationOuterR * 0.46f
+    arcRect.set(-innerRx, -innerRy, innerRx, innerRy)
+    anomalyRingPaint.strokeWidth = 4.6f
+    anomalyRingPaint.color = Color.argb((220 * opScale).toInt().coerceIn(90, 245), 17, 30, 52)
+    canvas.drawOval(arcRect, anomalyRingPaint)
+    anomalyRingPaint.strokeWidth = 2.0f
+    anomalyRingPaint.color =
+      Color.argb((225 * opScale).toInt().coerceIn(95, 250), Color.red(goldCol), Color.green(goldCol), Color.blue(goldCol))
+    canvas.drawOval(arcRect, anomalyRingPaint)
+    canvas.restore()
+
+    // Central High-Contrast Octagonal Armored NEXUS Command Spire + Lit Micro-Windows + Reactor Core
+    val spireR = (stationOuterR * 0.32f).coerceAtLeast(16f)
+    obstaclePath.reset()
+    for (v in 0 until 8) {
+      val va = rotSlow * 0.45f + v * (PI.toFloat() * 0.25f)
+      val vx = szCX + cos(va) * spireR
+      val vy = szCY + sin(va) * spireR
+      if (v == 0) obstaclePath.moveTo(vx, vy) else obstaclePath.lineTo(vx, vy)
+    }
+    obstaclePath.close()
+    obstacleCapPaint.color = Color.rgb(13, 23, 41)
+    canvas.drawPath(obstaclePath, obstacleCapPaint)
+    anomalyRingPaint.strokeWidth = 2.2f
+    anomalyRingPaint.color = goldCol
+    canvas.drawPath(obstaclePath, anomalyRingPaint)
+
+    // Lit micro-windows around the octagonal command deck
+    for (wIdx in 0 until 8) {
+      val wa = rotSlow * 0.45f + wIdx * (PI.toFloat() * 0.25f) + 0.19f
+      val wx = szCX + cos(wa) * (spireR * 0.68f)
+      val wy = szCY + sin(wa) * (spireR * 0.68f)
+      obstacleBeaconPaint.color = if (wIdx % 3 == 0) goldCol else Color.rgb(56, 189, 248)
+      canvas.drawCircle(wx, wy, 1.9f, obstacleBeaconPaint)
+    }
+
+    // Glowing Singularity Reactor Heart at the center of the Station
+    obstacleBeaconPaint.color = hubAccent
+    canvas.drawCircle(szCX, szCY, spireR * 0.36f, obstacleBeaconPaint)
+    obstacleBeaconPaint.color = Color.WHITE
+    canvas.drawCircle(szCX, szCY, spireR * 0.18f, obstacleBeaconPaint)
+
+    // Layer 3: Crisp Braced Stabilizer Containment Shield Ring at exact physics radius szR
+    val rimColor = hubAccent
+    anomalyRingPaint.strokeWidth = 4.2f
+    anomalyRingPaint.color =
+      Color.argb((225 * opScale).toInt().coerceIn(90, 255), Color.red(rimColor), Color.green(rimColor), Color.blue(rimColor))
+    canvas.drawCircle(szCX, szCY, szR, anomalyRingPaint)
+
+    arcRect.set(szCX - szR * 0.97f, szCY - szR * 0.97f, szCX + szR * 0.97f, szCY + szR * 0.97f)
+    anomalyRingPaint.strokeWidth = 2.0f
+    anomalyRingPaint.color =
+      Color.argb((155 * opScale).toInt().coerceIn(55, 215), Color.red(hubSecondary), Color.green(hubSecondary), Color.blue(hubSecondary))
+    val rimSpinDeg = (tSec * 14f) % 360f
+    for (seg in 0 until 16) {
+      canvas.drawArc(arcRect, rimSpinDeg + seg * 22.5f, 12f, false, anomalyRingPaint)
+    }
+
+    // Layer 4: Readable Zoom-Compensated Safe-Harbor Banner
     val safeScale = worldScale.coerceAtLeast(0.15f)
     val safeBannerText =
       when {
         isLockedOut ->
           String.format(
             java.util.Locale.US,
-            "SAFE ZONE LOCKED • %.1fs // REPULSION FIELD ACTIVE",
+            "SAFE HARBOR LOCKED • %.1fs // REPULSION SHIELD ACTIVE",
             p.safeZoneLockoutTimer,
           )
         p.inSafeZone && p.respawnTimer <= 0f -> {
           val rem = max(0f, RiftCalibrationState.safeZoneIdleLimitSec - p.safeZoneStayTimer)
-          String.format(java.util.Locale.US, "NEXUS SAFE RIFT // WEAPONS DISARMED • EVICTION WARP IN %.1fs", rem)
+          String.format(java.util.Locale.US, "NEXUS SAFE HARBOR // WEAPONS DISARMED • EVICTION WARP IN %.1fs", rem)
         }
         else ->
-          String.format(java.util.Locale.US, "NEXUS SAFE RIFT // WEAPONS DISARMED • %.0fs MAX STAY", RiftCalibrationState.safeZoneIdleLimitSec)
+          String.format(java.util.Locale.US, "NEXUS SAFE HARBOR // WEAPONS DISARMED • %.0fs MAX STAY", RiftCalibrationState.safeZoneIdleLimitSec)
       }
     drawWorldOverheadBanner(
       canvas = canvas,
       text = safeBannerText,
       worldX = szCX,
-      worldY = szCY - szR - (20f / safeScale),
+      worldY = szCY - szR - (24f / safeScale),
       fillColor = if (isLockedOut) rimColor else Color.parseColor("#67E8F9"),
       worldScale = worldScale,
       sizeMultiplier = 1.22f,
@@ -3284,6 +3374,21 @@ class RiftArenaView(
             canvas.drawArc(arcRect, -90f + seg * 36f, 26f, false, anomalyRingPaint)
           }
         }
+        if (w.hp < w.maxHp) {
+          val hpFrac = (w.hp / w.maxHp.coerceAtLeast(1f)).coerceIn(0f, 1f)
+          val integR = (min(w.w, w.h) * 0.42f).coerceAtLeast(20f)
+          arcRect.set(tCx - integR, tCy - integR, tCx + integR, tCy + integR)
+          anomalyRingPaint.strokeWidth = 3.8f
+          anomalyRingPaint.color = Color.argb(145, 15, 23, 42)
+          canvas.drawCircle(tCx, tCy, integR, anomalyRingPaint)
+          anomalyRingPaint.color =
+            when {
+              hpFrac > 0.55f -> Color.parseColor("#00F5D4")
+              hpFrac > 0.25f -> Color.parseColor("#FACC15")
+              else -> Color.parseColor("#EF4444")
+            }
+          canvas.drawArc(arcRect, -90f, hpFrac * 360f, false, anomalyRingPaint)
+        }
       }
 
       SpaceObstacleStyle.ASTEROID_STATION -> {
@@ -3305,6 +3410,21 @@ class RiftArenaView(
           for (seg in 0 until w.stationHitCounter.coerceIn(0, 10)) {
             canvas.drawArc(arcRect, -90f + seg * 36f, 26f, false, anomalyRingPaint)
           }
+        }
+        if (w.hp < w.maxHp) {
+          val hpFrac = (w.hp / w.maxHp.coerceAtLeast(1f)).coerceIn(0f, 1f)
+          val integR = (min(w.w, w.h) * 0.42f).coerceAtLeast(18f)
+          arcRect.set(tCx - integR, tCy - integR, tCx + integR, tCy + integR)
+          anomalyRingPaint.strokeWidth = 3.8f
+          anomalyRingPaint.color = Color.argb(145, 15, 23, 42)
+          canvas.drawCircle(tCx, tCy, integR, anomalyRingPaint)
+          anomalyRingPaint.color =
+            when {
+              hpFrac > 0.55f -> Color.parseColor("#00F5D4")
+              hpFrac > 0.25f -> Color.parseColor("#FACC15")
+              else -> Color.parseColor("#EF4444")
+            }
+          canvas.drawArc(arcRect, -90f, hpFrac * 360f, false, anomalyRingPaint)
         }
       }
 
@@ -3344,6 +3464,21 @@ class RiftArenaView(
         }
         obstacleBeaconPaint.color = obsGlow
         canvas.drawCircle(tCx, tCy, 5.0f, obstacleBeaconPaint)
+        if (w.style == SpaceObstacleStyle.FLOATING_DEBRIS && w.hp < w.maxHp) {
+          val hpFrac = (w.hp / w.maxHp.coerceAtLeast(1f)).coerceIn(0f, 1f)
+          val integR = (min(w.w, w.h) * 0.40f).coerceAtLeast(14f)
+          arcRect.set(tCx - integR, tCy - integR, tCx + integR, tCy + integR)
+          anomalyRingPaint.strokeWidth = 3.4f
+          anomalyRingPaint.color = Color.argb(140, 15, 23, 42)
+          canvas.drawCircle(tCx, tCy, integR, anomalyRingPaint)
+          anomalyRingPaint.color =
+            when {
+              hpFrac > 0.55f -> Color.parseColor("#00F5D4")
+              hpFrac > 0.25f -> Color.parseColor("#FACC15")
+              else -> Color.parseColor("#EF4444")
+            }
+          canvas.drawArc(arcRect, -90f, hpFrac * 360f, false, anomalyRingPaint)
+        }
       }
     }
 
@@ -4627,33 +4762,39 @@ private const val SAFE_NEXUS_RIFT_AGSL =
     float safeR = max(uRadius, 1.0);
     float2 rel = (fragCoord - uCenter) / safeR;
     float r = length(rel);
-    if (r > 1.05) {
+    if (r > 1.30) {
       return half4(0.0);
     }
 
-    float ang = atan(rel.y, rel.x);
-    float swirl = ang + (1.0 - r) * 2.6 - uTime * 0.65;
-    float2 uv = float2(cos(swirl), sin(swirl)) * (r * 3.1) + float2(uTime * 0.14, -uTime * 0.11);
-    float n1 = fbm(uv);
-    float n2 = fbm(uv * 1.9 - float2(uTime * 0.22, uTime * 0.18));
+    float2 dir = rel / max(r, 1e-4);
+    float locked = clamp(uLocked, 0.0, 1.0);
 
-    float caustics = pow(clamp(1.0 - abs(n1 - n2) * 2.4, 0.0, 1.0), 2.2);
-    float horizonRim = smoothstep(0.68, 0.98, r) * (1.0 - smoothstep(0.99, 1.05, r));
-    float deepWell = 1.0 - smoothstep(0.0, 0.96, r);
+    if (r < 1.0) {
+      // Calm, clear #030A16 Safe Harbor sanctuary inside szR (stabilized by the central 3D NEXUS Station!)
+      float rimGlow = smoothstep(0.84, 1.0, r);
+      float calmRipple = 0.5 + 0.5 * sin(r * 18.0 - uTime * 1.4);
+      float3 calmBase = mix(float3(0.012, 0.039, 0.086), float3(0.11, 0.015, 0.025), locked);
+      float3 shieldRim = mix(float3(0.00, 0.96, 0.83), float3(0.96, 0.24, 0.28), locked);
+      float3 col = calmBase + shieldRim * (rimGlow * 0.42 + calmRipple * rimGlow * 0.14);
+      float alpha = clamp((0.46 + 0.34 * rimGlow) * uOpacity, 0.0, 0.86);
+      return half4(half3(col * alpha), half(alpha));
+    }
 
-    float3 openBase = float3(0.01, 0.05, 0.12);
-    float3 openCyan = float3(0.00, 0.96, 0.83);
-    float3 openIndigo = float3(0.28, 0.48, 0.98);
-    float3 openCol = openBase + openIndigo * (n1 * 0.55 * deepWell) + openCyan * (caustics * 0.62 + horizonRim * 0.85);
+    // Outside szR (r in 1.0..1.30): Volatile cyan/violet/magenta Rift storm tendrils pressing INWARD against the braced shield rim!
+    float outFrac = (r - 1.0) / 0.30;
+    float2 inwardUv = dir * 3.4 + float2(r * 5.2 + uTime * 0.95, -r * 4.4 - uTime * 0.78);
+    float n1 = fbm(inwardUv);
+    float n2 = fbm(inwardUv * 1.85 + float2(-uTime * 0.65, uTime * 0.55));
+    float tendril = pow(clamp(1.0 - abs(n1 - n2) * 2.5, 0.0, 1.0), 1.85);
+    float pressMask = (1.0 - smoothstep(0.0, 1.0, outFrac)) * (0.55 + 0.75 * n1);
 
-    float3 lockBase = float3(0.16, 0.02, 0.04);
-    float3 lockCrimson = float3(0.96, 0.24, 0.28);
-    float3 lockAmber = float3(0.98, 0.62, 0.20);
-    float3 lockCol = lockBase + lockCrimson * (n1 * 0.62 + horizonRim * 0.90) + lockAmber * (caustics * 0.48);
-
-    float3 col = mix(openCol, lockCol, clamp(uLocked, 0.0, 1.0));
-    float edgeFade = 1.0 - smoothstep(0.95, 1.05, r);
-    float alpha = clamp((0.34 + 0.42 * horizonRim + 0.22 * caustics) * edgeFade * uOpacity, 0.0, 0.92);
+    float3 riftCyan = float3(0.00, 0.96, 0.83);
+    float3 riftViolet = float3(0.66, 0.33, 0.97);
+    float3 riftMagenta = float3(0.93, 0.28, 0.60);
+    float3 stormOpen = mix(riftViolet, riftMagenta, n2) * (0.65 + 0.55 * tendril) + riftCyan * (tendril * (1.0 - outFrac) * 0.85);
+    float3 stormLocked = mix(float3(0.96, 0.24, 0.28), float3(0.98, 0.62, 0.20), tendril);
+    float3 col = mix(stormOpen, stormLocked, locked);
+    float alpha = clamp(pressMask * (0.52 + 0.48 * tendril) * uOpacity, 0.0, 0.92);
     return half4(half3(col * alpha), half(alpha));
   }
   """
@@ -4702,12 +4843,14 @@ private const val STORM_BOUNDARY_AGSL =
       return half4(0.0);
     }
 
-    float ang = atan(delta.y, delta.x);
-    float arcCoord = ang * max(uRadius, 1.0) * 0.0042;
+    // Seamless 2D world-space direction vector (zero atan(y, x) ±PI discontinuity at West wall!)
+    float2 dir = delta / max(dist, 1.0);
+    float ringScale = max(uRadius, 1.0) * 0.0046;
     float radialCoord = signedOff * 0.014;
+    float2 baseWorldUv = dir * ringScale;
 
-    float cloudA = fbms(float2(arcCoord * 1.4 + uTime * 0.16, radialCoord - uTime * 0.24));
-    float cloudB = fbms(float2(arcCoord * 2.9 - uTime * 0.29, radialCoord * 1.8 + cloudA * 1.3));
+    float cloudA = fbms(baseWorldUv * 1.45 + float2(uTime * 0.16, radialCoord - uTime * 0.24));
+    float cloudB = fbms(baseWorldUv * 2.95 + float2(-uTime * 0.29, radialCoord * 1.8 + cloudA * 1.3));
     float billow = clamp(cloudA * 0.62 + cloudB * 0.55, 0.0, 1.0);
 
     float inwardMask = smoothstep(-260.0, -18.0 + (cloudA - 0.5) * 95.0, signedOff);
@@ -4715,7 +4858,7 @@ private const val STORM_BOUNDARY_AGSL =
     float stormEnvelope = inwardMask * outwardMask;
 
     float ridge = 1.0 - abs(cloudA - cloudB) * 3.4;
-    float flash = 0.55 + 0.45 * sin(uTime * 7.5 + ang * 9.0 + cloudB * 6.0);
+    float flash = 0.55 + 0.45 * sin(uTime * 7.5 + dot(dir, float2(7.3, -6.1)) + cloudB * 6.0);
     float lightningVein = pow(clamp(ridge, 0.0, 1.0), 4.0) * flash * smoothstep(-150.0, 25.0, signedOff);
 
     float3 deepStorm = mix(float3(0.03, 0.06, 0.16), uTrimRGB * 0.68, billow);

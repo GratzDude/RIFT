@@ -263,75 +263,155 @@ fun RiftHudOverlay(
  ) {
   val topBarRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_TOP_BAR) }
   val topBarEffScale = (RiftCalibrationState.topBarScale * topBarRec.pixelScale).coerceIn(0.6f, 1.8f)
+  var practiceChecklistDismissed by remember(engine.isEphemeralPracticeRift) { mutableStateOf(false) }
+  var practiceDidBoost by remember(engine.isEphemeralPracticeRift) { mutableStateOf(false) }
+  var practiceDidGrowRift by remember(engine.isEphemeralPracticeRift) { mutableStateOf(false) }
+  var practiceDidVisitSafe by remember(engine.isEphemeralPracticeRift) { mutableStateOf(false) }
+
+  if (engine.isEphemeralPracticeRift) {
+   if (player.afterburning || (engine.leftStickActive && engine.leftStickMag > 0.80f)) {
+    practiceDidBoost = true
+   }
+   if (engine.anomalies.any { it.type == com.example.engine.AnomalyType.GRAVITY_RIFT && it.absorbedWeaponCount > 0 }) {
+    practiceDidGrowRift = true
+   }
+   if (player.inSafeZone) {
+    practiceDidVisitSafe = true
+   }
+  }
+  val showPracticeChecklist = engine.isEphemeralPracticeRift && !uiUnlocked && !practiceChecklistDismissed
+
   if (engine.isEphemeralPracticeRift && !uiUnlocked) {
-   Row(
-    modifier =
-     Modifier.align(Alignment.TopCenter)
-      .padding(top = 6.dp)
-      .zIndex(14f)
-      .clip(RoundedCornerShape(10.dp))
-      .background(Color(0xDD050C1A))
-      .border(1.dp, Color(0xFF00F5D4).copy(alpha = 0.72f), RoundedCornerShape(10.dp))
-      .padding(horizontal = 8.dp, vertical = 4.dp)
-      .testTag("practice_rift_top_bar"),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(4.dp),
+   Column(
+    modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp).zIndex(14f),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(4.dp),
    ) {
-    Text(
-     text = "PRACTICE RIFT",
-     color = Color(0xFF00F5D4),
-     fontSize = (8.4f * textScale).sp,
-     fontWeight = FontWeight.Black,
-     fontFamily = FontFamily.Monospace,
-     style = WingTelemetryTextStyle,
-     modifier = Modifier.padding(end = 3.dp),
-    )
-    for (hullId in 1..10) {
-     val isActiveHull = player.shipId == hullId
+    Row(
+     modifier =
+      Modifier.clip(RoundedCornerShape(10.dp))
+       .background(Color(0xDD050C1A))
+       .border(1.dp, Color(0xFF00F5D4).copy(alpha = 0.72f), RoundedCornerShape(10.dp))
+       .padding(horizontal = 8.dp, vertical = 4.dp)
+       .testTag("practice_rift_top_bar"),
+     verticalAlignment = Alignment.CenterVertically,
+     horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+     Text(
+      text = "PRACTICE RIFT",
+      color = Color(0xFF00F5D4),
+      fontSize = (8.4f * textScale).sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+      style = WingTelemetryTextStyle,
+      modifier = Modifier.padding(end = 3.dp),
+     )
+     for (hullId in 1..10) {
+      val isActiveHull = player.shipId == hullId
+      Box(
+       modifier =
+        Modifier.clip(RoundedCornerShape(6.dp))
+         .background(if (isActiveHull) Color(0xFF00F5D4).copy(alpha = 0.26f) else Color(0xFF0C182B))
+         .border(
+          width = 1.dp,
+          color = if (isActiveHull) Color(0xFF00F5D4) else Color(0xFF334155),
+          shape = RoundedCornerShape(6.dp),
+         )
+         .clickable {
+          engine.switchLocalPlayerShip(hullId, forceFromHangar = true)
+          engine.localPlayer.flux = engine.localPlayer.maxFlux
+         }
+         .padding(horizontal = 6.dp, vertical = 3.dp)
+         .testTag("practice_rift_hull_$hullId"),
+       contentAlignment = Alignment.Center,
+      ) {
+       Text(
+        text = "$hullId",
+        color = if (isActiveHull) Color.White else Color(0xFF94A3B8),
+        fontSize = (8.0f * textScale).sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+       )
+      }
+     }
      Box(
       modifier =
-       Modifier.clip(RoundedCornerShape(6.dp))
-        .background(if (isActiveHull) Color(0xFF00F5D4).copy(alpha = 0.26f) else Color(0xFF0C182B))
-        .border(
-         width = 1.dp,
-         color = if (isActiveHull) Color(0xFF00F5D4) else Color(0xFF334155),
-         shape = RoundedCornerShape(6.dp),
-        )
-        .clickable {
-         engine.switchLocalPlayerShip(hullId, forceFromHangar = true)
-         engine.localPlayer.flux = engine.localPlayer.maxFlux
-        }
-        .padding(horizontal = 6.dp, vertical = 3.dp)
-        .testTag("practice_rift_hull_$hullId"),
+       Modifier.padding(start = 3.dp)
+        .clip(RoundedCornerShape(6.dp))
+        .background(Color(0xFF0D253B))
+        .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+        .clickable { onOpenNexus() }
+        .padding(horizontal = 8.dp, vertical = 3.dp)
+        .testTag("practice_rift_exit_btn"),
       contentAlignment = Alignment.Center,
      ) {
       Text(
-       text = "$hullId",
-       color = if (isActiveHull) Color.White else Color(0xFF94A3B8),
+       text = "[EXIT TO NEXUS]",
+       color = Color(0xFF38BDF8),
        fontSize = (8.0f * textScale).sp,
        fontWeight = FontWeight.Black,
        fontFamily = FontFamily.Monospace,
       )
      }
     }
-    Box(
-     modifier =
-      Modifier.padding(start = 3.dp)
-       .clip(RoundedCornerShape(6.dp))
-       .background(Color(0xFF0D253B))
-       .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
-       .clickable { onOpenNexus() }
-       .padding(horizontal = 8.dp, vertical = 3.dp)
-       .testTag("practice_rift_exit_btn"),
-     contentAlignment = Alignment.Center,
-    ) {
-     Text(
-      text = "[EXIT TO NEXUS]",
-      color = Color(0xFF38BDF8),
-      fontSize = (8.0f * textScale).sp,
-      fontWeight = FontWeight.Black,
-      fontFamily = FontFamily.Monospace,
-     )
+
+    if (showPracticeChecklist) {
+     Row(
+      modifier =
+       Modifier.clip(RoundedCornerShape(8.dp))
+        .background(Color(0xD9060D1A))
+        .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.55f), RoundedCornerShape(8.dp))
+        .padding(horizontal = 8.dp, vertical = 3.dp)
+        .testTag("practice_flight_checklist"),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+     ) {
+      val steps =
+       listOf(
+        practiceDidBoost to "Boost >80%",
+        practiceDidGrowRift to "Grow Gravity Rift",
+        practiceDidVisitSafe to "Visit Safe Station",
+       )
+      steps.forEachIndexed { idx, (done, label) ->
+       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(
+         modifier =
+          Modifier.size(10.dp)
+           .clip(RoundedCornerShape(2.5.dp))
+           .background(if (done) Color(0xFF00F5D4) else Color(0xFF0F172A))
+           .border(1.dp, if (done) Color(0xFF00F5D4) else Color(0xFF64748B), RoundedCornerShape(2.5.dp)),
+        )
+        Text(
+         text = label,
+         color = if (done) Color(0xFF00F5D4) else Color(0xFFCBD5E1),
+         fontSize = (7.6f * textScale).sp,
+         fontWeight = FontWeight.Bold,
+         fontFamily = FontFamily.Monospace,
+        )
+        if (idx < steps.lastIndex) {
+         Text(
+          text = "•",
+          color = Color(0xFF475569),
+          fontSize = (7.6f * textScale).sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+         )
+        }
+       }
+      }
+      Text(
+       text = "[X]",
+       color = Color(0xFF94A3B8),
+       fontSize = (7.5f * textScale).sp,
+       fontWeight = FontWeight.Black,
+       fontFamily = FontFamily.Monospace,
+       modifier =
+        Modifier.clip(RoundedCornerShape(4.dp))
+         .clickable { practiceChecklistDismissed = true }
+         .padding(horizontal = 4.dp, vertical = 1.dp)
+         .testTag("practice_checklist_dismiss_btn"),
+      )
+     }
     }
    }
   } else if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE || engine.isCustomGameActive() || uiUnlocked) {
@@ -408,7 +488,7 @@ fun RiftHudOverlay(
 
   if (levelUpBannerLevel > 1) {
    Box(
-    modifier = Modifier.align(Alignment.TopCenter).padding(top = 48.dp).zIndex(22f).clip(RoundedCornerShape(10.dp))
+    modifier = Modifier.align(Alignment.TopCenter).padding(top = if (showPracticeChecklist) 72.dp else 48.dp).zIndex(22f).clip(RoundedCornerShape(10.dp))
      .background(Brush.horizontalGradient(listOf(Color(0xEE081B33), Color(0xEE1A2B12), Color(0xEE081B33))))
      .border(1.3.dp, Color(0xFFFFD700), RoundedCornerShape(10.dp))
      .clickable { onOpenProgression() }.padding(horizontal = (12f * textScale).dp, vertical = (4.5f * textScale).dp)
@@ -522,7 +602,15 @@ fun RiftHudOverlay(
    val combinedWarnOffset = RiftCalibrationState.toastContainerOffset + RiftCalibrationState.idleWarningBannerOffset
 
    Box(
-    modifier = Modifier.align(Alignment.TopCenter).padding(top = if (levelUpBannerLevel > 1) 76.dp else 44.dp)
+    modifier = Modifier.align(Alignment.TopCenter).padding(
+     top =
+      when {
+       levelUpBannerLevel > 1 && showPracticeChecklist -> 100.dp
+       levelUpBannerLevel > 1 -> 76.dp
+       showPracticeChecklist -> 68.dp
+       else -> 44.dp
+      }
+    )
      .offset { IntOffset(combinedWarnOffset.x.roundToInt(), combinedWarnOffset.y.roundToInt()) }
      .graphicsLayer { scaleX = warnScale; scaleY = warnScale }
      .then(

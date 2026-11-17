@@ -1,5 +1,6 @@
 package com.example.ui
 
+import android.content.Context
 import android.view.KeyEvent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -98,6 +99,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -194,32 +196,55 @@ internal fun extractCustomRoomCode(instanceId: String): String {
 internal fun isPrivateCustomGame(config: CustomGameConfig): Boolean =
   config.instanceId.startsWith("priv_", ignoreCase = true)
 
+@Composable
+fun ResonanceCrestIcon(sizeDp: Dp = 14.dp, modifier: Modifier = Modifier) {
+  val visualRev = RiftVisualForgeState.visualRevision
+  val bmp = remember(visualRev) { RiftSpriteBaker.resonanceIconBitmap.asImageBitmap() }
+  Canvas(modifier = modifier.size(sizeDp)) {
+    drawImage(
+      bmp,
+      dstSize = IntSize(size.width.roundToInt().coerceAtLeast(1), size.height.roundToInt().coerceAtLeast(1)),
+    )
+  }
+}
+
+@Composable
+fun RiftShardGemIcon(sizeDp: Dp = 14.dp, modifier: Modifier = Modifier) {
+  val visualRev = RiftVisualForgeState.visualRevision
+  val bmp = remember(visualRev) { RiftSpriteBaker.riftShardIconBitmap.asImageBitmap() }
+  Canvas(modifier = modifier.size(sizeDp)) {
+    drawImage(
+      bmp,
+      dstSize = IntSize(size.width.roundToInt().coerceAtLeast(1), size.height.roundToInt().coerceAtLeast(1)),
+    )
+  }
+}
+
 /**
- * Signature Merged Tri-Concept `NEXUS` Brand Symbol (Threshold Dynamics Studio, LLC):
- * 1. Glowing multicolored swirling Singularity core at center (`#00F5D4`, `#A855F7`, `#FACC15`).
- * 2. Interlocking 3D-tilted Ring-Space gyro arcs (`+32°` cyan & `-32°` solar-gold/violet) looping
- *    behind and in front of the monogram for true 3D orbital depth.
- * 3. Two sleek swept starfighter wing-blades (`#F8FAFC` -> `#38BDF8` -> `#0284C7`) forming a
- *    geometric **`N`** monogram with a blazing cyan-to-gold diagonal energy slash.
+ * Official 3-Tier Gunmetal & Solar-Gold Winged Vortex Crest (`NEXUS` — Threshold Dynamics Studio, LLC):
+ * - Symmetrical 3-tier swept dark-titanium starfighter wings (`#1E293B` / `#334155` / `#475569`)
+ *   with `#FACC15` solar-gold & `#38BDF8` sky-cyan bevel highlights, dorsal crown fin, and twin lower fangs.
+ * - Circular `#091326` / `#00F5D4` containment collar with 4 solar-gold compass notches cradling
+ *   live-spinning `#00F5D4` / `#38BDF8` / `#A855F7` / `#EC4899` Rift vortex ribbons around a `#02040A` throat.
  */
 @Composable
 fun NexusMergedBrandEmblem(modifier: Modifier = Modifier, isStreaming: Boolean = false) {
   val headless = remember { isHeadlessGlEnvironment() }
   val phaseDeg =
     if (headless) {
-      28f
+      24f
     } else {
-      val transition = rememberInfiniteTransition(label = "nexus_merged_emblem")
+      val transition = rememberInfiniteTransition(label = "nexus_winged_vortex_crest")
       val animDeg by
         transition.animateFloat(
           initialValue = 0f,
           targetValue = 360f,
           animationSpec =
             infiniteRepeatable(
-              tween(if (isStreaming) 1800 else 6400, easing = LinearEasing),
+              tween(if (isStreaming) 1800 else 6200, easing = LinearEasing),
               RepeatMode.Restart,
             ),
-          label = "emblem_spin_deg",
+          label = "crest_vortex_spin_deg",
         )
       animDeg
     }
@@ -230,156 +255,168 @@ fun NexusMergedBrandEmblem(modifier: Modifier = Modifier, isStreaming: Boolean =
     if (w <= 1f || h <= 1f) return@Canvas
     val cx = w * 0.5f
     val cy = h * 0.5f
-    val r = min(w, h) * 0.46f
+    val s = min(w, h) / 68f
+    fun px(dx: Float) = cx + dx * s
+    fun py(dy: Float) = cy + dy * s
     val center = Offset(cx, cy)
 
-    // 1. Ambient Swirling Singularity Corona + Deep Singularity Heart
+    // Ambient singularity corona behind the 3-tier wing frame
     drawCircle(
       brush =
         Brush.radialGradient(
-          colors =
-            listOf(
-              Color(0x6600F5D4),
-              Color(0x44A855F7),
-              Color(0x00020611),
-            ),
+          colors = listOf(Color(0x4400F5D4), Color(0x30A855F7), Color.Transparent),
           center = center,
-          radius = r * 1.06f,
+          radius = 24f * s,
         ),
-      radius = r * 1.06f,
+      radius = 24f * s,
       center = center,
     )
-    drawCircle(color = Color(0xFF030814), radius = r * 0.54f, center = center)
 
-    val swirlColors = listOf(Color(0xFF00F5D4), Color(0xFF38BDF8), Color(0xFFA855F7), Color(0xFFFACC15))
-    val swirlStroke = (r * 0.11f).coerceAtLeast(1.1f)
-    for (arm in 0 until 4) {
-      drawArc(
-        color = swirlColors[arm],
-        startAngle = phaseDeg + arm * 90f,
-        sweepAngle = 58f,
-        useCenter = false,
-        topLeft = Offset(cx - r * 0.44f, cy - r * 0.44f),
-        size = Size(r * 0.88f, r * 0.88f),
-        style = Stroke(width = swirlStroke, cap = StrokeCap.Round),
-      )
+    val bevelStroke = (0.9f * s).coerceAtLeast(0.8f)
+
+    // Helper for symmetrical left/right wing polygon
+    fun drawSymWing(
+      pts: FloatArray, // pairs of (dxPositive, dy)
+      fill: Color,
+      highlightFill: Color?,
+      strokeCol: Color,
+    ) {
+      for (dir in intArrayOf(-1, 1)) {
+        val path =
+          Path().apply {
+            moveTo(px(dir * pts[0]), py(pts[1]))
+            var k = 2
+            while (k < pts.size) {
+              lineTo(px(dir * pts[k]), py(pts[k + 1]))
+              k += 2
+            }
+            close()
+          }
+        drawPath(path, color = fill)
+        if (highlightFill != null) {
+          drawPath(path, color = highlightFill.copy(alpha = 0.25f))
+        }
+        drawPath(
+          path,
+          color = strokeCol,
+          style = Stroke(width = bevelStroke, join = StrokeJoin.Round),
+        )
+      }
     }
 
-    // 2. Back-Halves of Interlocking 3D-Tilted Ring-Space Gyro Ellipses (behind the Winged-N)
-    val gyroRx = r * 0.96f
-    val gyroRy = r * 0.36f
-    val gyroTopLeft = Offset(cx - gyroRx, cy - gyroRy)
-    val gyroSize = Size(gyroRx * 2f, gyroRy * 2f)
-    val gyroStroke = (r * 0.105f).coerceAtLeast(1.15f)
-
-    rotate(degrees = -32f, pivot = center) {
-      drawArc(
-        color = Color(0xAA00F5D4),
-        startAngle = 180f,
-        sweepAngle = 180f,
-        useCenter = false,
-        topLeft = gyroTopLeft,
-        size = gyroSize,
-        style = Stroke(width = gyroStroke, cap = StrokeCap.Round),
-      )
-    }
-    rotate(degrees = 32f, pivot = center) {
-      drawArc(
-        color = Color(0xAAFACC15),
-        startAngle = 180f,
-        sweepAngle = 180f,
-        useCenter = false,
-        topLeft = gyroTopLeft,
-        size = gyroSize,
-        style = Stroke(width = gyroStroke * 0.92f, cap = StrokeCap.Round),
-      )
-    }
-
-    // 3. Swept Starfighter Wing-Blades Forming Stylized Geometric 'N' Monogram
-    val wingBrushLeft =
-      Brush.linearGradient(
-        colors = listOf(Color(0xFFF8FAFC), Color(0xFF38BDF8), Color(0xFF0284C7)),
-        start = Offset(cx - r * 0.56f, cy - r * 0.78f),
-        end = Offset(cx - r * 0.24f, cy + r * 0.78f),
-      )
-    val wingBrushRight =
-      Brush.linearGradient(
-        colors = listOf(Color(0xFF0284C7), Color(0xFF38BDF8), Color(0xFFF8FAFC)),
-        start = Offset(cx + r * 0.24f, cy - r * 0.78f),
-        end = Offset(cx + r * 0.56f, cy + r * 0.78f),
-      )
-
-    // Left swept starfighter wing-blade (vertical-swept left leg of 'N')
-    val leftWing =
-      Path().apply {
-        moveTo(cx - r * 0.28f, cy - r * 0.76f)
-        lineTo(cx - r * 0.58f, cy - r * 0.34f)
-        lineTo(cx - r * 0.46f, cy + r * 0.76f)
-        lineTo(cx - r * 0.24f, cy + r * 0.44f)
-        close()
-      }
-    // Right swept starfighter wing-blade (vertical-swept right leg of 'N')
-    val rightWing =
-      Path().apply {
-        moveTo(cx + r * 0.46f, cy - r * 0.76f)
-        lineTo(cx + r * 0.24f, cy - r * 0.44f)
-        lineTo(cx + r * 0.28f, cy + r * 0.76f)
-        lineTo(cx + r * 0.58f, cy + r * 0.34f)
-        close()
-      }
-    // Diagonal energy bridge connecting top-left wing apex across the Singularity to bottom-right wing apex
-    val diagSlash =
-      Path().apply {
-        moveTo(cx - r * 0.32f, cy - r * 0.68f)
-        lineTo(cx - r * 0.14f, cy - r * 0.68f)
-        lineTo(cx + r * 0.32f, cy + r * 0.68f)
-        lineTo(cx + r * 0.14f, cy + r * 0.68f)
-        close()
-      }
-
-    drawPath(leftWing, brush = wingBrushLeft)
-    drawPath(rightWing, brush = wingBrushRight)
-    drawPath(
-      diagSlash,
-      brush =
-        Brush.linearGradient(
-          colors = listOf(Color(0xFF00F5D4), Color.White, Color(0xFFFACC15)),
-          start = Offset(cx - r * 0.30f, cy - r * 0.68f),
-          end = Offset(cx + r * 0.30f, cy + r * 0.68f),
-        ),
+    // TIER 1: Upper Swept Starfighter Wing Blades (Dark Gunmetal + Solar-Gold Bevels)
+    drawSymWing(
+      pts = floatArrayOf(12.2f, -8.2f, 31.2f, -18.2f, 25.4f, -8.8f, 14.0f, -4.6f),
+      fill = Color(0xFF1E293B),
+      highlightFill = Color(0xFF334155),
+      strokeCol = Color(0xFFFACC15),
     )
 
-    val bevelStroke = (r * 0.055f).coerceAtLeast(0.85f)
-    drawPath(leftWing, color = Color.White.copy(alpha = 0.82f), style = Stroke(width = bevelStroke, join = StrokeJoin.Round))
-    drawPath(rightWing, color = Color(0xFF00F5D4).copy(alpha = 0.88f), style = Stroke(width = bevelStroke, join = StrokeJoin.Round))
+    // TIER 2: Mid Primary Heavy Titanium Pinions (Gunmetal + Sky-Cyan Bevels)
+    drawSymWing(
+      pts = floatArrayOf(14.5f, -3.6f, 29.6f, -6.6f, 25.6f, 0.4f, 14.4f, 0.8f),
+      fill = Color(0xFF334155),
+      highlightFill = Color(0xFF475569),
+      strokeCol = Color(0xFF38BDF8),
+    )
 
-    // Glowing Singularity Pinpoint at the center of the N slash
-    drawCircle(color = Color(0xFF00F5D4).copy(alpha = 0.55f), radius = r * 0.20f, center = center)
-    drawCircle(color = Color.White, radius = (r * 0.10f).coerceAtLeast(1.1f), center = center)
+    // TIER 3: Lower Swept Stabilizer Blades (Dark Titanium + Slate Trim)
+    drawSymWing(
+      pts = floatArrayOf(14.0f, 1.8f, 25.2f, 3.0f, 20.2f, 8.6f, 12.0f, 5.6f),
+      fill = Color(0xFF1E293B),
+      highlightFill = null,
+      strokeCol = Color(0xFF94A3B8),
+    )
 
-    // 4. Front-Halves of Interlocking 3D-Tilted Ring-Space Gyro Ellipses (crossing in front of Winged-N)
-    rotate(degrees = -32f, pivot = center) {
+    // Twin Lower Armored Fangs Cradling the Vortex Collar
+    drawSymWing(
+      pts = floatArrayOf(10.6f, 7.2f, 6.6f, 20.2f, 3.4f, 11.6f, 7.2f, 8.8f),
+      fill = Color(0xFF334155),
+      highlightFill = null,
+      strokeCol = Color(0xFFFACC15),
+    )
+
+    // Crown Dorsal Apex Fin
+    val crownFin =
+      Path().apply {
+        moveTo(px(0f), py(-20.8f))
+        lineTo(px(3.5f), py(-14.0f))
+        lineTo(px(0f), py(-15.4f))
+        lineTo(px(-3.5f), py(-14.0f))
+        close()
+      }
+    drawPath(crownFin, color = Color(0xFF1E293B))
+    drawPath(crownFin, color = Color(0xFFFACC15), style = Stroke(width = bevelStroke, join = StrokeJoin.Round))
+
+    // Outer Gunmetal & Cyan Containment Collar Ring
+    val collarR = 14.4f * s
+    drawCircle(color = Color(0xFF091326), radius = collarR, center = center)
+    drawCircle(
+      color = Color(0xFF475569),
+      radius = collarR,
+      center = center,
+      style = Stroke(width = (1.8f * s).coerceAtLeast(1.0f)),
+    )
+    drawCircle(
+      color = Color(0xFF00F5D4),
+      radius = 13.0f * s,
+      center = center,
+      style = Stroke(width = (1.15f * s).coerceAtLeast(0.85f)),
+    )
+
+    // 4 Solar-Gold Compass Notches
+    val notchStroke = (1.45f * s).coerceAtLeast(0.95f)
+    drawLine(Color(0xFFFACC15), Offset(cx, py(-14.8f)), Offset(cx, py(-11.8f)), strokeWidth = notchStroke, cap = StrokeCap.Round)
+    drawLine(Color(0xFFFACC15), Offset(cx, py(11.8f)), Offset(cx, py(14.8f)), strokeWidth = notchStroke, cap = StrokeCap.Round)
+    drawLine(Color(0xFFFACC15), Offset(px(-14.8f), cy), Offset(px(-11.8f), cy), strokeWidth = notchStroke, cap = StrokeCap.Round)
+    drawLine(Color(0xFFFACC15), Offset(px(11.8f), cy), Offset(px(14.8f), cy), strokeWidth = notchStroke, cap = StrokeCap.Round)
+
+    // Live-Spinning Cyan, Sky, Violet & Magenta Rift Vortex Ribbons
+    val ribbonColors =
+      listOf(Color(0xFF00F5D4), Color(0xFF38BDF8), Color(0xFFA855F7), Color(0xFFEC4899))
+    val outerRibbonR = 10.2f * s
+    val innerRibbonR = 7.8f * s
+    val ribbonStroke = (1.95f * s).coerceAtLeast(1.05f)
+    for (arm in 0 until 4) {
+      val col = ribbonColors[arm]
       drawArc(
-        brush = Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color.White, Color(0xFF38BDF8))),
-        startAngle = 10f,
-        sweepAngle = 160f,
+        color = col,
+        startAngle = phaseDeg + arm * 90f,
+        sweepAngle = 64f,
         useCenter = false,
-        topLeft = gyroTopLeft,
-        size = gyroSize,
-        style = Stroke(width = gyroStroke * 1.08f, cap = StrokeCap.Round),
+        topLeft = Offset(cx - outerRibbonR, cy - outerRibbonR),
+        size = Size(outerRibbonR * 2f, outerRibbonR * 2f),
+        style = Stroke(width = ribbonStroke, cap = StrokeCap.Round),
+      )
+      drawArc(
+        color = col.copy(alpha = 0.85f),
+        startAngle = phaseDeg * 1.35f + arm * 90f + 34f,
+        sweepAngle = 52f,
+        useCenter = false,
+        topLeft = Offset(cx - innerRibbonR, cy - innerRibbonR),
+        size = Size(innerRibbonR * 2f, innerRibbonR * 2f),
+        style = Stroke(width = ribbonStroke * 0.78f, cap = StrokeCap.Round),
       )
     }
-    rotate(degrees = 32f, pivot = center) {
-      drawArc(
-        brush = Brush.horizontalGradient(listOf(Color(0xFFA855F7), Color(0xFFFACC15), Color.White)),
-        startAngle = 12f,
-        sweepAngle = 156f,
-        useCenter = false,
-        topLeft = gyroTopLeft,
-        size = gyroSize,
-        style = Stroke(width = gyroStroke * 0.96f, cap = StrokeCap.Round),
-      )
-    }
+
+    // Deep #02040A Singularity Event-Horizon Throat & Specular Photon Arc
+    val throatR = 5.8f * s
+    drawCircle(color = Color(0xFF02040A), radius = throatR, center = center)
+    drawCircle(
+      color = Color(0xFF00F5D4),
+      radius = throatR,
+      center = center,
+      style = Stroke(width = (0.9f * s).coerceAtLeast(0.75f)),
+    )
+    drawArc(
+      color = Color.White,
+      startAngle = -145f + phaseDeg * 0.35f,
+      sweepAngle = 82f,
+      useCenter = false,
+      topLeft = Offset(cx - throatR * 0.72f, cy - throatR * 0.72f),
+      size = Size(throatR * 1.44f, throatR * 1.44f),
+      style = Stroke(width = (0.95f * s).coerceAtLeast(0.75f), cap = StrokeCap.Round),
+    )
   }
 }
 
@@ -1192,7 +1229,7 @@ private fun OrbitalHubSpatialStage(
   totalOnlinePilots: Int,
   syndicateOnlineCount: Int,
   strikeWingOnlineCount: Int,
-  @Suppress("UNUSED_PARAMETER") unreadCommsCount: Int,
+  unreadCommsCount: Int,
   @Suppress("UNUSED_PARAMETER") bootToNexusHub: Boolean,
   isInMatch: Boolean,
   isStreaming: Boolean,
@@ -1204,61 +1241,40 @@ private fun OrbitalHubSpatialStage(
   onCloseModal: () -> Unit,
   onSelectNode: (Int, NexusCoreNode) -> Unit,
 ) {
-  val density = LocalDensity.current
-  var stageOriginInRoot by remember { mutableStateOf(Offset.Zero) }
-  var stageSizePx by remember { mutableStateOf(IntSize.Zero) }
-  var projectedStates by remember { mutableStateOf<List<ProjectedRiftTearScreenState>>(emptyList()) }
+  val context = LocalContext.current
+  val headless = remember { isHeadlessGlEnvironment() }
+  val howToPrefs = remember(context) { context.getSharedPreferences("rift_user_settings", Context.MODE_PRIVATE) }
+  var showHowToPlayModal by remember {
+    mutableStateOf(!headless && !howToPrefs.getBoolean("seen_how_to_play_v66", false))
+  }
+  fun dismissHowToPlay() {
+    showHowToPlayModal = false
+    howToPrefs.edit().putBoolean("seen_how_to_play_v66", true).apply()
+  }
 
-  val visualRev = RiftVisualForgeState.visualRevision
-  val resonanceBmp = remember(visualRev) { RiftSpriteBaker.resonanceIconBitmap.asImageBitmap() }
-  val shardBmp = remember(visualRev) { RiftSpriteBaker.riftShardIconBitmap.asImageBitmap() }
   val shardText =
     if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) "999,999" else riftShards.toString()
   val pilotIdentityLabel =
     if (syndicateTag.isNotBlank()) "• [$syndicateTag] $callsign" else "• $callsign"
 
-  LaunchedEffect(glViewRef, stageSizePx) {
-    if (isHeadlessGlEnvironment() || glViewRef == null) {
-      projectedStates =
-        if (stageSizePx.width > 0 && stageSizePx.height > 0) {
-          computeStaticProjectedTearStates(stageSizePx.width.toFloat(), stageSizePx.height.toFloat())
-        } else {
-          computeStaticProjectedTearStates(1280f, 720f)
-        }
-      return@LaunchedEffect
-    }
-    while (true) {
-      withFrameNanos {
-        if (projectedStates.isEmpty() || glViewRef.consumeProjectionDirty()) {
-          val glW = glViewRef.width
-          val glH = glViewRef.height
-          projectedStates =
-            if (glW > 0 && glH > 0) {
-              glViewRef.computeProjectedTearStates(glW.toFloat(), glH.toFloat())
-            } else if (stageSizePx.width > 0 && stageSizePx.height > 0) {
-              computeStaticProjectedTearStates(stageSizePx.width.toFloat(), stageSizePx.height.toFloat())
-            } else {
-              emptyList()
-            }
-        }
-      }
-    }
-  }
-
-  Column(modifier = Modifier.fillMaxSize()) {
-    // Ultra-minimal frameless translucent horizon telemetry strip (SYN / WING / ONLINE + PRACTICE RIFT >)
-    Box(
-      modifier =
-        Modifier.fillMaxWidth()
-          .background(
-            Brush.verticalGradient(
-              colors = listOf(Color(0xD8010308), Color(0x78010308), Color.Transparent),
-            )
-          )
-          .padding(horizontal = 16.dp, vertical = 5.dp),
+  Box(modifier = Modifier.fillMaxSize()) {
+    Column(
+      modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+      // Minimal Top Tactical Terminal Header (#060D1A obsidian-glass bar)
       Row(
-        modifier = Modifier.fillMaxWidth().height(32.dp),
+        modifier =
+          Modifier.fillMaxWidth()
+            .height(36.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xE8060D1A))
+            .border(
+              1.dp,
+              Brush.horizontalGradient(listOf(Color(0x9900F5D4), Color(0x6638BDF8), Color(0x88FACC15))),
+              RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
@@ -1267,7 +1283,7 @@ private fun OrbitalHubSpatialStage(
           horizontalArrangement = Arrangement.spacedBy(5.dp),
           modifier = Modifier.weight(1f),
         ) {
-          SwirlingRiftVortexGlyph(modifier = Modifier.size(20.dp), isStreaming = isStreaming)
+          SwirlingRiftVortexGlyph(modifier = Modifier.size(22.dp), isStreaming = isStreaming)
           Text(
             text = "NEXUS",
             color = Color(0xFF00F5D4),
@@ -1279,7 +1295,7 @@ private fun OrbitalHubSpatialStage(
           Text(
             text = pilotIdentityLabel,
             color = Color(0xFFE2E8F0),
-            fontSize = 8.6.sp,
+            fontSize = 8.4.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -1288,85 +1304,121 @@ private fun OrbitalHubSpatialStage(
           Text(
             text = "•",
             color = Color(0xFF64748B),
-            fontSize = 8.6.sp,
+            fontSize = 8.4.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
           )
-          Canvas(modifier = Modifier.size(14.dp)) {
-            drawImage(
-              resonanceBmp,
-              dstSize = IntSize(size.width.roundToInt().coerceAtLeast(1), size.height.roundToInt().coerceAtLeast(1)),
-            )
-          }
+          ResonanceCrestIcon(sizeDp = 14.dp)
           Text(
             text = "$liveResonance",
             color = Color(0xFFFACC15),
-            fontSize = 8.6.sp,
+            fontSize = 8.5.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
           )
           Text(
             text = "•",
             color = Color(0xFF64748B),
-            fontSize = 8.6.sp,
+            fontSize = 8.4.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
           )
-          Canvas(modifier = Modifier.size(14.dp)) {
-            drawImage(
-              shardBmp,
-              dstSize = IntSize(size.width.roundToInt().coerceAtLeast(1), size.height.roundToInt().coerceAtLeast(1)),
-            )
-          }
+          RiftShardGemIcon(sizeDp = 14.dp)
           Text(
             text = shardText,
             color = Color(0xFFF0ABFC),
-            fontSize = 8.6.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-          )
-          Text(
-            text = "• SYN $syndicateOnlineCount • WING $strikeWingOnlineCount",
-            color = Color(0xFF38BDF8),
             fontSize = 8.5.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
           )
           Text(
-            text = "• $totalOnlinePilots ONLINE",
+            text = "• SYN $syndicateOnlineCount • WING $strikeWingOnlineCount • $totalOnlinePilots ONLINE",
             color = Color(0xFF34D399),
-            fontSize = 8.6.sp,
+            fontSize = 8.2.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-          if (isInMatch) {
+        Row(
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          // [? HOW TO PLAY] Briefing Button
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFF0B192E))
+                .border(1.dp, Color(0xFFFACC15).copy(alpha = 0.80f), RoundedCornerShape(6.dp))
+                .clickable { showHowToPlayModal = true }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .testTag("nexus_btn_how_to_play"),
+            contentAlignment = Alignment.Center,
+          ) {
             Text(
-              text = "LEAVE MATCH",
-              color = Color(0xFFFB7185),
-              fontSize = 8.4.sp,
+              text = "[? HOW TO PLAY]",
+              color = Color(0xFFFACC15),
+              fontSize = 8.0.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
+            )
+          }
+
+          // [HELM SYSTEMS] Top Header Button (Index 7)
+          val helmFocused = focusedOrbitalIndex == 7
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(6.dp))
+                .background(if (helmFocused) Color(0x3338BDF8) else Color(0xFF0B192E))
+                .border(
+                  1.dp,
+                  if (helmFocused) Color.White else Color(0xFF94A3B8).copy(alpha = 0.75f),
+                  RoundedCornerShape(6.dp),
+                )
+                .clickable { onSelectNode(7, NexusCoreNode.HELM_SYSTEMS) }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .testTag("nexus_node_helm_systems"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "[HELM SYSTEMS]",
+              color = if (helmFocused) Color.White else Color(0xFFCBD5E1),
+              fontSize = 8.0.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+
+          if (isInMatch) {
+            Box(
               modifier =
-                Modifier.clip(CircleShape)
+                Modifier.clip(RoundedCornerShape(6.dp))
+                  .background(Color(0xFF280D18))
+                  .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(6.dp))
                   .clickable { onLeaveMatch() }
                   .padding(horizontal = 8.dp, vertical = 4.dp)
                   .testTag("nexus_leave_match_button"),
-            )
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "LEAVE MATCH",
+                color = Color(0xFFFB7185),
+                fontSize = 8.0.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
           }
-          Text(
-            text = if (isInMatch) "RETURN TO RIFT >" else "PRACTICE RIFT >",
-            color = Color(0xFF00F5D4),
-            fontSize = 8.8.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
+
+          // [PRACTICE RIFT >] / [RETURN TO RIFT >]
+          Box(
             modifier =
-              Modifier.clip(CircleShape)
+              Modifier.clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFF082233))
+                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
                 .clickable {
                   if (isInMatch) {
                     onCloseModal()
@@ -1374,130 +1426,875 @@ private fun OrbitalHubSpatialStage(
                     onEnterPracticeRift()
                   }
                 }
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(horizontal = 9.dp, vertical = 4.dp)
                 .testTag("nexus_close_button"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = if (isInMatch) "RETURN TO RIFT >" else "PRACTICE RIFT >",
+              color = Color(0xFF00F5D4),
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+
+      // Main Zero-Scroll Breached Tactical Cockpit Terminal Deck (Left 24% • Center 52% Rift Breach • Right 24%)
+      Row(
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        // LEFT TACTICAL TERMINAL COLUMN (3 Beveled Obsidian-Glass Cards)
+        Column(
+          modifier = Modifier.weight(0.24f).fillMaxHeight(),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          BreachedTerminalModuleCard(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            title = "HANGAR DECK",
+            subtitle = "10 Ships & 100-Pt Builder",
+            codeLabel = "SYS-01",
+            accent = Color(0xFF38BDF8),
+            secondaryAccent = Color(0xFF00F5D4),
+            badgeText = null,
+            isFocused = focusedOrbitalIndex == 1,
+            isRightColumn = false,
+            testTag = "nexus_node_hangar_deck",
+            onClick = { onSelectNode(1, NexusCoreNode.HANGAR_DECK) },
+          )
+          BreachedTerminalModuleCard(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            title = "RIFT CONDUIT",
+            subtitle = "Resonance, Quests & Cosmetics",
+            codeLabel = "SYS-02",
+            accent = Color(0xFFE879F9),
+            secondaryAccent = Color(0xFFFACC15),
+            badgeText = "$liveResonance RES",
+            isFocused = focusedOrbitalIndex == 2,
+            isRightColumn = false,
+            testTag = "nexus_node_rift_conduit",
+            onClick = { onSelectNode(2, NexusCoreNode.RIFT_CONDUIT) },
+          )
+          BreachedTerminalModuleCard(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            title = "STAR FORGE",
+            subtitle = "1:1 Asset & Audio Studio",
+            codeLabel = "SYS-03",
+            accent = Color(0xFFC084FC),
+            secondaryAccent = Color(0xFF38BDF8),
+            badgeText = null,
+            isFocused = focusedOrbitalIndex == 3,
+            isRightColumn = false,
+            testTag = "nexus_node_star_forge",
+            onClick = { onSelectNode(3, NexusCoreNode.STAR_FORGE) },
+          )
+        }
+
+        // CENTER TERMINAL BREACH (~52% width): Colossal Swirling Rift Singularity + PLAY // ENTER THE RIFT
+        val centerFocused = focusedOrbitalIndex == 0
+        Box(
+          modifier =
+            Modifier.weight(0.52f)
+              .fillMaxHeight()
+              .pointerInput(glViewRef) {
+                detectDragGestures(
+                  onDragEnd = { glViewRef?.releaseCameraLookSpring() },
+                  onDragCancel = { glViewRef?.releaseCameraLookSpring() },
+                ) { change, dragAmount ->
+                  change.consume()
+                  glViewRef?.addCameraLookDelta(dragAmount.x, dragAmount.y)
+                }
+              }
+              .clickable { onSelectNode(0, NexusCoreNode.CONVERGENCE_GATE) }
+              .testTag("nexus_node_convergence_gate"),
+          contentAlignment = Alignment.Center,
+        ) {
+          BreachedTerminalViewportOverlay(
+            isFocused = centerFocused,
+            drawHeadlessRiftFallback = headless,
+          )
+
+          // Unmistakable Center Callout Seated Inside the #000000 Event-Horizon Throat
+          val playTitleGlow =
+            remember(centerFocused) {
+              Shadow(
+                color = if (centerFocused) Color.White else Color(0xFF00F5D4),
+                offset = Offset.Zero,
+                blurRadius = 14f,
+              )
+            }
+          Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier =
+              Modifier.clip(RoundedCornerShape(12.dp))
+                .background(Color(0x96010308))
+                .border(
+                  width = if (centerFocused) 1.5.dp else 1.dp,
+                  brush =
+                    Brush.horizontalGradient(
+                      listOf(Color(0xCC00F5D4), Color(0xCCFACC15), Color(0xCCA855F7))
+                    ),
+                  shape = RoundedCornerShape(12.dp),
+                )
+                .padding(horizontal = 18.dp, vertical = 9.dp),
+          ) {
+            Text(
+              text = "PLAY",
+              color = Color.White,
+              fontSize = 21.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              letterSpacing = 2.6.sp,
+              style = TextStyle(shadow = playTitleGlow),
+            )
+            Text(
+              text = "ENTER THE RIFT",
+              color = Color(0xFF00F5D4),
+              fontSize = 9.8.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              letterSpacing = 1.2.sp,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+              text = "6 Ranked Modes • Custom Lobbies",
+              color = Color(0xFFE2E8F0),
+              fontSize = 7.8.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+
+        // RIGHT TACTICAL TERMINAL COLUMN (3 Beveled Obsidian-Glass Cards)
+        Column(
+          modifier = Modifier.weight(0.24f).fillMaxHeight(),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          val commsBadge =
+            when {
+              unreadCommsCount > 0 -> "$unreadCommsCount NEW"
+              totalOnlinePilots > 0 -> "$totalOnlinePilots LIVE"
+              else -> null
+            }
+          BreachedTerminalModuleCard(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            title = "SUBSPACE COMMS",
+            subtitle = "Live Chat & NEXUS AI",
+            codeLabel = "COM-01",
+            accent = Color(0xFF00F5D4),
+            secondaryAccent = Color(0xFFFACC15),
+            badgeText = commsBadge,
+            isFocused = focusedOrbitalIndex == 4,
+            isRightColumn = true,
+            testTag = "nexus_node_subspace_comms",
+            onClick = { onSelectNode(4, NexusCoreNode.SUBSPACE_COMMS) },
+          )
+          BreachedTerminalModuleCard(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            title = "SYNDICATE CITADEL",
+            subtitle = "Clans & Strike Wings",
+            codeLabel = "COM-02",
+            accent = Color(0xFFFACC15),
+            secondaryAccent = Color(0xFFF97316),
+            badgeText = if (strikeWingOnlineCount > 0) "WING $strikeWingOnlineCount" else null,
+            isFocused = focusedOrbitalIndex == 5,
+            isRightColumn = true,
+            testTag = "nexus_node_syndicate_citadel",
+            onClick = { onSelectNode(5, NexusCoreNode.SYNDICATE_CITADEL) },
+          )
+          BreachedTerminalModuleCard(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            title = "ARCHIVE & CODEX",
+            subtitle = "Dossier & Field Manual",
+            codeLabel = "COM-03",
+            accent = Color(0xFF34D399),
+            secondaryAccent = Color(0xFF38BDF8),
+            badgeText = null,
+            isFocused = focusedOrbitalIndex == 6,
+            isRightColumn = true,
+            testTag = "nexus_node_archive_codex",
+            onClick = { onSelectNode(6, NexusCoreNode.ARCHIVE_CODEX) },
           )
         }
       }
     }
 
-    // 3D NEXUS Stage: Central Rotating 3D Space Station (idx 0) + 7 Round Outward-Bleeding 3D Rifts (idx 1..7)
-    Box(
-      modifier =
-        Modifier.weight(1f)
-          .fillMaxWidth()
-          .onGloballyPositioned { coords ->
-            stageOriginInRoot = coords.positionInRoot()
-            stageSizePx = coords.size
-          }
-          .pointerInput(glViewRef) {
-            detectDragGestures(
-              onDragEnd = { glViewRef?.releaseCameraLookSpring() },
-              onDragCancel = { glViewRef?.releaseCameraLookSpring() },
-            ) { change, dragAmount ->
-              change.consume()
-              glViewRef?.addCameraLookDelta(dragAmount.x, dragAmount.y)
-            }
-          }
+    if (showHowToPlayModal) {
+      NexusHowToPlayBriefingModal(
+        onGotIt = { dismissHowToPlay() },
+        onTryPracticeRift = {
+          dismissHowToPlay()
+          onEnterPracticeRift()
+        },
+      )
+    }
+  }
+}
+
+@Composable
+private fun BreachedTerminalModuleCard(
+  modifier: Modifier,
+  title: String,
+  subtitle: String,
+  codeLabel: String,
+  accent: Color,
+  secondaryAccent: Color,
+  badgeText: String?,
+  isFocused: Boolean,
+  isRightColumn: Boolean,
+  testTag: String,
+  onClick: () -> Unit,
+) {
+  Box(
+    modifier =
+      modifier
+        .minimumInteractiveComponentSize()
+        .clip(RoundedCornerShape(10.dp))
+        .background(
+          Brush.linearGradient(
+            colors =
+              if (isFocused) {
+                listOf(Color(0xF50B1C36), Color(0xEB060D1A))
+              } else {
+                listOf(Color(0xEB060D1A), Color(0xE0091426))
+              }
+          )
+        )
+        .border(
+          width = if (isFocused) 1.5.dp else 1.dp,
+          brush =
+            Brush.horizontalGradient(
+              if (isRightColumn) {
+                listOf(secondaryAccent.copy(alpha = 0.65f), accent.copy(alpha = if (isFocused) 1f else 0.80f))
+              } else {
+                listOf(accent.copy(alpha = if (isFocused) 1f else 0.80f), secondaryAccent.copy(alpha = 0.65f))
+              }
+            ),
+          shape = RoundedCornerShape(10.dp),
+        )
+        .clickable { onClick() }
+        .testTag(testTag),
+  ) {
+    // Chamfered Tactical Corner Brackets + Inner Breach-Facing Energy Tick
+    Canvas(modifier = Modifier.fillMaxSize()) {
+      val w = size.width
+      val h = size.height
+      if (w <= 4f || h <= 4f) return@Canvas
+      val brk = 10.dp.toPx().coerceAtMost(min(w, h) * 0.28f)
+      val sw = 1.6.dp.toPx()
+      val bracketCol = if (isFocused) Color.White else accent
+      val goldCorner = Color(0xFFFACC15).copy(alpha = 0.85f)
+
+      // Top-left chamfer bracket
+      drawLine(bracketCol, Offset(2f, 2f + brk), Offset(2f, 2f), strokeWidth = sw)
+      drawLine(bracketCol, Offset(2f, 2f), Offset(2f + brk, 2f), strokeWidth = sw)
+      // Bottom-right chamfer bracket
+      drawLine(goldCorner, Offset(w - 2f, h - 2f - brk), Offset(w - 2f, h - 2f), strokeWidth = sw)
+      drawLine(goldCorner, Offset(w - 2f - brk, h - 2f), Offset(w - 2f, h - 2f), strokeWidth = sw)
+
+      // Rift-facing edge fracture energy bar (inner side facing the colossal center Rift)
+      val innerX = if (isRightColumn) 1.5f else (w - 1.5f)
+      drawLine(
+        brush = Brush.verticalGradient(listOf(Color.Transparent, accent, Color.Transparent)),
+        start = Offset(innerX, h * 0.16f),
+        end = Offset(innerX, h * 0.84f),
+        strokeWidth = 2.4.dp.toPx(),
+        cap = StrokeCap.Round,
+      )
+    }
+
+    Column(
+      modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 7.dp),
+      verticalArrangement = Arrangement.SpaceBetween,
     ) {
-      val activeProjections =
-        if (projectedStates.size == NEXUS_3D_RIFT_TEARS.size) {
-          projectedStates
-        } else if (stageSizePx.width > 0 && stageSizePx.height > 0) {
-          computeStaticProjectedTearStates(stageSizePx.width.toFloat(), stageSizePx.height.toFloat())
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          text = codeLabel,
+          color = accent.copy(alpha = 0.85f),
+          fontSize = 7.2.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          letterSpacing = 0.8.sp,
+        )
+        if (badgeText != null) {
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(4.dp))
+                .background(secondaryAccent.copy(alpha = 0.18f))
+                .border(0.8.dp, secondaryAccent.copy(alpha = 0.75f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 5.dp, vertical = 1.dp),
+          ) {
+            Text(
+              text = badgeText,
+              color = secondaryAccent,
+              fontSize = 6.8.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
         } else {
-          computeStaticProjectedTearStates(1280f, 720f)
+          Text(
+            text = ">",
+            color = accent,
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
+
+      Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+          text = title,
+          color = Color.White,
+          fontSize = 10.2.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = subtitle,
+          color = Color(0xFFCBD5E1),
+          fontSize = 7.8.sp,
+          fontWeight = FontWeight.SemiBold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+    }
+  }
+}
+
+/**
+ * Renders the fractured `#060D1A` obsidian terminal glass & bent cyan HUD grid lines physically punched
+ * open around the Colossal Center `PLAY` Rift Singularity.
+ */
+@Composable
+private fun BreachedTerminalViewportOverlay(
+  isFocused: Boolean,
+  drawHeadlessRiftFallback: Boolean,
+) {
+  val headless = remember { isHeadlessGlEnvironment() }
+  val pulsePhase =
+    if (headless) {
+      0.5f
+    } else {
+      val transition = rememberInfiniteTransition(label = "breach_fracture_pulse")
+      val p by
+        transition.animateFloat(
+          initialValue = 0f,
+          targetValue = (2.0 * PI).toFloat(),
+          animationSpec = infiniteRepeatable(tween(4800, easing = LinearEasing), RepeatMode.Restart),
+          label = "breach_fracture_rad",
+        )
+      p
+    }
+
+  Canvas(modifier = Modifier.fillMaxSize()) {
+    val w = size.width
+    val h = size.height
+    if (w <= 4f || h <= 4f) return@Canvas
+    val cx = w * 0.5f
+    val cy = h * 0.5f
+    val center = Offset(cx, cy)
+    val breachR = min(w * 0.46f, h * 0.47f)
+
+    if (drawHeadlessRiftFallback) {
+      val colors = listOf(Color(0xFF00F5D4), Color(0xFF38BDF8), Color(0xFFA855F7), Color(0xFFEC4899))
+      for (arm in 0 until 4) {
+        drawArc(
+          color = colors[arm],
+          startAngle = arm * 90f + 18f,
+          sweepAngle = 68f,
+          useCenter = false,
+          topLeft = Offset(cx - breachR * 0.78f, cy - breachR * 0.78f),
+          size = Size(breachR * 1.56f, breachR * 1.56f),
+          style = Stroke(width = breachR * 0.10f, cap = StrokeCap.Round),
+        )
+      }
+      drawCircle(color = Color.Black, radius = breachR * 0.42f, center = center)
+    }
+
+    // 1. Bent Tactical Cyan HUD Grid Lines Sucked Inward Toward the Rift Breach!
+    val gridColor = Color(0xFF00F5D4).copy(alpha = 0.20f)
+    val gridSteps = 6
+    for (g in 1 until gridSteps) {
+      val frac = g.toFloat() / gridSteps.toFloat()
+      // Horizontal bent grid line
+      val baseY = h * frac
+      val pathH = Path()
+      val segs = 20
+      var startedH = false
+      for (sIdx in 0..segs) {
+        val x = w * (sIdx.toFloat() / segs.toFloat())
+        val dx = cx - x
+        val dy = cy - baseY
+        val dist = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
+        if (dist > breachR * 0.84f) {
+          val pull = (breachR * 0.24f) * kotlin.math.exp(-((dist - breachR * 0.84f) / (breachR * 0.65f)))
+          val px = x + (dx / dist) * pull
+          val py = baseY + (dy / dist) * pull
+          if (!startedH) {
+            pathH.moveTo(px, py)
+            startedH = true
+          } else {
+            pathH.lineTo(px, py)
+          }
+        } else {
+          startedH = false
+        }
+      }
+      drawPath(pathH, color = gridColor, style = Stroke(width = 1.dp.toPx()))
+
+      // Vertical bent grid line
+      val baseX = w * frac
+      val pathV = Path()
+      var startedV = false
+      for (sIdx in 0..segs) {
+        val y = h * (sIdx.toFloat() / segs.toFloat())
+        val dx = cx - baseX
+        val dy = cy - y
+        val dist = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
+        if (dist > breachR * 0.84f) {
+          val pull = (breachR * 0.24f) * kotlin.math.exp(-((dist - breachR * 0.84f) / (breachR * 0.65f)))
+          val px = baseX + (dx / dist) * pull
+          val py = y + (dy / dist) * pull
+          if (!startedV) {
+            pathV.moveTo(px, py)
+            startedV = true
+          } else {
+            pathV.lineTo(px, py)
+          }
+        } else {
+          startedV = false
+        }
+      }
+      drawPath(pathV, color = gridColor, style = Stroke(width = 1.dp.toPx()))
+    }
+
+    // 2. 4 Fractured #060D1A Obsidian Terminal Corner Shards Punched Open Around the Rift
+    val shardAngles =
+      arrayOf(
+        floatArrayOf(-2.90f, -2.55f, -2.18f, -1.82f), // Top-Left corner fracture
+        floatArrayOf(-1.32f, -0.96f, -0.59f, -0.24f), // Top-Right corner fracture
+        floatArrayOf(0.24f, 0.59f, 0.96f, 1.32f),     // Bottom-Right corner fracture
+        floatArrayOf(1.82f, 2.18f, 2.55f, 2.90f),     // Bottom-Left corner fracture
+      )
+    val corners =
+      arrayOf(
+        Offset(0f, 0f),
+        Offset(w, 0f),
+        Offset(w, h),
+        Offset(0f, h),
+      )
+    val edgeAnchorsA =
+      arrayOf(
+        Offset(0f, h * 0.36f),
+        Offset(w * 0.66f, 0f),
+        Offset(w, h * 0.64f),
+        Offset(w * 0.34f, h),
+      )
+    val edgeAnchorsB =
+      arrayOf(
+        Offset(w * 0.34f, 0f),
+        Offset(w, h * 0.36f),
+        Offset(w * 0.66f, h),
+        Offset(0f, h * 0.64f),
+      )
+
+    val fractureStroke = (if (isFocused) 2.1.dp else 1.5.dp).toPx()
+    val pulseAlpha = 0.72f + 0.28f * sin(pulsePhase)
+
+    for (cIdx in 0 until 4) {
+      val angs = shardAngles[cIdx]
+      val shardPath =
+        Path().apply {
+          moveTo(corners[cIdx].x, corners[cIdx].y)
+          lineTo(edgeAnchorsA[cIdx].x, edgeAnchorsA[cIdx].y)
+          for (j in angs.indices) {
+            val jagR = breachR * (if (j % 2 == 0) 1.04f else 0.95f)
+            val jx = cx + cos(angs[j]) * jagR
+            val jy = cy + sin(angs[j]) * jagR
+            lineTo(jx, jy)
+          }
+          lineTo(edgeAnchorsB[cIdx].x, edgeAnchorsB[cIdx].y)
+          close()
+        }
+      drawPath(shardPath, color = Color(0xCC060D1A))
+
+      // Crackling cyan/magenta/gold inner fracture edge along the shattered glass lip
+      val crackPath = Path()
+      for (j in angs.indices) {
+        val jagR = breachR * (if (j % 2 == 0) 1.04f else 0.95f)
+        val jx = cx + cos(angs[j]) * jagR
+        val jy = cy + sin(angs[j]) * jagR
+        if (j == 0) crackPath.moveTo(jx, jy) else crackPath.lineTo(jx, jy)
+      }
+      val crackCol =
+        if (cIdx % 2 == 0) Color(0xFF00F5D4).copy(alpha = pulseAlpha)
+        else Color(0xFFEC4899).copy(alpha = pulseAlpha)
+      drawPath(crackPath, color = crackCol, style = Stroke(width = fractureStroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+
+    // Outer HUD telemetry brackets framing the breach viewport
+    val frameCol = Color(0xFF38BDF8).copy(alpha = 0.42f)
+    drawLine(frameCol, Offset(w * 0.25f, 1f), Offset(w * 0.75f, 1f), strokeWidth = 1.dp.toPx())
+    drawLine(frameCol, Offset(w * 0.25f, h - 1f), Offset(w * 0.75f, h - 1f), strokeWidth = 1.dp.toPx())
+  }
+}
+
+/**
+ * Single-Screen, Zero-Cartoon 3-Panel Animated Vector `[? HOW TO PLAY]` Tactical Cockpit Schematic
+ * (`<= 6` words per panel caption, auto-shown once for first-time pilots).
+ */
+@Composable
+private fun NexusHowToPlayBriefingModal(
+  onGotIt: () -> Unit,
+  onTryPracticeRift: () -> Unit,
+) {
+  val headless = remember { isHeadlessGlEnvironment() }
+  val animT =
+    if (headless) {
+      0.42f
+    } else {
+      val transition = rememberInfiniteTransition(label = "how_to_play_vector_schematic")
+      val t by
+        transition.animateFloat(
+          initialValue = 0f,
+          targetValue = 1f,
+          animationSpec = infiniteRepeatable(tween(3200, easing = LinearEasing), RepeatMode.Restart),
+          label = "schematic_phase",
+        )
+      t
+    }
+
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .background(Color(0xCC02050B))
+        .clickable(onClick = onGotIt)
+        .testTag("nexus_how_to_play_modal"),
+    contentAlignment = Alignment.Center,
+  ) {
+    Surface(
+      modifier =
+        Modifier.fillMaxWidth(0.92f)
+          .fillMaxHeight(0.84f)
+          .clickable(enabled = false) {}
+          .border(
+            1.4.dp,
+            Brush.linearGradient(listOf(Color(0xFF00F5D4), Color(0xFFFACC15), Color(0xFFA855F7))),
+            RoundedCornerShape(14.dp),
+          ),
+      color = Color(0xF8060D1A),
+      shape = RoundedCornerShape(14.dp),
+    ) {
+      Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+      ) {
+        // Header
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            SwirlingRiftVortexGlyph(modifier = Modifier.size(22.dp))
+            Text(
+              text = "TACTICAL FLIGHT BRIEFING // COCKPIT SCHEMATIC",
+              color = Color(0xFF00F5D4),
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              letterSpacing = 0.8.sp,
+            )
+          }
+          Text(
+            text = "3 CORE SYSTEMS",
+            color = Color(0xFFFACC15),
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
         }
 
-      val usingGlRootCoords = glViewRef != null && glViewRef.width > 0 && glViewRef.height > 0
+        // 3 Side-by-Side Live-Animated Vector Cockpit Schematics (<= 6 words per caption)
+        Row(
+          modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp),
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          // PANEL 1: LEFT STICK: DRIFT & BOOST
+          TacticalSchematicPanel(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            title = "1. LEFT STICK: DRIFT & BOOST",
+            caption = "Push >80% to Ignite Boost",
+            accent = Color(0xFF00F5D4),
+          ) {
+            val w = size.width
+            val h = size.height
+            val stickCx = w * 0.32f
+            val stickCy = h * 0.54f
+            val outerR = min(w * 0.24f, h * 0.34f)
+            val boostR = outerR * 0.80f
+            val pushMag = 0.45f + 0.52f * (0.5f + 0.5f * sin(animT * 2f * PI.toFloat()))
+            val isBoosting = pushMag > 0.80f
+            val ang = -0.55f
+            val knobX = stickCx + cos(ang) * outerR * pushMag
+            val knobY = stickCy + sin(ang) * outerR * pushMag
 
-      NEXUS_3D_RIFT_TEARS.forEachIndexed { idx, spec ->
-        val proj = activeProjections.getOrNull(idx) ?: return@forEachIndexed
-        if (!proj.visible && stageSizePx.width > 0) return@forEachIndexed
+            drawCircle(Color(0xFF1E293B), radius = outerR, center = Offset(stickCx, stickCy), style = Stroke(width = 2f))
+            drawCircle(
+              color = if (isBoosting) Color(0xFFFACC15) else Color(0x6600F5D4),
+              radius = boostR,
+              center = Offset(stickCx, stickCy),
+              style = Stroke(width = 1.6f),
+            )
+            drawLine(
+              color = if (isBoosting) Color(0xFFFACC15) else Color(0xFF00F5D4),
+              start = Offset(stickCx, stickCy),
+              end = Offset(knobX, knobY),
+              strokeWidth = 2.6f,
+              cap = StrokeCap.Round,
+            )
+            drawCircle(
+              color = if (isBoosting) Color(0xFFFACC15) else Color(0xFF00F5D4),
+              radius = outerR * 0.20f,
+              center = Offset(knobX, knobY),
+            )
 
-        val localCenterX =
-          if (usingGlRootCoords) proj.screenCenterX - stageOriginInRoot.x else proj.screenCenterX
-        val localCenterY =
-          if (usingGlRootCoords) proj.screenCenterY - stageOriginInRoot.y else proj.screenCenterY
-
-        val minHitPx = with(density) { 48.dp.toPx() }
-        val hitW = proj.projectedWidthPx.coerceAtLeast(minHitPx * 2.1f)
-        val hitH = proj.projectedHeightPx.coerceAtLeast(minHitPx * 1.15f)
-        val hitWdp = with(density) { hitW.toDp() }
-        val hitHdp = with(density) { hitH.toDp() }
-
-        val stageW = stageSizePx.width.toFloat().coerceAtLeast(hitW)
-        val stageH = stageSizePx.height.toFloat().coerceAtLeast(hitH)
-        val offsetX = (localCenterX - hitW * 0.5f).coerceIn(0f, (stageW - hitW).coerceAtLeast(0f))
-        val offsetY = (localCenterY - hitH * 0.5f).coerceIn(0f, (stageH - hitH).coerceAtLeast(0f))
-
-        val isPrimaryNexus = idx == 0
-        val isFocused = focusedOrbitalIndex == idx
-        val primaryGlow =
-          remember(spec.accentColor, isFocused) {
-            Shadow(
-              color = if (isFocused) Color.White else spec.accentColor.copy(alpha = 0.85f),
-              offset = Offset.Zero,
-              blurRadius = 7f,
+            // Vector Starfighter Silhouette + Igniting Afterburner Plume
+            val shipCx = w * 0.72f
+            val shipCy = h * 0.48f
+            val sr = min(w, h) * 0.16f
+            if (isBoosting) {
+              val plume =
+                Path().apply {
+                  moveTo(shipCx - sr * 0.65f, shipCy - sr * 0.26f)
+                  lineTo(shipCx - sr * 1.75f, shipCy)
+                  lineTo(shipCx - sr * 0.65f, shipCy + sr * 0.26f)
+                  close()
+                }
+              drawPath(plume, color = Color(0xCC00F5D4))
+            }
+            val hull =
+              Path().apply {
+                moveTo(shipCx + sr, shipCy)
+                lineTo(shipCx - sr * 0.72f, shipCy - sr * 0.62f)
+                lineTo(shipCx - sr * 0.38f, shipCy)
+                lineTo(shipCx - sr * 0.72f, shipCy + sr * 0.62f)
+                close()
+              }
+            drawPath(hull, color = Color(0xFF0F172A))
+            drawPath(
+              hull,
+              color = if (isBoosting) Color(0xFFFACC15) else Color(0xFF38BDF8),
+              style = Stroke(width = 2.2f, join = StrokeJoin.Round),
             )
           }
 
-        if (isPrimaryNexus) {
-          // 100% transparent clickable hit target over the Central 3D Station & its 3D Revolving Hologram Ring (zero 2D text overlay!)
-          Box(
-            modifier =
-              Modifier.minimumInteractiveComponentSize()
-                .width(hitWdp)
-                .height(hitHdp)
-                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-                .semantics { contentDescription = "NEXUS SUBSPACE COMMS" }
-                .clickable { onSelectNode(idx, spec.node) }
-                .testTag(spec.testTag),
-          )
-        } else {
-          // Crisp button text inside the feathered #000000 cores of Rifts 1..7
-          Box(
-            modifier =
-              Modifier.minimumInteractiveComponentSize()
-                .width(hitWdp)
-                .height(hitHdp)
-                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-                .clickable { onSelectNode(idx, spec.node) }
-                .testTag(spec.testTag),
-            contentAlignment = Alignment.Center,
+          // PANEL 2: RIGHT STICK: SHARED FLUX
+          TacticalSchematicPanel(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            title = "2. RIGHT STICK: SHARED FLUX",
+            caption = "Weapons & Shield Share Flux",
+            accent = Color(0xFF38BDF8),
           ) {
-            Column(
-              horizontalAlignment = Alignment.CenterHorizontally,
-              verticalArrangement = Arrangement.Center,
-              modifier = Modifier.padding(horizontal = 6.dp),
-            ) {
-              Text(
-                text = spec.title,
-                color = Color.White,
-                fontSize = 8.8.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 0.5.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                style = TextStyle(shadow = primaryGlow),
-              )
-              Text(
-                text = spec.subtitle,
-                color = if (isFocused) Color.White else spec.accentColor,
-                fontSize = 6.8.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
+            val w = size.width
+            val h = size.height
+            val cx = w * 0.50f
+            val cy = h * 0.52f
+            val ringR = min(w, h) * 0.30f
+            val firing = animT < 0.58f
+            val fluxFrac =
+              if (firing) (0.92f - 0.55f * (animT / 0.58f))
+              else (0.37f + 0.55f * ((animT - 0.58f) / 0.42f))
+
+            // Shared Circular Flux Shield / Energy Pool Arc
+            drawCircle(Color(0xFF1E293B), radius = ringR, center = Offset(cx, cy), style = Stroke(width = 4.5f))
+            drawArc(
+              color = if (firing) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+              startAngle = -90f,
+              sweepAngle = 360f * fluxFrac.coerceIn(0.1f, 1f),
+              useCenter = false,
+              topLeft = Offset(cx - ringR, cy - ringR),
+              size = Size(ringR * 2f, ringR * 2f),
+              style = Stroke(width = 4.5f, cap = StrokeCap.Round),
+            )
+
+            // Center Vector Ship + Outward Aim Bolts
+            drawCircle(Color(0xFF00F5D4), radius = ringR * 0.22f, center = Offset(cx, cy), style = Stroke(width = 2f))
+            if (firing) {
+              for (b in 0..1) {
+                val bProg = ((animT * 3.4f + b * 0.5f) % 1f)
+                val bx0 = cx + ringR * (0.28f + bProg * 0.95f)
+                val bx1 = bx0 + ringR * 0.24f
+                drawLine(
+                  color = if (b == 0) Color(0xFF00F5D4) else Color(0xFFFACC15),
+                  start = Offset(bx0, cy + (if (b == 0) -4f else 4f)),
+                  end = Offset(bx1, cy + (if (b == 0) -4f else 4f)),
+                  strokeWidth = 3f,
+                  cap = StrokeCap.Round,
+                )
+              }
+            }
+          }
+
+          // PANEL 3: RIFTS & SAFE HARBOR
+          TacticalSchematicPanel(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            title = "3. RIFTS & SAFE HARBOR",
+            caption = "Feed Gravity Rifts • Center Safe",
+            accent = Color(0xFFA855F7),
+          ) {
+            val w = size.width
+            val h = size.height
+            // Left half: Bullet feeding expanding Violet Gravity Rift
+            val riftCx = w * 0.30f
+            val riftCy = h * 0.52f
+            val baseR = min(w * 0.16f, h * 0.24f)
+            val grownR = baseR * (0.72f + 0.42f * animT)
+            for (arm in 0 until 3) {
+              drawArc(
+                color = Color(0xFFA855F7),
+                startAngle = animT * 360f + arm * 120f,
+                sweepAngle = 74f,
+                useCenter = false,
+                topLeft = Offset(riftCx - grownR, riftCy - grownR),
+                size = Size(grownR * 2f, grownR * 2f),
+                style = Stroke(width = 2.6f, cap = StrokeCap.Round),
               )
             }
+            drawCircle(Color.Black, radius = grownR * 0.45f, center = Offset(riftCx, riftCy))
+            val shotX = (w * 0.06f) + (riftCx - w * 0.06f) * ((animT * 2f) % 1f)
+            drawCircle(Color(0xFFFACC15), radius = 3.2f, center = Offset(shotX, riftCy))
+
+            // Right half: Braced Cyan Safe Harbor 3D Station Ring
+            val safeCx = w * 0.73f
+            val safeCy = h * 0.52f
+            val safeR = min(w * 0.18f, h * 0.28f)
+            drawCircle(Color(0x66EC4899), radius = safeR * 1.16f, center = Offset(safeCx, safeCy), style = Stroke(width = 3.2f))
+            drawCircle(Color(0xFF030A16), radius = safeR, center = Offset(safeCx, safeCy))
+            drawCircle(Color(0xFF00F5D4), radius = safeR, center = Offset(safeCx, safeCy), style = Stroke(width = 2.2f))
+            for (sp in 0 until 4) {
+              val sa = sp * (PI.toFloat() * 0.5f) + animT * PI.toFloat() * 0.5f
+              drawLine(
+                color = Color(0xFFFACC15),
+                start = Offset(safeCx, safeCy),
+                end = Offset(safeCx + cos(sa) * safeR, safeCy + sin(sa) * safeR),
+                strokeWidth = 1.5f,
+              )
+            }
+            drawCircle(Color.White, radius = safeR * 0.20f, center = Offset(safeCx, safeCy))
+          }
+        }
+
+        // Bottom Action Bar
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Box(
+            modifier =
+              Modifier.minimumInteractiveComponentSize()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF0E1E36))
+                .border(1.dp, Color(0xFF64748B), RoundedCornerShape(8.dp))
+                .clickable { onGotIt() }
+                .padding(horizontal = 16.dp, vertical = 7.dp)
+                .testTag("how_to_play_got_it_btn"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "[GOT IT]",
+              color = Color.White,
+              fontSize = 9.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+
+          Box(
+            modifier =
+              Modifier.minimumInteractiveComponentSize()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF08283B))
+                .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                .clickable { onTryPracticeRift() }
+                .padding(horizontal = 16.dp, vertical = 7.dp)
+                .testTag("how_to_play_practice_btn"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "[PRACTICE RIFT >]",
+              color = Color(0xFF00F5D4),
+              fontSize = 9.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
           }
         }
       }
     }
+  }
+}
+
+@Composable
+private fun TacticalSchematicPanel(
+  modifier: Modifier,
+  title: String,
+  caption: String,
+  accent: Color,
+  onDrawSchematic: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit,
+) {
+  Column(
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(10.dp))
+        .background(Color(0xFF091426))
+        .border(1.dp, accent.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
+        .padding(8.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.SpaceBetween,
+  ) {
+    Text(
+      text = title,
+      color = accent,
+      fontSize = 8.4.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
+    Canvas(
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp),
+      onDraw = onDrawSchematic,
+    )
+    Text(
+      text = caption,
+      color = Color.White,
+      fontSize = 8.2.sp,
+      fontWeight = FontWeight.Bold,
+      fontFamily = FontFamily.Monospace,
+      textAlign = TextAlign.Center,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
   }
 }
 
