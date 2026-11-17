@@ -22,6 +22,8 @@ object RiftSpriteBaker {
     private set
   var fluxIconBitmap: Bitmap = bake3dFluxReactorIcon(64)
     private set
+  var resonanceIconBitmap: Bitmap = bake3dResonanceCrestIcon(64)
+    private set
   var riftShardIconBitmap: Bitmap = bake3dRiftShardIcon(64)
     private set
   var spriteVisualRevision: Int = 1
@@ -148,6 +150,7 @@ object RiftSpriteBaker {
     wallTileBitmap = bakeWallTile()
     wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
     fluxIconBitmap = bake3dFluxReactorIcon(64)
+    resonanceIconBitmap = bake3dResonanceCrestIcon(64)
     riftShardIconBitmap = bake3dRiftShardIcon(64)
     riftAnomalyIconBitmaps = buildRiftAnomalyIconMap()
     spriteVisualRevision++
@@ -414,222 +417,409 @@ object RiftSpriteBaker {
   }
 
   /**
-   * Bakes a 3D Faceted Amethyst Crystal Spire Icon (`riftShardIconBitmap`) emerging from a glowing
-   * 3D violet-cyan Rift vortex ring at the base, flanked by 2 smaller angled side shards.
+   * Draws the custom Solar-Gold & Cyan Harmonic Winged Tuning Crest (`resonanceIconBitmap`):
+   * - Deep midnight containment backing disc (`#050E1D`) with subtle gold/cyan corona.
+   * - Twin outward-radiating curved acoustic resonance wave arcs (`#00F5D4` outer + `#FACC15` inner).
+   * - Sleek upward-swept winged solar-gold chevron (`#F59E0B` -> `#FACC15` -> `#FEF08A`) cradling
+   *   a bright white-gold harmonic tuning sphere (`#FFFFFF` -> `#FACC15` -> `#00F5D4`).
+   */
+  fun drawResonanceCrestIcon(
+    c: Canvas,
+    cx: Float,
+    cy: Float,
+    r: Float,
+    alpha: Int = 255,
+  ) {
+    val aFrac = (alpha.coerceIn(0, 255)) / 255f
+    if (aFrac <= 0.005f || r <= 0.5f) return
+    fun aCol(a: Int, red: Int, green: Int, blue: Int): Int =
+      Color.argb((a * aFrac).toInt().coerceIn(0, 255), red, green, blue)
+
+    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    val strokePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+      }
+
+    // 1. Ambient solar-cyan corona + dark midnight contrast disc
+    fillPaint.shader =
+      RadialGradient(
+        cx,
+        cy,
+        (r * 1.05f).coerceAtLeast(1f),
+        intArrayOf(aCol(110, 250, 204, 21), aCol(62, 0, 245, 212), aCol(0, 5, 14, 29)),
+        floatArrayOf(0f, 0.62f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    c.drawCircle(cx, cy, r * 1.05f, fillPaint)
+    fillPaint.shader = null
+
+    fillPaint.color = aCol(235, 5, 14, 29)
+    c.drawCircle(cx, cy, r * 0.88f, fillPaint)
+
+    // 2. Twin flanking curved harmonic resonance wave arcs (left & right)
+    val outerWaveRect = RectF(cx - r * 0.94f, cy - r * 0.86f, cx + r * 0.94f, cy + r * 0.86f)
+    strokePaint.strokeWidth = (r * 0.105f).coerceAtLeast(1.2f)
+    strokePaint.color = aCol(235, 0, 245, 212)
+    c.drawArc(outerWaveRect, 144f, 72f, false, strokePaint)
+    c.drawArc(outerWaveRect, -36f, 72f, false, strokePaint)
+
+    val innerWaveRect = RectF(cx - r * 0.72f, cy - r * 0.66f, cx + r * 0.72f, cy + r * 0.66f)
+    strokePaint.strokeWidth = (r * 0.09f).coerceAtLeast(1.0f)
+    strokePaint.color = aCol(215, 250, 204, 21)
+    c.drawArc(innerWaveRect, 150f, 60f, false, strokePaint)
+    c.drawArc(innerWaveRect, -30f, 60f, false, strokePaint)
+
+    // 3. Upward-swept solar-gold winged tuning chevron
+    val leftWing =
+      Path().apply {
+        moveTo(cx, cy + r * 0.72f)
+        lineTo(cx - r * 0.72f, cy - r * 0.44f)
+        lineTo(cx - r * 0.44f, cy - r * 0.62f)
+        lineTo(cx, cy + r * 0.22f)
+        close()
+      }
+    val rightWing =
+      Path().apply {
+        moveTo(cx, cy + r * 0.72f)
+        lineTo(cx + r * 0.72f, cy - r * 0.44f)
+        lineTo(cx + r * 0.44f, cy - r * 0.62f)
+        lineTo(cx, cy + r * 0.22f)
+        close()
+      }
+    fillPaint.shader =
+      LinearGradient(
+        cx - r * 0.72f,
+        cy - r * 0.62f,
+        cx,
+        cy + r * 0.72f,
+        intArrayOf(aCol(255, 254, 240, 138), aCol(255, 250, 204, 21), aCol(255, 245, 158, 11)),
+        floatArrayOf(0f, 0.55f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    c.drawPath(leftWing, fillPaint)
+
+    fillPaint.shader =
+      LinearGradient(
+        cx + r * 0.72f,
+        cy - r * 0.62f,
+        cx,
+        cy + r * 0.72f,
+        intArrayOf(aCol(255, 250, 204, 21), aCol(255, 245, 158, 11), aCol(255, 180, 83, 9)),
+        floatArrayOf(0f, 0.55f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    c.drawPath(rightWing, fillPaint)
+    fillPaint.shader = null
+
+    // Crisp specular edge highlight along upper wing bevels
+    strokePaint.strokeWidth = (r * 0.065f).coerceAtLeast(0.95f)
+    strokePaint.color = aCol(240, 255, 255, 255)
+    c.drawLine(cx - r * 0.70f, cy - r * 0.43f, cx - r * 0.44f, cy - r * 0.60f, strokePaint)
+    c.drawLine(cx - r * 0.44f, cy - r * 0.60f, cx, cy + r * 0.20f, strokePaint)
+    strokePaint.color = aCol(220, 0, 245, 212)
+    c.drawLine(cx + r * 0.44f, cy - r * 0.60f, cx + r * 0.70f, cy - r * 0.43f, strokePaint)
+
+    // 4. Central bright harmonic tuning sphere cradled between the wings
+    val orbY = cy - r * 0.22f
+    val orbR = r * 0.28f
+    fillPaint.shader =
+      RadialGradient(
+        cx - orbR * 0.25f,
+        orbY - orbR * 0.25f,
+        (orbR * 1.45f).coerceAtLeast(1f),
+        intArrayOf(
+          aCol(255, 255, 255, 255),
+          aCol(254, 254, 240, 138),
+          aCol(245, 0, 245, 212),
+          aCol(0, 0, 245, 212),
+        ),
+        floatArrayOf(0f, 0.42f, 0.78f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    c.drawCircle(cx, orbY, orbR * 1.38f, fillPaint)
+    fillPaint.shader = null
+    fillPaint.color = aCol(255, 255, 255, 255)
+    c.drawCircle(cx, orbY, orbR * 0.56f, fillPaint)
+  }
+
+  fun bake3dResonanceCrestIcon(sizePx: Int = 64): Bitmap {
+    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val cx = sizePx * 0.5f
+    val cy = sizePx * 0.5f
+    drawResonanceCrestIcon(c, cx, cy, sizePx * 0.43f, alpha = 255)
+    return bmp
+  }
+
+  /**
+   * Draws ONE single, large, jewel-grade 3D Faceted Prismatic Shard Gem filling ~86% of icon bounds
+   * so it remains razor-sharp from 13dp HUD readouts up to 64px store headers:
+   * - Deep `#3B0764` shadow facet, `#9333EA` mid amethyst facet, `#E879F9` lit facet,
+   *   `#FAE8FF` central crown table, crisp `#00F5D4` cyan prismatic rim highlight, and `#FFFFFF` gleam.
+   */
+  fun drawRiftShardGemIcon(
+    c: Canvas,
+    cx: Float,
+    cy: Float,
+    r: Float,
+    alpha: Int = 255,
+    recipeOverride: VisualElementRecipe? = null,
+  ) {
+    val rec =
+      recipeOverride
+        ?: runCatching { RiftVisualForgeState.getRecipe(ForgeElementTarget.CURRENCY_SHARD_ICON) }
+          .getOrNull()
+    val aFrac = (alpha.coerceIn(0, 255)) / 255f
+    if (aFrac <= 0.005f || r <= 0.5f) return
+
+    fun argbColor(baseAlpha: Int, col: Int): Int =
+      Color.argb(
+        (baseAlpha * aFrac).toInt().coerceIn(0, 255),
+        Color.red(col),
+        Color.green(col),
+        Color.blue(col),
+      )
+
+    val isDefault = rec == null || rec.isFactoryDefault
+    val gemR = r * (rec?.pixelScale ?: 1f).coerceIn(0.75f, 1.35f)
+    val glowMult = (rec?.glowIntensity ?: 1f).coerceIn(0f, 2f)
+    val borderMult = (rec?.borderWeight ?: 1f).coerceIn(0.6f, 2.0f)
+
+    val deepShadowCol = if (isDefault) Color.parseColor("#3B0764") else rec!!.primaryColorInt
+    val midVioletCol = if (isDefault) Color.parseColor("#9333EA") else rec!!.trimColorInt
+    val litMagentaCol = if (isDefault) Color.parseColor("#E879F9") else rec!!.glowColorInt
+    val crownTableCol = Color.parseColor("#FAE8FF")
+    val cyanRimCol = Color.parseColor("#00F5D4")
+
+    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    val strokePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+      }
+
+    // 1. Subtle prismatic refraction halo behind the single gem
+    if (glowMult > 0.05f) {
+      fillPaint.shader =
+        RadialGradient(
+          cx,
+          cy,
+          (gemR * 1.12f).coerceAtLeast(1f),
+          intArrayOf(
+            argbColor((108 * glowMult).toInt().coerceIn(0, 230), litMagentaCol),
+            argbColor((52 * glowMult).toInt().coerceIn(0, 175), cyanRimCol),
+            argbColor(0, deepShadowCol),
+          ),
+          floatArrayOf(0f, 0.64f, 1f),
+          Shader.TileMode.CLAMP,
+        )
+      c.drawCircle(cx, cy, gemR * 1.12f, fillPaint)
+      fillPaint.shader = null
+    }
+
+    // Single bold 6-vertex cleaved prismatic crystal geometry (~86% of icon bounds)
+    val topX = cx
+    val topY = cy - gemR * 0.98f
+    val botX = cx
+    val botY = cy + gemR * 0.98f
+    val ulX = cx - gemR * 0.68f
+    val ulY = cy - gemR * 0.28f
+    val urX = cx + gemR * 0.68f
+    val urY = cy - gemR * 0.28f
+    val llX = cx - gemR * 0.50f
+    val llY = cy + gemR * 0.42f
+    val lrX = cx + gemR * 0.50f
+    val lrY = cy + gemR * 0.42f
+
+    // Inner crown table vertices
+    val tTopX = cx - gemR * 0.04f
+    val tTopY = cy - gemR * 0.52f
+    val tLeftX = cx - gemR * 0.28f
+    val tLeftY = cy - gemR * 0.14f
+    val tRightX = cx + gemR * 0.24f
+    val tRightY = cy - gemR * 0.12f
+    val tBotX = cx + gemR * 0.02f
+    val tBotY = cy + gemR * 0.36f
+
+    val outerHull =
+      Path().apply {
+        moveTo(topX, topY)
+        lineTo(urX, urY)
+        lineTo(lrX, lrY)
+        lineTo(botX, botY)
+        lineTo(llX, llY)
+        lineTo(ulX, ulY)
+        close()
+      }
+
+    // Base shadow fill (#3B0764)
+    fillPaint.color = argbColor(255, deepShadowCol)
+    c.drawPath(outerHull, fillPaint)
+
+    // Upper-left bright lit facet (#E879F9)
+    val upperLeftFacet =
+      Path().apply {
+        moveTo(topX, topY)
+        lineTo(tTopX, tTopY)
+        lineTo(tLeftX, tLeftY)
+        lineTo(ulX, ulY)
+        close()
+      }
+    fillPaint.color = argbColor(255, litMagentaCol)
+    c.drawPath(upperLeftFacet, fillPaint)
+
+    // Mid-left amethyst facet (#9333EA -> #E879F9)
+    val midLeftFacet =
+      Path().apply {
+        moveTo(ulX, ulY)
+        lineTo(tLeftX, tLeftY)
+        lineTo(tBotX, tBotY)
+        lineTo(llX, llY)
+        close()
+      }
+    fillPaint.shader =
+      LinearGradient(
+        ulX,
+        ulY,
+        llX,
+        llY,
+        intArrayOf(argbColor(255, litMagentaCol), argbColor(255, midVioletCol)),
+        null,
+        Shader.TileMode.CLAMP,
+      )
+    c.drawPath(midLeftFacet, fillPaint)
+    fillPaint.shader = null
+
+    // Lower-left keel facet (#9333EA)
+    val lowerLeftFacet =
+      Path().apply {
+        moveTo(llX, llY)
+        lineTo(tBotX, tBotY)
+        lineTo(botX, botY)
+        close()
+      }
+    fillPaint.color = argbColor(255, midVioletCol)
+    c.drawPath(lowerLeftFacet, fillPaint)
+
+    // Upper-right cyan-refracted facet (#9333EA -> #00F5D4)
+    val upperRightFacet =
+      Path().apply {
+        moveTo(topX, topY)
+        lineTo(urX, urY)
+        lineTo(tRightX, tRightY)
+        lineTo(tTopX, tTopY)
+        close()
+      }
+    fillPaint.shader =
+      LinearGradient(
+        topX,
+        topY,
+        urX,
+        urY,
+        intArrayOf(argbColor(255, midVioletCol), argbColor(235, cyanRimCol)),
+        null,
+        Shader.TileMode.CLAMP,
+      )
+    c.drawPath(upperRightFacet, fillPaint)
+    fillPaint.shader = null
+
+    // Mid-right deep refraction facet (#9333EA -> #3B0764)
+    val midRightFacet =
+      Path().apply {
+        moveTo(urX, urY)
+        lineTo(lrX, lrY)
+        lineTo(tBotX, tBotY)
+        lineTo(tRightX, tRightY)
+        close()
+      }
+    fillPaint.shader =
+      LinearGradient(
+        urX,
+        urY,
+        lrX,
+        botY,
+        intArrayOf(argbColor(255, midVioletCol), argbColor(255, deepShadowCol)),
+        null,
+        Shader.TileMode.CLAMP,
+      )
+    c.drawPath(midRightFacet, fillPaint)
+    fillPaint.shader = null
+
+    // Central high-luminance prismatic crown table (#FAE8FF -> #E879F9)
+    val crownTable =
+      Path().apply {
+        moveTo(tTopX, tTopY)
+        lineTo(tRightX, tRightY)
+        lineTo(tBotX, tBotY)
+        lineTo(tLeftX, tLeftY)
+        close()
+      }
+    fillPaint.shader =
+      LinearGradient(
+        tLeftX,
+        tTopY,
+        tRightX,
+        tBotY,
+        intArrayOf(argbColor(255, Color.WHITE), argbColor(245, crownTableCol), argbColor(235, litMagentaCol)),
+        floatArrayOf(0f, 0.55f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    c.drawPath(crownTable, fillPaint)
+    fillPaint.shader = null
+
+    // Crisp internal facet ridges (#FFFFFF)
+    strokePaint.strokeWidth = (gemR * 0.068f * borderMult).coerceAtLeast(1.0f)
+    strokePaint.color = argbColor(235, Color.WHITE)
+    c.drawPath(crownTable, strokePaint)
+    c.drawLine(topX, topY, tTopX, tTopY, strokePaint)
+    c.drawLine(ulX, ulY, tLeftX, tLeftY, strokePaint)
+    strokePaint.color = argbColor(175, crownTableCol)
+    c.drawLine(tBotX, tBotY, botX, botY, strokePaint)
+    c.drawLine(urX, urY, tRightX, tRightY, strokePaint)
+
+    // Outer crystal silhouette: #F0ABFC left bevel + #00F5D4 cyan specular right rim
+    strokePaint.strokeWidth = (gemR * 0.088f * borderMult).coerceAtLeast(1.25f)
+    val leftBevel =
+      Path().apply {
+        moveTo(botX, botY)
+        lineTo(llX, llY)
+        lineTo(ulX, ulY)
+        lineTo(topX, topY)
+      }
+    strokePaint.color = argbColor(250, Color.parseColor("#F0ABFC"))
+    c.drawPath(leftBevel, strokePaint)
+
+    val rightCyanRim =
+      Path().apply {
+        moveTo(topX, topY)
+        lineTo(urX, urY)
+        lineTo(lrX, lrY)
+        lineTo(botX, botY)
+      }
+    strokePaint.color = argbColor(255, cyanRimCol)
+    c.drawPath(rightCyanRim, strokePaint)
+
+    // Crisp white specular star-gleam on upper-left crown shoulder
+    val gleamX = cx - gemR * 0.24f
+    val gleamY = cy - gemR * 0.42f
+    fillPaint.color = argbColor(255, Color.WHITE)
+    c.drawCircle(gleamX, gleamY, (gemR * 0.095f).coerceAtLeast(1.1f), fillPaint)
+  }
+
+  /**
+   * Bakes ONE single jewel-grade 3D Faceted Prismatic Shard Gem (`riftShardIconBitmap`) filling
+   * ~86% of the 64x64 frame so it remains crystal-clear down to 13dp–16dp HUD & header badges.
    */
   fun bake3dRiftShardIcon(sizePx: Int = 64): Bitmap {
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
     val cx = sizePx * 0.5f
     val cy = sizePx * 0.5f
-    val rec =
-      runCatching { RiftVisualForgeState.getRecipe(ForgeElementTarget.CURRENCY_SHARD_ICON) }
-        .getOrNull()
-    val r = sizePx * 0.44f * (rec?.pixelScale ?: 1f).coerceIn(0.65f, 1.25f)
-    val trim = rec?.trimColorInt ?: Color.parseColor("#D946EF")
-    val glow = rec?.glowColorInt ?: Color.parseColor("#00F5D4")
-    val glowMult = (rec?.glowIntensity ?: 1f).coerceIn(0f, 2f)
-
-    // 1. Ambient Crystal Halo
-    val haloPaint =
-      Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        shader =
-          RadialGradient(
-            cx,
-            cy,
-            (sizePx * 0.48f).coerceAtLeast(8f),
-            intArrayOf(
-              Color.argb(
-                (190 * glowMult).toInt().coerceIn(0, 255),
-                Color.red(trim),
-                Color.green(trim),
-                Color.blue(trim),
-              ),
-              Color.argb(
-                (88 * glowMult).toInt().coerceIn(0, 255),
-                Color.red(glow),
-                Color.green(glow),
-                Color.blue(glow),
-              ),
-              Color.argb(0, 76, 29, 149),
-            ),
-            floatArrayOf(0f, 0.56f, 1f),
-            Shader.TileMode.CLAMP,
-          )
-      }
-    c.drawCircle(cx, cy, sizePx * 0.48f, haloPaint)
-
-    // 2. Back-half of 3D Violet-Cyan Rift Vortex Base Ring
-    val vortexY = cy + r * 0.56f
-    val vortexRect = RectF(cx - r * 0.80f, vortexY - r * 0.24f, cx + r * 0.80f, vortexY + r * 0.24f)
-    val vortexBackPaint =
-      Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = (r * 0.11f).coerceAtLeast(1.8f)
-        color = Color.parseColor("#7C3AED")
-      }
-    val vortexWellFill =
-      Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.argb(210, 15, 7, 36)
-      }
-    c.drawOval(vortexRect, vortexWellFill)
-    c.drawArc(vortexRect, 180f, 180f, false, vortexBackPaint)
-
-    fun drawFacetedShardCluster(
-      ox: Float,
-      oy: Float,
-      tiltDeg: Float,
-      shardW: Float,
-      shardH: Float,
-    ) {
-      c.save()
-      c.translate(ox, oy)
-      c.rotate(tiltDeg)
-
-      val topY = -shardH
-      val shoulderY = -shardH * 0.62f
-      val hipY = -shardH * 0.14f
-      val botY = shardH * 0.12f
-
-      val shadowOutline =
-        Path().apply {
-          moveTo(0f, topY)
-          lineTo(shardW, shoulderY)
-          lineTo(shardW * 0.78f, hipY)
-          lineTo(0f, botY)
-          lineTo(-shardW * 0.78f, hipY)
-          lineTo(-shardW, shoulderY)
-          close()
-        }
-      val darkBasePaint =
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          style = Paint.Style.FILL
-          color = Color.parseColor("#3B0764")
-        }
-      c.drawPath(shadowOutline, darkBasePaint)
-
-      // Left bright sunlit facet (#F5D0FE -> #E879F9)
-      val leftFacet =
-        Path().apply {
-          moveTo(0f, topY)
-          lineTo(-shardW * 0.12f, hipY * 0.85f)
-          lineTo(0f, botY)
-          lineTo(-shardW * 0.78f, hipY)
-          lineTo(-shardW, shoulderY)
-          close()
-        }
-      val leftPaint =
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          style = Paint.Style.FILL
-          shader =
-            LinearGradient(
-              -shardW,
-              topY,
-              0f,
-              botY,
-              intArrayOf(
-                Color.parseColor("#F5D0FE"),
-                Color.parseColor("#E879F9"),
-                Color.parseColor("#A855F7"),
-              ),
-              floatArrayOf(0f, 0.52f, 1f),
-              Shader.TileMode.CLAMP,
-            )
-        }
-      c.drawPath(leftFacet, leftPaint)
-
-      // Right deep amethyst facet (#C026D3 -> #581C87)
-      val rightFacet =
-        Path().apply {
-          moveTo(0f, topY)
-          lineTo(shardW, shoulderY)
-          lineTo(shardW * 0.78f, hipY)
-          lineTo(0f, botY)
-          lineTo(-shardW * 0.12f, hipY * 0.85f)
-          close()
-        }
-      val rightPaint =
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          style = Paint.Style.FILL
-          shader =
-            LinearGradient(
-              0f,
-              topY,
-              shardW,
-              botY,
-              intArrayOf(
-                Color.parseColor("#D946EF"),
-                Color.parseColor("#9333EA"),
-                Color.parseColor("#4C1D95"),
-              ),
-              floatArrayOf(0f, 0.56f, 1f),
-              Shader.TileMode.CLAMP,
-            )
-        }
-      c.drawPath(rightFacet, rightPaint)
-
-      // Center crown facet & crisp white ridge specular highlight
-      val crownFacet =
-        Path().apply {
-          moveTo(0f, topY)
-          lineTo(shardW * 0.38f, shoulderY * 0.92f)
-          lineTo(-shardW * 0.10f, hipY * 0.82f)
-          lineTo(-shardW * 0.44f, shoulderY * 0.94f)
-          close()
-        }
-      val crownPaint =
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          style = Paint.Style.FILL
-          color = Color.argb(175, 250, 232, 255)
-        }
-      c.drawPath(crownFacet, crownPaint)
-
-      val ridgePaint =
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          style = Paint.Style.STROKE
-          strokeWidth = (r * 0.065f).coerceAtLeast(1.1f)
-          strokeCap = Paint.Cap.ROUND
-          strokeJoin = Paint.Join.ROUND
-          color = Color.WHITE
-        }
-      c.drawLine(0f, topY, -shardW * 0.10f, hipY * 0.82f, ridgePaint)
-      c.drawLine(0f, topY, -shardW, shoulderY, ridgePaint)
-
-      val rimStroke =
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          style = Paint.Style.STROKE
-          strokeWidth = (r * 0.055f).coerceAtLeast(1.0f)
-          strokeJoin = Paint.Join.ROUND
-          color = Color.parseColor("#F0ABFC")
-        }
-      c.drawPath(shadowOutline, rimStroke)
-      c.restore()
-    }
-
-    // 3. Two angled side crystal shards + tall central sovereign crystal spire
-    drawFacetedShardCluster(cx - r * 0.36f, vortexY - r * 0.04f, -24f, r * 0.25f, r * 0.78f)
-    drawFacetedShardCluster(cx + r * 0.36f, vortexY - r * 0.04f, 23f, r * 0.24f, r * 0.74f)
-    drawFacetedShardCluster(cx, vortexY + r * 0.02f, 0f, r * 0.38f, r * 1.38f)
-
-    // 4. Front-half of 3D Rift Vortex Base Ring overlapping the crystal base (#00F5D4 + #E879F9)
-    val vortexFrontGlow =
-      Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = (r * 0.17f).coerceAtLeast(2.4f)
-        strokeCap = Paint.Cap.ROUND
-        color = Color.argb(135, 0, 245, 212)
-      }
-    val vortexFrontCore =
-      Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = (r * 0.095f).coerceAtLeast(1.5f)
-        strokeCap = Paint.Cap.ROUND
-        color = Color.parseColor("#00F5D4")
-      }
-    c.drawArc(vortexRect, 0f, 180f, false, vortexFrontGlow)
-    c.drawArc(vortexRect, 0f, 180f, false, vortexFrontCore)
+    drawRiftShardGemIcon(c, cx, cy, sizePx * 0.43f, alpha = 255)
     return bmp
   }
 

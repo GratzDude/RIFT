@@ -298,10 +298,28 @@ fun SettingsModal(
   val context = LocalContext.current
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val pilotPrefs = remember(context) { LocalPilotPrefs(context) }
+  val isSwornPilot = isGoogleAuthenticated && !pilotPrefs.isGuestBypassEnabled()
   val riftShardsBalance = remember(isGoogleAuthenticated) { pilotPrefs.getRiftShards() }
+  val liveResonanceBalance = remember(isGoogleAuthenticated) { pilotPrefs.getLiveResonance() }
   val activeCallsign = remember(isGoogleAuthenticated) { pilotPrefs.getCallsign() }
-  val activeSynTag = remember(isGoogleAuthenticated) { pilotPrefs.getSyndicateTag().ifBlank { "RFT" } }
+  val activeSynTag =
+    remember(isGoogleAuthenticated) {
+      if (!isSwornPilot) {
+        "RFT"
+      } else {
+        pilotPrefs
+          .getSyndicateTag()
+          .trim()
+          .uppercase(Locale.US)
+          .takeIf {
+            it.isNotEmpty() &&
+              it !in setOf("RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED", "NONE")
+          } ?: ""
+      }
+    }
   val visualRev = RiftVisualForgeState.visualRevision
+  val resonanceImage =
+    remember(visualRev) { RiftSpriteBaker.resonanceIconBitmap.asImageBitmap() }
   val riftShardImage =
     remember(visualRev) { RiftSpriteBaker.riftShardIconBitmap.asImageBitmap() }
   var forgePromptDraft by remember(initialMusicPrompt) { mutableStateOf(initialMusicPrompt) }
@@ -457,17 +475,19 @@ fun SettingsModal(
                       )
                       Text(
                         text =
-                          if (isGoogleAuthenticated) "SWORN PILOT LINKED"
+                          if (isSwornPilot) "SWORN PILOT LINKED"
                           else "[RFT] DRIFTER SESSION",
                         color =
-                          if (isGoogleAuthenticated) Color(0xFF34D399) else Color(0xFFFACC15),
+                          if (isSwornPilot) Color(0xFF34D399) else Color(0xFFFACC15),
                         fontSize = 8.8.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = Mono,
                       )
                     }
                     Text(
-                      text = "[$activeSynTag] $activeCallsign",
+                      text =
+                        if (activeSynTag.isNotEmpty()) "[$activeSynTag] $activeCallsign"
+                        else activeCallsign,
                       color = Color.White,
                       fontSize = if (isCompactPhone) 12.sp else 14.sp,
                       fontWeight = FontWeight.Black,
@@ -478,24 +498,43 @@ fun SettingsModal(
                   }
                 }
 
-                // Single Rift Shard Icon + Balance (ZERO duplicate ❖ text next to Image!)
+                // Custom Resonance Crest + Single Prismatic Rift Shard Gem (ZERO plain RES / duplicate ❖!)
                 Row(
-                  modifier =
-                    Modifier.fillMaxWidth()
-                      .background(Color(0xFF140B29), RoundedCornerShape(8.dp))
-                      .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(8.dp))
-                      .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 5.dp else 7.dp),
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
                   verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                  Text(
-                    text = "RIFT SHARDS",
-                    color = Color(0xFFC084FC),
-                    fontSize = 8.8.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = Mono,
-                  )
                   Row(
+                    modifier =
+                      Modifier.weight(0.85f)
+                        .background(Color(0xFF171308), RoundedCornerShape(8.dp))
+                        .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 5.dp else 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                  ) {
+                    Image(
+                      bitmap = resonanceImage,
+                      contentDescription = "Resonance",
+                      filterQuality = FilterQuality.High,
+                      modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                      text = "$liveResonanceBalance",
+                      color = Color(0xFFFEF08A),
+                      fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = Mono,
+                      maxLines = 1,
+                    )
+                  }
+
+                  Row(
+                    modifier =
+                      Modifier.weight(1.15f)
+                        .background(Color(0xFF140B29), RoundedCornerShape(8.dp))
+                        .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 5.dp else 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                   ) {
@@ -503,14 +542,16 @@ fun SettingsModal(
                       bitmap = riftShardImage,
                       contentDescription = "Rift Shards",
                       filterQuality = FilterQuality.High,
-                      modifier = Modifier.size(15.dp),
+                      modifier = Modifier.size(14.dp),
                     )
                     Text(
                       text = shardReadoutText,
                       color = Color(0xFFE9D5FF),
-                      fontSize = if (isCompactPhone) 10.sp else 11.sp,
+                      fontSize = if (isCompactPhone) 9.6.sp else 10.6.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = Mono,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
                     )
                   }
                 }

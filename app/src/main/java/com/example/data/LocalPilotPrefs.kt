@@ -33,6 +33,12 @@ class LocalPilotPrefs(context: Context) {
     if (enabled) {
       editor.putString(KEY_SYNDICATE_TAG, "RFT")
       editor.putString(KEY_SYNDICATE_NAME, "Rift Drifters")
+    } else {
+      val rawTag = (prefs.getString(KEY_SYNDICATE_TAG, "") ?: "").trim().uppercase(Locale.US)
+      if (rawTag in setOf("RFT", "GUEST", "FREE", "UNAFFILIATED", "NONE", "SOLO")) {
+        editor.putString(KEY_SYNDICATE_TAG, "")
+        editor.putString(KEY_SYNDICATE_NAME, "Unaffiliated")
+      }
     }
     editor.apply()
   }
@@ -96,8 +102,13 @@ class LocalPilotPrefs(context: Context) {
     }
     val perUid = if (!uid.isNullOrBlank()) prefs.getString(uidKey(KEY_CALLSIGN, uid), null) else null
     val global = prefs.getString(KEY_CALLSIGN, null)
-    val chosenPerUid = perUid?.takeIf { it.isNotBlank() && it != "COMMANDER" }
-    val chosenGlobal = global?.takeIf { it.isNotBlank() && it != "COMMANDER" }
+    fun isChosenSwornName(s: String?): Boolean {
+      if (s.isNullOrBlank()) return false
+      val u = s.trim().uppercase(Locale.US)
+      return u != "COMMANDER" && !u.startsWith("RFT-") && !u.startsWith("#RFT")
+    }
+    val chosenPerUid = perUid?.takeIf { isChosenSwornName(it) }
+    val chosenGlobal = global?.takeIf { isChosenSwornName(it) }
     val resolved = chosenPerUid ?: chosenGlobal
     if (resolved != null) {
       if (chosenGlobal != resolved || (!uid.isNullOrBlank() && chosenPerUid != resolved)) {
@@ -109,9 +120,7 @@ class LocalPilotPrefs(context: Context) {
       }
       return resolved
     }
-    return perUid?.takeIf { it.isNotBlank() }
-      ?: global?.takeIf { it.isNotBlank() }
-      ?: "COMMANDER"
+    return "COMMANDER"
   }
 
   fun setCallsign(rawCallsign: String, uid: String? = null): String {
@@ -156,7 +165,8 @@ class LocalPilotPrefs(context: Context) {
     if (explicitChosen) return true
     if (!isGuestBypassEnabled()) {
       val existing = getCallsign(uid)
-      if (existing.isNotBlank() && existing != "COMMANDER") {
+      val upper = existing.trim().uppercase(Locale.US)
+      if (upper.isNotBlank() && upper != "COMMANDER" && !upper.startsWith("RFT-") && !upper.startsWith("#RFT")) {
         setHasChosenInitialCallsign(true, uid)
         return true
       }
@@ -227,7 +237,22 @@ class LocalPilotPrefs(context: Context) {
   fun getSyndicateTag(): String {
     if (isGuestBypassEnabled()) return "RFT"
     val raw = (prefs.getString(KEY_SYNDICATE_TAG, "") ?: "").trim().uppercase(Locale.US)
-    if (raw in setOf("GUEST", "UNAFFILIATED", "NONE", "SOLO", "KSTL", "AURL", "VRTX", "RUST")) {
+    if (
+      raw in
+        setOf(
+          "RFT",
+          "GUEST",
+          "FREE",
+          "BOT",
+          "UNAFFILIATED",
+          "NONE",
+          "SOLO",
+          "KSTL",
+          "AURL",
+          "VRTX",
+          "RUST",
+        )
+    ) {
       return ""
     }
     return sanitizeSyndicateTag(raw)
@@ -240,6 +265,7 @@ class LocalPilotPrefs(context: Context) {
     val raw = (prefs.getString(KEY_SYNDICATE_NAME, "Unaffiliated") ?: "Unaffiliated").trim()
     return if (
       raw.isEmpty() ||
+        raw.equals("Rift Drifters", ignoreCase = true) ||
         raw.equals("Guest Tracking Framework", ignoreCase = true) ||
         raw.contains("Kestrel", ignoreCase = true) ||
         raw.contains("Aurelia", ignoreCase = true) ||
@@ -415,18 +441,14 @@ class LocalPilotPrefs(context: Context) {
   fun setLastShipId(shipId: Int) = setPreferredShipId(shipId)
 
   /**
-   * Startup Boot Preference:
-   * true (default) = open NEXUS CORE Spatial Hub on startup so pilots choose their mode before deploying.
-   * false = fast-boot into Sector Orbit.
+   * Always-NEXUS Boot Law:
+   * Cold boot and post-auth entry always open straight into unjoined NEXUS CORE.
    */
-  fun getBootToNexusHub(): Boolean {
-    val fallback = prefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, true)
-    return userSettingsPrefs.getBoolean(KEY_BOOT_TO_NEXUS_HUB, fallback)
-  }
+  fun getBootToNexusHub(): Boolean = true
 
-  fun setBootToNexusHub(enabled: Boolean) {
-    prefs.edit().putBoolean(KEY_BOOT_TO_NEXUS_HUB, enabled).apply()
-    userSettingsPrefs.edit().putBoolean(KEY_BOOT_TO_NEXUS_HUB, enabled).apply()
+  fun setBootToNexusHub(@Suppress("UNUSED_PARAMETER") enabled: Boolean) {
+    prefs.edit().putBoolean(KEY_BOOT_TO_NEXUS_HUB, true).apply()
+    userSettingsPrefs.edit().putBoolean(KEY_BOOT_TO_NEXUS_HUB, true).apply()
   }
 
   fun getSfxEnabled(): Boolean = userSettingsPrefs.getBoolean(KEY_SFX_ENABLED, true)

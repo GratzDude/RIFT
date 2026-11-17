@@ -333,8 +333,8 @@ fun RiftArenaScreen(
   var toastVersion by remember { mutableIntStateOf(0) }
   var unreadCommsCount by remember { mutableIntStateOf(0) }
 
-  var bootToNexusHub by remember { mutableStateOf(localPrefs.getBootToNexusHub()) }
-  var isNexusShellOpen by remember { mutableStateOf(bootToNexusHub) }
+  var bootToNexusHub by remember { mutableStateOf(true) }
+  var isNexusShellOpen by remember { mutableStateOf(true) }
   var activeNexusNode by remember { mutableStateOf(NexusCoreNode.ORBITAL_HUB) }
   var syndicateSubDeck by remember { mutableStateOf(SyndicateCitadelSubDeck.SYNDICATES_WARS) }
   var archiveSubDeck by remember { mutableStateOf(ArchiveCodexSubDeck.PILOT_DOSSIER) }
@@ -351,11 +351,17 @@ fun RiftArenaScreen(
     )
   }
   var needsInitialSwornCallsign by remember(currentUserId, isGoogleAuthenticated) {
-    mutableStateOf(isGoogleAuthenticated && !localPrefs.hasChosenInitialCallsign(currentUserId))
+    mutableStateOf(false)
   }
-  var initialSwornCallsignDraft by remember(callsign) { mutableStateOf(callsign) }
-  var syndicateTag by remember { mutableStateOf(localPrefs.getSyndicateTag()) }
-  var syndicateName by remember { mutableStateOf(localPrefs.getSyndicateName()) }
+  var initialSwornCallsignDraft by remember(callsign) {
+    mutableStateOf(if (callsign.equals("COMMANDER", ignoreCase = true)) "" else callsign)
+  }
+  var syndicateTag by remember(currentUserId, isGoogleAuthenticated) {
+    mutableStateOf(localPrefs.getSyndicateTag())
+  }
+  var syndicateName by remember(currentUserId, isGoogleAuthenticated) {
+    mutableStateOf(localPrefs.getSyndicateName())
+  }
   var selectedShipId by remember {
     mutableIntStateOf(localPrefs.getPreferredShipId().coerceIn(1, 10))
   }
@@ -655,93 +661,82 @@ fun RiftArenaScreen(
     }
   }
 
-  // Monotonic max(local, cloud) merge for Sworn Pilot career stats & callsign across devices/updates
+  // Monotonic max(local, cloud) merge for Sworn Pilot career stats, callsign & Syndicate tag across devices/updates
   LaunchedEffect(dossierState, currentUserId, isGoogleAuthenticated) {
-    val cloudDossier = (dossierState as? UiState.Success)?.data ?: return@LaunchedEffect
-    val mergedAllTimeKills = maxOf(engine.allTimeKills, cloudDossier.allTimeKills)
-    val mergedAllTimeDeaths = maxOf(engine.allTimeDeaths, cloudDossier.allTimeDeaths)
-    val mergedAllTimeBountyPeak = maxOf(engine.allTimeBountyPeak, cloudDossier.allTimeBountyPeak)
-    val mergedPvpKills = maxOf(engine.pvpKills, cloudDossier.pvpKills)
-    val mergedPvpDeaths = maxOf(engine.pvpDeaths, cloudDossier.pvpDeaths)
-    val mergedPvpBountyPeak = maxOf(engine.pvpBountyPeak, cloudDossier.pvpBountyPeak)
-    val mergedConvergencesWon = maxOf(engine.convergencesWon, cloudDossier.convergencesWon)
-
-    val anyCareerRaised =
-      mergedAllTimeKills > engine.allTimeKills ||
-        mergedAllTimeDeaths > engine.allTimeDeaths ||
-        mergedAllTimeBountyPeak > engine.allTimeBountyPeak ||
-        mergedPvpKills > engine.pvpKills ||
-        mergedPvpDeaths > engine.pvpDeaths ||
-        mergedPvpBountyPeak > engine.pvpBountyPeak ||
-        mergedConvergencesWon > engine.convergencesWon
-
-    engine.allTimeKills = mergedAllTimeKills
-    engine.allTimeDeaths = mergedAllTimeDeaths
-    engine.allTimeBountyPeak = mergedAllTimeBountyPeak
-    engine.pvpKills = mergedPvpKills
-    engine.pvpDeaths = mergedPvpDeaths
-    engine.pvpBountyPeak = mergedPvpBountyPeak
-    engine.convergencesWon = mergedConvergencesWon
-
-    val cloudDerivedPeakResonance =
-      ((cloudDossier.pvpBountyPeak - 100L).coerceAtLeast(0L) +
-          cloudDossier.pvpKills * 12L +
-          cloudDossier.convergencesWon * 35L)
-        .coerceIn(0L, 50_000L)
-        .toInt()
-    if (cloudDerivedPeakResonance > engine.peakResonance) {
-      engine.peakResonance = cloudDerivedPeakResonance
-      localPrefs.setPeakResonance(cloudDerivedPeakResonance, currentUserId)
-      slot9BUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
-      slot9CUnlocked = localPrefs.isCustomSlotUnlocked("Frame C", currentUserId)
-      slot9DUnlocked = localPrefs.isCustomSlotUnlocked("Frame D", currentUserId)
-      slot9EUnlocked = localPrefs.isCustomSlotUnlocked("Frame E", currentUserId)
+    fun isValidSwornCallsign(raw: String): Boolean {
+      val c = raw.trim().uppercase(Locale.US)
+      return c.length >= 3 &&
+        c != "COMMANDER" &&
+        !c.startsWith("RFT-") &&
+        !c.startsWith("#RFT") &&
+        !c.contains("[BOT]")
     }
 
-    if (anyCareerRaised) {
-      localPrefs.saveCombatStats(
-        pvpKills = engine.pvpKills,
-        pvpDeaths = engine.pvpDeaths,
-        pvpBountyPeak = engine.pvpBountyPeak,
-        allTimeKills = engine.allTimeKills,
-        allTimeDeaths = engine.allTimeDeaths,
-        allTimeBountyPeak = engine.allTimeBountyPeak,
-        convergencesWon = engine.convergencesWon,
-        hvtEliminations = engine.hvtEliminations,
-        greensCollected = engine.greensCollected,
-      )
+    if (isGoogleAuthenticated && !localPrefs.isGuestBypassEnabled()) {
+      val scrubbedTag = localPrefs.getSyndicateTag()
+      val scrubbedName = localPrefs.getSyndicateName()
+      if (syndicateTag != scrubbedTag || engine.localPlayer.syndicateTag != scrubbedTag) {
+        syndicateTag = scrubbedTag
+        syndicateName = scrubbedName
+        engine.localPlayer.syndicateTag = scrubbedTag
+        engine.syncLocalArmadaSelfSlot()
+      }
+      if (isValidSwornCallsign(callsign)) {
+        localPrefs.setHasChosenInitialCallsign(true, currentUserId)
+        needsInitialSwornCallsign = false
+      }
+    } else {
+      needsInitialSwornCallsign = false
     }
 
-    if (isGoogleAuthenticated && currentUserId.isNotBlank()) {
-      val cloudCallsign = cloudDossier.callsign.trim().uppercase(Locale.US)
-      val cloudHasChosenName =
-        cloudCallsign.length >= 3 &&
-          cloudCallsign != "COMMANDER" &&
-          !cloudCallsign.startsWith("RFT-") &&
-          !cloudCallsign.contains("[BOT]")
-      val localHasChosenName =
-        callsign.length >= 3 &&
-          callsign != "COMMANDER" &&
-          !callsign.startsWith("RFT-") &&
-          !callsign.contains("[BOT]")
+    if (dossierState is UiState.Loading) {
+      return@LaunchedEffect
+    }
 
-      if (cloudHasChosenName && !localHasChosenName) {
-        val adopted = localPrefs.setCallsign(cloudCallsign, currentUserId)
-        localPrefs.setHasChosenInitialCallsign(true, currentUserId)
-        callsign = adopted
-        initialSwornCallsignDraft = adopted
-        needsInitialSwornCallsign = false
-        engine.localPlayer.callsign = adopted
-      } else if (localHasChosenName && cloudCallsign != callsign) {
-        val saved = localPrefs.setCallsign(callsign, currentUserId)
-        localPrefs.setHasChosenInitialCallsign(true, currentUserId)
-        needsInitialSwornCallsign = false
-        engine.localPlayer.callsign = saved
-        viewModel.syncNativePilotStats(
-          callsign = saved,
-          shipId = engine.localPlayer.shipId,
-          foundry = engine.localPlayer.spec.role,
-          mode = engine.mode,
+    val cloudDossier = (dossierState as? UiState.Success)?.data
+    if (cloudDossier != null) {
+      val mergedAllTimeKills = maxOf(engine.allTimeKills, cloudDossier.allTimeKills)
+      val mergedAllTimeDeaths = maxOf(engine.allTimeDeaths, cloudDossier.allTimeDeaths)
+      val mergedAllTimeBountyPeak = maxOf(engine.allTimeBountyPeak, cloudDossier.allTimeBountyPeak)
+      val mergedPvpKills = maxOf(engine.pvpKills, cloudDossier.pvpKills)
+      val mergedPvpDeaths = maxOf(engine.pvpDeaths, cloudDossier.pvpDeaths)
+      val mergedPvpBountyPeak = maxOf(engine.pvpBountyPeak, cloudDossier.pvpBountyPeak)
+      val mergedConvergencesWon = maxOf(engine.convergencesWon, cloudDossier.convergencesWon)
+
+      val anyCareerRaised =
+        mergedAllTimeKills > engine.allTimeKills ||
+          mergedAllTimeDeaths > engine.allTimeDeaths ||
+          mergedAllTimeBountyPeak > engine.allTimeBountyPeak ||
+          mergedPvpKills > engine.pvpKills ||
+          mergedPvpDeaths > engine.pvpDeaths ||
+          mergedPvpBountyPeak > engine.pvpBountyPeak ||
+          mergedConvergencesWon > engine.convergencesWon
+
+      engine.allTimeKills = mergedAllTimeKills
+      engine.allTimeDeaths = mergedAllTimeDeaths
+      engine.allTimeBountyPeak = mergedAllTimeBountyPeak
+      engine.pvpKills = mergedPvpKills
+      engine.pvpDeaths = mergedPvpDeaths
+      engine.pvpBountyPeak = mergedPvpBountyPeak
+      engine.convergencesWon = mergedConvergencesWon
+
+      val cloudDerivedPeakResonance =
+        ((cloudDossier.pvpBountyPeak - 100L).coerceAtLeast(0L) +
+            cloudDossier.pvpKills * 12L +
+            cloudDossier.convergencesWon * 35L)
+          .coerceIn(0L, 50_000L)
+          .toInt()
+      if (cloudDerivedPeakResonance > engine.peakResonance) {
+        engine.peakResonance = cloudDerivedPeakResonance
+        localPrefs.setPeakResonance(cloudDerivedPeakResonance, currentUserId)
+        slot9BUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
+        slot9CUnlocked = localPrefs.isCustomSlotUnlocked("Frame C", currentUserId)
+        slot9DUnlocked = localPrefs.isCustomSlotUnlocked("Frame D", currentUserId)
+        slot9EUnlocked = localPrefs.isCustomSlotUnlocked("Frame E", currentUserId)
+      }
+
+      if (anyCareerRaised) {
+        localPrefs.saveCombatStats(
           pvpKills = engine.pvpKills,
           pvpDeaths = engine.pvpDeaths,
           pvpBountyPeak = engine.pvpBountyPeak,
@@ -749,11 +744,79 @@ fun RiftArenaScreen(
           allTimeDeaths = engine.allTimeDeaths,
           allTimeBountyPeak = engine.allTimeBountyPeak,
           convergencesWon = engine.convergencesWon,
-          syndicateTag = engine.localPlayer.syndicateTag,
-          armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
-          armadaTierSize = engine.getCurrentArmadaSize(),
+          hvtEliminations = engine.hvtEliminations,
+          greensCollected = engine.greensCollected,
         )
       }
+
+      if (isGoogleAuthenticated && !localPrefs.isGuestBypassEnabled() && currentUserId.isNotBlank()) {
+        val cloudSynTag = cloudDossier.syndicateTag.trim().uppercase(Locale.US)
+        val nonPlayerTags =
+          setOf("", "RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED", "NONE", "BOT") +
+            RiftGameEngine.LEGACY_FOUNDRY_TAGS
+        if (cloudSynTag.length in 1..4 && cloudSynTag !in nonPlayerTags && syndicateTag.isBlank()) {
+          val resolvedSynName =
+            cloudDossier.syndicateName
+              .trim()
+              .takeIf { it.isNotBlank() && !it.contains("Guest", ignoreCase = true) }
+              ?: "$cloudSynTag Syndicate"
+          localPrefs.joinOfficialSyndicate(
+            tag = cloudSynTag,
+            name = resolvedSynName,
+            apply15DayLock = false,
+          )
+          syndicateTag = localPrefs.getSyndicateTag()
+          syndicateName = localPrefs.getSyndicateName()
+          engine.localPlayer.syndicateTag = syndicateTag
+          engine.syncLocalArmadaSelfSlot()
+          syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+        }
+
+        val cloudCallsign = cloudDossier.callsign.trim().uppercase(Locale.US)
+        val cloudHasChosenName = isValidSwornCallsign(cloudCallsign)
+        val localHasChosenName = isValidSwornCallsign(callsign)
+
+        if (cloudHasChosenName) {
+          localPrefs.setHasChosenInitialCallsign(true, currentUserId)
+          needsInitialSwornCallsign = false
+          if (!localHasChosenName) {
+            val adopted = localPrefs.setCallsign(cloudCallsign, currentUserId)
+            callsign = adopted
+            initialSwornCallsignDraft = adopted
+            engine.localPlayer.callsign = adopted
+            engine.syncLocalArmadaSelfSlot()
+          }
+        } else if (localHasChosenName && cloudCallsign != callsign) {
+          val saved = localPrefs.setCallsign(callsign, currentUserId)
+          localPrefs.setHasChosenInitialCallsign(true, currentUserId)
+          needsInitialSwornCallsign = false
+          engine.localPlayer.callsign = saved
+          viewModel.syncNativePilotStats(
+            callsign = saved,
+            shipId = engine.localPlayer.shipId,
+            foundry = engine.localPlayer.spec.role,
+            mode = engine.mode,
+            pvpKills = engine.pvpKills,
+            pvpDeaths = engine.pvpDeaths,
+            pvpBountyPeak = engine.pvpBountyPeak,
+            allTimeKills = engine.allTimeKills,
+            allTimeDeaths = engine.allTimeDeaths,
+            allTimeBountyPeak = engine.allTimeBountyPeak,
+            convergencesWon = engine.convergencesWon,
+            syndicateTag = engine.localPlayer.syndicateTag,
+            armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
+            armadaTierSize = engine.getCurrentArmadaSize(),
+          )
+        }
+      }
+    }
+
+    if (isGoogleAuthenticated && !localPrefs.isGuestBypassEnabled() && currentUserId.isNotBlank()) {
+      val hasValidNameNow =
+        isValidSwornCallsign(callsign) || localPrefs.hasChosenInitialCallsign(currentUserId)
+      needsInitialSwornCallsign = !hasValidNameNow
+    } else {
+      needsInitialSwornCallsign = false
     }
   }
 
@@ -2503,22 +2566,16 @@ fun RiftArenaScreen(
               callsign = callsign,
               syndicateTag = syndicateTag,
               syndicateName = syndicateName,
+              isGoogleAuthenticated = isGoogleAuthenticated,
               activeShipId = selectedShipId,
               bestShipId = bestShipId,
               riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
               unreadCommsCount = unreadCommsCount,
               currentUserId = currentUserId,
               bootToNexusHub = bootToNexusHub,
-              onToggleBootToNexusHub = { enabled ->
-                bootToNexusHub = enabled
-                localPrefs.setBootToNexusHub(enabled)
-                toastMessage =
-                  if (enabled) {
-                    "STARTUP PREFERENCE: OPEN NEXUS CORE ON LOGIN"
-                  } else {
-                    "STARTUP PREFERENCE: ORBIT SECTOR UNTIL DEPLOY"
-                  }
-                toastVersion++
+              onToggleBootToNexusHub = { _ ->
+                bootToNexusHub = true
+                localPrefs.setBootToNexusHub(true)
               },
               totalOnlinePilots = humanPilotsOnline,
               syndicateOnlineCount = syndicateOnlineCount,

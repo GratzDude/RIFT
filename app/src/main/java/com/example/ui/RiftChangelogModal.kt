@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 62
+const val CURRENT_RIFT_BUILD_VERSION = 63
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 63,
+      versionTag = "v1.0.63 // BUILD #63",
+      releaseDate = "Nov 17, 2026",
+      headline = "3D Jita-Style Central NEXUS Space Station + Live Real-Ship Traffic, Deep #010308 Dark Space, 7 Round Outward-Bleeding 3D Rifts, Merged NEXUS Brand Emblem, Custom Resonance & Shard Icons & Cloud Identity Sync",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Upgraded NexusSpaceGlView (OpenGL ES 3.0 + hardware depth buffer) to deep #010308 Abyssal Dark Space anchored by a central 3D rotating Jita-style multi-ring NEXUS Orbital Space Station (SUBSPACE COMMS & #nexus-ai) and live 3D-projected real Playfield ship traffic (max(5, onlineHumanPilots.size)) banking along undocking/docking corridors and warping through surrounding Rifts.",
+          "Reforged the 7 surrounding module portals (CONVERGENCE GATE through HELM SYSTEMS) into round (~1:1) Playfield-spirit 3D Singularities that bleed logarithmic swirling plasma arms outward into dark space around pure #000000 event-horizon button-text cores with >85% reduced pulse.",
+          "Unified the Tri-Concept NEXUS Brand Emblem (Winged-N + 3D Ring-Space Gyro + Swirling Singularity) across AuthScreen, NEXUS, HUD, and Changelog; added the custom Solar-Gold & Cyan Harmonic Winged Tuning Crest Resonance icon and single jewel-grade 3D Faceted Prismatic Gem Rift Shard icon (eliminating plain RES and duplicate ❖ text); enforced Always-NEXUS boot; and fixed Sworn Pilot Firestore callsign/tag sync so returning Google pilots never see a false callsign modal or [RFT]/[GUEST] tags.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 62,
       versionTag = "v1.0.62 // BUILD #62",
       releaseDate = "Nov 17, 2026",
       headline = "Native OpenGL ES 3.0 3D Volumetric NEXUS Space, Multi-Pass HDR Bloom & 8 Crackling Spacetime Rift Tears with Pure #000000 Cores",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "GLES30 PIPELINE",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
@@ -276,44 +290,7 @@ fun RiftChangelogModal(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            Canvas(modifier = Modifier.size(28.dp)) {
-              val w = size.width
-              val h = size.height
-              val cx = w * 0.5f
-              val cy = h * 0.5f
-              val r = minOf(w, h) * 0.44f
-              drawCircle(
-                brush =
-                  Brush.radialGradient(
-                    colors = listOf(Color(0x5500F5D4), Color(0x33A855F7), Color.Transparent),
-                    center = Offset(cx, cy),
-                    radius = r * 1.15f,
-                  ),
-                radius = r * 1.15f,
-                center = Offset(cx, cy),
-              )
-              for (i in 0 until 3) {
-                drawArc(
-                  color = if (i % 2 == 0) Color(0xFF00F5D4) else Color(0xFFA855F7),
-                  startAngle = i * 120f + 18f,
-                  sweepAngle = 82f,
-                  useCenter = false,
-                  topLeft = Offset(cx - r, cy - r),
-                  size = Size(r * 2f, r * 2f),
-                  style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round),
-                )
-              }
-              drawArc(
-                color = Color(0xFFFACC15),
-                startAngle = -20f,
-                sweepAngle = 220f,
-                useCenter = false,
-                topLeft = Offset(cx - r * 0.92f, cy - r * 0.42f),
-                size = Size(r * 1.84f, r * 0.84f),
-                style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round),
-              )
-              drawCircle(Color.White, radius = r * 0.22f, center = Offset(cx, cy))
-            }
+            NexusMergedBrandEmblem(modifier = Modifier.size(30.dp))
             Column {
               Text(
                 text = "NEXUS // RING SPACE TRANSMISSION & VERSION LOG",

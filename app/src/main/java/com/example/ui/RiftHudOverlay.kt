@@ -224,8 +224,11 @@ fun RiftHudOverlay(
  val sectorX = ((player.x / 1000f).toInt()).coerceIn(0, 7)
  val sectorY = ((player.y / 1000f).toInt()).coerceIn(0, 7)
  val sectorCode = "${('A' + sectorX)}${sectorY + 1}"
- val tagCore = player.syndicateTag.ifBlank { "RFT" }
- val armadaBadge = if (engine.activeArmadaName.isNotEmpty()) "[$tagCore] • ${engine.activeArmadaName} ${engine.getCurrentArmadaSize()}/5" else "[$tagCore] • SOLO"
+ val cleanTagCore = player.syndicateTag.trim().uppercase(Locale.US).takeIf {
+  it.isNotEmpty() && it !in RiftGameEngine.LEGACY_FOUNDRY_TAGS && it !in setOf("GUEST", "FREE", "UNAFFILIATED", "NONE", "SOLO")
+ } ?: ""
+ val armadaSuffix = if (engine.activeArmadaName.isNotEmpty()) "${engine.activeArmadaName} ${engine.getCurrentArmadaSize()}/5" else "SOLO"
+ val armadaBadge = if (cleanTagCore.isNotEmpty()) "[$cleanTagCore] • $armadaSuffix" else armadaSuffix
 
  val (_, _, xpProgressFraction) = engine.getXpProgressInCurrentLevel()
  var lastObservedPilotLevel by remember { mutableIntStateOf(engine.pilotLevel) }
@@ -1025,6 +1028,8 @@ private fun SymmetricBottomConsoleLayout(
  @Composable
  fun RightWingInner(fillEqualSpace: Boolean) {
   val shardDisplay = if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) "INF" else engine.riftShards.toString()
+  val resonanceIcon = remember(visualRev) { RiftSpriteBaker.resonanceIconBitmap.asImageBitmap() }
+  val riftShardIcon = remember(visualRev) { RiftSpriteBaker.riftShardIconBitmap.asImageBitmap() }
   Row(
    modifier = (if (fillEqualSpace) Modifier.fillMaxSize() else Modifier.wrapContentSize())
     .background(consoleBgColor, RoundedCornerShape(50))
@@ -1041,11 +1046,25 @@ private fun SymmetricBottomConsoleLayout(
      modifier = Modifier.clickable(enabled = !uiUnlocked) { onOpenNexus() }.testTag("hud_bounty_kd_readout"),
     )
     Row(
-     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((4f * textScale).dp),
+     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((3.0f * textScale).dp),
      modifier = Modifier.clickable(enabled = !uiUnlocked) { onOpenProgression() }.testTag("hud_console_progression_link"),
     ) {
-     Text("RES ${engine.liveResonance} • ❖ $shardDisplay", color = Color(0xFF00F5D4), fontSize = (7.4f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
-     Box(modifier = Modifier.width((26f * textScale).dp).height((2.6f * textScale).dp).clip(RoundedCornerShape(1.3.dp)).background(Color(0xFF142844))) {
+     Image(
+      bitmap = resonanceIcon,
+      contentDescription = "Resonance",
+      filterQuality = FilterQuality.High,
+      modifier = Modifier.size((10.5f * textScale).dp),
+     )
+     Text("${engine.liveResonance}", color = Color(0xFFFACC15), fontSize = (7.4f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+     Text("•", color = Color(0xFF64748B), fontSize = (7.0f * textScale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+     Image(
+      bitmap = riftShardIcon,
+      contentDescription = "Rift Shards",
+      filterQuality = FilterQuality.High,
+      modifier = Modifier.size((10.5f * textScale).dp),
+     )
+     Text(shardDisplay, color = Color(0xFFF0ABFC), fontSize = (7.4f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+     Box(modifier = Modifier.width((24f * textScale).dp).height((2.6f * textScale).dp).clip(RoundedCornerShape(1.3.dp)).background(Color(0xFF142844))) {
       Box(modifier = Modifier.fillMaxWidth(xpProgressFraction.coerceIn(0.08f, 1f)).height((2.6f * textScale).dp).background(Color(0xFF00F5D4), RoundedCornerShape(1.3.dp)))
      }
     }
@@ -1421,8 +1440,14 @@ private fun UnifiedThreeRingCockpitButton(
 
 @Composable
 private fun KillFeedRow(entry: KillFeedEntry, alpha: Float) {
- val cleanKillerTag = if (entry.killerTag in RiftGameEngine.LEGACY_FOUNDRY_TAGS || entry.killerTag.isEmpty()) "GUEST" else entry.killerTag
- val cleanVictimTag = if (entry.victimTag in RiftGameEngine.LEGACY_FOUNDRY_TAGS || entry.victimTag.isEmpty()) "GUEST" else entry.victimTag
+ val cleanKillerTag = entry.killerTag.trim().uppercase(Locale.US).takeIf {
+  it.isNotEmpty() && it !in RiftGameEngine.LEGACY_FOUNDRY_TAGS && it !in setOf("GUEST", "FREE", "UNAFFILIATED", "NONE", "SOLO")
+ } ?: ""
+ val cleanVictimTag = entry.victimTag.trim().uppercase(Locale.US).takeIf {
+  it.isNotEmpty() && it !in RiftGameEngine.LEGACY_FOUNDRY_TAGS && it !in setOf("GUEST", "FREE", "UNAFFILIATED", "NONE", "SOLO")
+ } ?: ""
+ val killerDisplay = if (cleanKillerTag.isNotEmpty()) "[$cleanKillerTag] ${entry.killerName}" else entry.killerName
+ val victimDisplay = if (cleanVictimTag.isNotEmpty()) "[$cleanVictimTag] ${entry.victimName}" else entry.victimName
  val isHighBountyShutdown = entry.victimBounty > 1000
  val rowDropShadow = if (isHighBountyShutdown) Shadow(Color(0xFFF59E0B).copy(alpha = alpha), Offset(0f, 1f), 8f) else Shadow(Color(0xF2000000).copy(alpha = alpha), Offset(0f, 1.5f), 3.5f)
  val rowTextStyle = TextStyle(lineHeight = 11.5.sp, shadow = rowDropShadow)
@@ -1431,9 +1456,9 @@ private fun KillFeedRow(entry: KillFeedEntry, alpha: Float) {
  val bountyColor = (when { isHighBountyShutdown -> Color(0xFFF59E0B); entry.wasHvt -> Color(0xFFFFD700); else -> Color(0xFFFACC15) }).copy(alpha = alpha)
 
  Row(modifier = Modifier.fillMaxWidth().padding(top = 1.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-  Text("[$cleanKillerTag] ${entry.killerName}", color = killerColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+  Text(killerDisplay, color = killerColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
   Text(">>", color = (if (isHighBountyShutdown) Color(0xFFF59E0B) else Color(0xFFCBD5E1)).copy(alpha = 0.85f * alpha), fontSize = 6.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = rowTextStyle)
-  Text("[$cleanVictimTag] ${entry.victimName}", color = victimColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+  Text(victimDisplay, color = victimColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
   Text(if (isHighBountyShutdown || entry.wasHvt) "HVT ${entry.victimBounty}" else "${entry.victimBounty}", color = bountyColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = rowTextStyle, maxLines = 1)
  }
 }

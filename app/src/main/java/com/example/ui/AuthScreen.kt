@@ -207,22 +207,6 @@ fun AuthScreen(
   var errorMessage by remember { mutableStateOf<String?>(null) }
   val scrollState = rememberScrollState()
 
-  val tearTransition = rememberInfiniteTransition(label = "nexus_auth_tear_anim")
-  val driftPhase by
-    tearTransition.animateFloat(
-      initialValue = 0f,
-      targetValue = (2.0 * PI).toFloat(),
-      animationSpec = infiniteRepeatable(tween(4200, easing = LinearEasing), RepeatMode.Restart),
-      label = "auth_tear_phase",
-    )
-  val cracklePulse by
-    tearTransition.animateFloat(
-      initialValue = 0.76f,
-      targetValue = 1.0f,
-      animationSpec = infiniteRepeatable(tween(680, easing = LinearEasing), RepeatMode.Reverse),
-      label = "auth_tear_crackle",
-    )
-
   LaunchedEffect(Unit) {
     if (Firebase.auth.currentUser != null) {
       onAuthSuccess()
@@ -230,7 +214,7 @@ fun AuthScreen(
   }
 
   Box(
-    modifier = Modifier.fillMaxSize().background(Color(0xFF02050B)),
+    modifier = Modifier.fillMaxSize().background(Color(0xFF010308)),
     contentAlignment = Alignment.Center,
   ) {
     if (!isHeadlessGlEnvironment()) {
@@ -252,7 +236,7 @@ fun AuthScreen(
         drawRect(
           brush =
             Brush.radialGradient(
-              colors = listOf(Color(0xFF09182E), Color(0xFF040A16), Color(0xFF02050B)),
+              colors = listOf(Color(0xFF061022), Color(0xFF020610), Color(0xFF010308)),
               center = Offset(size.width * 0.5f, size.height * 0.36f),
               radius = maxOf(size.width, size.height) * 0.82f,
             )
@@ -311,10 +295,8 @@ fun AuthScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.weight(1f),
               ) {
-                NexusRiftTearBrandEmblem(
-                  phaseRad = driftPhase,
-                  cracklePulse = cracklePulse,
-                  modifier = Modifier.width(68.dp).height(46.dp),
+                NexusMergedBrandEmblem(
+                  modifier = Modifier.size(50.dp),
                 )
                 Column {
                   Row(
@@ -516,106 +498,6 @@ fun AuthScreen(
   }
 }
 
-@Composable
-private fun NexusRiftTearBrandEmblem(
-  phaseRad: Float,
-  cracklePulse: Float,
-  modifier: Modifier = Modifier,
-) {
-  Canvas(modifier = modifier) {
-    val w = size.width
-    val h = size.height
-    if (w <= 1f || h <= 1f) return@Canvas
-    val cx = w * 0.5f
-    val cy = h * 0.5f
-    val halfW = w * 0.45f
-    val halfH = h * 0.29f
-
-    // Jagged asymmetric spacetime fracture path with pure #000000 interior
-    val tearPath = Path()
-    val steps = 22
-    for (s in 0..steps) {
-      val nx = (s.toFloat() / steps.toFloat()) * 2f - 1f
-      val env = (1f - nx * nx).coerceAtLeast(0f).pow(0.58f)
-      val jag =
-        (sin(nx * 5.6f + phaseRad * 2.1f) * 0.19f + cos(nx * 11.4f - phaseRad * 3.4f) * 0.08f) *
-          halfH *
-          (1f - abs(nx))
-      val px = cx + nx * halfW
-      val py = cy - (halfH * env + jag)
-      if (s == 0) tearPath.moveTo(px, py) else tearPath.lineTo(px, py)
-    }
-    for (s in steps downTo 0) {
-      val nx = (s.toFloat() / steps.toFloat()) * 2f - 1f
-      val env = (1f - nx * nx).coerceAtLeast(0f).pow(0.58f)
-      val jag =
-        (cos(nx * 5.2f - phaseRad * 1.9f) * 0.19f + sin(nx * 10.8f + phaseRad * 3.1f) * 0.08f) *
-          halfH *
-          (1f - abs(nx))
-      val px = cx + nx * halfW
-      val py = cy + (halfH * env + jag)
-      tearPath.lineTo(px, py)
-    }
-    tearPath.close()
-
-    // Outer multicolored plasma bloom sheath
-    drawPath(
-      path = tearPath,
-      brush =
-        Brush.horizontalGradient(
-          colors =
-            listOf(
-              Color(0x6600F5D4),
-              Color(0x77A855F7),
-              Color(0x66EC4899),
-              Color(0x66FACC15),
-            )
-        ),
-      style = Stroke(width = 6.5.dp.toPx(), cap = StrokeCap.Round),
-    )
-
-    // Intense crackling plasma wound lip
-    drawPath(
-      path = tearPath,
-      brush =
-        Brush.horizontalGradient(
-          colors =
-            listOf(
-              Color(0xFF00F5D4).copy(alpha = cracklePulse),
-              Color(0xFFA855F7).copy(alpha = cracklePulse),
-              Color(0xFFEC4899).copy(alpha = cracklePulse),
-              Color(0xFFFACC15).copy(alpha = cracklePulse),
-            )
-        ),
-      style = Stroke(width = 3.0.dp.toPx(), cap = StrokeCap.Round),
-    )
-
-    // Branching electric lightning filaments striking outward from the tear tips & lips
-    for (bolt in 0 until 4) {
-      val dir = if (bolt % 2 == 0) -1f else 1f
-      val anchorFrac = if (bolt < 2) 0.78f else 0.34f
-      val ax = cx + dir * halfW * anchorFrac
-      val ay = cy + (if (bolt == 1 || bolt == 2) -1f else 1f) * halfH * 0.48f
-      val bx = ax + dir * w * 0.08f
-      val by = ay + sin(phaseRad * 3f + bolt * 1.7f) * h * 0.16f
-      val cx2 = bx + dir * w * 0.06f
-      val cy2 = by + cos(phaseRad * 4f + bolt * 2.3f) * h * 0.12f
-      val boltCol = if (bolt % 2 == 0) Color(0xFF00F5D4) else Color(0xFFFACC15)
-      drawLine(boltCol.copy(alpha = cracklePulse), Offset(ax, ay), Offset(bx, by), strokeWidth = 1.3.dp.toPx())
-      drawLine(Color.White.copy(alpha = 0.8f * cracklePulse), Offset(bx, by), Offset(cx2, cy2), strokeWidth = 0.9.dp.toPx())
-    }
-
-    // Strict pure #000000 interior inside the crackling spacetime tear
-    drawPath(path = tearPath, color = Color.Black)
-
-    // Razor-thin white-hot inner horizon filament
-    drawPath(
-      path = tearPath,
-      color = Color.White.copy(alpha = 0.86f * cracklePulse),
-      style = Stroke(width = 1.0.dp.toPx(), cap = StrokeCap.Round),
-    )
-  }
-}
 
 @Composable
 private fun FeatureBullet(
