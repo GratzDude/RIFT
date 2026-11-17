@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 65
+const val CURRENT_RIFT_BUILD_VERSION = 66
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,12 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 66,
+      versionTag = "v1.0.66 // BUILD #66",
+      releaseDate = "Nov 17, 2026",
+      headline = "OpenGL ES 3.0 NEXUS Renderer Link Fix (Cross-Stage Uniform Precision Alignment & FBO/Surface Hardening)",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Fixed a strict GLSL ES 3.00 program link failure in progHoloRing where uConeMode defaulted to highp int in the vertex shader and mediump int in the fragment shader, which caused initEglAndGl() to abort on hardware mobile GPUs.",
+          "Standardized explicit precision highp float and precision highp int qualifiers across all OpenGL ES 3.0 vertex and fragment shaders in NexusSpaceGlView and switched uConeMode to a highp float uniform.",
+          "Aligned split-resolution 0.62x fboPlasma dimensions to even pixel boundaries, preserved premultiplied-alpha brightness on the 3D Station Holographic Text Ring, added GLSL info-log diagnostics, and hardened TextureView re-attachment.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 65,
       versionTag = "v1.0.65 // BUILD #65",
       releaseDate = "Nov 17, 2026",
       headline = "Choreographer Hardware VSYNC & Paused Background Arena, 3D Station Holographic Text Ring, Inward-Sucking Feathered Rift Throats, Minimal Top Bar & Ephemeral Solo PRACTICE RIFT",
-      badgeLabel = "LATEST RELEASE",
-      accentColorHex = "#00F5D4",
+      badgeLabel = "VSYNC & PRACTICE RIFT",
+      accentColorHex = "#38BDF8",
       highlights =
         listOf(
           "Replaced manual render-thread sleep timing in NexusSpaceGlView with Choreographer hardware VSYNC pacing (eglSwapInterval(1) + EMA dt smoothing), split-res 0.62x linear plasma FBO upsampled with full 1.0x crisp starlight/station/ships, projection-dirty Compose gating, and 100% paused background RiftArenaView while NEXUS is open.",

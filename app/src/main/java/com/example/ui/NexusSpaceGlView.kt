@@ -17,6 +17,7 @@ import android.opengl.GLUtils
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.Choreographer
 import android.view.TextureView
 import androidx.compose.ui.graphics.Color
@@ -1068,6 +1069,15 @@ class NexusSpaceGlView(context: Context) :
 
   override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
 
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    if (!isHeadlessGlEnvironment() && isAvailable && renderThread == null) {
+      surfaceTexture?.let { st ->
+        onSurfaceTextureAvailable(st, max(1, width), max(1, height))
+      }
+    }
+  }
+
   override fun onDetachedFromWindow() {
     stopRenderThread()
     super.onDetachedFromWindow()
@@ -1272,16 +1282,20 @@ class NexusSpaceGlView(context: Context) :
 
           val w = max(1, viewportW)
           val h = max(1, viewportH)
-          if (w != allocatedW || h != allocatedH) {
-            allocateFramebuffers(w, h)
-            projectionDirty = true
-          }
-          ensureShipAtlasUpToDate()
-          ensureHoloRingTextureUpToDate()
-          stepTrafficSimulation(dtSec, elapsedSec)
+          runCatching {
+            if (w != allocatedW || h != allocatedH) {
+              allocateFramebuffers(w, h)
+              projectionDirty = true
+            }
+            ensureShipAtlasUpToDate()
+            ensureHoloRingTextureUpToDate()
+            stepTrafficSimulation(dtSec, elapsedSec)
 
-          drawFrame(w, h, elapsedSec)
-          EGL14.eglSwapBuffers(eglDisplay, eglSurface)
+            drawFrame(w, h, elapsedSec)
+            EGL14.eglSwapBuffers(eglDisplay, eglSurface)
+          }.onFailure { err ->
+            Log.e("NexusSpaceGlView", "Frame render error", err)
+          }
         }
       } finally {
         mainHandler.post {
@@ -1333,19 +1347,21 @@ class NexusSpaceGlView(context: Context) :
         GLES30.glGenVertexArrays(1, vaos, 0)
         emptyVao = vaos[0]
 
-        progScene = linkProgram(FULLSCREEN_TRI_VERT_GLSL, NEXUS_VOLUMETRIC_SCENE_FRAG_GLSL)
-        progSceneUpsample = linkProgram(FULLSCREEN_TRI_VERT_GLSL, NEXUS_SCENE_UPSAMPLE_FRAG_GLSL)
-        progStation = linkProgram(STATION_VERT_GLSL, STATION_FRAG_GLSL)
-        progHoloRing = linkProgram(HOLO_RING_VERT_GLSL, HOLO_RING_FRAG_GLSL)
-        progShipHull = linkProgram(SHIP_HULL_VERT_GLSL, SHIP_HULL_FRAG_GLSL)
-        progShipTrail = linkProgram(SHIP_TRAIL_VERT_GLSL, SHIP_TRAIL_FRAG_GLSL)
-        progBright = linkProgram(FULLSCREEN_TRI_VERT_GLSL, BLOOM_BRIGHT_EXTRACT_FRAG_GLSL)
-        progBlur = linkProgram(FULLSCREEN_TRI_VERT_GLSL, BLOOM_GAUSSIAN_BLUR_FRAG_GLSL)
-        progComposite = linkProgram(FULLSCREEN_TRI_VERT_GLSL, FINAL_ACES_COMPOSITE_FRAG_GLSL)
+        progScene = linkProgram("progScene", FULLSCREEN_TRI_VERT_GLSL, NEXUS_VOLUMETRIC_SCENE_FRAG_GLSL)
+        progSceneUpsample = linkProgram("progSceneUpsample", FULLSCREEN_TRI_VERT_GLSL, NEXUS_SCENE_UPSAMPLE_FRAG_GLSL)
+        progStation = linkProgram("progStation", STATION_VERT_GLSL, STATION_FRAG_GLSL)
+        progHoloRing = linkProgram("progHoloRing", HOLO_RING_VERT_GLSL, HOLO_RING_FRAG_GLSL)
+        progShipHull = linkProgram("progShipHull", SHIP_HULL_VERT_GLSL, SHIP_HULL_FRAG_GLSL)
+        progShipTrail = linkProgram("progShipTrail", SHIP_TRAIL_VERT_GLSL, SHIP_TRAIL_FRAG_GLSL)
+        progBright = linkProgram("progBright", FULLSCREEN_TRI_VERT_GLSL, BLOOM_BRIGHT_EXTRACT_FRAG_GLSL)
+        progBlur = linkProgram("progBlur", FULLSCREEN_TRI_VERT_GLSL, BLOOM_GAUSSIAN_BLUR_FRAG_GLSL)
+        progComposite = linkProgram("progComposite", FULLSCREEN_TRI_VERT_GLSL, FINAL_ACES_COMPOSITE_FRAG_GLSL)
 
-        if (progScene == 0 || progSceneUpsample == 0 || progStation == 0 || progHoloRing == 0 ||
-          progShipHull == 0 || progShipTrail == 0 || progBright == 0 || progBlur == 0 || progComposite == 0
-        ) {
+        if (progScene == 0 || progSceneUpsample == 0 || progBright == 0 || progBlur == 0 || progComposite == 0) {
+          Log.e(
+            "NexusSpaceGlView",
+            "Core GL program link failed: scene=$progScene upsample=$progSceneUpsample bright=$progBright blur=$progBlur comp=$progComposite",
+          )
           return false
         }
 
@@ -1353,6 +1369,8 @@ class NexusSpaceGlView(context: Context) :
         uploadHoloRingMeshes()
         initDynamicShipBuffers()
         true
+      }.onFailure { err ->
+        Log.e("NexusSpaceGlView", "initEglAndGl failed", err)
       }.getOrDefault(false)
     }
 
@@ -1437,6 +1455,8 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, coneStride, 0)
       GLES30.glEnableVertexAttribArray(1)
       GLES30.glVertexAttribPointer(1, 4, GLES30.GL_FLOAT, false, coneStride, 3 * 4)
+      GLES30.glDisableVertexAttribArray(2)
+      GLES30.glVertexAttrib2f(2, 0f, 0f)
 
       GLES30.glBindVertexArray(0)
       GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
@@ -1835,8 +1855,8 @@ class NexusSpaceGlView(context: Context) :
       allocatedW = w
       allocatedH = h
 
-      plasmaW = max(1, (w * 0.62f).toInt())
-      plasmaH = max(1, (h * 0.62f).toInt())
+      plasmaW = max(2, (w * 0.62f).toInt() and -2)
+      plasmaH = max(2, (h * 0.62f).toInt() and -2)
       val plasmaPair = createColorFbo(plasmaW, plasmaH)
       fboPlasma = plasmaPair[0]
       texPlasma = plasmaPair[1]
@@ -2006,6 +2026,7 @@ class NexusSpaceGlView(context: Context) :
     }
 
     private fun drawStation3D(basis: CameraBasis3D, timeSec: Float) {
+      if (progStation == 0 || vaoSpire == 0) return
       val st = NEXUS_3D_RIFT_TEARS[0]
       val sx = if (isSplashMode) 0.0f else st.worldX
       val sy = if (isSplashMode) 0.04f else st.worldY
@@ -2046,7 +2067,7 @@ class NexusSpaceGlView(context: Context) :
     }
 
     private fun drawStationHologramRing3D(basis: CameraBasis3D, timeSec: Float) {
-      if (isSplashMode || texHoloRing == 0 || vaoHoloRing == 0) return
+      if (isSplashMode || progHoloRing == 0 || texHoloRing == 0 || vaoHoloRing == 0) return
 
       val st = NEXUS_3D_RIFT_TEARS[0]
       val sx = st.worldX
@@ -2074,7 +2095,7 @@ class NexusSpaceGlView(context: Context) :
         GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uAspect"), basis.aspect)
         GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uTime"), timeSec)
         GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uFocusGain"), focusGain)
-        GLES30.glUniform1i(GLES30.glGetUniformLocation(progHoloRing, "uConeMode"), 1)
+        GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uConeMode"), 1.0f)
         GLES30.glBindVertexArray(vaoHoloCone)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, holoConeVertCount)
       }
@@ -2090,7 +2111,7 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uAspect"), basis.aspect)
       GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uTime"), timeSec)
       GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uFocusGain"), focusGain)
-      GLES30.glUniform1i(GLES30.glGetUniformLocation(progHoloRing, "uConeMode"), 0)
+      GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uConeMode"), 0.0f)
 
       GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
       GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texHoloRing)
@@ -2120,7 +2141,7 @@ class NexusSpaceGlView(context: Context) :
     }
 
     private fun drawLiveShipTraffic3D(basis: CameraBasis3D, timeSec: Float) {
-      if (texShipAtlas == 0 || trafficShips.isEmpty()) return
+      if (progShipHull == 0 || progShipTrail == 0 || texShipAtlas == 0 || trafficShips.isEmpty()) return
 
       var hullFloats = 0
       var trailFloats = 0
@@ -2526,7 +2547,7 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glBindVertexArray(0)
     }
 
-    private fun compileShader(type: Int, src: String): Int {
+    private fun compileShader(label: String, type: Int, src: String): Int {
       val s = GLES30.glCreateShader(type)
       if (s == 0) return 0
       GLES30.glShaderSource(s, src)
@@ -2534,16 +2555,18 @@ class NexusSpaceGlView(context: Context) :
       val status = IntArray(1)
       GLES30.glGetShaderiv(s, GLES30.GL_COMPILE_STATUS, status, 0)
       if (status[0] == 0) {
+        val log = GLES30.glGetShaderInfoLog(s)
+        Log.e("NexusSpaceGlView", "Shader compile failed [$label]: $log")
         GLES30.glDeleteShader(s)
         return 0
       }
       return s
     }
 
-    private fun linkProgram(vertSrc: String, fragSrc: String): Int {
-      val vs = compileShader(GLES30.GL_VERTEX_SHADER, vertSrc)
+    private fun linkProgram(label: String, vertSrc: String, fragSrc: String): Int {
+      val vs = compileShader("$label:VS", GLES30.GL_VERTEX_SHADER, vertSrc)
       if (vs == 0) return 0
-      val fs = compileShader(GLES30.GL_FRAGMENT_SHADER, fragSrc)
+      val fs = compileShader("$label:FS", GLES30.GL_FRAGMENT_SHADER, fragSrc)
       if (fs == 0) {
         GLES30.glDeleteShader(vs)
         return 0
@@ -2557,6 +2580,8 @@ class NexusSpaceGlView(context: Context) :
       val status = IntArray(1)
       GLES30.glGetProgramiv(prog, GLES30.GL_LINK_STATUS, status, 0)
       if (status[0] == 0) {
+        val log = GLES30.glGetProgramInfoLog(prog)
+        Log.e("NexusSpaceGlView", "Program link failed [$label]: $log")
         GLES30.glDeleteProgram(prog)
         return 0
       }
@@ -2611,6 +2636,7 @@ class NexusSpaceGlView(context: Context) :
 private const val FULLSCREEN_TRI_VERT_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 out vec2 vUv;
 void main() {
     vec2 pos = vec2((gl_VertexID == 1) ? 3.0 : -1.0, (gl_VertexID == 2) ? 3.0 : -1.0);
@@ -2622,6 +2648,7 @@ void main() {
 private const val STATION_VERT_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
@@ -2667,6 +2694,7 @@ void main() {
 private const val STATION_FRAG_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 
 in vec3 vWorldPos;
 in vec3 vLocalPos;
@@ -2736,6 +2764,7 @@ void main() {
 private const val SHIP_HULL_VERT_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aUv;
@@ -2772,6 +2801,7 @@ void main() {
 private const val SHIP_HULL_FRAG_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 
 in vec2 vUv;
 in vec2 vAlphaBoost;
@@ -2795,6 +2825,7 @@ void main() {
 private const val SHIP_TRAIL_VERT_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec4 aColor;
@@ -2828,6 +2859,7 @@ void main() {
 private const val SHIP_TRAIL_FRAG_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 
 in vec4 vColor;
 out vec4 fragColor;
@@ -2840,6 +2872,7 @@ void main() {
 private const val HOLO_RING_VERT_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec4 aNormalOrCol;
@@ -2852,7 +2885,7 @@ uniform vec3 uCamRight;
 uniform vec3 uCamUp;
 uniform float uTanHalfFovY;
 uniform float uAspect;
-uniform int uConeMode;
+uniform float uConeMode;
 
 out vec3 vWorldPos;
 out vec3 vWorldNormal;
@@ -2862,7 +2895,7 @@ out vec4 vConeCol;
 void main() {
     vec4 wp = uModel * vec4(aPos, 1.0);
     vWorldPos = wp.xyz;
-    if (uConeMode == 1) {
+    if (uConeMode > 0.5) {
         vWorldNormal = vec3(0.0, 1.0, 0.0);
         vConeCol = aNormalOrCol;
         vUv = vec2(0.0);
@@ -2889,6 +2922,7 @@ void main() {
 private const val HOLO_RING_FRAG_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 
 in vec3 vWorldPos;
 in vec3 vWorldNormal;
@@ -2900,12 +2934,12 @@ uniform vec3 uCamPos;
 uniform float uTime;
 uniform float uFocusGain;
 uniform float uBackArcDim;
-uniform int uConeMode;
+uniform float uConeMode;
 
 out vec4 fragColor;
 
 void main() {
-    if (uConeMode == 1) {
+    if (uConeMode > 0.5) {
         float shimmer = 0.80 + 0.20 * sin(uTime * 3.8 + vWorldPos.x * 18.0 + vWorldPos.z * 18.0);
         vec3 coneRgb = vConeCol.rgb * (vConeCol.a * shimmer * uFocusGain);
         fragColor = vec4(coneRgb, vConeCol.a);
@@ -2913,7 +2947,7 @@ void main() {
     }
 
     vec4 texel = texture(uHoloTex, vUv);
-    // Faint translucent cyan hologram carrier band + crisp text & guide rails
+    // Faint translucent cyan hologram carrier band + crisp premultiplied-alpha text & guide rails
     float bandMask = smoothstep(0.0, 0.14, vUv.y) * smoothstep(1.0, 0.86, vUv.y);
     float scanline = 0.84 + 0.16 * sin(vUv.y * 145.0 - uTime * 9.5);
     float dataWave = 0.90 + 0.10 * sin(vUv.x * 37.699 + uTime * 3.2);
@@ -2923,7 +2957,7 @@ void main() {
     float limbFade = pow(clamp(dot(surfNormal, viewDir), 0.0, 1.0), 0.65);
 
     vec3 carrierCol = vec3(0.0, 0.72, 0.90) * (0.048 * bandMask);
-    vec3 glyphCol = texel.rgb * texel.a * (1.28 * uFocusGain);
+    vec3 glyphCol = texel.rgb * (1.35 * uFocusGain);
     vec3 finalRgb = (carrierCol + glyphCol) * scanline * dataWave * limbFade * uBackArcDim;
 
     if (max(finalRgb.r, max(finalRgb.g, finalRgb.b)) < 0.002) {
@@ -2936,6 +2970,7 @@ void main() {
 private const val NEXUS_VOLUMETRIC_SCENE_FRAG_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -3155,6 +3190,7 @@ void main() {
 private const val NEXUS_SCENE_UPSAMPLE_FRAG_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -3296,6 +3332,7 @@ void main() {
 private const val BLOOM_BRIGHT_EXTRACT_FRAG_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uSceneTex;
@@ -3311,6 +3348,7 @@ void main() {
 private const val BLOOM_GAUSSIAN_BLUR_FRAG_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uTex;
@@ -3329,6 +3367,7 @@ void main() {
 private const val FINAL_ACES_COMPOSITE_FRAG_GLSL =
   """#version 300 es
 precision highp float;
+precision highp int;
 in vec2 vUv;
 out vec4 fragColor;
 
