@@ -263,7 +263,78 @@ fun RiftHudOverlay(
  ) {
   val topBarRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_TOP_BAR) }
   val topBarEffScale = (RiftCalibrationState.topBarScale * topBarRec.pixelScale).coerceIn(0.6f, 1.8f)
-  if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE || engine.isCustomGameActive() || uiUnlocked) {
+  if (engine.isEphemeralPracticeRift && !uiUnlocked) {
+   Row(
+    modifier =
+     Modifier.align(Alignment.TopCenter)
+      .padding(top = 6.dp)
+      .zIndex(14f)
+      .clip(RoundedCornerShape(10.dp))
+      .background(Color(0xDD050C1A))
+      .border(1.dp, Color(0xFF00F5D4).copy(alpha = 0.72f), RoundedCornerShape(10.dp))
+      .padding(horizontal = 8.dp, vertical = 4.dp)
+      .testTag("practice_rift_top_bar"),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(4.dp),
+   ) {
+    Text(
+     text = "PRACTICE RIFT",
+     color = Color(0xFF00F5D4),
+     fontSize = (8.4f * textScale).sp,
+     fontWeight = FontWeight.Black,
+     fontFamily = FontFamily.Monospace,
+     style = WingTelemetryTextStyle,
+     modifier = Modifier.padding(end = 3.dp),
+    )
+    for (hullId in 1..10) {
+     val isActiveHull = player.shipId == hullId
+     Box(
+      modifier =
+       Modifier.clip(RoundedCornerShape(6.dp))
+        .background(if (isActiveHull) Color(0xFF00F5D4).copy(alpha = 0.26f) else Color(0xFF0C182B))
+        .border(
+         width = 1.dp,
+         color = if (isActiveHull) Color(0xFF00F5D4) else Color(0xFF334155),
+         shape = RoundedCornerShape(6.dp),
+        )
+        .clickable {
+         engine.switchLocalPlayerShip(hullId, forceFromHangar = true)
+         engine.localPlayer.flux = engine.localPlayer.maxFlux
+        }
+        .padding(horizontal = 6.dp, vertical = 3.dp)
+        .testTag("practice_rift_hull_$hullId"),
+      contentAlignment = Alignment.Center,
+     ) {
+      Text(
+       text = "$hullId",
+       color = if (isActiveHull) Color.White else Color(0xFF94A3B8),
+       fontSize = (8.0f * textScale).sp,
+       fontWeight = FontWeight.Black,
+       fontFamily = FontFamily.Monospace,
+      )
+     }
+    }
+    Box(
+     modifier =
+      Modifier.padding(start = 3.dp)
+       .clip(RoundedCornerShape(6.dp))
+       .background(Color(0xFF0D253B))
+       .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+       .clickable { onOpenNexus() }
+       .padding(horizontal = 8.dp, vertical = 3.dp)
+       .testTag("practice_rift_exit_btn"),
+     contentAlignment = Alignment.Center,
+    ) {
+     Text(
+      text = "[EXIT TO NEXUS]",
+      color = Color(0xFF38BDF8),
+      fontSize = (8.0f * textScale).sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+     )
+    }
+   }
+  } else if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE || engine.isCustomGameActive() || uiUnlocked) {
    val mode = engine.effectiveModeRules()
    val topBarDragMod =
     Modifier.align(Alignment.TopCenter)

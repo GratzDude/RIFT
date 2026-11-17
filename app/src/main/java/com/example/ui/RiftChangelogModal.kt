@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 64
+const val CURRENT_RIFT_BUILD_VERSION = 65
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,12 +62,27 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 65,
+      versionTag = "v1.0.65 // BUILD #65",
+      releaseDate = "Nov 17, 2026",
+      headline = "Choreographer Hardware VSYNC & Paused Background Arena, 3D Station Holographic Text Ring, Inward-Sucking Feathered Rift Throats, Minimal Top Bar & Ephemeral Solo PRACTICE RIFT",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Replaced manual render-thread sleep timing in NexusSpaceGlView with Choreographer hardware VSYNC pacing (eglSwapInterval(1) + EMA dt smoothing), split-res 0.62x linear plasma FBO upsampled with full 1.0x crisp starlight/station/ships, projection-dirty Compose gating, and 100% paused background RiftArenaView while NEXUS is open.",
+          "Added a 3D Station-Projected Revolving Cylindrical Holographic Text Ring (\"NEXUS // SUBSPACE COMMS & AI • [N] ONLINE\") rendered on a 64-segment 3D cylinder with 2-pass GL_CULL_FACE hardware depth occlusion passing physically in front of and behind the command spire, leaving the center station uncovered by 2D text.",
+          "Reforged all 7 surrounding Rifts into inward-sucking gravitational vortex throats that pull surrounding Ring-Space plasma spirals into feathered 0.42..0.88 polar FBM event horizons dissolving into pure #000000 button-text cores with zero sharp circular sticker edges.",
+          "Streamlined the NEXUS top horizon bar (SYN / WING / ONLINE telemetry on the left; PRACTICE RIFT > on the right) and introduced the on-demand ephemeral solo PRACTICE RIFT flight sandbox (0 AI bots, 0 remote players, 0 career/Resonance/Bounty/Directive stat mutations, disabled Anti-AFK drain, 1-tap 1-10 HUD hull hot-swap with Flux refill, and instant teardown upon returning to NEXUS).",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 64,
       versionTag = "v1.0.64 // BUILD #64",
       releaseDate = "Nov 17, 2026",
       headline = "Haze-Free High-Contrast 3D NEXUS Station, Full-Screen Ring-Space Rift Tapestry with Subtle Starlight & Zero Rift Bobbing",
-      badgeLabel = "LATEST RELEASE",
-      accentColorHex = "#00F5D4",
+      badgeLabel = "RING SPACE 3D",
+      accentColorHex = "#38BDF8",
       highlights =
         listOf(
           "Removed all gamma washout, quarter-res bloom fog, and UI gradient veils over the central 3D NEXUS Orbital Space Station and live Playfield ship traffic, upgrading to half-res high-threshold (>1.05) HDR bloom and crisp Blinn-Phong metallic contrast.",

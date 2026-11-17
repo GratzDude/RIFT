@@ -414,20 +414,6 @@ fun RiftArenaScreen(
 
   val chatMessages = remember { mutableStateListOf<SyndicateChatMessage>() }
 
-  fun openNexusNode(node: NexusCoreNode) {
-    if (node == NexusCoreNode.SUBSPACE_COMMS) {
-      unreadCommsCount = 0
-    }
-    if (node != NexusCoreNode.STAR_FORGE) {
-      isForgeFullScreenStage = false
-    }
-    if (node == NexusCoreNode.CONVERGENCE_GATE) {
-      pendingStagedLaunch = null
-    }
-    activeNexusNode = node
-    isNexusShellOpen = true
-  }
-
   fun syncEquippedCosmeticsToEngine(targetEngine: RiftGameEngine) {
     val killFin = localPrefs.getEquippedCosmeticId("KILL_FINISHER", currentUserId)
     val hullTrim = localPrefs.getEquippedCosmeticId("HULL_TRIM", currentUserId).coerceIn(0, 3)
@@ -493,13 +479,35 @@ fun RiftArenaScreen(
     }
   }
 
+  fun openNexusNode(node: NexusCoreNode) {
+    if (engine.isEphemeralPracticeRift) {
+      engine.closeEphemeralPracticeRift()
+    }
+    if (node == NexusCoreNode.SUBSPACE_COMMS) {
+      unreadCommsCount = 0
+    }
+    if (node != NexusCoreNode.STAR_FORGE) {
+      isForgeFullScreenStage = false
+    }
+    if (node == NexusCoreNode.CONVERGENCE_GATE) {
+      pendingStagedLaunch = null
+    }
+    activeNexusNode = node
+    isNexusShellOpen = true
+  }
+
   DisposableEffect(engine, viewModel) {
     syncEquippedCosmeticsToEngine(engine)
     engine.onDailyDirectiveEvent = { metric, amount, isAbsolutePeak ->
-      localPrefs.recordDailyDirectiveProgress(metric, amount, isAbsolutePeak, currentUserId)
-      directivesRefreshKey++
+      if (!engine.isEphemeralPracticeRift) {
+        localPrefs.recordDailyDirectiveProgress(metric, amount, isAbsolutePeak, currentUserId)
+        directivesRefreshKey++
+      }
     }
     engine.onStatsUpdated = {
+      if (engine.isEphemeralPracticeRift) {
+        frameTick++
+      } else {
       engine.riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards)
       localPrefs.setActiveArmadaName(engine.activeArmadaName)
       localPrefs.saveCombatStats(
@@ -562,25 +570,30 @@ fun RiftArenaScreen(
         )
       }
       frameTick++
+      }
     }
     engine.onLifeRunEnded = { finalizedSnapshot, hadPvp ->
-      localPrefs.maybeRecordPeakBountySnapshot(
-        snapshot = finalizedSnapshot,
-        hadPvp = hadPvp,
-        isFinalizedLifeEnd = true,
-        uid = currentUserId,
-      )
-      allTimePeakSnapshot = localPrefs.getAllTimePeakBountySnapshot(currentUserId)
-      pvpPeakSnapshot = localPrefs.getPvpPeakBountySnapshot(currentUserId)
+      if (!engine.isEphemeralPracticeRift) {
+        localPrefs.maybeRecordPeakBountySnapshot(
+          snapshot = finalizedSnapshot,
+          hadPvp = hadPvp,
+          isFinalizedLifeEnd = true,
+          uid = currentUserId,
+        )
+        allTimePeakSnapshot = localPrefs.getAllTimePeakBountySnapshot(currentUserId)
+        pvpPeakSnapshot = localPrefs.getPvpPeakBountySnapshot(currentUserId)
+      }
     }
     engine.onSyndicateContribution = { killsDelta, currentBounty, winsDelta ->
-      localPrefs.recordSyndicateContribution(
-        addKills = killsDelta,
-        currentBounty = currentBounty,
-        addPublicWins = winsDelta,
-        uid = currentUserId,
-      )
-      syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+      if (!engine.isEphemeralPracticeRift) {
+        localPrefs.recordSyndicateContribution(
+          addKills = killsDelta,
+          currentBounty = currentBounty,
+          addPublicWins = winsDelta,
+          uid = currentUserId,
+        )
+        syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+      }
     }
     engine.onSyndicateWarFinished = { won, delta ->
       localPrefs.recordSyndicateWarOutcome(syndicateTag, won, delta)
@@ -951,10 +964,14 @@ fun RiftArenaScreen(
       showFullChangelogModal = false
     } else if (isNexusShellOpen && activeNexusNode == NexusCoreNode.STAR_FORGE && isForgeFullScreenStage) {
       isForgeFullScreenStage = false
+    } else if (!isNexusShellOpen && engine.isEphemeralPracticeRift) {
+      openNexusNode(NexusCoreNode.ORBITAL_HUB)
     } else if (isNexusShellOpen && activeNexusNode != NexusCoreNode.ORBITAL_HUB) {
       activeNexusNode = NexusCoreNode.ORBITAL_HUB
     } else if (isNexusShellOpen && activeNexusNode == NexusCoreNode.ORBITAL_HUB) {
-      isNexusShellOpen = false
+      if (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift) {
+        isNexusShellOpen = false
+      }
     } else {
       openNexusNode(NexusCoreNode.ORBITAL_HUB)
     }
@@ -1375,7 +1392,48 @@ fun RiftArenaScreen(
                       }
                       .distinct()
                       .size
-                  (if (engine.hasJoinedMatch) 1 else 0) + remoteSynOnline
+                  1 + remoteSynOnline
+                }
+              }
+            val strikeWingOnlineCount =
+              remember(frameTick, friendsRefreshKey, sectorPilotsState, onlineHumanPilotsList) {
+                val activeWing = engine.activeArmadaName.trim()
+                if (activeWing.isBlank()) {
+                  0
+                } else {
+                  val slotCallsigns =
+                    engine.activeArmadaSlots
+                      .filter { !it.isLeader && it.callsign.isNotBlank() }
+                      .map { it.callsign.uppercase(Locale.US) }
+                      .toSet()
+                  val remoteWingUids =
+                    onlineHumanPilotsList
+                      .mapNotNull { st ->
+                        val rUid = st.userId.ifEmpty { st.id }
+                        if (
+                          rUid.isNotBlank() &&
+                            rUid != currentUserId &&
+                            (st.armadaName.trim().equals(activeWing, ignoreCase = true) ||
+                              st.callsign.trim().uppercase(Locale.US) in slotCallsigns)
+                        ) {
+                          rUid
+                        } else {
+                          null
+                        }
+                      }
+                      .toMutableSet()
+                  syndicateFriends.forEach { fr ->
+                    if (
+                      fr.isOnline &&
+                        fr.uid.isNotBlank() &&
+                        fr.uid != currentUserId &&
+                        (fr.currentArmadaName.trim().equals(activeWing, ignoreCase = true) ||
+                          fr.callsign.trim().uppercase(Locale.US) in slotCallsigns)
+                    ) {
+                      remoteWingUids.add(fr.uid)
+                    }
+                  }
+                  (1 + remoteWingUids.size).coerceAtMost(5)
                 }
               }
             val presetArmadasReadyCount =
@@ -2579,6 +2637,18 @@ fun RiftArenaScreen(
               },
               totalOnlinePilots = humanPilotsOnline,
               syndicateOnlineCount = syndicateOnlineCount,
+              strikeWingOnlineCount = strikeWingOnlineCount,
+              isInMatch = engine.hasJoinedMatch && !engine.isEphemeralPracticeRift,
+              onEnterPracticeRift = {
+                pendingStagedLaunch = null
+                engine.switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
+                syncEquippedCosmeticsToEngine(engine)
+                engine.enterEphemeralPracticeRift()
+                isNexusShellOpen = false
+                toastMessage = "PRACTICE RIFT INITIALIZED // SOLO FLIGHT SANDBOX"
+                toastVersion++
+                frameTick++
+              },
               presetArmadasReadyCount = presetArmadasReadyCount,
               activeArmadaName = engine.activeArmadaName,
               armadaSlots = engine.activeArmadaSlots.toList(),

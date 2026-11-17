@@ -116,17 +116,20 @@ class RiftArenaView(
 
   var isModalOverlayOpen: Boolean = false
     set(value) {
-      if (field != value) {
-        field = value
-        if (value && !RiftCalibrationState.isUiUnlockedForDragging) {
-          leftPointerId = MotionEvent.INVALID_POINTER_ID
-          firePointerId = MotionEvent.INVALID_POINTER_ID
-          bombPointerId = MotionEvent.INVALID_POINTER_ID
-          engine.leftStickActive = false
-          engine.leftStickMag = 0f
-          engine.fireStickActive = false
-          engine.bombStickActive = false
-        }
+      val wasOpen = field
+      field = value
+      if (value && !RiftCalibrationState.isUiUnlockedForDragging) {
+        leftPointerId = MotionEvent.INVALID_POINTER_ID
+        firePointerId = MotionEvent.INVALID_POINTER_ID
+        bombPointerId = MotionEvent.INVALID_POINTER_ID
+        engine.leftStickActive = false
+        engine.leftStickMag = 0f
+        engine.fireStickActive = false
+        engine.bombStickActive = false
+      }
+      if ((wasOpen && !value) || !value || RiftCalibrationState.isUiUnlockedForDragging) {
+        lastFrameNs = System.nanoTime()
+        postInvalidateOnAnimation()
       }
     }
 
@@ -688,6 +691,11 @@ class RiftArenaView(
       hudLabelPaint.color = Color.parseColor("#94A3B8")
       canvas.drawText("RIFT WIDESCREEN ARENA REQUIRES LANDSCAPE VIEWPORT", vw * 0.5f, vh * 0.54f, hudLabelPaint)
       postInvalidateOnAnimation()
+      return
+    }
+
+    if (isModalOverlayOpen && !RiftCalibrationState.isUiUnlockedForDragging) {
+      canvas.drawColor(Color.parseColor("#02050B"))
       return
     }
 

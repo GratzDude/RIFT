@@ -3,7 +3,10 @@ package com.example.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.SurfaceTexture
+import android.graphics.Typeface
 import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.EGLContext
@@ -12,6 +15,9 @@ import android.opengl.EGLSurface
 import android.opengl.GLES30
 import android.opengl.GLUtils
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.view.Choreographer
 import android.view.TextureView
 import androidx.compose.ui.graphics.Color
 import com.example.engine.RiftSpriteBaker
@@ -806,6 +812,93 @@ private object StationMeshBuilder {
     }
     return s.toMesh()
   }
+
+  /**
+   * 64-segment 3D Cylindrical Holographic Ribbon Mesh (`8` floats/vert: `x, y, z, nx, ny, nz, u, v`).
+   * Winding is strictly CCW when viewed from outside (`+Z`), with `u` advancing left-to-right across
+   * the near `+Z` arc so the projected station hologram text reads upright and forward (non-mirrored).
+   */
+  fun buildHoloCylinderMesh(segments: Int = 64, radius: Float = 0.63f, halfHeight: Float = 0.072f): Pair<FloatBuffer, Int> {
+    val floatsPerVert = 8
+    val data = FloatArray(segments * 6 * floatsPerVert)
+    var o = 0
+    fun push(x: Float, y: Float, z: Float, nx: Float, ny: Float, nz: Float, u: Float, v: Float) {
+      data[o++] = x; data[o++] = y; data[o++] = z
+      data[o++] = nx; data[o++] = ny; data[o++] = nz
+      data[o++] = u; data[o++] = v
+    }
+    val step = (2.0 * PI / segments).toFloat()
+    for (i in 0 until segments) {
+      val phi0 = i * step
+      val phi1 = (i + 1) * step
+      val s0 = sin(phi0); val c0 = cos(phi0)
+      val s1 = sin(phi1); val c1 = cos(phi1)
+      val x0 = radius * s0; val z0 = radius * c0
+      val x1 = radius * s1; val z1 = radius * c1
+      val u0 = i.toFloat() / segments.toFloat()
+      val u1 = (i + 1).toFloat() / segments.toFloat()
+
+      // Triangle 1: BL -> BR -> TR (CCW from outside)
+      push(x0, -halfHeight, z0, s0, 0f, c0, u0, 1f)
+      push(x1, -halfHeight, z1, s1, 0f, c1, u1, 1f)
+      push(x1, halfHeight, z1, s1, 0f, c1, u1, 0f)
+      // Triangle 2: BL -> TR -> TL (CCW from outside)
+      push(x0, -halfHeight, z0, s0, 0f, c0, u0, 1f)
+      push(x1, halfHeight, z1, s1, 0f, c1, u1, 0f)
+      push(x0, halfHeight, z0, s0, 0f, c0, u0, 0f)
+    }
+    val buf = ByteBuffer.allocateDirect(o * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+    buf.put(data, 0, o)
+    buf.position(0)
+    return buf to (o / floatsPerVert)
+  }
+
+  /**
+   * Faint translucent cyan emitter cone linking the station's comm collar (`r=0.148`) outward to the
+   * 3D Hologram Ring (`r=0.622`) (`7` floats/vert: `x, y, z, r, g, b, a`, compatible with `progShipTrail`).
+   */
+  fun buildHoloEmitterConeMesh(spokes: Int = 24): Pair<FloatBuffer, Int> {
+    val floatsPerVert = 7
+    val data = FloatArray(spokes * 6 * floatsPerVert)
+    var o = 0
+    fun push(x: Float, y: Float, z: Float, r: Float, g: Float, b: Float, a: Float) {
+      data[o++] = x; data[o++] = y; data[o++] = z
+      data[o++] = r; data[o++] = g; data[o++] = b; data[o++] = a
+    }
+    val rIn = 0.148f
+    val rOut = 0.622f
+    val yIn = 0.056f
+    val yOut = 0.018f
+    val halfAng = (PI / (spokes * 2.4)).toFloat()
+    for (i in 0 until spokes) {
+      val basePhi = (i * 2.0 * PI / spokes).toFloat()
+      val pL = basePhi - halfAng
+      val pR = basePhi + halfAng
+      val isAccent = (i % 6 == 0)
+      val cr = if (isAccent) 0.98f else 0.0f
+      val cg = if (isAccent) 0.82f else 0.96f
+      val cb = if (isAccent) 0.16f else 0.86f
+      val aIn = if (isAccent) 0.11f else 0.075f
+      val aOut = 0.012f
+
+      val ilX = rIn * sin(pL); val ilZ = rIn * cos(pL)
+      val irX = rIn * sin(pR); val irZ = rIn * cos(pR)
+      val olX = rOut * sin(pL); val olZ = rOut * cos(pL)
+      val orX = rOut * sin(pR); val orZ = rOut * cos(pR)
+
+      push(ilX, yIn, ilZ, cr, cg, cb, aIn)
+      push(irX, yIn, irZ, cr, cg, cb, aIn)
+      push(orX, yOut, orZ, cr, cg, cb, aOut)
+
+      push(ilX, yIn, ilZ, cr, cg, cb, aIn)
+      push(orX, yOut, orZ, cr, cg, cb, aOut)
+      push(olX, yOut, olZ, cr, cg, cb, aOut)
+    }
+    val buf = ByteBuffer.allocateDirect(o * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+    buf.put(data, 0, o)
+    buf.position(0)
+    return buf to (o / floatsPerVert)
+  }
 }
 
 /**
@@ -865,6 +958,9 @@ class NexusSpaceGlView(context: Context) :
   @Volatile private var latestTimeSec: Float = 0f
 
   @Volatile private var onlinePilotShipIds: IntArray = intArrayOf(1)
+  @Volatile private var holoOnlinePilots: Int = 1
+  @Volatile private var holoUnreadComms: Int = 0
+  @Volatile private var projectionDirty: Boolean = true
 
   private var renderThread: GlSpaceRenderThread? = null
 
@@ -872,6 +968,25 @@ class NexusSpaceGlView(context: Context) :
     isOpaque = false
     if (!isHeadlessGlEnvironment()) {
       surfaceTextureListener = this
+    }
+  }
+
+  /** Returns true only when camera/viewport/dive state changed so stationary hub frames trigger zero Compose recompositions. */
+  fun consumeProjectionDirty(): Boolean {
+    if (projectionDirty) {
+      projectionDirty = false
+      return true
+    }
+    return false
+  }
+
+  /** Updates the live telemetry string projected onto the 3D Station's revolving cylindrical Holographic Text Ring. */
+  fun updateStationHologramTelemetry(onlinePilots: Int, unreadComms: Int) {
+    val clampedOnline = onlinePilots.coerceAtLeast(1)
+    val clampedUnread = unreadComms.coerceAtLeast(0)
+    if (holoOnlinePilots != clampedOnline || holoUnreadComms != clampedUnread) {
+      holoOnlinePilots = clampedOnline
+      holoUnreadComms = clampedUnread
     }
   }
 
@@ -891,15 +1006,18 @@ class NexusSpaceGlView(context: Context) :
     springBackActive = false
     targetLookYawRad = (targetLookYawRad - (dxPx / w) * 0.42f).coerceIn(-0.22f, 0.22f)
     targetLookPitchRad = (targetLookPitchRad + (dyPx / h) * 0.30f).coerceIn(-0.15f, 0.15f)
+    projectionDirty = true
   }
 
   fun releaseCameraLookSpring() {
     springBackActive = true
+    projectionDirty = true
   }
 
   fun triggerTearDive(tearIndex: Int) {
     activeDiveTearIdx = tearIndex
     activeDiveProgress = 0.01f
+    projectionDirty = true
   }
 
   fun triggerDiveIntoTear(tearIndex: Int) = triggerTearDive(tearIndex)
@@ -907,6 +1025,7 @@ class NexusSpaceGlView(context: Context) :
   fun clearTearDive() {
     activeDiveTearIdx = -1
     activeDiveProgress = 0f
+    projectionDirty = true
   }
 
   fun resetCameraDive() = clearTearDive()
@@ -931,12 +1050,14 @@ class NexusSpaceGlView(context: Context) :
 
   override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
     if (isHeadlessGlEnvironment()) return
+    projectionDirty = true
     stopRenderThread()
     renderThread =
       GlSpaceRenderThread(surface, max(1, width), max(1, height)).also { it.start() }
   }
 
   override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+    projectionDirty = true
     renderThread?.updateViewportSize(max(1, width), max(1, height))
   }
 
@@ -975,13 +1096,19 @@ class NexusSpaceGlView(context: Context) :
 
     private var emptyVao = 0
     private var progScene = 0
+    private var progSceneUpsample = 0
     private var progStation = 0
+    private var progHoloRing = 0
     private var progShipHull = 0
     private var progShipTrail = 0
     private var progBright = 0
     private var progBlur = 0
     private var progComposite = 0
 
+    private var fboPlasma = 0
+    private var texPlasma = 0
+    private var plasmaW = 0
+    private var plasmaH = 0
     private var fboScene = 0
     private var texScene = 0
     private var rboSceneDepth = 0
@@ -992,7 +1119,7 @@ class NexusSpaceGlView(context: Context) :
     private var allocatedW = 0
     private var allocatedH = 0
 
-    // Station VBOs/VAOs
+    // Station + Revolving 3D Holographic Text Ring VBOs/VAOs
     private var vaoSpire = 0
     private var vboSpire = 0
     private var spireVertCount = 0
@@ -1002,6 +1129,16 @@ class NexusSpaceGlView(context: Context) :
     private var vaoInnerRing = 0
     private var vboInnerRing = 0
     private var innerRingVertCount = 0
+
+    private var vaoHoloRing = 0
+    private var vboHoloRing = 0
+    private var holoRingVertCount = 0
+    private var vaoHoloCone = 0
+    private var vboHoloCone = 0
+    private var holoConeVertCount = 0
+    private var texHoloRing = 0
+    private var bakedHoloOnline = -1
+    private var bakedHoloUnread = -1
 
     // Dynamic Ship Hull + Ion Trail streaming buffers + Ship Sprite Atlas
     private var texShipAtlas = 0
@@ -1017,7 +1154,7 @@ class NexusSpaceGlView(context: Context) :
     private val shipTrailBuffer: FloatBuffer =
       ByteBuffer.allocateDirect(shipTrailScratch.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
 
-    // Cached uniform buffers for the 7 Rifts (or 3 ambient Rifts in splash mode)
+    // Cached uniform buffers for the 7 Rifts (or 2 ambient Rifts in splash mode)
     private val tearPosSizeBuf = FloatArray(8 * 4)
     private val tearStyleBuf = FloatArray(8 * 4)
     private val tearColorABuf = FloatArray(8 * 3)
@@ -1028,13 +1165,39 @@ class NexusSpaceGlView(context: Context) :
     private val trafficRng = Random(0x5EED63L)
     private val trafficShips = ArrayList<HubTrafficShip>(28)
 
+    // Hardware Choreographer VSYNC signal (zero Thread.sleep drift!)
+    private val vsyncLock = Object()
+    @Volatile private var pendingVsyncFrameNs: Long = 0L
+    @Volatile private var hasPendingVsync: Boolean = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val vsyncCallback =
+      object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+          if (!running.get()) return
+          synchronized(vsyncLock) {
+            pendingVsyncFrameNs = frameTimeNanos
+            hasPendingVsync = true
+            vsyncLock.notifyAll()
+          }
+          Choreographer.getInstance().postFrameCallback(this)
+        }
+      }
+
     fun updateViewportSize(w: Int, h: Int) {
       viewportW = w
       viewportH = h
+      projectionDirty = true
     }
 
     fun requestStop() {
       running.set(false)
+      synchronized(vsyncLock) {
+        hasPendingVsync = true
+        vsyncLock.notifyAll()
+      }
+      mainHandler.post {
+        runCatching { Choreographer.getInstance().removeFrameCallback(vsyncCallback) }
+      }
     }
 
     override fun run() {
@@ -1043,47 +1206,89 @@ class NexusSpaceGlView(context: Context) :
         return
       }
 
-      val startNs = System.nanoTime()
-      var prevFrameNs = startNs
-
-      while (running.get()) {
-        val frameStartNs = System.nanoTime()
-        val dtSec = ((frameStartNs - prevFrameNs) * 1e-9f).coerceIn(0.001f, 0.05f)
-        prevFrameNs = frameStartNs
-        val elapsedSec = ((frameStartNs - startNs) * 1e-9f)
-        latestTimeSec = elapsedSec
-
-        if (springBackActive) {
-          targetLookYawRad += (0f - targetLookYawRad) * min(1f, dtSec * 4.5f)
-          targetLookPitchRad += (0f - targetLookPitchRad) * min(1f, dtSec * 4.5f)
-        }
-        val smooth = min(1f, dtSec * 9.5f)
-        currentLookYawRad += (targetLookYawRad - currentLookYawRad) * smooth
-        currentLookPitchRad += (targetLookPitchRad - currentLookPitchRad) * smooth
-
-        if (activeDiveTearIdx >= 0 && activeDiveProgress > 0f) {
-          activeDiveProgress = (activeDiveProgress + dtSec * 2.8f).coerceAtMost(1f)
-        }
-
-        val w = max(1, viewportW)
-        val h = max(1, viewportH)
-        if (w != allocatedW || h != allocatedH) {
-          allocateFramebuffers(w, h)
-        }
-        ensureShipAtlasUpToDate()
-        stepTrafficSimulation(dtSec, elapsedSec)
-
-        drawFrame(w, h, elapsedSec)
-        EGL14.eglSwapBuffers(eglDisplay, eglSurface)
-
-        val frameCostMs = (System.nanoTime() - frameStartNs) / 1_000_000L
-        val sleepMs = 16L - frameCostMs
-        if (sleepMs > 1L) {
-          runCatching { sleep(sleepMs) }
+      mainHandler.post {
+        if (running.get()) {
+          runCatching { Choreographer.getInstance().postFrameCallback(vsyncCallback) }
         }
       }
 
-      releaseAllGlResources()
+      var startNs = 0L
+      var prevFrameNs = 0L
+      var smoothedDtSec = 1f / 60f
+      var wasCameraMoving = false
+
+      try {
+        while (running.get()) {
+          var vsyncNs: Long
+          synchronized(vsyncLock) {
+            if (!hasPendingVsync && running.get()) {
+              runCatching { vsyncLock.wait(32L) }
+            }
+            hasPendingVsync = false
+            vsyncNs = pendingVsyncFrameNs
+          }
+          if (!running.get()) break
+
+          val frameNs = if (vsyncNs > 0L) vsyncNs else System.nanoTime()
+          if (startNs == 0L) startNs = frameNs
+          val rawDt =
+            if (prevFrameNs == 0L) (1f / 60f)
+            else ((frameNs - prevFrameNs) * 1e-9f).coerceIn(0.002f, 0.05f)
+          prevFrameNs = frameNs
+          smoothedDtSec += (rawDt - smoothedDtSec) * 0.22f
+          val dtSec = smoothedDtSec.coerceIn(0.004f, 0.034f)
+          val elapsedSec = ((frameNs - startNs) * 1e-9f).coerceAtLeast(0f)
+          latestTimeSec = elapsedSec
+
+          if (springBackActive) {
+            targetLookYawRad += (0f - targetLookYawRad) * min(1f, dtSec * 4.5f)
+            targetLookPitchRad += (0f - targetLookPitchRad) * min(1f, dtSec * 4.5f)
+          }
+          val smooth = min(1f, dtSec * 9.5f)
+          currentLookYawRad += (targetLookYawRad - currentLookYawRad) * smooth
+          currentLookPitchRad += (targetLookPitchRad - currentLookPitchRad) * smooth
+
+          if (activeDiveTearIdx >= 0 && activeDiveProgress > 0f) {
+            activeDiveProgress = (activeDiveProgress + dtSec * 2.8f).coerceAtMost(1f)
+          }
+
+          val cameraActiveNow =
+            abs(currentLookYawRad) > 1e-4f ||
+              abs(currentLookPitchRad) > 1e-4f ||
+              abs(targetLookYawRad) > 1e-4f ||
+              abs(targetLookPitchRad) > 1e-4f ||
+              activeDiveProgress > 0f
+          if (cameraActiveNow) {
+            projectionDirty = true
+            wasCameraMoving = true
+          } else if (wasCameraMoving) {
+            currentLookYawRad = 0f
+            currentLookPitchRad = 0f
+            targetLookYawRad = 0f
+            targetLookPitchRad = 0f
+            projectionDirty = true
+            wasCameraMoving = false
+          }
+
+          val w = max(1, viewportW)
+          val h = max(1, viewportH)
+          if (w != allocatedW || h != allocatedH) {
+            allocateFramebuffers(w, h)
+            projectionDirty = true
+          }
+          ensureShipAtlasUpToDate()
+          ensureHoloRingTextureUpToDate()
+          stepTrafficSimulation(dtSec, elapsedSec)
+
+          drawFrame(w, h, elapsedSec)
+          EGL14.eglSwapBuffers(eglDisplay, eglSurface)
+        }
+      } finally {
+        mainHandler.post {
+          runCatching { Choreographer.getInstance().removeFrameCallback(vsyncCallback) }
+        }
+        releaseAllGlResources()
+      }
     }
 
     private fun initEglAndGl(): Boolean {
@@ -1122,26 +1327,30 @@ class NexusSpaceGlView(context: Context) :
         if (eglSurface == EGL14.EGL_NO_SURFACE) return false
 
         if (!EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) return false
+        EGL14.eglSwapInterval(eglDisplay, 1)
 
         val vaos = IntArray(1)
         GLES30.glGenVertexArrays(1, vaos, 0)
         emptyVao = vaos[0]
 
         progScene = linkProgram(FULLSCREEN_TRI_VERT_GLSL, NEXUS_VOLUMETRIC_SCENE_FRAG_GLSL)
+        progSceneUpsample = linkProgram(FULLSCREEN_TRI_VERT_GLSL, NEXUS_SCENE_UPSAMPLE_FRAG_GLSL)
         progStation = linkProgram(STATION_VERT_GLSL, STATION_FRAG_GLSL)
+        progHoloRing = linkProgram(HOLO_RING_VERT_GLSL, HOLO_RING_FRAG_GLSL)
         progShipHull = linkProgram(SHIP_HULL_VERT_GLSL, SHIP_HULL_FRAG_GLSL)
         progShipTrail = linkProgram(SHIP_TRAIL_VERT_GLSL, SHIP_TRAIL_FRAG_GLSL)
         progBright = linkProgram(FULLSCREEN_TRI_VERT_GLSL, BLOOM_BRIGHT_EXTRACT_FRAG_GLSL)
         progBlur = linkProgram(FULLSCREEN_TRI_VERT_GLSL, BLOOM_GAUSSIAN_BLUR_FRAG_GLSL)
         progComposite = linkProgram(FULLSCREEN_TRI_VERT_GLSL, FINAL_ACES_COMPOSITE_FRAG_GLSL)
 
-        if (progScene == 0 || progStation == 0 || progShipHull == 0 || progShipTrail == 0 ||
-          progBright == 0 || progBlur == 0 || progComposite == 0
+        if (progScene == 0 || progSceneUpsample == 0 || progStation == 0 || progHoloRing == 0 ||
+          progShipHull == 0 || progShipTrail == 0 || progBright == 0 || progBlur == 0 || progComposite == 0
         ) {
           return false
         }
 
         uploadStationMeshes()
+        uploadHoloRingMeshes()
         initDynamicShipBuffers()
         true
       }.getOrDefault(false)
@@ -1192,6 +1401,172 @@ class NexusSpaceGlView(context: Context) :
 
       GLES30.glBindVertexArray(0)
       GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+    }
+
+    private fun uploadHoloRingMeshes() {
+      val (cylBuf, cylVerts) = StationMeshBuilder.buildHoloCylinderMesh(segments = 64, radius = 0.63f, halfHeight = 0.072f)
+      val (coneBuf, coneVerts) = StationMeshBuilder.buildHoloEmitterConeMesh(spokes = 24)
+      holoRingVertCount = cylVerts
+      holoConeVertCount = coneVerts
+
+      val vaos = IntArray(2)
+      val vbos = IntArray(2)
+      GLES30.glGenVertexArrays(2, vaos, 0)
+      GLES30.glGenBuffers(2, vbos, 0)
+
+      vaoHoloRing = vaos[0]
+      vboHoloRing = vbos[0]
+      val cylStride = 8 * 4
+      GLES30.glBindVertexArray(vaoHoloRing)
+      GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vboHoloRing)
+      GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, cylVerts * cylStride, cylBuf, GLES30.GL_STATIC_DRAW)
+      GLES30.glEnableVertexAttribArray(0)
+      GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, cylStride, 0)
+      GLES30.glEnableVertexAttribArray(1)
+      GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, cylStride, 3 * 4)
+      GLES30.glEnableVertexAttribArray(2)
+      GLES30.glVertexAttribPointer(2, 2, GLES30.GL_FLOAT, false, cylStride, 6 * 4)
+
+      vaoHoloCone = vaos[1]
+      vboHoloCone = vbos[1]
+      val coneStride = 7 * 4
+      GLES30.glBindVertexArray(vaoHoloCone)
+      GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vboHoloCone)
+      GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, coneVerts * coneStride, coneBuf, GLES30.GL_STATIC_DRAW)
+      GLES30.glEnableVertexAttribArray(0)
+      GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, coneStride, 0)
+      GLES30.glEnableVertexAttribArray(1)
+      GLES30.glVertexAttribPointer(1, 4, GLES30.GL_FLOAT, false, coneStride, 3 * 4)
+
+      GLES30.glBindVertexArray(0)
+      GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+    }
+
+    private fun ensureHoloRingTextureUpToDate() {
+      val online = holoOnlinePilots
+      val unread = holoUnreadComms
+      if (texHoloRing != 0 && bakedHoloOnline == online && bakedHoloUnread == unread) return
+      bakedHoloOnline = online
+      bakedHoloUnread = unread
+
+      val texW = 2048
+      val texH = 160
+      val bmp = Bitmap.createBitmap(texW, texH, Bitmap.Config.ARGB_8888)
+      val canvas = Canvas(bmp)
+      bmp.eraseColor(android.graphics.Color.TRANSPARENT)
+
+      val railPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          style = Paint.Style.STROKE
+          strokeWidth = 3.2f
+          color = android.graphics.Color.argb(210, 0, 245, 212)
+        }
+      val goldAccentPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          style = Paint.Style.FILL
+          color = android.graphics.Color.argb(245, 250, 204, 21)
+        }
+      val cyanFillPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          style = Paint.Style.FILL
+          color = android.graphics.Color.argb(235, 0, 245, 212)
+        }
+
+      // Top & bottom segmented hologram guide rails
+      val dashCount = 32
+      val dashStep = texW.toFloat() / dashCount
+      for (d in 0 until dashCount) {
+        val xStart = d * dashStep + 6f
+        val xEnd = (d + 1) * dashStep - 6f
+        railPaint.color =
+          if (d % 4 == 0) android.graphics.Color.argb(230, 250, 204, 21)
+          else android.graphics.Color.argb(195, 0, 245, 212)
+        canvas.drawLine(xStart, 18f, xEnd, 18f, railPaint)
+        canvas.drawLine(xStart, texH - 18f, xEnd, texH - 18f, railPaint)
+      }
+
+      val label =
+        "NEXUS // SUBSPACE COMMS & AI • $online ONLINE" +
+          (if (unread > 0) " • $unread UNREAD" else "")
+
+      val glowPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+          textAlign = Paint.Align.CENTER
+          textSize = 44f
+          letterSpacing = 0.05f
+          color =
+            if (unread > 0) android.graphics.Color.argb(165, 250, 204, 21)
+            else android.graphics.Color.argb(165, 0, 245, 212)
+          setShadowLayer(12f, 0f, 0f, android.graphics.Color.argb(220, 0, 245, 212))
+        }
+      val coreTextPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+          textAlign = Paint.Align.CENTER
+          textSize = 44f
+          letterSpacing = 0.05f
+          color =
+            if (unread > 0) android.graphics.Color.rgb(254, 243, 199)
+            else android.graphics.Color.rgb(236, 254, 255)
+        }
+
+      // Fit text cleanly within each 1024px half-revolution with generous margin for geometric separator crest
+      val rawWidth = coreTextPaint.measureText(label)
+      if (rawWidth > 860f) {
+        val scaled = (44f * (860f / rawWidth)).coerceAtLeast(28f)
+        glowPaint.textSize = scaled
+        coreTextPaint.textSize = scaled
+      }
+
+      val fm = coreTextPaint.fontMetrics
+      val baselineY = texH * 0.5f - (fm.ascent + fm.descent) * 0.5f
+
+      for (rep in 0..1) {
+        val centerX = 512f + rep * 1024f
+        canvas.drawText(label, centerX, baselineY, glowPaint)
+        canvas.drawText(label, centerX, baselineY, coreTextPaint)
+
+        // Geometric vector prism separator between the two repeated cylinder arcs (zero emoji characters)
+        val sepX = (rep * 1024f).let { if (it < 1f) 1024f else 2032f }
+        if (rep == 0) {
+          for (sx in floatArrayOf(16f, 1024f, 2032f)) {
+            val dm = Path().apply {
+              moveTo(sx, texH * 0.5f - 15f)
+              lineTo(sx + 13f, texH * 0.5f)
+              lineTo(sx, texH * 0.5f + 15f)
+              lineTo(sx - 13f, texH * 0.5f)
+              close()
+            }
+            canvas.drawPath(dm, goldAccentPaint)
+            val innerDm = Path().apply {
+              moveTo(sx, texH * 0.5f - 7f)
+              lineTo(sx + 6f, texH * 0.5f)
+              lineTo(sx, texH * 0.5f + 7f)
+              lineTo(sx - 6f, texH * 0.5f)
+              close()
+            }
+            canvas.drawPath(innerDm, cyanFillPaint)
+          }
+        } else if (sepX < 0f) {
+          // unreachable; keeps sepX used cleanly
+        }
+      }
+
+      if (texHoloRing == 0) {
+        val texArr = IntArray(1)
+        GLES30.glGenTextures(1, texArr, 0)
+        texHoloRing = texArr[0]
+      }
+      GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texHoloRing)
+      GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR_MIPMAP_LINEAR)
+      GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+      GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_REPEAT)
+      GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+      GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bmp, 0)
+      GLES30.glGenerateMipmap(GLES30.GL_TEXTURE_2D)
+      GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
+      bmp.recycle()
     }
 
     private fun initDynamicShipBuffers() {
@@ -1460,6 +1835,12 @@ class NexusSpaceGlView(context: Context) :
       allocatedW = w
       allocatedH = h
 
+      plasmaW = max(1, (w * 0.62f).toInt())
+      plasmaH = max(1, (h * 0.62f).toInt())
+      val plasmaPair = createColorFbo(plasmaW, plasmaH)
+      fboPlasma = plasmaPair[0]
+      texPlasma = plasmaPair[1]
+
       val scenePair = createSceneColorDepthFbo(w, h)
       fboScene = scenePair[0]
       texScene = scenePair[1]
@@ -1662,6 +2043,80 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, innerRingVertCount)
 
       GLES30.glBindVertexArray(0)
+    }
+
+    private fun drawStationHologramRing3D(basis: CameraBasis3D, timeSec: Float) {
+      if (isSplashMode || texHoloRing == 0 || vaoHoloRing == 0) return
+
+      val st = NEXUS_3D_RIFT_TEARS[0]
+      val sx = st.worldX
+      val sy = st.worldY
+      val sz = st.worldZ
+      val focusGain = if (focusedTearIndex == 0) 1.30f else 1.0f
+
+      // Shared 3D orientation of the revolving cylindrical Holographic Text Ring around the Command Spire
+      buildRotTransMatrix(sx, sy, sz, spinY = -timeSec * 0.26f, pitchX = 0.17f, rollZ = -0.05f, modelMat)
+
+      GLES30.glEnable(GLES30.GL_BLEND)
+      GLES30.glBlendFunc(GLES30.GL_DST_ALPHA, GLES30.GL_ONE)
+      GLES30.glDepthMask(false)
+
+      // 1. Faint translucent cyan projector cone linking the station's comm collar outward to the ring
+      if (vaoHoloCone != 0 && holoConeVertCount > 0) {
+        GLES30.glDisable(GLES30.GL_CULL_FACE)
+        GLES30.glUseProgram(progHoloRing)
+        GLES30.glUniformMatrix4fv(GLES30.glGetUniformLocation(progHoloRing, "uModel"), 1, false, modelMat, 0)
+        GLES30.glUniform3f(GLES30.glGetUniformLocation(progHoloRing, "uCamPos"), basis.camX, basis.camY, basis.camZ)
+        GLES30.glUniform3f(GLES30.glGetUniformLocation(progHoloRing, "uCamFwd"), basis.fwdX, basis.fwdY, basis.fwdZ)
+        GLES30.glUniform3f(GLES30.glGetUniformLocation(progHoloRing, "uCamRight"), basis.rightX, basis.rightY, basis.rightZ)
+        GLES30.glUniform3f(GLES30.glGetUniformLocation(progHoloRing, "uCamUp"), basis.upX, basis.upY, basis.upZ)
+        GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uTanHalfFovY"), basis.tanHalfFovY)
+        GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uAspect"), basis.aspect)
+        GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uTime"), timeSec)
+        GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uFocusGain"), focusGain)
+        GLES30.glUniform1i(GLES30.glGetUniformLocation(progHoloRing, "uConeMode"), 1)
+        GLES30.glBindVertexArray(vaoHoloCone)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, holoConeVertCount)
+      }
+
+      // 2. Two-Pass GL_CULL_FACE 3D Cylindrical Hologram Ring (Back Arc occluded behind spire, Front Arc in front of spire)
+      GLES30.glUseProgram(progHoloRing)
+      GLES30.glUniformMatrix4fv(GLES30.glGetUniformLocation(progHoloRing, "uModel"), 1, false, modelMat, 0)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progHoloRing, "uCamPos"), basis.camX, basis.camY, basis.camZ)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progHoloRing, "uCamFwd"), basis.fwdX, basis.fwdY, basis.fwdZ)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progHoloRing, "uCamRight"), basis.rightX, basis.rightY, basis.rightZ)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progHoloRing, "uCamUp"), basis.upX, basis.upY, basis.upZ)
+      GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uTanHalfFovY"), basis.tanHalfFovY)
+      GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uAspect"), basis.aspect)
+      GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uTime"), timeSec)
+      GLES30.glUniform1f(GLES30.glGetUniformLocation(progHoloRing, "uFocusGain"), focusGain)
+      GLES30.glUniform1i(GLES30.glGetUniformLocation(progHoloRing, "uConeMode"), 0)
+
+      GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+      GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texHoloRing)
+      GLES30.glUniform1i(GLES30.glGetUniformLocation(progHoloRing, "uHoloTex"), 0)
+
+      GLES30.glBindVertexArray(vaoHoloRing)
+      GLES30.glFrontFace(GLES30.GL_CCW)
+      GLES30.glEnable(GLES30.GL_CULL_FACE)
+
+      val locBackDim = GLES30.glGetUniformLocation(progHoloRing, "uBackArcDim")
+
+      // Pass A: Far Back Arc (cull front faces -> draw inward-facing back half at 0.16 alpha, occluded behind solid spire)
+      GLES30.glCullFace(GLES30.GL_FRONT)
+      GLES30.glUniform1f(locBackDim, 0.16f)
+      GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, holoRingVertCount)
+
+      // Pass B: Near Front Arc (cull back faces -> draw outward-facing front half in front of spire with crisp limb fade)
+      GLES30.glCullFace(GLES30.GL_BACK)
+      GLES30.glUniform1f(locBackDim, 1.0f)
+      GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, holoRingVertCount)
+
+      GLES30.glDisable(GLES30.GL_CULL_FACE)
+      GLES30.glDepthMask(true)
+      GLES30.glDisable(GLES30.GL_BLEND)
+      GLES30.glBindVertexArray(0)
+      GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
     }
 
     private fun drawLiveShipTraffic3D(basis: CameraBasis3D, timeSec: Float) {
@@ -1950,19 +2405,17 @@ class NexusSpaceGlView(context: Context) :
         }
       }
 
-      // PASS 1A: Full-Screen Ring-Space Rift Tapestry + Subtle Starlight + 7 Stationary Round 3D Rifts into fboScene
-      GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboScene)
-      GLES30.glViewport(0, 0, w, h)
+      // PASS 1A-1: 0.62x Split-Res Ring-Space Rift Tapestry + 7 Inward-Sucking Feathered Rift Spirals -> fboPlasma
+      GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboPlasma)
+      GLES30.glViewport(0, 0, plasmaW, plasmaH)
       GLES30.glColorMask(true, true, true, true)
-      GLES30.glDepthMask(true)
+      GLES30.glDepthMask(false)
       GLES30.glDisable(GLES30.GL_DEPTH_TEST)
       GLES30.glDisable(GLES30.GL_BLEND)
-      GLES30.glClearColor(0.008f, 0.020f, 0.052f, 1.0f)
-      GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
 
       GLES30.glBindVertexArray(emptyVao)
       GLES30.glUseProgram(progScene)
-      GLES30.glUniform2f(GLES30.glGetUniformLocation(progScene, "uResolution"), w.toFloat(), h.toFloat())
+      GLES30.glUniform2f(GLES30.glGetUniformLocation(progScene, "uResolution"), plasmaW.toFloat(), plasmaH.toFloat())
       GLES30.glUniform1f(GLES30.glGetUniformLocation(progScene, "uTime"), timeSec)
       GLES30.glUniform3f(GLES30.glGetUniformLocation(progScene, "uCamPos"), basis.camX, basis.camY, basis.camZ)
       GLES30.glUniform3f(GLES30.glGetUniformLocation(progScene, "uCamFwd"), basis.fwdX, basis.fwdY, basis.fwdZ)
@@ -1976,7 +2429,33 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glUniform3fv(GLES30.glGetUniformLocation(progScene, "uTearColorB"), tearCount, tearColorBBuf, 0)
       GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
 
-      // PASS 1B & 1C: Hardware Depth-Tested 3D Central NEXUS Station + Live Real-Ship Playfield Traffic
+      // PASS 1A-2: Full-Res 1.0x Bilinear Plasma Upsample + Crisp Multi-Depth Stars + Exact Feathered #000000 Void Mask -> fboScene
+      GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboScene)
+      GLES30.glViewport(0, 0, w, h)
+      GLES30.glColorMask(true, true, true, true)
+      GLES30.glDepthMask(true)
+      GLES30.glDisable(GLES30.GL_DEPTH_TEST)
+      GLES30.glDisable(GLES30.GL_BLEND)
+      GLES30.glClearColor(0.008f, 0.020f, 0.052f, 1.0f)
+      GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
+
+      GLES30.glUseProgram(progSceneUpsample)
+      GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+      GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texPlasma)
+      GLES30.glUniform1i(GLES30.glGetUniformLocation(progSceneUpsample, "uPlasmaTex"), 0)
+      GLES30.glUniform2f(GLES30.glGetUniformLocation(progSceneUpsample, "uResolution"), w.toFloat(), h.toFloat())
+      GLES30.glUniform1f(GLES30.glGetUniformLocation(progSceneUpsample, "uTime"), timeSec)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progSceneUpsample, "uCamPos"), basis.camX, basis.camY, basis.camZ)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progSceneUpsample, "uCamFwd"), basis.fwdX, basis.fwdY, basis.fwdZ)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progSceneUpsample, "uCamRight"), basis.rightX, basis.rightY, basis.rightZ)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progSceneUpsample, "uCamUp"), basis.upX, basis.upY, basis.upZ)
+      GLES30.glUniform1f(GLES30.glGetUniformLocation(progSceneUpsample, "uTanHalfFovY"), basis.tanHalfFovY)
+      GLES30.glUniform1i(GLES30.glGetUniformLocation(progSceneUpsample, "uTearCount"), tearCount)
+      GLES30.glUniform4fv(GLES30.glGetUniformLocation(progSceneUpsample, "uTearPosSize"), tearCount, tearPosSizeBuf, 0)
+      GLES30.glUniform4fv(GLES30.glGetUniformLocation(progSceneUpsample, "uTearStyle"), tearCount, tearStyleBuf, 0)
+      GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
+
+      // PASS 1B, 1C & 1D: Full-Res 1.0x Hardware Depth-Tested 3D Station + Revolving 3D Hologram Ring + Live Real-Ship Traffic
       // Preserve fboScene.a (voidKeepMask) so #000000 Rift button-text cores stay 100% pure black!
       GLES30.glColorMask(true, true, true, false)
       GLES30.glEnable(GLES30.GL_DEPTH_TEST)
@@ -1984,6 +2463,7 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glDepthMask(true)
 
       drawStation3D(basis, timeSec)
+      drawStationHologramRing3D(basis, timeSec)
       drawLiveShipTraffic3D(basis, timeSec)
 
       GLES30.glDisable(GLES30.GL_DEPTH_TEST)
@@ -2084,14 +2564,15 @@ class NexusSpaceGlView(context: Context) :
     }
 
     private fun deleteFramebuffers() {
-      val fbos = intArrayOf(fboScene, fboBloomA, fboBloomB)
-      val texs = intArrayOf(texScene, texBloomA, texBloomB)
+      val fbos = intArrayOf(fboPlasma, fboScene, fboBloomA, fboBloomB)
+      val texs = intArrayOf(texPlasma, texScene, texBloomA, texBloomB)
       val rbos = intArrayOf(rboSceneDepth)
       for (i in fbos.indices) {
         if (fbos[i] != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(fbos[i]), 0)
         if (texs[i] != 0) GLES30.glDeleteTextures(1, intArrayOf(texs[i]), 0)
       }
       if (rbos[0] != 0) GLES30.glDeleteRenderbuffers(1, rbos, 0)
+      fboPlasma = 0; texPlasma = 0; plasmaW = 0; plasmaH = 0
       fboScene = 0; texScene = 0; rboSceneDepth = 0
       fboBloomA = 0; texBloomA = 0
       fboBloomB = 0; texBloomB = 0
@@ -2103,11 +2584,12 @@ class NexusSpaceGlView(context: Context) :
         if (eglDisplay != EGL14.EGL_NO_DISPLAY && eglContext != EGL14.EGL_NO_CONTEXT) {
           deleteFramebuffers()
           if (texShipAtlas != 0) GLES30.glDeleteTextures(1, intArrayOf(texShipAtlas), 0)
-          val vaos = intArrayOf(emptyVao, vaoSpire, vaoOuterRing, vaoInnerRing, vaoShipHull, vaoShipTrail)
+          if (texHoloRing != 0) GLES30.glDeleteTextures(1, intArrayOf(texHoloRing), 0)
+          val vaos = intArrayOf(emptyVao, vaoSpire, vaoOuterRing, vaoInnerRing, vaoHoloRing, vaoHoloCone, vaoShipHull, vaoShipTrail)
           for (v in vaos) if (v != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(v), 0)
-          val vbos = intArrayOf(vboSpire, vboOuterRing, vboInnerRing, vboShipHull, vboShipTrail)
+          val vbos = intArrayOf(vboSpire, vboOuterRing, vboInnerRing, vboHoloRing, vboHoloCone, vboShipHull, vboShipTrail)
           for (b in vbos) if (b != 0) GLES30.glDeleteBuffers(1, intArrayOf(b), 0)
-          val progs = intArrayOf(progScene, progStation, progShipHull, progShipTrail, progBright, progBlur, progComposite)
+          val progs = intArrayOf(progScene, progSceneUpsample, progStation, progHoloRing, progShipHull, progShipTrail, progBright, progBlur, progComposite)
           for (p in progs) if (p != 0) GLES30.glDeleteProgram(p)
         }
       }
@@ -2355,6 +2837,102 @@ void main() {
 }
 """
 
+private const val HOLO_RING_VERT_GLSL =
+  """#version 300 es
+precision highp float;
+
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec4 aNormalOrCol;
+layout(location = 2) in vec2 aUv;
+
+uniform mat4 uModel;
+uniform vec3 uCamPos;
+uniform vec3 uCamFwd;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform float uTanHalfFovY;
+uniform float uAspect;
+uniform int uConeMode;
+
+out vec3 vWorldPos;
+out vec3 vWorldNormal;
+out vec2 vUv;
+out vec4 vConeCol;
+
+void main() {
+    vec4 wp = uModel * vec4(aPos, 1.0);
+    vWorldPos = wp.xyz;
+    if (uConeMode == 1) {
+        vWorldNormal = vec3(0.0, 1.0, 0.0);
+        vConeCol = aNormalOrCol;
+        vUv = vec2(0.0);
+    } else {
+        vWorldNormal = normalize(mat3(uModel) * aNormalOrCol.xyz);
+        vConeCol = vec4(1.0);
+        vUv = aUv;
+    }
+
+    vec3 d = wp.xyz - uCamPos;
+    float vx = dot(d, uCamRight);
+    float vy = dot(d, uCamUp);
+    float vz = max(0.05, dot(d, uCamFwd));
+
+    float clipX = vx / (uAspect * uTanHalfFovY);
+    float clipY = vy / uTanHalfFovY;
+    float zNear = 0.20;
+    float zFar = 12.0;
+    float clipZ = ((zFar + zNear) * vz - 2.0 * zFar * zNear) / (zFar - zNear);
+    gl_Position = vec4(clipX, clipY, clipZ, vz);
+}
+"""
+
+private const val HOLO_RING_FRAG_GLSL =
+  """#version 300 es
+precision highp float;
+
+in vec3 vWorldPos;
+in vec3 vWorldNormal;
+in vec2 vUv;
+in vec4 vConeCol;
+
+uniform sampler2D uHoloTex;
+uniform vec3 uCamPos;
+uniform float uTime;
+uniform float uFocusGain;
+uniform float uBackArcDim;
+uniform int uConeMode;
+
+out vec4 fragColor;
+
+void main() {
+    if (uConeMode == 1) {
+        float shimmer = 0.80 + 0.20 * sin(uTime * 3.8 + vWorldPos.x * 18.0 + vWorldPos.z * 18.0);
+        vec3 coneRgb = vConeCol.rgb * (vConeCol.a * shimmer * uFocusGain);
+        fragColor = vec4(coneRgb, vConeCol.a);
+        return;
+    }
+
+    vec4 texel = texture(uHoloTex, vUv);
+    // Faint translucent cyan hologram carrier band + crisp text & guide rails
+    float bandMask = smoothstep(0.0, 0.14, vUv.y) * smoothstep(1.0, 0.86, vUv.y);
+    float scanline = 0.84 + 0.16 * sin(vUv.y * 145.0 - uTime * 9.5);
+    float dataWave = 0.90 + 0.10 * sin(vUv.x * 37.699 + uTime * 3.2);
+
+    vec3 viewDir = normalize(uCamPos - vWorldPos);
+    vec3 surfNormal = (uBackArcDim < 0.5) ? -normalize(vWorldNormal) : normalize(vWorldNormal);
+    float limbFade = pow(clamp(dot(surfNormal, viewDir), 0.0, 1.0), 0.65);
+
+    vec3 carrierCol = vec3(0.0, 0.72, 0.90) * (0.048 * bandMask);
+    vec3 glyphCol = texel.rgb * texel.a * (1.28 * uFocusGain);
+    vec3 finalRgb = (carrierCol + glyphCol) * scanline * dataWave * limbFade * uBackArcDim;
+
+    if (max(finalRgb.r, max(finalRgb.g, finalRgb.b)) < 0.002) {
+        discard;
+    }
+    fragColor = vec4(finalRgb, 1.0);
+}
+"""
+
 private const val NEXUS_VOLUMETRIC_SCENE_FRAG_GLSL =
   """#version 300 es
 precision highp float;
@@ -2374,12 +2952,6 @@ uniform vec4 uTearPosSize[8]; // (worldX, worldY, halfW, halfH)
 uniform vec4 uTearStyle[8];   // (worldZ, tiltRad, phaseOffset, focusGain)
 uniform vec3 uTearColorA[8];
 uniform vec3 uTearColorB[8];
-
-vec2 hash22(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.xx + p3.yz) * p3.zy);
-}
 
 float noise3(vec3 x) {
     vec3 i = floor(x);
@@ -2421,29 +2993,6 @@ float fbm5(vec3 p) {
         amp *= 0.5;
     }
     return v;
-}
-
-vec3 starFieldLayer(vec2 dirUv, float scale, float densityCut, float t) {
-    vec2 gv = fract(dirUv * scale) - 0.5;
-    vec2 id = floor(dirUv * scale);
-    vec2 rnd = hash22(id);
-    if (rnd.x < densityCut) return vec3(0.0);
-    vec2 offs = (rnd - 0.5) * 0.68;
-    float d = length(gv - offs);
-    float twinkle = 0.74 + 0.26 * sin(t * (1.4 + rnd.y * 2.8) + rnd.x * 37.0);
-    float core = smoothstep(0.078, 0.0, d) * twinkle;
-    vec3 tint = mix(vec3(0.72, 0.88, 1.0), vec3(1.0, 0.91, 0.74), fract(rnd.y * 7.3));
-    return tint * core * (0.58 + 0.82 * fract(rnd.x * 13.7));
-}
-
-// Crisp 3-depth starfield shining subtly through the swirling Ring-Space Rift tapestry
-vec3 sampleRingSpaceStars(vec3 rayDir, float t) {
-    vec2 sph = rayDir.xy / max(0.32, abs(rayDir.z));
-    vec3 stars = vec3(0.0);
-    stars += starFieldLayer(sph + vec2(t * 0.0007, 0.0), 36.0, 0.85, t) * 0.95;
-    stars += starFieldLayer(sph * 1.34 - vec2(0.0, t * 0.0005), 68.0, 0.88, t) * 0.72;
-    stars += starFieldLayer(sph * 1.78 + vec2(4.2, -1.9), 116.0, 0.91, t) * 0.48;
-    return stars;
 }
 
 // Overarching Full-Screen Ring-Space NEXUS Convergence Tapestry (covers 100% edge-to-edge to all 4 corners)
@@ -2492,28 +3041,6 @@ void main() {
         ndc.y * uTanHalfFovY * uCamUp
     );
 
-    // Gravitational micro-lensing bend of background starlight around the Singularities
-    vec3 lensedDir = rayDir;
-    for (int i = 0; i < 8; i++) {
-        if (i >= uTearCount) break;
-        vec4 ps = uTearPosSize[i];
-        vec4 st = uTearStyle[i];
-        float denom = rayDir.z;
-        if (abs(denom) > 1e-4) {
-            float tHit = (st.x - uCamPos.z) / denom;
-            if (tHit > 0.1) {
-                vec3 hit = uCamPos + rayDir * tHit;
-                vec2 d = (hit.xy - ps.xy) / max(vec2(0.05), ps.zw);
-                float r2 = dot(d, d);
-                if (r2 < 6.0) {
-                    float pull = exp(-r2 * 0.90) * 0.032;
-                    lensedDir.xy -= normalize(d + vec2(1e-5)) * pull;
-                }
-            }
-        }
-    }
-    lensedDir = normalize(lensedDir);
-
     // Intersect Ring-Space hub plane (z = 0.0) for full-screen edge-to-edge tapestry & central contrast pocket
     vec2 hubPlaneXY = rayDir.xy * 3.6;
     float hubDist = 2.0;
@@ -2528,11 +3055,30 @@ void main() {
     // Crisp dark silhouette contrast pocket right behind the Central 3D Station (ZERO cyan fog halo!)
     float hubBackdropPocket = mix(0.28, 1.0, smoothstep(0.28, 0.76, hubDist));
 
-    vec3 col = sampleRingSpaceTapestry(hubPlaneXY, hubBackdropPocket, uTime);
+    // Gravitational inward-sucking vortex warp: pull & twist surrounding Ring-Space plasma spirals into each Rift's throat
+    vec2 warpedHubXY = hubPlaneXY;
+    for (int i = 0; i < 8; i++) {
+        if (i >= uTearCount) break;
+        vec4 ps = uTearPosSize[i];
+        vec4 st = uTearStyle[i];
+        vec2 relH = hubPlaneXY - ps.xy;
+        vec2 qH = relH / max(vec2(0.05), ps.zw);
+        float rH = length(qH);
+        if (rH < 3.8) {
+            float pull = exp(-max(rH - 0.36, 0.0) * 1.45) * 0.52;
+            float twistAng = pull * (1.35 + 0.25 * sin(uTime * 0.85 + st.z));
+            float ct = cos(twistAng);
+            float stw = sin(twistAng);
+            vec2 stretched = relH * (1.0 + pull * 1.15);
+            vec2 twisted = vec2(stretched.x * ct - stretched.y * stw, stretched.x * stw + stretched.y * ct);
+            warpedHubXY += (twisted - relH);
+        }
+    }
 
+    vec3 col = sampleRingSpaceTapestry(warpedHubXY, hubBackdropPocket, uTime);
     float voidKeepMask = 1.0;
 
-    // 7 Stationary Round (~1.05:1.0) Playfield-Spirit 3D Singularities whose spiral arms extend across all of Ring Space
+    // 7 Stationary Round (~1:1) Inward-Sucking 3D Rifts with feathered polar FBM event-horizon throats (zero sharp cookie-cutter circles)
     for (int i = 0; i < 8; i++) {
         if (i >= uTearCount) break;
         vec4 ps = uTearPosSize[i];
@@ -2551,64 +3097,197 @@ void main() {
         vec2 q = rot / max(vec2(0.04), ps.zw);
 
         float r = length(q);
-        // Unclipped Ring-Space field — spiral arms & FBM currents flow seamlessly edge-to-edge!
-
         float theta = atan(q.y, q.x);
         float phase = st.z;
         float focusGain = st.w;
         vec3 colA = uTearColorA[i];
         vec3 colB = uTearColorB[i];
 
-        // Subtle horizon shimmer (<3.2% amplitude — calm, monumental, zero shockwave rings)
-        float breathe = 1.0 + 0.030 * sin(uTime * 1.25 + phase);
+        float breathe = 1.0 + 0.026 * sin(uTime * 1.15 + phase);
+        float safeR = max(r, 0.14);
+        float logR = log(safeR);
 
-        // Organic round #000000 event-horizon core housing projected button text (only in 7-Rift Hub mode)
-        float rimNoise = (fbm4(vec3(cos(theta) * 2.1, sin(theta) * 2.1, uTime * 0.30 + phase)) - 0.5) * 0.062;
-        float coreR = (uTearCount == 7) ? (0.68 + rimNoise) : (0.34 + rimNoise * 0.6);
+        // Polar FBM tendrils physically streaming INWARD (+uTime in logR shrinks radius with time!)
+        float inwardFlow = fbm4(vec3(cos(theta) * 3.2, sin(theta) * 3.2, logR * 2.6 + uTime * 1.55 + phase));
+        float innerBlackR = (uTearCount == 7) ? 0.42 : 0.22;
+        float outerFeatherR =
+            (uTearCount == 7)
+                ? (0.86 + (inwardFlow - 0.5) * 0.22)
+                : (0.52 + (inwardFlow - 0.5) * 0.14);
+        float coreFade = smoothstep(innerBlackR, outerFeatherR, r);
 
-        float rDist = r - coreR;
+        if (r > innerBlackR * 0.88) {
+            float rOuter = max(r - 0.56, 0.0);
+            float warp = fbm4(vec3(q * (1.48 / (1.0 + 0.20 * rOuter)), uTime * 0.28 + phase));
 
-        if (rDist > -0.06) {
-            float safeR = max(r, 0.16);
-            float logR = log(safeR);
-            float warp = fbm4(vec3(q * (1.55 / (1.0 + 0.18 * max(rDist, 0.0))), uTime * 0.24 + phase));
+            // Inward-streaming logarithmic spiral arms pulled into the feathered Rift throat
+            float armPrimary = 0.5 + 0.5 * sin(3.0 * theta + 5.4 * logR + uTime * 1.70 + warp * 2.8 + phase);
+            float armSecondary = 0.5 + 0.5 * sin(5.0 * theta + 3.8 * logR + uTime * 1.18 - warp * 2.1);
+            float innerSpiral = pow(armPrimary, 2.15) * 0.74 + pow(armSecondary, 2.75) * 0.42;
+            float innerFalloff = exp(-rOuter * 1.58);
 
-            // 1A. Rich inner Playfield-spirit logarithmic spiral vortex
-            float armPrimary = 0.5 + 0.5 * sin(3.0 * theta - 5.2 * logR - uTime * 1.65 + warp * 2.8 + phase);
-            float armSecondary = 0.5 + 0.5 * sin(5.0 * theta - 3.5 * logR - uTime * 1.10 - warp * 2.1);
-            float innerSpiral = pow(armPrimary, 2.2) * 0.72 + pow(armSecondary, 2.8) * 0.40;
-            float innerFalloff = exp(-max(rDist, 0.0) * 1.65);
-
-            // 1B. Long-range outward-flowing spiral arms & FBM currents interweaving across 100% of Ring Space
-            float farArm = 0.5 + 0.5 * sin(2.0 * theta - 3.6 * logR - uTime * 0.82 + warp * 2.7 + phase);
-            float longRangeFalloff = 1.0 / (1.0 + max(rDist, 0.0) * max(rDist, 0.0) * 0.42);
+            // Long-range convergence arms interweaving across 100% of Ring Space
+            float farArm = 0.5 + 0.5 * sin(2.0 * theta + 3.6 * logR + uTime * 0.84 + warp * 2.6 + phase);
+            float longRangeFalloff = 1.0 / (1.0 + rOuter * rOuter * 0.42);
             float longRangeCurrent =
                 (pow(farArm, 1.85) * 0.58 + smoothstep(0.28, 0.84, warp) * 0.42) *
                 longRangeFalloff *
                 hubBackdropPocket;
 
-            vec3 plasmaTint = mix(colA, colB, clamp(0.5 + 0.5 * sin(theta * 2.0 - logR * 2.1 + uTime * 0.55), 0.0, 1.0));
-            col += plasmaTint * (innerSpiral * innerFalloff * 1.18 + longRangeCurrent * 0.24) * breathe * focusGain;
+            vec3 plasmaTint = mix(colA, colB, clamp(0.5 + 0.5 * sin(theta * 2.0 + logR * 2.2 + uTime * 0.55), 0.0, 1.0));
+            col += plasmaTint * (innerSpiral * innerFalloff * 1.16 + longRangeCurrent * 0.24) * coreFade * breathe * focusGain;
 
-            // Razor-crisp white-hot inner photon accretion ring hugging the event horizon (HDR > 1.05 for tight jewel bloom)
-            float photonRing = exp(-abs(rDist) * 21.0);
-            vec3 lipHot = mix(plasmaTint, vec3(1.0, 0.99, 1.0), 0.68);
-            col += lipHot * photonRing * 2.15 * breathe * focusGain;
+            // Soft feathered inward-streaming accretion wisps (ZERO hard circular exp(-abs(rDist)*21) sticker edge!)
+            float throatBand = smoothstep(innerBlackR * 0.96, innerBlackR + 0.28, r) * exp(-max(r - 0.70, 0.0) * 3.15);
+            float filamentWisp = pow(clamp(inwardFlow * 0.65 + armPrimary * 0.35, 0.0, 1.0), 1.85);
+            vec3 lipHot = mix(plasmaTint, vec3(0.96, 0.99, 1.0), 0.46);
+            col += lipHot * (throatBand * (0.58 + 1.08 * filamentWisp)) * coreFade * breathe * focusGain;
         }
 
-        // Accumulate pure #000000 Singularity Event-Horizon mask
-        float innerVoid = 1.0 - smoothstep(-0.045, 0.025, rDist);
-        voidKeepMask *= (1.0 - innerVoid);
+        voidKeepMask *= coreFade;
     }
 
-    // Subtle multi-depth starlight shining through the swirling Ring-Space Rift plasma across the whole screen
+    float cleanVoidMask = clamp(voidKeepMask, 0.0, 1.0);
+    fragColor = vec4(max(col * cleanVoidMask, vec3(0.0)), cleanVoidMask);
+}
+"""
+
+private const val NEXUS_SCENE_UPSAMPLE_FRAG_GLSL =
+  """#version 300 es
+precision highp float;
+
+in vec2 vUv;
+out vec4 fragColor;
+
+uniform sampler2D uPlasmaTex;
+uniform vec2 uResolution;
+uniform float uTime;
+uniform vec3 uCamPos;
+uniform vec3 uCamFwd;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform float uTanHalfFovY;
+uniform int uTearCount;
+uniform vec4 uTearPosSize[8];
+uniform vec4 uTearStyle[8];
+
+vec2 hash22(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+float noise3(vec3 x) {
+    vec3 i = floor(x);
+    vec3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    float n = i.x + i.y * 57.0 + 113.0 * i.z;
+    float a = fract(sin(n + 0.0) * 43758.5453);
+    float b = fract(sin(n + 1.0) * 43758.5453);
+    float c = fract(sin(n + 57.0) * 43758.5453);
+    float d = fract(sin(n + 58.0) * 43758.5453);
+    float e = fract(sin(n + 113.0) * 43758.5453);
+    float f1 = fract(sin(n + 114.0) * 43758.5453);
+    float g = fract(sin(n + 170.0) * 43758.5453);
+    float h = fract(sin(n + 171.0) * 43758.5453);
+    return mix(
+        mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
+        mix(mix(e, f1, f.x), mix(g, h, f.x), f.y),
+        f.z
+    );
+}
+
+float fbm4(vec3 p) {
+    float v = 0.0;
+    float amp = 0.5;
+    for (int i = 0; i < 4; i++) {
+        v += amp * noise3(p);
+        p = p * 2.04 + vec3(7.3, -4.9, 5.1);
+        amp *= 0.5;
+    }
+    return v;
+}
+
+vec3 starFieldLayer(vec2 dirUv, float scale, float densityCut, float t) {
+    vec2 gv = fract(dirUv * scale) - 0.5;
+    vec2 id = floor(dirUv * scale);
+    vec2 rnd = hash22(id);
+    if (rnd.x < densityCut) return vec3(0.0);
+    vec2 offs = (rnd - 0.5) * 0.68;
+    float d = length(gv - offs);
+    float twinkle = 0.74 + 0.26 * sin(t * (1.4 + rnd.y * 2.8) + rnd.x * 37.0);
+    float core = smoothstep(0.078, 0.0, d) * twinkle;
+    vec3 tint = mix(vec3(0.72, 0.88, 1.0), vec3(1.0, 0.91, 0.74), fract(rnd.y * 7.3));
+    return tint * core * (0.58 + 0.82 * fract(rnd.x * 13.7));
+}
+
+vec3 sampleRingSpaceStars(vec3 rayDir, float t) {
+    vec2 sph = rayDir.xy / max(0.32, abs(rayDir.z));
+    vec3 stars = vec3(0.0);
+    stars += starFieldLayer(sph + vec2(t * 0.0007, 0.0), 36.0, 0.85, t) * 0.95;
+    stars += starFieldLayer(sph * 1.34 - vec2(0.0, t * 0.0005), 68.0, 0.88, t) * 0.72;
+    stars += starFieldLayer(sph * 1.78 + vec2(4.2, -1.9), 116.0, 0.91, t) * 0.48;
+    return stars;
+}
+
+void main() {
+    vec4 plasmaSample = texture(uPlasmaTex, vUv);
+    vec3 col = plasmaSample.rgb;
+
+    float aspect = uResolution.x / max(1.0, uResolution.y);
+    vec2 ndc = vUv * 2.0 - 1.0;
+    vec3 rayDir = normalize(
+        uCamFwd +
+        ndc.x * aspect * uTanHalfFovY * uCamRight +
+        ndc.y * uTanHalfFovY * uCamUp
+    );
+
+    // Full-resolution gravitational lensing + full-resolution feathered #000000 throat mask
+    vec3 lensedDir = rayDir;
+    float voidKeepMask = 1.0;
+    for (int i = 0; i < 8; i++) {
+        if (i >= uTearCount) break;
+        vec4 ps = uTearPosSize[i];
+        vec4 st = uTearStyle[i];
+        float denom = rayDir.z;
+        if (abs(denom) > 1e-4) {
+            float tHit = (st.x - uCamPos.z) / denom;
+            if (tHit > 0.1) {
+                vec3 hit = uCamPos + rayDir * tHit;
+                vec2 rel = hit.xy - ps.xy;
+                vec2 d = rel / max(vec2(0.05), ps.zw);
+                float r2 = dot(d, d);
+                if (r2 < 6.0) {
+                    float pull = exp(-r2 * 0.90) * 0.038;
+                    lensedDir.xy -= normalize(d + vec2(1e-5)) * pull;
+                }
+
+                float c = cos(-st.y);
+                float s = sin(-st.y);
+                vec2 rot = vec2(rel.x * c - rel.y * s, rel.x * s + rel.y * c);
+                vec2 q = rot / max(vec2(0.04), ps.zw);
+                float r = length(q);
+                if (r < 1.15) {
+                    float theta = atan(q.y, q.x);
+                    float inwardFlow = fbm4(vec3(cos(theta) * 3.2, sin(theta) * 3.2, log(max(r, 0.14)) * 2.6 + uTime * 1.55 + st.z));
+                    float innerBlackR = (uTearCount == 7) ? 0.42 : 0.22;
+                    float outerFeatherR =
+                        (uTearCount == 7)
+                            ? (0.86 + (inwardFlow - 0.5) * 0.22)
+                            : (0.52 + (inwardFlow - 0.5) * 0.14);
+                    voidKeepMask *= smoothstep(innerBlackR, outerFeatherR, r);
+                }
+            }
+        }
+    }
+    lensedDir = normalize(lensedDir);
+
+    // Native 1.0x razor-sharp multi-depth starlight glinting subtly through the upsampled plasma
     vec3 stars = sampleRingSpaceStars(lensedDir, uTime);
     float plasmaLum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-    col += stars * (0.42 + 0.36 * clamp(1.0 - plasmaLum * 0.45, 0.22, 1.0));
-
-    // Enforce strict pure #000000 inside all 7 Rift button-text cores (zero star or neighbor-arm bleed!)
-    float cleanVoidMask = clamp(voidKeepMask, 0.0, 1.0);
-    col *= cleanVoidMask;
+    float cleanVoidMask = clamp(min(plasmaSample.a, voidKeepMask), 0.0, 1.0);
+    col = col * (cleanVoidMask / max(plasmaSample.a, 1e-4)) +
+        stars * (0.42 + 0.36 * clamp(1.0 - plasmaLum * 0.45, 0.22, 1.0)) * cleanVoidMask;
 
     fragColor = vec4(max(col, vec3(0.0)), cleanVoidMask);
 }

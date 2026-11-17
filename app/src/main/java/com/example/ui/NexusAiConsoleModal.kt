@@ -544,6 +544,7 @@ fun NexusAiConsoleModal(
   onToggleBootToNexusHub: (Boolean) -> Unit = {},
   totalOnlinePilots: Int = 0,
   syndicateOnlineCount: Int = 0,
+  strikeWingOnlineCount: Int = 0,
   presetArmadasReadyCount: Int = 0,
   activeArmadaName: String = "",
   armadaSlots: List<ArmadaMemberSlot> = emptyList(),
@@ -585,6 +586,8 @@ fun NexusAiConsoleModal(
   onAddOnlinePilotFriend: (String) -> Unit = {},
   onInviteOnlinePilotToWing: (LivePilotState) -> Unit = {},
   engine: RiftGameEngine? = null,
+  isInMatch: Boolean = engine?.hasJoinedMatch == true && engine?.isEphemeralPracticeRift != true,
+  onEnterPracticeRift: () -> Unit = onCloseModal,
   initialLayoutMode: NexusHubLayoutMode = NexusHubLayoutMode.DECK_ONLY,
   activeModuleKey: String = "NEXUS",
   activeNode: NexusCoreNode = NexusCoreNode.ORBITAL_HUB,
@@ -887,6 +890,7 @@ fun NexusAiConsoleModal(
             dimFactor = if (activeNode == NexusCoreNode.ORBITAL_HUB) 1.0f else 0.44f
             focusedTearIndex = if (activeNode == NexusCoreNode.ORBITAL_HUB) focusedOrbitalIndex else -1
             updateOnlinePilotShips(liveTrafficShipIds)
+            updateStationHologramTelemetry(totalOnlinePilots, unreadCommsCount)
             glViewRef = this
           }
         },
@@ -895,6 +899,7 @@ fun NexusAiConsoleModal(
           view.isSplashMode = false
           view.dimFactor = if (activeNode == NexusCoreNode.ORBITAL_HUB) 1.0f else 0.44f
           view.updateOnlinePilotShips(liveTrafficShipIds)
+          view.updateStationHologramTelemetry(totalOnlinePilots, unreadCommsCount)
         },
         modifier = Modifier.fillMaxSize(),
       )
@@ -920,14 +925,17 @@ fun NexusAiConsoleModal(
             liveResonance = resolvedLiveResonance,
             riftShards = riftShards,
             totalOnlinePilots = totalOnlinePilots,
+            syndicateOnlineCount = syndicateOnlineCount,
+            strikeWingOnlineCount = strikeWingOnlineCount,
             unreadCommsCount = unreadCommsCount,
             bootToNexusHub = bootToNexusHub,
-            isInMatch = engine?.hasJoinedMatch == true,
+            isInMatch = isInMatch,
             isStreaming = isStreaming,
             focusedOrbitalIndex = focusedOrbitalIndex,
             glViewRef = glViewRef,
             onToggleBootToNexusHub = onToggleBootToNexusHub,
             onLeaveMatch = onLeaveMatch,
+            onEnterPracticeRift = onEnterPracticeRift,
             onCloseModal = onCloseModal,
             onSelectNode = { tearIdx, node ->
               glViewRef?.triggerDiveIntoTear(tearIdx)
@@ -965,10 +973,11 @@ fun NexusAiConsoleModal(
                 onSelectArchiveSubDeck = onSelectArchiveSubDeck,
                 armadaCount = armadaSlots.size.coerceAtLeast(1),
                 showClearAi = activeNode == NexusCoreNode.SUBSPACE_COMMS && selectedChannelKey == "#nexus-ai" && messages.isNotEmpty(),
-                isInMatch = engine?.hasJoinedMatch == true,
+                isInMatch = isInMatch,
                 onBackToHub = { onSelectNode(NexusCoreNode.ORBITAL_HUB) },
                 onClearAi = onClearHistory,
                 onLeaveMatch = onLeaveMatch,
+                onEnterPracticeRift = onEnterPracticeRift,
                 onCloseToArena = onCloseModal,
               )
 
@@ -1181,7 +1190,9 @@ private fun OrbitalHubSpatialStage(
   liveResonance: Int,
   riftShards: Long,
   totalOnlinePilots: Int,
-  unreadCommsCount: Int,
+  syndicateOnlineCount: Int,
+  strikeWingOnlineCount: Int,
+  @Suppress("UNUSED_PARAMETER") unreadCommsCount: Int,
   @Suppress("UNUSED_PARAMETER") bootToNexusHub: Boolean,
   isInMatch: Boolean,
   isStreaming: Boolean,
@@ -1189,6 +1200,7 @@ private fun OrbitalHubSpatialStage(
   glViewRef: NexusSpaceGlView?,
   @Suppress("UNUSED_PARAMETER") onToggleBootToNexusHub: (Boolean) -> Unit,
   onLeaveMatch: () -> Unit,
+  onEnterPracticeRift: () -> Unit,
   onCloseModal: () -> Unit,
   onSelectNode: (Int, NexusCoreNode) -> Unit,
 ) {
@@ -1217,62 +1229,57 @@ private fun OrbitalHubSpatialStage(
     }
     while (true) {
       withFrameNanos {
-        val glW = glViewRef.width
-        val glH = glViewRef.height
-        projectedStates =
-          if (glW > 0 && glH > 0) {
-            glViewRef.computeProjectedTearStates(glW.toFloat(), glH.toFloat())
-          } else if (stageSizePx.width > 0 && stageSizePx.height > 0) {
-            computeStaticProjectedTearStates(stageSizePx.width.toFloat(), stageSizePx.height.toFloat())
-          } else {
-            emptyList()
-          }
+        if (projectedStates.isEmpty() || glViewRef.consumeProjectionDirty()) {
+          val glW = glViewRef.width
+          val glH = glViewRef.height
+          projectedStates =
+            if (glW > 0 && glH > 0) {
+              glViewRef.computeProjectedTearStates(glW.toFloat(), glH.toFloat())
+            } else if (stageSizePx.width > 0 && stageSizePx.height > 0) {
+              computeStaticProjectedTearStates(stageSizePx.width.toFloat(), stageSizePx.height.toFloat())
+            } else {
+              emptyList()
+            }
+        }
       }
     }
   }
 
   Column(modifier = Modifier.fillMaxSize()) {
-    // Sleek frameless translucent horizon telemetry strip (no STARTUP toggle; custom Resonance & Shard icons)
+    // Ultra-minimal frameless translucent horizon telemetry strip (SYN / WING / ONLINE + PRACTICE RIFT >)
     Box(
       modifier =
         Modifier.fillMaxWidth()
           .background(
             Brush.verticalGradient(
-              colors = listOf(Color(0xDC010308), Color(0x88010308), Color.Transparent),
+              colors = listOf(Color(0xD8010308), Color(0x78010308), Color.Transparent),
             )
           )
-          .padding(horizontal = 16.dp, vertical = 6.dp),
+          .padding(horizontal = 16.dp, vertical = 5.dp),
     ) {
       Row(
-        modifier = Modifier.fillMaxWidth().height(34.dp),
+        modifier = Modifier.fillMaxWidth().height(32.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
           modifier = Modifier.weight(1f),
         ) {
-          SwirlingRiftVortexGlyph(modifier = Modifier.size(24.dp), isStreaming = isStreaming)
+          SwirlingRiftVortexGlyph(modifier = Modifier.size(20.dp), isStreaming = isStreaming)
           Text(
             text = "NEXUS",
             color = Color(0xFF00F5D4),
-            fontSize = 12.5.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
-            letterSpacing = 1.2.sp,
-          )
-          Text(
-            text = "• $totalOnlinePilots PILOTS ONLINE",
-            color = Color(0xFF34D399),
-            fontSize = 8.8.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
+            letterSpacing = 1.1.sp,
           )
           Text(
             text = pilotIdentityLabel,
             color = Color(0xFFE2E8F0),
-            fontSize = 8.8.sp,
+            fontSize = 8.6.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -1281,11 +1288,10 @@ private fun OrbitalHubSpatialStage(
           Text(
             text = "•",
             color = Color(0xFF64748B),
-            fontSize = 8.8.sp,
+            fontSize = 8.6.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
           )
-          // Custom Solar-Gold & Cyan Harmonic Winged Tuning Crest (replaces plain "RES " text)
           Canvas(modifier = Modifier.size(14.dp)) {
             drawImage(
               resonanceBmp,
@@ -1295,18 +1301,17 @@ private fun OrbitalHubSpatialStage(
           Text(
             text = "$liveResonance",
             color = Color(0xFFFACC15),
-            fontSize = 8.8.sp,
+            fontSize = 8.6.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
           )
           Text(
             text = "•",
             color = Color(0xFF64748B),
-            fontSize = 8.8.sp,
+            fontSize = 8.6.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
           )
-          // Single Jewel-Grade 3D Faceted Prismatic Shard Gem (zero duplicate ❖ glyph)
           Canvas(modifier = Modifier.size(14.dp)) {
             drawImage(
               shardBmp,
@@ -1316,7 +1321,23 @@ private fun OrbitalHubSpatialStage(
           Text(
             text = shardText,
             color = Color(0xFFF0ABFC),
-            fontSize = 8.8.sp,
+            fontSize = 8.6.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+          Text(
+            text = "• SYN $syndicateOnlineCount • WING $strikeWingOnlineCount",
+            color = Color(0xFF38BDF8),
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+          Text(
+            text = "• $totalOnlinePilots ONLINE",
+            color = Color(0xFF34D399),
+            fontSize = 8.6.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -1339,14 +1360,20 @@ private fun OrbitalHubSpatialStage(
             )
           }
           Text(
-            text = if (isInMatch) "RETURN TO RIFT >" else "VIEW ORBIT >",
+            text = if (isInMatch) "RETURN TO RIFT >" else "PRACTICE RIFT >",
             color = Color(0xFF00F5D4),
             fontSize = 8.8.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             modifier =
               Modifier.clip(CircleShape)
-                .clickable { onCloseModal() }
+                .clickable {
+                  if (isInMatch) {
+                    onCloseModal()
+                  } else {
+                    onEnterPracticeRift()
+                  }
+                }
                 .padding(horizontal = 8.dp, vertical = 4.dp)
                 .testTag("nexus_close_button"),
           )
@@ -1407,78 +1434,43 @@ private fun OrbitalHubSpatialStage(
         val isPrimaryNexus = idx == 0
         val isFocused = focusedOrbitalIndex == idx
         val primaryGlow =
-          remember(spec.accentColor, isFocused, isPrimaryNexus) {
-            if (isPrimaryNexus) {
-              Shadow(
-                color = Color.Black,
-                offset = Offset(0f, 1.5f),
-                blurRadius = 5f,
-              )
-            } else {
-              Shadow(
-                color = if (isFocused) Color.White else spec.accentColor.copy(alpha = 0.85f),
-                offset = Offset.Zero,
-                blurRadius = 7f,
-              )
-            }
+          remember(spec.accentColor, isFocused) {
+            Shadow(
+              color = if (isFocused) Color.White else spec.accentColor.copy(alpha = 0.85f),
+              offset = Offset.Zero,
+              blurRadius = 7f,
+            )
           }
 
-        // 100% unobstructed frameless diegetic hit target over the Central 3D Station (idx 0) or inside the 7 #000000 Rift cores (idx 1..7)
-        Box(
-          modifier =
-            Modifier.minimumInteractiveComponentSize()
-              .width(hitWdp)
-              .height(hitHdp)
-              .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-              .clickable { onSelectNode(idx, spec.node) }
-              .testTag(spec.testTag),
-          contentAlignment = Alignment.Center,
-        ) {
-          Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+        if (isPrimaryNexus) {
+          // 100% transparent clickable hit target over the Central 3D Station & its 3D Revolving Hologram Ring (zero 2D text overlay!)
+          Box(
             modifier =
-              if (isPrimaryNexus) {
-                Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-              } else {
-                Modifier.padding(horizontal = 6.dp)
-              },
+              Modifier.minimumInteractiveComponentSize()
+                .width(hitWdp)
+                .height(hitHdp)
+                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                .semantics { contentDescription = "NEXUS SUBSPACE COMMS" }
+                .clickable { onSelectNode(idx, spec.node) }
+                .testTag(spec.testTag),
+          )
+        } else {
+          // Crisp button text inside the feathered #000000 cores of Rifts 1..7
+          Box(
+            modifier =
+              Modifier.minimumInteractiveComponentSize()
+                .width(hitWdp)
+                .height(hitHdp)
+                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                .clickable { onSelectNode(idx, spec.node) }
+                .testTag(spec.testTag),
+            contentAlignment = Alignment.Center,
           ) {
-            if (isPrimaryNexus) {
-              val primaryLabel =
-                if (unreadCommsCount > 0) "NEXUS • $unreadCommsCount" else "NEXUS"
-              Text(
-                text = primaryLabel,
-                color = if (unreadCommsCount > 0) Color(0xFFFACC15) else Color.White,
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 1.6.sp,
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-                style = TextStyle(shadow = primaryGlow),
-              )
-              Text(
-                text = "COMMS & AI • $totalOnlinePilots ONLINE",
-                color = if (isFocused) Color.White else Color(0xFF00F5D4),
-                fontSize = 7.4.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 0.4.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                style =
-                  TextStyle(
-                    shadow =
-                      Shadow(
-                        color = Color.Black,
-                        offset = Offset(0f, 1.5f),
-                        blurRadius = 5f,
-                      )
-                  ),
-              )
-            } else {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.Center,
+              modifier = Modifier.padding(horizontal = 6.dp),
+            ) {
               Text(
                 text = spec.title,
                 color = Color.White,
@@ -1551,6 +1543,7 @@ private fun GlassTerminalTopHeader(
   onBackToHub: () -> Unit,
   onClearAi: () -> Unit,
   onLeaveMatch: () -> Unit,
+  onEnterPracticeRift: () -> Unit,
   onCloseToArena: () -> Unit,
 ) {
   val (title, accent) =
@@ -1670,12 +1663,18 @@ private fun GlassTerminalTopHeader(
           Modifier.clip(RoundedCornerShape(6.dp))
             .background(Color(0xFF0A283E))
             .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
-            .clickable { onCloseToArena() }
+            .clickable {
+              if (isInMatch) {
+                onCloseToArena()
+              } else {
+                onEnterPracticeRift()
+              }
+            }
             .padding(horizontal = 10.dp, vertical = 4.dp)
             .testTag("nexus_close_button"),
       ) {
         Text(
-          text = if (isInMatch) "RETURN TO RIFT >" else "VIEW ORBIT >",
+          text = if (isInMatch) "RETURN TO RIFT >" else "PRACTICE RIFT >",
           color = Color(0xFF00F5D4),
           fontSize = 8.5.sp,
           fontWeight = FontWeight.Black,

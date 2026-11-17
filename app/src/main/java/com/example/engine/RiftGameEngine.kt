@@ -740,6 +740,130 @@ class RiftGameEngine(
   // True while the player is browsing the NEXUS Command Hub / Modal windows before deploying into combat
   var isInLobbyStaging: Boolean = true
 
+  // True when flying in the on-demand ephemeral solo PRACTICE RIFT flight sandbox (0 bots, 0 remotes, 0 stat mutations)
+  var isEphemeralPracticeRift: Boolean = false
+
+  private fun getPracticeRiftOpenSpawnPosition(): Pair<Float, Float> {
+    val minR = (getSafeZoneRadius() + 185f).coerceAtLeast(480f)
+    val maxR = (arenaRadius * 0.56f).coerceAtLeast(minR + 240f)
+    for (attempt in 0 until 42) {
+      val ang = Random.nextFloat() * PI.toFloat() * 2f
+      val dist = minR + Random.nextFloat() * (maxR - minR)
+      val x = arenaCenterX + cos(ang) * dist
+      val y = arenaCenterY + sin(ang) * dist
+      if (!circleIntersectsWalls(x, y, 48f) && !isInsideSafeZone(x, y)) {
+        return x to y
+      }
+    }
+    return (arenaCenterX + minR) to arenaCenterY
+  }
+
+  fun enterEphemeralPracticeRift() {
+    isEphemeralPracticeRift = true
+    hasJoinedMatch = true
+    isInLobbyStaging = false
+    currentCustomGame = null
+    activeRankedMode = RankedGameMode.SECTOR_CONVERGENCE
+    mode = "SECTOR_CONVERGENCE"
+    isShipLockedForMatch = false
+    spectatingTargetShipId = ""
+
+    bullets.clear()
+    bombs.clear()
+    decoys.clear()
+    swarmDrones.clear()
+    brickWalls.clear()
+    shockwaves.clear()
+    shipDebrisChunks.clear()
+    interdictorBubbles.clear()
+    killFeed.clear()
+    remotePilots.clear()
+
+    arenaRadius = computeTargetArenaRadius(6)
+    val brigOffset = (arenaRadius - 560f).coerceIn(1350f, 2600f)
+    westBrigReactorX = arenaCenterX - brigOffset
+    eastBrigReactorX = arenaCenterX + brigOffset
+    westBrigRect.set(
+      westBrigReactorX - stasisJailRadius,
+      westBrigReactorY - stasisJailRadius,
+      westBrigReactorX + stasisJailRadius,
+      westBrigReactorY + stasisJailRadius,
+    )
+    eastBrigRect.set(
+      eastBrigReactorX - stasisJailRadius,
+      eastBrigReactorY - stasisJailRadius,
+      eastBrigReactorX + stasisJailRadius,
+      eastBrigReactorY + stasisJailRadius,
+    )
+    val riftOffset = (arenaRadius * 0.40f).coerceIn(820f, 1450f)
+    riftAlphaX = arenaCenterX - riftOffset
+    riftOmegaX = arenaCenterX + riftOffset
+
+    generateSectorArena(Random.nextInt(10_000, 999_999))
+
+    ships.removeAll { !it.isLocalPlayer }
+    if (ships.none { it.isLocalPlayer }) {
+      ships.add(localPlayer)
+    }
+
+    val sp = getPracticeRiftOpenSpawnPosition()
+    localPlayer.respawnTimer = 0f
+    localPlayer.deathLingerTimer = 0f
+    localPlayer.hullImpactJoltTimer = 0f
+    localPlayer.warpInAnimTimer = 0.65f
+    localPlayer.x = sp.first
+    localPlayer.y = sp.second
+    localPlayer.vx = 0f
+    localPlayer.vy = 0f
+    localPlayer.visualBankRoll = 0f
+    localPlayer.barrelRollTimer = 0f
+    localPlayer.afterburning = false
+    localPlayer.isCloaked = false
+    localPlayer.isInStasisBrig = false
+    localPlayer.maxFlux = localPlayer.spec.maxFlux * (1f + localPlayer.maxFluxOverchargeStacks * 0.10f)
+    localPlayer.flux = localPlayer.maxFlux
+    localPlayer.isIdleDraining = false
+    localPlayer.playfieldIdleTimer = 0f
+    localPlayer.safeZoneStayTimer = 0f
+    localPlayer.safeZoneLockoutTimer = 0f
+    localPlayer.inSafeZone = false
+    localPlayer.wasInSafeZone = false
+    localPlayer.weaponsLocked = false
+    localPlayer.canFire = true
+    localPlayer.weaponState = "ARMED"
+    localPlayer.phaseShieldTimer = 1.25f
+    sfx.playWarp()
+  }
+
+  fun closeEphemeralPracticeRift() {
+    isEphemeralPracticeRift = false
+    hasJoinedMatch = false
+    isInLobbyStaging = true
+    isShipLockedForMatch = false
+    spectatingTargetShipId = ""
+    bullets.clear()
+    bombs.clear()
+    decoys.clear()
+    swarmDrones.clear()
+    brickWalls.clear()
+    shockwaves.clear()
+    shipDebrisChunks.clear()
+    particles.clear()
+    walls.clear()
+    greens.clear()
+    anomalies.clear()
+    interdictorBubbles.clear()
+    remotePilots.clear()
+    ships.removeAll { !it.isLocalPlayer }
+    localPlayer.vx = 0f
+    localPlayer.vy = 0f
+    localPlayer.respawnTimer = 0f
+    localPlayer.flux = localPlayer.maxFlux
+    localPlayer.afterburning = false
+    localPlayer.isIdleDraining = false
+    localPlayer.playfieldIdleTimer = 0f
+  }
+
   fun computeTargetArenaRadius(totalShips: Int): Float =
     (1700f + totalShips.coerceIn(2, 24) * 105f).coerceIn(2100f, 3800f)
 
@@ -817,7 +941,9 @@ class RiftGameEngine(
     }
     localPlayer.bounty = getLocalStartingBounty()
     resetCurrentLifeStats()
-    onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
+    if (!isEphemeralPracticeRift) {
+      onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
+    }
   }
 
   fun getEffectiveProjectileScale(): Float =
@@ -865,7 +991,7 @@ class RiftGameEngine(
     }
 
   fun adjustLocalResonance(delta: Int, reasonLabel: String = "") {
-    if (currentCustomGame != null || delta == 0) return
+    if (currentCustomGame != null || isEphemeralPracticeRift || delta == 0) return
     val prev = liveResonance
     liveResonance = (liveResonance + delta).coerceAtLeast(0)
     if (liveResonance > peakResonance) {
@@ -916,6 +1042,7 @@ class RiftGameEngine(
     localPrefs: com.example.data.LocalPilotPrefs? = null,
     uid: String? = null,
   ) {
+    isEphemeralPracticeRift = false
     localPrefs?.wipeAllStatsArmadasAndSyndicates(uid)
 
     pvpKills = 0L
@@ -1019,6 +1146,7 @@ class RiftGameEngine(
     bountyKilledXp: Float = 0f,
     notifyChange: Boolean = true,
   ) {
+    if (isEphemeralPracticeRift) return
     xpFromBuffs += buffXp.coerceAtLeast(0f)
     xpFromDamage += damageXp.coerceAtLeast(0f)
     xpFromAccuracy += accuracyXp.coerceAtLeast(0f)
@@ -1553,6 +1681,10 @@ class RiftGameEngine(
 
   fun enforceBotsEnabledState() {
     if (!hasJoinedMatch) return
+    if (isEphemeralPracticeRift) {
+      ships.removeAll { !it.isLocalPlayer }
+      return
+    }
     val botsAllowed = currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled
     if (!botsAllowed) {
       ships.removeAll { !it.isHuman && !it.isLocalPlayer }
@@ -1563,6 +1695,7 @@ class RiftGameEngine(
   }
 
   fun createAndJoinCustomGame(config: CustomGameConfig) {
+    isEphemeralPracticeRift = false
     hasJoinedMatch = true
     isInLobbyStaging = false
     activeCustomGames.removeAll { it.instanceId == config.instanceId }
@@ -1572,6 +1705,7 @@ class RiftGameEngine(
 
   fun joinCustomGame(instanceId: String) {
     val cfg = activeCustomGames.firstOrNull { it.instanceId == instanceId } ?: return
+    isEphemeralPracticeRift = false
     hasJoinedMatch = true
     isInLobbyStaging = false
     currentCustomGame = cfg
@@ -1625,7 +1759,7 @@ class RiftGameEngine(
   }
 
   fun activeMatchSectorTag(): String =
-    if (!hasJoinedMatch) {
+    if (!hasJoinedMatch || isEphemeralPracticeRift) {
       "NEXUS_LOBBY"
     } else {
       currentCustomGame?.let { "CUSTOM_${it.instanceId}" } ?: activeRankedMode.id
@@ -1651,7 +1785,9 @@ class RiftGameEngine(
    * Returns the exact count of real HUMAN pilots currently active in the specified Ranked Mode (0 when empty; NEVER counts AI bots).
    */
   fun getHumanPilotCountForMode(mode: RankedGameMode = activeRankedMode): Int {
-    val localInMode = if (hasJoinedMatch && currentCustomGame == null && activeRankedMode == mode) 1 else 0
+    val localInMode =
+      if (hasJoinedMatch && !isEphemeralPracticeRift && currentCustomGame == null && activeRankedMode == mode) 1
+      else 0
     val remoteInMode = onlineRemoteSectorByUid.values.count { matchesRankedModeSector(it, mode) }
     return localInMode + remoteInMode
   }
@@ -1661,7 +1797,8 @@ class RiftGameEngine(
    */
   fun getHumanPilotCountForCustomGame(instanceId: String): Int {
     val targetSector = "CUSTOM_${instanceId.trim()}"
-    val localInCustom = if (hasJoinedMatch && currentCustomGame?.instanceId == instanceId) 1 else 0
+    val localInCustom =
+      if (hasJoinedMatch && !isEphemeralPracticeRift && currentCustomGame?.instanceId == instanceId) 1 else 0
     val remoteInCustom = onlineRemoteSectorByUid.values.count { it.equals(targetSector, ignoreCase = true) }
     return localInCustom + remoteInCustom
   }
@@ -1675,6 +1812,7 @@ class RiftGameEngine(
    * Cleanly leaves the active combat instance and returns the pilot to peaceful unjoined NEXUS orbit.
    */
   fun leaveActiveMatchToNexusOrbit() {
+    isEphemeralPracticeRift = false
     hasJoinedMatch = false
     isInLobbyStaging = true
     isShipLockedForMatch = false
@@ -1763,6 +1901,7 @@ class RiftGameEngine(
         return
       }
     }
+    isEphemeralPracticeRift = false
     hasJoinedMatch = true
     isInLobbyStaging = false
     currentCustomGame = null
@@ -2408,6 +2547,15 @@ class RiftGameEngine(
   }
 
   fun rebuildRosterForMode(newMode: String = activeRankedMode.id) {
+    if (isEphemeralPracticeRift) {
+      remotePilots.clear()
+      ships.removeAll { !it.isLocalPlayer }
+      if (ships.none { it.isLocalPlayer }) {
+        ships.add(localPlayer)
+      }
+      isShipLockedForMatch = false
+      return
+    }
     val resolvedMode = RankedGameMode.fromId(newMode)
     activeRankedMode = resolvedMode
     mode = resolvedMode.id
@@ -2622,9 +2770,12 @@ class RiftGameEngine(
       onlineRemoteSectorByUid.remove(off)
     }
 
-    if (!hasJoinedMatch) {
+    if (!hasJoinedMatch || isEphemeralPracticeRift) {
       if (remotePilots.isNotEmpty()) {
         remotePilots.clear()
+      }
+      if (isEphemeralPracticeRift) {
+        ships.removeAll { !it.isLocalPlayer }
       }
       return
     }
@@ -5778,7 +5929,9 @@ class RiftGameEngine(
     if (target.isLocalPlayer) {
       triggerHitStop(2)
       addTrauma(0.55f)
-      allTimeDeaths++
+      if (!isEphemeralPracticeRift) {
+        allTimeDeaths++
+      }
       currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, victimPreDeathBounty)
       val finalized =
         currentLifeStats.toSnapshot(
@@ -6822,7 +6975,7 @@ class RiftGameEngine(
     for (s in ships) {
       s.matchPresenceTimeSec += rawDt
     }
-    if (publicMatchDurationSec >= publicMatchCycleLimitSec) {
+    if (!isEphemeralPracticeRift && publicMatchDurationSec >= publicMatchCycleLimitSec) {
       concludePublicFfaMatchCycle(forceSimulateWinWithPresence = false)
     }
 
@@ -6885,6 +7038,7 @@ class RiftGameEngine(
             when {
               isStasisBreachRulesActive() && s.isInStasisBrig -> getStasisBrigPrisonerSpawnPosition(s.freq)
               isTeamBasedRankedMode() || !hasActiveSafeZone() -> getSkirmishGateSpawnPosition(s.freq)
+              s.isLocalPlayer && isEphemeralPracticeRift -> getPracticeRiftOpenSpawnPosition()
               s.isLocalPlayer -> getSafeZoneSpawnPosition()
               else -> getOuterGateSpawnPosition(s.freq)
             }
@@ -6921,7 +7075,9 @@ class RiftGameEngine(
             spectatingTargetShipId = ""
             buffVersion++
             resetCurrentLifeStats()
-            onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
+            if (!isEphemeralPracticeRift) {
+              onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
+            }
           }
           val inSafe = isInsideSafeZone(s.x, s.y)
           s.wasInSafeZone = inSafe
@@ -7034,8 +7190,8 @@ class RiftGameEngine(
         if (s.safeZoneLockoutTimer > 0f) {
           s.safeZoneLockoutTimer = max(0f, s.safeZoneLockoutTimer - rawDt)
         }
-        // Open-Space Anti-AFK Flux Drain runs ONLY in modes with an active Safe Zone (SECTOR_CONVERGENCE & FLUX_CORE)
-        if (!hasActiveSafeZone()) {
+        // Open-Space Anti-AFK Flux Drain runs ONLY in modes with an active Safe Zone (SECTOR_CONVERGENCE & FLUX_CORE) and NEVER in Practice Rift
+        if (!hasActiveSafeZone() || isEphemeralPracticeRift) {
           s.playfieldIdleTimer = 0f
           s.isIdleDraining = false
         } else {
@@ -7351,12 +7507,14 @@ class RiftGameEngine(
           if (s.isLocalPlayer) {
             buffVersion++
             sfx.playPrize()
-            greensCollected++
-            currentLifeStats.buffsCollected++
-            currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, localPlayer.bounty)
-            onDailyDirectiveEvent(DailyDirectiveMetric.CRATES_COLLECTED, 1, false)
-            onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
-            onSyndicateContribution(0L, localPlayer.bounty.toLong(), 0L)
+            if (!isEphemeralPracticeRift) {
+              greensCollected++
+              currentLifeStats.buffsCollected++
+              currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, localPlayer.bounty)
+              onDailyDirectiveEvent(DailyDirectiveMetric.CRATES_COLLECTED, 1, false)
+              onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
+              onSyndicateContribution(0L, localPlayer.bounty.toLong(), 0L)
+            }
             val msg =
               when {
                 customForgedEntry != null -> {
@@ -7449,12 +7607,14 @@ class RiftGameEngine(
                 }
               }
             onPrizeToast(msg)
-            allTimeBountyPeak = max(allTimeBountyPeak, localPlayer.bounty.toLong())
-            awardPilotXp(
-              buffXp = 35f,
-              bountyEarnedXp = 30f,
-              notifyChange = true,
-            )
+            if (!isEphemeralPracticeRift) {
+              allTimeBountyPeak = max(allTimeBountyPeak, localPlayer.bounty.toLong())
+              awardPilotXp(
+                buffXp = 35f,
+                bountyEarnedXp = 30f,
+                notifyChange = true,
+              )
+            }
           }
         }
       }
