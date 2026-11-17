@@ -1,16 +1,16 @@
 <resources>
-    <string name="app_name">RIFT</string>
-    <string name="auth_title">RIFT // SECTOR CONVERGENCE</string>
-    <string name="auth_subtitle">NEXUS Tactical Command • 10 Modular 3D Hulls • 6 Official Modes</string>
+    <string name="app_name">NEXUS</string>
+    <string name="auth_title">NEXUS</string>
+    <string name="auth_subtitle">ENTER RING SPACE • CONTROL THE RIFTS • 10 MODULAR HULLS</string>
     <string name="sign_in_with_google">SIGN IN WITH GOOGLE (SWORN PILOT)</string>
-    <string name="signing_in">Authenticating Command Link…</string>
-    <string name="auth_feature_physics">10 Modular 3D Hulls • 6 Crate Overcharge Buffs • Unified Flux Capacitor</string>
-    <string name="auth_feature_ships">6 Official Ranked Modes • 2-Rift Tug-of-War • Custom 10-Rule Sandbox</string>
-    <string name="auth_feature_cloud">Sworn Pilot Cloud Dossier (#RFT-XXXXXX) • Syndicates &amp; Live Leaderboards</string>
+    <string name="signing_in">Authenticating NEXUS Link…</string>
+    <string name="auth_feature_physics">10 Modular 3D Hulls • 100-Pt Rift Frame • Newtonian Flight</string>
+    <string name="auth_feature_ships">6 Ranked Rift Modes • Living 3D Rifts • Custom 10-Rule Sandbox</string>
+    <string name="auth_feature_cloud">Threshold Dynamics Studio, LLC • Cloud Syndicates &amp; Resonance</string>
     <string name="sign_out">Sign Out</string>
-    <string name="nexus_orb_content_desc">Open NEXUS Rift Core Tactical Intelligence</string>
-    <string name="nexus_console_title">NEXUS // OMNISCIENT RIFT CORE</string>
-    <string name="nexus_input_placeholder">Ask NEXUS anything in RIFT (pixel specs, 100-pt builds, top bounties…)</string>
+    <string name="nexus_orb_content_desc">Open NEXUS Hub &amp; Ring Space Command</string>
+    <string name="nexus_console_title">NEXUS // RING SPACE HUB</string>
+    <string name="nexus_input_placeholder">Ask NEXUS AI anything (100-pt builds, Rift physics, Peak Resonance…)</string>
     <string name="nexus_transmit">TRANSMIT</string>
     <string name="nexus_clear">CLEAR</string>
     <string name="nexus_close">CLOSE</string>

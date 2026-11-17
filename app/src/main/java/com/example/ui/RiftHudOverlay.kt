@@ -1,5 +1,7 @@
 package com.example.ui
 
+import android.graphics.RuntimeShader
+import android.os.Build
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -39,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.zIndex
+import com.example.data.RiftBillingManager
 import com.example.engine.*
 import java.util.Locale
 import kotlin.math.*
@@ -80,44 +83,102 @@ private fun Modifier.wysiwygUnlockOutline(enabled: Boolean, isCircle: Boolean = 
  }
 }
 
+private const val MINIMAP_FLUX_PLASMA_AGSL =
+ """
+ uniform float2 uRes;
+ uniform float uTime;
+ uniform float uSweepFrac;
+ uniform float uRIn;
+ uniform float uROut;
+ uniform float3 uColA;
+ uniform float3 uColB;
+
+ half4 main(float2 fragCoord) {
+   float2 p = fragCoord - 0.5 * uRes;
+   float r = length(p);
+   if (r < uRIn || r > uROut) return half4(0.0);
+   float ang = atan(p.y, p.x) + 1.5707963;
+   if (ang < 0.0) ang += 6.2831853;
+   float normAng = ang / 6.2831853;
+   if (normAng > uSweepFrac) return half4(0.0);
+
+   float bandT = clamp((r - uRIn) / max(uROut - uRIn, 0.001), 0.0, 1.0);
+   float tube = sin(bandT * 3.1415926);
+   float helix1 = 0.5 + 0.5 * sin(ang * 9.0 - uTime * 4.2 + bandT * 4.5);
+   float helix2 = 0.5 + 0.5 * cos(ang * 14.0 + uTime * 3.1 - bandT * 3.8);
+   float plasma = clamp(0.45 * helix1 + 0.35 * helix2 + 0.35 * tube, 0.0, 1.0);
+
+   half3 baseCol = mix(half3(uColA), half3(uColB), half(plasma));
+   float spec = pow(tube, 2.6) * (0.45 + 0.55 * helix1);
+   float headGlow = exp(-28.0 * max(uSweepFrac - normAng, 0.0));
+   half3 finalCol = baseCol + half3(0.85, 0.98, 1.0) * half(spec * 0.55 + headGlow * 0.65);
+   half alpha = half(clamp(tube * (0.78 + 0.22 * plasma), 0.0, 1.0));
+   return half4(finalCol * alpha, alpha);
+ }
+ """
+
 @Composable
 fun FluxEmblem(sizeDp: Dp = 13.dp, modifier: Modifier = Modifier) {
- val outerPath = remember { Path() }
- val leftFacet = remember { Path() }
- val rightFacet = remember { Path() }
- val innerCore = remember { Path() }
  val visualRev = RiftVisualForgeState.visualRevision
  val fluxRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.CURRENCY_FLUX_ICON) }
- val leftCol = remember(fluxRec) { if (fluxRec.isFactoryDefault) Color(0xFF38BDF8) else Color(fluxRec.trimColorInt) }
- val rightCol = remember(fluxRec) { if (fluxRec.isFactoryDefault) Color(0xFF0284C7) else Color(fluxRec.primaryColorInt) }
+ val ribbonCol = remember(fluxRec) { if (fluxRec.isFactoryDefault) Color(0xFF38BDF8) else Color(fluxRec.trimColorInt) }
+ val deepCol = remember(fluxRec) { if (fluxRec.isFactoryDefault) Color(0xFF0284C7) else Color(fluxRec.primaryColorInt) }
  val coreCol = remember(fluxRec) { if (fluxRec.isFactoryDefault) Color(0xFF00F5D4) else Color(fluxRec.glowColorInt) }
  Canvas(modifier = Modifier.size(sizeDp).then(modifier)) {
   val cx = size.width * 0.5f; val cy = size.height * 0.5f; val r = size.minDimension * 0.46f
   if (r <= 0.5f) return@Canvas
-  val hw = r * 0.72f; val shoulderY = r * 0.24f
-  drawCircle(coreCol.copy(alpha = 0.22f), r * 1.08f, Offset(cx, cy))
-  outerPath.reset()
-  outerPath.moveTo(cx, cy - r); outerPath.lineTo(cx + hw, cy - shoulderY); outerPath.lineTo(cx + hw, cy + shoulderY)
-  outerPath.lineTo(cx, cy + r); outerPath.lineTo(cx - hw, cy + shoulderY); outerPath.lineTo(cx - hw, cy - shoulderY); outerPath.close()
-  drawPath(outerPath, Color(0xFF0F172A))
+  drawCircle(coreCol.copy(alpha = 0.24f), r * 1.08f, Offset(cx, cy))
+  drawCircle(Color(0xFF040D1A), r * 0.94f, Offset(cx, cy))
+  drawCircle(deepCol.copy(alpha = 0.65f), r * 0.92f, Offset(cx, cy), style = Stroke(width = (r * 0.14f).coerceAtLeast(0.8f)))
 
-  leftFacet.reset()
-  leftFacet.moveTo(cx, cy - r); leftFacet.lineTo(cx, cy + r)
-  leftFacet.lineTo(cx - hw, cy + shoulderY); leftFacet.lineTo(cx - hw, cy - shoulderY); leftFacet.close()
-  drawPath(leftFacet, leftCol)
+  val outerArcR = r * 0.80f
+  val innerArcR = r * 0.58f
+  val outerStroke = (r * 0.20f).coerceAtLeast(1.0f)
+  val innerStroke = (r * 0.15f).coerceAtLeast(0.85f)
+  for (i in 0 until 3) {
+   val baseDeg = i * 120f - 25f
+   drawArc(
+    color = deepCol,
+    startAngle = baseDeg,
+    sweepAngle = 86f,
+    useCenter = false,
+    topLeft = Offset(cx - outerArcR, cy - outerArcR),
+    size = Size(outerArcR * 2f, outerArcR * 2f),
+    style = Stroke(width = outerStroke, cap = StrokeCap.Round),
+   )
+   drawArc(
+    color = ribbonCol,
+    startAngle = baseDeg + 8f,
+    sweepAngle = 68f,
+    useCenter = false,
+    topLeft = Offset(cx - outerArcR, cy - outerArcR),
+    size = Size(outerArcR * 2f, outerArcR * 2f),
+    style = Stroke(width = outerStroke * 0.58f, cap = StrokeCap.Round),
+   )
+   drawArc(
+    color = coreCol.copy(alpha = 0.92f),
+    startAngle = baseDeg + 52f,
+    sweepAngle = 72f,
+    useCenter = false,
+    topLeft = Offset(cx - innerArcR, cy - innerArcR),
+    size = Size(innerArcR * 2f, innerArcR * 2f),
+    style = Stroke(width = innerStroke, cap = StrokeCap.Round),
+   )
+   val nodeRad = Math.toRadians((baseDeg + 74f).toDouble())
+   val nx = cx + cos(nodeRad).toFloat() * outerArcR
+   val ny = cy + sin(nodeRad).toFloat() * outerArcR
+   drawCircle(Color.White, (r * 0.12f).coerceAtLeast(0.8f), Offset(nx, ny))
+  }
 
-  rightFacet.reset()
-  rightFacet.moveTo(cx, cy - r); rightFacet.lineTo(cx + hw, cy - shoulderY)
-  rightFacet.lineTo(cx + hw, cy + shoulderY); rightFacet.lineTo(cx, cy + r); rightFacet.close()
-  drawPath(rightFacet, rightCol)
-
-  val cw = hw * 0.52f; val ch = r * 0.54f
-  innerCore.reset()
-  innerCore.moveTo(cx, cy - ch); innerCore.lineTo(cx + cw, cy); innerCore.lineTo(cx, cy + ch); innerCore.lineTo(cx - cw, cy); innerCore.close()
-  drawPath(innerCore, coreCol)
-
-  drawLine(Color(0xFFE0F2FE), Offset(cx, cy - r * 0.86f), Offset(cx, cy + r * 0.55f), strokeWidth = (r * 0.16f).coerceAtLeast(1f), cap = StrokeCap.Round)
-  drawPath(outerPath, Color(0xFFE0F2FE), style = Stroke(width = (r * 0.14f).coerceAtLeast(0.9f)))
+  drawCircle(
+   brush = Brush.radialGradient(
+    colors = listOf(Color.White, coreCol, ribbonCol.copy(alpha = 0.45f), Color.Transparent),
+    center = Offset(cx - r * 0.08f, cy - r * 0.08f),
+    radius = r * 0.48f,
+   ),
+   radius = r * 0.46f,
+   center = Offset(cx, cy),
+  )
  }
 }
 
@@ -199,7 +260,7 @@ fun RiftHudOverlay(
  ) {
   if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE || engine.isCustomGameActive()) {
    val mode = engine.effectiveModeRules()
-   if (mode == RankedGameMode.RIFT_CONTROL && !engine.isCustomGameActive()) {
+   if (mode == RankedGameMode.RIFT_CONTROL) {
     RiftControlTugOfWarHudBar(engine, textScale, onOpenNexus, Modifier.align(Alignment.TopCenter).padding(top = 6.dp).zIndex(11f))
    } else {
     val modeAccent = when (mode) {
@@ -212,7 +273,7 @@ fun RiftHudOverlay(
     }
     val baseModeSummaryText = when (mode) {
      RankedGameMode.RIFT_SKIRMISH ->
-      "⚔️ RIFT SKIRMISH (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • RND ${engine.skirmishCurrentRound} (${engine.skirmishRoundTimerSec.toInt()}s) • WEST ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} EAST"
+      "RIFT SKIRMISH (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • RND ${engine.skirmishCurrentRound} (${engine.skirmishRoundTimerSec.toInt()}s) • WEST ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} EAST"
      RankedGameMode.FLUX_CORE -> {
       val carrierShip = engine.ships.firstOrNull {
        it.id == engine.fluxCoreCarrierEntityId || (engine.fluxCoreOrb.carrierShipId != -1 && it.shipId == engine.fluxCoreOrb.carrierShipId)
@@ -225,17 +286,17 @@ fun RiftHudOverlay(
       "FLUX CORE • $carrierLabel • HOLD ${engine.fluxCoreOrb.holdDurationSec.toInt()}s"
      }
      RankedGameMode.STASIS_BREACH ->
-      "🔒 STASIS BREACH (10v10) • WEST CORE ${engine.westBrigGeneratorHp.toInt()} FLUX | EAST CORE ${engine.eastBrigGeneratorHp.toInt()} FLUX"
+      "STASIS BREACH (10v10) • WEST CORE ${engine.westBrigGeneratorHp.toInt()} FLUX | EAST CORE ${engine.eastBrigGeneratorHp.toInt()} FLUX"
      RankedGameMode.RIFT_CONTROL -> {
       val mins = (engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)) / 60
       val secs = (engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)) % 60
-      String.format(Locale.US, "🎯 RIFT CONTROL (%dv%d) • %d:%02d • WEST %d - %d EAST", engine.activeTeamSizeBracket, engine.activeTeamSizeBracket, mins, secs, engine.riftControlWestScore.toInt(), engine.riftControlEastScore.toInt())
+      String.format(Locale.US, "RIFT CONTROL (%dv%d) • %d:%02d • WEST %d - %d EAST", engine.activeTeamSizeBracket, engine.activeTeamSizeBracket, mins, secs, engine.riftControlWestScore.toInt(), engine.riftControlEastScore.toInt())
      }
      RankedGameMode.SYNDICATE_WARS ->
-      "🏛️ SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • [${player.syndicateTag}] ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} [${engine.rivalSyndicateWarTag}] • ${engine.skirmishRoundTimerSec.toInt()}s"
+      "SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • [${player.syndicateTag}] ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} [${engine.rivalSyndicateWarTag}] • ${engine.skirmishRoundTimerSec.toInt()}s"
      RankedGameMode.SECTOR_CONVERGENCE -> mode.title
     }
-    val modeSummaryText = if (engine.isCustomGameActive()) "⚙️ CUSTOM: ${engine.currentCustomGame?.title ?: "Custom Match"} • $baseModeSummaryText" else baseModeSummaryText
+    val modeSummaryText = if (engine.isCustomGameActive()) "CUSTOM: ${engine.currentCustomGame?.title ?: "Custom Match"} • $baseModeSummaryText" else baseModeSummaryText
 
     Box(
      modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp).clip(RoundedCornerShape(9.dp))
@@ -262,8 +323,8 @@ fun RiftHudOverlay(
     contentAlignment = Alignment.Center,
    ) {
     Text(
-     if (levelUpBannerLevel == 20) "★ PILOT LVL 20 REACHED — FULL 100-PT RIFT FRAME UNLOCKED! ★"
-     else "★ PILOT LEVEL $levelUpBannerLevel UNLOCKED! TAP TO VIEW REWARDS ★",
+     if (levelUpBannerLevel == 20) "PILOT LVL 20 REACHED — FULL 100-PT RIFT FRAME UNLOCKED"
+     else "PILOT LEVEL $levelUpBannerLevel UNLOCKED — TAP TO VIEW REWARDS",
      color = Color(0xFFFFD700), fontSize = (9.5f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1,
     )
    }
@@ -325,7 +386,7 @@ fun RiftHudOverlay(
      promptBg = Color(0xEE241404); promptBorder = Color(0xFFF59E0B).copy(alpha = pulseWave); promptTextColor = Color(0xFFFEF08A)
     }
     hasIdleDrain -> {
-     promptTitle = "⚠ IDLE FLUX DRAIN — ENGAGE THRUSTERS ⚠"
+     promptTitle = "[!] IDLE FLUX DRAIN — ENGAGE THRUSTERS"
      promptSubtitle = "DRAINING -$drainPctInt% MAX FLUX/SEC • FLUX AT $fluxPctInt%"
      promptBg = Color(0xE62A060B); promptBorder = Color(0xFFEF4444).copy(alpha = pulseWave); promptTextColor = Color(0xFFFECACA)
     }
@@ -334,7 +395,7 @@ fun RiftHudOverlay(
      promptBg = Color(0xCC080E18); promptBorder = Color(0xAA38BDF8); promptTextColor = Color(0xFFFACC15)
     }
     hasSafeLockout -> {
-     promptTitle = String.format(Locale.US, "⛔ SAFE ZONE LOCKED: %.1fs", player.safeZoneLockoutTimer); promptSubtitle = null
+     promptTitle = String.format(Locale.US, "SAFE ZONE LOCKED: %.1fs", player.safeZoneLockoutTimer); promptSubtitle = null
      promptBg = Color(0xD924070B); promptBorder = Color(0xFFEF4444).copy(alpha = pulseWave); promptTextColor = Color(0xFFFCA5A5)
     }
     hasSafeEviction -> {
@@ -344,7 +405,7 @@ fun RiftHudOverlay(
      promptTextColor = promptBorder
     }
     else -> {
-     promptTitle = "❖ SYSTEM PROMPTS / TOASTS"; promptSubtitle = null
+     promptTitle = "SYSTEM PROMPTS / TOASTS"; promptSubtitle = null
      promptBg = Color(0xCC080E18); promptBorder = Color(0x8838BDF8); promptTextColor = Color(0xFFFACC15)
     }
    }
@@ -548,8 +609,8 @@ fun RiftHudOverlay(
        .testTag("pill_expand_spectator_box"),
       verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
      ) {
-      Text("👁 SPECTATING: ${activeTarget?.callsign ?: "ALLY"}", color = Color(0xFF00F5D4), fontSize = (8.4f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
-      Text("[▲]", color = Color(0xFFE0F2FE), fontSize = (8.2f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
+      Text("SPECTATING: ${activeTarget?.callsign ?: "ALLY"}", color = Color(0xFF00F5D4), fontSize = (8.4f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+      Text("[^]", color = Color(0xFFE0F2FE), fontSize = (8.2f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
      }
     } else {
      AllySpectatorSelectorCard(
@@ -563,10 +624,6 @@ fun RiftHudOverlay(
      )
     }
    }
-  }
-
-  if (RiftCalibrationState.isCalibrationModalOpen && uiUnlocked) {
-   RiftCalibrationDialog(engine = engine, onDismiss = { RiftCalibrationState.isCalibrationModalOpen = false })
   }
  }
 }
@@ -692,7 +749,7 @@ private fun AllySpectatorSelectorCard(
  ) {
   Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
    Column {
-    Text("👁 TEAMMATE SPECTATOR (${livingAllies.size})", color = Color(0xFF00F5D4), fontSize = (8.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
+    Text("TEAMMATE SPECTATOR (${livingAllies.size})", color = Color(0xFF00F5D4), fontSize = (8.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
     Text(statusLabel, color = Color(0xFFFACC15), fontSize = (7.2f * textScale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle)
    }
    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -700,16 +757,16 @@ private fun AllySpectatorSelectorCard(
      Box(
       modifier = Modifier.size(26.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF0D213B)).border(0.9.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp)).clickable { onCyclePrev() }.testTag("btn_spectate_prev"),
       contentAlignment = Alignment.Center,
-     ) { Text("◀", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, style = CompactCircleTextStyle) }
+     ) { Text("<", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = CompactCircleTextStyle) }
      Box(
       modifier = Modifier.size(26.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF0D213B)).border(0.9.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp)).clickable { onCycleNext() }.testTag("btn_spectate_next"),
       contentAlignment = Alignment.Center,
-     ) { Text("▶", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, style = CompactCircleTextStyle) }
+     ) { Text(">", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = CompactCircleTextStyle) }
     }
     Box(
      modifier = Modifier.size(26.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF1A1026)).border(0.9.dp, Color(0xFF94A3B8), RoundedCornerShape(6.dp)).clickable { onCollapse() }.testTag("btn_collapse_spectator_box"),
      contentAlignment = Alignment.Center,
-    ) { Text("✕", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, style = CompactCircleTextStyle) }
+    ) { Text("X", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = CompactCircleTextStyle) }
    }
   }
 
@@ -765,11 +822,9 @@ private fun SymmetricBottomConsoleLayout(
  onToggleRadarExpand: () -> Unit,
  modifier: Modifier = Modifier,
 ) {
- val fluxPct = (player.flux / player.maxFlux).coerceIn(0f, 1f)
- val fluxColor = when { fluxPct > 0.75f -> Color(0xFF10B981); fluxPct >= 0.25f -> Color(0xFFF59E0B); else -> Color(0xFFEF4444) }
  val padStart = (8f * textScale).dp
  val padVert = (5.5f * textScale).dp
- val lineGap = (1.2f * textScale).dp
+ val lineGap = (1.6f * textScale).dp
  val consoleGap = 8.dp
  val visualRev = RiftVisualForgeState.visualRevision
  val consoleRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_MINIMAP_CONSOLE) }
@@ -810,7 +865,13 @@ private fun SymmetricBottomConsoleLayout(
      Box(
       modifier = Modifier.align(Alignment.TopEnd).size(10.dp).clip(CircleShape).background(Color(0xEE1E1604)).border(0.8.dp, Color(0xFFF59E0B), CircleShape),
       contentAlignment = Alignment.Center,
-     ) { Text("🔒", fontSize = 6.sp, style = CompactCircleTextStyle) }
+     ) {
+      Canvas(modifier = Modifier.size(6.5.dp)) {
+       val w = size.width; val h = size.height
+       drawArc(Color(0xFFFBBF24), 180f, 180f, false, Offset(w * 0.22f, h * 0.10f), Size(w * 0.56f, h * 0.50f), style = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round))
+       drawRoundRect(Color(0xFFF59E0B), Offset(w * 0.16f, h * 0.42f), Size(w * 0.68f, h * 0.48f), CornerRadius(1.dp.toPx(), 1.dp.toPx()))
+      }
+     }
     }
    }
 
@@ -847,6 +908,7 @@ private fun SymmetricBottomConsoleLayout(
 
  @Composable
  fun RightWingInner(fillEqualSpace: Boolean) {
+  val shardDisplay = if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) "INF" else engine.riftShards.toString()
   Row(
    modifier = (if (fillEqualSpace) Modifier.fillMaxSize() else Modifier.wrapContentSize())
     .background(consoleBgColor, RoundedCornerShape(50))
@@ -857,22 +919,18 @@ private fun SymmetricBottomConsoleLayout(
    horizontalArrangement = if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((5.5f * textScale).dp),
   ) {
    Column(verticalArrangement = Arrangement.spacedBy(lineGap)) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.5.dp)) {
-     FluxEmblem(sizeDp = (12.0f * textScale).dp)
-     Text("${player.flux.toInt()} (${(fluxPct * 100).toInt()}%)", color = fluxColor, fontSize = (8.8f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
-    }
     Text(
      "BTY ${player.bounty} • K/D ${engine.allTimeKills}/${engine.allTimeDeaths}",
-     color = Color(0xFFFACC15), fontSize = (7.6f * textScale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1,
+     color = Color(0xFFFACC15), fontSize = (8.0f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1,
      modifier = Modifier.clickable(enabled = !uiUnlocked) { onOpenNexus() }.testTag("hud_bounty_kd_readout"),
     )
     Row(
      verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((4f * textScale).dp),
      modifier = Modifier.clickable(enabled = !uiUnlocked) { onOpenProgression() }.testTag("hud_console_progression_link"),
     ) {
-     Text("LVL ${engine.pilotLevel} • ❖${engine.riftShards}", color = Color(0xFF00F5D4), fontSize = (7.1f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
-     Box(modifier = Modifier.width((28f * textScale).dp).height((2.4f * textScale).dp).clip(RoundedCornerShape(1.2.dp)).background(Color(0xFF142844))) {
-      Box(modifier = Modifier.fillMaxWidth(xpProgressFraction.coerceIn(0.05f, 1f)).height((2.4f * textScale).dp).background(Color(0xFF00F5D4), RoundedCornerShape(1.2.dp)))
+     Text("RES ${engine.liveResonance} • ❖ $shardDisplay", color = Color(0xFF00F5D4), fontSize = (7.4f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+     Box(modifier = Modifier.width((26f * textScale).dp).height((2.6f * textScale).dp).clip(RoundedCornerShape(1.3.dp)).background(Color(0xFF142844))) {
+      Box(modifier = Modifier.fillMaxWidth(xpProgressFraction.coerceIn(0.08f, 1f)).height((2.6f * textScale).dp).background(Color(0xFF00F5D4), RoundedCornerShape(1.3.dp)))
      }
     }
    }
@@ -924,7 +982,12 @@ private fun CircularRadarMinimap(
 ) {
  var panOffsetX by remember { mutableFloatStateOf(0f) }
  var panOffsetY by remember { mutableFloatStateOf(0f) }
- val radarBmp = remember(engine.radarBgBitmap) { engine.radarBgBitmap?.asImageBitmap() }
+ LaunchedEffect(isExpanded) {
+  if (!isExpanded) {
+   panOffsetX = 0f
+   panOffsetY = 0f
+  }
+ }
  val trianglePath = remember { Path() }
  var radarCenterOnScreen by remember { mutableStateOf(Offset(960f, 980f)) }
 
@@ -936,9 +999,14 @@ private fun CircularRadarMinimap(
  var continuousFrameNanos by remember { mutableLongStateOf(0L) }
  LaunchedEffect(Unit) { while (true) { withFrameNanos { continuousFrameNanos = it } } }
  val innerClipPath = remember { Path() }
+ val fluxAgslShader = remember {
+  if (Build.VERSION.SDK_INT >= 33) {
+   runCatching { RuntimeShader(MINIMAP_FLUX_PLASMA_AGSL) }.getOrNull()
+  } else null
+ }
 
  Box(
-  modifier = Modifier.zIndex(if (isExpanded || expandScale > 1.02f) 35f else 2f).size(128.dp)
+  modifier = Modifier.zIndex(if (isExpanded || expandScale > 1.02f) 35f else 2f).size(132.dp)
    .onGloballyPositioned { coords ->
     val pos = coords.positionInRoot()
     radarCenterOnScreen = Offset(pos.x + coords.size.width * 0.5f, pos.y + coords.size.height * 0.5f)
@@ -967,14 +1035,13 @@ private fun CircularRadarMinimap(
    .testTag("hud_circular_radar"),
  ) {
   Canvas(modifier = Modifier.fillMaxSize()) {
-   val unusedTick = frameTick + continuousFrameNanos
+   val tickKeepAlive = frameTick.toLong() + continuousFrameNanos
+   if (tickKeepAlive == Long.MIN_VALUE) return@Canvas
    val w = size.width; val h = size.height; val center = Offset(w * 0.5f, h * 0.5f)
-   val radarRadius = w * 0.5f
-   val playfieldRadius = (radarRadius - 12.dp.toPx()).coerceAtLeast(16f)
-   val maxBlipRadius = (playfieldRadius - 3.5.dp.toPx()).coerceAtLeast(8f)
-   val drawSize = playfieldRadius * 2f
-   val ox = center.x - playfieldRadius + panOffsetX
-   val oy = center.y - playfieldRadius + panOffsetY
+   val outerBezelRadius = (min(w, h) * 0.5f - 1.5.dp.toPx()).coerceAtLeast(24f)
+   val fluxRingRadius = (outerBezelRadius - 5.2.dp.toPx()).coerceAtLeast(20f)
+   val playfieldRadius = (fluxRingRadius - 6.8.dp.toPx()).coerceAtLeast(14f)
+   val maxBlipRadius = (playfieldRadius - 2.6.dp.toPx()).coerceAtLeast(8f)
    val radarScale = playfieldRadius / engine.arenaRadius.coerceAtLeast(1000f)
 
    fun clampToRadar(rawX: Float, rawY: Float): Offset {
@@ -987,152 +1054,207 @@ private fun CircularRadarMinimap(
     center.y + panOffsetY + (wy - engine.arenaCenterY) * radarScale,
    )
 
-   drawCircle(if (isExpanded) Color(0xF2040B16) else Color(0xB3040B16), playfieldRadius, center)
+   // Outer obsidian-glass bezel (eliminates bezel/tip clipping)
+   drawCircle(Color(0xE8030812), outerBezelRadius, center)
+   drawCircle(Color(0x4438BDF8), outerBezelRadius, center, style = Stroke(width = 1.0.dp.toPx()))
+
+   // Inner 1:1 circular playfield scope
+   drawCircle(if (isExpanded) Color(0xF5040B16) else Color(0xCC040B16), playfieldRadius, center)
    innerClipPath.reset()
    innerClipPath.addOval(Rect(center.x - playfieldRadius, center.y - playfieldRadius, center.x + playfieldRadius, center.y + playfieldRadius))
-   clipPath(innerClipPath) {
-    if (radarBmp != null) drawImage(radarBmp, IntOffset(ox.toInt(), oy.toInt()), IntSize(drawSize.toInt(), drawSize.toInt()), alpha = 0.65f)
-    drawCircle(Color(0x2638BDF8), playfieldRadius * 0.55f, center, style = Stroke(width = 1.0f))
-   }
-   drawCircle(Color(0x5538BDF8), playfieldRadius, center, style = Stroke(width = 1.1.dp.toPx()))
-
-   for (g in engine.greens) drawCircle(Color(0xFF10B981).copy(alpha = 0.55f), 1.1f, worldToRadar(g.x, g.y))
-
-   if (engine.isStasisBreachRulesActive()) {
-    drawCircle(Color(0xFF38BDF8), 4.2f, worldToRadar(engine.westBrigReactorX, engine.westBrigReactorY), style = Stroke(1.3f))
-    drawCircle(Color(0xFFF43F5E), 4.2f, worldToRadar(engine.eastBrigReactorX, engine.eastBrigReactorY), style = Stroke(1.3f))
-   } else if (engine.isRiftControlRulesActive()) {
-    val aCol = when (engine.riftAlphaLockedBy) { 0 -> Color(0xFF00F5D4); 1 -> Color(0xFFF43F5E); else -> Color(0xFF38BDF8) }
-    val oCol = when (engine.riftOmegaLockedBy) { 0 -> Color(0xFF00F5D4); 1 -> Color(0xFFF43F5E); else -> Color(0xFF38BDF8) }
-    drawCircle(aCol, 4.6f, worldToRadar(engine.riftAlphaX, engine.riftAlphaY), style = Stroke(1.5f))
-    drawCircle(oCol, 4.6f, worldToRadar(engine.riftOmegaX, engine.riftOmegaY), style = Stroke(1.5f))
-   }
-
-   for (anom in engine.anomalies) {
-    val aColor = when (anom.type) {
-     AnomalyType.PLASMA_RIFT -> Color(0xFFEF4444)
-     AnomalyType.REPULSOR_RIFT -> Color.White
-     AnomalyType.GRAVITY_RIFT -> Color(0xFFA855F7)
-     AnomalyType.PHASE_RIFT_A -> Color(0xFF2DD4BF)
-     AnomalyType.PHASE_RIFT_B -> Color(0xFF38BDF8)
-    }
-    drawCircle(aColor.copy(alpha = 0.80f), 2.6f, worldToRadar(anom.x, anom.y))
-   }
 
    val nowMs = System.currentTimeMillis()
    val pulsePhase = ((nowMs % 1200L) / 1200f)
+   val goldPulse = 0.5f + 0.5f * sin(((nowMs % 640L) / 640f) * 6.28318f)
    val p = engine.localPlayer
 
-   for (bw in engine.brickWalls) {
-    val aPt = worldToRadar(if (bw.w >= bw.h) bw.x else bw.x + bw.w * 0.5f, if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y)
-    val bPt = worldToRadar(if (bw.w >= bw.h) bw.x + bw.w else bw.x + bw.w * 0.5f, if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y + bw.h)
-    drawLine(Color(0xFF00F5D4), aPt, bPt, strokeWidth = 2.2f)
-   }
+   clipPath(innerClipPath) {
+    val arenaCenterOnRadar = Offset(center.x + panOffsetX, center.y + panOffsetY)
+    drawCircle(Color(0x2238BDF8), playfieldRadius * 0.55f, arenaCenterOnRadar, style = Stroke(width = 1.0f))
+    drawLine(Color(0x1838BDF8), Offset(arenaCenterOnRadar.x - playfieldRadius, arenaCenterOnRadar.y), Offset(arenaCenterOnRadar.x + playfieldRadius, arenaCenterOnRadar.y), 1f)
+    drawLine(Color(0x1838BDF8), Offset(arenaCenterOnRadar.x, arenaCenterOnRadar.y - playfieldRadius), Offset(arenaCenterOnRadar.x, arenaCenterOnRadar.y + playfieldRadius), 1f)
 
-   for (dc in engine.decoys) {
-    val isFriendlyDecoy = dc.ownerId == p.id || (p.armadaName.isNotEmpty() && dc.armadaName == p.armadaName) || (p.syndicateTag != "GUEST" && dc.syndicateTag == p.syndicateTag)
-    drawCircle(if (isFriendlyDecoy) Color(0xFF38BDF8) else Color(0xFFEF4444), 2.2f, worldToRadar(dc.x, dc.y))
-   }
-
-   val goldPulse = 0.5f + 0.5f * sin(((nowMs % 640L) / 640f) * 6.28318f)
-   if (engine.isFluxCoreRulesActive() && engine.fluxCoreCarrierEntityId.isEmpty()) {
-    val orbPt = worldToRadar(engine.fluxCoreOrb.x, engine.fluxCoreOrb.y)
-    val orbHaloR = (4.2f + 4.8f * goldPulse).coerceAtMost(maxBlipRadius - hypot(orbPt.x - center.x, orbPt.y - center.y) + 2.5f)
-    if (orbHaloR > 2.0f) drawCircle(Color(0xFFFACC15).copy(alpha = (0.85f - 0.50f * goldPulse).coerceIn(0.25f, 0.90f)), orbHaloR, orbPt, style = Stroke(1.5f))
-    drawCircle(Color(0xFFFFD700), 4.2f, orbPt)
-    drawCircle(Color.White, 4.2f, orbPt, style = Stroke(1.1f))
-   }
-
-   val radarShips = if (engine.hasJoinedMatch) engine.ships else listOf(p)
-   for (s in radarShips) {
-    if (s.respawnTimer > 0f) continue
-    val isFriendly = engine.areAllied(p, s)
-    val isBallCarrier = engine.hasJoinedMatch && engine.isFluxCoreRulesActive() &&
-     (s.id == engine.fluxCoreCarrierEntityId || (engine.fluxCoreOrb.carrierShipId != -1 && s.shipId == engine.fluxCoreOrb.carrierShipId))
-    if (s.isCloaked && !isFriendly && !s.isLocalPlayer && !isBallCarrier) continue
-
-    val pt = worldToRadar(s.x, s.y)
-    val sx = pt.x; val sy = pt.y
-    if (isBallCarrier) {
-     val carrierHaloR = (6.0f + 5.5f * goldPulse).coerceAtMost(maxBlipRadius - hypot(sx - center.x, sy - center.y) + 3.0f)
-     if (carrierHaloR > 3.0f) drawCircle(Color(0xFFFACC15).copy(alpha = (0.92f - 0.52f * goldPulse).coerceIn(0.30f, 0.95f)), carrierHaloR, pt, style = Stroke(1.8f))
-     drawCircle(lerp(Color(0xFFFFD700), Color(0xFFFACC15), goldPulse), 6.0f, pt)
-     drawCircle(Color.White, 6.0f, pt, style = Stroke(1.2f))
-     continue
+    if (engine.hasActiveSafeZone()) {
+     val szCenter = Offset(
+      center.x + panOffsetX + (4000f - engine.arenaCenterX) * radarScale,
+      center.y + panOffsetY + (4000f - engine.arenaCenterY) * radarScale,
+     )
+     val szRadius = ((engine.safeZone.width() * 0.5f) * RiftCalibrationState.safeZoneScale * radarScale).coerceAtLeast(3.2f)
+     drawCircle(Color(0x2600F5D4), szRadius, szCenter)
+     drawCircle(Color(0xAA00F5D4), szRadius, szCenter, style = Stroke(width = 1.2f))
     }
 
-    if (s.bounty >= RiftGameEngine.HVT_BOUNTY_THRESHOLD) {
-     val pingR = (3.2f + pulsePhase * 6.5f).coerceAtMost(maxBlipRadius - hypot(sx - center.x, sy - center.y) + 2.5f)
-     if (pingR > 2.0f) drawCircle(Color(0xFFFFD700).copy(alpha = (1f - pulsePhase).coerceIn(0.20f, 0.90f)), pingR, pt, style = Stroke(1.3f))
+    for (wall in engine.walls) {
+     val wx = wall.x + wall.w * 0.5f
+     val wy = wall.y + wall.h * 0.5f
+     val wPt = Offset(
+      center.x + panOffsetX + (wx - engine.arenaCenterX) * radarScale,
+      center.y + panOffsetY + (wy - engine.arenaCenterY) * radarScale,
+     )
+     val halfSpan = max(wall.w, wall.h) * 0.5f * radarScale
+     drawCircle(Color(0x66475569), halfSpan.coerceIn(1.2f, 4.5f), wPt)
     }
 
-    if (s.isLocalPlayer) {
-     val r = 4.2f; val a = s.angle
-     trianglePath.reset()
-     trianglePath.moveTo(sx + cos(a) * r, sy + sin(a) * r)
-     trianglePath.lineTo(sx + cos(a + 2.4f) * r * 0.85f, sy + sin(a + 2.4f) * r * 0.85f)
-     trianglePath.lineTo(sx + cos(a - 2.4f) * r * 0.85f, sy + sin(a - 2.4f) * r * 0.85f)
-     trianglePath.close()
-     drawPath(trianglePath, if (s.isCloaked) Color(0xFFD8B4FE) else Color.White)
-    } else {
-     val isSpectatedTarget = engine.isActivelySpectatingTeammates() && s.id == engine.spectatingTargetShipId
-     val dotFill = when { isSpectatedTarget -> Color(0xFF00F5D4); isFriendly -> Color(0xFF3B82F6); else -> Color(0xFFEF4444) }
-     val dotRadius = when { isSpectatedTarget -> 4.0f; s.isHuman -> 3.0f; else -> 2.2f }
-     drawCircle(dotFill, dotRadius, pt)
-     if (s.isHuman || isSpectatedTarget) drawCircle(Color.White, dotRadius, pt, style = Stroke(if (isSpectatedTarget) 1.3f else 1.0f))
+    for (g in engine.greens) drawCircle(Color(0xFF10B981).copy(alpha = 0.55f), 1.1f, worldToRadar(g.x, g.y))
+
+    if (engine.isStasisBreachRulesActive()) {
+     drawCircle(Color(0xFF38BDF8), 4.2f, worldToRadar(engine.westBrigReactorX, engine.westBrigReactorY), style = Stroke(1.3f))
+     drawCircle(Color(0xFFF43F5E), 4.2f, worldToRadar(engine.eastBrigReactorX, engine.eastBrigReactorY), style = Stroke(1.3f))
+    } else if (engine.isRiftControlRulesActive()) {
+     val aCol = when (engine.riftAlphaLockedBy) { 0 -> Color(0xFF00F5D4); 1 -> Color(0xFFF43F5E); else -> Color(0xFF38BDF8) }
+     val oCol = when (engine.riftOmegaLockedBy) { 0 -> Color(0xFF00F5D4); 1 -> Color(0xFFF43F5E); else -> Color(0xFF38BDF8) }
+     drawCircle(aCol, 4.6f, worldToRadar(engine.riftAlphaX, engine.riftAlphaY), style = Stroke(1.5f))
+     drawCircle(oCol, 4.6f, worldToRadar(engine.riftOmegaX, engine.riftOmegaY), style = Stroke(1.5f))
+    }
+
+    for (anom in engine.anomalies) {
+     val aColor = when (anom.type) {
+      AnomalyType.PLASMA_RIFT -> Color(0xFFEF4444)
+      AnomalyType.REPULSOR_RIFT -> Color.White
+      AnomalyType.GRAVITY_RIFT -> Color(0xFFA855F7)
+      AnomalyType.PHASE_RIFT_A -> Color(0xFF2DD4BF)
+      AnomalyType.PHASE_RIFT_B -> Color(0xFF38BDF8)
+     }
+     drawCircle(aColor.copy(alpha = 0.82f), 2.6f, worldToRadar(anom.x, anom.y))
+    }
+
+    for (bw in engine.brickWalls) {
+     val aPt = worldToRadar(if (bw.w >= bw.h) bw.x else bw.x + bw.w * 0.5f, if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y)
+     val bPt = worldToRadar(if (bw.w >= bw.h) bw.x + bw.w else bw.x + bw.w * 0.5f, if (bw.w >= bw.h) bw.y + bw.h * 0.5f else bw.y + bw.h)
+     drawLine(Color(0xFF00F5D4), aPt, bPt, strokeWidth = 2.2f)
+    }
+
+    for (dc in engine.decoys) {
+     val isFriendlyDecoy = dc.ownerId == p.id || (p.armadaName.isNotEmpty() && dc.armadaName == p.armadaName) || (p.syndicateTag != "GUEST" && dc.syndicateTag == p.syndicateTag)
+     drawCircle(if (isFriendlyDecoy) Color(0xFF38BDF8) else Color(0xFFEF4444), 2.2f, worldToRadar(dc.x, dc.y))
+    }
+
+    if (engine.isFluxCoreRulesActive() && engine.fluxCoreCarrierEntityId.isEmpty()) {
+     val orbPt = worldToRadar(engine.fluxCoreOrb.x, engine.fluxCoreOrb.y)
+     val orbHaloR = 4.4f + 4.8f * goldPulse
+     drawCircle(Color(0xFFFACC15).copy(alpha = (0.85f - 0.50f * goldPulse).coerceIn(0.25f, 0.90f)), orbHaloR, orbPt, style = Stroke(1.5f))
+     drawCircle(Color(0xFFFFD700), 4.4f, orbPt)
+     drawCircle(Color.White, 4.4f, orbPt, style = Stroke(1.1f))
+    }
+
+    val radarShips = if (engine.hasJoinedMatch) engine.ships else listOf(p)
+    for (s in radarShips) {
+     if (s.respawnTimer > 0f) continue
+     val isFriendly = engine.areAllied(p, s)
+     val isBallCarrier = engine.hasJoinedMatch && engine.isFluxCoreRulesActive() &&
+      (s.id == engine.fluxCoreCarrierEntityId || (engine.fluxCoreOrb.carrierShipId != -1 && s.shipId == engine.fluxCoreOrb.carrierShipId))
+     if (s.isCloaked && !isFriendly && !s.isLocalPlayer && !isBallCarrier) continue
+
+     val pt = worldToRadar(s.x, s.y)
+     val sx = pt.x; val sy = pt.y
+     if (isBallCarrier) {
+      // 2x pulsing Gold Flux Core carrier beacon
+      val carrierHaloR = 6.2f + 5.8f * goldPulse
+      drawCircle(Color(0xFFFACC15).copy(alpha = (0.92f - 0.52f * goldPulse).coerceIn(0.30f, 0.95f)), carrierHaloR, pt, style = Stroke(1.8f))
+      drawCircle(lerp(Color(0xFFFFD700), Color(0xFFFACC15), goldPulse), 6.2f, pt)
+      drawCircle(Color.White, 6.2f, pt, style = Stroke(1.25f))
+      continue
+     }
+
+     if (s.bounty >= RiftGameEngine.HVT_BOUNTY_THRESHOLD) {
+      val pingR = 3.2f + pulsePhase * 6.5f
+      drawCircle(Color(0xFFFFD700).copy(alpha = (1f - pulsePhase).coerceIn(0.20f, 0.90f)), pingR, pt, style = Stroke(1.3f))
+     }
+
+     if (s.isLocalPlayer) {
+      val r = 4.2f; val a = s.angle
+      trianglePath.reset()
+      trianglePath.moveTo(sx + cos(a) * r, sy + sin(a) * r)
+      trianglePath.lineTo(sx + cos(a + 2.4f) * r * 0.85f, sy + sin(a + 2.4f) * r * 0.85f)
+      trianglePath.lineTo(sx + cos(a - 2.4f) * r * 0.85f, sy + sin(a - 2.4f) * r * 0.85f)
+      trianglePath.close()
+      drawPath(trianglePath, if (s.isCloaked) Color(0xFFD8B4FE) else Color.White)
+     } else {
+      val isSpectatedTarget = engine.isActivelySpectatingTeammates() && s.id == engine.spectatingTargetShipId
+      val dotFill = when { isSpectatedTarget -> Color(0xFF00F5D4); isFriendly -> Color(0xFF3B82F6); else -> Color(0xFFEF4444) }
+      val dotRadius = when { isSpectatedTarget -> 4.0f; s.isHuman -> 3.0f; else -> 2.2f }
+      drawCircle(dotFill, dotRadius, pt)
+      if (s.isHuman || isSpectatedTarget) drawCircle(Color.White, dotRadius, pt, style = Stroke(if (isSpectatedTarget) 1.3f else 1.0f))
+     }
     }
    }
 
+   drawCircle(Color(0x6638BDF8), playfieldRadius, center, style = Stroke(width = 1.1.dp.toPx()))
+
+   // 3D AGSL Swirling Plasma Flux Ring wrapping the Circular Minimap
    val fluxPct = (p.flux / p.maxFlux.coerceAtLeast(1f)).coerceIn(0f, 1f)
-   val critFlash = if (fluxPct < 0.20f || p.isIdleDraining) 0.35f + 0.65f * (0.5f + 0.5f * sin((nowMs % 320L) / 320f * 6.28318f)) else 1.0f
-   val ringColor = when {
+   val critFlash = if (fluxPct < 0.20f || p.isIdleDraining) 0.38f + 0.62f * (0.5f + 0.5f * sin((nowMs % 320L) / 320f * 6.28318f)) else 1.0f
+   val ringPrimary = when {
     p.isIdleDraining || fluxPct < 0.20f -> Color(0xFFEF4444).copy(alpha = critFlash)
-    fluxPct >= 0.75f -> lerp(Color(0xFF10B981), Color(0xFF00F5D4), ((fluxPct - 0.75f) / 0.25f).coerceIn(0f, 1f))
-    fluxPct >= 0.40f -> lerp(Color(0xFF10B981), Color(0xFF34D399), ((fluxPct - 0.40f) / 0.35f).coerceIn(0f, 1f))
-    else -> lerp(Color(0xFFF59E0B), Color(0xFF10B981), ((fluxPct - 0.20f) / 0.20f).coerceIn(0f, 1f))
+    fluxPct >= 0.70f -> Color(0xFF00F5D4)
+    fluxPct >= 0.35f -> Color(0xFF38BDF8)
+    else -> Color(0xFFF59E0B)
+   }
+   val ringSecondary = when {
+    p.isIdleDraining || fluxPct < 0.20f -> Color(0xFFF97316).copy(alpha = critFlash)
+    fluxPct >= 0.70f -> Color(0xFF38BDF8)
+    fluxPct >= 0.35f -> Color(0xFF10B981)
+    else -> Color(0xFFEF4444)
    }
 
-   val fluxRingRadius = (radarRadius - 5.5.dp.toPx()).coerceAtLeast(24f)
-   val trackStrokeW = 4.5.dp.toPx()
-   val arcStrokeW = 4.2.dp.toPx()
+   val trackStrokeW = 5.0.dp.toPx()
+   val arcStrokeW = 4.6.dp.toPx()
    val arcTopLeft = Offset(center.x - fluxRingRadius, center.y - fluxRingRadius)
    val arcSize = Size(fluxRingRadius * 2f, fluxRingRadius * 2f)
-   drawCircle(Color(0x99091322), fluxRingRadius, center, style = Stroke(width = trackStrokeW))
+   drawCircle(Color(0xBF071120), fluxRingRadius, center, style = Stroke(width = trackStrokeW))
    for (tick in 0 until 12) {
     val tickRad = Math.toRadians(-90.0 + tick * 30.0)
-    val rIn = fluxRingRadius - trackStrokeW * 0.45f; val rOut = fluxRingRadius + trackStrokeW * 0.45f
-    drawLine(Color(0x6638BDF8), Offset(center.x + rIn * cos(tickRad).toFloat(), center.y + rIn * sin(tickRad).toFloat()), Offset(center.x + rOut * cos(tickRad).toFloat(), center.y + rOut * sin(tickRad).toFloat()), 1.0.dp.toPx())
+    val rIn = fluxRingRadius - trackStrokeW * 0.48f; val rOut = fluxRingRadius + trackStrokeW * 0.48f
+    drawLine(Color(0x5538BDF8), Offset(center.x + rIn * cos(tickRad).toFloat(), center.y + rIn * sin(tickRad).toFloat()), Offset(center.x + rOut * cos(tickRad).toFloat(), center.y + rOut * sin(tickRad).toFloat()), 0.9.dp.toPx())
    }
 
    if (fluxPct > 0.005f) {
     val sweepDeg = 360f * fluxPct
-    drawArc(ringColor.copy(alpha = 0.28f), -90f, sweepDeg, false, arcTopLeft, arcSize, style = Stroke(width = arcStrokeW * 1.9f, cap = StrokeCap.Round))
-    drawArc(ringColor, -90f, sweepDeg, false, arcTopLeft, arcSize, style = Stroke(width = arcStrokeW, cap = StrokeCap.Round))
+    drawArc(ringPrimary.copy(alpha = 0.24f), -90f, sweepDeg, false, arcTopLeft, arcSize, style = Stroke(width = arcStrokeW * 1.75f, cap = StrokeCap.Round))
+    var drewAgslRing = false
+    if (Build.VERSION.SDK_INT >= 33 && fluxAgslShader != null) {
+     val timeSec = ((nowMs % 60000L) / 1000f)
+     drewAgslRing = runCatching {
+      fluxAgslShader.setFloatUniform("uRes", w, h)
+      fluxAgslShader.setFloatUniform("uTime", timeSec)
+      fluxAgslShader.setFloatUniform("uSweepFrac", fluxPct.coerceIn(0f, 1f))
+      fluxAgslShader.setFloatUniform("uRIn", fluxRingRadius - arcStrokeW * 0.56f)
+      fluxAgslShader.setFloatUniform("uROut", fluxRingRadius + arcStrokeW * 0.56f)
+      fluxAgslShader.setFloatUniform("uColA", ringSecondary.red, ringSecondary.green, ringSecondary.blue)
+      fluxAgslShader.setFloatUniform("uColB", ringPrimary.red, ringPrimary.green, ringPrimary.blue)
+      drawRect(brush = ShaderBrush(fluxAgslShader), topLeft = Offset.Zero, size = Size(w, h), alpha = critFlash)
+      true
+     }.getOrDefault(false)
+    }
+    if (!drewAgslRing) {
+     drawArc(ringSecondary, -90f, sweepDeg, false, arcTopLeft, arcSize, style = Stroke(width = arcStrokeW, cap = StrokeCap.Round))
+     drawArc(ringPrimary, -90f, sweepDeg, false, arcTopLeft, arcSize, style = Stroke(width = arcStrokeW * 0.58f, cap = StrokeCap.Round))
+    }
+
     val tipRad = Math.toRadians(-90.0 + sweepDeg.toDouble())
     val tipCenter = Offset(center.x + fluxRingRadius * cos(tipRad).toFloat(), center.y + fluxRingRadius * sin(tipRad).toFloat())
-    drawCircle(ringColor.copy(alpha = 0.35f), 5.5.dp.toPx(), tipCenter)
-    drawCircle(Color(0xFF040B16), 4.2.dp.toPx(), tipCenter)
-    drawCircle(Color.White, 3.2.dp.toPx(), tipCenter)
-    drawCircle(ringColor, 3.2.dp.toPx(), tipCenter, style = Stroke(1.0.dp.toPx()))
+    drawCircle(ringPrimary.copy(alpha = 0.38f), 4.6.dp.toPx(), tipCenter)
+    drawCircle(Color.White, 2.5.dp.toPx(), tipCenter)
+    drawCircle(ringPrimary, 2.5.dp.toPx(), tipCenter, style = Stroke(1.0.dp.toPx()))
    }
   }
 
   val playerFluxPct = (engine.localPlayer.flux / engine.localPlayer.maxFlux.coerceAtLeast(1f)).coerceIn(0f, 1f)
   val badgeColor = when {
    engine.localPlayer.isIdleDraining || playerFluxPct < 0.20f -> Color(0xFFEF4444)
-   playerFluxPct >= 0.75f -> Color(0xFF00F5D4)
-   playerFluxPct >= 0.40f -> Color(0xFF10B981)
+   playerFluxPct >= 0.70f -> Color(0xFF00F5D4)
+   playerFluxPct >= 0.35f -> Color(0xFF38BDF8)
    else -> Color(0xFFF59E0B)
   }
   Box(
    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 1.dp).clip(RoundedCornerShape(6.dp))
-    .background(Color(0xEE040B16)).border(1.dp, badgeColor.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
-    .padding(horizontal = 4.5.dp, vertical = 1.dp),
+    .background(Color(0xF2040B16)).border(1.dp, badgeColor.copy(alpha = 0.88f), RoundedCornerShape(6.dp))
+    .padding(horizontal = 5.dp, vertical = 1.dp),
    contentAlignment = Alignment.Center,
   ) {
    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
-    FluxEmblem(sizeDp = 9.dp)
-    Text("${(playerFluxPct * 100f).roundToInt()}%", color = badgeColor, fontSize = 6.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = CompactCircleTextStyle, maxLines = 1)
+    FluxEmblem(sizeDp = 9.5.dp)
+    Text("${engine.localPlayer.flux.roundToInt()}", color = badgeColor, fontSize = 7.0.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = CompactCircleTextStyle, maxLines = 1)
    }
   }
  }
@@ -1184,9 +1306,9 @@ private fun KillFeedRow(entry: KillFeedEntry, alpha: Float) {
 
  Row(modifier = Modifier.fillMaxWidth().padding(top = 1.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
   Text("[$cleanKillerTag] ${entry.killerName}", color = killerColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-  Text("⚔", color = (if (isHighBountyShutdown) Color(0xFFF59E0B) else Color(0xFFCBD5E1)).copy(alpha = 0.85f * alpha), fontSize = 6.8.sp, fontWeight = FontWeight.Bold, style = rowTextStyle)
+  Text(">>", color = (if (isHighBountyShutdown) Color(0xFFF59E0B) else Color(0xFFCBD5E1)).copy(alpha = 0.85f * alpha), fontSize = 6.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = rowTextStyle)
   Text("[$cleanVictimTag] ${entry.victimName}", color = victimColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-  Text(if (isHighBountyShutdown || entry.wasHvt) "★${entry.victimBounty}" else "${entry.victimBounty}", color = bountyColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = rowTextStyle, maxLines = 1)
+  Text(if (isHighBountyShutdown || entry.wasHvt) "HVT ${entry.victimBounty}" else "${entry.victimBounty}", color = bountyColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = rowTextStyle, maxLines = 1)
  }
 }
 

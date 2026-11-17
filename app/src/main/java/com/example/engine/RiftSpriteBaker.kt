@@ -159,8 +159,12 @@ object RiftSpriteBaker {
   fun bakeFluxCrystalIconBitmap(sizePx: Int = 64): Bitmap = bake3dFluxReactorIcon(sizePx)
 
   /**
-   * Draws the canonical crisp 6-facet beveled diamond-hex Flux Prism icon (`#E0F2FE`, `#38BDF8`,
-   * `#00F5D4`, `#0284C7`, `#0F172A`) — zero lightning bolts, zero gold rings.
+   * Draws the canonical 3D Swirling Plasma Toroid / Tri-Arc Vortex Coil Flux icon:
+   * 1. Deep dark magnetic containment shadow disc (`#040D1A`) for crisp contrast on any background.
+   * 2. Three 120°-spaced swirling helical plasma ribbons (`#0284C7` -> `#38BDF8` -> `#00F5D4`)
+   *    spiraling inward like a miniature magnetic fusion tokamak, plus segmented containment arcs.
+   * 3. Volumetric 3D spherical plasma fusion core (`#E0F2FE` / `#FFFFFF` top-left specular highlight)
+   *    and 3 tiny orbital plasma spark nodes — 100% circular/helical energy, never a diamond.
    */
   fun drawFluxPrismIcon(
     c: Canvas,
@@ -175,158 +179,206 @@ object RiftSpriteBaker {
         ?: runCatching { RiftVisualForgeState.getRecipe(ForgeElementTarget.CURRENCY_FLUX_ICON) }
           .getOrNull()
     val aFrac = (alpha.coerceIn(0, 255)) / 255f
+    if (aFrac <= 0.005f || r <= 0.5f) return
+
     fun argbHex(baseAlpha: Int, red: Int, green: Int, blue: Int): Int =
       Color.argb((baseAlpha * aFrac).toInt().coerceIn(0, 255), red, green, blue)
     fun argbColor(baseAlpha: Int, colorInt: Int): Int =
       argbHex(baseAlpha, Color.red(colorInt), Color.green(colorInt), Color.blue(colorInt))
 
+    val isDefaultRecipe = rec == null || rec.isFactoryDefault
     val scaledR = r * (rec?.pixelScale ?: 1f).coerceIn(0.65f, 1.50f)
-    val topY = cy - scaledR
-    val upperY = cy - scaledR * 0.34f
-    val lowerY = cy + scaledR * 0.34f
-    val botY = cy + scaledR
-    val halfW = scaledR * 0.68f
-    val innerW = scaledR * 0.28f
+    val glowMult = (rec?.glowIntensity ?: 1f).coerceIn(0f, 2f)
+    val borderMult = (rec?.borderWeight ?: 1f).coerceIn(0.5f, 2.2f)
 
-    val glowCol = rec?.glowColorInt ?: Color.rgb(0, 245, 212)
-    val trimCol = rec?.trimColorInt ?: Color.rgb(56, 189, 248)
-    val baseCol = rec?.primaryColorInt ?: Color.rgb(15, 23, 42)
-    val darkAzCol =
-      Color.rgb(
-        (Color.red(trimCol) * 0.42f).toInt(),
-        (Color.green(trimCol) * 0.56f).toInt(),
-        (Color.blue(trimCol) * 0.78f).toInt(),
-      )
-
-    // Subtle dark obsidian silhouette backing for crisp contrast on any background
-    val shadowPath =
-      Path().apply {
-        moveTo(cx, topY - scaledR * 0.06f)
-        lineTo(cx + halfW + scaledR * 0.05f, upperY)
-        lineTo(cx + halfW + scaledR * 0.05f, lowerY)
-        lineTo(cx, botY + scaledR * 0.06f)
-        lineTo(cx - halfW - scaledR * 0.05f, lowerY)
-        lineTo(cx - halfW - scaledR * 0.05f, upperY)
-        close()
+    val glowCol = if (isDefaultRecipe) Color.rgb(0, 245, 212) else rec!!.glowColorInt
+    val skyCol = if (isDefaultRecipe) Color.rgb(56, 189, 248) else rec!!.trimColorInt
+    val deepAzureCol =
+      if (isDefaultRecipe) {
+        Color.rgb(2, 132, 199)
+      } else {
+        Color.rgb(
+          (Color.red(skyCol) * 0.45f + Color.red(rec!!.primaryColorInt) * 0.35f).toInt().coerceIn(0, 255),
+          (Color.green(skyCol) * 0.58f + Color.green(rec.primaryColorInt) * 0.25f).toInt().coerceIn(0, 255),
+          (Color.blue(skyCol) * 0.82f + Color.blue(rec.primaryColorInt) * 0.18f).toInt().coerceIn(0, 255),
+        )
       }
+    val containmentDiscCol =
+      if (isDefaultRecipe) Color.rgb(4, 13, 26) else rec!!.primaryColorInt
+
     val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    fillPaint.color = argbColor(220, baseCol)
-    c.drawPath(shadowPath, fillPaint)
-
-    // Facet 1: Upper-left lit crown (#E0F2FE)
-    val f1 =
-      Path().apply {
-        moveTo(cx, topY)
-        lineTo(cx, cy)
-        lineTo(cx - halfW, upperY)
-        close()
-      }
-    fillPaint.color = argbHex(255, 224, 242, 254)
-    c.drawPath(f1, fillPaint)
-
-    // Facet 2: Upper-right cyan/glow crown
-    val f2 =
-      Path().apply {
-        moveTo(cx, topY)
-        lineTo(cx + halfW, upperY)
-        lineTo(cx, cy)
-        close()
-      }
-    fillPaint.color = argbColor(255, glowCol)
-    c.drawPath(f2, fillPaint)
-
-    // Facet 3: Mid-left trim bevel
-    val f3 =
-      Path().apply {
-        moveTo(cx - halfW, upperY)
-        lineTo(cx, cy)
-        lineTo(cx - halfW, lowerY)
-        close()
-      }
-    fillPaint.color = argbColor(255, trimCol)
-    c.drawPath(f3, fillPaint)
-
-    // Facet 4: Mid-right deep azure bevel
-    val f4 =
-      Path().apply {
-        moveTo(cx + halfW, upperY)
-        lineTo(cx + halfW, lowerY)
-        lineTo(cx, cy)
-        close()
-      }
-    fillPaint.color = argbColor(255, darkAzCol)
-    c.drawPath(f4, fillPaint)
-
-    // Facet 5: Lower-left glow facet
-    val f5 =
-      Path().apply {
-        moveTo(cx - halfW, lowerY)
-        lineTo(cx, cy)
-        lineTo(cx, botY)
-        close()
-      }
-    fillPaint.color = argbColor(245, glowCol)
-    c.drawPath(f5, fillPaint)
-
-    // Facet 6: Lower-right shaded sapphire facet
-    val f6 =
-      Path().apply {
-        moveTo(cx, cy)
-        lineTo(cx + halfW, lowerY)
-        lineTo(cx, botY)
-        close()
-      }
-    fillPaint.color = argbColor(255, darkAzCol)
-    c.drawPath(f6, fillPaint)
-
-    // Central luminous inner diamond core (#E0F2FE)
-    val coreDiamond =
-      Path().apply {
-        moveTo(cx, cy - scaledR * 0.44f)
-        lineTo(cx + innerW, cy)
-        lineTo(cx, cy + scaledR * 0.44f)
-        lineTo(cx - innerW, cy)
-        close()
-      }
-    fillPaint.color = argbHex(245, 224, 242, 254)
-    c.drawPath(coreDiamond, fillPaint)
-
-    // Crisp outer rim stroke (#E0F2FE)
-    val outerHex =
-      Path().apply {
-        moveTo(cx, topY)
-        lineTo(cx + halfW, upperY)
-        lineTo(cx + halfW, lowerY)
-        lineTo(cx, botY)
-        lineTo(cx - halfW, lowerY)
-        lineTo(cx - halfW, upperY)
-        close()
-      }
-    val rimPaint =
+    val strokePaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth =
-          (scaledR * 0.11f * (rec?.borderWeight ?: 1f).coerceIn(0.5f, 2.2f)).coerceAtLeast(1.1f)
+        strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-        color = argbHex(235, 224, 242, 254)
       }
-    c.drawPath(outerHex, rimPaint)
+
+    // 1. Soft outer radial plasma bloom
+    if (glowMult > 0.05f) {
+      val bloomR = scaledR * 1.16f
+      fillPaint.shader =
+        RadialGradient(
+          cx,
+          cy,
+          bloomR.coerceAtLeast(1f),
+          intArrayOf(
+            argbColor((92 * glowMult).toInt().coerceIn(0, 220), glowCol),
+            argbColor((42 * glowMult).toInt().coerceIn(0, 160), skyCol),
+            argbColor(0, deepAzureCol),
+          ),
+          floatArrayOf(0f, 0.62f, 1f),
+          Shader.TileMode.CLAMP,
+        )
+      c.drawCircle(cx, cy, bloomR, fillPaint)
+      fillPaint.shader = null
+    }
+
+    // 2. Deep dark magnetic containment shadow disc (#040D1A)
+    val discR = scaledR * 0.90f
+    fillPaint.color = argbColor(242, containmentDiscCol)
+    c.drawCircle(cx, cy, discR, fillPaint)
+
+    // Subtle recessed tokamak magnetic track & segmented outer containment arcs
+    strokePaint.strokeWidth = (scaledR * 0.08f * borderMult).coerceAtLeast(0.8f)
+    strokePaint.color = argbColor(85, deepAzureCol)
+    c.drawCircle(cx, cy, scaledR * 0.72f, strokePaint)
+
+    val ringR = scaledR * 0.88f
+    val ringRect = RectF(cx - ringR, cy - ringR, cx + ringR, cy + ringR)
+    strokePaint.strokeWidth = (scaledR * 0.095f * borderMult).coerceAtLeast(0.9f)
+    strokePaint.color = argbColor(175, skyCol)
+    for (seg in 0 until 3) {
+      c.drawArc(ringRect, -78f + seg * 120f, 64f, false, strokePaint)
+    }
+
+    // 3. Three 120°-spaced swirling helical plasma ribbons (#0284C7 -> #38BDF8 -> #00F5D4)
+    val armPath = Path()
+    val filamentPath = Path()
+    for (arm in 0 until 3) {
+      val baseRad = (-Math.PI * 0.5 + arm * (Math.PI * 2.0 / 3.0)).toFloat()
+      val a0 = baseRad
+      val aMidOut = baseRad + 0.92f
+      val aMidIn = baseRad + 1.06f
+      val aTip = baseRad + 2.05f
+      val aTailIn = baseRad + 0.16f
+
+      val rOuter = scaledR * 0.85f
+      val rMidOut = scaledR * 0.69f
+      val rMidIn = scaledR * 0.45f
+      val rTip = scaledR * 0.30f
+      val rTailIn = scaledR * 0.74f
+
+      val x0 = cx + kotlin.math.cos(a0) * rOuter
+      val y0 = cy + kotlin.math.sin(a0) * rOuter
+      val xCtrlOut = cx + kotlin.math.cos(aMidOut) * rMidOut
+      val yCtrlOut = cy + kotlin.math.sin(aMidOut) * rMidOut
+      val xTip = cx + kotlin.math.cos(aTip) * rTip
+      val yTip = cy + kotlin.math.sin(aTip) * rTip
+      val xCtrlIn = cx + kotlin.math.cos(aMidIn) * rMidIn
+      val yCtrlIn = cy + kotlin.math.sin(aMidIn) * rMidIn
+      val xTailIn = cx + kotlin.math.cos(aTailIn) * rTailIn
+      val yTailIn = cy + kotlin.math.sin(aTailIn) * rTailIn
+
+      armPath.reset()
+      armPath.moveTo(x0, y0)
+      armPath.quadTo(xCtrlOut, yCtrlOut, xTip, yTip)
+      armPath.quadTo(xCtrlIn, yCtrlIn, xTailIn, yTailIn)
+      armPath.close()
+
+      fillPaint.shader =
+        LinearGradient(
+          x0,
+          y0,
+          xTip,
+          yTip,
+          intArrayOf(
+            argbColor(235, deepAzureCol),
+            argbColor(250, skyCol),
+            argbColor(255, glowCol),
+          ),
+          floatArrayOf(0f, 0.52f, 1f),
+          Shader.TileMode.CLAMP,
+        )
+      c.drawPath(armPath, fillPaint)
+      fillPaint.shader = null
+
+      // Luminous #E0F2FE inner helical plasma filament along each ribbon spine
+      val xSpineCtrl = cx + kotlin.math.cos(baseRad + 0.98f) * (scaledR * 0.58f)
+      val ySpineCtrl = cy + kotlin.math.sin(baseRad + 0.98f) * (scaledR * 0.58f)
+      val xSpineStart = cx + kotlin.math.cos(baseRad + 0.08f) * (scaledR * 0.80f)
+      val ySpineStart = cy + kotlin.math.sin(baseRad + 0.08f) * (scaledR * 0.80f)
+      filamentPath.reset()
+      filamentPath.moveTo(xSpineStart, ySpineStart)
+      filamentPath.quadTo(xSpineCtrl, ySpineCtrl, xTip, yTip)
+      strokePaint.strokeWidth = (scaledR * 0.085f * borderMult).coerceAtLeast(0.8f)
+      strokePaint.color = argbHex(225, 224, 242, 254)
+      c.drawPath(filamentPath, strokePaint)
+
+      // Tiny orbital plasma spark node per vortex arm
+      val sparkAngle = baseRad + 0.36f
+      val sparkR = scaledR * 0.77f
+      val sx = cx + kotlin.math.cos(sparkAngle) * sparkR
+      val sy = cy + kotlin.math.sin(sparkAngle) * sparkR
+      fillPaint.color = argbColor(190, glowCol)
+      c.drawCircle(sx, sy, (scaledR * 0.12f).coerceAtLeast(0.9f), fillPaint)
+      fillPaint.color = argbHex(255, 255, 255, 255)
+      c.drawCircle(sx, sy, (scaledR * 0.06f).coerceAtLeast(0.55f), fillPaint)
+    }
+
+    // 4. Volumetric 3D spherical plasma fusion core + offset specular highlight
+    val coreR = (scaledR * 0.36f).coerceAtLeast(1.2f)
+    fillPaint.color = argbColor(150, glowCol)
+    c.drawCircle(cx, cy, coreR * 1.24f, fillPaint)
+
+    val specOffX = cx - coreR * 0.28f
+    val specOffY = cy - coreR * 0.28f
+    fillPaint.shader =
+      RadialGradient(
+        specOffX,
+        specOffY,
+        (coreR * 1.32f).coerceAtLeast(1.2f),
+        intArrayOf(
+          argbHex(255, 255, 255, 255),
+          argbHex(252, 224, 242, 254),
+          argbColor(248, glowCol),
+          argbColor(242, deepAzureCol),
+        ),
+        floatArrayOf(0f, 0.30f, 0.70f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    c.drawCircle(cx, cy, coreR, fillPaint)
+    fillPaint.shader = null
+
+    strokePaint.strokeWidth = (scaledR * 0.065f * borderMult).coerceAtLeast(0.75f)
+    strokePaint.color = argbHex(210, 224, 242, 254)
+    c.drawCircle(cx, cy, coreR, strokePaint)
+
+    // Crisp top-left #FFFFFF specular droplet highlight
+    fillPaint.color = argbHex(255, 255, 255, 255)
+    c.drawCircle(
+      cx - coreR * 0.32f,
+      cy - coreR * 0.32f,
+      (coreR * 0.27f).coerceAtLeast(0.65f),
+      fillPaint,
+    )
   }
 
   /**
-   * Bakes the 6-facet beveled Flux Prism Icon (`fluxIconBitmap`) with an ambient halo.
+   * Bakes the 3D Swirling Plasma Toroid / Tri-Arc Vortex Coil (`fluxIconBitmap`) with an ambient halo.
    */
   fun bake3dFluxReactorIcon(sizePx: Int = 64): Bitmap {
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
     val cx = sizePx * 0.5f
     val cy = sizePx * 0.5f
-    val r = sizePx * 0.40f
+    val r = sizePx * 0.41f
     val rec =
       runCatching { RiftVisualForgeState.getRecipe(ForgeElementTarget.CURRENCY_FLUX_ICON) }
         .getOrNull()
-    val trim = rec?.trimColorInt ?: Color.rgb(56, 189, 248)
-    val glow = rec?.glowColorInt ?: Color.rgb(0, 245, 212)
+    val isDefault = rec == null || rec.isFactoryDefault
+    val trim = if (isDefault) Color.rgb(56, 189, 248) else rec!!.trimColorInt
+    val glow = if (isDefault) Color.rgb(0, 245, 212) else rec!!.glowColorInt
     val glowMult = (rec?.glowIntensity ?: 1f).coerceIn(0f, 2f)
     val haloPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -335,27 +387,27 @@ object RiftSpriteBaker {
           RadialGradient(
             cx,
             cy,
-            r * 1.22f,
+            (sizePx * 0.49f).coerceAtLeast(4f),
             intArrayOf(
               Color.argb(
-                (165 * glowMult).toInt().coerceIn(0, 255),
-                Color.red(trim),
-                Color.green(trim),
-                Color.blue(trim),
-              ),
-              Color.argb(
-                (72 * glowMult).toInt().coerceIn(0, 255),
+                (170 * glowMult).toInt().coerceIn(0, 255),
                 Color.red(glow),
                 Color.green(glow),
                 Color.blue(glow),
               ),
+              Color.argb(
+                (78 * glowMult).toInt().coerceIn(0, 255),
+                Color.red(trim),
+                Color.green(trim),
+                Color.blue(trim),
+              ),
               Color.argb(0, Color.red(trim), Color.green(trim), Color.blue(trim)),
             ),
-            floatArrayOf(0f, 0.55f, 1f),
+            floatArrayOf(0f, 0.56f, 1f),
             Shader.TileMode.CLAMP,
           )
       }
-    c.drawCircle(cx, cy, r * 1.22f, haloPaint)
+    c.drawCircle(cx, cy, sizePx * 0.49f, haloPaint)
     drawFluxPrismIcon(c, cx, cy, r, alpha = 255, recipeOverride = rec)
     return bmp
   }
@@ -1100,7 +1152,7 @@ object RiftSpriteBaker {
    * 4 = Brick (Cyan Solid Energy Barrier Wall)
    * 5 = Rocket (Magenta-Red Hyper-Thruster Boost Plume)
    * Bucket B (Instant Ship & Weapon Enhancers):
-   * 6 = Full Flux Charge (Emerald Lightning Bolt)
+   * 6 = Full Flux Charge (3D Swirling Plasma Toroid)
    * 7 = Repel Charge (Electric Cyan Concentric Shockwave Rings)
    * 8 = Shot-Limited Multi-Shot +25 Shots (Gold Triple-Spread Trident Beams)
    * 9 = Bouncing Bullets +30 Shots (Electric Violet Ricochet Bank-Shot)
@@ -1284,8 +1336,9 @@ object RiftSpriteBaker {
         c.drawLine(cx + r * 0.14f, cy + r * 0.18f, cx + r * 0.22f, cy + r * 0.52f, glyphStrokePaint)
       }
       6 -> {
-        // FULL FLUX CHARGE: 6-facet beveled Flux Prism
-        drawFluxPrismIcon(c, cx, cy, r * 0.64f, alpha = 255)
+        // FULL FLUX CHARGE: 3D Swirling Plasma Toroid
+        c.drawCircle(cx, cy, r * 0.68f, innerRimPaint)
+        drawFluxPrismIcon(c, cx, cy, r * 0.62f, alpha = 255)
       }
       7 -> {
         // REPEL CHARGE: Dual concentric repulsion wave rings + outward arrows
@@ -1333,17 +1386,14 @@ object RiftSpriteBaker {
         c.drawPath(nozzle, glyphCoreStroke)
       }
       -12 -> {
-        // REACTOR OVERCHARGE (+8% x3): Capacitor diamond ring + central Flux Prism
-        val diamond =
-          Path().apply {
-            moveTo(cx, cy - r * 0.56f)
-            lineTo(cx + r * 0.52f, cy)
-            lineTo(cx, cy + r * 0.56f)
-            lineTo(cx - r * 0.52f, cy)
-            close()
-          }
-        c.drawPath(diamond, glyphStrokePaint)
-        drawFluxPrismIcon(c, cx, cy, r * 0.42f, alpha = 255)
+        // REACTOR OVERCHARGE (+8% x3): Sleek circular dual-arc turbine ring + central 3D Plasma Toroid
+        val turbineR = r * 0.58f
+        val turbineRect = RectF(cx - turbineR, cy - turbineR, cx + turbineR, cy + turbineR)
+        c.drawArc(turbineRect, -155f, 130f, false, glyphStrokePaint)
+        c.drawArc(turbineRect, 25f, 130f, false, glyphStrokePaint)
+        c.drawArc(turbineRect, -145f, 110f, false, glyphCoreStroke)
+        c.drawArc(turbineRect, 35f, 110f, false, glyphCoreStroke)
+        drawFluxPrismIcon(c, cx, cy, r * 0.44f, alpha = 255)
       }
       -13 -> {
         // TURN RADIUS OVERCHARGE (+12% x3): Twin rotational thruster arrows (#EC4899 / #38BDF8) around a ship chevron
@@ -1370,9 +1420,9 @@ object RiftSpriteBaker {
         c.drawPath(chev, glyphFillPaint)
       }
       -14 -> {
-        // MAX FLUX OVERCHARGE (+10% x3): Glowing #00F5D4 cell with Flux Prism
-        val cellRect = RectF(cx - r * 0.50f, cy - r * 0.50f, cx + r * 0.50f, cy + r * 0.50f)
-        c.drawRoundRect(cellRect, 6f, 6f, glyphStrokePaint)
+        // MAX FLUX OVERCHARGE (+10% x3): Circular tokamak containment ring + central 3D Plasma Toroid
+        c.drawCircle(cx, cy, r * 0.56f, glyphStrokePaint)
+        c.drawCircle(cx, cy, r * 0.56f, innerRimPaint)
         drawFluxPrismIcon(c, cx, cy, r * 0.44f, alpha = 255)
       }
       else -> {

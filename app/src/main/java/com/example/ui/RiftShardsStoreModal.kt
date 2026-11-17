@@ -1,5 +1,6 @@
 package com.example.ui
 
+import android.app.Activity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -61,6 +62,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.LocalPilotPrefs
+import com.example.data.RiftBillingManager
+import com.example.data.ShardPurchaseResult
+import com.example.data.ShardVaultSkuPack
 import com.example.engine.CosmeticCatalogItem
 import com.example.engine.DailyConduitDirective
 import com.example.engine.RiftCodex
@@ -71,6 +75,13 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlinx.coroutines.launch
+
+private fun parseHexColorSafe(hex: String, fallback: Color = Color(0xFF00F5D4)): Color {
+  val cleaned = hex.trim().removePrefix("#")
+  val rgb = cleaned.toLongOrNull(16) ?: return fallback
+  return if (cleaned.length == 8) Color(rgb) else Color(0xFF000000L or rgb)
+}
 
 @Composable
 fun RiftShardsStoreModal(
@@ -113,8 +124,11 @@ fun RiftShardsStoreModal(
   onUnlockOrSelectFrameSlot: ((String) -> Pair<Boolean, String>)? = null,
 ) {
   val context = LocalContext.current
+  val scope = rememberCoroutineScope()
   val localPrefs = remember(context) { LocalPilotPrefs(context) }
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
+  val isTesterInfiniteShards = RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE
+  val displayedShards = RiftBillingManager.effectiveShardBalance(riftShards)
 
   var selectedSubDeck by remember { mutableIntStateOf(0) }
   var refreshTick by remember { mutableIntStateOf(0) }
@@ -154,17 +168,26 @@ fun RiftShardsStoreModal(
 
   var statusBanner by remember {
     mutableStateOf(
-      "RIFT CONDUIT ONLINE // ALL 10 HULLS OPEN AT 0 RESONANCE • COSMETICS & FRAME B–E UNLOCK BY PEAK RESONANCE OR ❖"
+      if (isTesterInfiniteShards) {
+        "RIFT CONDUIT ONLINE // TESTER TREASURY: INFINITE 999,999❖ ACTIVE • ALL 10 HULLS OPEN AT 0 RESONANCE"
+      } else {
+        "RIFT CONDUIT ONLINE // ALL 10 HULLS OPEN AT 0 RESONANCE • COSMETICS & FRAME B–E UNLOCK BY PEAK RESONANCE OR ❖"
+      }
     )
   }
 
   fun trySpendShards(cost: Long): Boolean {
     if (cost <= 0L) return true
-    if (riftShards < cost) return false
+    if (!RiftBillingManager.canAffordShardSpend(displayedShards, cost)) return false
     if (onSpendRiftShards != null) return onSpendRiftShards(cost)
-    onTopUpRiftShards(-cost)
+    if (!isTesterInfiniteShards) {
+      onTopUpRiftShards(-cost)
+    }
     return true
   }
+
+  fun spendCostNote(cost: Long): String =
+    if (isTesterInfiniteShards) "TESTER 0❖ DEPLETED" else "-${cost}❖"
 
   fun queryEquippedCosmetic(categoryKey: String): Int =
     equippedCosmeticByCategory?.invoke(categoryKey)
@@ -287,20 +310,26 @@ fun RiftShardsStoreModal(
         modifier =
           Modifier.background(Color(0xFF1A1405), RoundedCornerShape(7.dp))
             .border(1.dp, Color(0xFFFFD700), RoundedCornerShape(7.dp))
+            .clickable { selectedSubDeck = 6 }
             .padding(horizontal = 10.dp, vertical = 4.dp)
             .testTag("store_rift_shards_balance")
       ) {
         Text(
-          text = "❖ $riftShards RIFT SHARDS",
+          text =
+            if (isTesterInfiniteShards) {
+              if (isCompactPhone) "❖ INF TESTER" else "❖ INF (999,999) TESTER"
+            } else {
+              "❖ $displayedShards RIFT SHARDS"
+            },
           color = Color(0xFFFFD700),
-          fontSize = if (isCompactPhone) 10.5.sp else 11.5.sp,
+          fontSize = if (isCompactPhone) 10.sp else 11.sp,
           fontWeight = FontWeight.ExtraBold,
           fontFamily = FontFamily.Monospace,
         )
       }
     }
 
-    // 2. 30.dp 6 Sub-Deck Pills
+    // 2. 30.dp 7 Sub-Deck Pills (Indices 0..6)
     Row(
       modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
       horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -314,19 +343,37 @@ fun RiftShardsStoreModal(
           "WARP SIGNATURES",
           "HVT CROWN HALOS",
           "RIFT FRAME BAYS (A–E)",
+          "SHARD VAULT",
         )
       subDecks.forEachIndexed { idx, label ->
         val selected = selectedSubDeck == idx
+        val isVaultPill = idx == 6
+        val bgCol =
+          when {
+            selected && isVaultPill -> Color(0xFFFACC15)
+            selected -> Color(0xFF00F5D4)
+            isVaultPill -> Color(0xCC1E1605)
+            else -> Color(0xCC0D1B30)
+          }
+        val borderCol =
+          when {
+            selected && isVaultPill -> Color(0xFFFACC15)
+            selected -> Color(0xFF00F5D4)
+            isVaultPill -> Color(0x99FACC15)
+            else -> Color(0x5538BDF8)
+          }
+        val txtCol =
+          when {
+            selected -> Color(0xFF041019)
+            isVaultPill -> Color(0xFFFACC15)
+            else -> Color.White
+          }
         Box(
           modifier =
             Modifier.height(if (isCompactPhone) 27.dp else 30.dp)
               .clip(RoundedCornerShape(7.dp))
-              .background(if (selected) Color(0xFF00F5D4) else Color(0xCC0D1B30))
-              .border(
-                1.dp,
-                if (selected) Color(0xFF00F5D4) else Color(0x5538BDF8),
-                RoundedCornerShape(7.dp),
-              )
+              .background(bgCol)
+              .border(1.dp, borderCol, RoundedCornerShape(7.dp))
               .clickable { selectedSubDeck = idx }
               .padding(horizontal = if (isCompactPhone) 8.dp else 10.dp)
               .testTag("progression_pillar_tab_$idx"),
@@ -334,7 +381,7 @@ fun RiftShardsStoreModal(
         ) {
           Text(
             text = label,
-            color = if (selected) Color(0xFF041019) else Color.White,
+            color = txtCol,
             fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
@@ -485,7 +532,8 @@ fun RiftShardsStoreModal(
                     localPrefs.setCosmeticUnlocked("KILL_FINISHER", item.id, true)
                     localPrefs.setEquippedCosmeticId("KILL_FINISHER", item.id)
                     refreshTick++
-                    statusBanner = "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (-${item.shardCost}❖)"
+                    statusBanner =
+                      "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (${spendCostNote(item.shardCost)})"
                   } else {
                     statusBanner =
                       "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost}❖ RIFT SHARDS"
@@ -522,7 +570,8 @@ fun RiftShardsStoreModal(
                     localPrefs.setEquippedCosmeticId("HULL_TRIM", item.id)
                     RiftSpriteBaker.activeHullTrimStyle = item.id.coerceIn(0, 3)
                     refreshTick++
-                    statusBanner = "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (-${item.shardCost}❖)"
+                    statusBanner =
+                      "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (${spendCostNote(item.shardCost)})"
                   } else {
                     statusBanner =
                       "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost}❖ RIFT SHARDS"
@@ -557,7 +606,8 @@ fun RiftShardsStoreModal(
                     localPrefs.setCosmeticUnlocked("WARP_SIGNATURE", item.id, true)
                     localPrefs.setEquippedCosmeticId("WARP_SIGNATURE", item.id)
                     refreshTick++
-                    statusBanner = "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (-${item.shardCost}❖)"
+                    statusBanner =
+                      "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (${spendCostNote(item.shardCost)})"
                   } else {
                     statusBanner =
                       "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost}❖ RIFT SHARDS"
@@ -592,7 +642,8 @@ fun RiftShardsStoreModal(
                     localPrefs.setCosmeticUnlocked("HVT_HALO", item.id, true)
                     localPrefs.setEquippedCosmeticId("HVT_HALO", item.id)
                     refreshTick++
-                    statusBanner = "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (-${item.shardCost}❖)"
+                    statusBanner =
+                      "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (${spendCostNote(item.shardCost)})"
                   } else {
                     statusBanner =
                       "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost}❖ RIFT SHARDS"
@@ -602,12 +653,13 @@ fun RiftShardsStoreModal(
             )
           }
 
-          else -> {
+          5 -> {
             ConduitFrameBaysDeck(
               activeSlotId = activeCustomSlotId,
               spentCustomizationPoints = spentCustomizationPoints,
               totalCustomizationPoints = totalCustomizationPoints,
               aiShipDesignTokens = aiShipDesignTokens,
+              isTesterInfiniteShards = isTesterInfiniteShards,
               isFrameUnlocked = ::queryFrameUnlocked,
               onPreviewSlot = { slotId ->
                 previewShipId = 10
@@ -630,7 +682,8 @@ fun RiftShardsStoreModal(
                     localPrefs.setCustomSlotUnlocked(slotId, true)
                     localPrefs.setActiveCustomSlotId(slotId)
                     refreshTick++
-                    statusBanner = "UNLOCKED ${slotId.uppercase(Locale.US)} (-${gate.shardCost}❖ RIFT SHARDS)"
+                    statusBanner =
+                      "UNLOCKED ${slotId.uppercase(Locale.US)} (${spendCostNote(gate.shardCost)})"
                   } else {
                     statusBanner =
                       "REQUIRES ${gate.freeAtResonance} PEAK RESONANCE (FREE) OR ${gate.shardCost}❖ RIFT SHARDS"
@@ -640,21 +693,276 @@ fun RiftShardsStoreModal(
               onRespecPoints = {
                 if (onRespecCustomizationPoints()) {
                   refreshTick++
-                  statusBanner = "RIFT FRAME RESPEC COMPLETE (-50❖)"
+                  statusBanner = "RIFT FRAME RESPEC COMPLETE (${spendCostNote(50L)})"
                 } else {
-                  statusBanner = "RESPEC REQUIRES 50❖ RIFT SHARDS AND >0 ALLOCATED POINTS"
+                  statusBanner = "RESPEC REQUIRES >0 ALLOCATED POINTS (50❖ RIFT SHARDS)"
                 }
               },
               onBuyForgeVoucher = {
                 if (onPurchaseAiDesignToken()) {
                   refreshTick++
-                  statusBanner = "ACQUIRED HULL FORGE SYNTHESIS VOUCHER (-150❖)"
+                  statusBanner = "ACQUIRED HULL FORGE SYNTHESIS VOUCHER (${spendCostNote(150L)})"
                 } else {
                   statusBanner = "HULL FORGE VOUCHER REQUIRES 150❖ RIFT SHARDS"
                 }
               },
               onOpenHangarShip10 = onOpenHangarShip10,
             )
+          }
+
+          else -> {
+            ShardVaultTreasuryDeck(
+              isCompactPhone = isCompactPhone,
+              isTesterInfiniteShards = isTesterInfiniteShards,
+              onSelectSkuPack = { pack ->
+                scope.launch {
+                  val result =
+                    RiftBillingManager.launchShardPackPurchaseFlow(
+                      activity = context as? Activity,
+                      sku = pack,
+                      currentUid = localPrefs.getOrCreatePermanentDeviceUid(),
+                      callsign = localPrefs.getCallsign(),
+                    )
+                  when (result) {
+                    is ShardPurchaseResult.VerifiedAndCredited -> {
+                      onTopUpRiftShards(result.shardsCredited)
+                      refreshTick++
+                      statusBanner =
+                        "VERIFIED PLAY PURCHASE [${result.productId.uppercase(Locale.US)}] // +${result.shardsCredited}❖ CREDITED"
+                    }
+                    is ShardPurchaseResult.TesterModeDormantNotice -> {
+                      statusBanner = result.message
+                    }
+                    is ShardPurchaseResult.BillingUnavailable -> {
+                      statusBanner = result.reason
+                    }
+                  }
+                }
+              },
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ShardVaultTreasuryDeck(
+  isCompactPhone: Boolean,
+  isTesterInfiniteShards: Boolean,
+  onSelectSkuPack: (ShardVaultSkuPack) -> Unit,
+) {
+  val rows = remember { RiftBillingManager.OFFICIAL_SKU_CATALOG.chunked(2) }
+  val studioUpper = RiftBillingManager.STUDIO_LEGAL_NAME.uppercase(Locale.US)
+
+  Column(
+    modifier = Modifier.fillMaxSize().testTag("shard_vault_treasury_deck"),
+    verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 5.dp else 7.dp),
+  ) {
+    // Top Studio / Tester Treasury Status Banner
+    Column(
+      modifier =
+        Modifier.fillMaxWidth()
+          .background(
+            if (isTesterInfiniteShards) Color(0xFF0A241E) else Color(0xFF1A1405),
+            RoundedCornerShape(8.dp),
+          )
+          .border(
+            1.dp,
+            if (isTesterInfiniteShards) Color(0xFF00F5D4) else Color(0xFFFACC15),
+            RoundedCornerShape(8.dp),
+          )
+          .padding(horizontal = 10.dp, vertical = 5.dp)
+          .testTag("shard_vault_tester_banner"),
+      verticalArrangement = Arrangement.spacedBy(1.dp),
+    ) {
+      Text(
+        text =
+          if (isTesterInfiniteShards) {
+            "BETA TESTER TREASURY ACTIVE // INFINITE 999,999❖ ENABLED"
+          } else {
+            "OFFICIAL GOOGLE PLAY BILLING TREASURY // $studioUpper"
+          },
+        color = if (isTesterInfiniteShards) Color(0xFF00F5D4) else Color(0xFFFACC15),
+        fontSize = if (isCompactPhone) 8.8.sp else 9.6.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Text(
+        text =
+          if (isTesterInfiniteShards) {
+            "GOOGLE PLAY BILLING ($studioUpper) STANDING BY FOR LAUNCH • ALL UNLOCKS DEPLETE 0❖"
+          } else {
+            "CONSUMABLE RIFT SHARD PACKS VERIFIED VIA FIRESTORE PURCHASE TOKEN LEDGER • ZERO PAY-TO-WIN"
+          },
+        color = Color(0xFFCBD5E1),
+        fontSize = if (isCompactPhone) 7.5.sp else 8.2.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+
+    // Zero-scroll 2x2 SKU Pack Grid
+    Column(
+      modifier = Modifier.weight(1f).fillMaxWidth(),
+      verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
+    ) {
+      rows.forEach { rowPacks ->
+        Row(
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
+        ) {
+          rowPacks.forEach { pack ->
+            val accent = parseHexColorSafe(pack.accentHex, Color(0xFF38BDF8))
+            Column(
+              modifier =
+                Modifier.weight(1f)
+                  .fillMaxHeight()
+                  .clip(RoundedCornerShape(9.dp))
+                  .background(
+                    Brush.verticalGradient(
+                      listOf(
+                        accent.copy(alpha = 0.14f),
+                        Color(0xFF081222),
+                        Color(0xFF050B16),
+                      )
+                    )
+                  )
+                  .border(1.2.dp, accent.copy(alpha = 0.72f), RoundedCornerShape(9.dp))
+                  .padding(if (isCompactPhone) 7.dp else 9.dp)
+                  .testTag("shard_vault_sku_${pack.productId}"),
+              verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  modifier = Modifier.weight(1f),
+                ) {
+                  Canvas(modifier = Modifier.size(if (isCompactPhone) 16.dp else 20.dp)) {
+                    drawConduitDiamondGlyph(accent)
+                  }
+                  Column {
+                    Text(
+                      text = pack.title,
+                      color = Color.White,
+                      fontSize = if (isCompactPhone) 9.5.sp else 11.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                      text = "SKU // ${pack.productId}",
+                      color = Color(0xFF64748B),
+                      fontSize = 7.4.sp,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = FontFamily.Monospace,
+                      maxLines = 1,
+                    )
+                  }
+                }
+
+                Box(
+                  modifier =
+                    Modifier.background(accent.copy(alpha = 0.18f), RoundedCornerShape(5.dp))
+                      .border(1.dp, accent, RoundedCornerShape(5.dp))
+                      .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                  Text(
+                    text = pack.badgeLabel,
+                    color = accent,
+                    fontSize = 7.4.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                  )
+                }
+              }
+
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom,
+              ) {
+                Column {
+                  Text(
+                    text = "❖ ${pack.totalShards}",
+                    color = Color(0xFFFFD700),
+                    fontSize = if (isCompactPhone) 14.sp else 17.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Text(
+                    text =
+                      if (pack.bonusShards > 0L) {
+                        "${pack.shardAmount} BASE + ${pack.bonusShards} BONUS ❖"
+                      } else {
+                        "${pack.shardAmount} BASE RIFT SHARDS"
+                      },
+                    color = Color(0xFF94A3B8),
+                    fontSize = if (isCompactPhone) 7.5.sp else 8.2.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                  )
+                }
+
+                Text(
+                  text = pack.displayPriceUsd,
+                  color = Color.White,
+                  fontSize = if (isCompactPhone) 11.sp else 13.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+
+              Button(
+                onClick = { onSelectSkuPack(pack) },
+                colors =
+                  ButtonDefaults.buttonColors(
+                    containerColor =
+                      if (isTesterInfiniteShards) Color(0xFF102438) else accent,
+                    contentColor =
+                      if (isTesterInfiniteShards) Color(0xFF00F5D4) else Color(0xFF040B14),
+                  ),
+                border =
+                  BorderStroke(
+                    1.dp,
+                    if (isTesterInfiniteShards) Color(0xFF00F5D4) else accent,
+                  ),
+                shape = RoundedCornerShape(6.dp),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .height(if (isCompactPhone) 25.dp else 28.dp)
+                    .testTag("btn_buy_sku_${pack.productId}"),
+              ) {
+                Text(
+                  text =
+                    if (isTesterInfiniteShards) {
+                      if (isCompactPhone) "INACTIVE — INFINITE TESTER ❖"
+                      else "PLAY BILLING INACTIVE — INFINITE TESTER ❖"
+                    } else {
+                      "PURCHASE ${pack.displayPriceUsd}"
+                    },
+                  fontSize = if (isCompactPhone) 7.4.sp else 8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+            }
           }
         }
       }
@@ -717,6 +1025,7 @@ private fun ConduitHoloPreviewStage(
           ?.accentColorHex ?: 0xFFFFD700.toInt()
       )
       5 -> Color(0xFFEC4899)
+      6 -> Color(0xFFFACC15)
       else -> Color(0xFF00F5D4)
     }
 
@@ -739,6 +1048,7 @@ private fun ConduitHoloPreviewStage(
         "HVT CROWN // ${hl.uppercase(Locale.US)}"
       }
       5 -> "RIFT FRAME // ${previewFrameSlotId.uppercase(Locale.US)} (100-PT PARITY)"
+      6 -> "SHARD VAULT // ${RiftBillingManager.STUDIO_LEGAL_NAME.uppercase(Locale.US)}"
       else -> "LIVE CONDUIT HOLO-STAGE // 60FPS TELEMETRY"
     }
 
@@ -779,7 +1089,7 @@ private fun ConduitHoloPreviewStage(
               .padding(horizontal = 6.dp, vertical = 2.dp)
               .testTag("conduit_holo_prev_ship")
         ) {
-          Text("◀", color = Color(0xFF38BDF8), fontSize = 8.5.sp, fontWeight = FontWeight.Black)
+          Text("<", color = Color(0xFF38BDF8), fontSize = 8.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
         }
         Text(
           text = shipSpec.name.uppercase(Locale.US),
@@ -797,7 +1107,7 @@ private fun ConduitHoloPreviewStage(
               .padding(horizontal = 6.dp, vertical = 2.dp)
               .testTag("conduit_holo_next_ship")
         ) {
-          Text("▶", color = Color(0xFF38BDF8), fontSize = 8.5.sp, fontWeight = FontWeight.Black)
+          Text(">", color = Color(0xFF38BDF8), fontSize = 8.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
         }
       }
     }
@@ -858,7 +1168,7 @@ private fun ConduitHoloPreviewStage(
         val activeWarp = if (selectedSubDeck == 3) previewCosmeticId else equippedWarpId
         val activeFinisher = if (selectedSubDeck == 1) previewCosmeticId else equippedFinisherId
 
-        // Warp Signature Portal Rings (emphasized on Warp tab, subtle ambient otherwise)
+        // Warp Signature Rift Aperture Rings (emphasized on Warp tab, subtle ambient otherwise)
         if (selectedSubDeck == 3 || activeWarp > 0) {
           val warpAlpha = if (selectedSubDeck == 3) 0.78f else 0.28f
           val warpR = size.minDimension * (0.24f + 0.07f * ((sin(holoPhase * 1.4f) + 1f) * 0.5f))
@@ -896,12 +1206,32 @@ private fun ConduitHoloPreviewStage(
           drawCircle(color = stageAccent.copy(alpha = haloAlpha), radius = 3.2.dp.toPx(), center = Offset(nx, ny))
         }
 
+        // Orbiting 4-point Rift Shard crystals on Sub-Deck 6 (Shard Vault)
+        if (selectedSubDeck == 6) {
+          val orbitR = size.minDimension * 0.36f
+          for (cIdx in 0 until 6) {
+            val ca = -holoPhase * 0.8f + (cIdx * 2f * PI.toFloat() / 6f)
+            val sx = cx + cos(ca) * orbitR
+            val sy = cy + sin(ca) * (orbitR * 0.72f)
+            val cr = 5.5.dp.toPx()
+            val shardPath =
+              Path().apply {
+                moveTo(sx, sy - cr)
+                lineTo(sx + cr * 0.7f, sy)
+                lineTo(sx, sy + cr)
+                lineTo(sx - cr * 0.7f, sy)
+                close()
+              }
+            val shardCol = if (cIdx % 2 == 0) Color(0xFFFACC15) else Color(0xFFC084FC)
+            drawPath(shardPath, shardCol.copy(alpha = 0.85f))
+          }
+        }
+
         // Kill Finisher Shockwave Pulse on Sub-Deck 1
         if (selectedSubDeck == 1) {
           val cyc = (holoPhase * 0.55f) % 1f
           val ringR =
             if (activeFinisher == 1) {
-              // Gravity Implosion collapses inward then snaps
               size.minDimension * (0.42f * (1f - cyc).coerceIn(0.08f, 1f))
             } else {
               size.minDimension * (0.10f + 0.34f * cyc)
@@ -1490,6 +1820,7 @@ private fun ConduitFrameBaysDeck(
   spentCustomizationPoints: Int,
   totalCustomizationPoints: Int,
   aiShipDesignTokens: Int,
+  isTesterInfiniteShards: Boolean,
   isFrameUnlocked: (String) -> Boolean,
   onPreviewSlot: (String) -> Unit,
   onUnlockOrSelectSlot: (String) -> Unit,
@@ -1525,7 +1856,7 @@ private fun ConduitFrameBaysDeck(
             .testTag("conduit_btn_open_hangar_ship10")
       ) {
         Text(
-          text = "OPEN IN HANGAR DECK ▶",
+          text = "OPEN IN HANGAR DECK >",
           color = Color(0xFFE9D5FF),
           fontSize = 8.2.sp,
           fontWeight = FontWeight.Black,
@@ -1669,7 +2000,7 @@ private fun ConduitFrameBaysDeck(
               )
             }
             Text(
-              text = "50❖",
+              text = if (isTesterInfiniteShards) "0❖ TEST" else "50❖",
               color = Color(0xFF38BDF8),
               fontSize = 9.5.sp,
               fontWeight = FontWeight.Black,
@@ -1705,7 +2036,7 @@ private fun ConduitFrameBaysDeck(
               )
             }
             Text(
-              text = "150❖",
+              text = if (isTesterInfiniteShards) "0❖ TEST" else "150❖",
               color = Color(0xFFC084FC),
               fontSize = 9.5.sp,
               fontWeight = FontWeight.Black,

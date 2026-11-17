@@ -70,12 +70,15 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.data.FriendPilotEntry
 import com.example.data.LocalPilotPrefs
 import com.example.data.PilotAchievement
+import com.example.data.RiftBillingManager
 import com.example.data.RiftRepository
 import com.example.data.SyndicateChatMessage
 import com.example.data.UgcModeration
+import com.example.engine.CustomGameConfig
 import com.example.engine.CustomHullVisualRecipe
 import com.example.engine.CustomShipLoadoutSlot
 import com.example.engine.MusicSynthArchetype
+import com.example.engine.RankedGameMode
 import com.example.engine.RiftArenaView
 import com.example.engine.RiftCalibrationState
 import com.example.engine.RiftCodex
@@ -122,6 +125,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import org.json.JSONObject
+
+private sealed interface StagedRiftLaunch {
+  data class Ranked(val mode: RankedGameMode, val teamSizeBracket: Int) : StagedRiftLaunch
+
+  data class NewCustom(val config: CustomGameConfig) : StagedRiftLaunch
+
+  data class ExistingCustom(val instanceId: String) : StagedRiftLaunch
+}
 
 internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
   val listener = FirebaseAuth.AuthStateListener { auth -> trySend(auth.currentUser) }
@@ -317,7 +328,7 @@ fun RiftArenaScreen(
   var currentFps by remember { mutableIntStateOf(60) }
   var frameTick by remember { mutableIntStateOf(0) }
   var toastMessage by remember {
-    mutableStateOf<String?>("NEXUS CORE ONLINE // SELECT ORBITAL NODE TO DEPLOY")
+    mutableStateOf<String?>("NEXUS CORE ONLINE // SELECT RIFT TO DEPLOY")
   }
   var toastVersion by remember { mutableIntStateOf(0) }
   var unreadCommsCount by remember { mutableIntStateOf(0) }
@@ -332,6 +343,7 @@ fun RiftArenaScreen(
   var forgeInitialTab by remember { mutableStateOf(NexusForgeTab.SHIP_COSMETICS) }
   var isForgeFullScreenStage by remember { mutableStateOf(false) }
   var showFullChangelogModal by remember { mutableStateOf(false) }
+  var pendingStagedLaunch by remember { mutableStateOf<StagedRiftLaunch?>(null) }
 
   var callsign by remember(currentUserId, isGoogleAuthenticated) {
     mutableStateOf(
@@ -403,6 +415,9 @@ fun RiftArenaScreen(
     if (node != NexusCoreNode.STAR_FORGE) {
       isForgeFullScreenStage = false
     }
+    if (node == NexusCoreNode.CONVERGENCE_GATE) {
+      pendingStagedLaunch = null
+    }
     activeNexusNode = node
     isNexusShellOpen = true
   }
@@ -448,7 +463,8 @@ fun RiftArenaScreen(
       xpFromBountyEarned = localPrefs.getXpFromBountyEarned(currentUserId).toFloat()
       xpFromBountyKilled = localPrefs.getXpFromBountyKilled(currentUserId).toFloat()
       pilotLevel = localPrefs.getPilotLevel(currentUserId)
-      riftShards = localPrefs.getRiftShards(currentUserId)
+      riftShards = RiftBillingManager.effectiveShardBalance(localPrefs.getRiftShards(currentUserId))
+      localPrefs.setRiftShards(riftShards, currentUserId)
       liveResonance = localPrefs.getLiveResonance(currentUserId)
       peakResonance = localPrefs.getPeakResonance(currentUserId)
       highestMilestoneLevelClaimed = localPrefs.getHighestMilestoneLevelClaimed(currentUserId)
@@ -478,6 +494,7 @@ fun RiftArenaScreen(
       directivesRefreshKey++
     }
     engine.onStatsUpdated = {
+      engine.riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards)
       localPrefs.setActiveArmadaName(engine.activeArmadaName)
       localPrefs.saveCombatStats(
         pvpKills = engine.pvpKills,
@@ -1351,8 +1368,11 @@ fun RiftArenaScreen(
               val cost = gate.shardCost
               val freeByMilestone =
                 engine.peakResonance >= gate.freeAtResonance || engine.pilotLevel >= gate.freeAtLevel
-              if (freeByMilestone || engine.riftShards >= cost) {
-                if (!freeByMilestone && cost > 0L) engine.riftShards -= cost
+              if (freeByMilestone || RiftBillingManager.canAffordShardSpend(engine.riftShards, cost)) {
+                if (!freeByMilestone && cost > 0L) {
+                  engine.riftShards = RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, cost)
+                  localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                }
                 engine.unlockedExtraSlots++
                 localPrefs.setCustomSlotUnlocked(targetSlotId, true, currentUserId)
                 slot9BUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
@@ -1366,25 +1386,43 @@ fun RiftArenaScreen(
             }
             val forgeAiHullShared: (String, String) -> Pair<Boolean, String> = { promptText, hullTitle ->
               val isFirstFree = activeCustomSlot.aiGenerationsCount == 0
-              val canAfford = isFirstFree || engine.aiShipDesignTokens > 0 || engine.riftShards >= 150L
+              val canAfford =
+                isFirstFree ||
+                  engine.aiShipDesignTokens > 0 ||
+                  RiftBillingManager.canAffordShardSpend(engine.riftShards, 150L)
               if (!canAfford) {
                 Pair(false, "NEED 150 ❖ RIFT SHARDS FOR HULL RE-DESIGN (OPEN RIFT CONDUIT).")
               } else {
                 if (!isFirstFree) {
-                  if (engine.aiShipDesignTokens > 0) engine.aiShipDesignTokens-- else engine.riftShards -= 150L
+                  if (engine.aiShipDesignTokens > 0) {
+                    engine.aiShipDesignTokens--
+                  } else {
+                    engine.riftShards = RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, 150L)
+                    localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                  }
                 }
                 val nextGenCount = activeCustomSlot.aiGenerationsCount + 1
                 val baseRecipe = CustomHullVisualRecipe.synthesizeFromPrompt(promptText, nextGenCount)
                 val finalTitle = hullTitle.trim().uppercase(Locale.US).take(18).ifEmpty { baseRecipe.hullName }
                 val finalRecipe = baseRecipe.copy(hullName = finalTitle)
-                val updatedSlot = activeCustomSlot.copy(customName = finalTitle, visualRecipe = finalRecipe, aiGenerationsCount = nextGenCount)
+                val updatedSlot =
+                  activeCustomSlot.copy(
+                    customName = finalTitle,
+                    visualRecipe = finalRecipe,
+                    aiGenerationsCount = nextGenCount,
+                  )
                 activeCustomSlot = updatedSlot
                 localPrefs.saveCustomShipSlot(updatedSlot, currentUserId)
                 RiftCodex.updateActiveCustomShipSlot(updatedSlot)
                 engine.syncLocalPlayerCustomShipSpec()
                 engine.onStatsUpdated()
                 sfx.playPrize()
-                val costNote = if (isFirstFree) "FREE 1ST DESIGN" else "-150 ❖"
+                val costNote =
+                  when {
+                    isFirstFree -> "FREE 1ST DESIGN"
+                    RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE -> "TESTER 0❖ DEPLETED"
+                    else -> "-150 ❖"
+                  }
                 Pair(true, "HULL FORGED ($costNote): [$finalTitle] (${finalRecipe.silhouette})")
               }
             }
@@ -1436,6 +1474,73 @@ fun RiftArenaScreen(
               }
             }
 
+            val stageRankedModeIntoHangar: (RankedGameMode, Int) -> Unit = { mode, bracket ->
+              if (mode == RankedGameMode.SYNDICATE_WARS) {
+                val (eligible, reason) = engine.canQueueSyndicateWars()
+                if (!eligible) {
+                  sfx.playMutedClick()
+                  toastMessage = reason
+                  toastVersion++
+                } else {
+                  pendingStagedLaunch = StagedRiftLaunch.Ranked(mode, bracket)
+                  selectedMode = mode.id
+                  sfx.playMutedClick()
+                  activeNexusNode = NexusCoreNode.HANGAR_DECK
+                  isNexusShellOpen = true
+                  toastMessage = "STAGED ${mode.title.uppercase(Locale.US)} // SELECT HULL & ENTER RIFT"
+                  toastVersion++
+                }
+              } else {
+                pendingStagedLaunch = StagedRiftLaunch.Ranked(mode, bracket)
+                selectedMode = mode.id
+                sfx.playMutedClick()
+                activeNexusNode = NexusCoreNode.HANGAR_DECK
+                isNexusShellOpen = true
+                toastMessage = "STAGED ${mode.title.uppercase(Locale.US)} // SELECT HULL & ENTER RIFT"
+                toastVersion++
+              }
+            }
+
+            val stagedTargetTitle: String? =
+              remember(pendingStagedLaunch, frameTick) {
+                when (val staged = pendingStagedLaunch) {
+                  is StagedRiftLaunch.Ranked -> {
+                    val bracketBadge =
+                      when (staged.mode) {
+                        RankedGameMode.RIFT_SKIRMISH,
+                        RankedGameMode.RIFT_CONTROL,
+                        RankedGameMode.SYNDICATE_WARS -> " (${staged.teamSizeBracket}V${staged.teamSizeBracket})"
+                        else -> " (${staged.mode.teamFormatBadge})"
+                      }
+                    "${staged.mode.title}$bracketBadge"
+                  }
+                  is StagedRiftLaunch.NewCustom ->
+                    "CUSTOM RIFT: ${staged.config.title} (${staged.config.baseMode.title})"
+                  is StagedRiftLaunch.ExistingCustom -> {
+                    val found = engine.activeCustomGames.firstOrNull { it.instanceId == staged.instanceId }
+                    if (found != null) {
+                      "CUSTOM RIFT: ${found.title} (${found.baseMode.title})"
+                    } else {
+                      "CUSTOM RIFT [${staged.instanceId}]"
+                    }
+                  }
+                  null -> null
+                }
+              }
+
+            val stagedHullLockNotice: Boolean =
+              remember(pendingStagedLaunch, frameTick) {
+                when (val staged = pendingStagedLaunch) {
+                  is StagedRiftLaunch.Ranked -> engine.doesModeLockShipSelection(staged.mode)
+                  is StagedRiftLaunch.NewCustom -> engine.doesModeLockShipSelection(staged.config.baseMode)
+                  is StagedRiftLaunch.ExistingCustom -> {
+                    val found = engine.activeCustomGames.firstOrNull { it.instanceId == staged.instanceId }
+                    found != null && engine.doesModeLockShipSelection(found.baseMode)
+                  }
+                  null -> engine.hasJoinedMatch && engine.doesModeLockShipSelection()
+                }
+              }
+
             val embeddedModuleContent: (@Composable () -> Unit)? =
               when (activeNexusNode) {
                 NexusCoreNode.ORBITAL_HUB,
@@ -1448,18 +1553,29 @@ fun RiftArenaScreen(
                         val (_, _, hangarLvlFrac) =
                           remember(frameTick) { engine.getXpProgressInCurrentLevel() }
                         val currentSectorModeId =
-                          engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
+                          when (val staged = pendingStagedLaunch) {
+                            is StagedRiftLaunch.Ranked -> staged.mode.id
+                            is StagedRiftLaunch.NewCustom -> staged.config.baseMode.id
+                            is StagedRiftLaunch.ExistingCustom ->
+                              engine.activeCustomGames
+                                .firstOrNull { it.instanceId == staged.instanceId }
+                                ?.baseMode
+                                ?.id ?: engine.activeRankedMode.id
+                            null ->
+                              engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
+                          }
                         HangarModal(
                           initialCallsign = callsign,
                           syndicateTag = syndicateTag,
                           syndicateName = syndicateName,
                           selectedShipId = selectedShipId,
+                          bestShipId = bestShipId,
                           selectedMode = currentSectorModeId,
                           pilotLevel = engine.pilotLevel,
                           xpProgressFraction = hangarLvlFrac,
                           customizationPointsTotal = engine.getCustomizationPointsTotal(),
                           spentCustomizationPoints = activeCustomSlot.totalAllocatedPoints(),
-                          riftShards = engine.riftShards,
+                          riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
                           unlockFullNinthShipOverride = RiftCalibrationState.unlockFullNinthShipOverride,
                           activeCustomSlot = activeCustomSlot,
                           slot9BUnlocked = slot9BUnlocked,
@@ -1468,6 +1584,19 @@ fun RiftArenaScreen(
                           slot9EUnlocked = slot9EUnlocked,
                           liveResonance = engine.liveResonance,
                           peakResonance = engine.peakResonance,
+                          stagedTargetTitle = stagedTargetTitle,
+                          stagedHullLockNotice = stagedHullLockNotice,
+                          onCancelStagedModeToGate =
+                            if (pendingStagedLaunch != null) {
+                              {
+                                pendingStagedLaunch = null
+                                sfx.playMutedClick()
+                                activeNexusNode = NexusCoreNode.CONVERGENCE_GATE
+                                isNexusShellOpen = true
+                              }
+                            } else {
+                              null
+                            },
                           onOpenRiftShardsStore = {
                             previousNodeBeforeConduit = NexusCoreNode.HANGAR_DECK
                             openNexusNode(NexusCoreNode.RIFT_CONDUIT)
@@ -1481,12 +1610,23 @@ fun RiftArenaScreen(
                           onSwitchCustomSlot = switchCustomSlotShared,
                           onUnlockCustomSlot = unlockCustomSlotShared,
                           onRespecCustomSlot = {
-                            if (engine.riftShards >= 50L && activeCustomSlot.totalAllocatedPoints() > 0) {
-                              engine.riftShards -= 50L
-                              val zeroed = activeCustomSlot.copy(
-                                speedPts = 0, thrustPts = 0, turnPts = 0, maxFluxPts = 0, rechargePts = 0,
-                                primaryArchetype = "LIGHT_PULSE", secondaryType = "NONE",
-                              )
+                            if (
+                              RiftBillingManager.canAffordShardSpend(engine.riftShards, 50L) &&
+                                activeCustomSlot.totalAllocatedPoints() > 0
+                            ) {
+                              engine.riftShards =
+                                RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, 50L)
+                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                              val zeroed =
+                                activeCustomSlot.copy(
+                                  speedPts = 0,
+                                  thrustPts = 0,
+                                  turnPts = 0,
+                                  maxFluxPts = 0,
+                                  rechargePts = 0,
+                                  primaryArchetype = "LIGHT_PULSE",
+                                  secondaryType = "NONE",
+                                )
                               saveCustomSlotShared(zeroed)
                               engine.onStatsUpdated()
                               sfx.playPrize()
@@ -1505,30 +1645,71 @@ fun RiftArenaScreen(
                             val cleanCallsign =
                               if (isGoogleAuthenticated) localPrefs.setCallsign(newCallsign, currentUserId)
                               else localPrefs.setCallsign(newCallsign)
-                            if (isGoogleAuthenticated && cleanCallsign.length >= 3 && cleanCallsign != "COMMANDER" && !cleanCallsign.startsWith("RFT-")) {
+                            if (
+                              isGoogleAuthenticated &&
+                                cleanCallsign.length >= 3 &&
+                                cleanCallsign != "COMMANDER" &&
+                                !cleanCallsign.startsWith("RFT-")
+                            ) {
                               localPrefs.setHasChosenInitialCallsign(true, currentUserId)
                               needsInitialSwornCallsign = false
                             }
                             val clampedShipId = newShipId.coerceIn(1, 10)
-                            val activeModeId =
-                              engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
                             callsign = cleanCallsign
                             selectedShipId = clampedShipId
-                            selectedMode = activeModeId
                             syndicateTag = localPrefs.getSyndicateTag()
                             syndicateName = localPrefs.getSyndicateName()
                             localPrefs.setPreferredShipId(clampedShipId)
-                            localPrefs.setPreferredMode(activeModeId)
                             engine.localPlayer.callsign = cleanCallsign
                             engine.localPlayer.syndicateTag = syndicateTag
                             engine.syncLocalArmadaSelfSlot()
+
+                            val staged = pendingStagedLaunch
+                            if (staged != null || !engine.hasJoinedMatch) {
+                              // Allow hull selection in Hangar staging before mode hull-lock engages
+                              engine.isShipLockedForMatch = false
+                            }
                             engine.switchLocalPlayerShip(clampedShipId, forceFromHangar = true)
                             syncEquippedCosmeticsToEngine(engine)
-                            if (!engine.hasJoinedMatch) {
-                              engine.deployToRankedMode(engine.activeRankedMode, engine.activeTeamSizeBracket)
+
+                            when (staged) {
+                              is StagedRiftLaunch.Ranked -> {
+                                selectedMode = staged.mode.id
+                                localPrefs.setPreferredMode(staged.mode.id)
+                                engine.deployToRankedMode(staged.mode, staged.teamSizeBracket)
+                              }
+                              is StagedRiftLaunch.NewCustom -> {
+                                selectedMode = staged.config.baseMode.id
+                                localPrefs.setPreferredMode(staged.config.baseMode.id)
+                                engine.createAndJoinCustomGame(staged.config)
+                              }
+                              is StagedRiftLaunch.ExistingCustom -> {
+                                engine.joinCustomGame(staged.instanceId)
+                                val resolvedModeId =
+                                  engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
+                                selectedMode = resolvedModeId
+                                localPrefs.setPreferredMode(resolvedModeId)
+                              }
+                              null -> {
+                                val activeModeId =
+                                  engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
+                                selectedMode = activeModeId
+                                localPrefs.setPreferredMode(activeModeId)
+                                if (!engine.hasJoinedMatch) {
+                                  engine.deployToRankedMode(
+                                    engine.activeRankedMode,
+                                    engine.activeTeamSizeBracket,
+                                  )
+                                }
+                              }
                             }
+
+                            syncEquippedCosmeticsToEngine(engine)
                             engine.onStatsUpdated()
-                            isNexusShellOpen = false
+                            if (engine.hasJoinedMatch) {
+                              pendingStagedLaunch = null
+                              isNexusShellOpen = false
+                            }
                           },
                           onCloseModal = closeEmbeddedModal,
                         )
@@ -1561,7 +1742,7 @@ fun RiftArenaScreen(
                           levelProgressFraction = lvlFrac,
                           totalCustomizationPoints = engine.getCustomizationPointsTotal(),
                           spentCustomizationPoints = activeCustomSlot.totalAllocatedPoints(),
-                          riftShards = engine.riftShards,
+                          riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
                           publicGameWins = engine.convergencesWon,
                           matchPresencePct = presencePct,
                           unlockedExtraSlots = engine.unlockedExtraSlots,
@@ -1574,6 +1755,12 @@ fun RiftArenaScreen(
                           dailySweepClaimed = conduitSweepClaimed,
                           activeShipId = selectedShipId,
                           activeCustomSlotId = activeCustomSlotId,
+                          onTopUpRiftShards = { delta ->
+                            engine.riftShards =
+                              RiftBillingManager.effectiveShardBalance(engine.riftShards + delta)
+                            localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                            engine.onStatsUpdated()
+                          },
                           equippedCosmeticByCategory = { category ->
                             val _unused = cosmeticsRefreshKey
                             localPrefs.getEquippedCosmeticId(category, currentUserId)
@@ -1602,7 +1789,11 @@ fun RiftArenaScreen(
                             val claimed =
                               localPrefs.claimDailyDirectiveReward(slotIdx, currentUserId)
                             if (claimed != null) {
-                              engine.riftShards += claimed.first
+                              engine.riftShards =
+                                RiftBillingManager.effectiveShardBalance(
+                                  engine.riftShards + claimed.first
+                                )
+                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
                               engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
                               engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
                               if (!engine.hasJoinedMatch) {
@@ -1627,7 +1818,11 @@ fun RiftArenaScreen(
                           onClaimDailySweep = {
                             val sweep = localPrefs.claimDailySweepBonus(currentUserId)
                             if (sweep != null) {
-                              engine.riftShards += sweep.first
+                              engine.riftShards =
+                                RiftBillingManager.effectiveShardBalance(
+                                  engine.riftShards + sweep.first
+                                )
+                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
                               engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
                               engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
                               if (!engine.hasJoinedMatch) {
@@ -1657,16 +1852,32 @@ fun RiftArenaScreen(
                               sfx.playPrize()
                               engine.onStatsUpdated()
                               true to "EQUIPPED ${item.name.uppercase(Locale.US)}"
-                            } else if (engine.riftShards >= item.shardCost) {
-                              engine.riftShards -= item.shardCost
+                            } else if (
+                              RiftBillingManager.canAffordShardSpend(
+                                engine.riftShards,
+                                item.shardCost,
+                              )
+                            ) {
+                              engine.riftShards =
+                                RiftBillingManager.computeBalanceAfterSpend(
+                                  engine.riftShards,
+                                  item.shardCost,
+                                )
+                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
                               localPrefs.setCosmeticUnlocked(category, item.id, true, currentUserId)
                               localPrefs.setEquippedCosmeticId(category, item.id, currentUserId)
                               syncEquippedCosmeticsToEngine(engine)
                               cosmeticsRefreshKey++
                               sfx.playPrize()
                               engine.onStatsUpdated()
+                              val spendNote =
+                                if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) {
+                                  "TESTER 0❖ DEPLETED"
+                                } else {
+                                  "-${item.shardCost}❖"
+                                }
                               true to
-                                "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (-${item.shardCost}❖)"
+                                "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} ($spendNote)"
                             } else {
                               false to
                                 "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost}❖ RIFT SHARDS"
@@ -1693,10 +1904,12 @@ fun RiftArenaScreen(
                               syncEquippedCosmeticsToEngine(engine)
                               engine.onStatsUpdated()
                               val freeNote =
-                                if (engine.peakResonance >= gate.freeAtResonance) {
-                                  "PEAK RESONANCE MILESTONE"
-                                } else {
-                                  "-${gate.shardCost}❖ RIFT SHARDS"
+                                when {
+                                  engine.peakResonance >= gate.freeAtResonance ->
+                                    "PEAK RESONANCE MILESTONE"
+                                  RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE ->
+                                    "TESTER 0❖ DEPLETED"
+                                  else -> "-${gate.shardCost}❖ RIFT SHARDS"
                                 }
                               true to "UNLOCKED ${slotId.uppercase(Locale.US)} ($freeNote)"
                             } else {
@@ -1705,8 +1918,10 @@ fun RiftArenaScreen(
                             }
                           },
                           onSpendRiftShards = { cost ->
-                            if (engine.riftShards >= cost) {
-                              engine.riftShards -= cost
+                            if (RiftBillingManager.canAffordShardSpend(engine.riftShards, cost)) {
+                              engine.riftShards =
+                                RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, cost)
+                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
                               sfx.playPrize()
                               engine.onStatsUpdated()
                               true
@@ -1715,8 +1930,13 @@ fun RiftArenaScreen(
                             }
                           },
                           onRespecCustomizationPoints = {
-                            if (engine.riftShards >= 50L && activeCustomSlot.totalAllocatedPoints() > 0) {
-                              engine.riftShards -= 50L
+                            if (
+                              RiftBillingManager.canAffordShardSpend(engine.riftShards, 50L) &&
+                                activeCustomSlot.totalAllocatedPoints() > 0
+                            ) {
+                              engine.riftShards =
+                                RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, 50L)
+                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
                               val zeroed =
                                 activeCustomSlot.copy(
                                   speedPts = 0,
@@ -1736,8 +1956,10 @@ fun RiftArenaScreen(
                             }
                           },
                           onPurchaseAiDesignToken = {
-                            if (engine.riftShards >= 150L) {
-                              engine.riftShards -= 150L
+                            if (RiftBillingManager.canAffordShardSpend(engine.riftShards, 150L)) {
+                              engine.riftShards =
+                                RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, 150L)
+                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
                               engine.aiShipDesignTokens++
                               sfx.playPrize()
                               engine.onStatsUpdated()
@@ -2018,7 +2240,7 @@ fun RiftArenaScreen(
                             levelProgressFraction = lvlFrac,
                             customizationPointsTotal = engine.getCustomizationPointsTotal(),
                             spentCustomizationPoints = activeCustomSlot.totalAllocatedPoints(),
-                            riftShards = engine.riftShards,
+                            riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
                             xpFromBuffs = engine.xpFromBuffs.toLong(),
                             xpFromDamage = engine.xpFromDamage.toLong(),
                             xpFromAccuracy = engine.xpFromAccuracy.toLong(),
@@ -2074,7 +2296,8 @@ fun RiftArenaScreen(
                               engine.xpFromBountyEarned = 0f
                               engine.xpFromBountyKilled = 0f
                               engine.pilotLevel = 1
-                              engine.riftShards = 0L
+                              engine.riftShards = RiftBillingManager.effectiveShardBalance(0L)
+                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
                               engine.liveResonance = 0
                               engine.peakResonance = 0
                               engine.highestMilestoneLevelClaimed = 0
@@ -2113,8 +2336,9 @@ fun RiftArenaScreen(
                               toastVersion++
                             },
                             onUpdateRiftShards = { remainingShards ->
-                              engine.riftShards = remainingShards
-                              localPrefs.setRiftShards(remainingShards, currentUserId)
+                              val effective = RiftBillingManager.effectiveShardBalance(remainingShards)
+                              engine.riftShards = effective
+                              localPrefs.setRiftShards(effective, currentUserId)
                               engine.onStatsUpdated()
                             },
                             onCloseModal = closeEmbeddedModal,
@@ -2183,7 +2407,7 @@ fun RiftArenaScreen(
                           callsign = callsign,
                           syndicateTag = syndicateTag,
                           pilotLevel = engine.pilotLevel,
-                          riftShards = engine.riftShards,
+                          riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
                           selectedShipId = selectedShipId,
                           activeCustomSlot = activeCustomSlot,
                           slot9BUnlocked = slot9BUnlocked,
@@ -2212,8 +2436,13 @@ fun RiftArenaScreen(
                           onUnlockCustomSlot = unlockCustomSlotShared,
                           onForgeAiHullDesign = forgeAiHullShared,
                           onSpendRiftShards = { cost ->
-                            if (engine.riftShards >= cost) {
-                              engine.riftShards -= cost; sfx.playPrize(); engine.onStatsUpdated(); true
+                            if (RiftBillingManager.canAffordShardSpend(engine.riftShards, cost)) {
+                              engine.riftShards =
+                                RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, cost)
+                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                              sfx.playPrize()
+                              engine.onStatsUpdated()
+                              true
                             } else false
                           },
                           onToggleSfx = toggleSfxShared,
@@ -2276,7 +2505,7 @@ fun RiftArenaScreen(
               syndicateName = syndicateName,
               activeShipId = selectedShipId,
               bestShipId = bestShipId,
-              riftShards = engine.riftShards,
+              riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
               unreadCommsCount = unreadCommsCount,
               currentUserId = currentUserId,
               bootToNexusHub = bootToNexusHub,
@@ -2310,11 +2539,10 @@ fun RiftArenaScreen(
               canQueueSyndicateWars = engine.canQueueSyndicateWars(),
               syndicateWarRecord = syndicateWarRecord,
               onDeployToRankedMode = { mode, bracket ->
-                engine.deployToRankedMode(mode, bracket)
-                selectedMode = mode.id
-                isNexusShellOpen = false
+                stageRankedModeIntoHangar(mode, bracket)
               },
               onLeaveMatch = {
+                pendingStagedLaunch = null
                 engine.leaveActiveMatchToNexusOrbit()
                 toastMessage = "LEFT MATCH // ORBITING NEXUS SECTOR"
                 toastVersion++
@@ -2727,6 +2955,28 @@ fun RiftArenaScreen(
               isCalibrationLivePeeking =
                 activeNexusNode == NexusCoreNode.STAR_FORGE && RiftCalibrationState.isDraggingAnySlider,
               hideTopHeaderForFullScreenStage = isForgeFullScreenStage,
+              liveResonance = engine.liveResonance,
+              onStageRankedModeViaHangar = { mode, bracket ->
+                stageRankedModeIntoHangar(mode, bracket)
+              },
+              onStageCustomGameViaHangar = { customCfg ->
+                pendingStagedLaunch = StagedRiftLaunch.NewCustom(customCfg)
+                selectedMode = customCfg.baseMode.id
+                sfx.playMutedClick()
+                activeNexusNode = NexusCoreNode.HANGAR_DECK
+                isNexusShellOpen = true
+                toastMessage =
+                  "STAGED CUSTOM RIFT [${customCfg.title.uppercase(Locale.US)}] // SELECT HULL & ENTER RIFT"
+                toastVersion++
+              },
+              onStageExistingCustomInstanceViaHangar = { instanceId ->
+                pendingStagedLaunch = StagedRiftLaunch.ExistingCustom(instanceId)
+                sfx.playMutedClick()
+                activeNexusNode = NexusCoreNode.HANGAR_DECK
+                isNexusShellOpen = true
+                toastMessage = "STAGED CUSTOM RIFT // SELECT HULL & ENTER RIFT"
+                toastVersion++
+              },
               embeddedModuleContent = embeddedModuleContent,
             )
           }

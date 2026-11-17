@@ -36,9 +36,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -46,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 57
+const val CURRENT_RIFT_BUILD_VERSION = 58
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,18 +62,31 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
-      buildNumber = 57,
-      versionTag = "v1.0.57 // BUILD #57",
-      releaseDate = "Nov 15, 2026",
-      headline = "Abyssal NEXUS CORE Spatial Hub, Cloud SUBSPACE COMMS & 95% Glass Terminals",
+      buildNumber = 58,
+      versionTag = "v1.0.58 // BUILD #58",
+      releaseDate = "Nov 16, 2026",
+      headline = "NEXUS Ring-Space 3D Shader Overhaul, Central Nexus Hub Station & 7 Living 3D Rifts",
       badgeLabel = "LATEST RELEASE",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
-          "Launched full-screen Abyssal NEXUS CORE Spatial Hub with central 3D Singularity Eye and 7 bobbing orbital terminals wrapped in 95% zero-scroll obsidian glass.",
-          "Upgraded SUBSPACE COMMS into a live Firestore-synced community hub with #announcements ([DEV // ARCHITECT] badge), #bug-reports cloud telemetry, #shipwright-meta clickable Rift Frame cards, #strike-lfg room/wing invites, and Live Online Pilot Roster.",
-          "Added 6-character Private & Public Custom Rift Gate room codes, MegaFat Bullets custom sandbox rule, and cloud-synced Syndicate Crests, custom channels, and verified Sworn Pilot Strike Wing lookup.",
-          "Standardized RIFT-branded vector iconography across Auth, NEXUS CORE, Eclipse Stasis, Paired Phase Rifts, and Syndicate Wars.",
+          "Rebranded outer game identity to NEXUS (developed by Threshold Dynamics Studio, LLC) with a 3D Singularity-Wing emblem while keeping all in-world Rifts, Rift Control, Rift Shards (❖), and Rift Frame systems intact.",
+          "Rebuilt NEXUS CORE with a GPU AGSL RuntimeShader 3D Ring-Space containment sphere (with FBM fallback on API 24-32), a rotating 3D NEXUS HUB Orbital Station at center, and 7 frameless swirling 3D Rifts with zero rectangular node boxes or wireframe lines.",
+          "Streamlined match staging in CONVERGENCE GATE so every Ranked Mode and 6-character Custom Rift transitions cleanly into HANGAR DECK hull selection before entering the Rift.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 57,
+      versionTag = "v1.0.57 // BUILD #57",
+      releaseDate = "Nov 15, 2026",
+      headline = "Cloud SUBSPACE COMMS Hub, Resonance Conduit & 95% Glass Terminals",
+      badgeLabel = "SUBSPACE COMMS",
+      accentColorHex = "#38BDF8",
+      highlights =
+        listOf(
+          "Launched live Firestore-synced SUBSPACE COMMS with #announcements ([DEV // ARCHITECT] badge), #bug-reports cloud telemetry, #shipwright-meta clickable Rift Frame cards, #strike-lfg room/wing invites, and Live Online Pilot Roster.",
+          "Added RIFT CONDUIT Live & Peak Resonance progression (100-500 Starting Bounty scaling), 3 Daily ❖ Directives, and all 10 hulls unlocked from 0 Resonance.",
+          "Added 6-character Private & Public Custom Rift Gate room codes, MegaFat Bullets custom sandbox rule, and cloud-synced Syndicate Crests and verified Sworn Pilot Strike Wing lookup.",
         ),
     ),
     RiftVersionLogEntry(
@@ -81,7 +95,7 @@ val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
       releaseDate = "Nov 15, 2026",
       headline = "STAR FORGE Studio, 10-Ship 100-Pt Parity & 3D Playfield Rifts",
       badgeLabel = "STAR FORGE",
-      accentColorHex = "#38BDF8",
+      accentColorHex = "#A855F7",
       highlights =
         listOf(
           "Launched STAR FORGE across Ship & Cosmetic Turntable, Track A-C Soundtrack & SFX Lab (60-180 BPM), Custom Buff Forge, Syndicate Crest Forge, and Interactive Playfield & HUD Studio.",
@@ -130,7 +144,7 @@ val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
       buildNumber = 1,
       versionTag = "v1.0.1 // BUILD #1",
       releaseDate = "Nov 10, 2026",
-      headline = "RIFT Core Newtonian Engine & Landscape Touch HUD Launch",
+      headline = "NEXUS Core Newtonian RIFT Engine & Landscape Touch HUD Launch",
       badgeLabel = "FOUNDATION",
       accentColorHex = "#00E676",
       highlights =
@@ -206,25 +220,47 @@ fun RiftChangelogModal(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            Canvas(modifier = Modifier.size(26.dp)) {
+            Canvas(modifier = Modifier.size(28.dp)) {
               val w = size.width
               val h = size.height
               val cx = w * 0.5f
               val cy = h * 0.5f
-              val diamond =
-                Path().apply {
-                  moveTo(cx, h * 0.08f)
-                  lineTo(w * 0.92f, cy)
-                  lineTo(cx, h * 0.92f)
-                  lineTo(w * 0.08f, cy)
-                  close()
-                }
-              drawPath(diamond, Color(0xFF00F5D4), style = Stroke(width = 2.dp.toPx()))
-              drawCircle(Color(0xFFFACC15), radius = w * 0.16f, center = Offset(cx, cy))
+              val r = minOf(w, h) * 0.44f
+              drawCircle(
+                brush =
+                  Brush.radialGradient(
+                    colors = listOf(Color(0x5500F5D4), Color(0x33A855F7), Color.Transparent),
+                    center = Offset(cx, cy),
+                    radius = r * 1.15f,
+                  ),
+                radius = r * 1.15f,
+                center = Offset(cx, cy),
+              )
+              for (i in 0 until 3) {
+                drawArc(
+                  color = if (i % 2 == 0) Color(0xFF00F5D4) else Color(0xFFA855F7),
+                  startAngle = i * 120f + 18f,
+                  sweepAngle = 82f,
+                  useCenter = false,
+                  topLeft = Offset(cx - r, cy - r),
+                  size = Size(r * 2f, r * 2f),
+                  style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round),
+                )
+              }
+              drawArc(
+                color = Color(0xFFFACC15),
+                startAngle = -20f,
+                sweepAngle = 220f,
+                useCenter = false,
+                topLeft = Offset(cx - r * 0.92f, cy - r * 0.42f),
+                size = Size(r * 1.84f, r * 0.84f),
+                style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round),
+              )
+              drawCircle(Color.White, radius = r * 0.22f, center = Offset(cx, cy))
             }
             Column {
               Text(
-                text = "RIFT // SECTOR TRANSMISSION & VERSION LOG",
+                text = "NEXUS // RING SPACE TRANSMISSION & VERSION LOG",
                 color = Color(0xFF00F5D4),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.ExtraBold,
@@ -233,12 +269,12 @@ fun RiftChangelogModal(
               Text(
                 text =
                   if (hasNew) {
-                    "CURRENT VERSION: v1.0.$CURRENT_RIFT_BUILD_VERSION (BUILD #$CURRENT_RIFT_BUILD_VERSION) • Changes since Build #$lastSeenBuild"
+                    "CURRENT VERSION: v1.0.$CURRENT_RIFT_BUILD_VERSION (BUILD #$CURRENT_RIFT_BUILD_VERSION) • Changes since Build #$lastSeenBuild • Threshold Dynamics Studio, LLC"
                   } else {
-                    "CURRENT VERSION: v1.0.$CURRENT_RIFT_BUILD_VERSION (BUILD #$CURRENT_RIFT_BUILD_VERSION) • Chronological Patch Archive"
+                    "CURRENT VERSION: v1.0.$CURRENT_RIFT_BUILD_VERSION (BUILD #$CURRENT_RIFT_BUILD_VERSION) • Threshold Dynamics Studio, LLC"
                   },
                 color = Color(0xFFFFD700),
-                fontSize = 11.sp,
+                fontSize = 10.8.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = FontFamily.Monospace,
               )

@@ -1,7 +1,15 @@
 package com.example.ui
 
+import android.graphics.RuntimeShader
+import android.os.Build
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -51,7 +59,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -65,6 +75,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.RiftBillingManager
 import com.example.data.UgcModeration
 import com.example.engine.CustomShipLoadoutSlot
 import com.example.engine.RankedGameMode
@@ -75,7 +86,9 @@ import com.example.engine.RiftSpriteBaker
 import com.example.engine.ShipSpec
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 private val HangarElectricCyan = Color(0xFF38BDF8)
 private val HangarDeltaPositive = Color(0xFF10B981)
@@ -106,12 +119,196 @@ private fun DrawScope.drawCornerTicks(
   drawLine(rightCol, Offset(size.width, size.height - tLen), Offset(size.width, size.height), sW)
 }
 
+private fun DrawScope.drawMiniSwirlingRiftGlyph(accent: Color) {
+  val cx = size.width * 0.5f
+  val cy = size.height * 0.5f
+  val r = size.minDimension * 0.44f
+  drawCircle(
+    brush = Brush.radialGradient(listOf(Color.White, accent, Color.Transparent)),
+    radius = r,
+    center = Offset(cx, cy),
+  )
+  drawArc(
+    color = accent,
+    startAngle = 15f,
+    sweepAngle = 145f,
+    useCenter = false,
+    topLeft = Offset(cx - r, cy - r),
+    size = Size(r * 2f, r * 2f),
+    style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round),
+  )
+  drawArc(
+    color = Color.White.copy(alpha = 0.85f),
+    startAngle = 195f,
+    sweepAngle = 145f,
+    useCenter = false,
+    topLeft = Offset(cx - r * 0.78f, cy - r * 0.78f),
+    size = Size(r * 1.56f, r * 1.56f),
+    style = Stroke(width = 1.3.dp.toPx(), cap = StrokeCap.Round),
+  )
+}
+
+private const val HANGAR_NEXUS_SINGULARITY_AGSL =
+  """
+  uniform float2 uRes;
+  uniform float uTime;
+
+  half4 main(float2 fragCoord) {
+    float2 uv = (fragCoord - 0.5 * uRes) / max(min(uRes.x, uRes.y) * 0.5, 1.0);
+    float r = length(uv);
+    if (r > 1.0) return half4(0.0);
+    float a = atan(uv.y, uv.x);
+    float swirl = a * 5.0 - r * 9.5 - uTime * 2.6;
+    float arm = 0.5 + 0.5 * sin(swirl);
+    float counter = 0.5 + 0.5 * cos(a * 3.0 + r * 7.0 + uTime * 1.9);
+    float ring = exp(-26.0 * (r - 0.56) * (r - 0.56));
+    float core = exp(-9.5 * r * r);
+    half3 cyan = half3(0.0, 0.96, 0.83);
+    half3 violet = half3(0.66, 0.33, 0.97);
+    half3 magenta = half3(0.93, 0.28, 0.60);
+    half3 gold = half3(0.98, 0.80, 0.08);
+    half3 col = mix(cyan, violet, half(arm));
+    col = mix(col, magenta, half(counter * 0.55));
+    col += gold * half(ring * 0.85) + half3(1.0) * half(core * 0.72);
+    float fade = smoothstep(1.0, 0.12, r);
+    half alpha = half(clamp(fade * (0.42 + 0.44 * arm + 0.45 * ring + 0.55 * core), 0.0, 0.96));
+    return half4(col * alpha, alpha);
+  }
+  """
+
+@Composable
+private fun SwirlingNexusLockBackdrop(modifier: Modifier = Modifier, phase: Float) {
+  val agslShader = remember {
+    if (Build.VERSION.SDK_INT >= 33) {
+      runCatching { RuntimeShader(HANGAR_NEXUS_SINGULARITY_AGSL) }.getOrNull()
+    } else null
+  }
+  Canvas(modifier = modifier) {
+    val cx = size.width * 0.5f
+    val cy = size.height * 0.5f
+    val r = size.minDimension * 0.49f
+    if (r <= 1f) return@Canvas
+    var drewShader = false
+    if (Build.VERSION.SDK_INT >= 33 && agslShader != null) {
+      drewShader =
+        runCatching {
+            agslShader.setFloatUniform("uRes", size.width, size.height)
+            agslShader.setFloatUniform("uTime", phase)
+            drawCircle(brush = ShaderBrush(agslShader), radius = r, center = Offset(cx, cy))
+            true
+          }
+          .getOrDefault(false)
+    }
+    if (!drewShader) {
+      drawCircle(
+        brush =
+          Brush.radialGradient(
+            colors =
+              listOf(
+                Color.White.copy(alpha = 0.82f),
+                Color(0xFF00F5D4).copy(alpha = 0.68f),
+                Color(0xFFA855F7).copy(alpha = 0.52f),
+                Color(0xFFEC4899).copy(alpha = 0.25f),
+                Color.Transparent,
+              ),
+            center = Offset(cx, cy),
+            radius = r,
+          ),
+        radius = r,
+        center = Offset(cx, cy),
+      )
+      val degBase = Math.toDegrees(phase.toDouble()).toFloat()
+      val armColors = listOf(Color(0xFF00F5D4), Color(0xFFA855F7), Color(0xFFEC4899), Color(0xFFFACC15), Color(0xFF38BDF8))
+      for (arm in 0 until 5) {
+        val startDeg = degBase * 1.4f + arm * 72f
+        val armR = r * (0.62f + (arm % 2) * 0.18f)
+        drawArc(
+          color = armColors[arm].copy(alpha = 0.85f),
+          startAngle = startDeg,
+          sweepAngle = 52f,
+          useCenter = false,
+          topLeft = Offset(cx - armR, cy - armR),
+          size = Size(armR * 2f, armR * 2f),
+          style = Stroke(width = (r * 0.11f).coerceAtLeast(1.4f), cap = StrokeCap.Round),
+        )
+      }
+    }
+  }
+}
+
+private fun DrawScope.drawApexResonanceHalo(phase: Float) {
+  val cx = size.width * 0.5f
+  val cy = size.height * 0.5f
+  val outerR = size.minDimension * 0.48f
+  val innerR = outerR * 0.82f
+  if (outerR <= 2f) return
+  val deg = Math.toDegrees(phase.toDouble()).toFloat()
+  val strokeOuter = (outerR * 0.085f).coerceAtLeast(1.2f)
+  val strokeInner = (outerR * 0.07f).coerceAtLeast(1.0f)
+  for (seg in 0 until 2) {
+    drawArc(
+      color = Color(0xFFFACC15).copy(alpha = 0.92f),
+      startAngle = deg + seg * 180f,
+      sweepAngle = 112f,
+      useCenter = false,
+      topLeft = Offset(cx - outerR, cy - outerR),
+      size = Size(outerR * 2f, outerR * 2f),
+      style = Stroke(width = strokeOuter, cap = StrokeCap.Round),
+    )
+    drawArc(
+      color = Color(0xFF00F5D4).copy(alpha = 0.88f),
+      startAngle = -deg * 1.35f + 45f + seg * 180f,
+      sweepAngle = 96f,
+      useCenter = false,
+      topLeft = Offset(cx - innerR, cy - innerR),
+      size = Size(innerR * 2f, innerR * 2f),
+      style = Stroke(width = strokeInner, cap = StrokeCap.Round),
+    )
+  }
+  for (t in 0 until 8) {
+    val rad = phase * 0.65f + t * (Math.PI.toFloat() * 0.25f)
+    val c = cos(rad)
+    val s = sin(rad)
+    val tickCol = if (t % 2 == 0) Color(0xFFFACC15) else Color(0xFF00F5D4)
+    drawLine(
+      color = tickCol,
+      start = Offset(cx + c * (outerR * 0.90f), cy + s * (outerR * 0.90f)),
+      end = Offset(cx + c * (outerR * 1.04f), cy + s * (outerR * 1.04f)),
+      strokeWidth = strokeInner,
+      cap = StrokeCap.Round,
+    )
+  }
+}
+
+@Composable
+private fun ApexMicroCrest(modifier: Modifier = Modifier) {
+  Box(
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(4.dp))
+        .background(Color(0xFF2B2106))
+        .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(4.dp))
+        .padding(horizontal = 4.dp, vertical = 1.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    Text(
+      text = "APEX",
+      color = Color(0xFFFDE047),
+      fontSize = 7.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = Mono,
+      maxLines = 1,
+    )
+  }
+}
+
 @Composable
 fun HangarModal(
   initialCallsign: String,
   syndicateTag: String = "GUEST",
   syndicateName: String = "Independent Pilot",
   selectedShipId: Int,
+  bestShipId: Int = 1,
   selectedMode: String,
   pilotLevel: Int = 1,
   xpProgressFraction: Float = 0f,
@@ -139,12 +336,32 @@ fun HangarModal(
   onCloseModal: () -> Unit = {},
   liveResonance: Int = 0,
   peakResonance: Int = 0,
+  stagedTargetTitle: String? = null,
+  stagedHullLockNotice: Boolean = false,
+  onCancelStagedModeToGate: (() -> Unit)? = null,
 ) {
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   var callsignInput by remember(initialCallsign) { mutableStateOf(initialCallsign) }
   var currentShipId by remember(selectedShipId) { mutableIntStateOf(selectedShipId.coerceIn(1, 10)) }
+  var lockedShipId by remember(selectedShipId) { mutableStateOf<Int?>(selectedShipId.coerceIn(1, 10)) }
+  val clampedBestShipId = bestShipId.coerceIn(1, 10)
   val currentMode = selectedMode.ifBlank { "SECTOR_CONVERGENCE" }
   var showPilotIdentityBar by remember { mutableStateOf(false) }
+
+  val nexusTransition = rememberInfiniteTransition(label = "hangar_nexus_vortex")
+  val nexusSpinPhase by
+    nexusTransition.animateFloat(
+      initialValue = 0f,
+      targetValue = 6.2831855f,
+      animationSpec = infiniteRepeatable(animation = tween(3600, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+      label = "hangar_nexus_phase",
+    )
+
+  fun handleHullTap(targetId: Int) {
+    val safeId = targetId.coerceIn(1, 10)
+    currentShipId = safeId
+    lockedShipId = if (lockedShipId == safeId) null else safeId
+  }
 
   val spriteVersion = RiftSpriteBaker.customShip9Version
   val allTenShips = remember(activeCustomSlot, spriteVersion) { RiftCodex.getAllNineShips() }
@@ -158,7 +375,11 @@ fun HangarModal(
   }
 
   BackHandler {
-    if (showFullNinthShipForgeModal) showFullNinthShipForgeModal = false else onCloseModal()
+    when {
+      showFullNinthShipForgeModal -> showFullNinthShipForgeModal = false
+      onCancelStagedModeToGate != null -> onCancelStagedModeToGate()
+      else -> onCloseModal()
+    }
   }
 
   val inspectedShip = remember(currentShipId, allTenShips) {
@@ -167,11 +388,15 @@ fun HangarModal(
   val equippedShip = remember(selectedShipId, allTenShips) {
     allTenShips.find { it.id == selectedShipId } ?: allTenShips.first()
   }
+  val lockedShipSpec = remember(lockedShipId, allTenShips) {
+    lockedShipId?.let { id -> allTenShips.find { it.id == id } }
+  }
   val effectivePointBudget = 100
   val pointsAllocatedInSlot = activeCustomSlot.totalAllocatedPoints()
   val pointsRemainingInSlot = (effectivePointBudget - pointsAllocatedInSlot).coerceAtLeast(0)
   val effectivePeakRes = maxOf(liveResonance, peakResonance)
   val startBounty = RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
+  val isTesterInfiniteShards = RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE
 
   Column(
     modifier =
@@ -184,47 +409,64 @@ fun HangarModal(
             RiftCalibrationState.gamepadConnected = true
             when (native.keyCode) {
               KeyEvent.KEYCODE_BUTTON_START, KeyEvent.KEYCODE_BACK -> {
-                if (showFullNinthShipForgeModal) showFullNinthShipForgeModal = false else onCloseModal()
+                when {
+                  showFullNinthShipForgeModal -> showFullNinthShipForgeModal = false
+                  onCancelStagedModeToGate != null -> onCancelStagedModeToGate()
+                  else -> onCloseModal()
+                }
                 true
               }
               KeyEvent.KEYCODE_DPAD_LEFT ->
                 if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
-                  currentShipId = if (currentShipId > 1) currentShipId - 1 else 10
+                  val nextId = if (currentShipId > 1) currentShipId - 1 else 10
+                  currentShipId = nextId
+                  lockedShipId = nextId
                   true
                 } else false
               KeyEvent.KEYCODE_DPAD_RIGHT ->
                 if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
-                  currentShipId = if (currentShipId < 10) currentShipId + 1 else 1
+                  val nextId = if (currentShipId < 10) currentShipId + 1 else 1
+                  currentShipId = nextId
+                  lockedShipId = nextId
                   true
                 } else false
               KeyEvent.KEYCODE_DPAD_UP ->
                 if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
-                  currentShipId =
+                  val nextId =
                     when {
                       currentShipId == 10 -> 8
                       currentShipId in 4..9 -> currentShipId - 3
                       else -> 10
                     }
+                  currentShipId = nextId
+                  lockedShipId = nextId
                   true
                 } else false
               KeyEvent.KEYCODE_DPAD_DOWN ->
                 if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
-                  currentShipId =
+                  val nextId =
                     when {
                       currentShipId in 1..6 -> currentShipId + 3
                       currentShipId in 7..9 -> 10
                       else -> 2
                     }
+                  currentShipId = nextId
+                  lockedShipId = nextId
                   true
                 } else false
               KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER ->
                 if (!showFullNinthShipForgeModal && !showPilotIdentityBar) {
-                  onDeployPilot(
-                    UgcModeration.sanitizeIdentifier(callsignInput.trim(), "COMMANDER"),
-                    currentShipId,
-                    currentMode,
-                    false,
-                  )
+                  val deployId = lockedShipId
+                  if (deployId != null) {
+                    onDeployPilot(
+                      UgcModeration.sanitizeIdentifier(callsignInput.trim(), "COMMANDER"),
+                      deployId,
+                      currentMode,
+                      false,
+                    )
+                  } else {
+                    lockedShipId = currentShipId
+                  }
                   true
                 } else false
               KeyEvent.KEYCODE_BUTTON_X ->
@@ -250,7 +492,13 @@ fun HangarModal(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         Text(
-          text = if (isCompactPhone) "HANGAR DECK // 10 HULLS" else "HANGAR DECK // 10-HULL PARITY MATRIX",
+          text =
+            when {
+              stagedTargetTitle != null && isCompactPhone -> "HANGAR // LAUNCH STAGING"
+              stagedTargetTitle != null -> "HANGAR DECK // RIFT LAUNCH STAGING"
+              isCompactPhone -> "HANGAR DECK // 10 HULLS"
+              else -> "HANGAR DECK // 10-HULL PARITY MATRIX"
+            },
           color = Color(0xFF00F5D4),
           fontSize = if (isCompactPhone) 11.sp else 12.5.sp,
           fontWeight = FontWeight.Black,
@@ -268,7 +516,9 @@ fun HangarModal(
               .padding(horizontal = 8.dp, vertical = 3.dp)
         ) {
           Text(
-            text = "ID: [$syndicateTag] $callsignInput ▾",
+            text =
+              if (showPilotIdentityBar) "ID: [$syndicateTag] $callsignInput [^]"
+              else "ID: [$syndicateTag] $callsignInput [v]",
             color = HangarElectricCyan,
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
@@ -337,8 +587,15 @@ fun HangarModal(
               .padding(horizontal = 8.dp, vertical = 4.dp),
           contentAlignment = Alignment.Center,
         ) {
+          val shardBadgeCopy =
+            when {
+              isTesterInfiniteShards && isCompactPhone -> "❖ INF"
+              isTesterInfiniteShards -> "❖ INF (999,999) [CONDUIT]"
+              isCompactPhone -> "❖ $riftShards"
+              else -> "❖ $riftShards [RIFT CONDUIT]"
+            }
           Text(
-            text = if (isCompactPhone) "❖ $riftShards" else "❖ $riftShards [RIFT CONDUIT]",
+            text = shardBadgeCopy,
             color = Color(0xFFF3E8FF),
             fontSize = 8.5.sp,
             fontWeight = FontWeight.Black,
@@ -348,9 +605,90 @@ fun HangarModal(
       }
     }
 
+    // Launch Staging Strip when routed from CONVERGENCE GATE or #strike-lfg Room Code
+    if (stagedTargetTitle != null) {
+      Spacer(modifier = Modifier.height(4.dp))
+      Row(
+        modifier =
+          Modifier.fillMaxWidth()
+            .height(if (isCompactPhone) 28.dp else 30.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+              Brush.horizontalGradient(
+                listOf(Color(0xFF062825), Color(0xFF09223A), Color(0xFF0A162A))
+              )
+            )
+            .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp)
+            .testTag("hangar_staged_rift_banner"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          modifier = Modifier.weight(1f),
+        ) {
+          Canvas(modifier = Modifier.size(15.dp)) {
+            drawMiniSwirlingRiftGlyph(Color(0xFF00F5D4))
+          }
+          Text(
+            text = "DEPLOYING TO: ${stagedTargetTitle.uppercase(Locale.US)}",
+            color = Color(0xFF00F5D4),
+            fontSize = if (isCompactPhone) 9.sp else 10.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = Mono,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          if (stagedHullLockNotice) {
+            Box(
+              modifier =
+                Modifier.background(Color(0xFF2B1B06), RoundedCornerShape(5.dp))
+                  .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(5.dp))
+                  .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+              Text(
+                text = "HULL LOCKS FOR MATCH",
+                color = Color(0xFFFBBF24),
+                fontSize = 7.8.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = Mono,
+                maxLines = 1,
+              )
+            }
+          }
+        }
+
+        if (onCancelStagedModeToGate != null) {
+          Box(
+            modifier =
+              Modifier.testTag("btn_hangar_change_staged_rift")
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFF0F2138))
+                .border(1.dp, HangarElectricCyan, RoundedCornerShape(6.dp))
+                .clickable { onCancelStagedModeToGate() }
+                .padding(horizontal = 8.dp, vertical = 3.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "< CHANGE RIFT",
+              color = HangarElectricCyan,
+              fontSize = 8.4.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = Mono,
+              maxLines = 1,
+            )
+          }
+        }
+      }
+    }
+
     if (showPilotIdentityBar) {
       Spacer(modifier = Modifier.height(4.dp))
-      val activeModeTitle = RankedGameMode.fromId(currentMode).title.uppercase(Locale.US)
+      val activeModeTitle =
+        stagedTargetTitle?.uppercase(Locale.US)
+          ?: RankedGameMode.fromId(currentMode).title.uppercase(Locale.US)
       Row(
         modifier =
           Modifier.fillMaxWidth()
@@ -380,7 +718,13 @@ fun HangarModal(
             value = callsignInput,
             onValueChange = { if (it.length <= 14) callsignInput = it.uppercase(Locale.US) },
             singleLine = true,
-            textStyle = TextStyle(color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = Mono),
+            textStyle =
+              TextStyle(
+                color = Color.White,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = Mono,
+              ),
             cursorBrush = SolidColor(Color(0xFF00F5D4)),
             modifier = Modifier.fillMaxWidth().testTag("input_pilot_callsign"),
           )
@@ -404,7 +748,7 @@ fun HangarModal(
           )
         }
         Text(
-          text = "SECTOR MODE:",
+          text = "TARGET RIFT:",
           color = Color(0xFF94A3B8),
           fontSize = 8.5.sp,
           fontWeight = FontWeight.Bold,
@@ -424,6 +768,8 @@ fun HangarModal(
             fontSize = 8.sp,
             fontWeight = FontWeight.Black,
             fontFamily = Mono,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
         }
       }
@@ -441,6 +787,7 @@ fun HangarModal(
         slot9EUnlocked = slot9EUnlocked || effectivePeakRes >= 1600,
         effectivePointBudget = effectivePointBudget,
         pointsRemaining = pointsRemainingInSlot,
+        isTesterInfiniteShards = isTesterInfiniteShards,
         statusBanner = forgeStatusBanner,
         onStatusBannerChange = { forgeStatusBanner = it },
         onSaveSlot = { onSaveCustomSlot(it) },
@@ -452,15 +799,26 @@ fun HangarModal(
           val gate = RiftProgressionCatalog.getFrameSlotGate(slotId)
           forgeStatusBanner =
             if (onUnlockCustomSlot(slotId)) {
-              "UNLOCKED ${slotId.uppercase(Locale.US)} (-${gate.shardCost}❖ RIFT SHARDS)"
+              if (isTesterInfiniteShards) {
+                "UNLOCKED ${slotId.uppercase(Locale.US)} (TESTER INFINITE ❖ — 0 DEPLETED)"
+              } else {
+                "UNLOCKED ${slotId.uppercase(Locale.US)} (-${gate.shardCost}❖ RIFT SHARDS)"
+              }
             } else {
               "REQUIRES ${gate.freeAtResonance} PEAK RESONANCE (FREE) OR ${gate.shardCost}❖ RIFT SHARDS"
             }
         },
         onRespecSlot = {
           forgeStatusBanner =
-            if (onRespecCustomSlot()) "RESPEC COMPLETE (-50❖): ALL ALLOCATED POINTS RESET TO 0"
-            else "NEED 50❖ RIFT SHARDS & >0 ALLOCATED POINTS TO RESPEC"
+            if (onRespecCustomSlot()) {
+              if (isTesterInfiniteShards) {
+                "RESPEC COMPLETE (TESTER 0❖ DEPLETED): ALL ALLOCATED POINTS RESET TO 0"
+              } else {
+                "RESPEC COMPLETE (-50❖): ALL ALLOCATED POINTS RESET TO 0"
+              }
+            } else {
+              "ALLOCATE >0 POINTS FIRST (REQUIRES 50❖ RIFT SHARDS TO RESPEC)"
+            }
         },
         onForgeAiHull = { prompt, hullName ->
           forgeStatusBanner = onForgeAiHullDesign(prompt, hullName).second
@@ -497,9 +855,12 @@ fun HangarModal(
                   ship = ship,
                   spriteVersion = spriteVersion,
                   isSelected = currentShipId == ship.id,
+                  isLocked = lockedShipId == ship.id,
+                  isBestShip = clampedBestShipId == ship.id,
                   isEquipped = selectedShipId == ship.id,
+                  nexusSpinPhase = nexusSpinPhase,
                   isCompactPhone = isCompactPhone,
-                  onSelect = { currentShipId = ship.id },
+                  onSelect = { handleHullTap(ship.id) },
                 )
               }
             }
@@ -507,6 +868,8 @@ fun HangarModal(
 
           // Ship #10: Rift Frame (100% Open at 0 Resonance with Full 100-Pt Parity)
           val isTenthSelected = currentShipId == 10
+          val isTenthLocked = lockedShipId == 10
+          val isTenthBest = clampedBestShipId == 10
           val isTenthEquipped = selectedShipId == 10
           val normalizedSlot = CustomShipLoadoutSlot.normalizeSlotId(activeCustomSlot.slotId)
           Box(
@@ -518,25 +881,32 @@ fun HangarModal(
                 .background(
                   Brush.horizontalGradient(
                     listOf(
-                      if (isTenthSelected) Color(0xFF1F113B) else Color(0xFF130B26),
+                      if (isTenthLocked) Color(0xFF231346) else if (isTenthSelected) Color(0xFF1F113B) else Color(0xFF130B26),
                       Color(0xFF280E38),
                     )
                   )
                 )
                 .border(
-                  width = if (isTenthSelected || isTenthEquipped) 1.5.dp else 1.dp,
+                  width = if (isTenthLocked || isTenthSelected || isTenthEquipped || isTenthBest) 1.6.dp else 1.dp,
                   color =
                     when {
+                      isTenthLocked -> Color(0xFF00F5D4)
+                      isTenthBest -> Color(0xFFFACC15)
                       isTenthSelected -> Color(0xFFEC4899)
                       isTenthEquipped -> Color(0xFF00F5D4)
                       else -> Color(0xFFA855F7)
                     },
                   shape = RoundedCornerShape(9.dp),
                 )
-                .clickable { currentShipId = 10 }
+                .clickable { handleHullTap(10) }
           ) {
             Canvas(modifier = Modifier.matchParentSize()) {
-              drawCornerTicks(9.dp.toPx(), 2.dp.toPx(), Color(0xFFA855F7), Color(0xFFEC4899))
+              drawCornerTicks(
+                9.dp.toPx(),
+                2.dp.toPx(),
+                if (isTenthLocked) Color(0xFF00F5D4) else Color(0xFFA855F7),
+                if (isTenthBest) Color(0xFFFACC15) else Color(0xFFEC4899),
+              )
             }
             Row(
               modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 5.dp),
@@ -546,20 +916,37 @@ fun HangarModal(
               Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.weight(0.46f),
+                modifier = Modifier.weight(0.48f),
               ) {
                 Box(
                   modifier =
-                    Modifier.size(42.dp)
+                    Modifier.size(44.dp)
                       .background(Color(0xFF070B16), RoundedCornerShape(7.dp))
-                      .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(7.dp)),
+                      .border(
+                        1.dp,
+                        when {
+                          isTenthLocked -> Color(0xFF00F5D4)
+                          isTenthBest -> Color(0xFFFACC15)
+                          else -> Color(0xFFA855F7)
+                        },
+                        RoundedCornerShape(7.dp),
+                      ),
                   contentAlignment = Alignment.Center,
                 ) {
-                  Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawCircle(
-                      brush = Brush.radialGradient(listOf(Color(0x66EC4899), Color.Transparent)),
-                      radius = size.minDimension * 0.48f,
-                    )
+                  if (isTenthLocked) {
+                    SwirlingNexusLockBackdrop(modifier = Modifier.fillMaxSize(), phase = nexusSpinPhase)
+                  } else {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                      drawCircle(
+                        brush = Brush.radialGradient(listOf(Color(0x66EC4899), Color.Transparent)),
+                        radius = size.minDimension * 0.48f,
+                      )
+                    }
+                  }
+                  if (isTenthBest) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                      drawApexResonanceHalo(nexusSpinPhase)
+                    }
                   }
                   ShipSpritePreview(shipId = 10, sizeDp = 36)
                 }
@@ -577,15 +964,26 @@ fun HangarModal(
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis,
                     )
-                    if (isTenthEquipped) {
-                      Text(
-                        text = "EQUIPPED",
-                        color = Color(0xFF00F5D4),
-                        fontSize = 8.5.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = Mono,
-                      )
+                    if (isTenthBest) {
+                      ApexMicroCrest()
                     }
+                    Text(
+                      text =
+                        when {
+                          isTenthLocked -> "LOCKED"
+                          isTenthEquipped -> "EQUIPPED"
+                          else -> "TAP LOCK"
+                        },
+                      color =
+                        when {
+                          isTenthLocked -> Color(0xFF00F5D4)
+                          isTenthEquipped -> Color(0xFF38BDF8)
+                          else -> Color(0xFF94A3B8)
+                        },
+                      fontSize = 8.2.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = Mono,
+                    )
                   }
                   Text(
                     text = "$normalizedSlot • $pointsAllocatedInSlot/$effectivePointBudget PTS (OPEN AT 0 RES)",
@@ -642,6 +1040,7 @@ fun HangarModal(
                     .border(1.dp, Color(0xFFEC4899), RoundedCornerShape(6.dp))
                     .clickable {
                       currentShipId = 10
+                      lockedShipId = 10
                       showFullNinthShipForgeModal = true
                     }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
@@ -663,16 +1062,21 @@ fun HangarModal(
           modifier = Modifier.weight(0.38f).fillMaxHeight(),
           ship = inspectedShip,
           equippedShip = equippedShip,
+          lockedShip = lockedShipSpec,
+          isBestShip = inspectedShip.id == clampedBestShipId,
+          nexusSpinPhase = nexusSpinPhase,
           spriteVersion = spriteVersion,
           isCurrentShip = inspectedShip.id == selectedShipId,
+          isLaunchStaging = stagedTargetTitle != null,
           activeSlot = activeCustomSlot,
           effectivePointBudget = effectivePointBudget,
           onOpenNinthShipForge = { showFullNinthShipForgeModal = true },
           onOpenShipForge = onOpenShipForge,
           onDeployShip = {
+            val targetId = lockedShipId ?: return@ShipComparisonInspectorPanel
             onDeployPilot(
-              callsignInput.trim().ifEmpty { "COMMANDER" },
-              inspectedShip.id,
+              UgcModeration.sanitizeIdentifier(callsignInput.trim(), "COMMANDER"),
+              targetId,
               currentMode,
               false,
             )
@@ -689,13 +1093,27 @@ private fun MatrixShipComparisonCell(
   ship: ShipSpec,
   spriteVersion: Int,
   isSelected: Boolean,
+  isLocked: Boolean = false,
+  isBestShip: Boolean = false,
   isEquipped: Boolean,
+  nexusSpinPhase: Float = 0f,
   isCompactPhone: Boolean = false,
   onSelect: () -> Unit,
 ) {
   val accentColor = Color(ship.accentColorHex)
-  val borderColor = if (isSelected || isEquipped) Color(0xFF00F5D4) else Color(0xFF1E293B)
-  val bgColor = if (isSelected) Color(0xFF0E1D34) else Color(0xFF0A1324)
+  val borderColor =
+    when {
+      isLocked -> Color(0xFF00F5D4)
+      isBestShip -> Color(0xFFFACC15)
+      isSelected || isEquipped -> Color(0xFF38BDF8)
+      else -> Color(0xFF1E293B)
+    }
+  val bgColor =
+    when {
+      isLocked -> Color(0xFF0F233D)
+      isSelected -> Color(0xFF0E1D34)
+      else -> Color(0xFF0A1324)
+    }
   val cleanName = cleanShipDisplayTitle(ship)
 
   Box(
@@ -705,14 +1123,15 @@ private fun MatrixShipComparisonCell(
         .shadow(2.dp, RoundedCornerShape(8.dp))
         .clip(RoundedCornerShape(8.dp))
         .background(bgColor)
-        .border(if (isSelected || isEquipped) 1.5.dp else 1.2.dp, borderColor, RoundedCornerShape(8.dp))
+        .border(if (isLocked || isBestShip || isSelected || isEquipped) 1.5.dp else 1.2.dp, borderColor, RoundedCornerShape(8.dp))
         .clickable { onSelect() }
   ) {
     Canvas(modifier = Modifier.matchParentSize()) {
       drawCornerTicks(
         8.dp.toPx(),
         1.8.dp.toPx(),
-        if (isSelected || isEquipped) Color(0xFF00F5D4) else Color(0xFF1E293B),
+        if (isLocked) Color(0xFF00F5D4) else if (isBestShip) Color(0xFFFACC15) else if (isSelected || isEquipped) Color(0xFF38BDF8) else Color(0xFF1E293B),
+        if (isBestShip) Color(0xFFFACC15) else if (isLocked) Color(0xFF00F5D4) else if (isSelected || isEquipped) Color(0xFF38BDF8) else Color(0xFF1E293B),
       )
     }
     Column(
@@ -740,16 +1159,33 @@ private fun MatrixShipComparisonCell(
             }
           Box(
             modifier =
-              Modifier.size(if (isCompactPhone) 34.dp else 36.dp)
+              Modifier.size(if (isCompactPhone) 34.dp else 38.dp)
                 .background(Color(0xFF050A14), RoundedCornerShape(7.dp))
-                .border(1.dp, accentColor.copy(alpha = 0.55f), RoundedCornerShape(7.dp)),
+                .border(
+                  1.dp,
+                  when {
+                    isLocked -> Color(0xFF00F5D4)
+                    isBestShip -> Color(0xFFFACC15)
+                    else -> accentColor.copy(alpha = 0.55f)
+                  },
+                  RoundedCornerShape(7.dp),
+                ),
             contentAlignment = Alignment.Center,
           ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-              drawCircle(
-                brush = Brush.radialGradient(listOf(accentColor.copy(alpha = 0.36f), Color.Transparent)),
-                radius = size.minDimension * 0.48f,
-              )
+            if (isLocked) {
+              SwirlingNexusLockBackdrop(modifier = Modifier.fillMaxSize(), phase = nexusSpinPhase)
+            } else {
+              Canvas(modifier = Modifier.fillMaxSize()) {
+                drawCircle(
+                  brush = Brush.radialGradient(listOf(accentColor.copy(alpha = 0.36f), Color.Transparent)),
+                  radius = size.minDimension * 0.48f,
+                )
+              }
+            }
+            if (isBestShip) {
+              Canvas(modifier = Modifier.fillMaxSize()) {
+                drawApexResonanceHalo(nexusSpinPhase)
+              }
             }
             Image(
               bitmap = spriteBitmap,
@@ -759,16 +1195,24 @@ private fun MatrixShipComparisonCell(
             )
           }
           Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = cleanName,
-              color = Color.White,
-              fontSize = if (isCompactPhone) 11.sp else 14.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = Sans,
-              lineHeight = if (isCompactPhone) 12.sp else 15.sp,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+              Text(
+                text = cleanName,
+                color = Color.White,
+                fontSize = if (isCompactPhone) 11.sp else 13.5.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = Sans,
+                lineHeight = if (isCompactPhone) 12.sp else 15.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              if (isBestShip) {
+                ApexMicroCrest()
+              }
+            }
             Text(
               text = ship.role.uppercase(Locale.US),
               color = accentColor,
@@ -785,17 +1229,37 @@ private fun MatrixShipComparisonCell(
         Box(
           modifier =
             Modifier.clip(RoundedCornerShape(4.dp))
-              .background(if (isEquipped) Color(0xFF042F2E) else Color(0xFF0F172A))
+              .background(
+                when {
+                  isLocked -> Color(0xFF042F2E)
+                  isEquipped -> Color(0xFF0C243E)
+                  else -> Color(0xFF0F172A)
+                }
+              )
               .border(
                 1.dp,
-                if (isEquipped) Color(0xFF00F5D4) else Color(0xFF334155),
+                when {
+                  isLocked -> Color(0xFF00F5D4)
+                  isEquipped -> Color(0xFF38BDF8)
+                  else -> Color(0xFF334155)
+                },
                 RoundedCornerShape(4.dp),
               )
               .padding(horizontal = 4.dp, vertical = 1.5.dp)
         ) {
           Text(
-            text = if (isEquipped) "EQUIPPED" else "SELECT",
-            color = if (isEquipped) Color(0xFF00F5D4) else Color(0xFF64748B),
+            text =
+              when {
+                isLocked -> "LOCKED"
+                isEquipped -> "EQUIPPED"
+                else -> "SELECT"
+              },
+            color =
+              when {
+                isLocked -> Color(0xFF00F5D4)
+                isEquipped -> Color(0xFF38BDF8)
+                else -> Color(0xFF64748B)
+              },
             fontSize = 7.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = Mono,
@@ -923,8 +1387,12 @@ private fun ShipComparisonInspectorPanel(
   modifier: Modifier = Modifier,
   ship: ShipSpec,
   equippedShip: ShipSpec,
+  lockedShip: ShipSpec? = null,
+  isBestShip: Boolean = false,
+  nexusSpinPhase: Float = 0f,
   spriteVersion: Int,
   isCurrentShip: Boolean,
+  isLaunchStaging: Boolean = false,
   activeSlot: CustomShipLoadoutSlot,
   effectivePointBudget: Int,
   onOpenNinthShipForge: () -> Unit,
@@ -932,6 +1400,7 @@ private fun ShipComparisonInspectorPanel(
   onDeployShip: () -> Unit,
 ) {
   val isTenth = ship.id == 10
+  val isInspectedLocked = lockedShip?.id == ship.id
   val accentColor = if (isTenth) Color(0xFFC084FC) else Color(ship.accentColorHex)
   val cleanTitle = cleanShipDisplayTitle(ship)
   val normalizedSlotLabel = CustomShipLoadoutSlot.normalizeSlotId(activeSlot.slotId).uppercase(Locale.US)
@@ -952,7 +1421,7 @@ private fun ShipComparisonInspectorPanel(
         modifier =
           Modifier.fillMaxWidth()
             .background(Color(0xFF060C18), RoundedCornerShape(9.dp))
-            .border(1.dp, accentColor.copy(alpha = 0.50f), RoundedCornerShape(9.dp))
+            .border(1.dp, if (isInspectedLocked) Color(0xFF00F5D4) else accentColor.copy(alpha = 0.50f), RoundedCornerShape(9.dp))
             .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -963,6 +1432,12 @@ private fun ShipComparisonInspectorPanel(
           }
         val holoPrimary = if (isTenth) Color(0xFFA855F7) else Color(0xFF00F5D4)
         Box(modifier = Modifier.size(width = 72.dp, height = 62.dp), contentAlignment = Alignment.Center) {
+          if (isInspectedLocked) {
+            SwirlingNexusLockBackdrop(
+              modifier = Modifier.size(58.dp).offset(y = (-3).dp),
+              phase = nexusSpinPhase,
+            )
+          }
           Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
@@ -987,7 +1462,11 @@ private fun ShipComparisonInspectorPanel(
                 endY = baseCy,
               ),
             )
-            drawOval(holoPrimary.copy(alpha = 0.25f), Offset(baseCx - w * 0.42f, baseCy - h * 0.12f), Size(w * 0.84f, h * 0.24f))
+            drawOval(
+              holoPrimary.copy(alpha = 0.25f),
+              Offset(baseCx - w * 0.42f, baseCy - h * 0.12f),
+              Size(w * 0.84f, h * 0.24f),
+            )
             drawOval(
               holoPrimary,
               Offset(baseCx - w * 0.42f, baseCy - h * 0.12f),
@@ -1000,6 +1479,9 @@ private fun ShipComparisonInspectorPanel(
               Size(w * 0.48f, h * 0.14f),
               style = Stroke(width = 1.dp.toPx()),
             )
+            if (isBestShip) {
+              drawApexResonanceHalo(nexusSpinPhase)
+            }
           }
           Image(
             bitmap = largeSprite,
@@ -1009,13 +1491,21 @@ private fun ShipComparisonInspectorPanel(
           )
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-          Text(
-            text = "HOLO-INSPECTOR // SPEC TELEMETRY",
-            color = holoPrimary,
-            fontSize = 8.2.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = Mono,
-          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+          ) {
+            Text(
+              text = if (isInspectedLocked) "NEXUS LOCK // ACTIVE" else "HOLO-INSPECTOR // STANDBY",
+              color = if (isInspectedLocked) Color(0xFF00F5D4) else Color(0xFF94A3B8),
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = Mono,
+            )
+            if (isBestShip) {
+              ApexMicroCrest()
+            }
+          }
           Text(
             text = cleanTitle,
             color = Color.White,
@@ -1222,26 +1712,49 @@ private fun ShipComparisonInspectorPanel(
 
     Spacer(modifier = Modifier.height(6.dp))
 
+    val hasLockedHull = lockedShip != null
+    val deployLabelTitle = lockedShip?.let { cleanShipDisplayTitle(it) } ?: cleanTitle
+    val ctaContainerColor =
+      when {
+        !hasLockedHull -> Color(0xFF1E293B)
+        isLaunchStaging -> Color(0xFF059669)
+        isCurrentShip -> Color(0xFF16A34A)
+        else -> Color(0xFF0284C7)
+      }
+    val ctaBorderColor =
+      when {
+        !hasLockedHull -> Color(0xFF475569)
+        isLaunchStaging -> Color(0xFF00F5D4)
+        isCurrentShip -> Color(0xFF4ADE80)
+        else -> Color(0xFF00F5D4)
+      }
+
     Button(
       onClick = onDeployShip,
+      enabled = hasLockedHull,
       colors =
         ButtonDefaults.buttonColors(
-          containerColor = if (isCurrentShip) Color(0xFF16A34A) else Color(0xFF0284C7)
+          containerColor = ctaContainerColor,
+          disabledContainerColor = Color(0xFF1E293B),
+          contentColor = Color.White,
+          disabledContentColor = Color(0xFF94A3B8),
         ),
-      border = BorderStroke(1.2.dp, if (isCurrentShip) Color(0xFF4ADE80) else Color(0xFF00F5D4)),
+      border = BorderStroke(1.4.dp, ctaBorderColor),
       shape = RoundedCornerShape(8.dp),
       modifier =
         Modifier.fillMaxWidth()
-          .height(36.dp)
-          .shadow(2.dp, RoundedCornerShape(8.dp))
+          .height(38.dp)
+          .shadow(4.dp, RoundedCornerShape(8.dp))
           .testTag("btn_deploy_pilot"),
     ) {
       Text(
-        text = if (isCurrentShip) "RE-DEPLOY $cleanTitle" else "DEPLOY $cleanTitle",
-        color = Color.White,
+        text = if (hasLockedHull) "ENTER RIFT // $deployLabelTitle" else "TAP HULL TO LOCK IN FOR RIFT",
+        color = if (hasLockedHull) Color.White else Color(0xFF94A3B8),
         fontSize = 11.5.sp,
         fontWeight = FontWeight.Black,
         fontFamily = Mono,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
       )
     }
   }
@@ -1257,6 +1770,7 @@ private fun NinthShipModularForgePanel(
   slot9EUnlocked: Boolean = false,
   effectivePointBudget: Int,
   pointsRemaining: Int,
+  isTesterInfiniteShards: Boolean = false,
   statusBanner: String?,
   onStatusBannerChange: (String?) -> Unit,
   onSaveSlot: (CustomShipLoadoutSlot) -> Unit,
@@ -1307,7 +1821,13 @@ private fun NinthShipModularForgePanel(
               .clickable { onBackToMatrix() }
               .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
-          Text("◀ 10-HULL MATRIX", color = HangarElectricCyan, fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = Mono)
+          Text(
+            text = "< 10-HULL MATRIX",
+            color = HangarElectricCyan,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = Mono,
+          )
         }
         val slots =
           listOf(
@@ -1366,18 +1886,25 @@ private fun NinthShipModularForgePanel(
               .clickable { onRespecSlot() }
               .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
-          Text("RESPEC (50❖)", color = Color(0xFFFDA4AF), fontSize = 8.2.sp, fontWeight = FontWeight.Black, fontFamily = Mono)
+          Text(
+            text = if (isTesterInfiniteShards) "RESPEC (0❖ TEST)" else "RESPEC (50❖)",
+            color = Color(0xFFFDA4AF),
+            fontSize = 8.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = Mono,
+          )
         }
       }
 
       Button(
         onClick = onDeployNinthShip,
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669)),
+        border = BorderStroke(1.dp, Color(0xFF00F5D4)),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
         modifier = Modifier.height(28.dp).testTag("btn_deploy_9th_ship"),
       ) {
         Text(
-          text = "DEPLOY RIFT FRAME ▶",
+          text = "ENTER RIFT // RIFT FRAME >",
           color = Color.White,
           fontSize = 9.sp,
           fontWeight = FontWeight.Black,
@@ -1397,7 +1924,13 @@ private fun NinthShipModularForgePanel(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(statusBanner, color = Color(0xFF00F0FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
-        Text("✕", color = Color(0xFF94A3B8), fontSize = 9.sp, modifier = Modifier.clickable { onStatusBannerChange(null) })
+        Text(
+          text = "[X]",
+          color = Color(0xFF94A3B8),
+          fontSize = 8.5.sp,
+          fontFamily = Mono,
+          modifier = Modifier.clickable { onStatusBannerChange(null) },
+        )
       }
     }
 
@@ -1718,7 +2251,13 @@ private fun NinthShipModularForgePanel(
               value = hullNameInput,
               onValueChange = { if (it.length <= 18) hullNameInput = it },
               singleLine = true,
-              textStyle = TextStyle(color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = Mono),
+              textStyle =
+                TextStyle(
+                  color = Color.White,
+                  fontSize = 9.5.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = Mono,
+                ),
               cursorBrush = SolidColor(Color(0xFFC084FC)),
               modifier = Modifier.fillMaxWidth().testTag("input_custom_hull_name"),
             )
@@ -1804,8 +2343,11 @@ private fun NinthShipModularForgePanel(
         ) {
           Text(
             text =
-              if (isFirstFree) "FORGE HULL DESIGN (1ST DESIGN FREE)"
-              else "FORGE HULL DESIGN (150❖ RIFT SHARDS)",
+              when {
+                isFirstFree -> "FORGE HULL DESIGN (1ST DESIGN FREE)"
+                isTesterInfiniteShards -> "FORGE HULL DESIGN (150❖ • TESTER 0 DEPLETED)"
+                else -> "FORGE HULL DESIGN (150❖ RIFT SHARDS)"
+              },
             color = Color.White,
             fontSize = 9.sp,
             fontWeight = FontWeight.Black,
