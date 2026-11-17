@@ -260,9 +260,11 @@ private fun buildCameraBasis3D(
   val aspectPullback = if (isSplashMode) 1.0f else max(1.0f, 1.70f / aspect.coerceAtLeast(0.55f))
   val baseZ = BASE_CAMERA_Z * aspectPullback
 
-  val orbitX = sin(timeSec * 0.30f) * 0.065f + cos(timeSec * 0.17f) * 0.025f
-  val orbitY = cos(timeSec * 0.24f) * 0.045f
-  val orbitZ = sin(timeSec * 0.20f) * 0.05f
+  // Zero autonomous idle camera wobble in NEXUS Hub (!isSplashMode) so the 3D Station & 7 Rifts sit 100% rock-solid
+  val orbitX =
+    if (isSplashMode) sin(timeSec * 0.26f) * 0.045f + cos(timeSec * 0.15f) * 0.018f else 0f
+  val orbitY = if (isSplashMode) cos(timeSec * 0.21f) * 0.032f else 0f
+  val orbitZ = if (isSplashMode) sin(timeSec * 0.18f) * 0.036f else 0f
 
   var camX = orbitX + sin(lookYawRad) * 0.44f
   var camY = orbitY + sin(lookPitchRad) * 0.34f
@@ -325,13 +327,13 @@ internal fun projectTearsWithBasis(
   basis: CameraBasis3D,
   viewportW: Float,
   viewportH: Float,
-  timeSec: Float,
+  @Suppress("UNUSED_PARAMETER") timeSec: Float,
 ): List<ProjectedRiftTearScreenState> {
   val safeW = max(1f, viewportW)
   val safeH = max(1f, viewportH)
   return NEXUS_3D_RIFT_TEARS.map { spec ->
-    // Central station (index 0) rotates smoothly around its axis without vertical bobbing; outer Rifts gently float
-    val bobY = if (spec.index == 0) 0f else sin(timeSec * 0.95f + spec.phaseOffset) * 0.012f
+    // 100% stationary monumental positions (zero vertical Rift bobbing)
+    val bobY = 0f
     val wx = spec.worldX
     val wy = spec.worldY + bobY
     val wz = spec.worldZ
@@ -589,9 +591,9 @@ private object StationMeshBuilder {
 
   fun buildCommandSpirePart(): StationPartMesh {
     val s = VertSink(20000)
-    // Brushed titanium-obsidian armor palette
-    val hullR = 0.082f; val hullG = 0.125f; val hullB = 0.205f // #152034
-    val trimR = 0.135f; val trimG = 0.205f; val trimB = 0.325f // #223453
+    // Rich dark brushed obsidian-titanium armor (#0D1729 hull / #1C2E4A trim) for razor-sharp contrast
+    val hullR = 0.051f; val hullG = 0.090f; val hullB = 0.161f // #0D1729
+    val trimR = 0.110f; val trimG = 0.180f; val trimB = 0.290f // #1C2E4A
     val goldR = 0.98f; val goldG = 0.80f; val goldB = 0.09f     // #FACC15
     val cyanR = 0.00f; val cyanG = 0.96f; val cyanB = 0.83f     // #00F5D4
     val skyR = 0.22f; val skyG = 0.74f; val skyB = 0.97f        // #38BDF8
@@ -649,8 +651,8 @@ private object StationMeshBuilder {
 
   fun buildOuterDockingRingPart(): StationPartMesh {
     val s = VertSink(36000)
-    val hullR = 0.078f; val hullG = 0.122f; val hullB = 0.198f
-    val armorR = 0.132f; val armorG = 0.198f; val armorB = 0.315f
+    val hullR = 0.047f; val hullG = 0.086f; val hullB = 0.157f // #0C1628
+    val armorR = 0.102f; val armorG = 0.169f; val armorB = 0.275f // #1A2B46
     val cyanR = 0.00f; val cyanG = 0.96f; val cyanB = 0.83f
     val goldR = 0.98f; val goldG = 0.80f; val goldB = 0.09f
 
@@ -752,7 +754,7 @@ private object StationMeshBuilder {
 
   fun buildInnerGyroRingPart(): StationPartMesh {
     val s = VertSink(18000)
-    val hullR = 0.105f; val hullG = 0.158f; val hullB = 0.255f
+    val hullR = 0.068f; val hullG = 0.118f; val hullB = 0.205f // #111E34
     val goldR = 0.98f; val goldG = 0.80f; val goldB = 0.09f
     val skyR = 0.22f; val skyG = 0.74f; val skyB = 0.97f
 
@@ -835,15 +837,16 @@ private class HubTrafficShip(
 }
 
 /**
- * Hardware-accelerated OpenGL ES 3.0 (`#version 300 es`) Volumetric 3D Space View:
- * - Pass 1A: Deep `#010308` Abyssal Dark Space + 7 Round (`~1.05:1.0`) Outward-Bleeding Playfield-Spirit
- *   3D Singularities with `#000000` event-horizon cores (`fboScene.a = voidKeepMask` + `GL_DEPTH_COMPONENT16`).
- * - Pass 1B: Central 3D Rotating Jita-Style `NEXUS` Orbital Space Station (`GL_TRIANGLES` + `GL_DEPTH_TEST`)
+ * Hardware-accelerated OpenGL ES 3.0 (`#version 300 es`) Volumetric 3D Ring-Space View:
+ * - Pass 1A: Full-Screen Ring-Space Rift Convergence Tapestry + Subtle Multi-Depth Starlight +
+ *   7 Stationary Round (`~1.05:1.0`) Playfield-Spirit 3D Singularities with `#000000` event-horizon cores
+ *   (`fboScene.a = voidKeepMask` + `GL_DEPTH_COMPONENT16`).
+ * - Pass 1B: Haze-Free, High-Contrast Central 3D Rotating `NEXUS` Orbital Space Station (`GL_TRIANGLES` + `GL_DEPTH_TEST`)
  *   with counter-rotating 3D-tilted rings, lit micro-window command spire, docking bays, and approach beacons.
  * - Pass 1C: Live Real-Ship Playfield Traffic (`max(5, onlineHumanPilots.size)`) using a `GLES30` `5x2`
  *   `128x128` ship sprite atlas, 3D Bezier corridors, glowing ion wakes, and Rift warp flashes.
- * - Pass 2–4: Quarter-resolution HDR bright-pass extraction + 9-tap separable Gaussian Bloom.
- * - Pass 5: ACES Filmic Tonemap + 3D parallax cosmic motes masked strictly outside `#000000` Rift cores.
+ * - Pass 2–4: Half-resolution (`w/2 x h/2`) high-threshold (`>1.05`) HDR bright-pass extraction + 9-tap separable Gaussian Bloom.
+ * - Pass 5: Haze-free ACES Filmic Tonemap (zero sRGB double-gamma wash) + cosmic motes cleared around the 3D station.
  */
 class NexusSpaceGlView(context: Context) :
   TextureView(context), TextureView.SurfaceTextureListener {
@@ -1462,8 +1465,8 @@ class NexusSpaceGlView(context: Context) :
       texScene = scenePair[1]
       rboSceneDepth = scenePair[2]
 
-      val bw = max(1, w / 4)
-      val bh = max(1, h / 4)
+      val bw = max(1, w / 2)
+      val bh = max(1, h / 2)
       val pairA = createColorFbo(bw, bh)
       fboBloomA = pairA[0]
       texBloomA = pairA[1]
@@ -1923,7 +1926,7 @@ class NexusSpaceGlView(context: Context) :
       } else {
         for (k in 0 until 7) {
           val spec = NEXUS_3D_RIFT_TEARS[k + 1]
-          val bobY = sin(timeSec * 0.95f + spec.phaseOffset) * 0.012f
+          val bobY = 0f
           val p4 = k * 4
           val p3 = k * 3
           tearPosSizeBuf[p4] = spec.worldX
@@ -1947,14 +1950,14 @@ class NexusSpaceGlView(context: Context) :
         }
       }
 
-      // PASS 1A: Deep #010308 Space + 7 Round Outward-Bleeding Playfield-Spirit 3D Rifts into fboScene
+      // PASS 1A: Full-Screen Ring-Space Rift Tapestry + Subtle Starlight + 7 Stationary Round 3D Rifts into fboScene
       GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboScene)
       GLES30.glViewport(0, 0, w, h)
       GLES30.glColorMask(true, true, true, true)
       GLES30.glDepthMask(true)
       GLES30.glDisable(GLES30.GL_DEPTH_TEST)
       GLES30.glDisable(GLES30.GL_BLEND)
-      GLES30.glClearColor(0.004f, 0.011f, 0.031f, 1.0f)
+      GLES30.glClearColor(0.008f, 0.020f, 0.052f, 1.0f)
       GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
 
       GLES30.glBindVertexArray(emptyVao)
@@ -1986,11 +1989,11 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glDisable(GLES30.GL_DEPTH_TEST)
       GLES30.glColorMask(true, true, true, true)
 
-      val bw = max(1, w / 4)
-      val bh = max(1, h / 4)
+      val bw = max(1, w / 2)
+      val bh = max(1, h / 2)
       GLES30.glBindVertexArray(emptyVao)
 
-      // PASS 2: Quarter-Res HDR Bright-Pass Extraction -> fboBloomA
+      // PASS 2: Half-Res High-Threshold (>1.05) HDR Bright-Pass Extraction -> fboBloomA
       GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboBloomA)
       GLES30.glViewport(0, 0, bw, bh)
       GLES30.glUseProgram(progBright)
@@ -2203,19 +2206,19 @@ void main() {
     vec3 N = normalize(vWorldNormal);
     vec3 V = normalize(uCamPos - vWorldPos);
 
-    // Key cyan-white directional starlight + warm solar-gold rim fill + subtle ambient
+    // High-contrast Blinn-Phong key starlight + warm solar-gold rim fill + low 0.10 obsidian ambient floor
     vec3 L1 = normalize(vec3(-0.55, 0.72, 0.68));
     vec3 L2 = normalize(vec3(0.75, -0.42, 0.48));
     float diff1 = max(dot(N, L1), 0.0);
     float diff2 = max(dot(N, L2), 0.0);
 
     vec3 H1 = normalize(L1 + V);
-    float spec1 = pow(max(dot(N, H1), 0.0), 38.0);
-    float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+    float spec1 = pow(max(dot(N, H1), 0.0), 68.0);
+    float fresnel = pow(1.0 - max(dot(N, V), 0.0), 4.5);
 
-    vec3 litHull = vColor * (0.34 + 0.85 * diff1 + 0.32 * diff2);
-    litHull += vec3(0.42, 0.88, 1.0) * (spec1 * 0.55 + fresnel * 0.22);
-    litHull += vec3(0.98, 0.80, 0.15) * (diff2 * 0.12);
+    vec3 litHull = vColor * (0.10 + 1.22 * diff1 + 0.28 * diff2);
+    litHull += vec3(0.56, 0.92, 1.0) * (spec1 * 0.78 + fresnel * 0.14);
+    litHull += vec3(0.98, 0.80, 0.15) * (diff2 * 0.10);
 
     float emissive = vEmissiveWin.x;
     float winSeed = vEmissiveWin.y;
@@ -2229,18 +2232,18 @@ void main() {
 
     vec3 glowAdd = vColor * emissive * uFocusGain;
 
-    // Lit Citadel micro-windows on armored command spire & outer docking ring plates
+    // Crisp HDR micro-windows on armored command spire & outer docking ring plates
     if (winSeed > 0.5) {
         float ang = atan(vLocalPos.z, vLocalPos.x);
         vec2 winGrid = vec2(ang * 14.0 + winSeed * 1.7, vLocalPos.y * 92.0);
         vec2 cell = floor(winGrid);
         vec2 f = fract(winGrid);
-        float inPane = step(0.24, f.x) * step(f.x, 0.76) * step(0.30, f.y) * step(f.y, 0.70);
+        float inPane = step(0.26, f.x) * step(f.x, 0.74) * step(0.32, f.y) * step(f.y, 0.68);
         float rnd = hash21(cell + floor(winSeed));
-        if (inPane > 0.5 && rnd > 0.46) {
-            vec3 winCol = (rnd > 0.84) ? vec3(1.0, 0.84, 0.22) : vec3(0.18, 0.92, 1.0);
-            float twinkle = 0.78 + 0.22 * sin(uTime * 1.8 + rnd * 19.0);
-            glowAdd += winCol * (1.25 * twinkle * uFocusGain);
+        if (inPane > 0.5 && rnd > 0.48) {
+            vec3 winCol = (rnd > 0.84) ? vec3(1.0, 0.85, 0.24) : vec3(0.18, 0.94, 1.0);
+            float twinkle = 0.82 + 0.18 * sin(uTime * 1.8 + rnd * 19.0);
+            glowAdd += winCol * (1.38 * twinkle * uFocusGain);
         }
     }
 
@@ -2300,9 +2303,9 @@ void main() {
     if (texel.a < 0.06) {
         discard;
     }
-    // texel.rgb is premultiplied from Android Bitmap; boost metallic specular & warp entry rim
+    // Preserve true un-washed sRGB metallic hull colors; only warp entry/exit pushes above HDR bloom knee
     float alpha = texel.a * vAlphaBoost.x;
-    vec3 boosted = texel.rgb * (1.12 * vAlphaBoost.y);
+    vec3 boosted = texel.rgb * (1.04 * vAlphaBoost.y);
     fragColor = vec4(boosted, alpha);
 }
 """
@@ -2372,12 +2375,6 @@ uniform vec4 uTearStyle[8];   // (worldZ, tiltRad, phaseOffset, focusGain)
 uniform vec3 uTearColorA[8];
 uniform vec3 uTearColorB[8];
 
-float hash12(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-}
-
 vec2 hash22(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
     p3 += dot(p3, p3.yzx + 33.33);
@@ -2415,6 +2412,17 @@ float fbm4(vec3 p) {
     return v;
 }
 
+float fbm5(vec3 p) {
+    float v = 0.0;
+    float amp = 0.5;
+    for (int i = 0; i < 5; i++) {
+        v += amp * noise3(p);
+        p = p * 2.03 + vec3(6.7, -5.3, 4.4);
+        amp *= 0.5;
+    }
+    return v;
+}
+
 vec3 starFieldLayer(vec2 dirUv, float scale, float densityCut, float t) {
     vec2 gv = fract(dirUv * scale) - 0.5;
     vec2 id = floor(dirUv * scale);
@@ -2422,28 +2430,56 @@ vec3 starFieldLayer(vec2 dirUv, float scale, float densityCut, float t) {
     if (rnd.x < densityCut) return vec3(0.0);
     vec2 offs = (rnd - 0.5) * 0.68;
     float d = length(gv - offs);
-    float twinkle = 0.72 + 0.28 * sin(t * (1.5 + rnd.y * 3.0) + rnd.x * 37.0);
-    float core = smoothstep(0.085, 0.0, d) * twinkle;
-    vec3 tint = mix(vec3(0.68, 0.86, 1.0), vec3(1.0, 0.90, 0.72), fract(rnd.y * 7.3));
-    return tint * core * (0.55 + 0.80 * fract(rnd.x * 13.7));
+    float twinkle = 0.74 + 0.26 * sin(t * (1.4 + rnd.y * 2.8) + rnd.x * 37.0);
+    float core = smoothstep(0.078, 0.0, d) * twinkle;
+    vec3 tint = mix(vec3(0.72, 0.88, 1.0), vec3(1.0, 0.91, 0.74), fract(rnd.y * 7.3));
+    return tint * core * (0.58 + 0.82 * fract(rnd.x * 13.7));
 }
 
-// Deep #010308–#030712 Abyssal Dark Space (background luminance strictly < 0.032; ZERO bright teal fog!)
-vec3 sampleAbyssalDarkSpace(vec3 rayDir, float t) {
+// Crisp 3-depth starfield shining subtly through the swirling Ring-Space Rift tapestry
+vec3 sampleRingSpaceStars(vec3 rayDir, float t) {
     vec2 sph = rayDir.xy / max(0.32, abs(rayDir.z));
-    float dustA = fbm4(vec3(sph * 1.15, t * 0.018));
-    float dustB = fbm4(vec3(sph * 2.25 + vec2(3.7, -2.1), -t * 0.014));
-    float faintWisp = smoothstep(0.46, 0.88, dustA * 0.62 + dustB * 0.38);
+    vec3 stars = vec3(0.0);
+    stars += starFieldLayer(sph + vec2(t * 0.0007, 0.0), 36.0, 0.85, t) * 0.95;
+    stars += starFieldLayer(sph * 1.34 - vec2(0.0, t * 0.0005), 68.0, 0.88, t) * 0.72;
+    stars += starFieldLayer(sph * 1.78 + vec2(4.2, -1.9), 116.0, 0.91, t) * 0.48;
+    return stars;
+}
 
-    vec3 deepVoid = vec3(0.004, 0.011, 0.031);     // #010308
-    vec3 midnightDust = vec3(0.014, 0.026, 0.068); // faint <6% deep midnight-indigo dust
-    vec3 col = mix(deepVoid, midnightDust, faintWisp * 0.52);
+// Overarching Full-Screen Ring-Space NEXUS Convergence Tapestry (covers 100% edge-to-edge to all 4 corners)
+vec3 sampleRingSpaceTapestry(vec2 worldXY, float hubBackdropPocket, float t) {
+    vec2 hubDelta = worldXY - vec2(0.0, -0.02);
+    float hubR = max(length(hubDelta), 0.14);
+    float hubTheta = atan(hubDelta.y, hubDelta.x);
+    float hubLogR = log(hubR);
 
-    // Crisp 3-depth parallax starfield
-    col += starFieldLayer(sph + vec2(t * 0.0008, 0.0), 34.0, 0.86, t) * 1.05;
-    col += starFieldLayer(sph * 1.32 - vec2(0.0, t * 0.0006), 64.0, 0.89, t) * 0.75;
-    col += starFieldLayer(sph * 1.75 + vec2(4.2, -1.9), 112.0, 0.92, t) * 0.50;
-    return col;
+    // 5-octave domain-warped Ring-Space plasma currents
+    float warpA = fbm5(vec3(worldXY * 0.56 + vec2(t * 0.024, -t * 0.019), t * 0.042));
+    float warpB = fbm5(vec3(worldXY * 1.08 + vec2(warpA * 1.45 - t * 0.031, warpA * 1.22 + t * 0.022), -t * 0.036));
+    float filament = fbm5(vec3(worldXY * 1.82 + vec2(warpB * 1.58, -warpA * 1.30), t * 0.052));
+
+    // Grand slow-swirling logarithmic convergence arms spanning all of Ring Space
+    float macroArmA = 0.5 + 0.5 * sin(2.0 * hubTheta - 3.35 * hubLogR - t * 0.38 + warpB * 3.4);
+    float macroArmB = 0.5 + 0.5 * sin(3.0 * hubTheta + 2.45 * hubLogR - t * 0.26 - filament * 2.9);
+    float spiralFlow = pow(macroArmA, 1.75) * 0.62 + pow(macroArmB, 2.15) * 0.44;
+    float currentBand = smoothstep(0.24, 0.86, warpB * 0.56 + filament * 0.44);
+    float shearVein = pow(max(0.0, 1.0 - abs(filament - 0.53) * 3.8), 2.3);
+
+    vec3 deepAbyss = vec3(0.020, 0.055, 0.133);      // #050E22 deep abyssal indigo
+    vec3 electricAzure = vec3(0.008, 0.518, 0.780);  // #0284C7 electric azure
+    vec3 bioCyan = vec3(0.000, 0.961, 0.831);        // #00F5D4 bioluminescent cyan
+    vec3 ultraViolet = vec3(0.486, 0.227, 0.929);    // #7C3AED ultraviolet
+    vec3 magentaShear = vec3(0.910, 0.475, 0.976);   // #E879F9 shear filament
+    vec3 solarShear = vec3(0.980, 0.804, 0.082);     // #FACC15 harmonic shear
+
+    float uvBlend = 0.5 + 0.5 * sin(hubTheta * 1.0 + warpA * 3.2 - t * 0.16);
+    vec3 baseTapestry = mix(deepAbyss * 0.68, deepAbyss * 1.45, currentBand);
+    vec3 primaryCurrents = mix(electricAzure, ultraViolet, uvBlend) * (0.14 + 0.24 * spiralFlow * currentBand);
+    vec3 cyanRibbons = bioCyan * (pow(macroArmA, 3.0) * currentBand * 0.16);
+    vec3 shearAccents = mix(magentaShear, solarShear, clamp(warpA, 0.0, 1.0)) * (shearVein * 0.13);
+
+    vec3 tapestry = baseTapestry + (primaryCurrents + cyanRibbons + shearAccents) * hubBackdropPocket;
+    return tapestry;
 }
 
 void main() {
@@ -2456,7 +2492,7 @@ void main() {
         ndc.y * uTanHalfFovY * uCamUp
     );
 
-    // Gravitational micro-lensing bend of background starlight around the 7 Singularities
+    // Gravitational micro-lensing bend of background starlight around the Singularities
     vec3 lensedDir = rayDir;
     for (int i = 0; i < 8; i++) {
         if (i >= uTearCount) break;
@@ -2469,8 +2505,8 @@ void main() {
                 vec3 hit = uCamPos + rayDir * tHit;
                 vec2 d = (hit.xy - ps.xy) / max(vec2(0.05), ps.zw);
                 float r2 = dot(d, d);
-                if (r2 < 5.5) {
-                    float pull = exp(-r2 * 0.95) * 0.032;
+                if (r2 < 6.0) {
+                    float pull = exp(-r2 * 0.90) * 0.032;
                     lensedDir.xy -= normalize(d + vec2(1e-5)) * pull;
                 }
             }
@@ -2478,21 +2514,25 @@ void main() {
     }
     lensedDir = normalize(lensedDir);
 
-    vec3 col = sampleAbyssalDarkSpace(lensedDir, uTime);
-
-    // Subtle volumetric station core halo at dead-center (world 0, -0.02, 0.10) behind the 3D station mesh
+    // Intersect Ring-Space hub plane (z = 0.0) for full-screen edge-to-edge tapestry & central contrast pocket
+    vec2 hubPlaneXY = rayDir.xy * 3.6;
+    float hubDist = 2.0;
     if (abs(rayDir.z) > 1e-4) {
-        float tHub = (0.10 - uCamPos.z) / rayDir.z;
+        float tHub = (0.0 - uCamPos.z) / rayDir.z;
         if (tHub > 0.1) {
-            vec3 hubHit = uCamPos + rayDir * tHub;
-            float hubDist = length(hubHit.xy - vec2(0.0, -0.02));
-            col += vec3(0.0, 0.42, 0.58) * exp(-hubDist * 4.2) * 0.14;
+            hubPlaneXY = (uCamPos + rayDir * tHub).xy;
+            vec2 stationCenter = (uTearCount == 7) ? vec2(0.0, -0.02) : vec2(0.0, 0.04);
+            hubDist = length(hubPlaneXY - stationCenter);
         }
     }
+    // Crisp dark silhouette contrast pocket right behind the Central 3D Station (ZERO cyan fog halo!)
+    float hubBackdropPocket = mix(0.28, 1.0, smoothstep(0.28, 0.76, hubDist));
+
+    vec3 col = sampleRingSpaceTapestry(hubPlaneXY, hubBackdropPocket, uTime);
 
     float voidKeepMask = 1.0;
 
-    // 7 Surrounding Round (~1.05:1.0) Outward-Bleeding Playfield-Spirit 3D Singularities
+    // 7 Stationary Round (~1.05:1.0) Playfield-Spirit 3D Singularities whose spiral arms extend across all of Ring Space
     for (int i = 0; i < 8; i++) {
         if (i >= uTearCount) break;
         vec4 ps = uTearPosSize[i];
@@ -2511,7 +2551,7 @@ void main() {
         vec2 q = rot / max(vec2(0.04), ps.zw);
 
         float r = length(q);
-        if (r > 2.65) continue;
+        // Unclipped Ring-Space field — spiral arms & FBM currents flow seamlessly edge-to-edge!
 
         float theta = atan(q.y, q.x);
         float phase = st.z;
@@ -2519,46 +2559,58 @@ void main() {
         vec3 colA = uTearColorA[i];
         vec3 colB = uTearColorB[i];
 
-        // Toned-down breathing shimmer (<3.5% amplitude — 85%+ calmer, ZERO shockwave rings!)
-        float breathe = 1.0 + 0.032 * sin(uTime * 1.25 + phase);
+        // Subtle horizon shimmer (<3.2% amplitude — calm, monumental, zero shockwave rings)
+        float breathe = 1.0 + 0.030 * sin(uTime * 1.25 + phase);
 
         // Organic round #000000 event-horizon core housing projected button text (only in 7-Rift Hub mode)
-        float rimNoise = (fbm4(vec3(cos(theta) * 2.1, sin(theta) * 2.1, uTime * 0.30 + phase)) - 0.5) * 0.065;
+        float rimNoise = (fbm4(vec3(cos(theta) * 2.1, sin(theta) * 2.1, uTime * 0.30 + phase)) - 0.5) * 0.062;
         float coreR = (uTearCount == 7) ? (0.68 + rimNoise) : (0.34 + rimNoise * 0.6);
 
         float rDist = r - coreR;
 
-        // 1. Outward-Bleeding 3D Swirling Logarithmic Spiral Plasma Arms + Soft FBM Nebula Wisps
         if (rDist > -0.06) {
             float safeR = max(r, 0.16);
             float logR = log(safeR);
-            float warp = fbm4(vec3(q * 1.85, uTime * 0.26 + phase));
+            float warp = fbm4(vec3(q * (1.55 / (1.0 + 0.18 * max(rDist, 0.0))), uTime * 0.24 + phase));
 
-            // Twin counter-structured Playfield-spirit spiral arms bleeding outward into #010308 dark space
-            float armPrimary = 0.5 + 0.5 * sin(3.0 * theta - 5.4 * logR - uTime * 1.75 + warp * 2.8 + phase);
-            float armSecondary = 0.5 + 0.5 * sin(5.0 * theta - 3.6 * logR - uTime * 1.15 - warp * 2.1);
-            float spiral = pow(armPrimary, 2.2) * 0.72 + pow(armSecondary, 2.8) * 0.42;
+            // 1A. Rich inner Playfield-spirit logarithmic spiral vortex
+            float armPrimary = 0.5 + 0.5 * sin(3.0 * theta - 5.2 * logR - uTime * 1.65 + warp * 2.8 + phase);
+            float armSecondary = 0.5 + 0.5 * sin(5.0 * theta - 3.5 * logR - uTime * 1.10 - warp * 2.1);
+            float innerSpiral = pow(armPrimary, 2.2) * 0.72 + pow(armSecondary, 2.8) * 0.40;
+            float innerFalloff = exp(-max(rDist, 0.0) * 1.65);
 
-            float radialFalloff = exp(-max(rDist, 0.0) * 2.35);
-            float wispFalloff = exp(-max(rDist, 0.0) * 1.48);
-            float nebulaWisp = smoothstep(0.32, 0.85, warp) * wispFalloff;
+            // 1B. Long-range outward-flowing spiral arms & FBM currents interweaving across 100% of Ring Space
+            float farArm = 0.5 + 0.5 * sin(2.0 * theta - 3.6 * logR - uTime * 0.82 + warp * 2.7 + phase);
+            float longRangeFalloff = 1.0 / (1.0 + max(rDist, 0.0) * max(rDist, 0.0) * 0.42);
+            float longRangeCurrent =
+                (pow(farArm, 1.85) * 0.58 + smoothstep(0.28, 0.84, warp) * 0.42) *
+                longRangeFalloff *
+                hubBackdropPocket;
 
-            vec3 plasmaTint = mix(colA, colB, clamp(0.5 + 0.5 * sin(theta * 2.0 - logR * 2.2 + uTime * 0.6), 0.0, 1.0));
-            col += plasmaTint * (spiral * radialFalloff * 1.42 + nebulaWisp * 0.46) * breathe * focusGain;
+            vec3 plasmaTint = mix(colA, colB, clamp(0.5 + 0.5 * sin(theta * 2.0 - logR * 2.1 + uTime * 0.55), 0.0, 1.0));
+            col += plasmaTint * (innerSpiral * innerFalloff * 1.18 + longRangeCurrent * 0.24) * breathe * focusGain;
 
-            // Razor-crisp white-hot inner photon accretion ring hugging the event horizon
-            float photonRing = exp(-abs(rDist) * 20.0);
+            // Razor-crisp white-hot inner photon accretion ring hugging the event horizon (HDR > 1.05 for tight jewel bloom)
+            float photonRing = exp(-abs(rDist) * 21.0);
             vec3 lipHot = mix(plasmaTint, vec3(1.0, 0.99, 1.0), 0.68);
             col += lipHot * photonRing * 2.15 * breathe * focusGain;
         }
 
-        // 2. Pure #000000 Singularity Event-Horizon Interior (guarantees 100% crisp button text contrast)
+        // Accumulate pure #000000 Singularity Event-Horizon mask
         float innerVoid = 1.0 - smoothstep(-0.045, 0.025, rDist);
-        col = mix(col, vec3(0.0), innerVoid);
         voidKeepMask *= (1.0 - innerVoid);
     }
 
-    fragColor = vec4(max(col, vec3(0.0)), clamp(voidKeepMask, 0.0, 1.0));
+    // Subtle multi-depth starlight shining through the swirling Ring-Space Rift plasma across the whole screen
+    vec3 stars = sampleRingSpaceStars(lensedDir, uTime);
+    float plasmaLum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col += stars * (0.42 + 0.36 * clamp(1.0 - plasmaLum * 0.45, 0.22, 1.0));
+
+    // Enforce strict pure #000000 inside all 7 Rift button-text cores (zero star or neighbor-arm bleed!)
+    float cleanVoidMask = clamp(voidKeepMask, 0.0, 1.0);
+    col *= cleanVoidMask;
+
+    fragColor = vec4(max(col, vec3(0.0)), cleanVoidMask);
 }
 """
 
@@ -2571,8 +2623,8 @@ uniform sampler2D uSceneTex;
 
 void main() {
     vec4 s = texture(uSceneTex, vUv);
-    float lum = dot(s.rgb, vec3(0.2126, 0.7152, 0.0722));
-    float knee = smoothstep(0.52, 1.38, lum);
+    float maxCh = max(s.r, max(s.g, s.b));
+    float knee = smoothstep(1.05, 2.15, maxCh);
     fragColor = vec4(s.rgb * knee * s.a, 1.0);
 }
 """
@@ -2633,13 +2685,13 @@ vec3 foregroundCosmicMotes(vec2 uv, float aspect, float t, vec2 parallax) {
         vec2 id = floor(p);
         vec2 gv = fract(p) - 0.5;
         vec2 rnd = hash22(id + fl * 29.0);
-        if (rnd.x > 0.82) {
+        if (rnd.x > 0.84) {
             vec2 pos = (rnd - 0.5) * 0.60;
             float d = length(gv - pos);
             float pulse = 0.55 + 0.45 * sin(t * 2.1 + rnd.y * 25.0);
-            float glow = smoothstep(0.10, 0.0, d) * pulse;
+            float glow = smoothstep(0.085, 0.0, d) * pulse;
             vec3 c = mix(vec3(0.0, 0.96, 0.83), vec3(0.98, 0.80, 0.09), fract(rnd.y * 5.7));
-            acc += c * glow * (0.36 - fl * 0.12);
+            acc += c * glow * (0.30 - fl * 0.10);
         }
     }
     return acc;
@@ -2651,15 +2703,19 @@ void main() {
     float voidKeep = scene.a;
 
     float aspect = uResolution.x / max(1.0, uResolution.y);
-    vec3 motes = foregroundCosmicMotes(vUv, aspect, uTime, uParallax) * voidKeep;
+    // Keep foreground cosmic motes clear of the central 3D Station silhouette so zero haze crosses its hull
+    float stationSilhouetteClear = smoothstep(0.15, 0.32, length((vUv - vec2(0.5)) * vec2(aspect, 1.0)));
+    vec3 motes = foregroundCosmicMotes(vUv, aspect, uTime, uParallax) * stationSilhouetteClear * voidKeep;
 
-    vec3 hdr = (scene.rgb + bloom * 0.72 * voidKeep + motes) * voidKeep;
-    vec3 mapped = acesTonemap(hdr);
-    mapped = pow(mapped, vec3(1.0 / 2.15));
+    // Haze-free high-contrast filmic curve (NO pow(1/2.15) double-gamma milky wash!)
+    vec3 hdr = (scene.rgb + bloom * 0.28 * voidKeep + motes) * voidKeep;
+    vec3 mapped = acesTonemap(hdr * 1.12);
+    mapped = pow(mapped, vec3(0.95));
+    mapped = smoothstep(vec3(0.008), vec3(0.992), mapped);
 
-    // Subtle deep-space corner vignette
+    // Subtle deep-space corner framing
     vec2 vigUv = vUv * 2.0 - 1.0;
-    float vig = clamp(1.0 - dot(vigUv, vigUv) * 0.14, 0.74, 1.0);
+    float vig = clamp(1.0 - dot(vigUv, vigUv) * 0.10, 0.82, 1.0);
     mapped *= mix(1.0, vig, voidKeep);
 
     fragColor = vec4(mapped * voidKeep * uDimFactor, 1.0);

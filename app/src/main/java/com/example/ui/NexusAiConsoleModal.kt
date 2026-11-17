@@ -1408,14 +1408,22 @@ private fun OrbitalHubSpatialStage(
         val isFocused = focusedOrbitalIndex == idx
         val primaryGlow =
           remember(spec.accentColor, isFocused, isPrimaryNexus) {
-            Shadow(
-              color = if (isPrimaryNexus) Color(0xEE010308) else if (isFocused) Color.White else spec.accentColor.copy(alpha = 0.85f),
-              offset = Offset.Zero,
-              blurRadius = if (isPrimaryNexus) 12f else 7f,
-            )
+            if (isPrimaryNexus) {
+              Shadow(
+                color = Color.Black,
+                offset = Offset(0f, 1.5f),
+                blurRadius = 5f,
+              )
+            } else {
+              Shadow(
+                color = if (isFocused) Color.White else spec.accentColor.copy(alpha = 0.85f),
+                offset = Offset.Zero,
+                blurRadius = 7f,
+              )
+            }
           }
 
-        // Frameless diegetic hit target over the Central 3D Station (idx 0) or inside the 7 #000000 Rift cores (idx 1..7)
+        // 100% unobstructed frameless diegetic hit target over the Central 3D Station (idx 0) or inside the 7 #000000 Rift cores (idx 1..7)
         Box(
           modifier =
             Modifier.minimumInteractiveComponentSize()
@@ -1431,13 +1439,7 @@ private fun OrbitalHubSpatialStage(
             verticalArrangement = Arrangement.Center,
             modifier =
               if (isPrimaryNexus) {
-                // Subtle frameless radial shadow veil over central reactor core so station text pops crisply
-                Modifier.background(
-                  Brush.radialGradient(
-                    colors = listOf(Color(0xB8010308), Color(0x66010308), Color.Transparent),
-                  ),
-                  CircleShape,
-                ).padding(horizontal = 12.dp, vertical = 6.dp)
+                Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
               } else {
                 Modifier.padding(horizontal = 6.dp)
               },
@@ -1466,7 +1468,15 @@ private fun OrbitalHubSpatialStage(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                style = TextStyle(shadow = Shadow(color = Color.Black, offset = Offset.Zero, blurRadius = 8f)),
+                style =
+                  TextStyle(
+                    shadow =
+                      Shadow(
+                        color = Color.Black,
+                        offset = Offset(0f, 1.5f),
+                        blurRadius = 5f,
+                      )
+                  ),
               )
             } else {
               Text(

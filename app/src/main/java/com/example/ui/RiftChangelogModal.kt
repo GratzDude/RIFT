@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 63
+const val CURRENT_RIFT_BUILD_VERSION = 64
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 64,
+      versionTag = "v1.0.64 // BUILD #64",
+      releaseDate = "Nov 17, 2026",
+      headline = "Haze-Free High-Contrast 3D NEXUS Station, Full-Screen Ring-Space Rift Tapestry with Subtle Starlight & Zero Rift Bobbing",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Removed all gamma washout, quarter-res bloom fog, and UI gradient veils over the central 3D NEXUS Orbital Space Station and live Playfield ship traffic, upgrading to half-res high-threshold (>1.05) HDR bloom and crisp Blinn-Phong metallic contrast.",
+          "Extended swirling logarithmic Rift spiral arms and domain-warped Ring-Space FBM plasma currents edge-to-edge across 100% of the background so all 7 Rifts interweave across the heart of the NEXUS with subtle multi-depth starlight shining through.",
+          "Eliminated vertical Rift bobbing and autonomous camera wobble so all 7 round 3D Rifts and the central 3D Station hold rock-steady coordinates while preserving 1-finger 3D look-around parallax.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 63,
       versionTag = "v1.0.63 // BUILD #63",
       releaseDate = "Nov 17, 2026",
       headline = "3D Jita-Style Central NEXUS Space Station + Live Real-Ship Traffic, Deep #010308 Dark Space, 7 Round Outward-Bleeding 3D Rifts, Merged NEXUS Brand Emblem, Custom Resonance & Shard Icons & Cloud Identity Sync",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "3D STATION & ICONS",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
