@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 67
+const val CURRENT_RIFT_BUILD_VERSION = 68
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,12 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 68,
+      versionTag = "v1.0.68 // BUILD #68",
+      releaseDate = "Nov 17, 2026",
+      headline = "Sci-Fi Tablet Terminal Digitizing Inward Into Abyssal-Garden 3D Safe-Zone Station Holding Back Outer Storm Space + Persistent Gravity Rift Mass Fix",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Rebuilt the NEXUS opening screen as a unified #060D1A Sci-Fi Command Tablet whose center viewport digitizes inward (dissolving holographic grid cells, voxel matrix tiles, and stepped depth telemetry) directly into the 3D Safe-Zone Sanctuary.",
+          "Replaced the tie-dye center vortex in NexusSpaceGlView (GLES30 VSYNC) with an abyssal-garden 3D Safe-Zone Sanctuary: calm volumetric #020814 abyssal space with angled light shafts and caustic shimmer inside, anchored by the 3D Multi-Ring NEXUS Orbital Station projecting 8 golden-cyan 3D stabilizer beams + 8 outward-bracing emitter chevrons to hold a 3D Containment Shield Ring open against dark encroaching outer storm clouds, with real 128x128 Playfield ships patrolling and an unobstructed lower-center [ PLAY // ENTER THE RIFT ] trigger.",
+          "Fixed the frameTick calibration sync bug in MainActivity.kt and RiftCalibrationState.kt that was resetting grown Gravity Rifts and Unstable Rifts back to 180px every 0.35s.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 67,
       versionTag = "v1.0.67 // BUILD #67",
       releaseDate = "Nov 17, 2026",
       headline = "Google Play Console Release Version Sync (versionCode 67 / v1.0.67)",
-      badgeLabel = "LATEST RELEASE",
-      accentColorHex = "#00F5D4",
+      badgeLabel = "PLAY CONSOLE SYNC",
+      accentColorHex = "#38BDF8",
       highlights =
         listOf(
           "Incremented Android release versionCode to 67 (v1.0.67) in 1:1 sync with CURRENT_RIFT_BUILD_VERSION for Google Play Console publishing while preserving com.aistudio.riftarena.vxpqzm and all BUILD #66 Breached-Terminal NEXUS, 3-Tier Winged Vortex Crest, Safe-Harbor 3D Station, and Gravity Rift systems intact.",

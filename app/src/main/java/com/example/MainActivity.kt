@@ -905,7 +905,7 @@ fun RiftArenaScreen(
     )
   }
 
-  LaunchedEffect(engine.currentCustomGame, engine.activeRankedMode, frameTick) {
+  LaunchedEffect(engine.currentCustomGame, engine.activeRankedMode) {
     if (engine.currentCustomGame == null) {
       RiftCalibrationState.enforceRankedFactoryDefaultsIfNeeded(engine)
     }

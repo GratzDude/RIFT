@@ -1496,7 +1496,12 @@ object RiftCalibrationState {
         }
       }
       for (anom in engine.anomalies) {
-        anom.physicalRadius = riftPhysicalRadius
+        if (!anom.isUnstableMergedRift &&
+          !(anom.type == AnomalyType.GRAVITY_RIFT && anom.absorbedWeaponCount > 0) &&
+          anom.absorbedWeaponCount == 0
+        ) {
+          anom.physicalRadius = riftPhysicalRadius
+        }
       }
       for (b in engine.interdictorBubbles) {
         b.radius = interdictorBubbleRadius
@@ -1558,7 +1563,12 @@ object RiftCalibrationState {
         }
       }
       for (anom in engine.anomalies) {
-        anom.physicalRadius = riftPhysicalRadius
+        if (!anom.isUnstableMergedRift &&
+          !(anom.type == AnomalyType.GRAVITY_RIFT && anom.absorbedWeaponCount > 0) &&
+          anom.absorbedWeaponCount == 0
+        ) {
+          anom.physicalRadius = riftPhysicalRadius
+        }
       }
       for (b in engine.interdictorBubbles) {
         b.radius = interdictorBubbleRadius

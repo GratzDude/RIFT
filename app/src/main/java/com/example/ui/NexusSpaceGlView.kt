@@ -35,9 +35,9 @@ import kotlin.math.sqrt
 import kotlin.math.tan
 
 /**
- * 3D World-Space Node Specification for the Breached-Terminal OpenGL ES 3.0 `NEXUS` Hub:
- * - Index `0` (`CONVERGENCE_GATE`) anchors the **Colossal Center `PLAY // ENTER THE RIFT` Singularity**
- *   punching open the center ~52% of the `#060D1A` Tactical Cockpit Terminal.
+ * 3D World-Space Node Specification for the Sci-Fi Command Tablet `NEXUS` Hub:
+ * - Index `0` (`CONVERGENCE_GATE`) anchors the central **3D Safe-Zone Sanctuary** (`shieldR = 0.92f`)
+ *   and its `[ PLAY // ENTER THE RIFT ]` launch console.
  * - Indices `1..7` map the Left Column (`HANGAR_DECK`, `RIFT_CONDUIT`, `STAR_FORGE`),
  *   Right Column (`SUBSPACE_COMMS`, `SYNDICATE_CITADEL`, `ARCHIVE_CODEX`), and Top Bar (`HELM_SYSTEMS`)
  *   for unified D-Pad/Controller focus & dive camera cues.
@@ -73,20 +73,20 @@ data class ProjectedRiftTearScreenState(
 
 val NEXUS_3D_RIFT_TEARS: List<RiftTearWorldSpec> =
   listOf(
-    // Index 0: Colossal Center Terminal Breach — PLAY // ENTER THE RIFT (CONVERGENCE GATE)
+    // Index 0: Central 3D Safe-Zone Sanctuary — PLAY // ENTER THE RIFT (CONVERGENCE GATE)
     RiftTearWorldSpec(
       index = 0,
       node = NexusCoreNode.CONVERGENCE_GATE,
       title = "PLAY",
       subtitle = "ENTER THE RIFT",
       worldX = 0.00f,
-      worldY = -0.02f,
-      worldZ = 0.00f,
-      halfWidthWorld = 0.96f,
-      halfHeightWorld = 0.96f,
-      tiltRad = 0.00f,
+      worldY = 0.04f,
+      worldZ = 0.08f,
+      halfWidthWorld = 0.92f,
+      halfHeightWorld = 0.92f,
+      tiltRad = -0.14f,
       lipColorA = Color(0xFF00F5D4),
-      lipColorB = Color(0xFFA855F7),
+      lipColorB = Color(0xFF38BDF8),
       accentColor = Color(0xFF00F5D4),
       phaseOffset = 0.0f,
       testTag = "nexus_node_convergence_gate",
@@ -120,9 +120,9 @@ val NEXUS_3D_RIFT_TEARS: List<RiftTearWorldSpec> =
       halfWidthWorld = 0.40f,
       halfHeightWorld = 0.36f,
       tiltRad = -0.04f,
-      lipColorA = Color(0xFFE879F9),
+      lipColorA = Color(0xFF38BDF8),
       lipColorB = Color(0xFF00F5D4),
-      accentColor = Color(0xFFE879F9),
+      accentColor = Color(0xFF38BDF8),
       phaseOffset = 1.70f,
       testTag = "nexus_node_rift_conduit",
     ),
@@ -137,9 +137,9 @@ val NEXUS_3D_RIFT_TEARS: List<RiftTearWorldSpec> =
       halfWidthWorld = 0.40f,
       halfHeightWorld = 0.36f,
       tiltRad = -0.04f,
-      lipColorA = Color(0xFFC084FC),
-      lipColorB = Color(0xFFF472B6),
-      accentColor = Color(0xFFC084FC),
+      lipColorA = Color(0xFF0EA5E9),
+      lipColorB = Color(0xFF00F5D4),
+      accentColor = Color(0xFF38BDF8),
       phaseOffset = 2.55f,
       testTag = "nexus_node_star_forge",
     ),
@@ -173,7 +173,7 @@ val NEXUS_3D_RIFT_TEARS: List<RiftTearWorldSpec> =
       halfHeightWorld = 0.36f,
       tiltRad = 0.04f,
       lipColorA = Color(0xFFFACC15),
-      lipColorB = Color(0xFFF97316),
+      lipColorB = Color(0xFF38BDF8),
       accentColor = Color(0xFFFACC15),
       phaseOffset = 4.25f,
       testTag = "nexus_node_syndicate_citadel",
@@ -230,7 +230,14 @@ internal fun isHeadlessGlEnvironment(): Boolean {
 }
 
 private const val CAMERA_FOV_Y_DEG = 46.0f
-private const val BASE_CAMERA_Z = 3.18f
+private const val BASE_CAMERA_Z = 3.16f
+
+private const val STATION_CENTER_X = 0.00f
+private const val STATION_CENTER_Y = 0.05f
+private const val STATION_CENTER_Z = 0.08f
+private const val SANCTUARY_SHIELD_RADIUS = 0.92f
+private const val SANCTUARY_PITCH_X_RAD = 0.46f
+private const val SANCTUARY_ROLL_Z_RAD = -0.14f
 
 internal data class CameraBasis3D(
   val camX: Float,
@@ -249,6 +256,52 @@ internal data class CameraBasis3D(
   val aspect: Float,
 )
 
+/**
+ * Orthonormal 3D frame for the tilted Safe-Zone Sanctuary disc & `NEXUS` Orbital Citadel:
+ * - `(ux, uy, uz)` & `(vx, vy, vz)` span the tilted Safe-Zone plane (`R = 0.92f`).
+ * - `(nx, ny, nz)` is the outward/upward citadel spire axis perpendicular to the Safe-Zone plane.
+ */
+private data class SanctuaryFrame3D(
+  val ux: Float,
+  val uy: Float,
+  val uz: Float,
+  val vx: Float,
+  val vy: Float,
+  val vz: Float,
+  val nx: Float,
+  val ny: Float,
+  val nz: Float,
+)
+
+private fun buildSanctuaryFrame3D(
+  pitchX: Float = SANCTUARY_PITCH_X_RAD,
+  rollZ: Float = SANCTUARY_ROLL_Z_RAD,
+): SanctuaryFrame3D {
+  val cp = cos(pitchX)
+  val sp = sin(pitchX)
+  val cr = cos(rollZ)
+  val sr = sin(rollZ)
+
+  // Start with disc in (X, Y) and spire along +Z, pitch back by Rx(-pitchX) so top recedes into -Z,
+  // then bank by Rz(rollZ):
+  // u0 = (1, 0, 0) -> Rx(-pitchX) = (1, 0, 0) -> Rz(rollZ) = (cr, sr, 0)
+  // v0 = (0, 1, 0) -> Rx(-pitchX) = (0, cp, -sp) -> Rz(rollZ) = (-sr*cp, cr*cp, -sp)
+  // n0 = (0, 0, 1) -> Rx(-pitchX) = (0, sp, cp) -> Rz(rollZ) = (-sr*sp, cr*sp, cp)
+  return SanctuaryFrame3D(
+    ux = cr,
+    uy = sr,
+    uz = 0f,
+    vx = -sr * cp,
+    vy = cr * cp,
+    vz = -sp,
+    nx = -sr * sp,
+    ny = cr * sp,
+    nz = cp,
+  )
+}
+
+private val DEFAULT_SANCTUARY_FRAME = buildSanctuaryFrame3D()
+
 private fun buildCameraBasis3D(
   viewportW: Float,
   viewportH: Float,
@@ -266,30 +319,29 @@ private fun buildCameraBasis3D(
   val aspectPullback = if (isSplashMode) 1.04f else max(1.0f, 1.55f / aspect.coerceAtLeast(0.55f))
   val baseZ = BASE_CAMERA_Z * aspectPullback
 
-  val orbitX = if (isSplashMode) sin(timeSec * 0.24f) * 0.035f else 0f
-  val orbitY = if (isSplashMode) cos(timeSec * 0.19f) * 0.025f else 0f
-  val orbitZ = if (isSplashMode) sin(timeSec * 0.16f) * 0.028f else 0f
+  val orbitX = if (isSplashMode) sin(timeSec * 0.22f) * 0.032f else 0f
+  val orbitY = if (isSplashMode) cos(timeSec * 0.18f) * 0.022f else 0f
+  val orbitZ = if (isSplashMode) sin(timeSec * 0.15f) * 0.024f else 0f
 
-  var camX = orbitX + sin(lookYawRad) * 0.42f
-  var camY = orbitY + sin(lookPitchRad) * 0.32f
+  var camX = orbitX + sin(lookYawRad) * 0.44f
+  var camY = orbitY + sin(lookPitchRad) * 0.34f
   var camZ = baseZ + orbitZ
 
-  var lookX = -sin(lookYawRad) * 0.48f
-  var lookY = -sin(lookPitchRad) * 0.38f
-  var lookZ = 0.0f
+  var lookX = -sin(lookYawRad) * 0.42f
+  var lookY = STATION_CENTER_Y - sin(lookPitchRad) * 0.32f
+  var lookZ = STATION_CENTER_Z
 
   if (!isSplashMode && diveTearIdx in NEXUS_3D_RIFT_TEARS.indices && diveProgress > 0.001f) {
     val target = NEXUS_3D_RIFT_TEARS[diveTearIdx]
     val ease = diveProgress * diveProgress * (3f - 2f * diveProgress)
-    // Dive straight toward the Colossal Center Rift throat (0, -0.02, 0)
-    val diveTargetX = if (diveTearIdx == 0) 0.0f else target.worldX * 0.35f
-    val diveTargetY = if (diveTearIdx == 0) -0.02f else target.worldY * 0.35f
-    camX += (diveTargetX - camX) * (ease * 0.76f)
-    camY += (diveTargetY - camY) * (ease * 0.76f)
-    camZ += (0.72f - camZ) * (ease * 0.82f)
+    val diveTargetX = if (diveTearIdx == 0) STATION_CENTER_X else target.worldX * 0.34f
+    val diveTargetY = if (diveTearIdx == 0) STATION_CENTER_Y else target.worldY * 0.34f
+    camX += (diveTargetX - camX) * (ease * 0.74f)
+    camY += (diveTargetY - camY) * (ease * 0.74f)
+    camZ += (0.86f - camZ) * (ease * 0.80f)
     lookX += (diveTargetX - lookX) * ease
     lookY += (diveTargetY - lookY) * ease
-    lookZ += (0.0f - lookZ) * ease
+    lookZ += (STATION_CENTER_Z - lookZ) * ease
   }
 
   var fx = lookX - camX
@@ -408,14 +460,526 @@ fun computeStaticProjectedTearStates(
 }
 
 /**
- * Live 3D Playfield Ship Entity banking along curved 3D Bezier trajectories into and out of the
- * Colossal Center `NEXUS` Rift Breach.
+ * Procedural 3D Mesh Builder (`11` floats per vertex: `pos(3) + normal(3) + color(3) + emissive(1) + radialT(1)`)
+ * for the Multi-Ring 3D `NEXUS` Orbital Citadel, Counter-Rotating Docking Rings, 3D Containment Shield Ring,
+ * 8 Golden-Cyan 3D Stabilizer Beams, and 8 Outward-Bracing Emitter Chevrons.
+ */
+private class StationMeshBuilder(initialFloats: Int = 24576) {
+  private var data = FloatArray(initialFloats)
+  var floatCount: Int = 0
+    private set
+
+  val vertexCount: Int
+    get() = floatCount / FLOATS_PER_VERTEX
+
+  private fun ensureCapacity(extraFloats: Int) {
+    if (floatCount + extraFloats <= data.size) return
+    var next = data.size * 2
+    while (next < floatCount + extraFloats) next *= 2
+    data = data.copyOf(next)
+  }
+
+  private fun pushVertex(
+    px: Float, py: Float, pz: Float,
+    nx: Float, ny: Float, nz: Float,
+    r: Float, g: Float, b: Float,
+    emissive: Float,
+    radialT: Float,
+  ) {
+    ensureCapacity(FLOATS_PER_VERTEX)
+    var i = floatCount
+    data[i++] = px; data[i++] = py; data[i++] = pz
+    data[i++] = nx; data[i++] = ny; data[i++] = nz
+    data[i++] = r; data[i++] = g; data[i++] = b
+    data[i++] = emissive
+    data[i++] = radialT
+    floatCount = i
+  }
+
+  fun addTri(
+    ax: Float, ay: Float, az: Float,
+    bx: Float, by: Float, bz: Float,
+    cx: Float, cy: Float, cz: Float,
+    r: Float, g: Float, b: Float,
+    emissive: Float = 0f,
+    radialT: Float = -1f,
+  ) {
+    val ux = bx - ax; val uy = by - ay; val uz = bz - az
+    val vx = cx - ax; val vy = cy - ay; val vz = cz - az
+    var nx = uy * vz - uz * vy
+    var ny = uz * vx - ux * vz
+    var nz = ux * vy - uy * vx
+    val nLen = sqrt(max(1e-8f, nx * nx + ny * ny + nz * nz))
+    nx /= nLen; ny /= nLen; nz /= nLen
+    pushVertex(ax, ay, az, nx, ny, nz, r, g, b, emissive, radialT)
+    pushVertex(bx, by, bz, nx, ny, nz, r, g, b, emissive, radialT)
+    pushVertex(cx, cy, cz, nx, ny, nz, r, g, b, emissive, radialT)
+  }
+
+  fun addTriGradRadial(
+    ax: Float, ay: Float, az: Float, ta: Float, ra: Float, ga: Float, ba: Float,
+    bx: Float, by: Float, bz: Float, tb: Float, rb: Float, gb: Float, bb: Float,
+    cx: Float, cy: Float, cz: Float, tc: Float, rc: Float, gc: Float, bc: Float,
+    emissive: Float,
+  ) {
+    val ux = bx - ax; val uy = by - ay; val uz = bz - az
+    val vx = cx - ax; val vy = cy - ay; val vz = cz - az
+    var nx = uy * vz - uz * vy
+    var ny = uz * vx - ux * vz
+    var nz = ux * vy - uy * vx
+    val nLen = sqrt(max(1e-8f, nx * nx + ny * ny + nz * nz))
+    nx /= nLen; ny /= nLen; nz /= nLen
+    pushVertex(ax, ay, az, nx, ny, nz, ra, ga, ba, emissive, ta)
+    pushVertex(bx, by, bz, nx, ny, nz, rb, gb, bb, emissive, tb)
+    pushVertex(cx, cy, cz, nx, ny, nz, rc, gc, bc, emissive, tc)
+  }
+
+  fun addQuad(
+    x0: Float, y0: Float, z0: Float,
+    x1: Float, y1: Float, z1: Float,
+    x2: Float, y2: Float, z2: Float,
+    x3: Float, y3: Float, z3: Float,
+    r: Float, g: Float, b: Float,
+    emissive: Float = 0f,
+    radialT: Float = -1f,
+  ) {
+    addTri(x0, y0, z0, x1, y1, z1, x2, y2, z2, r, g, b, emissive, radialT)
+    addTri(x0, y0, z0, x2, y2, z2, x3, y3, z3, r, g, b, emissive, radialT)
+  }
+
+  /**
+   * Builds a tapered polygonal frustum around the local `Z` spire axis (`z0 -> z1`, radii `r0 -> r1`).
+   */
+  fun addSpireFrustumZ(
+    sides: Int,
+    z0: Float,
+    z1: Float,
+    r0: Float,
+    r1: Float,
+    r: Float,
+    g: Float,
+    b: Float,
+    emissive: Float = 0f,
+    capBottom: Boolean = false,
+    capTop: Boolean = false,
+    angleOffset: Float = 0f,
+  ) {
+    val step = (PI.toFloat() * 2f) / sides.toFloat()
+    for (i in 0 until sides) {
+      val a0 = angleOffset + i * step
+      val a1 = angleOffset + (i + 1) * step
+      val c0 = cos(a0); val s0 = sin(a0)
+      val c1 = cos(a1); val s1 = sin(a1)
+      if (r0 > 1e-4f && r1 > 1e-4f) {
+        addQuad(
+          c0 * r0, s0 * r0, z0,
+          c1 * r0, s1 * r0, z0,
+          c1 * r1, s1 * r1, z1,
+          c0 * r1, s0 * r1, z1,
+          r, g, b, emissive,
+        )
+      } else if (r1 <= 1e-4f) {
+        addTri(
+          c0 * r0, s0 * r0, z0,
+          c1 * r0, s1 * r0, z0,
+          0f, 0f, z1,
+          r, g, b, emissive,
+        )
+      } else {
+        addTri(
+          0f, 0f, z0,
+          c1 * r1, s1 * r1, z1,
+          c0 * r1, s0 * r1, z1,
+          r, g, b, emissive,
+        )
+      }
+      if (capTop && r1 > 1e-4f) {
+        addTri(0f, 0f, z1, c0 * r1, s0 * r1, z1, c1 * r1, s1 * r1, z1, r * 1.12f, g * 1.12f, b * 1.12f, emissive)
+      }
+      if (capBottom && r0 > 1e-4f) {
+        addTri(0f, 0f, z0, c1 * r0, s1 * r0, z0, c0 * r0, s0 * r0, z0, r * 0.82f, g * 0.82f, b * 0.82f, emissive)
+      }
+    }
+  }
+
+  /**
+   * Builds a beveled 4-sided diamond/chamfered 3D ring lying in the local `(X, Y)` disc plane.
+   */
+  fun addBeveledRingXY(
+    segments: Int,
+    majorR: Float,
+    halfRadialW: Float,
+    halfHeightZ: Float,
+    hullR: Float, hullG: Float, hullB: Float,
+    innerTrimR: Float, innerTrimG: Float, innerTrimB: Float,
+    innerEmissive: Float,
+    outerTrimR: Float, outerTrimG: Float, outerTrimB: Float,
+    outerEmissive: Float,
+  ) {
+    val step = (PI.toFloat() * 2f) / segments.toFloat()
+    val rIn = majorR - halfRadialW
+    val rMid = majorR
+    val rOut = majorR + halfRadialW
+    for (i in 0 until segments) {
+      val a0 = i * step
+      val a1 = (i + 1) * step
+      val c0 = cos(a0); val s0 = sin(a0)
+      val c1 = cos(a1); val s1 = sin(a1)
+
+      // Top-inner slope (brushed titanium)
+      addQuad(
+        c0 * rIn, s0 * rIn, 0f,
+        c1 * rIn, s1 * rIn, 0f,
+        c1 * rMid, s1 * rMid, halfHeightZ,
+        c0 * rMid, s0 * rMid, halfHeightZ,
+        innerTrimR, innerTrimG, innerTrimB, innerEmissive,
+      )
+      // Top-outer slope (armored hull)
+      addQuad(
+        c0 * rMid, s0 * rMid, halfHeightZ,
+        c1 * rMid, s1 * rMid, halfHeightZ,
+        c1 * rOut, s1 * rOut, 0f,
+        c0 * rOut, s0 * rOut, 0f,
+        hullR, hullG, hullB, 0f,
+      )
+      // Bottom-outer slope
+      addQuad(
+        c0 * rOut, s0 * rOut, 0f,
+        c1 * rOut, s1 * rOut, 0f,
+        c1 * rMid, s1 * rMid, -halfHeightZ,
+        c0 * rMid, s0 * rMid, -halfHeightZ,
+        outerTrimR, outerTrimG, outerTrimB, outerEmissive,
+      )
+      // Bottom-inner slope
+      addQuad(
+        c0 * rMid, s0 * rMid, -halfHeightZ,
+        c1 * rMid, s1 * rMid, -halfHeightZ,
+        c1 * rIn, s1 * rIn, 0f,
+        c0 * rIn, s0 * rIn, 0f,
+        hullR * 0.82f, hullG * 0.82f, hullB * 0.86f, 0f,
+      )
+    }
+  }
+
+  fun addOrientedBoxXY(
+    angleRad: Float,
+    rStart: Float,
+    rEnd: Float,
+    halfTangentialW: Float,
+    zBottom: Float,
+    zTop: Float,
+    r: Float, g: Float, b: Float,
+    emissive: Float = 0f,
+  ) {
+    val ca = cos(angleRad); val sa = sin(angleRad)
+    val px = -sa * halfTangentialW; val py = ca * halfTangentialW
+
+    val x0L = ca * rStart + px; val y0L = sa * rStart + py
+    val x0R = ca * rStart - px; val y0R = sa * rStart - py
+    val x1L = ca * rEnd + px; val y1L = sa * rEnd + py
+    val x1R = ca * rEnd - px; val y1R = sa * rEnd - py
+
+    // Top (+Z)
+    addQuad(x0R, y0R, zTop, x1R, y1R, zTop, x1L, y1L, zTop, x0L, y0L, zTop, r, g, b, emissive)
+    // Bottom (-Z)
+    addQuad(x0L, y0L, zBottom, x1L, y1L, zBottom, x1R, y1R, zBottom, x0R, y0R, zBottom, r * 0.78f, g * 0.78f, b * 0.82f, emissive)
+    // Outer end (rEnd)
+    addQuad(x1R, y1R, zBottom, x1L, y1L, zBottom, x1L, y1L, zTop, x1R, y1R, zTop, r * 1.08f, g * 1.08f, b * 1.08f, emissive)
+    // Inner end (rStart)
+    addQuad(x0L, y0L, zBottom, x0R, y0R, zBottom, x0R, y0R, zTop, x0L, y0L, zTop, r * 0.88f, g * 0.88f, b * 0.88f, emissive)
+    // Left flank
+    addQuad(x0L, y0L, zBottom, x0L, y0L, zTop, x1L, y1L, zTop, x1L, y1L, zBottom, r * 0.92f, g * 0.92f, b * 0.95f, emissive)
+    // Right flank
+    addQuad(x1R, y1R, zBottom, x1R, y1R, zTop, x0R, y0R, zTop, x0R, y0R, zBottom, r * 0.92f, g * 0.92f, b * 0.95f, emissive)
+  }
+
+  fun toFloatBuffer(): FloatBuffer {
+    val buf = ByteBuffer.allocateDirect(floatCount * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+    buf.put(data, 0, floatCount)
+    buf.position(0)
+    return buf
+  }
+
+  companion object {
+    const val FLOATS_PER_VERTEX = 11
+    const val STRIDE_BYTES = FLOATS_PER_VERTEX * 4
+
+    /**
+     * Builds the central dark-titanium octagonal `NEXUS` Command Citadel Spire with twinkling
+     * cyan/gold micro-windows, central reactor heart, and 4 armored docking pylons.
+     */
+    fun buildCentralSpireMesh(): StationMeshBuilder {
+      val m = StationMeshBuilder(12288)
+      // Dark brushed titanium-obsidian palette (#0D1729 / #1C2E4A / #2A4365)
+      val darkHullR = 0.052f; val darkHullG = 0.092f; val darkHullB = 0.165f
+      val midHullR = 0.110f; val midHullG = 0.180f; val midHullB = 0.292f
+      val litBevelR = 0.175f; val litBevelG = 0.275f; val litBevelB = 0.420f
+
+      // Lower deep-space reactor keel (-0.34 -> -0.05)
+      m.addSpireFrustumZ(8, -0.34f, -0.22f, 0.0f, 0.055f, darkHullR, darkHullG, darkHullB)
+      m.addSpireFrustumZ(8, -0.22f, -0.09f, 0.055f, 0.115f, midHullR, midHullG, midHullB, capTop = true)
+      // Glowing lower keel cyan thruster/stabilizer band
+      m.addSpireFrustumZ(8, -0.105f, -0.088f, 0.117f, 0.119f, 0.0f, 0.96f, 0.83f, emissive = 1.35f)
+
+      // Central Reactor Heart & Octagonal Command Citadel (-0.09 -> +0.16)
+      m.addSpireFrustumZ(8, -0.09f, -0.02f, 0.138f, 0.156f, darkHullR, darkHullG, darkHullB, capBottom = true)
+      // Glowing Solar-Gold & Cyan Reactor Core Band around z = -0.01..+0.03
+      m.addSpireFrustumZ(12, -0.018f, 0.026f, 0.148f, 0.148f, 0.05f, 0.95f, 0.88f, emissive = 1.65f)
+      m.addSpireFrustumZ(8, 0.026f, 0.125f, 0.156f, 0.122f, midHullR, midHullG, midHullB, capTop = true)
+      m.addSpireFrustumZ(8, 0.125f, 0.225f, 0.102f, 0.072f, litBevelR, litBevelG, litBevelB, capTop = true)
+      // Upper Command Bridge & Tall Sensor Mast (+0.225 -> +0.40)
+      m.addSpireFrustumZ(8, 0.225f, 0.305f, 0.052f, 0.028f, midHullR, midHullG, midHullB)
+      m.addSpireFrustumZ(6, 0.305f, 0.405f, 0.018f, 0.002f, litBevelR, litBevelG, litBevelB)
+      // Apex Beacon Tip (HDR Solar-Gold / Cyan)
+      m.addSpireFrustumZ(8, 0.385f, 0.415f, 0.014f, 0.0f, 0.98f, 0.82f, 0.15f, emissive = 1.85f)
+
+      // Twinkling Cyan & Solar-Gold Micro-Windows across the 8 Citadel Faces
+      val octStep = (PI.toFloat() * 2f) / 8f
+      for (face in 0 until 8) {
+        val midAng = (face + 0.5f) * octStep
+        for (tier in 0 until 3) {
+          val zBot = 0.042f + tier * 0.025f
+          val zTop = zBot + 0.012f
+          val tierFrac = (zBot - 0.026f) / (0.125f - 0.026f)
+          val faceR = (0.156f + (0.122f - 0.156f) * tierFrac) * cos(octStep * 0.5f) + 0.003f
+          val isGold = (face + tier) % 3 == 0
+          val wr = if (isGold) 0.98f else 0.00f
+          val wg = if (isGold) 0.80f else 0.96f
+          val wb = if (isGold) 0.12f else 0.85f
+          m.addOrientedBoxXY(
+            angleRad = midAng,
+            rStart = faceR - 0.002f,
+            rEnd = faceR + 0.003f,
+            halfTangentialW = 0.018f,
+            zBottom = zBot,
+            zTop = zTop,
+            r = wr, g = wg, b = wb,
+            emissive = 1.42f,
+          )
+        }
+      }
+
+      // 8 Radial Collar Anchor Buttresses around z = -0.015..+0.025 (from r = 0.135 -> 0.185)
+      for (k in 0 until 8) {
+        val ang = k * (PI.toFloat() * 0.25f)
+        m.addOrientedBoxXY(
+          angleRad = ang,
+          rStart = 0.130f,
+          rEnd = 0.186f,
+          halfTangentialW = if (k % 2 == 0) 0.022f else 0.015f,
+          zBottom = -0.018f,
+          zTop = 0.026f,
+          r = midHullR, g = midHullG, b = midHullB,
+        )
+        m.addOrientedBoxXY(
+          angleRad = ang,
+          rStart = 0.168f,
+          rEnd = 0.192f,
+          halfTangentialW = 0.010f,
+          zBottom = 0.026f,
+          zTop = 0.035f,
+          r = 0.98f, g = 0.80f, b = 0.10f,
+          emissive = 1.35f,
+        )
+      }
+      return m
+    }
+
+    /**
+     * Builds the Outer Sovereign Docking Ring (`R = 0.44f`) with 8 armored docking clamps.
+     */
+    fun buildOuterDockingRingMesh(): StationMeshBuilder {
+      val m = StationMeshBuilder(8192)
+      m.addBeveledRingXY(
+        segments = 44,
+        majorR = 0.44f,
+        halfRadialW = 0.032f,
+        halfHeightZ = 0.019f,
+        hullR = 0.115f, hullG = 0.190f, hullB = 0.305f,
+        innerTrimR = 0.05f, innerTrimG = 0.82f, innerTrimB = 0.96f,
+        innerEmissive = 1.22f,
+        outerTrimR = 0.075f, outerTrimG = 0.130f, outerTrimB = 0.220f,
+        outerEmissive = 0f,
+      )
+      for (k in 0 until 8) {
+        val ang = k * (PI.toFloat() * 0.25f)
+        m.addOrientedBoxXY(
+          angleRad = ang,
+          rStart = 0.395f,
+          rEnd = 0.485f,
+          halfTangentialW = 0.020f,
+          zBottom = -0.024f,
+          zTop = 0.024f,
+          r = 0.165f, g = 0.260f, b = 0.395f,
+        )
+        // Solar-gold docking beacon light on each clamp
+        m.addOrientedBoxXY(
+          angleRad = ang,
+          rStart = 0.402f,
+          rEnd = 0.422f,
+          halfTangentialW = 0.009f,
+          zBottom = 0.024f,
+          zTop = 0.031f,
+          r = 0.98f, g = 0.80f, b = 0.10f,
+          emissive = 1.45f,
+        )
+      }
+      return m
+    }
+
+    /**
+     * Builds the Inner Counter-Rotating Gyro Ring (`R = 0.28f`).
+     */
+    fun buildInnerGyroRingMesh(): StationMeshBuilder {
+      val m = StationMeshBuilder(6144)
+      m.addBeveledRingXY(
+        segments = 36,
+        majorR = 0.28f,
+        halfRadialW = 0.022f,
+        halfHeightZ = 0.014f,
+        hullR = 0.140f, hullG = 0.225f, hullB = 0.355f,
+        innerTrimR = 0.98f, innerTrimG = 0.80f, innerTrimB = 0.12f,
+        innerEmissive = 1.28f,
+        outerTrimR = 0.00f, outerTrimG = 0.96f, outerTrimB = 0.83f,
+        outerEmissive = 1.15f,
+      )
+      for (k in 0 until 4) {
+        val ang = k * (PI.toFloat() * 0.5f) + 0.39f
+        m.addOrientedBoxXY(
+          angleRad = ang,
+          rStart = 0.248f,
+          rEnd = 0.312f,
+          halfTangentialW = 0.015f,
+          zBottom = -0.018f,
+          zTop = 0.018f,
+          r = 0.20f, g = 0.31f, b = 0.46f,
+        )
+      }
+      return m
+    }
+
+    /**
+     * Builds the **3D Containment Shield Ring (`R = 0.92f`) + 8 Golden-Cyan 3D Stabilizer Beams +
+     * 8 Outward-Bracing 3D Emitter Chevrons** visibly pushing outward to hold back storm collapse.
+     */
+    fun buildContainmentAssemblyMesh(): StationMeshBuilder {
+      val m = StationMeshBuilder(16384)
+      val shieldR = SANCTUARY_SHIELD_RADIUS
+
+      // 1. Crisp 3D Containment Shield Torus Ring at R = 0.92f
+      m.addBeveledRingXY(
+        segments = 64,
+        majorR = shieldR,
+        halfRadialW = 0.018f,
+        halfHeightZ = 0.012f,
+        hullR = 0.08f, hullG = 0.28f, hullB = 0.44f,
+        innerTrimR = 0.00f, innerTrimG = 0.96f, innerTrimB = 0.85f,
+        innerEmissive = 1.52f,
+        outerTrimR = 0.22f, outerTrimG = 0.74f, outerTrimB = 0.98f,
+        outerEmissive = 1.38f,
+      )
+
+      // 2. 8 Golden-Cyan 3D Stabilizer Beams (r = 0.175f -> 0.905f) + 8 Outward-Bracing Emitter Chevrons
+      val beamSteps = 6
+      val rStart = 0.175f
+      val rEnd = shieldR - 0.015f
+      for (k in 0 until 8) {
+        val ang = k * (PI.toFloat() * 0.25f)
+        val ca = cos(ang)
+        val sa = sin(ang)
+        val px = -sa
+        val py = ca
+
+        // Segmented 3D diamond-cross-section energy beam from Solar-Gold collar emitter to Bioluminescent Cyan shield rim
+        for (s in 0 until beamSteps) {
+          val t0 = s.toFloat() / beamSteps.toFloat()
+          val t1 = (s + 1).toFloat() / beamSteps.toFloat()
+          val rad0 = rStart + (rEnd - rStart) * t0
+          val rad1 = rStart + (rEnd - rStart) * t1
+          val w0 = 0.0105f * (1f - 0.22f * t0)
+          val w1 = 0.0105f * (1f - 0.22f * t1)
+          val h0 = 0.0085f * (1f - 0.20f * t0)
+          val h1 = 0.0085f * (1f - 0.20f * t1)
+
+          // Smooth gradient from Solar-Gold (#FACC15) near station collar -> Cyan (#00F5D4) into containment rim
+          val goldMix0 = (1f - t0 * 1.45f).coerceIn(0f, 1f)
+          val goldMix1 = (1f - t1 * 1.45f).coerceIn(0f, 1f)
+          val rCol0 = 0.00f * (1f - goldMix0) + 0.98f * goldMix0
+          val gCol0 = 0.96f * (1f - goldMix0) + 0.82f * goldMix0
+          val bCol0 = 0.84f * (1f - goldMix0) + 0.12f * goldMix0
+          val rCol1 = 0.00f * (1f - goldMix1) + 0.98f * goldMix1
+          val gCol1 = 0.96f * (1f - goldMix1) + 0.82f * goldMix1
+          val bCol1 = 0.84f * (1f - goldMix1) + 0.12f * goldMix1
+
+          val top0x = ca * rad0; val top0y = sa * rad0; val top0z = h0
+          val top1x = ca * rad1; val top1y = sa * rad1; val top1z = h1
+          val bot0x = ca * rad0; val bot0y = sa * rad0; val bot0z = -h0
+          val bot1x = ca * rad1; val bot1y = sa * rad1; val bot1z = -h1
+          val lft0x = ca * rad0 + px * w0; val lft0y = sa * rad0 + py * w0
+          val lft1x = ca * rad1 + px * w1; val lft1y = sa * rad1 + py * w1
+          val rgt0x = ca * rad0 - px * w0; val rgt0y = sa * rad0 - py * w0
+          val rgt1x = ca * rad1 - px * w1; val rgt1y = sa * rad1 - py * w1
+
+          val beamEmissive = 1.48f
+          // Top-left facet
+          m.addTriGradRadial(top0x, top0y, top0z, t0, rCol0, gCol0, bCol0, lft0x, lft0y, 0f, t0, rCol0, gCol0, bCol0, lft1x, lft1y, 0f, t1, rCol1, gCol1, bCol1, beamEmissive)
+          m.addTriGradRadial(top0x, top0y, top0z, t0, rCol0, gCol0, bCol0, lft1x, lft1y, 0f, t1, rCol1, gCol1, bCol1, top1x, top1y, top1z, t1, rCol1, gCol1, bCol1, beamEmissive)
+          // Top-right facet
+          m.addTriGradRadial(rgt0x, rgt0y, 0f, t0, rCol0, gCol0, bCol0, top0x, top0y, top0z, t0, rCol0, gCol0, bCol0, top1x, top1y, top1z, t1, rCol1, gCol1, bCol1, beamEmissive)
+          m.addTriGradRadial(rgt0x, rgt0y, 0f, t0, rCol0, gCol0, bCol0, top1x, top1y, top1z, t1, rCol1, gCol1, bCol1, rgt1x, rgt1y, 0f, t1, rCol1, gCol1, bCol1, beamEmissive)
+          // Bottom-left facet
+          m.addTriGradRadial(lft0x, lft0y, 0f, t0, rCol0, gCol0, bCol0, bot0x, bot0y, bot0z, t0, rCol0, gCol0, bCol0, bot1x, bot1y, bot1z, t1, rCol1, gCol1, bCol1, beamEmissive)
+          m.addTriGradRadial(lft0x, lft0y, 0f, t0, rCol0, gCol0, bCol0, bot1x, bot1y, bot1z, t1, rCol1, gCol1, bCol1, lft1x, lft1y, 0f, t1, rCol1, gCol1, bCol1, beamEmissive)
+          // Bottom-right facet
+          m.addTriGradRadial(bot0x, bot0y, bot0z, t0, rCol0, gCol0, bCol0, rgt0x, rgt0y, 0f, t0, rCol0, gCol0, bCol0, rgt1x, rgt1y, 0f, t1, rCol1, gCol1, bCol1, beamEmissive)
+          m.addTriGradRadial(bot0x, bot0y, bot0z, t0, rCol0, gCol0, bCol0, rgt1x, rgt1y, 0f, t1, rCol1, gCol1, bCol1, bot1x, bot1y, bot1z, t1, rCol1, gCol1, bCol1, beamEmissive)
+        }
+
+        // Armored Pylon Node Socket on the Containment Ring (r = 0.89f..0.95f)
+        m.addOrientedBoxXY(
+          angleRad = ang,
+          rStart = shieldR - 0.030f,
+          rEnd = shieldR + 0.026f,
+          halfTangentialW = 0.026f,
+          zBottom = -0.018f,
+          zTop = 0.018f,
+          r = 0.125f, g = 0.215f, b = 0.345f,
+        )
+
+        // 3D Outward-Bracing V-Shaped Emitter Chevron (r = 0.935f -> 1.035f) visibly bracing back the outer storm!
+        val chevBaseR = shieldR + 0.015f
+        val chevTipR = shieldR + 0.108f
+        val chevWingSpan = 0.068f
+        val tipX = ca * chevTipR
+        val tipY = sa * chevTipR
+        val wingLx = ca * chevBaseR + px * chevWingSpan
+        val wingLy = sa * chevBaseR + py * chevWingSpan
+        val wingRx = ca * chevBaseR - px * chevWingSpan
+        val wingRy = sa * chevBaseR - py * chevWingSpan
+        val throatX = ca * (chevBaseR + 0.028f)
+        val throatY = sa * (chevBaseR + 0.028f)
+
+        // Top armored solar-gold & cyan chevron wings
+        m.addTri(throatX, throatY, 0.016f, wingLx, wingLy, 0.004f, tipX, tipY, 0.0f, 0.98f, 0.82f, 0.14f, emissive = 1.46f, radialT = 1.0f)
+        m.addTri(throatX, throatY, 0.016f, tipX, tipY, 0.0f, wingRx, wingRy, 0.004f, 0.00f, 0.96f, 0.85f, emissive = 1.52f, radialT = 1.0f)
+        // Bottom chevron wings
+        m.addTri(throatX, throatY, -0.016f, tipX, tipY, 0.0f, wingLx, wingLy, -0.004f, 0.00f, 0.82f, 0.92f, emissive = 1.32f, radialT = 1.0f)
+        m.addTri(throatX, throatY, -0.016f, wingRx, wingRy, -0.004f, tipX, tipY, 0.0f, 0.98f, 0.78f, 0.12f, emissive = 1.32f, radialT = 1.0f)
+      }
+      return m
+    }
+  }
+}
+
+/**
+ * Live 3D Playfield Ship Entity undocking, patrolling in 3D inside `shieldR`, and docking back at the
+ * central 3D `NEXUS` Orbital Station.
  */
 private class HubTrafficShip(
   var shipId: Int = 1,
-  var routeType: Int = 0, // 0 = OUTER_TO_BREACH, 1 = BREACH_TO_OUTER, 2 = ACCRETION_RIM_SKIM
+  var routeType: Int = 0, // 0 = UNDOCK_TO_PATROL, 1 = SANCTUARY_ORBIT_PATROL, 2 = PATROL_TO_DOCK
   var progress: Float = 0f,
-  var durationSec: Float = 6.2f,
+  var durationSec: Float = 6.5f,
   var p0x: Float = 0f, var p0y: Float = 0f, var p0z: Float = 0f,
   var p1x: Float = 0f, var p1y: Float = 0f, var p1z: Float = 0f,
   var p2x: Float = 0f, var p2y: Float = 0f, var p2z: Float = 0f,
@@ -423,6 +987,7 @@ private class HubTrafficShip(
   var curX: Float = 0f, var curY: Float = 0f, var curZ: Float = 0f,
   var dirX: Float = 1f, var dirY: Float = 0f, var dirZ: Float = 0f,
   var bankRad: Float = 0f,
+  var orbitAnchorAngle: Float = 0f,
   val trailHistoryX: FloatArray = FloatArray(TRAIL_POINTS),
   val trailHistoryY: FloatArray = FloatArray(TRAIL_POINTS),
   val trailHistoryZ: FloatArray = FloatArray(TRAIL_POINTS),
@@ -434,15 +999,18 @@ private class HubTrafficShip(
 }
 
 /**
- * Hardware-accelerated OpenGL ES 3.0 (`#version 300 es`) Breached-Terminal `NEXUS` Rift Renderer:
+ * Hardware-accelerated OpenGL ES 3.0 (`#version 300 es`) `Abyssal-Garden` 3D Safe-Zone Sanctuary Renderer:
  * - Choreographer hardware VSYNC pacing (`eglSwapInterval(1)` + EMA `dt` smoothing).
- * - Pass 1A: Even-aligned `0.62x` linear `fboPlasma` + `1.0x` `fboScene` rendering gameplay-honest `#02050B`
- *   dark space, crisp `1.0x` multi-depth starlight, and a **Colossal High-Contrast Swirling Playfield Rift Singularity**
- *   at dead center (`(0.0, -0.02, 0.0)`, `r = 0.96`) with luminous cyan/sky/violet/magenta/gold spiral plasma ribbons
- *   whipping inward into a feathered `#000000` event-horizon throat (`voidKeepMask`).
- * - Pass 1B: Live Real-Ship Playfield Traffic (`max(5, onlinePilotShipIds.size)`) using a `GLES30` `5x2`
- *   `128x128` ship sprite atlas banking into and out of the central Rift breach with glowing ion wakes & warp flashes.
- * - Pass 2–5: Half-res bright-pass HDR Gaussian Bloom + haze-free ACES Filmic Tonemap.
+ * - Zero tie-dye magenta/rainbow swirls:
+ *   - Inside `r < shieldR`: Calm volumetric `#020814` -> `#041428` abyssal space-ocean clarity with angled
+ *     light shafts, gentle cyan/sapphire caustic shimmer (`0.10..0.22`), crisp `1.0x` starlight, and drifting
+ *     cyan/gold depth motes.
+ *   - At `r == shieldR`: Braced `#00F5D4` / `#38BDF8` 3D Containment Shield Ring (`R = 0.92f`) with 8
+ *     golden-cyan 3D stabilizer beams & 8 outward-bracing emitter chevrons radiating outward ripples.
+ *   - Outside `r > shieldR`: Dark encroaching abyssal storm clouds (`#050914`, `#0B192E`, `#1E3A5F` / `#0284C7`
+ *     ridges + fine ice-cyan veins) pressing inward and physically held back from collapsing in.
+ * - High-contrast 3D Multi-Ring `NEXUS` Orbital Citadel + live `128x128` Playfield ships patrolling in 3D under
+ *   hardware `GL_DEPTH_TEST`, finished with half-res `>1.05` HDR bloom & haze-free ACES Filmic Tonemap.
  */
 class NexusSpaceGlView(context: Context) :
   TextureView(context), TextureView.SurfaceTextureListener {
@@ -602,6 +1170,7 @@ class NexusSpaceGlView(context: Context) :
     private var emptyVao = 0
     private var progScene = 0
     private var progSceneUpsample = 0
+    private var progStation = 0
     private var progShipHull = 0
     private var progShipTrail = 0
     private var progBright = 0
@@ -622,6 +1191,23 @@ class NexusSpaceGlView(context: Context) :
     private var allocatedW = 0
     private var allocatedH = 0
 
+    // 4 Static 3D Station & Containment Mesh Groups
+    private var vaoSpire = 0
+    private var vboSpire = 0
+    private var countSpire = 0
+
+    private var vaoOuterRing = 0
+    private var vboOuterRing = 0
+    private var countOuterRing = 0
+
+    private var vaoInnerRing = 0
+    private var vboInnerRing = 0
+    private var countInnerRing = 0
+
+    private var vaoContainment = 0
+    private var vboContainment = 0
+    private var countContainment = 0
+
     private var texShipAtlas = 0
     private var bakedCustomShipVersion = -1
     private var vaoShipHull = 0
@@ -635,12 +1221,7 @@ class NexusSpaceGlView(context: Context) :
     private val shipTrailBuffer: FloatBuffer =
       ByteBuffer.allocateDirect(shipTrailScratch.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
 
-    private val tearPosSizeBuf = FloatArray(4)
-    private val tearStyleBuf = FloatArray(4)
-    private val tearColorABuf = FloatArray(3)
-    private val tearColorBBuf = FloatArray(3)
-
-    private val trafficRng = Random(0x66EE53L)
+    private val trafficRng = Random(0x68AB54L)
     private val trafficShips = ArrayList<HubTrafficShip>(28)
 
     private val vsyncLock = Object()
@@ -813,27 +1394,75 @@ class NexusSpaceGlView(context: Context) :
         GLES30.glGenVertexArrays(1, vaos, 0)
         emptyVao = vaos[0]
 
-        progScene = linkProgram("progScene", FULLSCREEN_TRI_VERT_GLSL, NEXUS_VOLUMETRIC_SCENE_FRAG_GLSL)
-        progSceneUpsample = linkProgram("progSceneUpsample", FULLSCREEN_TRI_VERT_GLSL, NEXUS_SCENE_UPSAMPLE_FRAG_GLSL)
+        progScene = linkProgram("progScene", FULLSCREEN_TRI_VERT_GLSL, ABYSSAL_SANCTUARY_SCENE_FRAG_GLSL)
+        progSceneUpsample = linkProgram("progSceneUpsample", FULLSCREEN_TRI_VERT_GLSL, ABYSSAL_SCENE_UPSAMPLE_FRAG_GLSL)
+        progStation = linkProgram("progStation", STATION_VERT_GLSL, STATION_FRAG_GLSL)
         progShipHull = linkProgram("progShipHull", SHIP_HULL_VERT_GLSL, SHIP_HULL_FRAG_GLSL)
         progShipTrail = linkProgram("progShipTrail", SHIP_TRAIL_VERT_GLSL, SHIP_TRAIL_FRAG_GLSL)
         progBright = linkProgram("progBright", FULLSCREEN_TRI_VERT_GLSL, BLOOM_BRIGHT_EXTRACT_FRAG_GLSL)
         progBlur = linkProgram("progBlur", FULLSCREEN_TRI_VERT_GLSL, BLOOM_GAUSSIAN_BLUR_FRAG_GLSL)
         progComposite = linkProgram("progComposite", FULLSCREEN_TRI_VERT_GLSL, FINAL_ACES_COMPOSITE_FRAG_GLSL)
 
-        if (progScene == 0 || progSceneUpsample == 0 || progBright == 0 || progBlur == 0 || progComposite == 0) {
+        if (progScene == 0 || progSceneUpsample == 0 || progStation == 0 || progBright == 0 || progBlur == 0 || progComposite == 0) {
           Log.e(
             "NexusSpaceGlView",
-            "Core GL program link failed: scene=$progScene upsample=$progSceneUpsample bright=$progBright blur=$progBlur comp=$progComposite",
+            "Core GL program link failed: scene=$progScene upsample=$progSceneUpsample station=$progStation bright=$progBright blur=$progBlur comp=$progComposite",
           )
           return false
         }
 
+        initStaticStationMeshes()
         initDynamicShipBuffers()
         true
       }.onFailure { err ->
         Log.e("NexusSpaceGlView", "initEglAndGl failed", err)
       }.getOrDefault(false)
+    }
+
+    private fun uploadStaticStationMesh(mesh: StationMeshBuilder): IntArray {
+      val vaoArr = IntArray(1)
+      val vboArr = IntArray(1)
+      GLES30.glGenVertexArrays(1, vaoArr, 0)
+      GLES30.glGenBuffers(1, vboArr, 0)
+      val vao = vaoArr[0]
+      val vbo = vboArr[0]
+      val buf = mesh.toFloatBuffer()
+      val stride = StationMeshBuilder.STRIDE_BYTES
+
+      GLES30.glBindVertexArray(vao)
+      GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vbo)
+      GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, mesh.floatCount * 4, buf, GLES30.GL_STATIC_DRAW)
+
+      // aPos (vec3)
+      GLES30.glEnableVertexAttribArray(0)
+      GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, stride, 0)
+      // aNormal (vec3)
+      GLES30.glEnableVertexAttribArray(1)
+      GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, stride, 3 * 4)
+      // aColor (vec3)
+      GLES30.glEnableVertexAttribArray(2)
+      GLES30.glVertexAttribPointer(2, 3, GLES30.GL_FLOAT, false, stride, 6 * 4)
+      // aEmissiveRadial (vec2: emissive, radialT)
+      GLES30.glEnableVertexAttribArray(3)
+      GLES30.glVertexAttribPointer(3, 2, GLES30.GL_FLOAT, false, stride, 9 * 4)
+
+      GLES30.glBindVertexArray(0)
+      GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+      return intArrayOf(vao, vbo, mesh.vertexCount)
+    }
+
+    private fun initStaticStationMeshes() {
+      val spireTriple = uploadStaticStationMesh(StationMeshBuilder.buildCentralSpireMesh())
+      vaoSpire = spireTriple[0]; vboSpire = spireTriple[1]; countSpire = spireTriple[2]
+
+      val outerTriple = uploadStaticStationMesh(StationMeshBuilder.buildOuterDockingRingMesh())
+      vaoOuterRing = outerTriple[0]; vboOuterRing = outerTriple[1]; countOuterRing = outerTriple[2]
+
+      val innerTriple = uploadStaticStationMesh(StationMeshBuilder.buildInnerGyroRingMesh())
+      vaoInnerRing = innerTriple[0]; vboInnerRing = innerTriple[1]; countInnerRing = innerTriple[2]
+
+      val containTriple = uploadStaticStationMesh(StationMeshBuilder.buildContainmentAssemblyMesh())
+      vaoContainment = containTriple[0]; vboContainment = containTriple[1]; countContainment = containTriple[2]
     }
 
     private fun initDynamicShipBuffers() {
@@ -913,74 +1542,93 @@ class NexusSpaceGlView(context: Context) :
       atlasBmp.recycle()
     }
 
+    private fun sanctuaryLocalToWorldX(lu: Float, lv: Float, ln: Float): Float {
+      val f = DEFAULT_SANCTUARY_FRAME
+      return STATION_CENTER_X + f.ux * lu + f.vx * lv + f.nx * ln
+    }
+
+    private fun sanctuaryLocalToWorldY(lu: Float, lv: Float, ln: Float): Float {
+      val f = DEFAULT_SANCTUARY_FRAME
+      return STATION_CENTER_Y + f.uy * lu + f.vy * lv + f.ny * ln
+    }
+
+    private fun sanctuaryLocalToWorldZ(lu: Float, lv: Float, ln: Float): Float {
+      val f = DEFAULT_SANCTUARY_FRAME
+      return STATION_CENTER_Z + f.uz * lu + f.vz * lv + f.nz * ln
+    }
+
+    /**
+     * Assigns smooth 3D Bezier routes inside the tilted `R = 0.92f` Safe-Zone Sanctuary:
+     * - `0`: Undock from the Outer Sovereign Docking Ring (`r ~ 0.24..0.44`) out to patrol orbit (`r ~ 0.62..0.80`).
+     * - `1`: Curved 3D Sanctuary Patrol Arc inside `shieldR` (varying local `ln` height so ships pass
+     *        both in front of and behind the 3D `NEXUS` Spire & Docking Rings under `GL_DEPTH_TEST`!).
+     * - `2`: Return approach banking inward from Sanctuary Patrol to dock at the station collar (`r ~ 0.22`).
+     */
     private fun assignNextRoute(ship: HubTrafficShip, slotIdx: Int, randomizeInitialProgress: Boolean) {
       val nextType =
         when {
-          randomizeInitialProgress -> if (slotIdx % 4 == 3) 2 else (slotIdx % 2)
-          ship.routeType == 0 -> if (trafficRng.nextFloat() < 0.25f) 2 else 1
-          ship.routeType == 1 -> 0
+          randomizeInitialProgress -> slotIdx % 3
+          ship.routeType == 0 -> 1
+          ship.routeType == 1 -> if (trafficRng.nextFloat() < 0.45f) 1 else 2
           else -> 0
         }
       ship.routeType = nextType
-      ship.durationSec = 4.8f + trafficRng.nextFloat() * 2.8f
-      ship.progress = if (randomizeInitialProgress) trafficRng.nextFloat() * 0.92f else 0f
+      ship.durationSec = 5.4f + trafficRng.nextFloat() * 2.6f
+      ship.progress = if (randomizeInitialProgress) trafficRng.nextFloat() * 0.90f else 0f
       ship.trailInitialized = false
 
-      val centerRift = NEXUS_3D_RIFT_TEARS[0]
-      val cx = centerRift.worldX
-      val cy = centerRift.worldY
-      val cz = centerRift.worldZ
-
-      // Outer corridor spawn/exit around the colossal center breach
-      val outerAng = (slotIdx * 1.15f) + trafficRng.nextFloat() * (PI.toFloat() * 2f)
-      val outerR = 1.18f + trafficRng.nextFloat() * 0.45f
-      val ox = cx + cos(outerAng) * outerR
-      val oy = cy + sin(outerAng) * (outerR * 0.86f)
-      val oz = cz + 0.22f + trafficRng.nextFloat() * 0.28f
-
-      // Spiraling entry/exit point along the inner event-horizon accretion rim (r ~ 0.34)
-      val swirlDelta = if (slotIdx % 2 == 0) 1.35f else -1.35f
-      val midAng = outerAng + swirlDelta * 0.55f
-      val throatAng = outerAng + swirlDelta
-      val throatR = 0.33f
-      val tx = cx + cos(throatAng) * throatR
-      val ty = cy + sin(throatAng) * throatR
-      val tz = cz + 0.04f
+      if (randomizeInitialProgress) {
+        ship.orbitAnchorAngle = (slotIdx * 1.18f) + trafficRng.nextFloat() * (PI.toFloat() * 2f)
+      }
+      val dir = if (slotIdx % 2 == 0) 1f else -1f
+      val a0 = ship.orbitAnchorAngle
+      val dockR = 0.24f + (slotIdx % 2) * 0.16f
+      val patrolR = 0.56f + (slotIdx % 4) * 0.068f
+      val hWave = if (slotIdx % 2 == 0) 0.09f else -0.08f
 
       when (nextType) {
-        0 -> { // OUTER_TO_BREACH: Real Playfield ship banks inward along spiral arm and dives into the Rift!
-          ship.p0x = ox; ship.p0y = oy; ship.p0z = oz
-          ship.p1x = cx + cos(outerAng + swirlDelta * 0.28f) * (outerR * 0.78f)
-          ship.p1y = cy + sin(outerAng + swirlDelta * 0.28f) * (outerR * 0.74f)
-          ship.p1z = oz * 0.75f + 0.12f
-          ship.p2x = cx + cos(midAng) * 0.58f
-          ship.p2y = cy + sin(midAng) * 0.58f
-          ship.p2z = cz + 0.16f
-          ship.p3x = tx; ship.p3y = ty; ship.p3z = tz
+        0 -> { // UNDOCK_TO_PATROL
+          val a1 = a0 + dir * 0.55f
+          val a2 = a0 + dir * 1.15f
+          val a3 = a0 + dir * 1.65f
+          ship.orbitAnchorAngle = a3
+          val u0 = cos(a0) * dockR; val v0 = sin(a0) * dockR; val n0 = 0.02f
+          val u1 = cos(a1) * (dockR + 0.14f); val v1 = sin(a1) * (dockR + 0.14f); val n1 = hWave * 0.65f
+          val u2 = cos(a2) * (patrolR * 0.92f); val v2 = sin(a2) * (patrolR * 0.92f); val n2 = hWave
+          val u3 = cos(a3) * patrolR; val v3 = sin(a3) * patrolR; val n3 = hWave * 0.45f
+          ship.p0x = sanctuaryLocalToWorldX(u0, v0, n0); ship.p0y = sanctuaryLocalToWorldY(u0, v0, n0); ship.p0z = sanctuaryLocalToWorldZ(u0, v0, n0)
+          ship.p1x = sanctuaryLocalToWorldX(u1, v1, n1); ship.p1y = sanctuaryLocalToWorldY(u1, v1, n1); ship.p1z = sanctuaryLocalToWorldZ(u1, v1, n1)
+          ship.p2x = sanctuaryLocalToWorldX(u2, v2, n2); ship.p2y = sanctuaryLocalToWorldY(u2, v2, n2); ship.p2z = sanctuaryLocalToWorldZ(u2, v2, n2)
+          ship.p3x = sanctuaryLocalToWorldX(u3, v3, n3); ship.p3y = sanctuaryLocalToWorldY(u3, v3, n3); ship.p3z = sanctuaryLocalToWorldZ(u3, v3, n3)
         }
-        1 -> { // BREACH_TO_OUTER: Ship erupts from the swirling Rift rim and banks outward into dark space
-          ship.p0x = tx; ship.p0y = ty; ship.p0z = tz
-          ship.p1x = cx + cos(throatAng + swirlDelta * 0.45f) * 0.56f
-          ship.p1y = cy + sin(throatAng + swirlDelta * 0.45f) * 0.56f
-          ship.p1z = cz + 0.18f
-          ship.p2x = cx + cos(outerAng + swirlDelta * 0.85f) * (outerR * 0.80f)
-          ship.p2y = cy + sin(outerAng + swirlDelta * 0.85f) * (outerR * 0.76f)
-          ship.p2z = oz * 0.82f
-          ship.p3x = cx + cos(outerAng + swirlDelta * 1.15f) * outerR
-          ship.p3y = cy + sin(outerAng + swirlDelta * 1.15f) * (outerR * 0.86f)
-          ship.p3z = oz
+        1 -> { // SANCTUARY_ORBIT_PATROL (inside r < 0.84f, weaving smoothly in 3D depth)
+          val sweep = dir * (1.75f + trafficRng.nextFloat() * 0.55f)
+          val a1 = a0 + sweep * 0.33f
+          val a2 = a0 + sweep * 0.67f
+          val a3 = a0 + sweep
+          ship.orbitAnchorAngle = a3
+          val u0 = cos(a0) * patrolR; val v0 = sin(a0) * patrolR; val n0 = hWave * 0.45f
+          val u1 = cos(a1) * (patrolR * 1.08f); val v1 = sin(a1) * (patrolR * 1.08f); val n1 = -hWave * 0.85f
+          val u2 = cos(a2) * (patrolR * 1.06f); val v2 = sin(a2) * (patrolR * 1.06f); val n2 = hWave * 0.90f
+          val u3 = cos(a3) * patrolR; val v3 = sin(a3) * patrolR; val n3 = -hWave * 0.35f
+          ship.p0x = sanctuaryLocalToWorldX(u0, v0, n0); ship.p0y = sanctuaryLocalToWorldY(u0, v0, n0); ship.p0z = sanctuaryLocalToWorldZ(u0, v0, n0)
+          ship.p1x = sanctuaryLocalToWorldX(u1, v1, n1); ship.p1y = sanctuaryLocalToWorldY(u1, v1, n1); ship.p1z = sanctuaryLocalToWorldZ(u1, v1, n1)
+          ship.p2x = sanctuaryLocalToWorldX(u2, v2, n2); ship.p2y = sanctuaryLocalToWorldY(u2, v2, n2); ship.p2z = sanctuaryLocalToWorldZ(u2, v2, n2)
+          ship.p3x = sanctuaryLocalToWorldX(u3, v3, n3); ship.p3y = sanctuaryLocalToWorldY(u3, v3, n3); ship.p3z = sanctuaryLocalToWorldZ(u3, v3, n3)
         }
-        else -> { // ACCRETION_RIM_SKIM: High-speed curved skim along the glowing cyan/violet accretion rim
-          val a0 = outerAng
-          val dir = if (slotIdx % 2 == 0) 1f else -1f
-          val skimR = 0.68f + (slotIdx % 3) * 0.09f
-          val a1 = a0 + dir * 0.95f
-          val a2 = a0 + dir * 1.90f
-          val a3 = a0 + dir * 2.85f
-          ship.p0x = cx + cos(a0) * skimR; ship.p0y = cy + sin(a0) * skimR; ship.p0z = cz + 0.14f
-          ship.p1x = cx + cos(a1) * (skimR * 1.14f); ship.p1y = cy + sin(a1) * (skimR * 1.14f); ship.p1z = cz + 0.26f
-          ship.p2x = cx + cos(a2) * (skimR * 1.14f); ship.p2y = cy + sin(a2) * (skimR * 1.14f); ship.p2z = cz + 0.22f
-          ship.p3x = cx + cos(a3) * skimR; ship.p3y = cy + sin(a3) * skimR; ship.p3z = cz + 0.12f
+        else -> { // PATROL_TO_DOCK
+          val a1 = a0 + dir * 0.55f
+          val a2 = a0 + dir * 1.10f
+          val a3 = a0 + dir * 1.55f
+          ship.orbitAnchorAngle = a3
+          val u0 = cos(a0) * patrolR; val v0 = sin(a0) * patrolR; val n0 = -hWave * 0.35f
+          val u1 = cos(a1) * (patrolR * 0.86f); val v1 = sin(a1) * (patrolR * 0.86f); val n1 = hWave * 0.55f
+          val u2 = cos(a2) * (dockR + 0.12f); val v2 = sin(a2) * (dockR + 0.12f); val n2 = 0.04f
+          val u3 = cos(a3) * dockR; val v3 = sin(a3) * dockR; val n3 = 0.015f
+          ship.p0x = sanctuaryLocalToWorldX(u0, v0, n0); ship.p0y = sanctuaryLocalToWorldY(u0, v0, n0); ship.p0z = sanctuaryLocalToWorldZ(u0, v0, n0)
+          ship.p1x = sanctuaryLocalToWorldX(u1, v1, n1); ship.p1y = sanctuaryLocalToWorldY(u1, v1, n1); ship.p1z = sanctuaryLocalToWorldZ(u1, v1, n1)
+          ship.p2x = sanctuaryLocalToWorldX(u2, v2, n2); ship.p2y = sanctuaryLocalToWorldY(u2, v2, n2); ship.p2z = sanctuaryLocalToWorldZ(u2, v2, n2)
+          ship.p3x = sanctuaryLocalToWorldX(u3, v3, n3); ship.p3y = sanctuaryLocalToWorldY(u3, v3, n3); ship.p3z = sanctuaryLocalToWorldZ(u3, v3, n3)
         }
       }
     }
@@ -1012,17 +1660,12 @@ class NexusSpaceGlView(context: Context) :
       ship.dirY = vy
       ship.dirZ = vz
       val turnSignal = (vx * prevDy - vy * prevDx) * 10f
-      ship.bankRad = (ship.bankRad * 0.85f + turnSignal.coerceIn(-0.68f, 0.68f) * 0.15f)
+      ship.bankRad = (ship.bankRad * 0.85f + turnSignal.coerceIn(-0.65f, 0.65f) * 0.15f)
     }
 
     private fun stepTrafficSimulation(dtSec: Float) {
       val onlineIds = onlinePilotShipIds
-      val desiredCount =
-        if (isSplashMode) {
-          5
-        } else {
-          max(6, onlineIds.size).coerceAtMost(24)
-        }
+      val desiredCount = max(5, onlineIds.size).coerceAtMost(24)
 
       while (trafficShips.size < desiredCount) {
         val idx = trafficShips.size
@@ -1050,7 +1693,7 @@ class NexusSpaceGlView(context: Context) :
             ((i * 3 + 1) % 10) + 1
           }
 
-        s.progress += dtSec / max(2.4f, s.durationSec)
+        s.progress += dtSec / max(2.8f, s.durationSec)
         if (s.progress >= 1f) {
           assignNextRoute(s, i, randomizeInitialProgress = false)
         }
@@ -1058,7 +1701,7 @@ class NexusSpaceGlView(context: Context) :
 
         if (!s.trailInitialized) {
           for (k in 0 until HubTrafficShip.TRAIL_POINTS) {
-            val back = k * 0.018f
+            val back = k * 0.016f
             s.trailHistoryX[k] = s.curX - s.dirX * back
             s.trailHistoryY[k] = s.curY - s.dirY * back
             s.trailHistoryZ[k] = s.curZ - s.dirZ * back
@@ -1070,15 +1713,15 @@ class NexusSpaceGlView(context: Context) :
               hypot((s.curX - s.trailHistoryX[0]).toDouble(), (s.curY - s.trailHistoryY[0]).toDouble()),
               (s.curZ - s.trailHistoryZ[0]).toDouble(),
             ).toFloat()
-          if (headDist >= 0.020f) {
+          if (headDist >= 0.018f) {
             for (k in HubTrafficShip.TRAIL_POINTS - 1 downTo 1) {
               s.trailHistoryX[k] = s.trailHistoryX[k - 1]
               s.trailHistoryY[k] = s.trailHistoryY[k - 1]
               s.trailHistoryZ[k] = s.trailHistoryZ[k - 1]
             }
-            s.trailHistoryX[0] = s.curX - s.dirX * 0.030f
-            s.trailHistoryY[0] = s.curY - s.dirY * 0.030f
-            s.trailHistoryZ[0] = s.curZ - s.dirZ * 0.030f
+            s.trailHistoryX[0] = s.curX - s.dirX * 0.026f
+            s.trailHistoryY[0] = s.curY - s.dirY * 0.026f
+            s.trailHistoryZ[0] = s.curZ - s.dirZ * 0.026f
           }
         }
       }
@@ -1230,6 +1873,65 @@ class NexusSpaceGlView(context: Context) :
       return intArrayOf(fbo, tex)
     }
 
+    private fun drawStationMeshGroup(
+      vao: Int,
+      vertCount: Int,
+      spinRad: Float,
+      extraPitchX: Float = 0f,
+    ) {
+      if (vao == 0 || vertCount <= 0) return
+      val f =
+        if (abs(extraPitchX) > 1e-4f) {
+          buildSanctuaryFrame3D(SANCTUARY_PITCH_X_RAD + extraPitchX, SANCTUARY_ROLL_Z_RAD)
+        } else {
+          DEFAULT_SANCTUARY_FRAME
+        }
+      val cs = cos(spinRad)
+      val ss = sin(spinRad)
+      val rUx = f.ux * cs + f.vx * ss
+      val rUy = f.uy * cs + f.vy * ss
+      val rUz = f.uz * cs + f.vz * ss
+      val rVx = -f.ux * ss + f.vx * cs
+      val rVy = -f.uy * ss + f.vy * cs
+      val rVz = -f.uz * ss + f.vz * cs
+
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progStation, "uAxisU"), rUx, rUy, rUz)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progStation, "uAxisV"), rVx, rVy, rVz)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progStation, "uAxisN"), f.nx, f.ny, f.nz)
+
+      GLES30.glBindVertexArray(vao)
+      GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, vertCount)
+    }
+
+    private fun drawOrbitalCitadelAndContainment3D(basis: CameraBasis3D, timeSec: Float) {
+      if (progStation == 0) return
+      GLES30.glDisable(GLES30.GL_BLEND)
+      GLES30.glEnable(GLES30.GL_DEPTH_TEST)
+      GLES30.glDepthFunc(GLES30.GL_LEQUAL)
+      GLES30.glDepthMask(true)
+
+      GLES30.glUseProgram(progStation)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progStation, "uOrigin"), STATION_CENTER_X, STATION_CENTER_Y, STATION_CENTER_Z)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progStation, "uCamPos"), basis.camX, basis.camY, basis.camZ)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progStation, "uCamFwd"), basis.fwdX, basis.fwdY, basis.fwdZ)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progStation, "uCamRight"), basis.rightX, basis.rightY, basis.rightZ)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progStation, "uCamUp"), basis.upX, basis.upY, basis.upZ)
+      GLES30.glUniform1f(GLES30.glGetUniformLocation(progStation, "uTanHalfFovY"), basis.tanHalfFovY)
+      GLES30.glUniform1f(GLES30.glGetUniformLocation(progStation, "uAspect"), basis.aspect)
+      GLES30.glUniform1f(GLES30.glGetUniformLocation(progStation, "uTime"), timeSec)
+
+      // 1. Central Octagonal Command Spire (slow regal rotation)
+      drawStationMeshGroup(vaoSpire, countSpire, spinRad = timeSec * 0.14f)
+      // 2. Outer Sovereign Docking Ring (R = 0.44f)
+      drawStationMeshGroup(vaoOuterRing, countOuterRing, spinRad = timeSec * 0.30f)
+      // 3. Inner Counter-Rotating Gyro Ring (R = 0.28f with subtle secondary gimbal cant)
+      drawStationMeshGroup(vaoInnerRing, countInnerRing, spinRad = -timeSec * 0.52f, extraPitchX = 0.11f * sin(timeSec * 0.35f))
+      // 4. 3D Containment Shield Ring (R = 0.92f) + 8 Golden-Cyan 3D Stabilizer Beams + 8 Outward Emitter Chevrons
+      drawStationMeshGroup(vaoContainment, countContainment, spinRad = timeSec * 0.045f)
+
+      GLES30.glBindVertexArray(0)
+    }
+
     private fun drawLiveShipTraffic3D(basis: CameraBasis3D) {
       if (progShipHull == 0 || progShipTrail == 0 || texShipAtlas == 0 || trafficShips.isEmpty()) return
 
@@ -1263,24 +1965,15 @@ class NexusSpaceGlView(context: Context) :
         val p = s.progress.coerceIn(0f, 1f)
 
         var hullScale = 1f
-        var warpFlash = 0f
-        if (s.routeType == 0) { // OUTER_TO_BREACH
-          if (p < 0.14f) hullScale = 0.28f + 0.72f * (p / 0.14f)
-          if (p > 0.80f) {
-            val k = ((p - 0.80f) / 0.20f).coerceIn(0f, 1f)
-            hullScale = 1f - 0.90f * k
-            warpFlash = sin(k * PI.toFloat())
-          }
-        } else if (s.routeType == 1) { // BREACH_TO_OUTER
-          if (p < 0.18f) {
-            val k = (p / 0.18f).coerceIn(0f, 1f)
-            hullScale = 0.12f + 0.88f * k
-            warpFlash = sin(k * PI.toFloat())
-          }
-          if (p > 0.86f) hullScale = 1f - 0.72f * ((p - 0.86f) / 0.14f)
-        } else {
-          if (p < 0.12f) hullScale = 0.25f + 0.75f * (p / 0.12f)
-          if (p > 0.88f) hullScale = 1f - 0.75f * ((p - 0.88f) / 0.12f)
+        var dockGlow = 0f
+        if (s.routeType == 0 && p < 0.16f) { // UNDOCKING
+          val k = (p / 0.16f).coerceIn(0f, 1f)
+          hullScale = 0.38f + 0.62f * k
+          dockGlow = sin(k * PI.toFloat()) * 0.85f
+        } else if (s.routeType == 2 && p > 0.84f) { // DOCKING
+          val k = ((p - 0.84f) / 0.16f).coerceIn(0f, 1f)
+          hullScale = 1f - 0.62f * k
+          dockGlow = sin(k * PI.toFloat()) * 0.85f
         }
 
         var toCamX = basis.camX - s.curX
@@ -1305,7 +1998,7 @@ class NexusSpaceGlView(context: Context) :
         val bankedWy = wy * cb + dy * sb
         val bankedWz = wz * cb + dz * sb
 
-        val halfSize = 0.072f * hullScale
+        val halfSize = 0.064f * hullScale
         val nx = s.dirX * halfSize
         val ny = s.dirY * halfSize
         val nz = s.dirZ * halfSize
@@ -1325,7 +2018,7 @@ class NexusSpaceGlView(context: Context) :
         val nbX = s.curX + nx - sx; val nbY = s.curY + ny - sy; val nbZ = s.curZ + nz - sz
         val sbX = s.curX - nx - sx; val sbY = s.curY - ny - sy; val sbZ = s.curZ - nz - sz
 
-        val boostGlow = 1.0f + warpFlash * 2.2f
+        val boostGlow = 1.0f + dockGlow * 1.15f
         pushHullVert(stX, stY, stZ, u0, v0, 1f, boostGlow)
         pushHullVert(ntX, ntY, ntZ, u1, v0, 1f, boostGlow)
         pushHullVert(nbX, nbY, nbZ, u1, v1, 1f, boostGlow)
@@ -1338,18 +2031,18 @@ class NexusSpaceGlView(context: Context) :
         val trG = if (isGoldTrail) 0.80f else 0.96f
         val trB = if (isGoldTrail) 0.14f else 0.85f
 
-        var prevLx = s.curX - nx * 0.72f + wx * (0.017f * hullScale)
-        var prevLy = s.curY - ny * 0.72f + wy * (0.017f * hullScale)
-        var prevLz = s.curZ - nz * 0.72f + wz * (0.017f * hullScale)
-        var prevRx = s.curX - nx * 0.72f - wx * (0.017f * hullScale)
-        var prevRy = s.curY - ny * 0.72f - wy * (0.017f * hullScale)
-        var prevRz = s.curZ - nz * 0.72f - wz * (0.017f * hullScale)
-        var prevAlpha = 0.90f * hullScale
+        var prevLx = s.curX - nx * 0.72f + wx * (0.014f * hullScale)
+        var prevLy = s.curY - ny * 0.72f + wy * (0.014f * hullScale)
+        var prevLz = s.curZ - nz * 0.72f + wz * (0.014f * hullScale)
+        var prevRx = s.curX - nx * 0.72f - wx * (0.014f * hullScale)
+        var prevRy = s.curY - ny * 0.72f - wy * (0.014f * hullScale)
+        var prevRz = s.curZ - nz * 0.72f - wz * (0.014f * hullScale)
+        var prevAlpha = 0.82f * hullScale
 
         for (k in 0 until HubTrafficShip.TRAIL_POINTS) {
           val frac = 1f - (k + 1).toFloat() / HubTrafficShip.TRAIL_POINTS.toFloat()
-          val wHalf = 0.016f * frac * hullScale
-          val curAlpha = 0.70f * frac * frac * hullScale
+          val wHalf = 0.013f * frac * hullScale
+          val curAlpha = 0.62f * frac * frac * hullScale
           val tx = s.trailHistoryX[k]
           val ty = s.trailHistoryY[k]
           val tz = s.trailHistoryZ[k]
@@ -1367,36 +2060,6 @@ class NexusSpaceGlView(context: Context) :
           prevRx = curRx; prevRy = curRy; prevRz = curRz
           prevAlpha = curAlpha
         }
-
-        if (warpFlash > 0.04f) {
-          val flashR = (0.058f + 0.082f * warpFlash)
-          val fx = basis.rightX * flashR
-          val fy = basis.rightY * flashR
-          val fz = basis.rightZ * flashR
-          val ux = basis.upX * flashR
-          val uy = basis.upY * flashR
-          val uz = basis.upZ * flashR
-          val fa = warpFlash * 1.40f
-          val pTopX = s.curX + ux; val pTopY = s.curY + uy; val pTopZ = s.curZ + uz
-          val pBotX = s.curX - ux; val pBotY = s.curY - uy; val pBotZ = s.curZ - uz
-          val pRgtX = s.curX + fx; val pRgtY = s.curY + fy; val pRgtZ = s.curZ + fz
-          val pLftX = s.curX - fx; val pLftY = s.curY - fy; val pLftZ = s.curZ - fz
-          pushTrailVert(s.curX, s.curY, s.curZ, 1.0f, 1.0f, 1.0f, fa)
-          pushTrailVert(pTopX, pTopY, pTopZ, 0.0f, 0.96f, 0.85f, 0f)
-          pushTrailVert(pRgtX, pRgtY, pRgtZ, 0.66f, 0.33f, 0.97f, 0f)
-
-          pushTrailVert(s.curX, s.curY, s.curZ, 1.0f, 1.0f, 1.0f, fa)
-          pushTrailVert(pRgtX, pRgtY, pRgtZ, 0.66f, 0.33f, 0.97f, 0f)
-          pushTrailVert(pBotX, pBotY, pBotZ, 0.0f, 0.96f, 0.85f, 0f)
-
-          pushTrailVert(s.curX, s.curY, s.curZ, 1.0f, 1.0f, 1.0f, fa)
-          pushTrailVert(pBotX, pBotY, pBotZ, 0.0f, 0.96f, 0.85f, 0f)
-          pushTrailVert(pLftX, pLftY, pLftZ, 0.66f, 0.33f, 0.97f, 0f)
-
-          pushTrailVert(s.curX, s.curY, s.curZ, 1.0f, 1.0f, 1.0f, fa)
-          pushTrailVert(pLftX, pLftY, pLftZ, 0.66f, 0.33f, 0.97f, 0f)
-          pushTrailVert(pTopX, pTopY, pTopZ, 0.0f, 0.96f, 0.85f, 0f)
-        }
       }
 
       if (hullFloats > 0) {
@@ -1405,8 +2068,7 @@ class NexusSpaceGlView(context: Context) :
         shipHullBuffer.position(0)
 
         GLES30.glEnable(GLES30.GL_BLEND)
-        // Multiply src by DST_ALPHA (voidKeepMask) so ships diving into the center Rift vanish cleanly into the event horizon!
-        GLES30.glBlendFunc(GLES30.GL_DST_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glDepthMask(true)
 
         GLES30.glUseProgram(progShipHull)
@@ -1433,7 +2095,7 @@ class NexusSpaceGlView(context: Context) :
         shipTrailBuffer.position(0)
 
         GLES30.glEnable(GLES30.GL_BLEND)
-        GLES30.glBlendFunc(GLES30.GL_DST_ALPHA, GLES30.GL_ONE)
+        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE)
         GLES30.glDepthMask(false)
 
         GLES30.glUseProgram(progShipTrail)
@@ -1469,23 +2131,19 @@ class NexusSpaceGlView(context: Context) :
           isSplashMode = isSplashMode,
         )
 
-      val centerSpec = NEXUS_3D_RIFT_TEARS[0]
-      val riftHalfR = if (isSplashMode) 0.88f else centerSpec.halfWidthWorld
-      val isFocused = (!isSplashMode && (focusedTearIndex == 0 || activeDiveTearIdx >= 0))
-      tearPosSizeBuf[0] = centerSpec.worldX
-      tearPosSizeBuf[1] = if (isSplashMode) 0.0f else centerSpec.worldY
-      tearPosSizeBuf[2] = riftHalfR
-      tearPosSizeBuf[3] = riftHalfR
+      val f = DEFAULT_SANCTUARY_FRAME
+      val focusGain = if (!isSplashMode && (focusedTearIndex == 0 || activeDiveTearIdx >= 0)) 1.16f else 1.0f
+      val spinPhase = timeSec * 0.045f
+      val cs = cos(spinPhase)
+      val ss = sin(spinPhase)
+      val planeUx = f.ux * cs + f.vx * ss
+      val planeUy = f.uy * cs + f.vy * ss
+      val planeUz = f.uz * cs + f.vz * ss
+      val planeVx = -f.ux * ss + f.vx * cs
+      val planeVy = -f.uy * ss + f.vy * cs
+      val planeVz = -f.uz * ss + f.vz * cs
 
-      tearStyleBuf[0] = centerSpec.worldZ
-      tearStyleBuf[1] = 0.0f
-      tearStyleBuf[2] = 0.0f
-      tearStyleBuf[3] = if (isFocused) 1.24f else 1.0f
-
-      tearColorABuf[0] = 0.00f; tearColorABuf[1] = 0.96f; tearColorABuf[2] = 0.83f // #00F5D4 cyan
-      tearColorBBuf[0] = 0.66f; tearColorBBuf[1] = 0.33f; tearColorBBuf[2] = 0.97f // #A855F7 violet
-
-      // PASS 1A-1: 0.62x Split-Res Colossal Swirling Playfield Rift Singularity -> fboPlasma
+      // PASS 1A-1: 0.62x Split-Res Abyssal-Garden Safe-Zone Sanctuary + Outer Storm Backdrop -> fboPlasma
       GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboPlasma)
       GLES30.glViewport(0, 0, plasmaW, plasmaH)
       GLES30.glColorMask(true, true, true, true)
@@ -1502,20 +2160,21 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glUniform3f(GLES30.glGetUniformLocation(progScene, "uCamRight"), basis.rightX, basis.rightY, basis.rightZ)
       GLES30.glUniform3f(GLES30.glGetUniformLocation(progScene, "uCamUp"), basis.upX, basis.upY, basis.upZ)
       GLES30.glUniform1f(GLES30.glGetUniformLocation(progScene, "uTanHalfFovY"), basis.tanHalfFovY)
-      GLES30.glUniform4fv(GLES30.glGetUniformLocation(progScene, "uTearPosSize"), 1, tearPosSizeBuf, 0)
-      GLES30.glUniform4fv(GLES30.glGetUniformLocation(progScene, "uTearStyle"), 1, tearStyleBuf, 0)
-      GLES30.glUniform3fv(GLES30.glGetUniformLocation(progScene, "uTearColorA"), 1, tearColorABuf, 0)
-      GLES30.glUniform3fv(GLES30.glGetUniformLocation(progScene, "uTearColorB"), 1, tearColorBBuf, 0)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progScene, "uPlaneOrigin"), STATION_CENTER_X, STATION_CENTER_Y, STATION_CENTER_Z)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progScene, "uPlaneU"), planeUx, planeUy, planeUz)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progScene, "uPlaneV"), planeVx, planeVy, planeVz)
+      GLES30.glUniform3f(GLES30.glGetUniformLocation(progScene, "uPlaneN"), f.nx, f.ny, f.nz)
+      GLES30.glUniform2f(GLES30.glGetUniformLocation(progScene, "uShieldCfg"), SANCTUARY_SHIELD_RADIUS, focusGain)
       GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
 
-      // PASS 1A-2: Full-Res 1.0x Upsample + Crisp Multi-Depth Starlight + Feathered #000000 Throat Mask -> fboScene
+      // PASS 1A-2: Full-Res 1.0x Upsample + Crisp Multi-Depth Starlight -> fboScene
       GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboScene)
       GLES30.glViewport(0, 0, w, h)
       GLES30.glColorMask(true, true, true, true)
       GLES30.glDepthMask(true)
       GLES30.glDisable(GLES30.GL_DEPTH_TEST)
       GLES30.glDisable(GLES30.GL_BLEND)
-      GLES30.glClearColor(0.008f, 0.020f, 0.043f, 1.0f)
+      GLES30.glClearColor(0.008f, 0.031f, 0.078f, 1.0f)
       GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
 
       GLES30.glUseProgram(progSceneUpsample)
@@ -1529,16 +2188,12 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glUniform3f(GLES30.glGetUniformLocation(progSceneUpsample, "uCamRight"), basis.rightX, basis.rightY, basis.rightZ)
       GLES30.glUniform3f(GLES30.glGetUniformLocation(progSceneUpsample, "uCamUp"), basis.upX, basis.upY, basis.upZ)
       GLES30.glUniform1f(GLES30.glGetUniformLocation(progSceneUpsample, "uTanHalfFovY"), basis.tanHalfFovY)
-      GLES30.glUniform4fv(GLES30.glGetUniformLocation(progSceneUpsample, "uTearPosSize"), 1, tearPosSizeBuf, 0)
-      GLES30.glUniform4fv(GLES30.glGetUniformLocation(progSceneUpsample, "uTearStyle"), 1, tearStyleBuf, 0)
       GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
 
-      // PASS 1B: Full-Res 1.0x Live Real-Ship Playfield Traffic Banking Into & Out Of the Rift Breach
-      GLES30.glColorMask(true, true, true, false)
-      GLES30.glEnable(GLES30.GL_DEPTH_TEST)
-      GLES30.glDepthFunc(GLES30.GL_LEQUAL)
-      GLES30.glDepthMask(true)
+      // PASS 1B: 3D Multi-Ring NEXUS Orbital Citadel + 8 Golden-Cyan Stabilizer Beams + Containment Shield Ring
+      drawOrbitalCitadelAndContainment3D(basis, timeSec)
 
+      // PASS 1C: Live Real-Ship Sanctuary Patrols (128x128 Playfield Ships under GL_DEPTH_TEST)
       drawLiveShipTraffic3D(basis)
 
       GLES30.glDisable(GLES30.GL_DEPTH_TEST)
@@ -1548,7 +2203,7 @@ class NexusSpaceGlView(context: Context) :
       val bh = max(1, h / 2)
       GLES30.glBindVertexArray(emptyVao)
 
-      // PASS 2: Half-Res High-Threshold (>1.02) HDR Bright-Pass Extraction -> fboBloomA
+      // PASS 2: Half-Res High-Threshold (>1.05) HDR Bright-Pass Extraction -> fboBloomA
       GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fboBloomA)
       GLES30.glViewport(0, 0, bw, bh)
       GLES30.glUseProgram(progBright)
@@ -1564,7 +2219,7 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
       GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texBloomA)
       GLES30.glUniform1i(GLES30.glGetUniformLocation(progBlur, "uTex"), 0)
-      GLES30.glUniform2f(GLES30.glGetUniformLocation(progBlur, "uDir"), 1.35f / bw.toFloat(), 0f)
+      GLES30.glUniform2f(GLES30.glGetUniformLocation(progBlur, "uDir"), 1.28f / bw.toFloat(), 0f)
       GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
 
       // PASS 4: Vertical Separable 9-Tap Gaussian Blur -> fboBloomA
@@ -1572,10 +2227,10 @@ class NexusSpaceGlView(context: Context) :
       GLES30.glViewport(0, 0, bw, bh)
       GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
       GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texBloomB)
-      GLES30.glUniform2f(GLES30.glGetUniformLocation(progBlur, "uDir"), 0f, 1.35f / bh.toFloat())
+      GLES30.glUniform2f(GLES30.glGetUniformLocation(progBlur, "uDir"), 0f, 1.28f / bh.toFloat())
       GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
 
-      // PASS 5: Final ACES Filmic Tonemap + Void-Masked HDR Bloom + Deep-Space Motes -> Default Screen
+      // PASS 5: Final ACES Filmic Tonemap + Crisp HDR Bloom + Bioluminescent Abyssal Motes -> Default Screen
       GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
       GLES30.glViewport(0, 0, w, h)
       GLES30.glUseProgram(progComposite)
@@ -1663,11 +2318,11 @@ class NexusSpaceGlView(context: Context) :
         if (eglDisplay != EGL14.EGL_NO_DISPLAY && eglContext != EGL14.EGL_NO_CONTEXT) {
           deleteFramebuffers()
           if (texShipAtlas != 0) GLES30.glDeleteTextures(1, intArrayOf(texShipAtlas), 0)
-          val vaos = intArrayOf(emptyVao, vaoShipHull, vaoShipTrail)
+          val vaos = intArrayOf(emptyVao, vaoSpire, vaoOuterRing, vaoInnerRing, vaoContainment, vaoShipHull, vaoShipTrail)
           for (v in vaos) if (v != 0) GLES30.glDeleteVertexArrays(1, intArrayOf(v), 0)
-          val vbos = intArrayOf(vboShipHull, vboShipTrail)
+          val vbos = intArrayOf(vboSpire, vboOuterRing, vboInnerRing, vboContainment, vboShipHull, vboShipTrail)
           for (b in vbos) if (b != 0) GLES30.glDeleteBuffers(1, intArrayOf(b), 0)
-          val progs = intArrayOf(progScene, progSceneUpsample, progShipHull, progShipTrail, progBright, progBlur, progComposite)
+          val progs = intArrayOf(progScene, progSceneUpsample, progStation, progShipHull, progShipTrail, progBright, progBlur, progComposite)
           for (p in progs) if (p != 0) GLES30.glDeleteProgram(p)
         }
       }
@@ -1695,6 +2350,110 @@ void main() {
     vec2 pos = vec2((gl_VertexID == 1) ? 3.0 : -1.0, (gl_VertexID == 2) ? 3.0 : -1.0);
     vUv = pos * 0.5 + 0.5;
     gl_Position = vec4(pos, 0.0, 1.0);
+}
+"""
+
+private const val STATION_VERT_GLSL =
+  """#version 300 es
+precision highp float;
+precision highp int;
+
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec3 aColor;
+layout(location = 3) in vec2 aEmissiveRadial;
+
+uniform vec3 uOrigin;
+uniform vec3 uAxisU;
+uniform vec3 uAxisV;
+uniform vec3 uAxisN;
+
+uniform vec3 uCamPos;
+uniform vec3 uCamFwd;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform float uTanHalfFovY;
+uniform float uAspect;
+
+out vec3 vWorldPos;
+out vec3 vWorldNormal;
+out vec3 vColor;
+out vec2 vEmissiveRadial;
+
+void main() {
+    vec3 worldPos = uOrigin + uAxisU * aPos.x + uAxisV * aPos.y + uAxisN * aPos.z;
+    vec3 worldNrm = normalize(uAxisU * aNormal.x + uAxisV * aNormal.y + uAxisN * aNormal.z);
+
+    vWorldPos = worldPos;
+    vWorldNormal = worldNrm;
+    vColor = aColor;
+    vEmissiveRadial = aEmissiveRadial;
+
+    vec3 d = worldPos - uCamPos;
+    float vx = dot(d, uCamRight);
+    float vy = dot(d, uCamUp);
+    float vz = max(0.08, dot(d, uCamFwd));
+
+    float clipX = vx / (uAspect * uTanHalfFovY);
+    float clipY = vy / uTanHalfFovY;
+    float zNear = 0.20;
+    float zFar = 12.0;
+    float clipZ = ((zFar + zNear) * vz - 2.0 * zFar * zNear) / (zFar - zNear);
+    gl_Position = vec4(clipX, clipY, clipZ, vz);
+}
+"""
+
+private const val STATION_FRAG_GLSL =
+  """#version 300 es
+precision highp float;
+precision highp int;
+
+in vec3 vWorldPos;
+in vec3 vWorldNormal;
+in vec3 vColor;
+in vec2 vEmissiveRadial;
+
+uniform vec3 uCamPos;
+uniform float uTime;
+
+out vec4 fragColor;
+
+void main() {
+    vec3 N = normalize(vWorldNormal);
+    vec3 V = normalize(uCamPos - vWorldPos);
+    if (dot(N, V) < 0.0) {
+        N = -N;
+    }
+
+    // Key light aligned with angled abyssal-garden volumetric shafts from upper-left-front
+    vec3 keyDir = normalize(vec3(-0.52, 0.72, 0.68));
+    // Subtle warm solar-gold rim bounce from lower-right
+    vec3 fillDir = normalize(vec3(0.64, -0.38, 0.55));
+
+    float diffKey = max(dot(N, keyDir), 0.0);
+    float diffFill = max(dot(N, fillDir), 0.0);
+
+    vec3 halfKey = normalize(keyDir + V);
+    float specKey = pow(max(dot(N, halfKey), 0.0), 42.0);
+    float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.4);
+
+    vec3 lit =
+        vColor * (0.24 + 0.88 * diffKey + 0.26 * diffFill) +
+        vec3(0.55, 0.88, 1.0) * (specKey * 0.44 + fresnel * 0.18) +
+        vec3(0.98, 0.80, 0.16) * (diffFill * 0.08);
+
+    float emissive = vEmissiveRadial.x;
+    if (emissive > 0.01) {
+        float pulse = 0.90 + 0.10 * sin(uTime * 2.6 + vWorldPos.x * 7.0 + vWorldPos.y * 5.0);
+        // Outward-traveling stabilizer wave along the 8 golden-cyan beams (vEmissiveRadial.y >= 0.0)
+        if (vEmissiveRadial.y >= 0.0) {
+            float wave = 0.72 + 0.46 * pow(0.5 + 0.5 * sin(vEmissiveRadial.y * 10.5 - uTime * 3.8), 2.2);
+            pulse *= wave;
+        }
+        lit = mix(lit, vColor * emissive * pulse, 0.88);
+    }
+
+    fragColor = vec4(max(lit, vec3(0.0)), 1.0);
 }
 """
 
@@ -1805,7 +2564,16 @@ void main() {
 }
 """
 
-private const val NEXUS_VOLUMETRIC_SCENE_FRAG_GLSL =
+/**
+ * Volumetric `Abyssal-Garden` 3D Safe-Zone Sanctuary + Braced Outer Storm Backdrop (`progScene`):
+ * - Zero tie-dye magenta/pink/purple spiral vortex!
+ * - `r < shieldR`: Calm `#020814` -> `#041428` abyssal space-ocean clarity with angled volumetric light shafts
+ *   and gentle cyan/sapphire caustic shimmer (`0.10..0.22`).
+ * - `r ~ shieldR`: Crisp `#00F5D4` / `#38BDF8` braced containment energy barrier with outward deflection waves.
+ * - `r > shieldR`: Dark encroaching abyssal storm clouds (`#050914`, `#0B192E`, `#1E3A5F` / `#0284C7` ridges
+ *   + fine ice-cyan static veins) pressing inward and physically held back from collapsing in!
+ */
+private const val ABYSSAL_SANCTUARY_SCENE_FRAG_GLSL =
   """#version 300 es
 precision highp float;
 precision highp int;
@@ -1820,10 +2588,12 @@ uniform vec3 uCamFwd;
 uniform vec3 uCamRight;
 uniform vec3 uCamUp;
 uniform float uTanHalfFovY;
-uniform vec4 uTearPosSize; // (worldX, worldY, halfW, halfH)
-uniform vec4 uTearStyle;   // (worldZ, tiltRad, phaseOffset, focusGain)
-uniform vec3 uTearColorA;
-uniform vec3 uTearColorB;
+
+uniform vec3 uPlaneOrigin;
+uniform vec3 uPlaneU;
+uniform vec3 uPlaneV;
+uniform vec3 uPlaneN;
+uniform vec2 uShieldCfg; // (shieldRadius = 0.92, focusGain)
 
 float noise3(vec3 x) {
     vec3 i = floor(x);
@@ -1850,10 +2620,17 @@ float fbm4(vec3 p) {
     float amp = 0.5;
     for (int i = 0; i < 4; i++) {
         v += amp * noise3(p);
-        p = p * 2.04 + vec3(7.3, -4.9, 5.1);
+        p = p * 2.03 + vec3(6.7, -4.3, 5.4);
         amp *= 0.5;
     }
     return v;
+}
+
+float causticPattern(vec2 p, float t) {
+    float n1 = noise3(vec3(p * 3.8, t * 0.28));
+    float n2 = noise3(vec3(p * 3.8 + vec2(2.4, -1.7), -t * 0.24 + 4.1));
+    float ridge = 1.0 - abs(n1 - n2) * 3.6;
+    return pow(clamp(ridge, 0.0, 1.0), 2.8);
 }
 
 void main() {
@@ -1866,86 +2643,117 @@ void main() {
         ndc.y * uTanHalfFovY * uCamUp
     );
 
-    // Deep gameplay-honest #02050B dark space baseline
-    vec3 col = vec3(0.008, 0.018, 0.044);
-    float voidKeepMask = 1.0;
+    float shieldR = uShieldCfg.x;
+    float focusGain = uShieldCfg.y;
 
-    if (abs(rayDir.z) > 1e-4) {
-        float tHit = (uTearStyle.x - uCamPos.z) / rayDir.z;
-        if (tHit > 0.1) {
-            vec3 hit = uCamPos + rayDir * tHit;
-            vec2 rel = hit.xy - uTearPosSize.xy;
-            vec2 q = rel / max(vec2(0.08), uTearPosSize.zw);
+    // Calm #020814 -> #041428 abyssal space-ocean base gradient
+    float vertGrad = clamp(vUv.y * 0.85 + 0.15, 0.0, 1.0);
+    vec3 abyssalDeep = vec3(0.008, 0.031, 0.078);   // #020814
+    vec3 abyssalMid  = vec3(0.016, 0.078, 0.157);   // #041428
+    vec3 col = mix(abyssalDeep, abyssalMid, vertGrad * 0.65);
 
+    // Subtle angled volumetric god-ray light shafts descending from upper-left across the sanctuary
+    vec2 screenMetric = vec2(ndc.x * aspect, ndc.y);
+    float shaftCoord = dot(screenMetric, vec2(0.76, 0.65));
+    float shaftNoise = fbm4(vec3(shaftCoord * 3.2 - uTime * 0.05, screenMetric.y * 0.85, uTime * 0.09));
+    float shaftBands = pow(0.5 + 0.5 * sin(shaftCoord * 7.5 + shaftNoise * 3.2 - uTime * 0.18), 3.2);
+    float shaftTopFade = smoothstep(-0.75, 0.92, ndc.y - ndc.x * 0.38);
+
+    float denom = dot(rayDir, uPlaneN);
+    if (abs(denom) > 1e-4) {
+        float tHit = dot(uPlaneOrigin - uCamPos, uPlaneN) / denom;
+        if (tHit > 0.15) {
+            vec3 hit = uCamPos + rayDir * tHit - uPlaneOrigin;
+            vec2 q = vec2(dot(hit, uPlaneU), dot(hit, uPlaneV));
             float r = length(q);
             vec2 dir = q / max(r, 1e-4);
-            float theta = atan(q.y, q.x);
-            float safeR = max(r, 0.12);
-            float logR = log(safeR);
-            float focusGain = uTearStyle.w;
 
-            // Seamless polar FBM tendrils whipping INWARD (+uTime in logR shrinks radius over time!)
-            float inwardFlow = fbm4(vec3(dir * 3.1, logR * 2.55 + uTime * 1.68));
-            float fineTurb = fbm4(vec3(dir * 6.2, logR * 3.8 + uTime * 2.35 - inwardFlow * 1.6));
+            float insideMask = 1.0 - smoothstep(shieldR - 0.035, shieldR + 0.035, r);
+            float outsideMask = smoothstep(shieldR - 0.015, shieldR + 0.065, r);
 
-            // Feathered #000000 event-horizon throat at dead center (holds PLAY // ENTER THE RIFT over pure black!)
-            float innerBlackR = 0.30;
-            float outerFeatherR = 0.50 + (inwardFlow - 0.5) * 0.15;
-            float coreFade = smoothstep(innerBlackR, outerFeatherR, r);
-            voidKeepMask = coreFade;
+            // 1. INSIDE SANCTUARY (r < shieldR): Calm Abyssal-Garden Clarity + Low-Intensity Cyan/Sapphire Caustics
+            if (insideMask > 0.002) {
+                float c1 = causticPattern(q * 1.45, uTime);
+                float c2 = causticPattern(q * 2.55 + vec2(1.3, -0.8), uTime * 1.18);
+                float caustic = (c1 * 0.65 + c2 * 0.35);
 
-            if (r > innerBlackR * 0.85) {
-                float breathe = 1.0 + 0.03 * sin(uTime * 1.45);
-                // High-contrast razor-sharp Playfield-style logarithmic spiral arms separated by dark lanes
-                float phaseA = 3.0 * theta + 5.8 * logR + uTime * 1.95 + (inwardFlow - 0.5) * 2.4;
-                float phaseB = 4.0 * theta + 4.4 * logR + uTime * 1.42 - (fineTurb - 0.5) * 2.1;
-                float phaseC = 2.0 * theta + 6.6 * logR + uTime * 2.45 + inwardFlow * 1.8;
+                vec3 sapphireCol = vec3(0.055, 0.647, 0.914); // #0EA5E9
+                vec3 cyanCol     = vec3(0.000, 0.961, 0.831); // #00F5D4
 
-                float ribbonA = pow(0.5 + 0.5 * sin(phaseA), 3.6);
-                float ribbonB = pow(0.5 + 0.5 * sin(phaseB), 4.2);
-                float ribbonC = pow(0.5 + 0.5 * sin(phaseC), 5.0);
+                // Strictly subtle 0.10..0.21 caustic shimmer + soft volumetric light shafts + gentle station heart aura
+                float radialCalm = smoothstep(shieldR, 0.15, r);
+                vec3 causticGlow = mix(sapphireCol, cyanCol, 0.42) * (0.09 + 0.12 * caustic) * (0.45 + 0.55 * radialCalm);
+                vec3 godRays = mix(sapphireCol, cyanCol, 0.35) * (shaftBands * shaftTopFade * 0.13);
+                float stationHalo = exp(-r * r * 6.5) * 0.16;
+                vec3 heartGlow = mix(vec3(0.012, 0.412, 0.631), cyanCol, 0.38) * stationHalo;
 
-                float radialEnvelope = smoothstep(innerBlackR, 0.54, r) * exp(-max(r - 0.58, 0.0) * 1.65);
-                float outerReach = exp(-max(r - 0.92, 0.0) * 1.05);
+                col += (causticGlow + godRays + heartGlow) * insideMask * focusGain;
+            }
 
-                vec3 cyanCol = uTearColorA;                  // #00F5D4 bioluminescent cyan
-                vec3 skyCol = vec3(0.220, 0.741, 0.973);     // #38BDF8 electric sky
-                vec3 violetCol = uTearColorB;                // #A855F7 rift violet
-                vec3 magentaCol = vec3(0.925, 0.282, 0.600); // #EC4899 rift magenta
-                vec3 goldCol = vec3(0.980, 0.804, 0.082);    // #FACC15 solar-gold shear
+            // 2. BRACED CONTAINMENT PERIMETER (r ~ shieldR): Crisp #00F5D4 / #38BDF8 Barrier + Outward Deflection Waves
+            float distFromShield = r - shieldR;
+            float rimCore = exp(-abs(distFromShield) * 28.0);
+            // 8 Nodal Brace Hot-Spots where the 8 Stabilizer Beams & Chevrons brace the Containment Ring!
+            // Compute cos(8*theta) via Chebyshev without atan seam!
+            float c2t = dir.x * dir.x - dir.y * dir.y;
+            float s2t = 2.0 * dir.x * dir.y;
+            float c4t = c2t * c2t - s2t * s2t;
+            float s4t = 2.0 * c2t * s2t;
+            float cos8Theta = c4t * c4t - s4t * s4t;
+            float braceNodes = 0.72 + 0.38 * max(0.0, cos8Theta);
 
-                vec3 spiralMix =
-                    cyanCol * (ribbonA * 1.42) +
-                    violetCol * (ribbonB * 1.18) +
-                    magentaCol * (ribbonC * 0.92) +
-                    skyCol * (pow(inwardFlow, 2.4) * 0.42);
+            // Outward-pushing deflection ripples (r = shieldR -> shieldR + 0.18)
+            float outwardZone = smoothstep(-0.01, 0.02, distFromShield) * exp(-max(distFromShield, 0.0) * 11.5);
+            float outwardRipple = pow(0.5 + 0.5 * sin(distFromShield * 44.0 - uTime * 3.6), 3.0) * outwardZone;
 
-                // Blazing inner photon accretion lip whipping right around the black throat
-                float photonRing = smoothstep(innerBlackR * 0.95, innerBlackR + 0.16, r) * exp(-max(r - 0.52, 0.0) * 5.2);
-                vec3 photonTint = mix(cyanCol, vec3(0.96, 0.99, 1.0), 0.52) + goldCol * (ribbonC * 0.38);
+            vec3 rimCyan = vec3(0.000, 0.961, 0.831);
+            vec3 rimSky  = vec3(0.220, 0.741, 0.973);
+            vec3 rimGold = vec3(0.980, 0.804, 0.082);
+            vec3 barrierGlow =
+                mix(rimSky, rimCyan, 0.62) * (rimCore * 0.92 * braceNodes + outwardRipple * 0.52) +
+                rimGold * (rimCore * pow(max(0.0, cos8Theta), 3.0) * 0.34);
+            col += barrierGlow * focusGain;
 
-                // Fine crackling electric lightning veins along the outer breach rim (r ~ 0.72..1.18)
-                float ridge = max(0.0, 1.0 - abs(inwardFlow - fineTurb) * 4.6);
-                float rimBand = smoothstep(0.46, 0.76, r) * exp(-max(r - 0.96, 0.0) * 2.8);
-                float arcFlash = pow(ridge, 3.8) * rimBand * (0.65 + 0.35 * sin(uTime * 8.5 + dot(dir, vec2(6.1, -5.3))));
-                vec3 arcCol = mix(skyCol, vec3(1.0), 0.55) * (arcFlash * 1.85);
+            // 3. OUTSIDE PERIMETER (r > shieldR): Dark Billowing Abyssal Storm Clouds Pressing Inward & Held Back!
+            if (outsideMask > 0.002) {
+                float safeR = max(r, shieldR * 0.95);
+                float logR = log(safeR);
+                // +uTime in radial coordinate advects storm clouds INWARD until they pile up against shieldR!
+                float stormA = fbm4(vec3(dir * 3.2, logR * 2.8 + uTime * 0.38));
+                float stormB = fbm4(vec3(dir * 6.4 + vec2(3.1, -2.4), logR * 4.2 + uTime * 0.54 - stormA * 1.4));
 
-                // Subtle ambient outer Ring-Space convergence tendrils extending behind the terminal columns
-                float farNebula = pow(0.5 + 0.5 * sin(2.0 * theta + 3.2 * logR + uTime * 0.72 + inwardFlow * 2.2), 2.4);
-                vec3 ambientOuter = mix(vec3(0.02, 0.09, 0.20), violetCol * 0.28, farNebula) * outerReach * 0.55;
+                // Storm compression pile-up right against the outer side of shieldR
+                float pileUp = exp(-max(distFromShield, 0.0) * 3.2);
+                float farFade = exp(-max(distFromShield - 0.55, 0.0) * 0.95);
 
-                col += (spiralMix * radialEnvelope + photonTint * photonRing * (0.82 + 0.95 * ribbonA) + arcCol + ambientOuter) *
-                    coreFade * breathe * focusGain;
+                vec3 stormVoid  = vec3(0.020, 0.035, 0.078); // #050914 dark abyssal storm shadow
+                vec3 stormSlate = vec3(0.043, 0.098, 0.180); // #0B192E heavy storm cloud body
+                vec3 stormRidge = vec3(0.118, 0.227, 0.373); // #1E3A5F muted deep-cobalt ridge
+                vec3 stormSteel = vec3(0.008, 0.518, 0.780); // #0284C7 muted storm-crest highlight
+
+                float billow = smoothstep(0.32, 0.78, stormA * 0.65 + stormB * 0.35);
+                vec3 stormCloud = mix(stormVoid, stormSlate, billow);
+                stormCloud = mix(stormCloud, stormRidge, pow(billow, 2.2) * (0.45 + 0.55 * pileUp));
+                stormCloud += stormSteel * (pow(stormB, 3.4) * pileUp * 0.28);
+
+                // Occasional fine ice-cyan electric filaments crackling along outer storm ridges
+                float filament = max(0.0, 1.0 - abs(stormA - stormB) * 5.2);
+                float sparkFlicker = 0.55 + 0.45 * sin(uTime * 6.4 + dot(dir, vec2(8.3, -6.7)));
+                vec3 iceFilament = vec3(0.55, 0.86, 1.0) * (pow(filament, 4.4) * pileUp * sparkFlicker * 0.68);
+
+                vec3 outerTotal = (stormCloud + iceFilament) * farFade;
+                col = mix(col, outerTotal + barrierGlow * 0.65, outsideMask * 0.92);
             }
         }
+    } else {
+        col += vec3(0.02, 0.10, 0.18) * (shaftBands * shaftTopFade * 0.08);
     }
 
-    float cleanVoidMask = clamp(voidKeepMask, 0.0, 1.0);
-    fragColor = vec4(max(col * cleanVoidMask, vec3(0.0)), cleanVoidMask);
+    fragColor = vec4(max(col, vec3(0.0)), 1.0);
 }
 """
 
-private const val NEXUS_SCENE_UPSAMPLE_FRAG_GLSL =
+private const val ABYSSAL_SCENE_UPSAMPLE_FRAG_GLSL =
   """#version 300 es
 precision highp float;
 precision highp int;
@@ -1961,44 +2769,11 @@ uniform vec3 uCamFwd;
 uniform vec3 uCamRight;
 uniform vec3 uCamUp;
 uniform float uTanHalfFovY;
-uniform vec4 uTearPosSize;
-uniform vec4 uTearStyle;
 
 vec2 hash22(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.xx + p3.yz) * p3.zy);
-}
-
-float noise3(vec3 x) {
-    vec3 i = floor(x);
-    vec3 f = fract(x);
-    f = f * f * (3.0 - 2.0 * f);
-    float n = i.x + i.y * 57.0 + 113.0 * i.z;
-    float a = fract(sin(n + 0.0) * 43758.5453);
-    float b = fract(sin(n + 1.0) * 43758.5453);
-    float c = fract(sin(n + 57.0) * 43758.5453);
-    float d = fract(sin(n + 58.0) * 43758.5453);
-    float e = fract(sin(n + 113.0) * 43758.5453);
-    float f1 = fract(sin(n + 114.0) * 43758.5453);
-    float g = fract(sin(n + 170.0) * 43758.5453);
-    float h = fract(sin(n + 171.0) * 43758.5453);
-    return mix(
-        mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
-        mix(mix(e, f1, f.x), mix(g, h, f.x), f.y),
-        f.z
-    );
-}
-
-float fbm4(vec3 p) {
-    float v = 0.0;
-    float amp = 0.5;
-    for (int i = 0; i < 4; i++) {
-        v += amp * noise3(p);
-        p = p * 2.04 + vec3(7.3, -4.9, 5.1);
-        amp *= 0.5;
-    }
-    return v;
 }
 
 vec3 starFieldLayer(vec2 dirUv, float scale, float densityCut, float t) {
@@ -2008,24 +2783,23 @@ vec3 starFieldLayer(vec2 dirUv, float scale, float densityCut, float t) {
     if (rnd.x < densityCut) return vec3(0.0);
     vec2 offs = (rnd - 0.5) * 0.68;
     float d = length(gv - offs);
-    float twinkle = 0.74 + 0.26 * sin(t * (1.4 + rnd.y * 2.8) + rnd.x * 37.0);
-    float core = smoothstep(0.078, 0.0, d) * twinkle;
-    vec3 tint = mix(vec3(0.72, 0.88, 1.0), vec3(1.0, 0.91, 0.74), fract(rnd.y * 7.3));
-    return tint * core * (0.62 + 0.85 * fract(rnd.x * 13.7));
+    float twinkle = 0.76 + 0.24 * sin(t * (1.2 + rnd.y * 2.4) + rnd.x * 37.0);
+    float core = smoothstep(0.074, 0.0, d) * twinkle;
+    vec3 tint = mix(vec3(0.72, 0.90, 1.0), vec3(1.0, 0.92, 0.74), fract(rnd.y * 7.3));
+    return tint * core * (0.58 + 0.78 * fract(rnd.x * 13.7));
 }
 
-vec3 sampleRingSpaceStars(vec3 rayDir, float t) {
+vec3 sampleSanctuaryStars(vec3 rayDir, float t) {
     vec2 sph = rayDir.xy / max(0.32, abs(rayDir.z));
     vec3 stars = vec3(0.0);
-    stars += starFieldLayer(sph + vec2(t * 0.0007, 0.0), 36.0, 0.84, t) * 0.98;
-    stars += starFieldLayer(sph * 1.34 - vec2(0.0, t * 0.0005), 68.0, 0.87, t) * 0.75;
-    stars += starFieldLayer(sph * 1.78 + vec2(4.2, -1.9), 116.0, 0.90, t) * 0.52;
+    stars += starFieldLayer(sph + vec2(t * 0.0005, 0.0), 38.0, 0.85, t) * 0.90;
+    stars += starFieldLayer(sph * 1.35 - vec2(0.0, t * 0.0004), 70.0, 0.88, t) * 0.68;
+    stars += starFieldLayer(sph * 1.80 + vec2(4.2, -1.9), 118.0, 0.91, t) * 0.46;
     return stars;
 }
 
 void main() {
-    vec4 plasmaSample = texture(uPlasmaTex, vUv);
-    vec3 col = plasmaSample.rgb;
+    vec3 col = texture(uPlasmaTex, vUv).rgb;
 
     float aspect = uResolution.x / max(1.0, uResolution.y);
     vec2 ndc = vUv * 2.0 - 1.0;
@@ -2035,37 +2809,11 @@ void main() {
         ndc.y * uTanHalfFovY * uCamUp
     );
 
-    vec3 lensedDir = rayDir;
-    float voidKeepMask = 1.0;
-    if (abs(rayDir.z) > 1e-4) {
-        float tHit = (uTearStyle.x - uCamPos.z) / rayDir.z;
-        if (tHit > 0.1) {
-            vec3 hit = uCamPos + rayDir * tHit;
-            vec2 rel = hit.xy - uTearPosSize.xy;
-            vec2 q = rel / max(vec2(0.08), uTearPosSize.zw);
-            float r = length(q);
-            if (r < 2.4) {
-                float pull = exp(-r * r * 0.85) * 0.055;
-                lensedDir.xy -= normalize(q + vec2(1e-5)) * pull;
-            }
-            if (r < 0.85) {
-                vec2 dir = q / max(r, 1e-4);
-                float inwardFlow = fbm4(vec3(dir * 3.1, log(max(r, 0.12)) * 2.55 + uTime * 1.68));
-                float innerBlackR = 0.30;
-                float outerFeatherR = 0.50 + (inwardFlow - 0.5) * 0.15;
-                voidKeepMask = smoothstep(innerBlackR, outerFeatherR, r);
-            }
-        }
-    }
-    lensedDir = normalize(lensedDir);
+    vec3 stars = sampleSanctuaryStars(rayDir, uTime);
+    float bgLum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col += stars * (0.46 + 0.34 * clamp(1.0 - bgLum * 0.75, 0.20, 1.0));
 
-    vec3 stars = sampleRingSpaceStars(lensedDir, uTime);
-    float plasmaLum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-    float cleanVoidMask = clamp(min(plasmaSample.a, voidKeepMask), 0.0, 1.0);
-    col = col * (cleanVoidMask / max(plasmaSample.a, 1e-4)) +
-        stars * (0.48 + 0.36 * clamp(1.0 - plasmaLum * 0.55, 0.20, 1.0)) * cleanVoidMask;
-
-    fragColor = vec4(max(col, vec3(0.0)), cleanVoidMask);
+    fragColor = vec4(max(col, vec3(0.0)), 1.0);
 }
 """
 
@@ -2080,8 +2828,8 @@ uniform sampler2D uSceneTex;
 void main() {
     vec4 s = texture(uSceneTex, vUv);
     float maxCh = max(s.r, max(s.g, s.b));
-    float knee = smoothstep(1.02, 2.10, maxCh);
-    fragColor = vec4(s.rgb * knee * s.a, 1.0);
+    float knee = smoothstep(1.05, 2.15, maxCh);
+    fragColor = vec4(s.rgb * knee, 1.0);
 }
 """
 
@@ -2133,46 +2881,45 @@ vec3 acesTonemap(vec3 x) {
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 
-vec3 foregroundCosmicMotes(vec2 uv, float aspect, float t, vec2 parallax) {
+vec3 abyssalBioluminescentMotes(vec2 uv, float aspect, float t, vec2 parallax) {
     vec3 acc = vec3(0.0);
     for (int layer = 0; layer < 2; layer++) {
         float fl = float(layer);
-        float scale = mix(9.5, 16.0, fl);
-        vec2 drift = vec2(t * (0.011 + fl * 0.007), t * (0.008 - fl * 0.004));
-        vec2 p = vec2(uv.x * aspect, uv.y) * scale + drift + parallax * (1.2 + fl * 0.8);
+        float scale = mix(8.5, 14.5, fl);
+        vec2 drift = vec2(t * (0.008 + fl * 0.005), t * (0.010 + fl * 0.004));
+        vec2 p = vec2(uv.x * aspect, uv.y) * scale + drift + parallax * (1.1 + fl * 0.7);
         vec2 id = floor(p);
         vec2 gv = fract(p) - 0.5;
-        vec2 rnd = hash22(id + fl * 29.0);
-        if (rnd.x > 0.85) {
-            vec2 pos = (rnd - 0.5) * 0.60;
+        vec2 rnd = hash22(id + fl * 31.0);
+        if (rnd.x > 0.84) {
+            vec2 pos = (rnd - 0.5) * 0.62;
             float d = length(gv - pos);
-            float pulse = 0.55 + 0.45 * sin(t * 2.1 + rnd.y * 25.0);
-            float glow = smoothstep(0.082, 0.0, d) * pulse;
-            vec3 c = mix(vec3(0.0, 0.96, 0.83), vec3(0.98, 0.80, 0.09), fract(rnd.y * 5.7));
-            acc += c * glow * (0.28 - fl * 0.10);
+            float pulse = 0.55 + 0.45 * sin(t * 1.85 + rnd.y * 23.0);
+            float glow = smoothstep(0.078, 0.0, d) * pulse;
+            vec3 c = mix(vec3(0.0, 0.96, 0.83), vec3(0.98, 0.82, 0.18), fract(rnd.y * 5.7) * 0.65);
+            acc += c * glow * (0.24 - fl * 0.08);
         }
     }
     return acc;
 }
 
 void main() {
-    vec4 scene = texture(uSceneTex, vUv);
+    vec3 scene = texture(uSceneTex, vUv).rgb;
     vec3 bloom = texture(uBloomTex, vUv).rgb;
-    float voidKeep = scene.a;
 
     float aspect = uResolution.x / max(1.0, uResolution.y);
-    float centerClear = smoothstep(0.14, 0.30, length((vUv - vec2(0.5)) * vec2(aspect, 1.0)));
-    vec3 motes = foregroundCosmicMotes(vUv, aspect, uTime, uParallax) * centerClear * voidKeep;
+    float centerSoft = smoothstep(0.06, 0.24, length((vUv - vec2(0.5)) * vec2(aspect, 1.0)));
+    vec3 motes = abyssalBioluminescentMotes(vUv, aspect, uTime, uParallax) * (0.45 + 0.55 * centerSoft);
 
-    vec3 hdr = (scene.rgb + bloom * 0.32 * voidKeep + motes) * voidKeep;
-    vec3 mapped = acesTonemap(hdr * 1.14);
-    mapped = pow(mapped, vec3(0.95));
-    mapped = smoothstep(vec3(0.006), vec3(0.994), mapped);
+    vec3 hdr = scene + bloom * 0.28 + motes;
+    vec3 mapped = acesTonemap(hdr * 1.12);
+    mapped = pow(mapped, vec3(0.96));
+    mapped = smoothstep(vec3(0.004), vec3(0.996), mapped);
 
     vec2 vigUv = vUv * 2.0 - 1.0;
-    float vig = clamp(1.0 - dot(vigUv, vigUv) * 0.10, 0.82, 1.0);
-    mapped *= mix(1.0, vig, voidKeep);
+    float vig = clamp(1.0 - dot(vigUv, vigUv) * 0.09, 0.84, 1.0);
+    mapped *= vig;
 
-    fragColor = vec4(mapped * voidKeep * uDimFactor, 1.0);
+    fragColor = vec4(mapped * uDimFactor, 1.0);
 }
 """

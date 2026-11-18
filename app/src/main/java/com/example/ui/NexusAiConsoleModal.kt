@@ -1258,368 +1258,476 @@ private fun OrbitalHubSpatialStage(
     if (syndicateTag.isNotBlank()) "• [$syndicateTag] $callsign" else "• $callsign"
 
   Box(modifier = Modifier.fillMaxSize()) {
-    Column(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp),
-      verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-      // Minimal Top Tactical Terminal Header (#060D1A obsidian-glass bar)
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .height(36.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xE8060D1A))
-            .border(
-              1.dp,
-              Brush.horizontalGradient(listOf(Color(0x9900F5D4), Color(0x6638BDF8), Color(0x88FACC15))),
-              RoundedCornerShape(8.dp),
-            )
-            .padding(horizontal = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(5.dp),
-          modifier = Modifier.weight(1f),
-        ) {
-          SwirlingRiftVortexGlyph(modifier = Modifier.size(22.dp), isStreaming = isStreaming)
-          Text(
-            text = "NEXUS",
-            color = Color(0xFF00F5D4),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 1.1.sp,
-          )
-          Text(
-            text = pilotIdentityLabel,
-            color = Color(0xFFE2E8F0),
-            fontSize = 8.4.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-          Text(
-            text = "•",
-            color = Color(0xFF64748B),
-            fontSize = 8.4.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-          )
-          ResonanceCrestIcon(sizeDp = 14.dp)
-          Text(
-            text = "$liveResonance",
-            color = Color(0xFFFACC15),
-            fontSize = 8.5.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-          )
-          Text(
-            text = "•",
-            color = Color(0xFF64748B),
-            fontSize = 8.4.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-          )
-          RiftShardGemIcon(sizeDp = 14.dp)
-          Text(
-            text = shardText,
-            color = Color(0xFFF0ABFC),
-            fontSize = 8.5.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-          )
-          Text(
-            text = "• SYN $syndicateOnlineCount • WING $strikeWingOnlineCount • $totalOnlinePilots ONLINE",
-            color = Color(0xFF34D399),
-            fontSize = 8.2.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
-
-        Row(
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          // [? HOW TO PLAY] Briefing Button
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF0B192E))
-                .border(1.dp, Color(0xFFFACC15).copy(alpha = 0.80f), RoundedCornerShape(6.dp))
-                .clickable { showHowToPlayModal = true }
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .testTag("nexus_btn_how_to_play"),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = "[? HOW TO PLAY]",
-              color = Color(0xFFFACC15),
-              fontSize = 8.0.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-
-          // [HELM SYSTEMS] Top Header Button (Index 7)
-          val helmFocused = focusedOrbitalIndex == 7
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(6.dp))
-                .background(if (helmFocused) Color(0x3338BDF8) else Color(0xFF0B192E))
-                .border(
-                  1.dp,
-                  if (helmFocused) Color.White else Color(0xFF94A3B8).copy(alpha = 0.75f),
-                  RoundedCornerShape(6.dp),
+    // Unified #060D1A Sci-Fi Command Tablet Outer Bezel Chassis
+    Box(
+      modifier =
+        Modifier.fillMaxSize()
+          .padding(horizontal = 6.dp, vertical = 4.dp)
+          .clip(RoundedCornerShape(14.dp))
+          .border(
+            width = 1.2.dp,
+            brush =
+              Brush.linearGradient(
+                listOf(
+                  Color(0x6600F5D4),
+                  Color(0x3838BDF8),
+                  Color(0x2E64748B),
+                  Color(0x55FACC15),
                 )
-                .clickable { onSelectNode(7, NexusCoreNode.HELM_SYSTEMS) }
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .testTag("nexus_node_helm_systems"),
-            contentAlignment = Alignment.Center,
+              ),
+            shape = RoundedCornerShape(14.dp),
+          ),
+    ) {
+      // Precision Sci-Fi Tablet Chassis Corner Registration Brackets
+      Canvas(modifier = Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        if (w <= 8f || h <= 8f) return@Canvas
+        val tick = 14.dp.toPx().coerceAtMost(min(w, h) * 0.08f)
+        val sw = 1.6.dp.toPx()
+        val cyan = Color(0xFF00F5D4).copy(alpha = 0.65f)
+        val gold = Color(0xFFFACC15).copy(alpha = 0.55f)
+        val pad = 3.dp.toPx()
+
+        // Top-Left & Bottom-Left registration corners
+        drawLine(cyan, Offset(pad, pad + tick), Offset(pad, pad), strokeWidth = sw)
+        drawLine(cyan, Offset(pad, pad), Offset(pad + tick, pad), strokeWidth = sw)
+        drawLine(cyan, Offset(pad, h - pad - tick), Offset(pad, h - pad), strokeWidth = sw)
+        drawLine(cyan, Offset(pad, h - pad), Offset(pad + tick, h - pad), strokeWidth = sw)
+
+        // Top-Right & Bottom-Right registration corners
+        drawLine(gold, Offset(w - pad - tick, pad), Offset(w - pad, pad), strokeWidth = sw)
+        drawLine(gold, Offset(w - pad, pad), Offset(w - pad, pad + tick), strokeWidth = sw)
+        drawLine(gold, Offset(w - pad - tick, h - pad), Offset(w - pad, h - pad), strokeWidth = sw)
+        drawLine(gold, Offset(w - pad, h - pad - tick), Offset(w - pad, h - pad), strokeWidth = sw)
+      }
+
+      Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 5.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        // Minimal Top Sci-Fi Tablet Header (#060D1A obsidian-glass bar)
+        Row(
+          modifier =
+            Modifier.fillMaxWidth()
+              .height(36.dp)
+              .clip(RoundedCornerShape(9.dp))
+              .background(Color(0xF0060D1A))
+              .border(
+                1.dp,
+                Brush.horizontalGradient(listOf(Color(0x9900F5D4), Color(0x5538BDF8), Color(0x80FACC15))),
+                RoundedCornerShape(9.dp),
+              )
+              .padding(horizontal = 10.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier.weight(1f),
           ) {
+            SwirlingRiftVortexGlyph(modifier = Modifier.size(22.dp), isStreaming = isStreaming)
             Text(
-              text = "[HELM SYSTEMS]",
-              color = if (helmFocused) Color.White else Color(0xFFCBD5E1),
-              fontSize = 8.0.sp,
+              text = "NEXUS",
+              color = Color(0xFF00F5D4),
+              fontSize = 12.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
+              letterSpacing = 1.1.sp,
+            )
+            Text(
+              text = pilotIdentityLabel,
+              color = Color(0xFFE2E8F0),
+              fontSize = 8.4.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+              text = "•",
+              color = Color(0xFF64748B),
+              fontSize = 8.4.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+            ResonanceCrestIcon(sizeDp = 14.dp)
+            Text(
+              text = "$liveResonance",
+              color = Color(0xFFFACC15),
+              fontSize = 8.5.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.Monospace,
+            )
+            Text(
+              text = "•",
+              color = Color(0xFF64748B),
+              fontSize = 8.4.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+            RiftShardGemIcon(sizeDp = 14.dp)
+            Text(
+              text = shardText,
+              color = Color(0xFFF0ABFC),
+              fontSize = 8.5.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
+            Text(
+              text = "• SYN $syndicateOnlineCount • WING $strikeWingOnlineCount • $totalOnlinePilots ONLINE",
+              color = Color(0xFF34D399),
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
             )
           }
 
-          if (isInMatch) {
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            // [? HOW TO PLAY] Briefing Button
             Box(
               modifier =
                 Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(Color(0xFF280D18))
-                  .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(6.dp))
-                  .clickable { onLeaveMatch() }
+                  .background(Color(0xFF0B192E))
+                  .border(1.dp, Color(0xFFFACC15).copy(alpha = 0.80f), RoundedCornerShape(6.dp))
+                  .clickable { showHowToPlayModal = true }
                   .padding(horizontal = 8.dp, vertical = 4.dp)
-                  .testTag("nexus_leave_match_button"),
+                  .testTag("nexus_btn_how_to_play"),
               contentAlignment = Alignment.Center,
             ) {
               Text(
-                text = "LEAVE MATCH",
-                color = Color(0xFFFB7185),
+                text = "[? HOW TO PLAY]",
+                color = Color(0xFFFACC15),
                 fontSize = 8.0.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
             }
-          }
 
-          // [PRACTICE RIFT >] / [RETURN TO RIFT >]
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF082233))
-                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
-                .clickable {
-                  if (isInMatch) {
-                    onCloseModal()
-                  } else {
-                    onEnterPracticeRift()
-                  }
-                }
-                .padding(horizontal = 9.dp, vertical = 4.dp)
-                .testTag("nexus_close_button"),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = if (isInMatch) "RETURN TO RIFT >" else "PRACTICE RIFT >",
-              color = Color(0xFF00F5D4),
-              fontSize = 8.2.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-        }
-      }
-
-      // Main Zero-Scroll Breached Tactical Cockpit Terminal Deck (Left 24% • Center 52% Rift Breach • Right 24%)
-      Row(
-        modifier = Modifier.weight(1f).fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        // LEFT TACTICAL TERMINAL COLUMN (3 Beveled Obsidian-Glass Cards)
-        Column(
-          modifier = Modifier.weight(0.24f).fillMaxHeight(),
-          verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          BreachedTerminalModuleCard(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            title = "HANGAR DECK",
-            subtitle = "10 Ships & 100-Pt Builder",
-            codeLabel = "SYS-01",
-            accent = Color(0xFF38BDF8),
-            secondaryAccent = Color(0xFF00F5D4),
-            badgeText = null,
-            isFocused = focusedOrbitalIndex == 1,
-            isRightColumn = false,
-            testTag = "nexus_node_hangar_deck",
-            onClick = { onSelectNode(1, NexusCoreNode.HANGAR_DECK) },
-          )
-          BreachedTerminalModuleCard(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            title = "RIFT CONDUIT",
-            subtitle = "Resonance, Quests & Cosmetics",
-            codeLabel = "SYS-02",
-            accent = Color(0xFFE879F9),
-            secondaryAccent = Color(0xFFFACC15),
-            badgeText = "$liveResonance RES",
-            isFocused = focusedOrbitalIndex == 2,
-            isRightColumn = false,
-            testTag = "nexus_node_rift_conduit",
-            onClick = { onSelectNode(2, NexusCoreNode.RIFT_CONDUIT) },
-          )
-          BreachedTerminalModuleCard(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            title = "STAR FORGE",
-            subtitle = "1:1 Asset & Audio Studio",
-            codeLabel = "SYS-03",
-            accent = Color(0xFFC084FC),
-            secondaryAccent = Color(0xFF38BDF8),
-            badgeText = null,
-            isFocused = focusedOrbitalIndex == 3,
-            isRightColumn = false,
-            testTag = "nexus_node_star_forge",
-            onClick = { onSelectNode(3, NexusCoreNode.STAR_FORGE) },
-          )
-        }
-
-        // CENTER TERMINAL BREACH (~52% width): Colossal Swirling Rift Singularity + PLAY // ENTER THE RIFT
-        val centerFocused = focusedOrbitalIndex == 0
-        Box(
-          modifier =
-            Modifier.weight(0.52f)
-              .fillMaxHeight()
-              .pointerInput(glViewRef) {
-                detectDragGestures(
-                  onDragEnd = { glViewRef?.releaseCameraLookSpring() },
-                  onDragCancel = { glViewRef?.releaseCameraLookSpring() },
-                ) { change, dragAmount ->
-                  change.consume()
-                  glViewRef?.addCameraLookDelta(dragAmount.x, dragAmount.y)
-                }
-              }
-              .clickable { onSelectNode(0, NexusCoreNode.CONVERGENCE_GATE) }
-              .testTag("nexus_node_convergence_gate"),
-          contentAlignment = Alignment.Center,
-        ) {
-          BreachedTerminalViewportOverlay(
-            isFocused = centerFocused,
-            drawHeadlessRiftFallback = headless,
-          )
-
-          // Unmistakable Center Callout Seated Inside the #000000 Event-Horizon Throat
-          val playTitleGlow =
-            remember(centerFocused) {
-              Shadow(
-                color = if (centerFocused) Color.White else Color(0xFF00F5D4),
-                offset = Offset.Zero,
-                blurRadius = 14f,
+            // [HELM SYSTEMS] Top Header Button (Index 7)
+            val helmFocused = focusedOrbitalIndex == 7
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(6.dp))
+                  .background(if (helmFocused) Color(0x3338BDF8) else Color(0xFF0B192E))
+                  .border(
+                    1.dp,
+                    if (helmFocused) Color.White else Color(0xFF94A3B8).copy(alpha = 0.75f),
+                    RoundedCornerShape(6.dp),
+                  )
+                  .clickable { onSelectNode(7, NexusCoreNode.HELM_SYSTEMS) }
+                  .padding(horizontal = 8.dp, vertical = 4.dp)
+                  .testTag("nexus_node_helm_systems"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "[HELM SYSTEMS]",
+                color = if (helmFocused) Color.White else Color(0xFFCBD5E1),
+                fontSize = 8.0.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
               )
             }
-          Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier =
-              Modifier.clip(RoundedCornerShape(12.dp))
-                .background(Color(0x96010308))
-                .border(
-                  width = if (centerFocused) 1.5.dp else 1.dp,
-                  brush =
-                    Brush.horizontalGradient(
-                      listOf(Color(0xCC00F5D4), Color(0xCCFACC15), Color(0xCCA855F7))
-                    ),
-                  shape = RoundedCornerShape(12.dp),
+
+            if (isInMatch) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF280D18))
+                    .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(6.dp))
+                    .clickable { onLeaveMatch() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .testTag("nexus_leave_match_button"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = "LEAVE MATCH",
+                  color = Color(0xFFFB7185),
+                  fontSize = 8.0.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
                 )
-                .padding(horizontal = 18.dp, vertical = 9.dp),
-          ) {
-            Text(
-              text = "PLAY",
-              color = Color.White,
-              fontSize = 21.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              letterSpacing = 2.6.sp,
-              style = TextStyle(shadow = playTitleGlow),
-            )
-            Text(
-              text = "ENTER THE RIFT",
-              color = Color(0xFF00F5D4),
-              fontSize = 9.8.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              letterSpacing = 1.2.sp,
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-              text = "6 Ranked Modes • Custom Lobbies",
-              color = Color(0xFFE2E8F0),
-              fontSize = 7.8.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-            )
+              }
+            }
+
+            // [PRACTICE RIFT >] / [RETURN TO RIFT >]
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(6.dp))
+                  .background(Color(0xFF082233))
+                  .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+                  .clickable {
+                    if (isInMatch) {
+                      onCloseModal()
+                    } else {
+                      onEnterPracticeRift()
+                    }
+                  }
+                  .padding(horizontal = 9.dp, vertical = 4.dp)
+                  .testTag("nexus_close_button"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = if (isInMatch) "RETURN TO RIFT >" else "PRACTICE RIFT >",
+                color = Color(0xFF00F5D4),
+                fontSize = 8.2.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
           }
         }
 
-        // RIGHT TACTICAL TERMINAL COLUMN (3 Beveled Obsidian-Glass Cards)
-        Column(
-          modifier = Modifier.weight(0.24f).fillMaxHeight(),
-          verticalArrangement = Arrangement.spacedBy(8.dp),
+        // Main Zero-Scroll Sci-Fi Command Tablet Deck:
+        // Left 24% Peripheral Bay • Center 52% Digitizing Inward Safe-Zone Viewport • Right 24% Peripheral Bay
+        Row(
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          val commsBadge =
-            when {
-              unreadCommsCount > 0 -> "$unreadCommsCount NEW"
-              totalOnlinePilots > 0 -> "$totalOnlinePilots LIVE"
-              else -> null
+          // LEFT SCI-FI TABLET DOCK (3 Chamfered #060D1A Terminal Cards)
+          Column(
+            modifier =
+              Modifier.weight(0.24f)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xBF050B16))
+                .border(1.dp, Color(0x2E38BDF8), RoundedCornerShape(10.dp))
+                .padding(5.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            SciFiTabletModuleCard(
+              modifier = Modifier.weight(1f).fillMaxWidth(),
+              title = "HANGAR DECK",
+              subtitle = "10 Ships & 100-Pt Builder",
+              codeLabel = "SYS-01",
+              accent = Color(0xFF38BDF8),
+              secondaryAccent = Color(0xFF00F5D4),
+              badgeText = null,
+              isFocused = focusedOrbitalIndex == 1,
+              isRightColumn = false,
+              testTag = "nexus_node_hangar_deck",
+              onClick = { onSelectNode(1, NexusCoreNode.HANGAR_DECK) },
+            )
+            SciFiTabletModuleCard(
+              modifier = Modifier.weight(1f).fillMaxWidth(),
+              title = "RIFT CONDUIT",
+              subtitle = "Resonance, Quests & Cosmetics",
+              codeLabel = "SYS-02",
+              accent = Color(0xFF38BDF8),
+              secondaryAccent = Color(0xFFFACC15),
+              badgeText = "$liveResonance RES",
+              isFocused = focusedOrbitalIndex == 2,
+              isRightColumn = false,
+              testTag = "nexus_node_rift_conduit",
+              onClick = { onSelectNode(2, NexusCoreNode.RIFT_CONDUIT) },
+            )
+            SciFiTabletModuleCard(
+              modifier = Modifier.weight(1f).fillMaxWidth(),
+              title = "STAR FORGE",
+              subtitle = "1:1 Asset & Audio Studio",
+              codeLabel = "SYS-03",
+              accent = Color(0xFF00F5D4),
+              secondaryAccent = Color(0xFF38BDF8),
+              badgeText = null,
+              isFocused = focusedOrbitalIndex == 3,
+              isRightColumn = false,
+              testTag = "nexus_node_star_forge",
+              onClick = { onSelectNode(3, NexusCoreNode.STAR_FORGE) },
+            )
+          }
+
+          // CENTER DIGITIZING VIEWPORT (~52% width):
+          // Dissolves the flat #060D1A tablet screen inward via holographic matrix cells & receding depth frames
+          // directly into the 3D Safe-Zone Sanctuary (leaving the 3D NEXUS Orbital Station 100% unobstructed!)
+          val centerFocused = focusedOrbitalIndex == 0
+          Box(
+            modifier =
+              Modifier.weight(0.52f)
+                .fillMaxHeight()
+                .pointerInput(glViewRef) {
+                  detectDragGestures(
+                    onDragEnd = { glViewRef?.releaseCameraLookSpring() },
+                    onDragCancel = { glViewRef?.releaseCameraLookSpring() },
+                  ) { change, dragAmount ->
+                    change.consume()
+                    glViewRef?.addCameraLookDelta(dragAmount.x, dragAmount.y)
+                  }
+                }
+                .clickable { onSelectNode(0, NexusCoreNode.CONVERGENCE_GATE) }
+                .testTag("nexus_node_convergence_gate"),
+          ) {
+            DigitizedSafeZoneViewportOverlay(
+              isFocused = centerFocused,
+              drawHeadlessSafeZoneFallback = headless,
+            )
+
+            // Top-Edge Micro Telemetry Readouts Tucked Cleanly Into Digitized Viewport Corners
+            Row(
+              modifier =
+                Modifier.align(Alignment.TopCenter)
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 10.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                text = "SAFE HARBOR // 3D SANCTUARY",
+                color = Color(0xFF00F5D4).copy(alpha = 0.78f),
+                fontSize = 7.2.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.8.sp,
+              )
+              Text(
+                text = "SHIELD BRACE: ACTIVE",
+                color = Color(0xFFFACC15).copy(alpha = 0.78f),
+                fontSize = 7.2.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.8.sp,
+              )
             }
-          BreachedTerminalModuleCard(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            title = "SUBSPACE COMMS",
-            subtitle = "Live Chat & NEXUS AI",
-            codeLabel = "COM-01",
-            accent = Color(0xFF00F5D4),
-            secondaryAccent = Color(0xFFFACC15),
-            badgeText = commsBadge,
-            isFocused = focusedOrbitalIndex == 4,
-            isRightColumn = true,
-            testTag = "nexus_node_subspace_comms",
-            onClick = { onSelectNode(4, NexusCoreNode.SUBSPACE_COMMS) },
-          )
-          BreachedTerminalModuleCard(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            title = "SYNDICATE CITADEL",
-            subtitle = "Clans & Strike Wings",
-            codeLabel = "COM-02",
-            accent = Color(0xFFFACC15),
-            secondaryAccent = Color(0xFFF97316),
-            badgeText = if (strikeWingOnlineCount > 0) "WING $strikeWingOnlineCount" else null,
-            isFocused = focusedOrbitalIndex == 5,
-            isRightColumn = true,
-            testTag = "nexus_node_syndicate_citadel",
-            onClick = { onSelectNode(5, NexusCoreNode.SYNDICATE_CITADEL) },
-          )
-          BreachedTerminalModuleCard(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            title = "ARCHIVE & CODEX",
-            subtitle = "Dossier & Field Manual",
-            codeLabel = "COM-03",
-            accent = Color(0xFF34D399),
-            secondaryAccent = Color(0xFF38BDF8),
-            badgeText = null,
-            isFocused = focusedOrbitalIndex == 6,
-            isRightColumn = true,
-            testTag = "nexus_node_archive_codex",
-            onClick = { onSelectNode(6, NexusCoreNode.ARCHIVE_CODEX) },
-          )
+
+            // Unobstructed Lower-Center [ PLAY // ENTER THE RIFT ] Launch Bar
+            // Anchored cleanly below the 3D NEXUS Orbital Station spire & patrolling ships!
+            val playTitleGlow =
+              remember(centerFocused) {
+                Shadow(
+                  color = if (centerFocused) Color.White else Color(0xFF00F5D4),
+                  offset = Offset.Zero,
+                  blurRadius = 12f,
+                )
+              }
+            Box(
+              modifier =
+                Modifier.align(Alignment.BottomCenter)
+                  .padding(bottom = 10.dp)
+                  .clip(RoundedCornerShape(10.dp))
+                  .background(
+                    Brush.horizontalGradient(
+                      listOf(Color(0xEB050D1C), Color(0xF208182E), Color(0xEB050D1C))
+                    )
+                  )
+                  .border(
+                    width = if (centerFocused) 1.6.dp else 1.1.dp,
+                    brush =
+                      Brush.horizontalGradient(
+                        listOf(Color(0xDD00F5D4), Color(0xCCFACC15), Color(0xDD38BDF8))
+                      ),
+                    shape = RoundedCornerShape(10.dp),
+                  )
+                  .padding(horizontal = 20.dp, vertical = 7.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+              ) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                  Text(
+                    text = "[",
+                    color = Color(0xFFFACC15),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Text(
+                    text = "PLAY // ENTER THE RIFT",
+                    color = Color.White,
+                    fontSize = 13.8.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.6.sp,
+                    style = TextStyle(shadow = playTitleGlow),
+                  )
+                  Text(
+                    text = "]",
+                    color = Color(0xFFFACC15),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
+                Text(
+                  text = "6 Ranked Modes • Custom Lobbies",
+                  color = Color(0xFFCBD5E1),
+                  fontSize = 7.8.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                  letterSpacing = 0.5.sp,
+                )
+              }
+            }
+          }
+
+          // RIGHT SCI-FI TABLET DOCK (3 Chamfered #060D1A Terminal Cards)
+          Column(
+            modifier =
+              Modifier.weight(0.24f)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xBF050B16))
+                .border(1.dp, Color(0x2E38BDF8), RoundedCornerShape(10.dp))
+                .padding(5.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            val commsBadge =
+              when {
+                unreadCommsCount > 0 -> "$unreadCommsCount NEW"
+                totalOnlinePilots > 0 -> "$totalOnlinePilots LIVE"
+                else -> null
+              }
+            SciFiTabletModuleCard(
+              modifier = Modifier.weight(1f).fillMaxWidth(),
+              title = "SUBSPACE COMMS",
+              subtitle = "Live Chat & NEXUS AI",
+              codeLabel = "COM-01",
+              accent = Color(0xFF00F5D4),
+              secondaryAccent = Color(0xFFFACC15),
+              badgeText = commsBadge,
+              isFocused = focusedOrbitalIndex == 4,
+              isRightColumn = true,
+              testTag = "nexus_node_subspace_comms",
+              onClick = { onSelectNode(4, NexusCoreNode.SUBSPACE_COMMS) },
+            )
+            SciFiTabletModuleCard(
+              modifier = Modifier.weight(1f).fillMaxWidth(),
+              title = "SYNDICATE CITADEL",
+              subtitle = "Clans & Strike Wings",
+              codeLabel = "COM-02",
+              accent = Color(0xFFFACC15),
+              secondaryAccent = Color(0xFF38BDF8),
+              badgeText = if (strikeWingOnlineCount > 0) "WING $strikeWingOnlineCount" else null,
+              isFocused = focusedOrbitalIndex == 5,
+              isRightColumn = true,
+              testTag = "nexus_node_syndicate_citadel",
+              onClick = { onSelectNode(5, NexusCoreNode.SYNDICATE_CITADEL) },
+            )
+            SciFiTabletModuleCard(
+              modifier = Modifier.weight(1f).fillMaxWidth(),
+              title = "ARCHIVE & CODEX",
+              subtitle = "Dossier & Field Manual",
+              codeLabel = "COM-03",
+              accent = Color(0xFF34D399),
+              secondaryAccent = Color(0xFF38BDF8),
+              badgeText = null,
+              isFocused = focusedOrbitalIndex == 6,
+              isRightColumn = true,
+              testTag = "nexus_node_archive_codex",
+              onClick = { onSelectNode(6, NexusCoreNode.ARCHIVE_CODEX) },
+            )
+          }
         }
       }
     }
@@ -1637,7 +1745,7 @@ private fun OrbitalHubSpatialStage(
 }
 
 @Composable
-private fun BreachedTerminalModuleCard(
+private fun SciFiTabletModuleCard(
   modifier: Modifier,
   title: String,
   subtitle: String,
@@ -1654,14 +1762,14 @@ private fun BreachedTerminalModuleCard(
     modifier =
       modifier
         .minimumInteractiveComponentSize()
-        .clip(RoundedCornerShape(10.dp))
+        .clip(RoundedCornerShape(8.dp))
         .background(
           Brush.linearGradient(
             colors =
               if (isFocused) {
-                listOf(Color(0xF50B1C36), Color(0xEB060D1A))
+                listOf(Color(0xF50B1C36), Color(0xF0060D1A))
               } else {
-                listOf(Color(0xEB060D1A), Color(0xE0091426))
+                listOf(Color(0xF0060D1A), Color(0xE6081224))
               }
           )
         )
@@ -1670,25 +1778,25 @@ private fun BreachedTerminalModuleCard(
           brush =
             Brush.horizontalGradient(
               if (isRightColumn) {
-                listOf(secondaryAccent.copy(alpha = 0.65f), accent.copy(alpha = if (isFocused) 1f else 0.80f))
+                listOf(secondaryAccent.copy(alpha = 0.60f), accent.copy(alpha = if (isFocused) 1f else 0.78f))
               } else {
-                listOf(accent.copy(alpha = if (isFocused) 1f else 0.80f), secondaryAccent.copy(alpha = 0.65f))
+                listOf(accent.copy(alpha = if (isFocused) 1f else 0.78f), secondaryAccent.copy(alpha = 0.60f))
               }
             ),
-          shape = RoundedCornerShape(10.dp),
+          shape = RoundedCornerShape(8.dp),
         )
         .clickable { onClick() }
         .testTag(testTag),
   ) {
-    // Chamfered Tactical Corner Brackets + Inner Breach-Facing Energy Tick
+    // Chamfered Tactical Corner Brackets + Inner Digitizing Aperture Coupling Bar
     Canvas(modifier = Modifier.fillMaxSize()) {
       val w = size.width
       val h = size.height
       if (w <= 4f || h <= 4f) return@Canvas
-      val brk = 10.dp.toPx().coerceAtMost(min(w, h) * 0.28f)
-      val sw = 1.6.dp.toPx()
+      val brk = 9.dp.toPx().coerceAtMost(min(w, h) * 0.26f)
+      val sw = 1.5.dp.toPx()
       val bracketCol = if (isFocused) Color.White else accent
-      val goldCorner = Color(0xFFFACC15).copy(alpha = 0.85f)
+      val goldCorner = Color(0xFFFACC15).copy(alpha = 0.80f)
 
       // Top-left chamfer bracket
       drawLine(bracketCol, Offset(2f, 2f + brk), Offset(2f, 2f), strokeWidth = sw)
@@ -1697,19 +1805,19 @@ private fun BreachedTerminalModuleCard(
       drawLine(goldCorner, Offset(w - 2f, h - 2f - brk), Offset(w - 2f, h - 2f), strokeWidth = sw)
       drawLine(goldCorner, Offset(w - 2f - brk, h - 2f), Offset(w - 2f, h - 2f), strokeWidth = sw)
 
-      // Rift-facing edge fracture energy bar (inner side facing the colossal center Rift)
+      // Inner Safe-Zone-facing digital telemetry rail
       val innerX = if (isRightColumn) 1.5f else (w - 1.5f)
       drawLine(
         brush = Brush.verticalGradient(listOf(Color.Transparent, accent, Color.Transparent)),
-        start = Offset(innerX, h * 0.16f),
-        end = Offset(innerX, h * 0.84f),
-        strokeWidth = 2.4.dp.toPx(),
+        start = Offset(innerX, h * 0.18f),
+        end = Offset(innerX, h * 0.82f),
+        strokeWidth = 2.2.dp.toPx(),
         cap = StrokeCap.Round,
       )
     }
 
     Column(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 7.dp),
+      modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp),
       verticalArrangement = Arrangement.SpaceBetween,
     ) {
       Row(
@@ -1719,7 +1827,7 @@ private fun BreachedTerminalModuleCard(
       ) {
         Text(
           text = codeLabel,
-          color = accent.copy(alpha = 0.85f),
+          color = accent.copy(alpha = 0.88f),
           fontSize = 7.2.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
@@ -1756,7 +1864,7 @@ private fun BreachedTerminalModuleCard(
         Text(
           text = title,
           color = Color.White,
-          fontSize = 10.2.sp,
+          fontSize = 10.0.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -1765,7 +1873,7 @@ private fun BreachedTerminalModuleCard(
         Text(
           text = subtitle,
           color = Color(0xFFCBD5E1),
-          fontSize = 7.8.sp,
+          fontSize = 7.6.sp,
           fontWeight = FontWeight.SemiBold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -1777,26 +1885,29 @@ private fun BreachedTerminalModuleCard(
 }
 
 /**
- * Renders the fractured `#060D1A` obsidian terminal glass & bent cyan HUD grid lines physically punched
- * open around the Colossal Center `PLAY` Rift Singularity.
+ * Digitizes the flat `#060D1A` Sci-Fi Command Tablet viewport inward into deep 3D Safe-Zone space via:
+ * 1. Stepped dissolving `#060D1A` & `#00F5D4` rectangular holographic voxel/matrix grid tiles along all 4 margins
+ *    whose opacity & scale step down (`0.90 -> 0.46 -> 0.16 -> 0.04 -> 0.0`) inward toward the 3D Sanctuary.
+ * 2. Three nested 3D-perspective cyan/slate wireframe depth rings connected by receding corner depth vectors
+ *    and precision rangefinder ticks (zero cartoon glass cracks, zero magenta fracture lines).
  */
 @Composable
-private fun BreachedTerminalViewportOverlay(
+private fun DigitizedSafeZoneViewportOverlay(
   isFocused: Boolean,
-  drawHeadlessRiftFallback: Boolean,
+  drawHeadlessSafeZoneFallback: Boolean,
 ) {
   val headless = remember { isHeadlessGlEnvironment() }
-  val pulsePhase =
+  val scanPhase =
     if (headless) {
-      0.5f
+      0.35f
     } else {
-      val transition = rememberInfiniteTransition(label = "breach_fracture_pulse")
+      val transition = rememberInfiniteTransition(label = "digitized_viewport_scan")
       val p by
         transition.animateFloat(
           initialValue = 0f,
           targetValue = (2.0 * PI).toFloat(),
-          animationSpec = infiniteRepeatable(tween(4800, easing = LinearEasing), RepeatMode.Restart),
-          label = "breach_fracture_rad",
+          animationSpec = infiniteRepeatable(tween(5400, easing = LinearEasing), RepeatMode.Restart),
+          label = "digitized_scan_rad",
         )
       p
     }
@@ -1804,153 +1915,160 @@ private fun BreachedTerminalViewportOverlay(
   Canvas(modifier = Modifier.fillMaxSize()) {
     val w = size.width
     val h = size.height
-    if (w <= 4f || h <= 4f) return@Canvas
+    if (w <= 8f || h <= 8f) return@Canvas
     val cx = w * 0.5f
-    val cy = h * 0.5f
+    val cy = h * 0.48f
     val center = Offset(cx, cy)
-    val breachR = min(w * 0.46f, h * 0.47f)
 
-    if (drawHeadlessRiftFallback) {
-      val colors = listOf(Color(0xFF00F5D4), Color(0xFF38BDF8), Color(0xFFA855F7), Color(0xFFEC4899))
-      for (arm in 0 until 4) {
-        drawArc(
-          color = colors[arm],
-          startAngle = arm * 90f + 18f,
-          sweepAngle = 68f,
-          useCenter = false,
-          topLeft = Offset(cx - breachR * 0.78f, cy - breachR * 0.78f),
-          size = Size(breachR * 1.56f, breachR * 1.56f),
-          style = Stroke(width = breachR * 0.10f, cap = StrokeCap.Round),
+    // Clean Headless Safe-Zone Schematic Fallback (used only in JVM/Robolectric tests without GLES30)
+    if (drawHeadlessSafeZoneFallback) {
+      val shieldR = min(w, h) * 0.36f
+      drawCircle(color = Color(0xFF050E1D), radius = shieldR * 1.24f, center = center)
+      drawCircle(color = Color(0xFF020814), radius = shieldR, center = center)
+      for (b in 0 until 8) {
+        val ang = (b * PI * 0.25).toFloat()
+        val innerPt = Offset(cx + cos(ang) * (shieldR * 0.24f), cy + sin(ang) * (shieldR * 0.24f))
+        val outerPt = Offset(cx + cos(ang) * shieldR, cy + sin(ang) * shieldR)
+        drawLine(
+          brush = Brush.linearGradient(listOf(Color(0xFFFACC15), Color(0xFF00F5D4)), start = innerPt, end = outerPt),
+          start = innerPt,
+          end = outerPt,
+          strokeWidth = 2.dp.toPx(),
         )
       }
-      drawCircle(color = Color.Black, radius = breachR * 0.42f, center = center)
+      drawCircle(
+        color = Color(0xFF00F5D4),
+        radius = shieldR,
+        center = center,
+        style = Stroke(width = 2.dp.toPx()),
+      )
+      drawCircle(color = Color(0xFF1E293B), radius = shieldR * 0.20f, center = center)
+      drawCircle(color = Color(0xFF38BDF8), radius = shieldR * 0.08f, center = center)
     }
 
-    // 1. Bent Tactical Cyan HUD Grid Lines Sucked Inward Toward the Rift Breach!
-    val gridColor = Color(0xFF00F5D4).copy(alpha = 0.20f)
-    val gridSteps = 6
-    for (g in 1 until gridSteps) {
-      val frac = g.toFloat() / gridSteps.toFloat()
-      // Horizontal bent grid line
-      val baseY = h * frac
-      val pathH = Path()
-      val segs = 20
-      var startedH = false
-      for (sIdx in 0..segs) {
-        val x = w * (sIdx.toFloat() / segs.toFloat())
-        val dx = cx - x
-        val dy = cy - baseY
-        val dist = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
-        if (dist > breachR * 0.84f) {
-          val pull = (breachR * 0.24f) * kotlin.math.exp(-((dist - breachR * 0.84f) / (breachR * 0.65f)))
-          val px = x + (dx / dist) * pull
-          val py = baseY + (dy / dist) * pull
-          if (!startedH) {
-            pathH.moveTo(px, py)
-            startedH = true
-          } else {
-            pathH.lineTo(px, py)
-          }
-        } else {
-          startedH = false
-        }
-      }
-      drawPath(pathH, color = gridColor, style = Stroke(width = 1.dp.toPx()))
+    // 1. Dissolving Digital Voxel / Matrix Grid Cells Along Outer Tablet Viewport Margins
+    // Stepped 10dp grid cells fade smoothly from #060D1A solid peripheral bezel into pure 3D space.
+    val cellPx = 10.5.dp.toPx().coerceAtLeast(6f)
+    val cols = (w / cellPx).toInt().coerceAtLeast(8)
+    val rows = (h / cellPx).toInt().coerceAtLeast(6)
+    val cellW = w / cols.toFloat()
+    val cellH = h / rows.toFloat()
+    val maxBandDepth = 4 // 4 stepped digital dissolution bands around all 4 edges
+    val tileGap = 1.2.dp.toPx()
+    val borderStroke = 0.8.dp.toPx()
 
-      // Vertical bent grid line
-      val baseX = w * frac
-      val pathV = Path()
-      var startedV = false
-      for (sIdx in 0..segs) {
-        val y = h * (sIdx.toFloat() / segs.toFloat())
-        val dx = cx - baseX
-        val dy = cy - y
-        val dist = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
-        if (dist > breachR * 0.84f) {
-          val pull = (breachR * 0.24f) * kotlin.math.exp(-((dist - breachR * 0.84f) / (breachR * 0.65f)))
-          val px = baseX + (dx / dist) * pull
-          val py = y + (dy / dist) * pull
-          if (!startedV) {
-            pathV.moveTo(px, py)
-            startedV = true
-          } else {
-            pathV.lineTo(px, py)
+    for (r in 0 until rows) {
+      for (c in 0 until cols) {
+        val distLeft = c
+        val distRight = (cols - 1) - c
+        val distTop = r
+        val distBottom = (rows - 1) - r
+        val edgeSteps = min(min(distLeft, distRight), min(distTop, distBottom))
+        if (edgeSteps >= maxBandDepth) continue
+
+        // Deterministic spatial hash so select digital tiles dissolve/step cleanly without random flicker
+        val hash = ((c * 73856093) xor (r * 19349663)) and 0xFF
+        val normHash = hash / 255f
+        // Skip inner-band tiles progressively so the boundary digitizes like dissolving holographic voxels
+        val keepThreshold =
+          when (edgeSteps) {
+            0 -> 1.00f
+            1 -> 0.82f
+            2 -> 0.50f
+            else -> 0.24f
           }
-        } else {
-          startedV = false
+        if (normHash > keepThreshold) continue
+
+        val baseFillAlpha =
+          when (edgeSteps) {
+            0 -> 0.88f
+            1 -> 0.46f
+            2 -> 0.18f
+            else -> 0.06f
+          }
+        val shimmer = 0.82f + 0.18f * sin(scanPhase + c * 0.45f + r * 0.35f)
+        val shrink = edgeSteps * 0.75.dp.toPx()
+        val left = c * cellW + tileGap * 0.5f + shrink * 0.5f
+        val top = r * cellH + tileGap * 0.5f + shrink * 0.5f
+        val rw = (cellW - tileGap - shrink).coerceAtLeast(1.5f)
+        val rh = (cellH - tileGap - shrink).coerceAtLeast(1.5f)
+
+        drawRect(
+          color = Color(0xFF060D1A).copy(alpha = (baseFillAlpha * shimmer).coerceIn(0f, 0.94f)),
+          topLeft = Offset(left, top),
+          size = Size(rw, rh),
+        )
+
+        // Crisp cyan/sky digital cell outline on select dissolving matrix tiles
+        if (edgeSteps >= 1 && (hash and 3) == 0) {
+          val wireAlpha =
+            when (edgeSteps) {
+              1 -> 0.36f
+              2 -> 0.24f
+              else -> 0.14f
+            } * shimmer
+          val wireCol = if ((hash and 4) == 0) Color(0xFF00F5D4) else Color(0xFF38BDF8)
+          drawRect(
+            color = wireCol.copy(alpha = wireAlpha.coerceIn(0f, 0.55f)),
+            topLeft = Offset(left, top),
+            size = Size(rw, rh),
+            style = Stroke(width = borderStroke),
+          )
         }
       }
-      drawPath(pathV, color = gridColor, style = Stroke(width = 1.dp.toPx()))
     }
 
-    // 2. 4 Fractured #060D1A Obsidian Terminal Corner Shards Punched Open Around the Rift
-    val shardAngles =
+    // 2. Three Nested Receding 3D Perspective Wireframe Depth Frames + Corner Depth Rays
+    val insetSteps = floatArrayOf(0.015f, 0.055f, 0.105f)
+    val stepColors =
       arrayOf(
-        floatArrayOf(-2.90f, -2.55f, -2.18f, -1.82f), // Top-Left corner fracture
-        floatArrayOf(-1.32f, -0.96f, -0.59f, -0.24f), // Top-Right corner fracture
-        floatArrayOf(0.24f, 0.59f, 0.96f, 1.32f),     // Bottom-Right corner fracture
-        floatArrayOf(1.82f, 2.18f, 2.55f, 2.90f),     // Bottom-Left corner fracture
+        if (isFocused) Color(0xFF00F5D4).copy(alpha = 0.62f) else Color(0xFF00F5D4).copy(alpha = 0.44f),
+        Color(0xFF38BDF8).copy(alpha = 0.28f),
+        Color(0xFF64748B).copy(alpha = 0.18f),
       )
-    val corners =
-      arrayOf(
-        Offset(0f, 0f),
-        Offset(w, 0f),
-        Offset(w, h),
-        Offset(0f, h),
-      )
-    val edgeAnchorsA =
-      arrayOf(
-        Offset(0f, h * 0.36f),
-        Offset(w * 0.66f, 0f),
-        Offset(w, h * 0.64f),
-        Offset(w * 0.34f, h),
-      )
-    val edgeAnchorsB =
-      arrayOf(
-        Offset(w * 0.34f, 0f),
-        Offset(w, h * 0.36f),
-        Offset(w * 0.66f, h),
-        Offset(0f, h * 0.64f),
-      )
+    val stepWidths = floatArrayOf(1.3.dp.toPx(), 1.0.dp.toPx(), 0.8.dp.toPx())
 
-    val fractureStroke = (if (isFocused) 2.1.dp else 1.5.dp).toPx()
-    val pulseAlpha = 0.72f + 0.28f * sin(pulsePhase)
+    for (i in insetSteps.indices) {
+      val ix = w * insetSteps[i]
+      val iy = h * (insetSteps[i] * 1.15f)
+      val rw = (w - ix * 2f).coerceAtLeast(2f)
+      val rh = (h - iy * 2f).coerceAtLeast(2f)
+      val cut = (12.dp.toPx() * (1f - i * 0.22f)).coerceAtMost(min(rw, rh) * 0.16f)
 
-    for (cIdx in 0 until 4) {
-      val angs = shardAngles[cIdx]
-      val shardPath =
+      val framePath =
         Path().apply {
-          moveTo(corners[cIdx].x, corners[cIdx].y)
-          lineTo(edgeAnchorsA[cIdx].x, edgeAnchorsA[cIdx].y)
-          for (j in angs.indices) {
-            val jagR = breachR * (if (j % 2 == 0) 1.04f else 0.95f)
-            val jx = cx + cos(angs[j]) * jagR
-            val jy = cy + sin(angs[j]) * jagR
-            lineTo(jx, jy)
-          }
-          lineTo(edgeAnchorsB[cIdx].x, edgeAnchorsB[cIdx].y)
+          moveTo(ix + cut, iy)
+          lineTo(ix + rw - cut, iy)
+          lineTo(ix + rw, iy + cut)
+          lineTo(ix + rw, iy + rh - cut)
+          lineTo(ix + rw - cut, iy + rh)
+          lineTo(ix + cut, iy + rh)
+          lineTo(ix, iy + rh - cut)
+          lineTo(ix, iy + cut)
           close()
         }
-      drawPath(shardPath, color = Color(0xCC060D1A))
-
-      // Crackling cyan/magenta/gold inner fracture edge along the shattered glass lip
-      val crackPath = Path()
-      for (j in angs.indices) {
-        val jagR = breachR * (if (j % 2 == 0) 1.04f else 0.95f)
-        val jx = cx + cos(angs[j]) * jagR
-        val jy = cy + sin(angs[j]) * jagR
-        if (j == 0) crackPath.moveTo(jx, jy) else crackPath.lineTo(jx, jy)
-      }
-      val crackCol =
-        if (cIdx % 2 == 0) Color(0xFF00F5D4).copy(alpha = pulseAlpha)
-        else Color(0xFFEC4899).copy(alpha = pulseAlpha)
-      drawPath(crackPath, color = crackCol, style = Stroke(width = fractureStroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+      drawPath(framePath, color = stepColors[i], style = Stroke(width = stepWidths[i]))
     }
 
-    // Outer HUD telemetry brackets framing the breach viewport
-    val frameCol = Color(0xFF38BDF8).copy(alpha = 0.42f)
-    drawLine(frameCol, Offset(w * 0.25f, 1f), Offset(w * 0.75f, 1f), strokeWidth = 1.dp.toPx())
-    drawLine(frameCol, Offset(w * 0.25f, h - 1f), Offset(w * 0.75f, h - 1f), strokeWidth = 1.dp.toPx())
+    // Receding 3D Perspective Corner Vectors Linking Outer Tablet Plane Into Deep Safe-Zone Space
+    val outerIx = w * insetSteps[0]
+    val outerIy = h * (insetSteps[0] * 1.15f)
+    val innerIx = w * 0.155f
+    val innerIy = h * 0.175f
+    val depthRayColor = Color(0xFF00F5D4).copy(alpha = 0.26f)
+    val rayStroke = 1.dp.toPx()
+
+    drawLine(depthRayColor, Offset(outerIx, outerIy), Offset(innerIx, innerIy), strokeWidth = rayStroke)
+    drawLine(depthRayColor, Offset(w - outerIx, outerIy), Offset(w - innerIx, innerIy), strokeWidth = rayStroke)
+    drawLine(depthRayColor, Offset(w - outerIx, h - outerIy), Offset(w - innerIx, h - innerIy), strokeWidth = rayStroke)
+    drawLine(depthRayColor, Offset(outerIx, h - outerIy), Offset(innerIx, h - innerIy), strokeWidth = rayStroke)
+
+    // Subtle Horizon & Azimuth Rangefinder Ticks Along Inner Depth Aperture
+    val tickLen = 7.dp.toPx()
+    val tickCol = Color(0xFF38BDF8).copy(alpha = 0.34f)
+    drawLine(tickCol, Offset(cx - tickLen, outerIy), Offset(cx + tickLen, outerIy), strokeWidth = rayStroke)
+    drawLine(tickCol, Offset(innerIx, cy - tickLen), Offset(innerIx, cy + tickLen), strokeWidth = rayStroke)
+    drawLine(tickCol, Offset(w - innerIx, cy - tickLen), Offset(w - innerIx, cy + tickLen), strokeWidth = rayStroke)
   }
 }
 
