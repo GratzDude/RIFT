@@ -2396,21 +2396,25 @@ private fun DevPlayfieldAndHudStudioBay(
           val crateRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SUPPLY_CRATE)
           val crateCx = w2sX(3920f)
           val crateCy = w2sY(4880f)
-          val crateR = (26f * RiftCalibrationState.crateScale * crateRec.pixelScale * worldScale).coerceAtLeast(11f)
-          drawRoundRect(
-            Color(crateRec.primaryColorInt),
-            Offset(crateCx - crateR, crateCy - crateR),
-            Size(crateR * 2f, crateR * 2f),
-            CornerRadius(6f, 6f),
+          val crateR = (39f * RiftCalibrationState.crateScale * crateRec.pixelScale * worldScale).coerceAtLeast(13f)
+          drawCircle(
+            Color(crateRec.glowColorInt).copy(alpha = (0.24f * crateRec.glowIntensity).coerceIn(0.06f, 0.55f)),
+            crateR * 1.18f,
+            Offset(crateCx, crateCy),
           )
-          drawRoundRect(
-            Color(crateRec.trimColorInt),
-            Offset(crateCx - crateR, crateCy - crateR),
-            Size(crateR * 2f, crateR * 2f),
-            CornerRadius(6f, 6f),
-            style = Stroke(2.dp.toPx() * crateRec.borderWeight),
-          )
-          drawCircle(Color(crateRec.glowColorInt), crateR * 0.36f, Offset(crateCx, crateCy))
+          drawIntoCanvas { c ->
+            val nc = c.nativeCanvas
+            val podBmp = RiftSpriteBaker.supplyPodFrameBitmap
+            val podR = crateR * 1.12f
+            val iconR = crateR * 0.78f
+            nc.save()
+            nc.translate(crateCx, crateCy)
+            nc.rotate((timeSec * 36f) % 360f)
+            nc.drawBitmap(podBmp, null, android.graphics.RectF(-podR, -podR, podR, podR), null)
+            nc.restore()
+            val buffBmp = RiftSpriteBaker.getBuffIconBitmap(0)
+            nc.drawBitmap(buffBmp, null, android.graphics.RectF(crateCx - iconR, crateCy - iconR, crateCx + iconR, crateCy + iconR), null)
+          }
           hitEntriesState += StageHitEntry(ForgeElementTarget.SUPPLY_CRATE, crateCx, crateCy, max(crateR * 1.8f, 28.dp.toPx()))
 
           val boltRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.PROJECTILE_PRIMARY_BOLT)
@@ -3585,6 +3589,26 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
         Size(span * 1.70f, span * 1.70f),
         style = Stroke(width = 3.dp.toPx() * recipe.borderWeight, cap = StrokeCap.Round),
       )
+    }
+    ForgeElementTarget.SUPPLY_CRATE -> {
+      drawCircle(
+        Color(recipe.glowColorInt).copy(alpha = (0.24f * recipe.glowIntensity).coerceIn(0.06f, 0.55f)),
+        span * 1.02f,
+        Offset(cx, cy),
+      )
+      drawIntoCanvas { c ->
+        val nc = c.nativeCanvas
+        val podBmp = RiftSpriteBaker.supplyPodFrameBitmap
+        val podR = span * 0.88f
+        val iconR = span * 0.60f
+        nc.save()
+        nc.translate(cx, cy)
+        nc.rotate((timeSec * 36f) % 360f)
+        nc.drawBitmap(podBmp, null, android.graphics.RectF(-podR, -podR, podR, podR), null)
+        nc.restore()
+        val buffBmp = RiftSpriteBaker.getBuffIconBitmap(0)
+        nc.drawBitmap(buffBmp, null, android.graphics.RectF(cx - iconR, cy - iconR, cx + iconR, cy + iconR), null)
+      }
     }
     else -> {
       val fill = Color(recipe.primaryColorInt).copy(alpha = recipe.surfaceOpacity.coerceIn(0.2f, 0.98f))

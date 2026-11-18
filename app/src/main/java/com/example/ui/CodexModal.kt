@@ -1,5 +1,6 @@
 package com.example.ui
 
+import android.graphics.RectF
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -64,6 +65,7 @@ import com.example.engine.RiftVisualForgeState
 import com.example.engine.ShipSpec
 import java.util.Locale
 import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.sin
 
 private val CodexMono = FontFamily.Monospace
@@ -72,7 +74,11 @@ private val CodexSans = FontFamily.SansSerif
 private fun cleanCodexCopy(raw: String): String =
   raw
     .replace("\u26A1", "Flux")
+    .replace("\u2696\uFE0F", "")
+    .replace("\u2696", "")
+    .replace("\uFE0F", "")
     .replace(Regex("(?i)stasis\\s+field"), "Stasis")
+    .trim()
 
 @Composable
 private fun VectorCodexEmblem(accent: Color, sizeDp: Dp = 16.dp) {
@@ -183,10 +189,10 @@ fun CodexModal(
         Column {
           Text(
             text =
-              if (isCompactPhone) "ARCHIVE & CODEX"
-              else "ARCHIVE & CODEX // TACTICAL FIELD MANUAL",
+              if (isCompactPhone) "STATS & CODEX"
+              else "STATS & CODEX // TACTICAL FIELD MANUAL",
             color = Color.White,
-            fontSize = if (isCompactPhone) 12.5.sp else 15.sp,
+            fontSize = if (isCompactPhone) 13.sp else 15.5.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = CodexSans,
             letterSpacing = 0.5.sp,
@@ -195,9 +201,9 @@ fun CodexModal(
           )
           if (!isCompactPhone) {
             Text(
-              text = "SUPPLY BUFFS • PLAYFIELD RIFTS • 10-HULL 0-RESONANCE PARITY MATRIX",
+              text = "SUPPLY BUFFS • PLAYFIELD RIFTS & 5X DS9 SAFE HARBOR • 10-HULL 0-RESONANCE PARITY",
               color = Color(0xFF00F5D4),
-              fontSize = 9.sp,
+              fontSize = 9.8.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = CodexMono,
               maxLines = 1,
@@ -274,7 +280,7 @@ fun CodexModal(
               )
               CodexHighlightCard(
                 modifier = Modifier.weight(1f),
-                title = "❖ HULL ENHANCERS",
+                title = "HULL ENHANCERS",
                 body =
                   "Ricochet Rounds, Speed / Thrust / Turn / Max Flux / Reactor Overcharge (+1..+3 stacks), Multi-Shot (+25), Repel (+1), & Flux Surge.",
                 bgColor = Color(0xFF261908),
@@ -286,7 +292,7 @@ fun CodexModal(
                 modifier = Modifier.weight(1f),
                 title = "100-PT HULL PARITY",
                 body =
-                  "100-PT HULL PARITY: All 10 ships — including modular Rift Frame — are unlocked from 0 Resonance on an identical 100-Point competitive budget.",
+                  "All 10 hulls — including modular Rift Frame — are unlocked from 0 Resonance on an identical 100-Point competitive budget.",
                 bgColor = Color(0xFF0D1E36),
                 borderColor = Color(0xFF38BDF8),
                 bodyColor = Color(0xFFE0F2FE),
@@ -345,7 +351,7 @@ fun CodexModal(
                 modifier = Modifier.weight(1f),
                 title = "MAX GRAVITY & UNSTABLE RIFT",
                 body =
-                  "420px Gravity Rifts pull nearby obstacles & barriers. Touching non-paired Rifts fuse into a 10.0s Unstable Rift (75% Max Flux blast).",
+                  "0.92x swept weapon absorption swells Gravity Rifts up to 440px; at >= 260px they drag & implode Asteroids/Stations (950/s crush + 360° Nova). Touching Rifts fuse into a 10.0s Unstable Rift (75% Max Flux blast).",
                 bgColor = Color(0xFF0A2229),
                 borderColor = Color(0xFF2DD4BF),
                 bodyColor = Color(0xFFCCFBF1),
@@ -364,6 +370,13 @@ fun CodexModal(
             }
           }
 
+          item(key = "safe_zone_ds9_and_sector_obstacles") {
+            SafeZoneAndSectorObstaclesCard(
+              isCompactPhone = isCompactPhone,
+              visualRev = visualRev,
+            )
+          }
+
           items(RiftCodex.RIFT_ANOMALIES_CODEX, key = { it.id }) { rift ->
             val accentColor =
               runCatching { Color(android.graphics.Color.parseColor(rift.accentHex)) }
@@ -379,7 +392,7 @@ fun CodexModal(
             ) {
               RiftAnomalyIconPreview(
                 riftId = rift.id,
-                sizeDp = if (isCompactPhone) 54 else 64,
+                sizeDp = if (isCompactPhone) 56 else 66,
                 accentColor = accentColor,
               )
               Column(modifier = Modifier.weight(1f)) {
@@ -395,7 +408,7 @@ fun CodexModal(
                     Text(
                       text = cleanCodexCopy(rift.title),
                       color = accentColor,
-                      fontSize = if (isCompactPhone) 12.sp else 13.5.sp,
+                      fontSize = if (isCompactPhone) 12.2.sp else 13.8.sp,
                       fontWeight = FontWeight.Bold,
                       fontFamily = CodexSans,
                     )
@@ -407,7 +420,7 @@ fun CodexModal(
                       Text(
                         text = cleanCodexCopy(rift.classification),
                         color = Color(0xFFCBD5E1),
-                        fontSize = 8.5.sp,
+                        fontSize = 9.0.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = CodexMono,
                       )
@@ -422,24 +435,25 @@ fun CodexModal(
                     Text(
                       text = cleanCodexCopy(rift.specBadge),
                       color = accentColor,
-                      fontSize = if (isCompactPhone) 9.sp else 10.sp,
+                      fontSize = if (isCompactPhone) 9.5.sp else 10.2.sp,
                       fontWeight = FontWeight.Bold,
                       fontFamily = CodexMono,
                     )
                   }
                 }
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                   text = cleanCodexCopy(rift.effectSummary),
                   color = Color.White,
-                  fontSize = if (isCompactPhone) 10.sp else 11.sp,
+                  fontSize = if (isCompactPhone) 10.2.sp else 11.4.sp,
+                  lineHeight = if (isCompactPhone) 13.5.sp else 15.sp,
                 )
-                Spacer(modifier = Modifier.height(1.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                   text = "TACTICAL: ${cleanCodexCopy(rift.tacticalNote)}",
-                  color = Color(0xFF94A3B8),
-                  fontSize = if (isCompactPhone) 9.2.sp else 10.sp,
-                  lineHeight = if (isCompactPhone) 12.sp else 13.sp,
+                  color = Color(0xFFCBD5E1),
+                  fontSize = if (isCompactPhone) 9.8.sp else 10.5.sp,
+                  lineHeight = if (isCompactPhone) 12.8.sp else 14.sp,
                 )
               }
             }
@@ -520,6 +534,171 @@ fun CodexModal(
   }
 }
 
+/**
+ * Dedicated Safe-Zone `DS9` Citadel & Sector Obstacles reference card inside the Playfield Rifts tab.
+ * Renders the live `RiftSpriteBaker.safeZoneStationBitmap` (`5x` ship-scale `180px` DS9 metallic station)
+ * + revolving Ops Holo-Ring alongside exact Safe Harbor, `2,400` Flux Crystal Asteroid, and `10`-Hit Station Nova rules.
+ */
+@Composable
+private fun SafeZoneAndSectorObstaclesCard(
+  isCompactPhone: Boolean,
+  visualRev: Int,
+) {
+  val headless = remember { isHeadlessGlEnvironment() }
+  val spinPhase =
+    if (headless) {
+      0.6f
+    } else {
+      val transition = rememberInfiniteTransition(label = "codex_ds9_station_spin")
+      val p by
+        transition.animateFloat(
+          initialValue = 0f,
+          targetValue = 1f,
+          animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Restart),
+          label = "ds9_spin_frac",
+        )
+      p
+    }
+  val stationBmp = remember(visualRev) { RiftSpriteBaker.safeZoneStationBitmap }
+  val stationRect = remember { RectF() }
+  val previewSizeDp = if (isCompactPhone) 62 else 74
+
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .background(Color(0xFF0B1C34), RoundedCornerShape(9.dp))
+        .border(
+          1.2.dp,
+          Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFACC15), Color(0xFF38BDF8))),
+          RoundedCornerShape(9.dp),
+        )
+        .padding(if (isCompactPhone) 8.dp else 10.dp)
+        .testTag("codex_safe_zone_ds9_card"),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(if (isCompactPhone) 10.dp else 12.dp),
+  ) {
+    Box(
+      modifier =
+        Modifier.size(previewSizeDp.dp)
+          .clip(RoundedCornerShape(9.dp))
+          .background(Color(0xFF030814))
+          .border(1.4.dp, Color(0xFF00F5D4), RoundedCornerShape(9.dp)),
+      contentAlignment = Alignment.Center,
+    ) {
+      Canvas(modifier = Modifier.fillMaxSize().padding(3.dp)) {
+        val cx = size.width * 0.5f
+        val cy = size.height * 0.5f
+        val shieldR = size.minDimension * 0.47f
+        val stationR = size.minDimension * 0.38f
+        val timeSec = spinPhase * 9.0f
+
+        for (b in 0 until 8) {
+          val ang = (b * PI * 0.25).toFloat()
+          drawLine(
+            color = Color(0xFF00F5D4).copy(alpha = 0.42f),
+            start = Offset(cx + cos(ang) * (stationR * 0.45f), cy + sin(ang) * (stationR * 0.45f)),
+            end = Offset(cx + cos(ang) * shieldR, cy + sin(ang) * shieldR),
+            strokeWidth = 1.1.dp.toPx(),
+          )
+        }
+        drawCircle(
+          color = Color(0xFF00F5D4).copy(alpha = 0.55f),
+          radius = shieldR,
+          center = Offset(cx, cy),
+          style = Stroke(width = 1.2.dp.toPx()),
+        )
+        drawIntoCanvas { composeCanvas ->
+          val nc = composeCanvas.nativeCanvas
+          nc.save()
+          nc.translate(cx, cy)
+          nc.rotate(spinPhase * 360f)
+          stationRect.set(-stationR, -stationR, stationR, stationR)
+          nc.drawBitmap(stationBmp, null, stationRect, null)
+          nc.restore()
+          RiftSpriteBaker.drawSafeZoneStationHoloRing(
+            c = nc,
+            cx = cx,
+            cy = cy,
+            stationRadius = stationR,
+            timeSec = timeSec,
+            isLockedOut = false,
+            alphaScale = 1f,
+          )
+        }
+      }
+    }
+
+    Column(
+      modifier = Modifier.weight(1f),
+      verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          modifier = Modifier.weight(1f, fill = false),
+        ) {
+          Text(
+            text = "SAFE-ZONE DS9 CITADEL & SECTOR OBSTACLES",
+            color = Color(0xFF00F5D4),
+            fontSize = if (isCompactPhone) 11.8.sp else 13.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = CodexSans,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Box(
+            modifier =
+              Modifier.background(Color(0x26FACC15), RoundedCornerShape(4.dp))
+                .padding(horizontal = 5.dp, vertical = 2.dp)
+          ) {
+            Text(
+              text = "STAR FORGE LIVE",
+              color = Color(0xFFFACC15),
+              fontSize = 8.8.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = CodexMono,
+            )
+          }
+        }
+        Box(
+          modifier =
+            Modifier.background(Color(0x2200F5D4), RoundedCornerShape(6.dp))
+              .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+              .padding(horizontal = 7.dp, vertical = 2.dp)
+        ) {
+          Text(
+            text = "5X SHIP (180px) • 15S STAY",
+            color = Color(0xFF00F5D4),
+            fontSize = if (isCompactPhone) 9.2.sp else 10.0.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = CodexMono,
+          )
+        }
+      }
+
+      Text(
+        text =
+          "SAFE HARBOR (SECTOR CONVERGENCE & FLUX CORE ONLY): Anchored by a 5x ship-scale (180px radius) DS9 metallic station with a revolving cyan/gold Ops Holo-Ring & radial stabilizer beams (editable in STAR FORGE). Weapons are locked inside; exceeding the 15s max stay or firing in combat triggers a 15s Safe-Zone lockout (ejects Flux Core at 1,650 px/s).",
+        color = Color.White,
+        fontSize = if (isCompactPhone) 10.0.sp else 11.2.sp,
+        lineHeight = if (isCompactPhone) 13.2.sp else 14.8.sp,
+      )
+      Text(
+        text =
+          "OBSTACLES & STATION NOVAS: Crystal Asteroids have 2,400 Flux integrity, drop a guaranteed Supply Crate on shatter, and respawn in 20.0s. Orbital & Asteroid Stations charge a 10-segment ring and unleash a 16-bolt 360° Defense Nova every 10 hits (or when imploded by a >= 260px Gravity Rift).",
+        color = Color(0xFFCBD5E1),
+        fontSize = if (isCompactPhone) 9.8.sp else 10.5.sp,
+        lineHeight = if (isCompactPhone) 12.8.sp else 14.0.sp,
+      )
+    }
+  }
+}
+
 @Composable
 private fun CodexSupplyBuffCard(
   entry: PowerUpCodexEntry,
@@ -569,7 +748,7 @@ private fun CodexSupplyBuffCard(
         Text(
           text = cleanCodexCopy(entry.title),
           color = accentColor,
-          fontSize = if (isCompactPhone) 10.2.sp else 11.5.sp,
+          fontSize = if (isCompactPhone) 10.8.sp else 11.8.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = CodexSans,
           maxLines = 1,
@@ -585,7 +764,7 @@ private fun CodexSupplyBuffCard(
           Text(
             text = "${entry.dropRatePercent}%",
             color = Color(0xFFFFD700),
-            fontSize = 8.5.sp,
+            fontSize = 9.0.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = CodexMono,
           )
@@ -594,16 +773,16 @@ private fun CodexSupplyBuffCard(
       Text(
         text = cleanCodexCopy(entry.effectSummary),
         color = Color.White,
-        fontSize = if (isCompactPhone) 9.2.sp else 10.sp,
-        lineHeight = if (isCompactPhone) 11.5.sp else 12.5.sp,
-        maxLines = 2,
+        fontSize = if (isCompactPhone) 9.8.sp else 10.6.sp,
+        lineHeight = if (isCompactPhone) 12.4.sp else 13.6.sp,
+        maxLines = 3,
         overflow = TextOverflow.Ellipsis,
       )
       Text(
         text = "TACTICAL: ${cleanCodexCopy(entry.tacticalNote)}",
-        color = Color(0xFF94A3B8),
-        fontSize = if (isCompactPhone) 8.5.sp else 9.2.sp,
-        lineHeight = if (isCompactPhone) 10.8.sp else 12.sp,
+        color = Color(0xFFCBD5E1),
+        fontSize = if (isCompactPhone) 9.4.sp else 10.0.sp,
+        lineHeight = if (isCompactPhone) 11.8.sp else 13.0.sp,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
       )
@@ -680,7 +859,7 @@ private fun CodexHullReferenceCard(
           Text(
             text = "#${ship.id} $displayName",
             color = Color.White,
-            fontSize = if (isCompactPhone) 11.sp else 12.5.sp,
+            fontSize = if (isCompactPhone) 11.4.sp else 12.8.sp,
             fontWeight = FontWeight.Black,
             fontFamily = CodexSans,
             maxLines = 1,
@@ -689,7 +868,7 @@ private fun CodexHullReferenceCard(
           Text(
             text = ship.role.uppercase(Locale.US),
             color = accentColor,
-            fontSize = if (isCompactPhone) 9.sp else 10.sp,
+            fontSize = if (isCompactPhone) 9.6.sp else 10.4.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = CodexSans,
             maxLines = 1,
@@ -706,7 +885,7 @@ private fun CodexHullReferenceCard(
         Text(
           text = "0 RES • 100 PTS",
           color = Color(0xFF34D399),
-          fontSize = 8.sp,
+          fontSize = 8.6.sp,
           fontWeight = FontWeight.Black,
           fontFamily = CodexMono,
         )
@@ -733,7 +912,7 @@ private fun CodexHullReferenceCard(
         text =
           "PRI (${ship.primaryPts}P): ${cleanCodexCopy(ship.primaryTitle)} • ${ship.primaryDamage.toInt()} DMG • ${ship.primaryCost.toInt()} Flux",
         color = Color(0xFFE2E8F0),
-        fontSize = if (isCompactPhone) 8.8.sp else 9.5.sp,
+        fontSize = if (isCompactPhone) 9.6.sp else 10.2.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = CodexMono,
         maxLines = 1,
@@ -742,7 +921,7 @@ private fun CodexHullReferenceCard(
       Text(
         text = "SEC (${ship.secondaryPts}P): $secondaryDisplay",
         color = Color(0xFFFBBF24),
-        fontSize = if (isCompactPhone) 8.8.sp else 9.5.sp,
+        fontSize = if (isCompactPhone) 9.6.sp else 10.2.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = CodexMono,
         maxLines = 1,
@@ -760,8 +939,8 @@ private fun HullStatChip(label: String, pts: Int, accent: Color) {
   ) {
     Text(
       text = label,
-      color = Color(0xFF94A3B8),
-      fontSize = 7.8.sp,
+      color = Color(0xFFCBD5E1),
+      fontSize = 8.4.sp,
       fontWeight = FontWeight.Bold,
       fontFamily = CodexMono,
     )
@@ -781,7 +960,7 @@ private fun HullStatChip(label: String, pts: Int, accent: Color) {
     Text(
       text = "$pts",
       color = Color.White,
-      fontSize = 8.sp,
+      fontSize = 8.8.sp,
       fontWeight = FontWeight.Black,
       fontFamily = CodexMono,
     )
@@ -799,7 +978,7 @@ private fun CodexTabPill(
 ) {
   Box(
     modifier =
-      Modifier.height(28.dp)
+      Modifier.height(29.dp)
         .clip(RoundedCornerShape(6.dp))
         .background(
           if (selected) {
@@ -828,7 +1007,7 @@ private fun CodexTabPill(
       Text(
         text = label,
         color = if (selected) Color.White else Color(0xFF94A3B8),
-        fontSize = 9.5.sp,
+        fontSize = 9.8.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = CodexMono,
         maxLines = 1,
@@ -853,15 +1032,15 @@ private fun CodexHighlightCard(
         .background(bgColor, RoundedCornerShape(8.dp))
         .border(1.dp, borderColor, RoundedCornerShape(8.dp))
         .padding(
-          horizontal = if (isCompactPhone) 6.dp else 10.dp,
+          horizontal = if (isCompactPhone) 7.dp else 10.dp,
           vertical = if (isCompactPhone) 5.dp else 7.dp,
         )
   ) {
-    Column {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
       Text(
         text = title,
         color = borderColor,
-        fontSize = if (isCompactPhone) 9.sp else 10.sp,
+        fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = CodexMono,
         maxLines = 1,
@@ -870,9 +1049,9 @@ private fun CodexHighlightCard(
       Text(
         text = body,
         color = bodyColor,
-        fontSize = if (isCompactPhone) 8.4.sp else 9.4.sp,
-        lineHeight = if (isCompactPhone) 11.sp else 12.5.sp,
-        maxLines = if (isCompactPhone) 3 else 4,
+        fontSize = if (isCompactPhone) 9.5.sp else 10.2.sp,
+        lineHeight = if (isCompactPhone) 12.2.sp else 13.6.sp,
+        maxLines = if (isCompactPhone) 4 else 5,
         overflow = TextOverflow.Ellipsis,
       )
     }

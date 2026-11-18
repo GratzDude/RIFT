@@ -96,19 +96,28 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   }
 
   private fun sanitizeMode(raw: String): String {
+    val trimmed = raw.trim()
     val allowed =
       setOf(
         "FFA",
         "SECTOR_CONVERGENCE",
         "RIFT_SKIRMISH",
+        "RIFT_CONTROL",
         "FLUX_CORE",
         "STASIS_BREACH",
         "SYNDICATE_WARS",
+        "NEXUS_LOBBY",
         "warzone_10v10",
         "ranked_3v3",
         "ranked_5v5",
       )
-    return if (raw in allowed) raw else "FFA"
+    return when {
+      trimmed in allowed -> trimmed
+      trimmed.startsWith("CUSTOM_") &&
+        trimmed.length <= 30 &&
+        trimmed.matches(Regex("^CUSTOM_[A-Za-z0-9_\\-]+$")) -> trimmed
+      else -> "FFA"
+    }
   }
 
   suspend fun getPilotDossier(userId: String = requireUserId()): Result<PilotDossier?> = runCatching {
@@ -377,6 +386,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
             "energy" to state.energy.coerceIn(0L, 10000L),
             "maxEnergy" to state.maxEnergy.coerceIn(100L, 10000L),
             "bounty" to state.bounty.coerceIn(0L, 100000000L),
+            "liveResonance" to state.liveResonance.coerceIn(0L, 1_000_000L),
             "lastPingType" to safePing,
             "lastPingX" to state.lastPingX.coerceIn(-100000.0, 100000.0),
             "lastPingY" to state.lastPingY.coerceIn(-100000.0, 100000.0),
@@ -405,6 +415,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
             "energy" to state.energy.coerceIn(0L, 10000L),
             "maxEnergy" to state.maxEnergy.coerceIn(100L, 10000L),
             "bounty" to state.bounty.coerceIn(0L, 100000000L),
+            "liveResonance" to state.liveResonance.coerceIn(0L, 1_000_000L),
             "lastPingType" to safePing,
             "lastPingX" to state.lastPingX.coerceIn(-100000.0, 100000.0),
             "lastPingY" to state.lastPingY.coerceIn(-100000.0, 100000.0),
@@ -530,12 +541,15 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         val updatedMs = liveMatch.updatedAt?.toDate()?.time
         val isOnlineNow = updatedMs == null || (nowMs - updatedMs) <= 45_000L
         val sectorTitle =
-          when (liveMatch.sectorId) {
-            "SECTOR_CONVERGENCE", "FFA" -> "Sector Convergence"
-            "RIFT_SKIRMISH" -> "Rift Skirmish"
-            "FLUX_CORE" -> "Flux Core"
-            "STASIS_BREACH" -> "Stasis Breach"
-            "SYNDICATE_WARS" -> "Syndicate Wars"
+          when {
+            liveMatch.sectorId == "SECTOR_CONVERGENCE" || liveMatch.sectorId == "FFA" -> "Sector Convergence"
+            liveMatch.sectorId == "RIFT_SKIRMISH" -> "Rift Skirmish"
+            liveMatch.sectorId == "RIFT_CONTROL" -> "Rift Control"
+            liveMatch.sectorId == "FLUX_CORE" -> "Flux Core"
+            liveMatch.sectorId == "STASIS_BREACH" -> "Stasis Breach"
+            liveMatch.sectorId == "SYNDICATE_WARS" -> "Syndicate Wars"
+            liveMatch.sectorId == "NEXUS_LOBBY" -> "NEXUS Command"
+            liveMatch.sectorId.startsWith("CUSTOM_") -> "Custom Rift"
             else -> "Sector Orbit"
           }
         return FriendPilotEntry(

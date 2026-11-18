@@ -12,6 +12,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -81,6 +83,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
@@ -111,16 +114,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.R
-import com.example.data.RiftBillingManager
 import com.example.data.ArmadaMemberSlot
 import com.example.data.LivePilotState
+import com.example.data.LocalPilotPrefs
+import com.example.data.RiftBillingManager
 import com.example.data.RiftCommunityRoles
 import com.example.data.SyndicateChatMessage
 import com.example.data.SyndicateWarRecord
 import com.example.engine.CustomGameConfig
 import com.example.engine.RankedGameMode
 import com.example.engine.RiftCalibrationState
+import com.example.engine.RiftCodex
 import com.example.engine.RiftGameEngine
+import com.example.engine.RiftProgressionCatalog
+import com.example.engine.RiftSoundSynthesizer
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.RiftVisualForgeState
 import java.util.Locale
@@ -1039,6 +1046,13 @@ fun NexusAiConsoleModal(
             syndicateTag = cleanSyndicateTag,
             liveResonance = resolvedLiveResonance,
             riftShards = riftShards,
+            activeShipId = activeShipId,
+            activeShipSummary = activeShipSummary,
+            armadaCount = armadaSlots.size.coerceAtLeast(1),
+            activeArmadaName = activeArmadaName,
+            syndicateWarRecord = syndicateWarRecord,
+            engine = engine,
+            currentUserId = currentUserId,
             totalOnlinePilots = totalOnlinePilots,
             syndicateOnlineCount = syndicateOnlineCount,
             strikeWingOnlineCount = strikeWingOnlineCount,
@@ -1321,6 +1335,13 @@ private fun OrbitalHubSpatialStage(
   syndicateTag: String,
   liveResonance: Int,
   riftShards: Long,
+  activeShipId: Int,
+  @Suppress("UNUSED_PARAMETER") activeShipSummary: String,
+  armadaCount: Int,
+  activeArmadaName: String,
+  syndicateWarRecord: SyndicateWarRecord,
+  engine: RiftGameEngine?,
+  currentUserId: String,
   totalOnlinePilots: Int,
   syndicateOnlineCount: Int,
   strikeWingOnlineCount: Int,
@@ -1348,6 +1369,7 @@ private fun OrbitalHubSpatialStage(
 ) {
   val context = LocalContext.current
   val headless = remember { isHeadlessGlEnvironment() }
+  val localPrefs = remember(context) { LocalPilotPrefs(context) }
   val howToPrefs = remember(context) { context.getSharedPreferences("rift_user_settings", Context.MODE_PRIVATE) }
   var showHowToPlayModal by remember {
     mutableStateOf(!headless && !howToPrefs.getBoolean("seen_how_to_play_v66", false))
@@ -1358,9 +1380,142 @@ private fun OrbitalHubSpatialStage(
   }
 
   val shardText =
-    if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) "999,999" else riftShards.toString()
+    if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) "999,999" else String.format(Locale.US, "%,d", riftShards)
   val pilotIdentityLabel =
     if (syndicateTag.isNotBlank()) "• [$syndicateTag] $callsign" else "• $callsign"
+
+  // Live per-card pilot telemetry & cached 192x192 5-stop metallic NEXUS-station module emblems
+  val activeCrestRecipe = RiftVisualForgeState.activeSyndicateCrestRecipe
+  val spriteRev = RiftSpriteBaker.spriteVisualRevision
+  val customShipRev = RiftSpriteBaker.customShip9Version
+  val hullTrim = RiftSpriteBaker.activeHullTrimStyle
+  val clampedShipId = activeShipId.coerceIn(1, 10)
+
+  val equippedSpec = remember(clampedShipId, customShipRev) { RiftCodex.getShipById(clampedShipId) }
+  val cleanRoleTitle =
+    remember(equippedSpec.role) {
+      equippedSpec.role.substringBefore("(").trim().uppercase(Locale.US)
+    }
+  val hangarPrimaryStat = "${equippedSpec.name.uppercase(Locale.US)} • $cleanRoleTitle"
+  val hangarSecondaryDetail = "100-PT PARITY • 10 HULLS OPEN"
+
+  val conduitTier = remember(liveResonance) { RiftProgressionCatalog.getConduitTierForResonance(liveResonance) }
+  val directives =
+    remember(localPrefs, currentUserId, liveResonance) {
+      localPrefs.getDailyDirectives(currentUserId.ifBlank { null })
+    }
+  val completedDirectives = directives.count { it.isComplete }
+  val claimableDirectives = directives.count { it.isComplete && !it.claimed }
+  val conduitBadge = if (claimableDirectives > 0) "$claimableDirectives CLAIM" else "$liveResonance RES"
+  val conduitPrimaryStat = "${String.format(Locale.US, "%,d", liveResonance)} RES • ${conduitTier.title}"
+  val conduitSecondaryDetail =
+    "START ${conduitTier.startingBounty} BTY • $completedDirectives/${directives.size.coerceAtLeast(3)} QUESTS"
+
+  val activeTrackIdx = RiftSoundSynthesizer.activeTrackSlotIndex.coerceIn(0, 2)
+  val activeMusicRecipe = RiftSoundSynthesizer.trackSlots.getOrNull(activeTrackIdx)
+  val trackArchetypeTitle = (activeMusicRecipe?.archetype?.label ?: "Dark Synthwave").uppercase(Locale.US)
+  val trackBpm = activeMusicRecipe?.bpm ?: 128
+  val trimLabel =
+    when (hullTrim) {
+      1 -> "ICE-CYAN TRIM"
+      2 -> "GOLD TRIM"
+      3 -> "VIOLET TRIM"
+      else -> "STD ARMOR"
+    }
+  val forgePrimaryStat = "$trackArchetypeTitle • $trackBpm BPM"
+  val forgeSecondaryDetail = "36-TARGET LAB • $trimLabel"
+
+  val commsBadge =
+    when {
+      unreadCommsCount > 0 -> "$unreadCommsCount NEW"
+      totalOnlinePilots > 0 -> "$totalOnlinePilots LIVE"
+      else -> "AI READY"
+    }
+  val commsPrimaryStat =
+    if (unreadCommsCount > 0) {
+      "$unreadCommsCount UNREAD • $totalOnlinePilots ONLINE"
+    } else {
+      "$totalOnlinePilots PILOTS LIVE • SUBSPACE"
+    }
+  val commsSecondaryDetail = "#SECTOR • #SYNDICATE • #NEXUS-AI"
+
+  val clanLabel = if (syndicateTag.isNotBlank()) "[$syndicateTag] CLAN" else "SOLO PILOT"
+  val wingLabel =
+    if (activeArmadaName.isNotBlank()) {
+      "[${activeArmadaName.take(8)}] ${armadaCount.coerceIn(1, 5)}/5"
+    } else {
+      "WING ${armadaCount.coerceIn(1, 5)}/5"
+    }
+  val citadelBadge =
+    when {
+      strikeWingOnlineCount > 0 -> "WING $strikeWingOnlineCount"
+      syndicateTag.isNotBlank() -> "[$syndicateTag]"
+      else -> null
+    }
+  val citadelPrimaryStat = "$clanLabel • $wingLabel"
+  val citadelSecondaryDetail =
+    "WARS ${syndicateWarRecord.warWins}W-${syndicateWarRecord.warLosses}L • SYN $syndicateOnlineCount LIVE"
+
+  val allKills = localPrefs.getAllTimeKills()
+  val allDeaths = localPrefs.getAllTimeDeaths()
+  val currentSessionBounty = (engine?.localPlayer?.bounty ?: 100).toLong()
+  val peakBounty = maxOf(localPrefs.getAllTimeBountyPeak(), currentSessionBounty)
+  val totalWins = localPrefs.getConvergencesWon()
+  val kdRatioText =
+    if (allDeaths <= 0L) {
+      String.format(Locale.US, "%.1f", allKills.toFloat())
+    } else {
+      String.format(Locale.US, "%.2f", allKills.toFloat() / allDeaths.toFloat())
+    }
+  val archiveBadge = if (totalWins > 0L) "${totalWins}W" else null
+  val archivePrimaryStat = "PEAK ${String.format(Locale.US, "%,d", peakBounty)} BTY • $totalWins WINS"
+  val archiveSecondaryDetail = "K/D $kdRatioText ($allKills/$allDeaths) • FIELD MANUAL"
+
+  val hangarEmblem =
+    remember(clampedShipId, spriteRev, customShipRev, hullTrim) {
+      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
+        moduleKey = "HANGAR",
+        activeShipId = clampedShipId,
+        sizePx = 192,
+      ).asImageBitmap()
+    }
+  val conduitEmblem =
+    remember(spriteRev) {
+      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
+        moduleKey = "CONDUIT",
+        sizePx = 192,
+      ).asImageBitmap()
+    }
+  val forgeEmblem =
+    remember(spriteRev) {
+      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
+        moduleKey = "FORGE",
+        sizePx = 192,
+      ).asImageBitmap()
+    }
+  val commsEmblem =
+    remember(spriteRev) {
+      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
+        moduleKey = "COMMS",
+        sizePx = 192,
+      ).asImageBitmap()
+    }
+  val citadelEmblem =
+    remember(spriteRev, activeCrestRecipe, syndicateTag) {
+      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
+        moduleKey = "CITADEL",
+        crestRecipe = activeCrestRecipe,
+        syndicateTag = syndicateTag,
+        sizePx = 192,
+      ).asImageBitmap()
+    }
+  val archiveEmblem =
+    remember(spriteRev) {
+      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
+        moduleKey = "ARCHIVE",
+        sizePx = 192,
+      ).asImageBitmap()
+    }
 
   Box(modifier = Modifier.fillMaxSize()) {
     // Unified #060D1A Sci-Fi Command Tablet Outer Bezel Chassis
@@ -1411,11 +1566,11 @@ private fun OrbitalHubSpatialStage(
         modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 5.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        // Minimal Top Sci-Fi Tablet Header (#060D1A obsidian-glass bar)
+        // Enlarged Crisp Top Sci-Fi Tablet Header (#060D1A obsidian-glass bar)
         Row(
           modifier =
             Modifier.fillMaxWidth()
-              .height(36.dp)
+              .height(40.dp)
               .clip(RoundedCornerShape(9.dp))
               .background(Color(0xF0060D1A))
               .border(
@@ -1429,14 +1584,14 @@ private fun OrbitalHubSpatialStage(
         ) {
           Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.weight(1f),
           ) {
-            SwirlingRiftVortexGlyph(modifier = Modifier.size(22.dp), isStreaming = isStreaming)
+            SwirlingRiftVortexGlyph(modifier = Modifier.size(24.dp), isStreaming = isStreaming)
             Text(
               text = "NEXUS",
               color = Color(0xFF00F5D4),
-              fontSize = 12.sp,
+              fontSize = 12.5.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               letterSpacing = 1.1.sp,
@@ -1444,7 +1599,7 @@ private fun OrbitalHubSpatialStage(
             Text(
               text = pilotIdentityLabel,
               color = Color(0xFFE2E8F0),
-              fontSize = 8.4.sp,
+              fontSize = 10.0.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -1453,30 +1608,30 @@ private fun OrbitalHubSpatialStage(
             Text(
               text = "•",
               color = Color(0xFF64748B),
-              fontSize = 8.4.sp,
+              fontSize = 9.8.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
             )
-            ResonanceCrestIcon(sizeDp = 14.dp)
+            ResonanceCrestIcon(sizeDp = 16.dp)
             Text(
               text = "$liveResonance",
               color = Color(0xFFFACC15),
-              fontSize = 8.5.sp,
+              fontSize = 10.4.sp,
               fontWeight = FontWeight.ExtraBold,
               fontFamily = FontFamily.Monospace,
             )
             Text(
               text = "•",
               color = Color(0xFF64748B),
-              fontSize = 8.4.sp,
+              fontSize = 9.8.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
             )
-            RiftShardGemIcon(sizeDp = 14.dp)
+            RiftShardGemIcon(sizeDp = 16.dp)
             Text(
               text = shardText,
               color = Color(0xFFF0ABFC),
-              fontSize = 8.5.sp,
+              fontSize = 10.4.sp,
               fontWeight = FontWeight.ExtraBold,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -1484,7 +1639,7 @@ private fun OrbitalHubSpatialStage(
             Text(
               text = "• SYN $syndicateOnlineCount • WING $strikeWingOnlineCount • $totalOnlinePilots ONLINE",
               color = Color(0xFF34D399),
-              fontSize = 8.2.sp,
+              fontSize = 9.8.sp,
               fontWeight = FontWeight.ExtraBold,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -1501,16 +1656,16 @@ private fun OrbitalHubSpatialStage(
               modifier =
                 Modifier.clip(RoundedCornerShape(6.dp))
                   .background(Color(0xFF0B192E))
-                  .border(1.dp, Color(0xFFFACC15).copy(alpha = 0.80f), RoundedCornerShape(6.dp))
+                  .border(1.dp, Color(0xFFFACC15).copy(alpha = 0.85f), RoundedCornerShape(6.dp))
                   .clickable { showHowToPlayModal = true }
-                  .padding(horizontal = 8.dp, vertical = 4.dp)
+                  .padding(horizontal = 9.dp, vertical = 5.dp)
                   .testTag("nexus_btn_how_to_play"),
               contentAlignment = Alignment.Center,
             ) {
               Text(
                 text = "[? HOW TO PLAY]",
                 color = Color(0xFFFACC15),
-                fontSize = 8.0.sp,
+                fontSize = 9.6.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1524,18 +1679,18 @@ private fun OrbitalHubSpatialStage(
                   .background(if (helmFocused) Color(0x3338BDF8) else Color(0xFF0B192E))
                   .border(
                     1.dp,
-                    if (helmFocused) Color.White else Color(0xFF94A3B8).copy(alpha = 0.75f),
+                    if (helmFocused) Color.White else Color(0xFF94A3B8).copy(alpha = 0.80f),
                     RoundedCornerShape(6.dp),
                   )
                   .clickable { onSelectNode(7, NexusCoreNode.HELM_SYSTEMS) }
-                  .padding(horizontal = 8.dp, vertical = 4.dp)
+                  .padding(horizontal = 9.dp, vertical = 5.dp)
                   .testTag("nexus_node_helm_systems"),
               contentAlignment = Alignment.Center,
             ) {
               Text(
                 text = "[HELM SYSTEMS]",
                 color = if (helmFocused) Color.White else Color(0xFFCBD5E1),
-                fontSize = 8.0.sp,
+                fontSize = 9.6.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1548,14 +1703,14 @@ private fun OrbitalHubSpatialStage(
                     .background(Color(0xFF280D18))
                     .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(6.dp))
                     .clickable { onLeaveMatch() }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .padding(horizontal = 9.dp, vertical = 5.dp)
                     .testTag("nexus_leave_match_button"),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
                   text = "LEAVE MATCH",
                   color = Color(0xFFFB7185),
-                  fontSize = 8.0.sp,
+                  fontSize = 9.6.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -1575,14 +1730,14 @@ private fun OrbitalHubSpatialStage(
                       onEnterPracticeRift()
                     }
                   }
-                  .padding(horizontal = 9.dp, vertical = 4.dp)
+                  .padding(horizontal = 10.dp, vertical = 5.dp)
                   .testTag("nexus_close_button"),
               contentAlignment = Alignment.Center,
             ) {
               Text(
                 text = if (isInMatch) "RETURN TO RIFT >" else "PRACTICE RIFT >",
                 color = Color(0xFF00F5D4),
-                fontSize = 8.2.sp,
+                fontSize = 9.8.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1591,16 +1746,16 @@ private fun OrbitalHubSpatialStage(
         }
 
         // Main Zero-Scroll Sci-Fi Command Tablet Deck:
-        // Left 24% Peripheral Bay • Center 52% Digitizing Inward Safe-Zone Viewport • Right 24% Peripheral Bay
+        // Left 25% Metallic Module Cards • Center 50% Round Overwatch Aperture • Right 25% Metallic Module Cards
         Row(
           modifier = Modifier.weight(1f).fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(6.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          // LEFT SCI-FI TABLET DOCK (3 Chamfered #060D1A Terminal Cards)
+          // LEFT SCI-FI TABLET DOCK (3 Metallic Station-Styled Module Cards)
           Column(
             modifier =
-              Modifier.weight(0.24f)
+              Modifier.weight(0.25f)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color(0xBF050B16))
@@ -1610,12 +1765,13 @@ private fun OrbitalHubSpatialStage(
           ) {
             SciFiTabletModuleCard(
               modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "HANGAR DECK",
-              subtitle = "10 Ships & 100-Pt Builder",
-              codeLabel = "SYS-01",
+              title = "SHIPS & BUILDS",
+              primaryStat = hangarPrimaryStat,
+              secondaryDetail = hangarSecondaryDetail,
+              emblemBitmap = hangarEmblem,
               accent = Color(0xFF38BDF8),
               secondaryAccent = Color(0xFF00F5D4),
-              badgeText = null,
+              badgeText = "SHIP #$clampedShipId",
               isFocused = focusedOrbitalIndex == 1,
               isRightColumn = false,
               testTag = "nexus_node_hangar_deck",
@@ -1623,12 +1779,13 @@ private fun OrbitalHubSpatialStage(
             )
             SciFiTabletModuleCard(
               modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "RIFT CONDUIT",
-              subtitle = "Resonance, Quests & Cosmetics",
-              codeLabel = "SYS-02",
-              accent = Color(0xFF38BDF8),
-              secondaryAccent = Color(0xFFFACC15),
-              badgeText = "$liveResonance RES",
+              title = "RANKS & QUESTS",
+              primaryStat = conduitPrimaryStat,
+              secondaryDetail = conduitSecondaryDetail,
+              emblemBitmap = conduitEmblem,
+              accent = Color(0xFFFACC15),
+              secondaryAccent = Color(0xFF00F5D4),
+              badgeText = conduitBadge,
               isFocused = focusedOrbitalIndex == 2,
               isRightColumn = false,
               testTag = "nexus_node_rift_conduit",
@@ -1636,12 +1793,13 @@ private fun OrbitalHubSpatialStage(
             )
             SciFiTabletModuleCard(
               modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "STAR FORGE",
-              subtitle = "1:1 Asset & Audio Studio",
-              codeLabel = "SYS-03",
+              title = "SKINS & AUDIO",
+              primaryStat = forgePrimaryStat,
+              secondaryDetail = forgeSecondaryDetail,
+              emblemBitmap = forgeEmblem,
               accent = Color(0xFF00F5D4),
-              secondaryAccent = Color(0xFF38BDF8),
-              badgeText = null,
+              secondaryAccent = Color(0xFFC084FC),
+              badgeText = "1:1 LAB",
               isFocused = focusedOrbitalIndex == 3,
               isRightColumn = false,
               testTag = "nexus_node_star_forge",
@@ -1649,12 +1807,12 @@ private fun OrbitalHubSpatialStage(
             )
           }
 
-          // CENTER ROUND RIPPLING DIGITIZED APERTURE (~52% width):
+          // CENTER ROUND RIPPLING DIGITIZED APERTURE (~50% width):
           // Circular aperture whose rim digitizes inward via concentric polar voxel/matrix rings with
           // dynamic cyan/gold directional lighting, looking straight down into Full-Playfield Live Active Game Overwatch!
           val centerFocused = focusedOrbitalIndex == 0
           RoundRipplingOverwatchAperture(
-            modifier = Modifier.weight(0.52f).fillMaxHeight(),
+            modifier = Modifier.weight(0.50f).fillMaxHeight(),
             isFocused = centerFocused,
             drawHeadlessSafeZoneFallback = headless,
             overwatchInstances = overwatchInstances,
@@ -1670,10 +1828,10 @@ private fun OrbitalHubSpatialStage(
             onApertureRootBoundsChanged = onApertureRootBoundsChanged,
           )
 
-          // RIGHT SCI-FI TABLET DOCK (3 Chamfered #060D1A Terminal Cards)
+          // RIGHT SCI-FI TABLET DOCK (3 Metallic Station-Styled Module Cards)
           Column(
             modifier =
-              Modifier.weight(0.24f)
+              Modifier.weight(0.25f)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color(0xBF050B16))
@@ -1681,17 +1839,12 @@ private fun OrbitalHubSpatialStage(
                 .padding(5.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
           ) {
-            val commsBadge =
-              when {
-                unreadCommsCount > 0 -> "$unreadCommsCount NEW"
-                totalOnlinePilots > 0 -> "$totalOnlinePilots LIVE"
-                else -> null
-              }
             SciFiTabletModuleCard(
               modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "SUBSPACE COMMS",
-              subtitle = "Live Chat & NEXUS AI",
-              codeLabel = "COM-01",
+              title = "CHAT & NEXUS AI",
+              primaryStat = commsPrimaryStat,
+              secondaryDetail = commsSecondaryDetail,
+              emblemBitmap = commsEmblem,
               accent = Color(0xFF00F5D4),
               secondaryAccent = Color(0xFFFACC15),
               badgeText = commsBadge,
@@ -1702,12 +1855,13 @@ private fun OrbitalHubSpatialStage(
             )
             SciFiTabletModuleCard(
               modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "SYNDICATE CITADEL",
-              subtitle = "Clans & Strike Wings",
-              codeLabel = "COM-02",
+              title = "CLANS & SQUADS",
+              primaryStat = citadelPrimaryStat,
+              secondaryDetail = citadelSecondaryDetail,
+              emblemBitmap = citadelEmblem,
               accent = Color(0xFFFACC15),
               secondaryAccent = Color(0xFF38BDF8),
-              badgeText = if (strikeWingOnlineCount > 0) "WING $strikeWingOnlineCount" else null,
+              badgeText = citadelBadge,
               isFocused = focusedOrbitalIndex == 5,
               isRightColumn = true,
               testTag = "nexus_node_syndicate_citadel",
@@ -1715,12 +1869,13 @@ private fun OrbitalHubSpatialStage(
             )
             SciFiTabletModuleCard(
               modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "ARCHIVE & CODEX",
-              subtitle = "Dossier & Field Manual",
-              codeLabel = "COM-03",
+              title = "STATS & CODEX",
+              primaryStat = archivePrimaryStat,
+              secondaryDetail = archiveSecondaryDetail,
+              emblemBitmap = archiveEmblem,
               accent = Color(0xFF34D399),
               secondaryAccent = Color(0xFF38BDF8),
-              badgeText = null,
+              badgeText = archiveBadge,
               isFocused = focusedOrbitalIndex == 6,
               isRightColumn = true,
               testTag = "nexus_node_archive_codex",
@@ -1747,8 +1902,9 @@ private fun OrbitalHubSpatialStage(
 private fun SciFiTabletModuleCard(
   modifier: Modifier,
   title: String,
-  subtitle: String,
-  codeLabel: String,
+  primaryStat: String,
+  secondaryDetail: String,
+  emblemBitmap: androidx.compose.ui.graphics.ImageBitmap,
   accent: Color,
   secondaryAccent: Color,
   badgeText: String?,
@@ -1757,32 +1913,41 @@ private fun SciFiTabletModuleCard(
   testTag: String,
   onClick: () -> Unit,
 ) {
+  val titleGlow =
+    remember(accent, isFocused) {
+      Shadow(
+        color = if (isFocused) Color.White.copy(alpha = 0.65f) else accent.copy(alpha = 0.45f),
+        offset = Offset.Zero,
+        blurRadius = 6f,
+      )
+    }
+
   Box(
     modifier =
       modifier
         .minimumInteractiveComponentSize()
-        .clip(RoundedCornerShape(8.dp))
+        .clip(RoundedCornerShape(9.dp))
         .background(
           Brush.linearGradient(
             colors =
               if (isFocused) {
                 listOf(Color(0xF50B1C36), Color(0xF0060D1A))
               } else {
-                listOf(Color(0xF0060D1A), Color(0xE6081224))
+                listOf(Color(0xF2060D1A), Color(0xEA081428))
               }
           )
         )
         .border(
-          width = if (isFocused) 1.5.dp else 1.dp,
+          width = if (isFocused) 1.6.dp else 1.1.dp,
           brush =
             Brush.horizontalGradient(
               if (isRightColumn) {
-                listOf(secondaryAccent.copy(alpha = 0.60f), accent.copy(alpha = if (isFocused) 1f else 0.78f))
+                listOf(secondaryAccent.copy(alpha = 0.68f), accent.copy(alpha = if (isFocused) 1f else 0.85f))
               } else {
-                listOf(accent.copy(alpha = if (isFocused) 1f else 0.78f), secondaryAccent.copy(alpha = 0.60f))
+                listOf(accent.copy(alpha = if (isFocused) 1f else 0.85f), secondaryAccent.copy(alpha = 0.68f))
               }
             ),
-          shape = RoundedCornerShape(8.dp),
+          shape = RoundedCornerShape(9.dp),
         )
         .clickable { onClick() }
         .testTag(testTag),
@@ -1792,10 +1957,10 @@ private fun SciFiTabletModuleCard(
       val w = size.width
       val h = size.height
       if (w <= 4f || h <= 4f) return@Canvas
-      val brk = 9.dp.toPx().coerceAtMost(min(w, h) * 0.26f)
-      val sw = 1.5.dp.toPx()
+      val brk = 10.dp.toPx().coerceAtMost(min(w, h) * 0.26f)
+      val sw = 1.6.dp.toPx()
       val bracketCol = if (isFocused) Color.White else accent
-      val goldCorner = Color(0xFFFACC15).copy(alpha = 0.80f)
+      val goldCorner = Color(0xFFFACC15).copy(alpha = 0.82f)
 
       // Top-left chamfer bracket
       drawLine(bracketCol, Offset(2f, 2f + brk), Offset(2f, 2f), strokeWidth = sw)
@@ -1804,82 +1969,144 @@ private fun SciFiTabletModuleCard(
       drawLine(goldCorner, Offset(w - 2f, h - 2f - brk), Offset(w - 2f, h - 2f), strokeWidth = sw)
       drawLine(goldCorner, Offset(w - 2f - brk, h - 2f), Offset(w - 2f, h - 2f), strokeWidth = sw)
 
-      // Inner Safe-Zone-facing digital telemetry rail
-      val innerX = if (isRightColumn) 1.5f else (w - 1.5f)
+      // Inner Overwatch-facing digital telemetry rail
+      val innerX = if (isRightColumn) 1.6f else (w - 1.6f)
       drawLine(
         brush = Brush.verticalGradient(listOf(Color.Transparent, accent, Color.Transparent)),
-        start = Offset(innerX, h * 0.18f),
-        end = Offset(innerX, h * 0.82f),
-        strokeWidth = 2.2.dp.toPx(),
+        start = Offset(innerX, h * 0.16f),
+        end = Offset(innerX, h * 0.84f),
+        strokeWidth = 2.4.dp.toPx(),
         cap = StrokeCap.Round,
       )
     }
 
-    Column(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp),
-      verticalArrangement = Arrangement.SpaceBetween,
+    Row(
+      modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(
-          text = codeLabel,
-          color = accent.copy(alpha = 0.88f),
-          fontSize = 7.2.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
-          letterSpacing = 0.8.sp,
+      if (!isRightColumn) {
+        HubMetallicEmblemPedestal(
+          emblemBitmap = emblemBitmap,
+          contentDescription = title,
+          accent = accent,
+          secondaryAccent = secondaryAccent,
         )
-        if (badgeText != null) {
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(4.dp))
-                .background(secondaryAccent.copy(alpha = 0.18f))
-                .border(0.8.dp, secondaryAccent.copy(alpha = 0.75f), RoundedCornerShape(4.dp))
-                .padding(horizontal = 5.dp, vertical = 1.dp),
-          ) {
-            Text(
-              text = badgeText,
-              color = secondaryAccent,
-              fontSize = 6.8.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-        } else {
-          Text(
-            text = ">",
-            color = accent,
-            fontSize = 8.5.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
       }
 
-      Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = title,
+            color = Color.White,
+            fontSize = 13.0.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(shadow = titleGlow),
+            modifier = Modifier.weight(1f, fill = false),
+          )
+          if (badgeText != null) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(4.dp))
+                  .background(secondaryAccent.copy(alpha = 0.20f))
+                  .border(0.9.dp, secondaryAccent.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
+                  .padding(horizontal = 5.dp, vertical = 1.5.dp),
+            ) {
+              Text(
+                text = badgeText,
+                color = secondaryAccent,
+                fontSize = 8.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+            }
+          }
+        }
+
         Text(
-          text = title,
-          color = Color.White,
-          fontSize = 10.0.sp,
-          fontWeight = FontWeight.Black,
+          text = primaryStat,
+          color = accent,
+          fontSize = 9.8.sp,
+          fontWeight = FontWeight.ExtraBold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
+
         Text(
-          text = subtitle,
+          text = secondaryDetail,
           color = Color(0xFFCBD5E1),
-          fontSize = 7.6.sp,
+          fontSize = 8.8.sp,
           fontWeight = FontWeight.SemiBold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
       }
+
+      if (isRightColumn) {
+        HubMetallicEmblemPedestal(
+          emblemBitmap = emblemBitmap,
+          contentDescription = title,
+          accent = accent,
+          secondaryAccent = secondaryAccent,
+        )
+      }
     }
+  }
+}
+
+@Composable
+private fun HubMetallicEmblemPedestal(
+  emblemBitmap: androidx.compose.ui.graphics.ImageBitmap,
+  contentDescription: String,
+  accent: Color,
+  secondaryAccent: Color,
+) {
+  Box(
+    modifier =
+      Modifier.fillMaxHeight(0.90f)
+        .aspectRatio(1f)
+        .drawBehind {
+          val r = size.minDimension * 0.52f
+          if (r > 2f) {
+            drawCircle(
+              brush =
+                Brush.radialGradient(
+                  colors =
+                    listOf(
+                      accent.copy(alpha = 0.28f),
+                      secondaryAccent.copy(alpha = 0.12f),
+                      Color.Transparent,
+                    ),
+                  center = center,
+                  radius = r,
+                ),
+              radius = r,
+              center = center,
+            )
+          }
+        },
+    contentAlignment = Alignment.Center,
+  ) {
+    Image(
+      bitmap = emblemBitmap,
+      contentDescription = contentDescription,
+      modifier = Modifier.fillMaxSize(),
+      contentScale = ContentScale.Fit,
+    )
   }
 }
 
@@ -2189,7 +2416,7 @@ private fun RoundRipplingOverwatchAperture(
               Brush.horizontalGradient(listOf(Color(0xAA00F5D4), Color(0x8838BDF8), Color(0xAAFACC15))),
               RoundedCornerShape(9.dp),
             )
-            .padding(horizontal = 6.dp, vertical = 4.dp),
+            .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
       ) {
@@ -2198,19 +2425,19 @@ private fun RoundRipplingOverwatchAperture(
           modifier =
             Modifier.clip(RoundedCornerShape(5.dp))
               .background(Color(0xFF0B192E))
-              .border(0.9.dp, Color(0xFF38BDF8).copy(alpha = 0.75f), RoundedCornerShape(5.dp))
+              .border(0.9.dp, Color(0xFF38BDF8).copy(alpha = 0.80f), RoundedCornerShape(5.dp))
               .clickable {
                 val prevIdx = if (currentIdx <= 0) totalInstances - 1 else currentIdx - 1
                 onSelectOverwatchKey(overwatchInstances[prevIdx].key)
               }
-              .padding(horizontal = 7.dp, vertical = 3.dp)
+              .padding(horizontal = 8.dp, vertical = 3.5.dp)
               .testTag("nexus_overwatch_prev"),
           contentAlignment = Alignment.Center,
         ) {
           Text(
             text = "<",
             color = Color(0xFF00F5D4),
-            fontSize = 9.5.sp,
+            fontSize = 11.0.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -2219,12 +2446,12 @@ private fun RoundRipplingOverwatchAperture(
         // Active Match Mode + RIFT # + Combined Pilot Resonance
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(4.dp),
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
           Text(
             text = "${activeInstance.modeTitle} • ${activeInstance.riftLabel}",
             color = Color.White,
-            fontSize = 7.8.sp,
+            fontSize = 9.8.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -2233,15 +2460,15 @@ private fun RoundRipplingOverwatchAperture(
           Text(
             text = "•",
             color = Color(0xFF64748B),
-            fontSize = 7.8.sp,
+            fontSize = 9.6.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
           )
-          ResonanceCrestIcon(sizeDp = 12.dp)
+          ResonanceCrestIcon(sizeDp = 14.dp)
           Text(
             text = "${formatOverwatchResonance(activeInstance.combinedResonance)} RES",
             color = Color(0xFFFACC15),
-            fontSize = 7.8.sp,
+            fontSize = 9.8.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -2250,7 +2477,7 @@ private fun RoundRipplingOverwatchAperture(
             Text(
               text = "• ${activeInstance.pilotCount}P",
               color = Color(0xFF34D399),
-              fontSize = 7.4.sp,
+              fontSize = 9.2.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -2265,18 +2492,18 @@ private fun RoundRipplingOverwatchAperture(
               .background(if (isFavorite) Color(0x33FACC15) else Color(0xFF0B192E))
               .border(
                 0.9.dp,
-                if (isFavorite) Color(0xFFFACC15) else Color(0xFF64748B).copy(alpha = 0.8f),
+                if (isFavorite) Color(0xFFFACC15) else Color(0xFF64748B).copy(alpha = 0.85f),
                 RoundedCornerShape(5.dp),
               )
               .clickable { onToggleFavoriteOverwatchKey(activeInstance.key) }
-              .padding(horizontal = 6.dp, vertical = 3.dp)
+              .padding(horizontal = 7.dp, vertical = 3.5.dp)
               .testTag("nexus_overwatch_fav_toggle"),
           contentAlignment = Alignment.Center,
         ) {
           Text(
             text = if (isFavorite) "[FAV *]" else "[FAV]",
             color = if (isFavorite) Color(0xFFFACC15) else Color(0xFFCBD5E1),
-            fontSize = 7.3.sp,
+            fontSize = 9.0.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -2288,19 +2515,19 @@ private fun RoundRipplingOverwatchAperture(
           modifier =
             Modifier.clip(RoundedCornerShape(5.dp))
               .background(Color(0xFF0B192E))
-              .border(0.9.dp, Color(0xFF38BDF8).copy(alpha = 0.75f), RoundedCornerShape(5.dp))
+              .border(0.9.dp, Color(0xFF38BDF8).copy(alpha = 0.80f), RoundedCornerShape(5.dp))
               .clickable {
                 val nextIdx = (currentIdx + 1) % totalInstances
                 onSelectOverwatchKey(overwatchInstances[nextIdx].key)
               }
-              .padding(horizontal = 7.dp, vertical = 3.dp)
+              .padding(horizontal = 8.dp, vertical = 3.5.dp)
               .testTag("nexus_overwatch_next"),
           contentAlignment = Alignment.Center,
         ) {
           Text(
             text = ">",
             color = Color(0xFF00F5D4),
-            fontSize = 9.5.sp,
+            fontSize = 11.0.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -2314,14 +2541,14 @@ private fun RoundRipplingOverwatchAperture(
               .background(Color(0xEB061428))
               .border(0.9.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
               .clickable { onResetOverwatchCamera() }
-              .padding(horizontal = 8.dp, vertical = 3.dp)
+              .padding(horizontal = 9.dp, vertical = 3.5.dp)
               .testTag("nexus_overwatch_zoom_reset"),
           contentAlignment = Alignment.Center,
         ) {
           Text(
             text = "${String.format(Locale.US, "%.1fx", overwatchZoom)} • [1.0x]",
             color = Color(0xFF00F5D4),
-            fontSize = 7.4.sp,
+            fontSize = 9.0.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -2363,14 +2590,14 @@ private fun RoundRipplingOverwatchAperture(
               shape = RoundedCornerShape(9.dp),
             )
             .clickable { onQuickZoneIntoOverwatch(activeInstance) }
-            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .padding(horizontal = 15.dp, vertical = 7.dp)
             .testTag("nexus_btn_quick_zone_in"),
         contentAlignment = Alignment.Center,
       ) {
         Text(
           text = "[ QUICK ZONE IN // ${activeInstance.riftLabel} ]",
           color = Color.White,
-          fontSize = 9.6.sp,
+          fontSize = 11.6.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           letterSpacing = 0.8.sp,
@@ -2383,16 +2610,16 @@ private fun RoundRipplingOverwatchAperture(
         modifier =
           Modifier.clip(RoundedCornerShape(9.dp))
             .background(Color(0xEB071224))
-            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.85f), RoundedCornerShape(9.dp))
+            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.88f), RoundedCornerShape(9.dp))
             .clickable { onOpenAllModesGate() }
-            .padding(horizontal = 11.dp, vertical = 6.dp)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
             .testTag("nexus_node_convergence_gate"),
         contentAlignment = Alignment.Center,
       ) {
         Text(
           text = "[ ALL MODES ]",
           color = Color(0xFF38BDF8),
-          fontSize = 8.8.sp,
+          fontSize = 9.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           letterSpacing = 0.6.sp,

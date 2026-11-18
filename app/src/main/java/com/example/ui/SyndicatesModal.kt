@@ -51,7 +51,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
@@ -92,6 +91,12 @@ import org.json.JSONObject
 
 private val Mono = FontFamily.Monospace
 private val Sans = FontFamily.SansSerif
+private val CitadelTabletBg = Color(0xFF060D1A)
+private val CitadelCardBg = Color(0xFF081224)
+private val CitadelRowBg = Color(0xFF0A172D)
+private val CitadelCyan = Color(0xFF38BDF8)
+private val CitadelTeal = Color(0xFF00F5D4)
+private val CitadelGold = Color(0xFFFACC15)
 
 private val NON_SYNDICATE_TAGS =
   setOf("", "RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED", "BOT")
@@ -101,7 +106,7 @@ private fun SyndicateCrestBadge(
   tag: String,
   localPrefs: LocalPilotPrefs,
   currentPlayerTag: String,
-  sizeDp: Dp = 30.dp,
+  sizeDp: Dp = 36.dp,
 ) {
   val visualRev = RiftVisualForgeState.visualRevision
   val activePlayerCrest = RiftVisualForgeState.activeSyndicateCrestRecipe
@@ -163,8 +168,8 @@ private fun VectorCitadelEmblem(accent: Color, sizeDp: Dp = 18.dp) {
     shieldPath.lineTo(cx - r * 0.68f, cy + r * 0.44f)
     shieldPath.lineTo(cx - r * 0.86f, cy - r * 0.42f)
     shieldPath.close()
-    drawPath(shieldPath, accent.copy(alpha = 0.18f))
-    drawPath(shieldPath, accent, style = Stroke(width = 1.4.dp.toPx()))
+    drawPath(shieldPath, accent.copy(alpha = 0.20f))
+    drawPath(shieldPath, accent, style = Stroke(width = 1.5.dp.toPx()))
     drawCircle(Color.White, radius = r * 0.22f, center = Offset(cx, cy))
   }
 }
@@ -233,7 +238,7 @@ private fun SyndicateInputBox(
       modifier
         .height(height)
         .clip(RoundedCornerShape(8.dp))
-        .background(Color(0xFF050B14))
+        .background(Color(0xFF040914))
         .border(1.dp, borderColor, RoundedCornerShape(8.dp))
         .padding(horizontal = 10.dp),
     contentAlignment = Alignment.CenterStart,
@@ -241,7 +246,7 @@ private fun SyndicateInputBox(
     if (value.isEmpty()) {
       Text(
         text = placeholder,
-        fontSize = 10.sp,
+        fontSize = 10.2.sp,
         color = Color(0xFF64748B),
         fontFamily = fontFamily,
         maxLines = 1,
@@ -298,11 +303,12 @@ fun SyndicatesModal(
     modifier =
       Modifier.fillMaxSize()
         .imePadding()
+        .background(CitadelTabletBg, RoundedCornerShape(12.dp))
         .padding(if (isCompactPhone) 6.dp else 8.dp)
         .testTag("syndicates_modal")
   ) {
     Row(
-      modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 28.dp else 34.dp),
+      modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 30.dp else 36.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -316,12 +322,12 @@ fun SyndicatesModal(
             tag = currentSyndicateTag,
             localPrefs = localPrefs,
             currentPlayerTag = currentSyndicateTag,
-            sizeDp = if (isCompactPhone) 24.dp else 30.dp,
+            sizeDp = if (isCompactPhone) 28.dp else 34.dp,
           )
         } else {
           VectorCitadelEmblem(
-            accent = Color(0xFF00F5D4),
-            sizeDp = if (isCompactPhone) 18.dp else 22.dp,
+            accent = CitadelTeal,
+            sizeDp = if (isCompactPhone) 20.dp else 24.dp,
           )
         }
         val headerLabel =
@@ -335,10 +341,10 @@ fun SyndicatesModal(
         Text(
           text = headerLabel,
           color = Color.White,
-          fontSize = if (isCompactPhone) 12.sp else 15.sp,
+          fontSize = if (isCompactPhone) 12.5.sp else 14.sp,
           fontWeight = FontWeight.Black,
           fontFamily = Sans,
-          letterSpacing = 0.7.sp,
+          letterSpacing = 0.6.sp,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
@@ -346,24 +352,24 @@ fun SyndicatesModal(
         Row(
           modifier =
             Modifier.clip(RoundedCornerShape(6.dp))
-              .background(if (isWarnBadge) Color(0xFF2B1C08) else Color(0xFF0A192F))
+              .background(CitadelCardBg)
               .border(
                 1.dp,
-                if (isWarnBadge) Color(0xFFF59E0B) else Color(0xFF38BDF8),
+                if (isWarnBadge) CitadelGold else CitadelCyan,
                 RoundedCornerShape(6.dp),
               )
-              .padding(horizontal = 6.dp, vertical = 2.dp),
+              .padding(horizontal = 7.dp, vertical = 2.5.dp),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(4.dp),
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
           if (remainingLockDays > 0) {
-            VectorPadlockGlyph(color = Color(0xFFF59E0B), sizeDp = 10.dp)
+            VectorPadlockGlyph(color = CitadelGold, sizeDp = 11.dp)
           } else {
             Box(
               modifier =
                 Modifier.size(6.dp)
                   .clip(CircleShape)
-                  .background(if (isRealEnlistedSyndicate) Color(0xFF10B981) else Color(0xFFF59E0B))
+                  .background(if (isRealEnlistedSyndicate) Color(0xFF10B981) else CitadelGold)
             )
           }
           Text(
@@ -373,8 +379,8 @@ fun SyndicatesModal(
                 !isRealEnlistedSyndicate -> "UNAFFILIATED PILOT"
                 else -> "ENLISTED (15d LOCK)"
               },
-            color = if (isWarnBadge) Color(0xFFF59E0B) else Color(0xFF38BDF8),
-            fontSize = if (isCompactPhone) 8.2.sp else 9.2.sp,
+            color = if (isWarnBadge) CitadelGold else CitadelCyan,
+            fontSize = if (isCompactPhone) 9.5.sp else 10.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = Mono,
             maxLines = 1,
@@ -396,7 +402,7 @@ fun SyndicatesModal(
         tag = "syndicate_tab_directory",
       )
       SyndicateTabButton(
-        label = if (isCompactPhone) "2. SYNDICATE ROSTER" else "2. SYNDICATE ROSTER",
+        label = "2. SYNDICATE ROSTER",
         selected = activeTab == 1,
         onClick = { activeTab = 1 },
         tag = "syndicate_tab_roster",
@@ -420,19 +426,19 @@ fun SyndicatesModal(
       Row(
         modifier =
           Modifier.fillMaxWidth()
-            .background(Color(0xFF2B1C08), RoundedCornerShape(8.dp))
-            .border(1.2.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 3.5.dp else 5.dp)
+            .background(CitadelCardBg, RoundedCornerShape(8.dp))
+            .border(1.2.dp, CitadelGold, RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 4.dp else 5.dp)
             .testTag("syndicate_drifter_lock_banner"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        VectorPadlockGlyph(color = Color(0xFFFACC15), sizeDp = 11.dp)
+        VectorPadlockGlyph(color = CitadelGold, sizeDp = 12.dp)
         Text(
           text =
             "DRIFTERS WEAR THE [RFT] TAG. SIGN IN AS A SWORN PILOT IN HELM SYSTEMS TO JOIN OR CHARTER A SYNDICATE.",
-          color = Color(0xFFFACC15),
-          fontSize = if (isCompactPhone) 8.8.sp else 10.sp,
+          color = CitadelGold,
+          fontSize = if (isCompactPhone) 9.5.sp else 10.2.sp,
           fontWeight = FontWeight.ExtraBold,
           fontFamily = Mono,
           maxLines = 1,
@@ -444,15 +450,15 @@ fun SyndicatesModal(
       Box(
         modifier =
           Modifier.fillMaxWidth()
-            .background(Color(0xFF1F1608), RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0x88F59E0B), RoundedCornerShape(8.dp))
+            .background(CitadelCardBg, RoundedCornerShape(8.dp))
+            .border(1.dp, CitadelGold.copy(alpha = 0.65f), RoundedCornerShape(8.dp))
             .padding(horizontal = 10.dp, vertical = 4.dp)
       ) {
         Text(
           text =
             "INDEPENDENT PILOT STATUS: Join or charter a real-player Syndicate below to unlock Syndicate Wars & forged Syndicate Crests (15-day allegiance lock).",
-          color = Color(0xFFFDE68A),
-          fontSize = 9.5.sp,
+          color = Color(0xFFFEF08A),
+          fontSize = 10.sp,
           fontWeight = FontWeight.Medium,
           fontFamily = Sans,
           maxLines = 1,
@@ -466,15 +472,15 @@ fun SyndicatesModal(
       Box(
         modifier =
           Modifier.fillMaxWidth()
-            .background(Color(0xFF102338), RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0x5538BDF8), RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp, vertical = 3.5.dp)
+            .background(CitadelCardBg, RoundedCornerShape(8.dp))
+            .border(1.dp, CitadelCyan.copy(alpha = 0.60f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp)
       ) {
         Text(
           text = statusBannerMessage,
-          color = Color(0xFF38BDF8),
-          fontSize = if (isCompactPhone) 9.sp else 10.5.sp,
-          fontWeight = FontWeight.Medium,
+          color = CitadelCyan,
+          fontSize = if (isCompactPhone) 9.6.sp else 10.5.sp,
+          fontWeight = FontWeight.Bold,
           fontFamily = Sans,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
@@ -565,11 +571,12 @@ fun ArmadaFleetModal(
     modifier =
       Modifier.fillMaxSize()
         .imePadding()
+        .background(CitadelTabletBg, RoundedCornerShape(12.dp))
         .padding(if (isCompactPhone) 6.dp else 8.dp)
         .testTag("armada_fleet_modal")
   ) {
     Row(
-      modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 28.dp else 34.dp),
+      modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 30.dp else 36.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -579,39 +586,39 @@ fun ArmadaFleetModal(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         VectorStrikeWingGlyph(
-          accent = if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF38BDF8),
-          sizeDp = if (isCompactPhone) 18.dp else 20.dp,
+          accent = if (isDeployedInArmada) Color(0xFF10B981) else CitadelCyan,
+          sizeDp = if (isCompactPhone) 18.dp else 22.dp,
         )
         Text(
           text =
             if (isCompactPhone) "STRIKE WING COMMAND (1–5 PILOTS)"
             else "STRIKE WING COMMAND // 1–5 SWORN PILOT TACTICAL FORMATION",
           color = Color.White,
-          fontSize = if (isCompactPhone) 12.sp else 15.sp,
+          fontSize = if (isCompactPhone) 12.5.sp else 14.sp,
           fontWeight = FontWeight.Black,
           fontFamily = Sans,
-          letterSpacing = 0.7.sp,
+          letterSpacing = 0.6.sp,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
         Row(
           modifier =
             Modifier.clip(RoundedCornerShape(6.dp))
-              .background(if (isDeployedInArmada) Color(0xFF06281E) else Color(0xFF0A192F))
+              .background(CitadelCardBg)
               .border(
                 1.dp,
-                if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF38BDF8),
+                if (isDeployedInArmada) Color(0xFF10B981) else CitadelCyan,
                 RoundedCornerShape(6.dp),
               )
-              .padding(horizontal = 6.dp, vertical = 2.dp),
+              .padding(horizontal = 7.dp, vertical = 2.5.dp),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(4.dp),
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
           Box(
             modifier =
               Modifier.size(6.dp)
                 .clip(CircleShape)
-                .background(if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF60A5FA))
+                .background(if (isDeployedInArmada) Color(0xFF10B981) else CitadelCyan)
           )
           Text(
             text =
@@ -620,8 +627,8 @@ fun ArmadaFleetModal(
               } else {
                 "[SOLO] INDEPENDENT"
               },
-            color = if (isDeployedInArmada) Color(0xFF10B981) else Color(0xFF60A5FA),
-            fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
+            color = if (isDeployedInArmada) Color(0xFF34D399) else CitadelCyan,
+            fontSize = if (isCompactPhone) 9.5.sp else 10.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = Mono,
             maxLines = 1,
@@ -635,15 +642,15 @@ fun ArmadaFleetModal(
       Box(
         modifier =
           Modifier.fillMaxWidth()
-            .background(Color(0xFF102338), RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0x553B82F6), RoundedCornerShape(8.dp))
+            .background(CitadelCardBg, RoundedCornerShape(8.dp))
+            .border(1.dp, CitadelCyan.copy(alpha = 0.60f), RoundedCornerShape(8.dp))
             .padding(horizontal = 10.dp, vertical = 4.dp)
       ) {
         Text(
           text = statusBannerMessage,
-          color = Color(0xFF60A5FA),
-          fontSize = if (isCompactPhone) 9.5.sp else 11.sp,
-          fontWeight = FontWeight.Medium,
+          color = CitadelCyan,
+          fontSize = if (isCompactPhone) 9.6.sp else 10.8.sp,
+          fontWeight = FontWeight.Bold,
           fontFamily = Sans,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
@@ -716,7 +723,8 @@ private fun DirectoryAndJoinPane(
   Column(
     modifier =
       Modifier.fillMaxSize()
-        .background(Color(0x99111C2D), RoundedCornerShape(12.dp))
+        .background(CitadelCardBg, RoundedCornerShape(10.dp))
+        .border(1.dp, CitadelCyan.copy(alpha = 0.48f), RoundedCornerShape(10.dp))
         .padding(if (isCompactPhone) 8.dp else 10.dp),
     verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
   ) {
@@ -729,10 +737,10 @@ private fun DirectoryAndJoinPane(
         Box(
           modifier =
             Modifier.clip(RoundedCornerShape(8.dp))
-              .background(if (rankingMode == 0) Color(0xFFF59E0B) else Color(0xCC0D1B30))
+              .background(if (rankingMode == 0) CitadelGold.copy(alpha = 0.22f) else CitadelTabletBg)
               .border(
                 1.dp,
-                if (rankingMode == 0) Color(0xFFF59E0B) else Color(0x66F59E0B),
+                if (rankingMode == 0) CitadelGold else CitadelGold.copy(alpha = 0.50f),
                 RoundedCornerShape(8.dp),
               )
               .clickable { rankingMode = 0 }
@@ -741,19 +749,19 @@ private fun DirectoryAndJoinPane(
         ) {
           Text(
             text = "SYNDICATE WARS LADDER",
-            color = if (rankingMode == 0) Color(0xFF05080E) else Color(0xFFFBBF24),
-            fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
+            color = if (rankingMode == 0) Color.White else CitadelGold,
+            fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
             fontWeight = FontWeight.ExtraBold,
-            fontFamily = Sans,
+            fontFamily = Mono,
           )
         }
         Box(
           modifier =
             Modifier.clip(RoundedCornerShape(8.dp))
-              .background(if (rankingMode == 1) Color(0xFF00F0FF) else Color(0xCC0D1B30))
+              .background(if (rankingMode == 1) CitadelTeal.copy(alpha = 0.22f) else CitadelTabletBg)
               .border(
                 1.dp,
-                if (rankingMode == 1) Color(0xFF00F0FF) else Color(0x6600F0FF),
+                if (rankingMode == 1) CitadelTeal else CitadelCyan.copy(alpha = 0.50f),
                 RoundedCornerShape(8.dp),
               )
               .clickable { rankingMode = 1 }
@@ -762,10 +770,10 @@ private fun DirectoryAndJoinPane(
         ) {
           Text(
             text = "COLLECTIVE MEMBER PRESTIGE",
-            color = if (rankingMode == 1) Color(0xFF05080E) else Color(0xFF00F0FF),
-            fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
+            color = if (rankingMode == 1) Color.White else CitadelTeal,
+            fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
             fontWeight = FontWeight.ExtraBold,
-            fontFamily = Sans,
+            fontFamily = Mono,
           )
         }
       }
@@ -775,7 +783,7 @@ private fun DirectoryAndJoinPane(
             if (rankingMode == 0) "RANKED BY SYNDICATE WAR TROPHIES"
             else "RANKED BY COMBINED MEMBER BOUNTY & ROSTER SIZE",
           color = Color(0xFF94A3B8),
-          fontSize = 9.2.sp,
+          fontSize = 9.6.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = Mono,
         )
@@ -787,8 +795,8 @@ private fun DirectoryAndJoinPane(
         modifier =
           Modifier.weight(1f)
             .fillMaxWidth()
-            .background(Color(0xCC0D1B30), RoundedCornerShape(10.dp))
-            .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(10.dp))
+            .background(CitadelTabletBg, RoundedCornerShape(10.dp))
+            .border(1.dp, CitadelCyan.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
             .padding(16.dp),
         contentAlignment = Alignment.Center,
       ) {
@@ -796,10 +804,10 @@ private fun DirectoryAndJoinPane(
           horizontalAlignment = Alignment.CenterHorizontally,
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          VectorCitadelEmblem(accent = Color(0xFF00F5D4), sizeDp = 28.dp)
+          VectorCitadelEmblem(accent = CitadelTeal, sizeDp = 30.dp)
           Text(
             text = "NO SWORN SYNDICATES CHARTERED IN THIS SECTOR YET",
-            color = Color(0xFF00F5D4),
+            color = CitadelTeal,
             fontSize = 13.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = Sans,
@@ -807,7 +815,7 @@ private fun DirectoryAndJoinPane(
           Text(
             text =
               "Every Syndicate in NEXUS is 100% real-player-founded. Open Tab 4 to charter the first Syndicate!",
-            color = Color(0xFF94A3B8),
+            color = Color(0xFFCBD5E1),
             fontSize = 11.sp,
             fontFamily = Sans,
             textAlign = TextAlign.Center,
@@ -816,7 +824,7 @@ private fun DirectoryAndJoinPane(
             onClick = onSelectCreateTab,
             colors =
               ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFFFD700),
+                containerColor = CitadelGold,
                 contentColor = Color(0xFF05080E),
               ),
             shape = RoundedCornerShape(8.dp),
@@ -826,7 +834,7 @@ private fun DirectoryAndJoinPane(
               text = "CHARTER FIRST SYNDICATE",
               fontSize = 10.5.sp,
               fontWeight = FontWeight.Bold,
-              fontFamily = Sans,
+              fontFamily = Mono,
             )
           }
         }
@@ -843,15 +851,15 @@ private fun DirectoryAndJoinPane(
             modifier =
               Modifier.fillMaxWidth()
                 .background(
-                  if (isMember) Color(0xCC142C4C) else Color(0x990D1B30),
+                  if (isMember) Color(0xFF0E2542) else CitadelRowBg,
                   RoundedCornerShape(10.dp),
                 )
                 .border(
                   1.dp,
-                  if (isMember) Color(0xFFFFD700) else Color(0x3338BDF8),
+                  if (isMember) CitadelGold else CitadelCyan.copy(alpha = 0.38f),
                   RoundedCornerShape(10.dp),
                 )
-                .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 7.dp else 10.dp),
+                .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 8.dp else 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
           ) {
@@ -864,7 +872,7 @@ private fun DirectoryAndJoinPane(
                 tag = syn.tag,
                 localPrefs = localPrefs,
                 currentPlayerTag = currentSyndicateTag,
-                sizeDp = if (isCompactPhone) 32.dp else 38.dp,
+                sizeDp = if (isCompactPhone) 36.dp else 44.dp,
               )
               Column(modifier = Modifier.weight(1f)) {
                 Row(
@@ -873,9 +881,9 @@ private fun DirectoryAndJoinPane(
                 ) {
                   Text(
                     text = "[${syn.tag}] ${syn.name}",
-                    color = if (isMember) Color(0xFFFFD700) else Color(0xFF00F0FF),
-                    fontSize = if (isCompactPhone) 13.sp else 14.5.sp,
-                    fontWeight = FontWeight.Bold,
+                    color = if (isMember) CitadelGold else CitadelTeal,
+                    fontSize = if (isCompactPhone) 12.5.sp else 14.sp,
+                    fontWeight = FontWeight.Black,
                     fontFamily = Sans,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -883,8 +891,8 @@ private fun DirectoryAndJoinPane(
                   Text(
                     text =
                       "${warRecord.warTrophies} WAR TROPHIES • ${warRecord.warWins}W-${warRecord.warLosses}L • STREAK ${warRecord.warStreak}",
-                    color = Color(0xFFFBBF24),
-                    fontSize = if (isCompactPhone) 9.5.sp else 10.8.sp,
+                    color = CitadelGold,
+                    fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
                     fontWeight = FontWeight.ExtraBold,
                     fontFamily = Mono,
                     maxLines = 1,
@@ -898,15 +906,15 @@ private fun DirectoryAndJoinPane(
                 ) {
                   Text(
                     text = "${syn.memberCount} PILOTS • ${syn.combinedBounty} TOTAL BOUNTY",
-                    color = Color(0xFF38BDF8),
-                    fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
+                    color = CitadelCyan,
+                    fontSize = if (isCompactPhone) 9.8.sp else 10.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = Mono,
                   )
                   Text(
                     text = "// ${syn.motto.uppercase(Locale.US)}",
-                    color = Color(0xFF8A99AD),
-                    fontSize = if (isCompactPhone) 9.sp else 10.sp,
+                    color = Color(0xFF94A3B8),
+                    fontSize = if (isCompactPhone) 9.6.sp else 10.2.sp,
                     fontFamily = Sans,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -917,7 +925,7 @@ private fun DirectoryAndJoinPane(
             if (isMember) {
               Box(
                 modifier =
-                  Modifier.background(Color(0xFF1E3E24), RoundedCornerShape(8.dp))
+                  Modifier.background(Color(0xFF062E22), RoundedCornerShape(8.dp))
                     .border(1.dp, Color(0xFF10B981), RoundedCornerShape(8.dp))
                     .padding(horizontal = 10.dp, vertical = 6.dp)
               ) {
@@ -935,10 +943,10 @@ private fun DirectoryAndJoinPane(
                 enabled = remainingLockDays <= 0 && !isDrifter,
                 colors =
                   ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF00F0FF),
+                    containerColor = CitadelTeal,
                     contentColor = Color(0xFF05080E),
-                    disabledContainerColor = Color(0xFF1A283B),
-                    disabledContentColor = Color(0xFF8A99AD),
+                    disabledContainerColor = Color(0xFF132238),
+                    disabledContentColor = Color(0xFF94A3B8),
                   ),
                 shape = RoundedCornerShape(8.dp),
                 modifier =
@@ -953,8 +961,8 @@ private fun DirectoryAndJoinPane(
                       else -> "JOIN [${syn.tag}]"
                     },
                   fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold,
-                  fontFamily = Sans,
+                  fontWeight = FontWeight.ExtraBold,
+                  fontFamily = Mono,
                 )
               }
             }
@@ -985,25 +993,25 @@ private fun MySyndicateRosterPane(
     Box(
       modifier =
         Modifier.fillMaxSize()
-          .background(Color(0x99111C2D), RoundedCornerShape(12.dp))
-          .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(12.dp))
+          .background(CitadelCardBg, RoundedCornerShape(10.dp))
+          .border(1.dp, CitadelCyan.copy(alpha = 0.48f), RoundedCornerShape(10.dp))
           .padding(16.dp),
       contentAlignment = Alignment.Center,
     ) {
       Column(
         modifier =
           Modifier.fillMaxWidth(0.84f)
-            .background(Color(0xEB07101E), RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(12.dp))
+            .background(CitadelTabletBg, RoundedCornerShape(12.dp))
+            .border(1.dp, CitadelCyan.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
             .padding(horizontal = 18.dp, vertical = if (isCompactPhone) 12.dp else 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 9.dp),
       ) {
-        VectorCitadelEmblem(accent = Color(0xFF00F5D4), sizeDp = 30.dp)
+        VectorCitadelEmblem(accent = CitadelTeal, sizeDp = 30.dp)
         Text(
           text = "NO ACTIVE SYNDICATE ALLEGIANCE",
-          color = Color(0xFF00F5D4),
-          fontSize = if (isCompactPhone) 13.sp else 15.sp,
+          color = CitadelTeal,
+          fontSize = if (isCompactPhone) 13.sp else 14.sp,
           fontWeight = FontWeight.Black,
           fontFamily = Sans,
           letterSpacing = 0.6.sp,
@@ -1015,11 +1023,11 @@ private fun MySyndicateRosterPane(
             } else {
               "Independent Pilots operate solo until pledging to a player-founded Syndicate. Browse active Syndicates in Tab 1 or charter your own 1–3 character Syndicate in Tab 4."
             },
-          color = Color(0xFF94A3B8),
+          color = Color(0xFFCBD5E1),
           fontSize = if (isCompactPhone) 10.sp else 11.sp,
           fontFamily = Sans,
           textAlign = TextAlign.Center,
-          lineHeight = if (isCompactPhone) 13.sp else 15.sp,
+          lineHeight = if (isCompactPhone) 13.5.sp else 15.sp,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           Button(
@@ -1038,7 +1046,7 @@ private fun MySyndicateRosterPane(
             onClick = onOpenCharterTab,
             colors =
               ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFFFD700),
+                containerColor = CitadelGold,
                 contentColor = Color(0xFF05080E),
               ),
             shape = RoundedCornerShape(8.dp),
@@ -1064,7 +1072,8 @@ private fun MySyndicateRosterPane(
   Column(
     modifier =
       Modifier.fillMaxSize()
-        .background(Color(0x99111C2D), RoundedCornerShape(12.dp))
+        .background(CitadelCardBg, RoundedCornerShape(10.dp))
+        .border(1.dp, CitadelCyan.copy(alpha = 0.48f), RoundedCornerShape(10.dp))
         .padding(if (isCompactPhone) 8.dp else 12.dp)
   ) {
     Row(
@@ -1081,24 +1090,24 @@ private fun MySyndicateRosterPane(
           tag = currentSyndicateTag,
           localPrefs = localPrefs,
           currentPlayerTag = currentSyndicateTag,
-          sizeDp = if (isCompactPhone) 32.dp else 38.dp,
+          sizeDp = if (isCompactPhone) 36.dp else 44.dp,
         )
         Column(modifier = Modifier.weight(1f)) {
           Text(
             text =
               "ACTIVE ROSTER // [$currentSyndicateTag] $currentSyndicateName (${humanRoster.size} MEMBERS)",
             color = Color.White,
-            fontSize = if (isCompactPhone) 13.sp else 15.sp,
-            fontWeight = FontWeight.Bold,
+            fontSize = if (isCompactPhone) 12.5.sp else 14.sp,
+            fontWeight = FontWeight.Black,
             fontFamily = Sans,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
           Text(
             text = "Customize your Syndicate Crest in STAR FORGE",
-            color = Color(0xFF00F5D4),
-            fontSize = if (isCompactPhone) 9.sp else 10.sp,
-            fontWeight = FontWeight.Medium,
+            color = CitadelTeal,
+            fontSize = if (isCompactPhone) 9.6.sp else 10.2.sp,
+            fontWeight = FontWeight.Bold,
             fontFamily = Mono,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1111,11 +1120,12 @@ private fun MySyndicateRosterPane(
         enabled = remainingLockDays <= 0,
         colors =
           ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF2B121D),
+            containerColor = Color(0xFF280E1A),
             contentColor = Color(0xFFFF3B4E),
-            disabledContainerColor = Color(0xFF1A283B),
-            disabledContentColor = Color(0xFF8A99AD),
+            disabledContainerColor = Color(0xFF132238),
+            disabledContentColor = Color(0xFF94A3B8),
           ),
+        border = BorderStroke(1.dp, if (remainingLockDays <= 0) Color(0xFFFF3B4E) else Color(0xFF334155)),
         shape = RoundedCornerShape(8.dp),
         modifier =
           Modifier.height(if (isCompactPhone) 32.dp else 34.dp).testTag("leave_syndicate_button"),
@@ -1124,9 +1134,9 @@ private fun MySyndicateRosterPane(
           text =
             if (remainingLockDays > 0) "LEAVE LOCKED ($remainingLockFormatted)"
             else "LEAVE SYNDICATE (15d 00h LOCK)",
-          fontSize = 9.5.sp,
+          fontSize = 9.8.sp,
           fontWeight = FontWeight.Bold,
-          fontFamily = Sans,
+          fontFamily = Mono,
         )
       }
     }
@@ -1139,7 +1149,8 @@ private fun MySyndicateRosterPane(
         Row(
           modifier =
             Modifier.fillMaxWidth()
-              .background(Color(0x990D1B30), RoundedCornerShape(8.dp))
+              .background(CitadelRowBg, RoundedCornerShape(8.dp))
+              .border(1.dp, CitadelCyan.copy(alpha = 0.30f), RoundedCornerShape(8.dp))
               .padding(horizontal = 12.dp, vertical = 8.dp),
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -1153,31 +1164,31 @@ private fun MySyndicateRosterPane(
               Text(
                 text = "[$currentSyndicateTag] ${member.callsign} • ${member.role}",
                 color = Color.White,
-                fontSize = 13.sp,
+                fontSize = 12.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = Sans,
               )
               Text(
                 text =
                   "HULL: ${shipSpec.name.uppercase(Locale.US)} (${shipSpec.role.uppercase(Locale.US)})",
-                color = Color(0xFF8A99AD),
-                fontSize = 10.5.sp,
-                fontFamily = Sans,
+                color = Color(0xFF94A3B8),
+                fontSize = 10.2.sp,
+                fontFamily = Mono,
               )
             }
           }
           Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
               text = "KILLS: ${member.kills}",
-              color = Color(0xFF00F0FF),
-              fontSize = 13.sp,
+              color = CitadelTeal,
+              fontSize = 12.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = Mono,
             )
             Text(
               text = "BOUNTY: ${member.bountyContribution}",
-              color = Color(0xFFFFD700),
-              fontSize = 13.sp,
+              color = CitadelGold,
+              fontSize = 12.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = Mono,
             )
@@ -1204,21 +1215,22 @@ private fun BountyCalloutsAndAchievementsPane(
       modifier =
         Modifier.weight(1f)
           .fillMaxSize()
-          .background(Color(0x99111C2D), RoundedCornerShape(12.dp))
+          .background(CitadelCardBg, RoundedCornerShape(10.dp))
+          .border(1.dp, CitadelGold.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
           .padding(10.dp)
     ) {
       Text(
         text = "HVT // SECTOR HIGH-VALUE TARGETS (BOUNTY >= 250)",
-        color = Color(0xFFFFD700),
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Bold,
+        color = CitadelGold,
+        fontSize = 12.5.sp,
+        fontWeight = FontWeight.Black,
         fontFamily = Sans,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
       )
       Text(
         text = "ELIMINATE HVTS FOR BOUNTY SHUTDOWN PAYOUTS & GOLD RADAR PINGS.",
-        color = Color(0xFF8A99AD),
+        color = Color(0xFF94A3B8),
         fontSize = 10.sp,
         fontFamily = Sans,
         maxLines = 1,
@@ -1230,14 +1242,15 @@ private fun BountyCalloutsAndAchievementsPane(
           modifier =
             Modifier.weight(1f)
               .fillMaxWidth()
-              .background(Color(0x660B1524), RoundedCornerShape(8.dp))
+              .background(CitadelTabletBg, RoundedCornerShape(8.dp))
+              .border(1.dp, CitadelCyan.copy(alpha = 0.30f), RoundedCornerShape(8.dp))
               .padding(12.dp),
           contentAlignment = Alignment.Center,
         ) {
           Text(
             text = "NO SWORN PILOTS ABOVE 250 BOUNTY IN ACTIVE SECTOR.",
-            color = Color(0xFF64748B),
-            fontSize = 10.sp,
+            color = Color(0xFF94A3B8),
+            fontSize = 10.2.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = Mono,
             textAlign = TextAlign.Center,
@@ -1249,8 +1262,8 @@ private fun BountyCalloutsAndAchievementsPane(
             Row(
               modifier =
                 Modifier.fillMaxWidth()
-                  .background(Color(0x991A1812), RoundedCornerShape(8.dp))
-                  .border(1.dp, Color(0x55FACC15), RoundedCornerShape(8.dp))
+                  .background(CitadelRowBg, RoundedCornerShape(8.dp))
+                  .border(1.dp, CitadelGold.copy(alpha = 0.60f), RoundedCornerShape(8.dp))
                   .padding(8.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.SpaceBetween,
@@ -1264,24 +1277,24 @@ private fun BountyCalloutsAndAchievementsPane(
                   val armTag = if (hvt.armadaName.isNotEmpty()) "[${hvt.armadaName}]" else "[SOLO]"
                   Text(
                     text = "HVT // $armTag [${hvt.syndicateTag}] ${hvt.callsign}",
-                    color = Color(0xFFFFD700),
-                    fontSize = 12.5.sp,
+                    color = CitadelGold,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = Sans,
                   )
                   Text(
                     text =
                       "HULL: ${hvt.spec.name.uppercase(Locale.US)} • SECTOR (${(hvt.x / 500f).toInt()},${(hvt.y / 500f).toInt()})",
-                    color = Color(0xFF8A99AD),
-                    fontSize = 10.5.sp,
-                    fontFamily = Sans,
+                    color = Color(0xFF94A3B8),
+                    fontSize = 10.sp,
+                    fontFamily = Mono,
                   )
                 }
               }
               Text(
                 text = "${hvt.bounty} BTY",
                 color = Color(0xFFFF3B4E),
-                fontSize = 13.5.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = Mono,
               )
@@ -1295,14 +1308,15 @@ private fun BountyCalloutsAndAchievementsPane(
       modifier =
         Modifier.weight(1f)
           .fillMaxSize()
-          .background(Color(0x99111C2D), RoundedCornerShape(12.dp))
+          .background(CitadelCardBg, RoundedCornerShape(10.dp))
+          .border(1.dp, CitadelTeal.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
           .padding(10.dp)
     ) {
       Text(
         text = "PILOT COMBAT ACHIEVEMENTS",
-        color = Color(0xFF00F0FF),
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Bold,
+        color = CitadelTeal,
+        fontSize = 12.5.sp,
+        fontWeight = FontWeight.Black,
         fontFamily = Sans,
       )
       Spacer(modifier = Modifier.height(6.dp))
@@ -1312,12 +1326,12 @@ private fun BountyCalloutsAndAchievementsPane(
             modifier =
               Modifier.fillMaxWidth()
                 .background(
-                  if (ach.unlocked) Color(0x990E2938) else Color(0x990D1B30),
+                  if (ach.unlocked) Color(0xFF08241E) else CitadelRowBg,
                   RoundedCornerShape(8.dp),
                 )
                 .border(
                   1.dp,
-                  if (ach.unlocked) Color(0x5510B981) else Color(0x3338BDF8),
+                  if (ach.unlocked) Color(0xFF10B981) else CitadelCyan.copy(alpha = 0.35f),
                   RoundedCornerShape(8.dp),
                 )
                 .padding(8.dp),
@@ -1327,22 +1341,22 @@ private fun BountyCalloutsAndAchievementsPane(
             Column(modifier = Modifier.weight(1f)) {
               Text(
                 text = if (ach.unlocked) "[UNLOCKED] ${ach.title}" else "[LOCKED] ${ach.title}",
-                color = if (ach.unlocked) Color(0xFF00E676) else Color(0xFF00F0FF),
-                fontSize = 12.sp,
+                color = if (ach.unlocked) Color(0xFF00E676) else CitadelTeal,
+                fontSize = 11.8.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = Sans,
               )
               Text(
                 text = ach.description.uppercase(Locale.US),
-                color = Color(0xFF8A99AD),
-                fontSize = 10.sp,
+                color = Color(0xFF94A3B8),
+                fontSize = 9.8.sp,
                 fontFamily = Sans,
               )
             }
             Text(
               text = ach.progressText,
-              color = Color(0xFFFFD700),
-              fontSize = 12.sp,
+              color = CitadelGold,
+              fontSize = 11.5.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = Mono,
             )
@@ -1372,7 +1386,7 @@ private fun CreateSyndicatePane(
 
   val focusManager = LocalFocusManager.current
   val keyboardController = LocalSoftwareKeyboardController.current
-  val inputBoxHeight = 34.dp
+  val inputBoxHeight = 36.dp
   val dismissIme = {
     focusManager.clearFocus()
     keyboardController?.hide()
@@ -1381,8 +1395,8 @@ private fun CreateSyndicatePane(
   Row(
     modifier =
       Modifier.fillMaxSize()
-        .background(Color(0x99111C2D), RoundedCornerShape(10.dp))
-        .border(1.dp, Color(0x3338BDF8), RoundedCornerShape(10.dp))
+        .background(CitadelCardBg, RoundedCornerShape(10.dp))
+        .border(1.dp, CitadelCyan.copy(alpha = 0.48f), RoundedCornerShape(10.dp))
         .padding(if (isCompactPhone) 8.dp else 12.dp),
     horizontalArrangement = Arrangement.spacedBy(if (isCompactPhone) 10.dp else 14.dp),
     verticalAlignment = Alignment.CenterVertically,
@@ -1392,37 +1406,37 @@ private fun CreateSyndicatePane(
       modifier =
         Modifier.weight(0.32f)
           .fillMaxHeight()
-          .background(Color(0xEB07101E), RoundedCornerShape(10.dp))
-          .border(1.dp, Color(0x5500F5D4), RoundedCornerShape(10.dp))
+          .background(CitadelTabletBg, RoundedCornerShape(10.dp))
+          .border(1.dp, CitadelTeal.copy(alpha = 0.58f), RoundedCornerShape(10.dp))
           .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 6.dp else 10.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.SpaceEvenly,
     ) {
       Text(
         text = "LIVE FORGED CREST",
-        color = Color(0xFF00F5D4),
-        fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
+        color = CitadelTeal,
+        fontSize = if (isCompactPhone) 9.5.sp else 10.2.sp,
         fontWeight = FontWeight.Black,
         fontFamily = Mono,
       )
       Box(
         modifier =
-          Modifier.size(if (isCompactPhone) 64.dp else 74.dp)
+          Modifier.size(if (isCompactPhone) 68.dp else 78.dp)
             .background(Color(0xFF040914), RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0x6638BDF8), RoundedCornerShape(12.dp)),
+            .border(1.dp, CitadelCyan.copy(alpha = 0.65f), RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center,
       ) {
         SyndicateCrestBadge(
           tag = tagInput.ifBlank { "TAG" },
           localPrefs = localPrefs,
           currentPlayerTag = currentPlayerTag,
-          sizeDp = 64.dp,
+          sizeDp = if (isCompactPhone) 60.dp else 68.dp,
         )
       }
       Text(
         text = "[${tagInput.ifBlank { "TAG" }}] ${nameInput.ifBlank { "SYNDICATE" }.uppercase(Locale.US)}",
-        color = Color(0xFFFFD700),
-        fontSize = if (isCompactPhone) 9.sp else 10.sp,
+        color = CitadelGold,
+        fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = Mono,
         maxLines = 1,
@@ -1431,19 +1445,19 @@ private fun CreateSyndicatePane(
       Box(
         modifier =
           Modifier.fillMaxWidth()
-            .background(Color(0xFF0C1A2E), RoundedCornerShape(6.dp))
-            .border(1.dp, Color(0x44F59E0B), RoundedCornerShape(6.dp))
+            .background(CitadelCardBg, RoundedCornerShape(6.dp))
+            .border(1.dp, CitadelGold.copy(alpha = 0.50f), RoundedCornerShape(6.dp))
             .padding(horizontal = 6.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,
       ) {
         Text(
           text = "15d 00h ALLEGIANCE LOCK\nFORGE CREST IN STAR FORGE",
-          color = Color(0xFFCBD5E1),
-          fontSize = if (isCompactPhone) 7.5.sp else 8.2.sp,
+          color = Color(0xFFE2E8F0),
+          fontSize = if (isCompactPhone) 9.sp else 9.5.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = Mono,
           textAlign = TextAlign.Center,
-          lineHeight = 10.sp,
+          lineHeight = 11.5.sp,
         )
       }
     }
@@ -1462,7 +1476,7 @@ private fun CreateSyndicatePane(
           Text(
             text = "CHARTER OFFICIAL PLAYER SYNDICATE",
             color = Color.White,
-            fontSize = if (isCompactPhone) 11.5.sp else 13.5.sp,
+            fontSize = if (isCompactPhone) 12.sp else 13.8.sp,
             fontWeight = FontWeight.Black,
             fontFamily = Sans,
             maxLines = 1,
@@ -1471,8 +1485,8 @@ private fun CreateSyndicatePane(
           if (!isDrifter && remainingLockDays > 0) {
             Text(
               text = "ALLEGIANCE COOLDOWN ACTIVE: $remainingLockFormatted REMAINING",
-              color = Color(0xFFF59E0B),
-              fontSize = 8.8.sp,
+              color = CitadelGold,
+              fontSize = 9.6.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = Mono,
               maxLines = 1,
@@ -1481,8 +1495,8 @@ private fun CreateSyndicatePane(
           } else {
             Text(
               text = "REGISTERS YOUR 1–3 CHAR [TAG] TO CLOUD DIRECTORY & SYNDICATE WARS",
-              color = Color(0xFF8A99AD),
-              fontSize = if (isCompactPhone) 8.2.sp else 9.2.sp,
+              color = Color(0xFF94A3B8),
+              fontSize = if (isCompactPhone) 9.2.sp else 9.8.sp,
               fontFamily = Mono,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
@@ -1501,11 +1515,11 @@ private fun CreateSyndicatePane(
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
             modifier =
-              Modifier.height(28.dp)
+              Modifier.height(30.dp)
                 .shadow(2.dp, RoundedCornerShape(8.dp))
                 .testTag("create_syndicate_done_button"),
           ) {
-            Text("DONE", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+            Text("DONE", fontSize = 9.8.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
           }
         }
       }
@@ -1524,8 +1538,8 @@ private fun CreateSyndicatePane(
           ) {
             Text(
               text = "TAG (1–3 CHARS)",
-              color = Color(0xFFFACC15),
-              fontSize = 8.2.sp,
+              color = CitadelGold,
+              fontSize = 9.6.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = Mono,
               maxLines = 1,
@@ -1534,13 +1548,13 @@ private fun CreateSyndicatePane(
               value = tagInput,
               onValueChange = { if (!isCooldownLocked) tagInput = localPrefs.sanitizeSyndicateTag(it) },
               placeholder = "e.g. NVX, A7",
-              borderColor = Color(0xFFFFD700),
-              textColor = Color(0xFFFFD700),
+              borderColor = CitadelGold,
+              textColor = CitadelGold,
               height = inputBoxHeight,
               modifier = Modifier.fillMaxWidth(),
               enabled = !isCooldownLocked,
               fontFamily = Mono,
-              fontSizeSp = 11.5f,
+              fontSizeSp = 12f,
               testTag = "create_syndicate_tag_input",
               onFocusChange = { anyFieldFocused = it },
               onDone = { dismissIme() },
@@ -1552,8 +1566,8 @@ private fun CreateSyndicatePane(
           ) {
             Text(
               text = "SYNDICATE NAME",
-              color = Color(0xFF00F5D4),
-              fontSize = 8.2.sp,
+              color = CitadelTeal,
+              fontSize = 9.6.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = Mono,
               maxLines = 1,
@@ -1562,13 +1576,13 @@ private fun CreateSyndicatePane(
               value = nameInput,
               onValueChange = { if (!isCooldownLocked) nameInput = it.take(24) },
               placeholder = "Enter Syndicate Name...",
-              borderColor = Color(0xFF00F5D4),
+              borderColor = CitadelTeal,
               textColor = Color.White,
               height = inputBoxHeight,
               modifier = Modifier.fillMaxWidth(),
               enabled = !isCooldownLocked,
               fontFamily = Sans,
-              fontSizeSp = 11.5f,
+              fontSizeSp = 12f,
               testTag = "create_syndicate_name_input",
               onFocusChange = { anyFieldFocused = it },
               onDone = { dismissIme() },
@@ -1582,8 +1596,8 @@ private fun CreateSyndicatePane(
         ) {
           Text(
             text = "SYNDICATE DOCTRINE / MOTTO",
-            color = Color(0xFF38BDF8),
-            fontSize = 8.2.sp,
+            color = CitadelCyan,
+            fontSize = 9.6.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = Mono,
             maxLines = 1,
@@ -1592,13 +1606,13 @@ private fun CreateSyndicatePane(
             value = mottoInput,
             onValueChange = { if (!isCooldownLocked) mottoInput = it.take(60) },
             placeholder = "Enter Syndicate Doctrine or Motto...",
-            borderColor = Color(0xFF38BDF8),
-            textColor = Color(0xFFD6E4F0),
+            borderColor = CitadelCyan,
+            textColor = Color(0xFFE2E8F0),
             height = inputBoxHeight,
             modifier = Modifier.fillMaxWidth(),
             enabled = !isCooldownLocked,
             fontFamily = Sans,
-            fontSizeSp = 11f,
+            fontSizeSp = 11.5f,
             testTag = "create_syndicate_motto_input",
             onFocusChange = { anyFieldFocused = it },
             onDone = { dismissIme() },
@@ -1618,12 +1632,12 @@ private fun CreateSyndicatePane(
         enabled = canSubmit,
         colors =
           ButtonDefaults.buttonColors(
-            containerColor = Color(0xFFFFD700),
+            containerColor = CitadelGold,
             contentColor = Color(0xFF05080E),
-            disabledContainerColor = Color(0xFF1A283B),
-            disabledContentColor = Color(0xFF8A99AD),
+            disabledContainerColor = Color(0xFF132238),
+            disabledContentColor = Color(0xFF94A3B8),
           ),
-        border = BorderStroke(1.2.dp, if (canSubmit) Color(0xFFFFD700) else Color(0xFF334155)),
+        border = BorderStroke(1.2.dp, if (canSubmit) CitadelGold else Color(0xFF334155)),
         shape = RoundedCornerShape(8.dp),
         modifier =
           Modifier.height(if (isCompactPhone) 36.dp else 40.dp)
@@ -1634,9 +1648,9 @@ private fun CreateSyndicatePane(
         Text(
           text =
             "CHARTER [$previewTag] $previewName & LOCK FOR 15d 00h",
-          fontSize = if (isCompactPhone) 10.sp else 11.2.sp,
+          fontSize = if (isCompactPhone) 10.5.sp else 11.8.sp,
           fontWeight = FontWeight.Black,
-          fontFamily = Sans,
+          fontFamily = Mono,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
@@ -1701,9 +1715,10 @@ private fun ArmadaAndFriendsTabPane(
   ) {
     Column(
       modifier =
-        Modifier.width(if (isCompactPhone) 268.dp else 305.dp)
+        Modifier.width(if (isCompactPhone) 272.dp else 310.dp)
           .fillMaxHeight()
-          .background(Color(0x99111C2D), RoundedCornerShape(10.dp))
+          .background(CitadelCardBg, RoundedCornerShape(10.dp))
+          .border(1.dp, CitadelCyan.copy(alpha = 0.48f), RoundedCornerShape(10.dp))
           .padding(if (isCompactPhone) 8.dp else 12.dp)
           .verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
@@ -1712,15 +1727,15 @@ private fun ArmadaAndFriendsTabPane(
         text =
           if (activeArmadaName.isEmpty()) "[STATUS: OPERATING INDEPENDENTLY]"
           else "[STRIKE WING: $activeArmadaName] (${armadaSlots.size}/5 • $armadaTierLabel)",
-        color = if (activeArmadaName.isEmpty()) Color(0xFF60A5FA) else Color(0xFF10B981),
-        fontSize = if (isCompactPhone) 9.8.sp else 11.sp,
-        fontWeight = FontWeight.Bold,
+        color = if (activeArmadaName.isEmpty()) CitadelCyan else Color(0xFF34D399),
+        fontSize = if (isCompactPhone) 10.5.sp else 11.8.sp,
+        fontWeight = FontWeight.Black,
         fontFamily = Sans,
       )
       Text(
         text = "STRIKE WING TAG (UP TO 14 CHARS)",
-        color = Color(0xFF38BDF8),
-        fontSize = 8.sp,
+        color = CitadelCyan,
+        fontSize = 9.5.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = Mono,
       )
@@ -1737,12 +1752,12 @@ private fun ArmadaAndFriendsTabPane(
               it.uppercase(Locale.US).replace(Regex("[^A-Z0-9_-]"), "").take(14)
           },
           placeholder = "STRIKE WING TAG",
-          borderColor = Color(0xFF38BDF8),
+          borderColor = CitadelCyan,
           textColor = Color.White,
           height = inputBoxHeight,
           modifier = Modifier.weight(1f),
           fontFamily = Mono,
-          fontSizeSp = 10.5f,
+          fontSizeSp = 11f,
           testTag = "armada_name_input",
           onFocusChange = { inputFocused = it },
           onDone = { dismissIme() },
@@ -1759,7 +1774,7 @@ private fun ArmadaAndFriendsTabPane(
             ),
           border = BorderStroke(1.2.dp, Color(0xFF34D399)),
           shape = RoundedCornerShape(8.dp),
-          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+          contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp),
           modifier =
             Modifier.height(inputBoxHeight)
               .shadow(2.dp, RoundedCornerShape(8.dp))
@@ -1767,9 +1782,9 @@ private fun ArmadaAndFriendsTabPane(
         ) {
           Text(
             text = if (activeArmadaName.isEmpty()) "FORM WING" else "RENAME WING",
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = Sans,
+            fontSize = 9.8.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = Mono,
           )
         }
       }
@@ -1782,14 +1797,15 @@ private fun ArmadaAndFriendsTabPane(
           Box(
             modifier =
               Modifier.fillMaxWidth()
-                .background(Color(0x660B1524), RoundedCornerShape(8.dp))
-                .padding(8.dp)
+                .background(CitadelTabletBg, RoundedCornerShape(8.dp))
+                .border(1.dp, CitadelCyan.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                .padding(9.dp)
           ) {
             Text(
               text =
                 "FLYING [SOLO] IN OPEN SECTOR.\nLINK SWORN PILOTS ON THE RIGHT TO FORM A 1–5 PILOT STRIKE WING.",
-              color = Color(0xFF8A99AD),
-              fontSize = if (isCompactPhone) 9.2.sp else 10.2.sp,
+              color = Color(0xFFCBD5E1),
+              fontSize = if (isCompactPhone) 9.6.sp else 10.2.sp,
               fontFamily = Sans,
             )
           }
@@ -1798,7 +1814,8 @@ private fun ArmadaAndFriendsTabPane(
             Row(
               modifier =
                 Modifier.fillMaxWidth()
-                  .background(Color(0x990D1B30), RoundedCornerShape(8.dp))
+                  .background(CitadelRowBg, RoundedCornerShape(8.dp))
+                  .border(1.dp, CitadelCyan.copy(alpha = 0.32f), RoundedCornerShape(8.dp))
                   .padding(horizontal = 8.dp, vertical = 6.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.SpaceBetween,
@@ -1807,20 +1824,20 @@ private fun ArmadaAndFriendsTabPane(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
               ) {
-                ShipSpritePreview(shipId = slot.shipId, sizeDp = 24)
+                ShipSpritePreview(shipId = slot.shipId, sizeDp = 26)
                 Column {
                   Text(
                     text = "[${slot.syndicateTag}] ${slot.callsign}",
-                    color = if (slot.isLeader) Color(0xFFFFD700) else Color.White,
-                    fontSize = 11.sp,
+                    color = if (slot.isLeader) CitadelGold else Color.White,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = Sans,
                   )
                   Text(
                     text = if (slot.isLeader) "WING COMMANDER" else "WINGMAN ACTIVE",
-                    color = Color(0xFF00F0FF),
-                    fontSize = 8.8.sp,
-                    fontFamily = Sans,
+                    color = CitadelTeal,
+                    fontSize = 9.6.sp,
+                    fontFamily = Mono,
                   )
                 }
               }
@@ -1829,7 +1846,7 @@ private fun ArmadaAndFriendsTabPane(
                   onClick = { onRemoveArmadaMember(slot.callsign) },
                   colors =
                     ButtonDefaults.buttonColors(
-                      containerColor = Color(0xFF2D1420),
+                      containerColor = Color(0xFF280E1A),
                       contentColor = Color(0xFFFF3B4E),
                     ),
                   border = BorderStroke(1.2.dp, Color(0xFFFF3B4E)),
@@ -1837,7 +1854,7 @@ private fun ArmadaAndFriendsTabPane(
                   contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                   modifier = Modifier.height(28.dp).shadow(2.dp, RoundedCornerShape(8.dp)),
                 ) {
-                  Text("DROP", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, fontFamily = Sans)
+                  Text("DROP", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
                 }
               }
             }
@@ -1850,7 +1867,7 @@ private fun ArmadaAndFriendsTabPane(
           onClick = onLeaveArmadaToSolo,
           colors =
             ButtonDefaults.buttonColors(
-              containerColor = Color(0xFF281520),
+              containerColor = Color(0xFF280E1A),
               contentColor = Color(0xFFEF4444),
             ),
           border = BorderStroke(1.2.dp, Color(0xFFEF4444)),
@@ -1862,7 +1879,7 @@ private fun ArmadaAndFriendsTabPane(
               .shadow(2.dp, RoundedCornerShape(8.dp))
               .testTag("leave_armada_solo_button"),
         ) {
-          Text("LEAVE STRIKE WING", fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = Sans)
+          Text("LEAVE STRIKE WING", fontSize = 9.8.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
         }
       }
     }
@@ -1871,7 +1888,8 @@ private fun ArmadaAndFriendsTabPane(
       modifier =
         Modifier.weight(1f)
           .fillMaxHeight()
-          .background(Color(0x99111C2D), RoundedCornerShape(10.dp))
+          .background(CitadelCardBg, RoundedCornerShape(10.dp))
+          .border(1.dp, CitadelTeal.copy(alpha = 0.48f), RoundedCornerShape(10.dp))
           .padding(if (isCompactPhone) 8.dp else 12.dp),
       verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
     ) {
@@ -1888,8 +1906,8 @@ private fun ArmadaAndFriendsTabPane(
               "VERIFIED SWORN PILOTS & STRIKE WING LINK (${visibleFriends.count { it.isOnline }} ONLINE)"
             },
           color = Color.White,
-          fontSize = if (isCompactPhone) 11.sp else 13.sp,
-          fontWeight = FontWeight.Bold,
+          fontSize = if (isCompactPhone) 11.5.sp else 13.sp,
+          fontWeight = FontWeight.Black,
           fontFamily = Sans,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
@@ -1906,12 +1924,12 @@ private fun ArmadaAndFriendsTabPane(
                 it.uppercase(Locale.US).replace(Regex("[^A-Z0-9_-]"), "").take(14)
             },
             placeholder = "SEARCH SWORN PILOT CALLSIGN",
-            borderColor = Color(0xFF00F5D4),
+            borderColor = CitadelTeal,
             textColor = Color.White,
             height = inputBoxHeight,
-            modifier = Modifier.width(if (isCompactPhone) 155.dp else 190.dp),
+            modifier = Modifier.width(if (isCompactPhone) 158.dp else 192.dp),
             fontFamily = Mono,
-            fontSizeSp = 10f,
+            fontSizeSp = 10.5f,
             testTag = "friend_search_input",
             onFocusChange = { inputFocused = it },
             onDone = { dismissIme() },
@@ -1926,15 +1944,15 @@ private fun ArmadaAndFriendsTabPane(
             },
             colors =
               ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF00F0FF),
+                containerColor = CitadelTeal,
                 contentColor = Color(0xFF05080E),
               ),
-            border = BorderStroke(1.2.dp, Color(0xFF00F5D4)),
+            border = BorderStroke(1.2.dp, CitadelTeal),
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
             modifier = Modifier.height(inputBoxHeight).shadow(2.dp, RoundedCornerShape(8.dp)),
           ) {
-            Text("LINK PILOT", fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+            Text("LINK PILOT", fontSize = 9.8.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
           }
           if (inputFocused) {
             Button(
@@ -1952,7 +1970,7 @@ private fun ArmadaAndFriendsTabPane(
                   .shadow(2.dp, RoundedCornerShape(8.dp))
                   .testTag("friend_input_done_button"),
             ) {
-              Text("DONE", fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+              Text("DONE", fontSize = 9.8.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
             }
           }
         }
@@ -1963,20 +1981,20 @@ private fun ArmadaAndFriendsTabPane(
           modifier =
             Modifier.weight(1f)
               .fillMaxWidth()
-              .background(Color(0x660B1524), RoundedCornerShape(8.dp))
-              .border(1.dp, Color(0x3338BDF8), RoundedCornerShape(8.dp))
+              .background(CitadelTabletBg, RoundedCornerShape(8.dp))
+              .border(1.dp, CitadelCyan.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
               .padding(14.dp),
           contentAlignment = Alignment.Center,
         ) {
           Text(
             text =
               "NO LINKED SWORN PILOTS YET.\nENTER A VERIFIED CLOUD PILOT CALLSIGN ABOVE AND TAP [LINK PILOT] TO RECRUIT.",
-            color = Color(0xFF94A3B8),
-            fontSize = 10.sp,
+            color = Color(0xFFCBD5E1),
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = Mono,
             textAlign = TextAlign.Center,
-            lineHeight = 14.sp,
+            lineHeight = 14.5.sp,
           )
         }
       } else {
@@ -1992,7 +2010,8 @@ private fun ArmadaAndFriendsTabPane(
             Row(
               modifier =
                 Modifier.fillMaxWidth()
-                  .background(Color(0x990D1B30), RoundedCornerShape(9.dp))
+                  .background(CitadelRowBg, RoundedCornerShape(9.dp))
+                  .border(1.dp, CitadelCyan.copy(alpha = 0.30f), RoundedCornerShape(9.dp))
                   .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 6.dp else 8.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.SpaceBetween,
@@ -2006,9 +2025,9 @@ private fun ArmadaAndFriendsTabPane(
                   modifier =
                     Modifier.size(9.dp)
                       .clip(CircleShape)
-                      .background(if (friend.isOnline) Color(0xFF00E676) else Color(0xFF546E7A))
+                      .background(if (friend.isOnline) Color(0xFF00E676) else Color(0xFF64748B))
                 )
-                ShipSpritePreview(shipId = friend.shipId, sizeDp = 26)
+                ShipSpritePreview(shipId = friend.shipId, sizeDp = 28)
                 Column {
                   val badge =
                     if (friend.currentArmadaName.isNotEmpty()) "[${friend.currentArmadaName}]"
@@ -2016,15 +2035,15 @@ private fun ArmadaAndFriendsTabPane(
                   Text(
                     text = "$badge [${friend.syndicateTag}] ${friend.callsign}",
                     color = Color.White,
-                    fontSize = if (isCompactPhone) 11.5.sp else 13.sp,
+                    fontSize = if (isCompactPhone) 11.8.sp else 13.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = Sans,
                   )
                   Text(
                     text = friend.statusText.uppercase(Locale.US),
-                    color = if (friend.isOnline) Color(0xFF8A99AD) else Color(0xFF607D8B),
-                    fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
-                    fontFamily = Sans,
+                    color = if (friend.isOnline) Color(0xFF94A3B8) else Color(0xFF64748B),
+                    fontSize = if (isCompactPhone) 9.8.sp else 10.5.sp,
+                    fontFamily = Mono,
                   )
                 }
               }
@@ -2044,15 +2063,15 @@ private fun ArmadaAndFriendsTabPane(
                       enabled = !reqLocked,
                       colors =
                         ButtonDefaults.buttonColors(
-                          containerColor = if (reqLocked) Color(0xFF332409) else Color(0xFF121A3A),
-                          contentColor = if (reqLocked) Color(0xFFF59E0B) else Color(0xFF38BDF8),
-                          disabledContainerColor = Color(0xFF332409),
-                          disabledContentColor = Color(0xFFF59E0B),
+                          containerColor = if (reqLocked) CitadelTabletBg else Color(0xFF0E203D),
+                          contentColor = if (reqLocked) CitadelGold else CitadelCyan,
+                          disabledContainerColor = CitadelTabletBg,
+                          disabledContentColor = CitadelGold,
                         ),
                       border =
                         BorderStroke(
                           1.2.dp,
-                          if (reqLocked) Color(0xFFF59E0B) else Color(0xFF38BDF8),
+                          if (reqLocked) CitadelGold else CitadelCyan,
                         ),
                       shape = RoundedCornerShape(8.dp),
                       contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -2063,7 +2082,7 @@ private fun ArmadaAndFriendsTabPane(
                     ) {
                       Text(
                         text = if (reqLocked) "SENT (${reqRem}s)" else "JOIN WING",
-                        fontSize = 9.sp,
+                        fontSize = 9.6.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = Mono,
                       )
@@ -2078,15 +2097,15 @@ private fun ArmadaAndFriendsTabPane(
                     enabled = !invLocked,
                     colors =
                       ButtonDefaults.buttonColors(
-                        containerColor = if (invLocked) Color(0xFF332409) else Color(0xFF10B981),
-                        contentColor = if (invLocked) Color(0xFFF59E0B) else Color(0xFF05080E),
-                        disabledContainerColor = Color(0xFF332409),
-                        disabledContentColor = Color(0xFFF59E0B),
+                        containerColor = if (invLocked) CitadelTabletBg else Color(0xFF10B981),
+                        contentColor = if (invLocked) CitadelGold else Color(0xFF05080E),
+                        disabledContainerColor = CitadelTabletBg,
+                        disabledContentColor = CitadelGold,
                       ),
                     border =
                       BorderStroke(
                         1.2.dp,
-                        if (invLocked) Color(0xFFF59E0B) else Color(0xFF34D399),
+                        if (invLocked) CitadelGold else Color(0xFF34D399),
                       ),
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -2097,7 +2116,7 @@ private fun ArmadaAndFriendsTabPane(
                   ) {
                     Text(
                       text = if (invLocked) "SENT (${invRem}s)" else "+ INVITE",
-                      fontSize = 9.sp,
+                      fontSize = 9.6.sp,
                       fontWeight = FontWeight.Bold,
                       fontFamily = Mono,
                     )
@@ -2107,10 +2126,10 @@ private fun ArmadaAndFriendsTabPane(
                   onClick = { onReportPilot(friend.uid, friend.callsign) },
                   colors =
                     ButtonDefaults.buttonColors(
-                      containerColor = Color(0xFF2B1C08),
-                      contentColor = Color(0xFFF59E0B),
+                      containerColor = CitadelTabletBg,
+                      contentColor = CitadelGold,
                     ),
-                  border = BorderStroke(1.2.dp, Color(0xFFF59E0B)),
+                  border = BorderStroke(1.2.dp, CitadelGold),
                   shape = RoundedCornerShape(8.dp),
                   contentPadding = PaddingValues(horizontal = 8.dp),
                   modifier =
@@ -2118,13 +2137,13 @@ private fun ArmadaAndFriendsTabPane(
                       .shadow(2.dp, RoundedCornerShape(8.dp))
                       .testTag("report_armada_friend_${friend.uid}"),
                 ) {
-                  Text("RPT", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+                  Text("RPT", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
                 }
                 Button(
                   onClick = { onBlockPilot(friend.uid, friend.callsign) },
                   colors =
                     ButtonDefaults.buttonColors(
-                      containerColor = Color(0xFF28111B),
+                      containerColor = Color(0xFF280E1A),
                       contentColor = Color(0xFFEF4444),
                     ),
                   border = BorderStroke(1.2.dp, Color(0xFFEF4444)),
@@ -2135,7 +2154,7 @@ private fun ArmadaAndFriendsTabPane(
                       .shadow(2.dp, RoundedCornerShape(8.dp))
                       .testTag("block_armada_friend_${friend.uid}"),
                 ) {
-                  Text("BLK", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+                  Text("BLK", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
                 }
               }
             }
@@ -2158,25 +2177,25 @@ private fun SyndicateTabButton(
     modifier =
       Modifier.shadow(2.dp, RoundedCornerShape(8.dp))
         .clip(RoundedCornerShape(8.dp))
-        .background(if (selected) Color(0xFFFFD700) else Color(0x99111C2D))
+        .background(if (selected) CitadelTeal.copy(alpha = 0.24f) else CitadelCardBg)
         .border(
           1.2.dp,
-          if (selected) Color(0xFFFFD700) else Color(0x4438BDF8),
+          if (selected) CitadelTeal else CitadelCyan.copy(alpha = 0.48f),
           RoundedCornerShape(8.dp),
         )
         .clickable { onClick() }
         .padding(
-          horizontal = if (isCompactPhone) 8.dp else 10.dp,
-          vertical = if (isCompactPhone) 4.dp else 6.dp,
+          horizontal = if (isCompactPhone) 9.dp else 12.dp,
+          vertical = if (isCompactPhone) 4.5.dp else 6.dp,
         )
         .testTag(tag)
   ) {
     Text(
       text = label,
-      color = if (selected) Color(0xFF05080E) else Color.White,
-      fontSize = if (isCompactPhone) 9.sp else 10.sp,
-      fontWeight = FontWeight.Bold,
-      fontFamily = Sans,
+      color = if (selected) Color.White else Color(0xFFE2E8F0),
+      fontSize = if (isCompactPhone) 10.sp else 11.2.sp,
+      fontWeight = FontWeight.ExtraBold,
+      fontFamily = Mono,
       maxLines = 1,
     )
   }

@@ -10,7 +10,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,10 +50,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
@@ -73,7 +70,6 @@ import com.example.data.LocalPilotPrefs
 import com.example.data.RiftBillingManager
 import com.example.engine.MusicSynthArchetype
 import com.example.engine.RiftCalibrationState
-import com.example.engine.RiftSpriteBaker
 import com.example.engine.RiftVisualForgeState
 import java.util.Locale
 import kotlin.math.abs
@@ -83,6 +79,11 @@ import kotlin.math.sin
 
 private val Mono = FontFamily.Monospace
 private val Sans = FontFamily.SansSerif
+private val TabletShellBg = Color(0xFF060D1A)
+private val TabletCardBg = Color(0xFF081224)
+private val TabletInsetBg = Color(0xFF050B16)
+private val TabletCyanBorder = Color(0xFF38BDF8)
+private val TabletTealBorder = Color(0xFF00F5D4)
 
 private data class ControllerActionSlotInfo(
   val slotId: String,
@@ -120,7 +121,7 @@ private val REMAPPABLE_ACTION_SLOTS =
     ControllerActionSlotInfo(
       "REPEL",
       "REPEL SHOCKWAVE",
-      "Triggers 360° radial repulsion wave (320 Flux)",
+      "Triggers 360 deg radial repulsion wave (320 Flux)",
       Color(0xFF60A5FA),
     ),
     ControllerActionSlotInfo(
@@ -173,12 +174,12 @@ private fun DrawScope.drawSettingsBrackets(
 }
 
 @Composable
-private fun VectorHelmWheelGlyph(accent: Color, sizeDp: Dp = 15.dp) {
+private fun VectorHelmWheelGlyph(accent: Color, sizeDp: Dp = 16.dp) {
   Canvas(modifier = Modifier.size(sizeDp)) {
     val cx = size.width * 0.5f
     val cy = size.height * 0.5f
     val r = size.minDimension * 0.42f
-    drawCircle(accent, r, Offset(cx, cy), style = Stroke(width = 1.4.dp.toPx()))
+    drawCircle(accent, r, Offset(cx, cy), style = Stroke(width = 1.5.dp.toPx()))
     drawCircle(Color.White, r * 0.24f, Offset(cx, cy))
     for (i in 0 until 6) {
       val a = Math.toRadians(i * 60.0)
@@ -186,7 +187,7 @@ private fun VectorHelmWheelGlyph(accent: Color, sizeDp: Dp = 15.dp) {
         accent,
         Offset(cx + cos(a).toFloat() * (r * 0.28f), cy + sin(a).toFloat() * (r * 0.28f)),
         Offset(cx + cos(a).toFloat() * (r * 0.96f), cy + sin(a).toFloat() * (r * 0.96f)),
-        strokeWidth = 1.1.dp.toPx(),
+        strokeWidth = 1.2.dp.toPx(),
       )
     }
   }
@@ -205,7 +206,7 @@ private fun SettingsBeveledButton(
   testTag: String? = null,
   onClick: () -> Unit,
 ) {
-  val h = heightOverride ?: if (isCompactPhone) 28.dp else 30.dp
+  val h = heightOverride ?: if (isCompactPhone) 30.dp else 32.dp
   Box(
     modifier =
       modifier
@@ -214,14 +215,14 @@ private fun SettingsBeveledButton(
         .background(Brush.verticalGradient(listOf(topColor, bottomColor)))
         .border(1.dp, borderColor, RoundedCornerShape(8.dp))
         .clickable(onClick = onClick)
-        .padding(horizontal = if (isCompactPhone) 8.dp else 10.dp)
+        .padding(horizontal = if (isCompactPhone) 9.dp else 11.dp)
         .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
     contentAlignment = Alignment.Center,
   ) {
     Text(
       text = label,
       color = textColor,
-      fontSize = if (isCompactPhone) 9.sp else 9.8.sp,
+      fontSize = if (isCompactPhone) 9.6.sp else 10.5.sp,
       fontWeight = FontWeight.ExtraBold,
       fontFamily = Mono,
       maxLines = 1,
@@ -240,25 +241,25 @@ private fun HelmSubDeckPill(
 ) {
   Box(
     modifier =
-      Modifier.height(26.dp)
-        .clip(RoundedCornerShape(6.dp))
+      Modifier.height(28.dp)
+        .clip(RoundedCornerShape(7.dp))
         .background(
           if (selected) {
-            Brush.verticalGradient(listOf(accent.copy(alpha = 0.34f), accent.copy(alpha = 0.16f)))
+            Brush.verticalGradient(listOf(accent.copy(alpha = 0.32f), accent.copy(alpha = 0.14f)))
           } else {
-            Brush.verticalGradient(listOf(Color(0xFF0A1424), Color(0xFF060C16)))
+            Brush.verticalGradient(listOf(TabletCardBg, TabletShellBg))
           }
         )
-        .border(1.dp, if (selected) accent else Color(0xFF1E293B), RoundedCornerShape(6.dp))
+        .border(1.dp, if (selected) accent else TabletCyanBorder.copy(alpha = 0.42f), RoundedCornerShape(7.dp))
         .clickable(onClick = onClick)
-        .padding(horizontal = 9.dp)
+        .padding(horizontal = 10.dp)
         .testTag(testTag),
     contentAlignment = Alignment.Center,
   ) {
     Text(
       text = label,
-      color = if (selected) Color.White else Color(0xFF94A3B8),
-      fontSize = 9.2.sp,
+      color = if (selected) Color.White else Color(0xFFCBD5E1),
+      fontSize = 9.8.sp,
       fontWeight = FontWeight.ExtraBold,
       fontFamily = Mono,
       maxLines = 1,
@@ -318,16 +319,12 @@ fun SettingsModal(
       }
     }
   val visualRev = RiftVisualForgeState.visualRevision
-  val resonanceImage =
-    remember(visualRev) { RiftSpriteBaker.resonanceIconBitmap.asImageBitmap() }
-  val riftShardImage =
-    remember(visualRev) { RiftSpriteBaker.riftShardIconBitmap.asImageBitmap() }
   var forgePromptDraft by remember(initialMusicPrompt) { mutableStateOf(initialMusicPrompt) }
   var subDeck by remember { mutableIntStateOf(0) }
 
   val shardReadoutText =
     if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) {
-      "INF (999,999)"
+      "999,999"
     } else {
       "$riftShardsBalance"
     }
@@ -349,25 +346,26 @@ fun SettingsModal(
   Column(
     modifier =
       Modifier.fillMaxSize()
+        .background(TabletShellBg, RoundedCornerShape(12.dp))
         .padding(if (isCompactPhone) 6.dp else 8.dp)
         .testTag("settings_modal"),
     verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
   ) {
-    // Top Header Row (30.dp): HELM SYSTEMS // $fps FPS + 3 Sub-Deck Pills + [VERSION LOG]
+    // Top Header Row: HELM SYSTEMS // $fps FPS + 3 Sub-Deck Pills + [VERSION LOG]
     Row(
-      modifier = Modifier.fillMaxWidth().height(30.dp),
+      modifier = Modifier.fillMaxWidth().height(32.dp),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
       ) {
-        VectorHelmWheelGlyph(accent = Color(0xFF00F5D4), sizeDp = 15.dp)
+        VectorHelmWheelGlyph(accent = TabletTealBorder, sizeDp = 16.dp)
         Text(
           text = "HELM SYSTEMS // $fps FPS",
           color = Color.White,
-          fontSize = if (isCompactPhone) 11.5.sp else 13.5.sp,
+          fontSize = if (isCompactPhone) 12.5.sp else 14.sp,
           fontWeight = FontWeight.Black,
           fontFamily = Mono,
           letterSpacing = 0.5.sp,
@@ -377,17 +375,17 @@ fun SettingsModal(
 
       Row(
         modifier =
-          Modifier.background(Color(0xFF050B14), RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(8.dp))
+          Modifier.background(TabletInsetBg, RoundedCornerShape(8.dp))
+            .border(1.dp, TabletCyanBorder.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
             .padding(2.dp)
             .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         HelmSubDeckPill(
           label = "[AUDIO & ACCOUNT]",
           selected = subDeck == 0,
-          accent = Color(0xFF00F5D4),
+          accent = TabletTealBorder,
           testTag = "settings_subdeck_audio",
         ) {
           subDeck = 0
@@ -395,7 +393,7 @@ fun SettingsModal(
         HelmSubDeckPill(
           label = "[DISPLAY & DETAIL]",
           selected = subDeck == 1,
-          accent = Color(0xFF38BDF8),
+          accent = TabletCyanBorder,
           testTag = "settings_subdeck_display",
         ) {
           subDeck = 1
@@ -412,12 +410,12 @@ fun SettingsModal(
 
       SettingsBeveledButton(
         label = "[VERSION LOG]",
-        topColor = Color(0xFF102A45),
-        bottomColor = Color(0xFF081728),
-        borderColor = Color(0xFF00F5D4),
-        textColor = Color(0xFF00F5D4),
+        topColor = Color(0xFF0C223B),
+        bottomColor = TabletShellBg,
+        borderColor = TabletTealBorder,
+        textColor = TabletTealBorder,
         isCompactPhone = isCompactPhone,
-        heightOverride = 28.dp,
+        heightOverride = 30.dp,
         testTag = "settings_btn_open_changelog",
         onClick = onOpenChangelog,
       )
@@ -431,31 +429,31 @@ fun SettingsModal(
             modifier = Modifier.fillMaxSize().testTag("settings_synth_music_forge_card"),
             horizontalArrangement = Arrangement.spacedBy(if (isCompactPhone) 8.dp else 12.dp),
           ) {
-            // Left Column: Sworn Pilot / [RFT] Drifter Account Link + Single Shard Icon + SFX Lab Jump
+            // Left Column: Sworn Pilot / [RFT] Drifter Account Link + Custom Resonance & Shard Icons + SFX Lab Jump
             Column(
               modifier =
                 Modifier.weight(0.36f)
                   .fillMaxHeight()
-                  .background(Color(0xFF0B182B), RoundedCornerShape(10.dp))
-                  .border(1.dp, Color(0xFF1B3454), RoundedCornerShape(10.dp))
+                  .background(TabletCardBg, RoundedCornerShape(10.dp))
+                  .border(1.dp, TabletCyanBorder.copy(alpha = 0.58f), RoundedCornerShape(10.dp))
                   .padding(if (isCompactPhone) 8.dp else 12.dp),
               verticalArrangement = Arrangement.SpaceBetween,
             ) {
-              Column(verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 5.dp else 7.dp)) {
+              Column(verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp)) {
                 Text(
                   text = "PILOT IDENTITY & CLOUD UPLINK",
-                  color = Color(0xFF00F5D4),
-                  fontSize = if (isCompactPhone) 9.8.sp else 11.sp,
+                  color = TabletTealBorder,
+                  fontSize = if (isCompactPhone) 10.2.sp else 11.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = Mono,
                 )
                 Box(
                   modifier =
                     Modifier.fillMaxWidth()
-                      .background(Color(0xFF060E1B), RoundedCornerShape(8.dp))
+                      .background(TabletShellBg, RoundedCornerShape(8.dp))
                       .border(
                         1.dp,
-                        if (isGoogleAuthenticated) Color(0xFF10B981) else Color(0xFF475569),
+                        if (isGoogleAuthenticated) Color(0xFF10B981) else TabletCyanBorder.copy(alpha = 0.45f),
                         RoundedCornerShape(8.dp),
                       )
                       .padding(horizontal = 10.dp, vertical = if (isCompactPhone) 6.dp else 8.dp)
@@ -470,7 +468,7 @@ fun SettingsModal(
                           Modifier.size(7.dp)
                             .clip(CircleShape)
                             .background(
-                              if (isGoogleAuthenticated) Color(0xFF10B981) else Color(0xFFF59E0B)
+                              if (isGoogleAuthenticated) Color(0xFF10B981) else Color(0xFFFACC15)
                             )
                       )
                       Text(
@@ -479,7 +477,7 @@ fun SettingsModal(
                           else "[RFT] DRIFTER SESSION",
                         color =
                           if (isSwornPilot) Color(0xFF34D399) else Color(0xFFFACC15),
-                        fontSize = 8.8.sp,
+                        fontSize = 9.6.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = Mono,
                       )
@@ -489,7 +487,7 @@ fun SettingsModal(
                         if (activeSynTag.isNotEmpty()) "[$activeSynTag] $activeCallsign"
                         else activeCallsign,
                       color = Color.White,
-                      fontSize = if (isCompactPhone) 12.sp else 14.sp,
+                      fontSize = if (isCompactPhone) 12.5.sp else 14.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = Sans,
                       maxLines = 1,
@@ -498,7 +496,7 @@ fun SettingsModal(
                   }
                 }
 
-                // Custom Resonance Crest + Single Prismatic Rift Shard Gem (ZERO plain RES / duplicate ❖!)
+                // Unified Custom Resonance Crest + Single Prismatic Rift Shard Gem
                 Row(
                   modifier = Modifier.fillMaxWidth(),
                   horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -506,23 +504,18 @@ fun SettingsModal(
                 ) {
                   Row(
                     modifier =
-                      Modifier.weight(0.85f)
-                        .background(Color(0xFF171308), RoundedCornerShape(8.dp))
+                      Modifier.weight(0.92f)
+                        .background(TabletShellBg, RoundedCornerShape(8.dp))
                         .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 5.dp else 7.dp),
+                        .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 6.dp else 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                   ) {
-                    Image(
-                      bitmap = resonanceImage,
-                      contentDescription = "Resonance",
-                      filterQuality = FilterQuality.High,
-                      modifier = Modifier.size(14.dp),
-                    )
+                    ResonanceCrestIcon(sizeDp = 15.dp)
                     Text(
                       text = "$liveResonanceBalance",
                       color = Color(0xFFFEF08A),
-                      fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
+                      fontSize = if (isCompactPhone) 10.sp else 11.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = Mono,
                       maxLines = 1,
@@ -531,23 +524,18 @@ fun SettingsModal(
 
                   Row(
                     modifier =
-                      Modifier.weight(1.15f)
-                        .background(Color(0xFF140B29), RoundedCornerShape(8.dp))
-                        .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 5.dp else 7.dp),
+                      Modifier.weight(1.08f)
+                        .background(TabletShellBg, RoundedCornerShape(8.dp))
+                        .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 6.dp else 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                   ) {
-                    Image(
-                      bitmap = riftShardImage,
-                      contentDescription = "Rift Shards",
-                      filterQuality = FilterQuality.High,
-                      modifier = Modifier.size(14.dp),
-                    )
+                    RiftShardGemIcon(sizeDp = 15.dp)
                     Text(
                       text = shardReadoutText,
-                      color = Color(0xFFE9D5FF),
-                      fontSize = if (isCompactPhone) 9.6.sp else 10.6.sp,
+                      color = Color(0xFFF3E8FF),
+                      fontSize = if (isCompactPhone) 10.sp else 11.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = Mono,
                       maxLines = 1,
@@ -560,10 +548,10 @@ fun SettingsModal(
               Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 SettingsBeveledButton(
                   label = "[TRACK A–C & SFX LAB]",
-                  topColor = Color(0xFF281242),
-                  bottomColor = Color(0xFF150926),
+                  topColor = Color(0xFF1A1036),
+                  bottomColor = TabletShellBg,
                   borderColor = Color(0xFFC084FC),
-                  textColor = Color(0xFFE9D5FF),
+                  textColor = Color(0xFFF3E8FF),
                   isCompactPhone = isCompactPhone,
                   modifier = Modifier.fillMaxWidth(),
                   heightOverride = if (isCompactPhone) 32.dp else 36.dp,
@@ -573,10 +561,10 @@ fun SettingsModal(
                 if (isGoogleAuthenticated) {
                   SettingsBeveledButton(
                     label = "SIGN OUT",
-                    topColor = Color(0xFF1E2D45),
-                    bottomColor = Color(0xFF111B2B),
-                    borderColor = Color(0xFF475569),
-                    textColor = Color(0xFFCBD5E1),
+                    topColor = Color(0xFF102038),
+                    bottomColor = TabletShellBg,
+                    borderColor = TabletCyanBorder.copy(alpha = 0.65f),
+                    textColor = Color(0xFFE2E8F0),
                     isCompactPhone = isCompactPhone,
                     modifier = Modifier.fillMaxWidth(),
                     heightOverride = if (isCompactPhone) 32.dp else 36.dp,
@@ -585,10 +573,10 @@ fun SettingsModal(
                 } else {
                   SettingsBeveledButton(
                     label = "SIGN IN WITH GOOGLE",
-                    topColor = Color(0xFF143D34),
-                    bottomColor = Color(0xFF0A211C),
-                    borderColor = Color(0xFF00F5D4),
-                    textColor = Color(0xFF00F5D4),
+                    topColor = Color(0xFF0A2E2B),
+                    bottomColor = TabletShellBg,
+                    borderColor = TabletTealBorder,
+                    textColor = TabletTealBorder,
                     isCompactPhone = isCompactPhone,
                     modifier = Modifier.fillMaxWidth(),
                     heightOverride = if (isCompactPhone) 32.dp else 36.dp,
@@ -603,8 +591,8 @@ fun SettingsModal(
               modifier =
                 Modifier.weight(0.64f)
                   .fillMaxHeight()
-                  .background(Color(0xFF0B182B), RoundedCornerShape(10.dp))
-                  .border(1.dp, Color(0xFF1B3454), RoundedCornerShape(10.dp))
+                  .background(TabletCardBg, RoundedCornerShape(10.dp))
+                  .border(1.dp, TabletTealBorder.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
                   .padding(if (isCompactPhone) 8.dp else 12.dp),
               verticalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -615,26 +603,26 @@ fun SettingsModal(
               ) {
                 Row(
                   verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  horizontalArrangement = Arrangement.spacedBy(7.dp),
                   modifier = Modifier.weight(1f).padding(end = 6.dp),
                 ) {
                   Text(
                     text = "SYNTH ENGINE",
-                    color = Color(0xFF00F5D4),
-                    fontSize = if (isCompactPhone) 10.sp else 11.5.sp,
+                    color = TabletTealBorder,
+                    fontSize = if (isCompactPhone) 10.5.sp else 12.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = Mono,
                   )
                   Box(
                     modifier =
-                      Modifier.background(Color(0xFF071324), RoundedCornerShape(5.dp))
-                        .border(1.dp, Color(0x6600F5D4), RoundedCornerShape(5.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                      Modifier.background(TabletShellBg, RoundedCornerShape(6.dp))
+                        .border(1.dp, TabletTealBorder.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 7.dp, vertical = 2.5.dp)
                   ) {
                     Text(
-                      text = activeMusicSummary.replace("\u26A1", "Flux"),
+                      text = activeMusicSummary,
                       color = Color(0xFF7DD3FC),
-                      fontSize = 8.5.sp,
+                      fontSize = 9.6.sp,
                       fontWeight = FontWeight.Bold,
                       fontFamily = Mono,
                       maxLines = 1,
@@ -645,23 +633,23 @@ fun SettingsModal(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                   SettingsBeveledButton(
                     label = if (musicEnabled) "MUSIC: ON" else "MUSIC: OFF",
-                    topColor = if (musicEnabled) Color(0xFF0F2D46) else Color(0xFF361620),
-                    bottomColor = if (musicEnabled) Color(0xFF081A2A) else Color(0xFF1F0B11),
-                    borderColor = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFFFF3B4E),
-                    textColor = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFFFF6B7A),
+                    topColor = if (musicEnabled) Color(0xFF0C2A42) else Color(0xFF2B111C),
+                    bottomColor = TabletShellBg,
+                    borderColor = if (musicEnabled) TabletTealBorder else Color(0xFFFF3B4E),
+                    textColor = if (musicEnabled) TabletTealBorder else Color(0xFFFF6B7A),
                     isCompactPhone = isCompactPhone,
-                    heightOverride = 26.dp,
+                    heightOverride = 28.dp,
                     testTag = "settings_music_toggle_button",
                     onClick = onToggleMusic,
                   )
                   SettingsBeveledButton(
                     label = if (sfxEnabled) "SFX: ON" else "SFX: OFF",
-                    topColor = if (sfxEnabled) Color(0xFF103328) else Color(0xFF361620),
-                    bottomColor = if (sfxEnabled) Color(0xFF081C16) else Color(0xFF1F0B11),
+                    topColor = if (sfxEnabled) Color(0xFF0A2E24) else Color(0xFF2B111C),
+                    bottomColor = TabletShellBg,
                     borderColor = if (sfxEnabled) Color(0xFF00E676) else Color(0xFFFF3B4E),
                     textColor = if (sfxEnabled) Color(0xFF00E676) else Color(0xFFFF6B7A),
                     isCompactPhone = isCompactPhone,
-                    heightOverride = 26.dp,
+                    heightOverride = 28.dp,
                     testTag = "settings_sfx_toggle_button",
                     onClick = onToggleSfx,
                   )
@@ -677,9 +665,9 @@ fun SettingsModal(
                 Column(
                   modifier =
                     Modifier.weight(1f)
-                      .background(Color(0xFF071120), RoundedCornerShape(8.dp))
-                      .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
-                      .padding(horizontal = 8.dp, vertical = 5.dp),
+                      .background(TabletShellBg, RoundedCornerShape(8.dp))
+                      .border(1.dp, TabletCyanBorder.copy(alpha = 0.42f), RoundedCornerShape(8.dp))
+                      .padding(horizontal = 8.dp, vertical = 6.dp),
                   verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                   Row(
@@ -689,33 +677,33 @@ fun SettingsModal(
                   ) {
                     Text(
                       text = "TEMPO: $musicBpm BPM",
-                      color = Color(0xFFFBBF24),
-                      fontSize = 9.2.sp,
+                      color = Color(0xFFFACC15),
+                      fontSize = 9.8.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = Mono,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                       listOf(90, 118, 135, 155).forEach { bpmPreset ->
                         val isPresetActive = abs(musicBpm - bpmPreset) <= 1
                         Box(
                           modifier =
-                            Modifier.clip(RoundedCornerShape(4.dp))
+                            Modifier.clip(RoundedCornerShape(5.dp))
                               .background(
-                                if (isPresetActive) Color(0xFFF59E0B) else Color(0xFF132642)
+                                if (isPresetActive) Color(0xFFFACC15) else Color(0xFF0D1D36)
                               )
                               .border(
                                 1.dp,
-                                if (isPresetActive) Color(0xFFFBBF24) else Color(0x44F59E0B),
-                                RoundedCornerShape(4.dp),
+                                if (isPresetActive) Color(0xFFFACC15) else Color(0x66FACC15),
+                                RoundedCornerShape(5.dp),
                               )
                               .clickable { onChangeMusicBpm(bpmPreset) }
-                              .padding(horizontal = 4.5.dp, vertical = 1.5.dp)
+                              .padding(horizontal = 5.5.dp, vertical = 2.dp)
                         ) {
                           Text(
                             text = "$bpmPreset",
-                            color = if (isPresetActive) Color(0xFF030712) else Color.White,
-                            fontSize = 7.8.sp,
-                            fontWeight = FontWeight.Bold,
+                            color = if (isPresetActive) Color(0xFF040914) else Color.White,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
                             fontFamily = Mono,
                           )
                         }
@@ -728,34 +716,35 @@ fun SettingsModal(
                     valueRange = 60f..180f,
                     colors =
                       SliderDefaults.colors(
-                        thumbColor = Color(0xFFF59E0B),
-                        activeTrackColor = Color(0xFFF59E0B),
+                        thumbColor = Color(0xFFFACC15),
+                        activeTrackColor = Color(0xFFFACC15),
                         inactiveTrackColor = Color(0xFF132642),
                       ),
                     modifier =
                       Modifier.fillMaxWidth().height(22.dp).testTag("settings_music_bpm_slider"),
                   )
                   Text(
-                    text = "60 BPM Ambient <--> 180 BPM Overdrive",
-                    color = Color(0xFF8A99AD),
-                    fontSize = 8.sp,
+                    text = "60 BPM Ambient  --  180 BPM Overdrive",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 9.5.sp,
                     fontFamily = Mono,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                   )
                 }
 
                 Column(
                   modifier =
                     Modifier.weight(1f)
-                      .background(Color(0xFF071120), RoundedCornerShape(8.dp))
-                      .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
-                      .padding(horizontal = 8.dp, vertical = 5.dp),
-                  verticalArrangement = Arrangement.spacedBy(1.dp),
+                      .background(TabletShellBg, RoundedCornerShape(8.dp))
+                      .border(1.dp, TabletCyanBorder.copy(alpha = 0.42f), RoundedCornerShape(8.dp))
+                      .padding(horizontal = 8.dp, vertical = 6.dp),
+                  verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                   Text(
                     text = "MUSIC VOL: ${(musicVolume * 100f).roundToInt()}%",
-                    color = Color(0xFF00F5D4),
-                    fontSize = 8.8.sp,
+                    color = TabletTealBorder,
+                    fontSize = 9.6.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = Mono,
                   )
@@ -765,8 +754,8 @@ fun SettingsModal(
                     valueRange = 0f..1f,
                     colors =
                       SliderDefaults.colors(
-                        thumbColor = Color(0xFF00F5D4),
-                        activeTrackColor = Color(0xFF00F5D4),
+                        thumbColor = TabletTealBorder,
+                        activeTrackColor = TabletTealBorder,
                         inactiveTrackColor = Color(0xFF132642),
                       ),
                     modifier =
@@ -774,8 +763,8 @@ fun SettingsModal(
                   )
                   Text(
                     text = "SFX VOL: ${(sfxVolume * 100f).roundToInt()}%",
-                    color = Color(0xFF38BDF8),
-                    fontSize = 8.8.sp,
+                    color = TabletCyanBorder,
+                    fontSize = 9.6.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = Mono,
                   )
@@ -785,8 +774,8 @@ fun SettingsModal(
                     valueRange = 0f..1f,
                     colors =
                       SliderDefaults.colors(
-                        thumbColor = Color(0xFF38BDF8),
-                        activeTrackColor = Color(0xFF38BDF8),
+                        thumbColor = TabletCyanBorder,
+                        activeTrackColor = TabletCyanBorder,
                         inactiveTrackColor = Color(0xFF132642),
                       ),
                     modifier =
@@ -799,20 +788,20 @@ fun SettingsModal(
               Column(
                 modifier =
                   Modifier.fillMaxWidth()
-                    .background(Color(0xFF060E1B), RoundedCornerShape(8.dp))
-                    .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(8.dp))
+                    .background(TabletShellBg, RoundedCornerShape(8.dp))
+                    .border(1.dp, TabletCyanBorder.copy(alpha = 0.48f), RoundedCornerShape(8.dp))
                     .padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
               ) {
                 Row(
                   modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                  horizontalArrangement = Arrangement.spacedBy(5.dp),
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
                   verticalAlignment = Alignment.CenterVertically,
                 ) {
                   Text(
                     text = "GENRES:",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 8.2.sp,
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 9.6.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = Mono,
                   )
@@ -825,27 +814,27 @@ fun SettingsModal(
                         Modifier.clip(RoundedCornerShape(6.dp))
                           .background(
                             Brush.verticalGradient(
-                              if (isSelected) listOf(Color(0xFF0E4F5C), Color(0xFF072B36))
-                              else listOf(Color(0xFF102038), Color(0xFF091324))
+                              if (isSelected) listOf(Color(0xFF0E4F5C), Color(0xFF062530))
+                              else listOf(Color(0xFF0F2038), TabletShellBg)
                             )
                           )
                           .border(
                             1.dp,
-                            if (isSelected) Color(0xFF00F5D4) else Color(0xFF334155),
+                            if (isSelected) TabletTealBorder else TabletCyanBorder.copy(alpha = 0.40f),
                             RoundedCornerShape(6.dp),
                           )
                           .clickable {
                             forgePromptDraft = ""
                             onSelectMusicArchetype(archetype)
                           }
-                          .padding(horizontal = 7.dp, vertical = 3.dp)
+                          .padding(horizontal = 8.dp, vertical = 4.dp)
                           .testTag("settings_music_archetype_${archetype.id}"),
                       contentAlignment = Alignment.Center,
                     ) {
                       Text(
-                        text = "${archetype.label.replace("\u26A1", "")} (${archetype.defaultBpm})",
-                        color = if (isSelected) Color(0xFF00F5D4) else Color(0xFFE2E8F0),
-                        fontSize = 8.5.sp,
+                        text = "${archetype.label} (${archetype.defaultBpm})",
+                        color = if (isSelected) TabletTealBorder else Color(0xFFF1F5F9),
+                        fontSize = 9.6.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = Sans,
                         maxLines = 1,
@@ -864,8 +853,8 @@ fun SettingsModal(
                       Modifier.weight(1f)
                         .height(36.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF040914))
-                        .border(1.dp, Color(0xFF284B73), RoundedCornerShape(8.dp))
+                        .background(TabletInsetBg)
+                        .border(1.dp, TabletCyanBorder.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.CenterStart,
                   ) {
@@ -873,8 +862,8 @@ fun SettingsModal(
                       Text(
                         text =
                           "Prompt custom battle synth (e.g. dark acid bassline, cosmic pad, retro boss)...",
-                        color = Color(0xFF64748B),
-                        fontSize = 9.5.sp,
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.sp,
                         fontFamily = Sans,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -884,11 +873,11 @@ fun SettingsModal(
                       value = forgePromptDraft,
                       onValueChange = { forgePromptDraft = it.take(120) },
                       singleLine = true,
-                      cursorBrush = SolidColor(Color(0xFF00F5D4)),
+                      cursorBrush = SolidColor(TabletTealBorder),
                       textStyle =
                         TextStyle(
                           color = Color.White,
-                          fontSize = 10.5.sp,
+                          fontSize = 11.sp,
                           fontWeight = FontWeight.Medium,
                           fontFamily = Sans,
                         ),
@@ -900,7 +889,7 @@ fun SettingsModal(
                       Modifier.height(36.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(
-                          Brush.verticalGradient(listOf(Color(0xFF4C1D95), Color(0xFF2E1065)))
+                          Brush.verticalGradient(listOf(Color(0xFF4C1D95), Color(0xFF1E0B42)))
                         )
                         .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(8.dp))
                         .clickable { onForgeCustomMusicPrompt(forgePromptDraft) }
@@ -911,7 +900,7 @@ fun SettingsModal(
                     Text(
                       text = "FORGE TRACK",
                       color = Color(0xFFF3E8FF),
-                      fontSize = 9.5.sp,
+                      fontSize = 10.sp,
                       fontWeight = FontWeight.ExtraBold,
                       fontFamily = Mono,
                       maxLines = 1,
@@ -934,12 +923,12 @@ fun SettingsModal(
               modifier =
                 Modifier.weight(1f)
                   .fillMaxHeight()
-                  .background(Color(0xFF0B182B), RoundedCornerShape(10.dp))
-                  .border(1.dp, Color(0xFF1B3454), RoundedCornerShape(10.dp))
+                  .background(TabletCardBg, RoundedCornerShape(10.dp))
+                  .border(1.dp, TabletCyanBorder.copy(alpha = 0.58f), RoundedCornerShape(10.dp))
                   .padding(if (isCompactPhone) 8.dp else 12.dp),
               verticalArrangement = Arrangement.SpaceBetween,
             ) {
-              Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+              Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 val zoomMode =
                   when {
                     cameraZoom <= 0.65f -> "TACTICAL OVERVIEW"
@@ -949,33 +938,33 @@ fun SettingsModal(
                 Text(
                   text =
                     "CAMERA ZOOM / ARENA FOV: ${String.format(Locale.US, "%.2fx", cameraZoom)} ($zoomMode)",
-                  color = Color(0xFF00F5D4),
-                  fontSize = if (isCompactPhone) 10.5.sp else 12.sp,
+                  color = TabletTealBorder,
+                  fontSize = if (isCompactPhone) 11.sp else 12.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = Mono,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                   listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f).forEach { preset ->
                     val isSelected = abs(cameraZoom - preset) <= 0.05f
                     Box(
                       modifier =
                         Modifier.clip(RoundedCornerShape(6.dp))
-                          .background(if (isSelected) Color(0xFF00F5D4) else Color(0xFF132642))
+                          .background(if (isSelected) TabletTealBorder else TabletShellBg)
                           .border(
                             1.dp,
-                            if (isSelected) Color(0xFF00F5D4) else Color(0x4400F5D4),
+                            if (isSelected) TabletTealBorder else TabletTealBorder.copy(alpha = 0.45f),
                             RoundedCornerShape(6.dp),
                           )
                           .clickable { onChangeCameraZoom(preset) }
-                          .padding(horizontal = 8.dp, vertical = 3.5.dp)
+                          .padding(horizontal = 9.dp, vertical = 4.dp)
                     ) {
                       Text(
                         text = "${preset}x",
-                        color = if (isSelected) Color(0xFF030712) else Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) Color(0xFF040914) else Color.White,
+                        fontSize = 9.8.sp,
+                        fontWeight = FontWeight.ExtraBold,
                         fontFamily = Mono,
                       )
                     }
@@ -989,8 +978,8 @@ fun SettingsModal(
                   valueRange = 0.5f..1.5f,
                   colors =
                     SliderDefaults.colors(
-                      thumbColor = Color(0xFF00F5D4),
-                      activeTrackColor = Color(0xFF00F5D4),
+                      thumbColor = TabletTealBorder,
+                      activeTrackColor = TabletTealBorder,
                       inactiveTrackColor = Color(0xFF132642),
                     ),
                   modifier =
@@ -1001,15 +990,15 @@ fun SettingsModal(
               Column(
                 modifier =
                   Modifier.fillMaxWidth()
-                    .background(Color(0xFF060E1B), RoundedCornerShape(8.dp))
-                    .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(8.dp))
+                    .background(TabletShellBg, RoundedCornerShape(8.dp))
+                    .border(1.dp, TabletCyanBorder.copy(alpha = 0.50f), RoundedCornerShape(8.dp))
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
               ) {
                 Text(
                   text = "GRAPHICS DETAIL // DYNAMIC POINT LIGHTING",
-                  color = Color(0xFF38BDF8),
-                  fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
+                  color = TabletCyanBorder,
+                  fontSize = if (isCompactPhone) 10.sp else 11.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = Mono,
                 )
@@ -1027,8 +1016,8 @@ fun SettingsModal(
                     val selected = activeGraphicsTier == tierIdx
                     val accent =
                       when (tierIdx) {
-                        0 -> Color(0xFF38BDF8)
-                        1 -> Color(0xFF00F5D4)
+                        0 -> TabletCyanBorder
+                        1 -> TabletTealBorder
                         else -> Color(0xFFC084FC)
                       }
                     Column(
@@ -1036,11 +1025,11 @@ fun SettingsModal(
                         Modifier.weight(1f)
                           .clip(RoundedCornerShape(7.dp))
                           .background(
-                            if (selected) accent.copy(alpha = 0.22f) else Color(0xFF0B1628)
+                            if (selected) accent.copy(alpha = 0.22f) else TabletCardBg
                           )
                           .border(
                             1.2.dp,
-                            if (selected) accent else Color(0xFF334155),
+                            if (selected) accent else TabletCyanBorder.copy(alpha = 0.35f),
                             RoundedCornerShape(7.dp),
                           )
                           .clickable {
@@ -1069,18 +1058,19 @@ fun SettingsModal(
                     ) {
                       Text(
                         text = tierLabel,
-                        color = if (selected) Color.White else Color(0xFFCBD5E1),
-                        fontSize = 10.sp,
+                        color = if (selected) Color.White else Color(0xFFE2E8F0),
+                        fontSize = 10.8.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = Mono,
                       )
                       Text(
                         text = subText,
-                        color = if (selected) accent else Color(0xFF64748B),
-                        fontSize = 7.5.sp,
+                        color = if (selected) accent else Color(0xFF94A3B8),
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = Mono,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                       )
                     }
                   }
@@ -1093,23 +1083,23 @@ fun SettingsModal(
               modifier =
                 Modifier.weight(1f)
                   .fillMaxHeight()
-                  .background(Color(0xFF0B182B), RoundedCornerShape(10.dp))
-                  .border(1.dp, Color(0xFF1B3454), RoundedCornerShape(10.dp))
+                  .background(TabletCardBg, RoundedCornerShape(10.dp))
+                  .border(1.dp, TabletTealBorder.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
                   .padding(if (isCompactPhone) 8.dp else 12.dp),
               verticalArrangement = Arrangement.SpaceBetween,
             ) {
               Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                   text = "PLAYFIELD TEXT SCALE: ${(playfieldTextScale * 100f).roundToInt()}%",
-                  color = Color(0xFF00F5D4),
-                  fontSize = if (isCompactPhone) 10.5.sp else 12.sp,
+                  color = TabletTealBorder,
+                  fontSize = if (isCompactPhone) 11.sp else 12.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = Mono,
                 )
                 Text(
                   text = "Scales world callsigns, bounties, Rift callouts, and Stasis timers.",
-                  color = Color(0xFF8A99AD),
-                  fontSize = if (isCompactPhone) 9.sp else 10.sp,
+                  color = Color(0xFFCBD5E1),
+                  fontSize = if (isCompactPhone) 9.6.sp else 10.5.sp,
                   fontFamily = Sans,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
@@ -1121,20 +1111,20 @@ fun SettingsModal(
                     Box(
                       modifier =
                         Modifier.clip(RoundedCornerShape(6.dp))
-                          .background(if (isSelected) Color(0xFF00F5D4) else Color(0xFF132642))
+                          .background(if (isSelected) TabletTealBorder else TabletShellBg)
                           .border(
                             1.dp,
-                            if (isSelected) Color(0xFF00F5D4) else Color(0x4400F5D4),
+                            if (isSelected) TabletTealBorder else TabletTealBorder.copy(alpha = 0.45f),
                             RoundedCornerShape(6.dp),
                           )
                           .clickable { onChangePlayfieldTextScale(preset) }
-                          .padding(horizontal = 9.dp, vertical = 3.5.dp)
+                          .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                       Text(
                         text = label,
-                        color = if (isSelected) Color(0xFF030712) else Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) Color(0xFF040914) else Color.White,
+                        fontSize = 9.8.sp,
+                        fontWeight = FontWeight.ExtraBold,
                         fontFamily = Mono,
                       )
                     }
@@ -1148,8 +1138,8 @@ fun SettingsModal(
                   valueRange = 0.75f..1.75f,
                   colors =
                     SliderDefaults.colors(
-                      thumbColor = Color(0xFF00F5D4),
-                      activeTrackColor = Color(0xFF00F5D4),
+                      thumbColor = TabletTealBorder,
+                      activeTrackColor = TabletTealBorder,
                       inactiveTrackColor = Color(0xFF132642),
                     ),
                   modifier =
@@ -1161,8 +1151,8 @@ fun SettingsModal(
                 modifier =
                   Modifier.fillMaxWidth()
                     .height(if (isCompactPhone) 68.dp else 88.dp)
-                    .background(Color(0xFF030712), RoundedCornerShape(8.dp))
-                    .border(1.dp, Color(0x4400F5D4), RoundedCornerShape(8.dp))
+                    .background(TabletInsetBg, RoundedCornerShape(8.dp))
+                    .border(1.dp, TabletTealBorder.copy(alpha = 0.48f), RoundedCornerShape(8.dp))
                     .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center,
               ) {
@@ -1171,21 +1161,21 @@ fun SettingsModal(
                     4.dp.toPx(),
                     8.dp.toPx(),
                     1.4.dp.toPx(),
-                    Color(0xFF00F5D4).copy(alpha = 0.55f),
+                    TabletTealBorder.copy(alpha = 0.65f),
                   )
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                   Text(
                     text = "LIVE ARENA CALLSIGN PREVIEW",
-                    color = Color(0xFF64748B),
-                    fontSize = 8.sp,
+                    color = Color(0xFF94A3B8),
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = Mono,
                   )
                   Spacer(modifier = Modifier.height(3.dp))
                   Text(
                     text = "[SYN] VIPER_ACE • BTY 350",
-                    color = Color(0xFF38BDF8),
+                    color = TabletCyanBorder,
                     fontSize = (12.5f * playfieldTextScale.coerceIn(0.75f, 1.75f)).sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = Mono,
@@ -1240,8 +1230,8 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
     modifier =
       modifier
         .fillMaxWidth()
-        .background(Color(0xFF071120), RoundedCornerShape(12.dp))
-        .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(12.dp))
+        .background(TabletCardBg, RoundedCornerShape(10.dp))
+        .border(1.dp, TabletCyanBorder.copy(alpha = 0.58f), RoundedCornerShape(10.dp))
         .focusRequester(mapperFocusRequester)
         .focusable()
         .onPreviewKeyEvent { keyEvent ->
@@ -1288,8 +1278,8 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
       modifier =
         Modifier.weight(0.50f)
           .fillMaxHeight()
-          .background(Color(0xFF050B14), RoundedCornerShape(10.dp))
-          .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
+          .background(TabletShellBg, RoundedCornerShape(10.dp))
+          .border(1.dp, TabletCyanBorder.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
           .testTag("controller_schematic_canvas"),
       revision = rev,
       highlightedCode = highlightedHardwareCode,
@@ -1304,8 +1294,8 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
       Row(
         modifier =
           Modifier.fillMaxWidth()
-            .background(Color(0xFF050B14), RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
+            .background(TabletShellBg, RoundedCornerShape(8.dp))
+            .border(1.dp, TabletCyanBorder.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
             .padding(horizontal = 8.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -1319,13 +1309,13 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
             modifier =
               Modifier.size(7.dp)
                 .clip(CircleShape)
-                .background(if (isGamepadConnected) Color(0xFF22C55E) else Color(0xFF94A3B8))
+                .background(if (isGamepadConnected) Color(0xFF22C55E) else TabletCyanBorder)
           )
           Text(
             text =
               if (isGamepadConnected) "GAMEPAD LINKED" else "TOUCH HUD + GAMEPAD READY",
-            color = if (isGamepadConnected) Color(0xFF4ADE80) else Color(0xFF00F5D4),
-            fontSize = if (isCompactPhone) 8.8.sp else 9.8.sp,
+            color = if (isGamepadConnected) Color(0xFF4ADE80) else TabletTealBorder,
+            fontSize = if (isCompactPhone) 9.5.sp else 10.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = Mono,
             maxLines = 1,
@@ -1334,12 +1324,12 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
         }
         SettingsBeveledButton(
           label = "[RESET BINDS]",
-          topColor = Color(0xFF382012),
-          bottomColor = Color(0xFF1F1008),
-          borderColor = Color(0xFFF59E0B),
-          textColor = Color(0xFFFBBF24),
+          topColor = Color(0xFF1A243B),
+          bottomColor = TabletShellBg,
+          borderColor = Color(0xFFFACC15),
+          textColor = Color(0xFFFEF08A),
           isCompactPhone = isCompactPhone,
-          heightOverride = 24.dp,
+          heightOverride = 26.dp,
           testTag = "btn_reset_default_controller_binds",
           onClick = {
             RiftCalibrationState.resetControllerBindingsToDefault(context)
@@ -1354,7 +1344,7 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
         Row(
           modifier =
             Modifier.fillMaxWidth()
-              .background(Color(0xFF2B1D06), RoundedCornerShape(7.dp))
+              .background(TabletShellBg, RoundedCornerShape(7.dp))
               .border(1.2.dp, Color(0xFFFACC15), RoundedCornerShape(7.dp))
               .padding(horizontal = 8.dp, vertical = 4.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -1363,7 +1353,7 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
           Text(
             text = "PRESS KEY OR TAP CHIP FOR [${activeListeningInfo.title}]...",
             color = Color(0xFFFEF08A),
-            fontSize = 8.5.sp,
+            fontSize = 9.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = Mono,
             maxLines = 1,
@@ -1373,7 +1363,7 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
           Text(
             text = "[CANCEL]",
             color = Color(0xFFF87171),
-            fontSize = 8.5.sp,
+            fontSize = 9.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = Mono,
             modifier = Modifier.padding(start = 6.dp).clickable { listeningSlot = null },
@@ -1383,7 +1373,7 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
         Row(
           modifier =
             Modifier.fillMaxWidth()
-              .background(Color(0xFF07261E), RoundedCornerShape(7.dp))
+              .background(Color(0xFF062420), RoundedCornerShape(7.dp))
               .border(1.dp, Color(0xFF10B981), RoundedCornerShape(7.dp))
               .padding(horizontal = 8.dp, vertical = 4.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -1392,7 +1382,7 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
           Text(
             text = feedbackBanner ?: "",
             color = Color(0xFF6EE7B7),
-            fontSize = 8.5.sp,
+            fontSize = 9.5.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = Mono,
             maxLines = 1,
@@ -1401,8 +1391,8 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
           )
           Text(
             text = "[X]",
-            color = Color(0xFF94A3B8),
-            fontSize = 8.5.sp,
+            color = Color(0xFFCBD5E1),
+            fontSize = 9.5.sp,
             fontFamily = Mono,
             modifier = Modifier.padding(start = 6.dp).clickable { feedbackBanner = null },
           )
@@ -1428,9 +1418,9 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
               val boundLabel = remember(boundCode) { RiftCalibrationState.getBindingLabel(boundCode) }
               val bracketColor =
                 if (slotInfo.slotId == "PRIMARY_FIRE" || slotInfo.slotId == "MULTI_TOGGLE") {
-                  Color(0xFFF59E0B)
+                  Color(0xFFFACC15)
                 } else {
-                  Color(0xFF00F5D4)
+                  TabletTealBorder
                 }
 
               Box(
@@ -1441,13 +1431,13 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
                     .clip(RoundedCornerShape(8.dp))
                     .background(
                       Brush.verticalGradient(
-                        if (isListening) listOf(Color(0xFF3B2806), Color(0xFF1E1403))
-                        else listOf(Color(0xFF0C1A33), Color(0xFF081224))
+                        if (isListening) listOf(Color(0xFF1A2842), TabletShellBg)
+                        else listOf(Color(0xFF0A172D), TabletShellBg)
                       )
                     )
                     .border(
                       if (isListening) 1.5.dp else 1.dp,
-                      if (isListening) Color(0xFFFACC15) else bracketColor.copy(alpha = 0.45f),
+                      if (isListening) Color(0xFFFACC15) else bracketColor.copy(alpha = 0.55f),
                       RoundedCornerShape(8.dp),
                     )
                     .clickable {
@@ -1458,12 +1448,12 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
                 Canvas(modifier = Modifier.fillMaxSize()) {
                   val cCol = if (isListening) Color(0xFFFACC15) else bracketColor
                   drawSettingsBrackets(0f, 7.dp.toPx(), 1.6.dp.toPx(), cCol)
-                  val gx = size.width * 0.20f
-                  val gy = size.height * 0.30f
+                  val gx = size.width * 0.18f
+                  val gy = size.height * 0.28f
                   val gw = 22.dp.toPx()
                   val gh = 12.dp.toPx()
                   drawRoundRect(
-                    Color(0xFF050B14),
+                    TabletInsetBg,
                     Offset(gx - gw * 0.5f, gy - gh * 0.5f),
                     Size(gw, gh),
                     CornerRadius(4f, 4f),
@@ -1501,7 +1491,7 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
                     Box(
                       modifier =
                         Modifier.background(
-                            if (isListening) Color(0xFFFACC15) else Color(0xFF050B14),
+                            if (isListening) Color(0xFFFACC15) else TabletInsetBg,
                             RoundedCornerShape(4.dp),
                           )
                           .border(
@@ -1513,8 +1503,8 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
                     ) {
                       Text(
                         text = if (isListening) "PRESS..." else "[$boundLabel]",
-                        color = if (isListening) Color(0xFF030712) else bracketColor,
-                        fontSize = 7.8.sp,
+                        color = if (isListening) Color(0xFF040914) else bracketColor,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = Mono,
                       )
@@ -1524,7 +1514,7 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
                     Text(
                       text = slotInfo.title,
                       color = Color.White,
-                      fontSize = if (isCompactPhone) 8.4.sp else 9.2.sp,
+                      fontSize = if (isCompactPhone) 9.5.sp else 10.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = Mono,
                       maxLines = 1,
@@ -1533,8 +1523,8 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
                     Text(
                       text = slotInfo.subtitle,
                       color = Color(0xFF94A3B8),
-                      fontSize = 7.sp,
-                      lineHeight = 8.2.sp,
+                      fontSize = if (isCompactPhone) 8.6.sp else 9.2.sp,
+                      lineHeight = 10.5.sp,
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis,
                     )
@@ -1550,8 +1540,8 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
       Row(
         modifier =
           Modifier.fillMaxWidth()
-            .background(Color(0xFF060D1A), RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
+            .background(TabletShellBg, RoundedCornerShape(8.dp))
+            .border(1.dp, TabletCyanBorder.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp)
             .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -1559,8 +1549,8 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
       ) {
         Text(
           text = if (listeningSlot != null) "BIND CHIP:" else "CHIPS:",
-          color = if (listeningSlot != null) Color(0xFFFACC15) else Color(0xFF94A3B8),
-          fontSize = 8.sp,
+          color = if (listeningSlot != null) Color(0xFFFACC15) else Color(0xFFCBD5E1),
+          fontSize = 9.5.sp,
           fontWeight = FontWeight.Black,
           fontFamily = Mono,
         )
@@ -1574,17 +1564,17 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
                 .clip(RoundedCornerShape(6.dp))
                 .background(
                   when {
-                    isHighlighted -> Color(0xFF3B2A07)
-                    listeningSlot != null -> Color(0xFF132642)
-                    else -> Color(0xFF0B1628)
+                    isHighlighted -> Color(0xFF1A2842)
+                    listeningSlot != null -> Color(0xFF0E223D)
+                    else -> TabletCardBg
                   }
                 )
                 .border(
                   1.dp,
                   when {
                     isHighlighted -> Color(0xFFFACC15)
-                    listeningSlot != null -> Color(0xFF38BDF8)
-                    else -> Color(0xFF334155)
+                    listeningSlot != null -> TabletCyanBorder
+                    else -> TabletCyanBorder.copy(alpha = 0.38f)
                   },
                   RoundedCornerShape(6.dp),
                 )
@@ -1596,13 +1586,13 @@ fun ControllerDiagramAndMapperCard(context: Context, modifier: Modifier = Modifi
                   feedbackBanner = "BOUND [$slotTitle] TO [$hwLabel]"
                   listeningSlot = null
                 }
-                .padding(horizontal = 6.dp, vertical = 3.dp),
+                .padding(horizontal = 7.dp, vertical = 3.5.dp),
             contentAlignment = Alignment.Center,
           ) {
             Text(
               text = if (actionOnChip != null) "$hwLabel ($actionOnChip)" else hwLabel,
               color = if (isHighlighted) Color(0xFFFEF08A) else Color.White,
-              fontSize = 7.8.sp,
+              fontSize = 9.5.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = Mono,
             )
@@ -1665,7 +1655,7 @@ private fun TwinStickControllerSchematicCanvas(
     val h = size.height
     val cx = w * 0.5f
     val cy = h * 0.54f
-    drawSettingsBrackets(5.dp.toPx(), 10.dp.toPx(), 1.5f, Color(0xFF00F5D4).copy(alpha = 0.55f))
+    drawSettingsBrackets(5.dp.toPx(), 10.dp.toPx(), 1.5f, TabletTealBorder.copy(alpha = 0.58f))
 
     fun strokeForCode(code: Int, defaultColor: Color): Color =
       if (highlightedCode == code) Color(0xFFFACC15).copy(alpha = pulseAlpha) else defaultColor
@@ -1696,7 +1686,7 @@ private fun TwinStickControllerSchematicCanvas(
       val topLeft = Offset(center.x - trigW * wScale * 0.5f, center.y - trigH * hScale * 0.5f)
       val sz = Size(trigW * wScale, trigH * hScale)
       drawRoundRect(
-        if (highlightedCode == code) Color(0xFF422806) else fillCol,
+        if (highlightedCode == code) Color(0xFF1A2842) else fillCol,
         topLeft,
         sz,
         CornerRadius(rad, rad),
@@ -1715,8 +1705,8 @@ private fun TwinStickControllerSchematicCanvas(
       0.96f,
       0.90f,
       7f,
-      Color(0xFF0F223D),
-      Color(0xFF00F5D4),
+      Color(0xFF0A1F38),
+      TabletTealBorder,
       1.8f,
     )
     drawShoulder(
@@ -1725,8 +1715,8 @@ private fun TwinStickControllerSchematicCanvas(
       0.96f,
       0.90f,
       7f,
-      Color(0xFF281509),
-      Color(0xFFF59E0B),
+      Color(0xFF142038),
+      Color(0xFFFACC15),
       1.8f,
     )
     drawShoulder(
@@ -1735,7 +1725,7 @@ private fun TwinStickControllerSchematicCanvas(
       1.04f,
       0.80f,
       6f,
-      Color(0xFF111E34),
+      Color(0xFF0E1B30),
       Color(0xFF94A3B8),
       1.6f,
     )
@@ -1745,8 +1735,8 @@ private fun TwinStickControllerSchematicCanvas(
       1.04f,
       0.80f,
       6f,
-      Color(0xFF0A2823),
-      Color(0xFF00F5D4),
+      Color(0xFF092624),
+      TabletTealBorder,
       1.6f,
     )
 
@@ -1808,14 +1798,14 @@ private fun TwinStickControllerSchematicCanvas(
     drawPath(
       gamepadPath,
       Brush.verticalGradient(
-        listOf(Color(0xFF1E293B), Color(0xFF0F172A)),
+        listOf(Color(0xFF1A2840), Color(0xFF091326)),
         startY = bodyTop,
         endY = bodyBottom + bodyH * 0.38f,
       ),
     )
-    drawPath(gamepadPath, Color(0xFF38BDF8), style = Stroke(width = 2.2.dp.toPx()))
+    drawPath(gamepadPath, TabletCyanBorder, style = Stroke(width = 2.2.dp.toPx()))
 
-    val seamCol = Color(0xFFF59E0B).copy(alpha = 0.72f)
+    val seamCol = Color(0xFFFACC15).copy(alpha = 0.72f)
     drawPath(
       Path().apply {
         moveTo(bodyLeft + bodyW * 0.05f, bodyTop + bodyH * 0.16f)
@@ -1847,7 +1837,7 @@ private fun TwinStickControllerSchematicCanvas(
     val rStickCenter = Offset(cx + bodyW * 0.14f, cy + bodyH * 0.20f)
     val stickRadius = bodyH * 0.19f
     fun drawThumbStick(center: Offset, code: Int, mainCol: Color, innerRingCol: Color) {
-      drawCircle(Color(0xFF050B14), stickRadius, center)
+      drawCircle(TabletInsetBg, stickRadius, center)
       drawCircle(strokeForCode(code, mainCol), stickRadius, center, style = Stroke(width = 2.2f))
       drawCircle(innerRingCol, stickRadius * 0.72f, center, style = Stroke(width = 1.4f))
       drawCircle(mainCol.copy(alpha = 0.42f), stickRadius * 0.42f, center)
@@ -1856,27 +1846,27 @@ private fun TwinStickControllerSchematicCanvas(
     drawThumbStick(
       lStickCenter,
       KeyEvent.KEYCODE_BUTTON_THUMBL,
-      Color(0xFF00F5D4),
+      TabletTealBorder,
       Color(0xFF1E293B),
     )
     drawThumbStick(
       rStickCenter,
       KeyEvent.KEYCODE_BUTTON_THUMBR,
       Color(0xFFC084FC),
-      Color(0xFFF59E0B).copy(alpha = 0.65f),
+      Color(0xFFFACC15).copy(alpha = 0.65f),
     )
 
     val dpadCenter = Offset(cx - bodyW * 0.14f, cy + bodyH * 0.20f)
     val dArm = stickRadius * 0.76f
     val dThick = stickRadius * 0.46f
     drawRoundRect(
-      Color(0xFF0B1528),
+      TabletShellBg,
       Offset(dpadCenter.x - dArm, dpadCenter.y - dThick * 0.5f),
       Size(dArm * 2f, dThick),
       CornerRadius(3f, 3f),
     )
     drawRoundRect(
-      Color(0xFF0B1528),
+      TabletShellBg,
       Offset(dpadCenter.x - dThick * 0.5f, dpadCenter.y - dArm),
       Size(dThick, dArm * 2f),
       CornerRadius(3f, 3f),
@@ -1895,7 +1885,7 @@ private fun TwinStickControllerSchematicCanvas(
       CornerRadius(3f, 3f),
       style = Stroke(width = 1.3f),
     )
-    val chevCol = Color(0xFF38BDF8)
+    val chevCol = TabletCyanBorder
     val chevOff = dArm * 0.62f
     listOf(Offset(0f, -chevOff), Offset(0f, chevOff), Offset(-chevOff, 0f), Offset(chevOff, 0f))
       .forEach { d -> drawCircle(chevCol, 2.0f, dpadCenter + d) }
@@ -1910,15 +1900,15 @@ private fun TwinStickControllerSchematicCanvas(
 
     listOf(
         Triple(KeyEvent.KEYCODE_BUTTON_Y, yPos, Color(0xFFFACC15) to "Y"),
-        Triple(KeyEvent.KEYCODE_BUTTON_X, xPos, Color(0xFF00F5D4) to "X"),
+        Triple(KeyEvent.KEYCODE_BUTTON_X, xPos, TabletTealBorder to "X"),
         Triple(KeyEvent.KEYCODE_BUTTON_B, bPos, Color(0xFFEF4444) to "B"),
-        Triple(KeyEvent.KEYCODE_BUTTON_A, aPos, Color(0xFF38BDF8) to "A"),
+        Triple(KeyEvent.KEYCODE_BUTTON_A, aPos, TabletCyanBorder to "A"),
       )
       .forEach { (code, pos, colAndLetter) ->
         val (col, letter) = colAndLetter
         val isHi = highlightedCode == code
         val isBound = RiftCalibrationState.getActionForBinding(code) != null
-        drawCircle(if (isHi) Color(0xFF422806) else Color(0xFF0A1424), btnR, pos)
+        drawCircle(if (isHi) Color(0xFF1A2842) else TabletShellBg, btnR, pos)
         drawCircle(
           strokeForCode(code, if (isBound) col else col.copy(alpha = 0.65f)),
           btnR,
@@ -1947,11 +1937,11 @@ private fun TwinStickControllerSchematicCanvas(
       val elbowPos = Offset(w * elbowX, h * yFrac)
       val calloutPos = Offset(w * calloutX, h * yFrac)
       drawCircle(cCol, 2.6f, anchor)
-      drawLine(cCol.copy(alpha = 0.78f), anchor, elbowPos, 1.4f)
-      drawLine(cCol.copy(alpha = 0.78f), elbowPos, calloutPos, 1.4f)
+      drawLine(cCol.copy(alpha = 0.80f), anchor, elbowPos, 1.5f)
+      drawLine(cCol.copy(alpha = 0.80f), elbowPos, calloutPos, 1.5f)
       drawContext.canvas.nativeCanvas.apply {
         labelPaint.color = argb
-        labelPaint.textSize = (h * 0.044f).coerceIn(11f, 18f)
+        labelPaint.textSize = (h * 0.048f).coerceIn(13f, 20f)
         labelPaint.textAlign = if (alignLeft) Paint.Align.LEFT else Paint.Align.RIGHT
         drawText(text, if (alignLeft) calloutPos.x + 4f else calloutPos.x - 4f, calloutPos.y + 4f, labelPaint)
       }
@@ -1961,12 +1951,12 @@ private fun TwinStickControllerSchematicCanvas(
     drawCalloutLabel(l1Center, 0.30f, 0.25f, 0.25f, "L1/LB: $l1Action", "#CBD5E1", false)
     drawCalloutLabel(lStickCenter, 0.30f, 0.25f, 0.50f, "L-STICK: FLIGHT", "#00F5D4", false)
     drawCalloutLabel(dpadCenter, 0.30f, 0.25f, 0.80f, "D-PAD: ZOOM/HANGAR", "#94A3B8", false)
-    drawCalloutLabel(rtCenter, 0.70f, 0.75f, 0.12f, "RT/R2: $rtAction", "#F59E0B", true)
+    drawCalloutLabel(rtCenter, 0.70f, 0.75f, 0.12f, "RT/R2: $rtAction", "#FACC15", true)
     drawCalloutLabel(r1Center, 0.70f, 0.75f, 0.23f, "R1/RB: $r1Action", "#00F5D4", true)
     drawCalloutLabel(yPos, 0.71f, 0.75f, 0.35f, "Y: $yAction", "#FACC15", true)
     drawCalloutLabel(xPos, 0.71f, 0.75f, 0.46f, "X: $xAction", "#00F5D4", true)
     drawCalloutLabel(bPos, 0.71f, 0.75f, 0.57f, "B: $bAction", "#EF4444", true)
     drawCalloutLabel(aPos, 0.71f, 0.75f, 0.68f, "A: $aAction", "#38BDF8", true)
-    drawCalloutLabel(rStickCenter, 0.70f, 0.75f, 0.82f, "R-STICK: 360° AIM", "#C084FC", true)
+    drawCalloutLabel(rStickCenter, 0.70f, 0.75f, 0.82f, "R-STICK: 360 AIM", "#C084FC", true)
   }
 }

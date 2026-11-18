@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 70
+const val CURRENT_RIFT_BUILD_VERSION = 74
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,66 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 74,
+      versionTag = "v1.0.74 // BUILD #74",
+      releaseDate = "Nov 18, 2026",
+      headline = "Inner Sub-Modal #060D1A Sci-Fi Tablet Restyle, Enlarged Readable Typography (9.5sp–14sp) & Unified Custom Resonance/Shard/Flux Iconography Across Hangar, Conduit, Citadel, Dossier & Helm Systems",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Unified all inner sub-modals (HangarModal, RiftShardsStoreModal, SyndicatesModal + ArmadaFleetModal, DossierModal, and SettingsModal) into the #060D1A / #081224 Sci-Fi Command Tablet shell with 1.dp #38BDF8 / #00F5D4 / #FACC15 borders, retiring legacy brown #1A1405 header/vault pills and semi-transparent #99111C2D containers.",
+          "Enlarged sub-modal typography from tiny 7.sp–8.8.sp micro-labels up to crisp, high-contrast 9.5.sp–14.sp hierarchy across HANGAR DECK ship cards & 100-Pt Rift Frame builder, RIFT CONDUIT Daily Directives & Cosmetic cards, SYNDICATE CITADEL (36.dp–44.dp forged Crests & 1–5 Strike Wing rows), PILOT DOSSIER Hall of Fame & Executioner telemetry, and HELM SYSTEMS audio/display/gamepad presets.",
+          "Standardized custom ResonanceCrestIcon, RiftShardGemIcon, and FluxEmblem readouts across all 5 sub-modals — eliminating plain RES badges, decorative unicode stars/arrows, and duplicate diamond glyphs beside prismatic Rift Shard gems while preserving 100% of Composable signatures and testTags.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 73,
+      versionTag = "v1.0.73 // BUILD #73",
+      releaseDate = "Nov 18, 2026",
+      headline = "Live Playfield Visual Overhaul: 224x224 5-Stop Metallic & Basalt Obstacles in RiftArenaView, App-Icon Ribbon Playfield Rifts, Contained 3D Supply Pods & Multi-Plane Mode-Tinted Deep-Space Parallax",
+      badgeLabel = "PLAYFIELD 3D",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Replaced raw rectangular box obstacles in RiftArenaView.drawSpaceObstacle3D with crisp 224x224 5-stop metallic & basalt sprites (RiftSpriteBaker.getSpaceObstacleBitmap across 4 seed variants) for Concentric Twin-Ring Orbital Stations, Craggy Basalt Asteroid Hangar Outposts, Rift-Veined Basalt Asteroids, and Sheared Starship Hull Debris — complete with 2.5D camera-offset drop shadows, specular hit-flash pulses, dynamic point-light rim arcs, circular Flux integrity rings, and 10-segment Station Defense Nova gauges.",
+          "Upgraded draw3dPlayfieldRiftColors to the official NEXUS App-Icon Ribbon Vortex aesthetic: 5 wide curved spiral plasma ribbons separated by #02040A event-horizon void lanes inside a beveled 16-tick metallic containment collar, synced 1:1 across the live arena, Hub Overwatch, Codex, and STAR FORGE.",
+          "Replaced oversized fuzzy green Supply Crate glow blobs with rotating 3D hexagonal Gunmetal/Emerald Containment Supply Pods (supplyPodFrameBitmap wired 1:1 into STAR FORGE), upgraded barrier endcap pylons to 5-stop beveled hexagonal emitters, and added mode-tinted volumetric nebulae + distant Orbital Ring Megastructure & 28 Deep-Parallax Micro-Asteroid planes in RiftArenaView.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 72,
+      versionTag = "v1.0.72 // BUILD #72",
+      releaseDate = "Nov 18, 2026",
+      headline = "Gameplay-Honest Sci-Fi Tablet AuthScreen, Codex Field Manual & #nexus-ai Ground-Truth Sync (5x DS9 Station, 440px Gravity Rift Implosion & Pinch-to-Zoom Overwatch) + Play Console privacy.html Sync",
+      badgeLabel = "TABLET AUTH & CODEX",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Rebuilt AuthScreen in the unified #060D1A Sci-Fi Command Tablet aesthetic (retiring the legacy NexusSpaceGlView 3D splash view in favor of a live circular Safe-Harbor radar schematic showcasing real 128x128 ship sprites + the 5x DS9 Safe-Zone Station sprite, animated 3-Tier Winged Vortex Crest, enlarged typography, and zero emojis).",
+          "Synchronized ShipSpecs (RIFT_ANOMALIES_CODEX), CodexModal, RiftNexusKnowledge, and NexusAiViewModel (#nexus-ai) with exact current physics & Hub architecture: 5x (180px) DS9 Safe-Zone Station with Ops Holo-Ring in STAR FORGE, 440px Gravity Rift swept weapon growth (0.92x disc, +18px/+40px/+14px) + >= 260px 950/s Asteroid/Station Tidal Implosion + 360° Overload Nova, and the 6-card NEXUS Tablet Hub with 1.0x..6.0x Pinch-to-Zoom Highest-Resonance Overwatch.",
+          "Updated privacy.html to reflect NEXUS (Threshold Dynamics Studio, LLC), Play Console package com.aistudio.riftarena.vxpqzm, Google Sworn Pilot cloud sync vs. strictly local-only [RFT] Drifter sessions, and UGC reporting/blocking controls.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 71,
+      versionTag = "v1.0.71 // BUILD #71",
+      releaseDate = "Nov 18, 2026",
+      headline = "6 Large NEXUS-Station Metallic Hub Module Graphics, Bold 2–3 Word Card Titles + Live Telemetry, Enlarged Hub Typography, Clean 1.0x Overwatch Labels & Firestore liveResonance Sync",
+      badgeLabel = "METALLIC CARDS",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Upgraded all 6 NEXUS Sci-Fi Tablet cards with large 192x192 5-stop metallic NEXUS-station-styled graphics (bakeNexusHubModuleEmblem in RiftSpriteBaker), bold 2–3 word titles (SHIPS & BUILDS, RANKS & QUESTS, SKINS & AUDIO, CHAT & NEXUS AI, CLANS & SQUADS, STATS & CODEX), enlarged typography across the Top Bar / Cards / Overwatch pills, and live per-card pilot telemetry.",
+          "Decluttered 1.0x Hub Overwatch by hiding world text/nametags below 1.55x zoom (fading them in smoothly as you pinch-zoom closer), and whitelisted liveResonance, RIFT_CONTROL, NEXUS_LOBBY, and CUSTOM_* across RiftRepository and firestore.rules.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 70,
       versionTag = "v1.0.70 // BUILD #70",
       releaseDate = "Nov 18, 2026",
       headline = "Strict Minimized/Background Audio & Render Silence + Interactive Pinch-to-Zoom & Pan Round Overwatch Aperture",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "AUDIO & ZOOM",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

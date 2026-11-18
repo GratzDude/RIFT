@@ -49,7 +49,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
@@ -77,7 +76,14 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlinx.coroutines.launch
 
-private fun parseHexColorSafe(hex: String, fallback: Color = Color(0xFF00F5D4)): Color {
+private val ConduitTabletAbyss = Color(0xFF060D1A)
+private val ConduitTabletPanel = Color(0xFF081224)
+private val ConduitTabletElevated = Color(0xFF0C1B33)
+private val ConduitElectricCyan = Color(0xFF38BDF8)
+private val ConduitNexusTeal = Color(0xFF00F5D4)
+private val ConduitSolarGold = Color(0xFFFACC15)
+
+private fun parseHexColorSafe(hex: String, fallback: Color = ConduitNexusTeal): Color {
   val cleaned = hex.trim().removePrefix("#")
   val rgb = cleaned.toLongOrNull(16) ?: return fallback
   return if (cleaned.length == 8) Color(rgb) else Color(0xFF000000L or rgb)
@@ -169,9 +175,9 @@ fun RiftShardsStoreModal(
   var statusBanner by remember {
     mutableStateOf(
       if (isTesterInfiniteShards) {
-        "RIFT CONDUIT ONLINE // TESTER TREASURY: INFINITE 999,999❖ ACTIVE • ALL 10 HULLS OPEN AT 0 RESONANCE"
+        "RIFT CONDUIT ONLINE // TESTER TREASURY: 999,999 SHARDS ACTIVE • ALL 10 HULLS OPEN AT 0 RESONANCE"
       } else {
-        "RIFT CONDUIT ONLINE // ALL 10 HULLS OPEN AT 0 RESONANCE • COSMETICS & FRAME B–E UNLOCK BY PEAK RESONANCE OR ❖"
+        "RIFT CONDUIT ONLINE // ALL 10 HULLS OPEN AT 0 RESONANCE • COSMETICS & FRAME B–E UNLOCK BY PEAK RESONANCE OR SHARDS"
       }
     )
   }
@@ -187,7 +193,7 @@ fun RiftShardsStoreModal(
   }
 
   fun spendCostNote(cost: Long): String =
-    if (isTesterInfiniteShards) "TESTER 0❖ DEPLETED" else "-${cost}❖"
+    if (isTesterInfiniteShards) "TESTER 0 SHARDS DEPLETED" else "-$cost SHARDS"
 
   fun queryEquippedCosmetic(categoryKey: String): Int =
     equippedCosmeticByCategory?.invoke(categoryKey)
@@ -237,16 +243,20 @@ fun RiftShardsStoreModal(
   }
 
   Column(
-    modifier = Modifier.fillMaxSize().padding(if (isCompactPhone) 6.dp else 8.dp).testTag("rift_shards_store_modal"),
+    modifier =
+      Modifier.fillMaxSize()
+        .background(ConduitTabletAbyss)
+        .padding(if (isCompactPhone) 6.dp else 8.dp)
+        .testTag("rift_shards_store_modal"),
     verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 5.dp else 6.dp),
   ) {
-    // 1. Top 38.dp Conduit Telemetry Strip
+    // 1. Top Conduit Telemetry Strip (#081224 Sci-Fi Command Tablet)
     Row(
       modifier =
         Modifier.fillMaxWidth()
-          .height(if (isCompactPhone) 36.dp else 40.dp)
-          .background(Color(0xE6081324), RoundedCornerShape(9.dp))
-          .border(1.dp, Color(activeTier.accentColorHex).copy(alpha = 0.65f), RoundedCornerShape(9.dp))
+          .height(if (isCompactPhone) 38.dp else 42.dp)
+          .background(ConduitTabletPanel, RoundedCornerShape(9.dp))
+          .border(1.dp, Color(activeTier.accentColorHex).copy(alpha = 0.70f), RoundedCornerShape(9.dp))
           .padding(horizontal = 10.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween,
@@ -256,34 +266,32 @@ fun RiftShardsStoreModal(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.weight(1f),
       ) {
-        Canvas(modifier = Modifier.size(16.dp)) {
-          drawConduitDiamondGlyph(Color(activeTier.accentColorHex))
-        }
+        ResonanceCrestIcon(sizeDp = 16.dp)
         Box(
           modifier =
-            Modifier.background(Color(activeTier.accentColorHex).copy(alpha = 0.18f), RoundedCornerShape(5.dp))
+            Modifier.background(ConduitTabletAbyss, RoundedCornerShape(5.dp))
               .border(1.dp, Color(activeTier.accentColorHex), RoundedCornerShape(5.dp))
               .padding(horizontal = 7.dp, vertical = 2.dp)
         ) {
           Text(
             text = activeTier.title,
             color = Color(activeTier.accentColorHex),
-            fontSize = if (isCompactPhone) 9.sp else 10.sp,
+            fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
         }
-        ConduitMetricInline("LIVE RESONANCE", "$effectiveLiveRes", Color(0xFF00F5D4))
+        ConduitMetricInline("LIVE RESONANCE", "$effectiveLiveRes", ConduitNexusTeal)
         ConduitMetricInline("PEAK RESONANCE", "$effectivePeakRes", Color(0xFFC084FC))
-        ConduitMetricInline("START BOUNTY", "$effectiveStartBounty BTY", Color(0xFFFFD700))
+        ConduitMetricInline("START BOUNTY", "$effectiveStartBounty BTY", ConduitSolarGold)
         if (!isCompactPhone) {
-          Column(modifier = Modifier.width(126.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Column(modifier = Modifier.width(138.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
               text =
                 if (effectiveLiveRes >= 1500) "APEX TIER LOCKED (500 MAX)"
                 else "NEXT TIER: $effectiveLiveRes / $nextTierThreshold",
               color = Color(0xFF94A3B8),
-              fontSize = 7.8.sp,
+              fontSize = 9.5.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -293,7 +301,7 @@ fun RiftShardsStoreModal(
                 Modifier.fillMaxWidth()
                   .height(4.dp)
                   .clip(RoundedCornerShape(2.dp))
-                  .background(Color(0xFF162C46))
+                  .background(ConduitTabletAbyss)
             ) {
               Box(
                 modifier =
@@ -306,30 +314,33 @@ fun RiftShardsStoreModal(
         }
       }
 
-      Box(
+      Row(
         modifier =
-          Modifier.background(Color(0xFF1A1405), RoundedCornerShape(7.dp))
-            .border(1.dp, Color(0xFFFFD700), RoundedCornerShape(7.dp))
+          Modifier.background(ConduitTabletAbyss, RoundedCornerShape(7.dp))
+            .border(1.dp, ConduitSolarGold, RoundedCornerShape(7.dp))
             .clickable { selectedSubDeck = 6 }
             .padding(horizontal = 10.dp, vertical = 4.dp)
-            .testTag("store_rift_shards_balance")
+            .testTag("store_rift_shards_balance"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
       ) {
+        RiftShardGemIcon(sizeDp = 16.dp)
         Text(
           text =
             if (isTesterInfiniteShards) {
-              if (isCompactPhone) "❖ INF TESTER" else "❖ INF (999,999) TESTER"
+              if (isCompactPhone) "999,999" else "999,999 TESTER"
             } else {
-              "❖ $displayedShards RIFT SHARDS"
+              "$displayedShards SHARDS"
             },
-          color = Color(0xFFFFD700),
-          fontSize = if (isCompactPhone) 10.sp else 11.sp,
+          color = ConduitSolarGold,
+          fontSize = if (isCompactPhone) 10.5.sp else 11.5.sp,
           fontWeight = FontWeight.ExtraBold,
           fontFamily = FontFamily.Monospace,
         )
       }
     }
 
-    // 2. 30.dp 7 Sub-Deck Pills (Indices 0..6)
+    // 2. 7 Sub-Deck Pills (Indices 0..6)
     Row(
       modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
       horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -337,7 +348,7 @@ fun RiftShardsStoreModal(
     ) {
       val subDecks =
         listOf(
-          "DAILY DIRECTIVES (250❖)",
+          "DAILY DIRECTIVES (250)",
           "KILL FINISHERS",
           "3D HULL TRIMS",
           "WARP SIGNATURES",
@@ -348,41 +359,45 @@ fun RiftShardsStoreModal(
       subDecks.forEachIndexed { idx, label ->
         val selected = selectedSubDeck == idx
         val isVaultPill = idx == 6
+        val showShardIcon = idx == 0 || idx == 6
         val bgCol =
           when {
-            selected && isVaultPill -> Color(0xFFFACC15)
-            selected -> Color(0xFF00F5D4)
-            isVaultPill -> Color(0xCC1E1605)
-            else -> Color(0xCC0D1B30)
+            selected && isVaultPill -> ConduitSolarGold
+            selected -> ConduitNexusTeal
+            else -> ConduitTabletPanel
           }
         val borderCol =
           when {
-            selected && isVaultPill -> Color(0xFFFACC15)
-            selected -> Color(0xFF00F5D4)
-            isVaultPill -> Color(0x99FACC15)
-            else -> Color(0x5538BDF8)
+            selected && isVaultPill -> ConduitSolarGold
+            selected -> ConduitNexusTeal
+            isVaultPill -> ConduitSolarGold.copy(alpha = 0.70f)
+            else -> ConduitElectricCyan.copy(alpha = 0.45f)
           }
         val txtCol =
           when {
-            selected -> Color(0xFF041019)
-            isVaultPill -> Color(0xFFFACC15)
+            selected -> ConduitTabletAbyss
+            isVaultPill -> ConduitSolarGold
             else -> Color.White
           }
-        Box(
+        Row(
           modifier =
-            Modifier.height(if (isCompactPhone) 27.dp else 30.dp)
+            Modifier.height(if (isCompactPhone) 28.dp else 31.dp)
               .clip(RoundedCornerShape(7.dp))
               .background(bgCol)
               .border(1.dp, borderCol, RoundedCornerShape(7.dp))
               .clickable { selectedSubDeck = idx }
               .padding(horizontal = if (isCompactPhone) 8.dp else 10.dp)
               .testTag("progression_pillar_tab_$idx"),
-          contentAlignment = Alignment.Center,
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+          if (showShardIcon) {
+            RiftShardGemIcon(sizeDp = 13.dp)
+          }
           Text(
             text = label,
             color = txtCol,
-            fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
+            fontSize = if (isCompactPhone) 9.5.sp else 10.2.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -395,14 +410,14 @@ fun RiftShardsStoreModal(
     Box(
       modifier =
         Modifier.fillMaxWidth()
-          .background(Color(0xFF0A1B2E), RoundedCornerShape(6.dp))
-          .border(1.dp, Color(0x4400F5D4), RoundedCornerShape(6.dp))
-          .padding(horizontal = 10.dp, vertical = 3.dp)
+          .background(ConduitTabletPanel, RoundedCornerShape(6.dp))
+          .border(1.dp, ConduitNexusTeal.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+          .padding(horizontal = 10.dp, vertical = 3.5.dp)
     ) {
       Text(
-        text = statusBanner,
-        color = Color(0xFF00F5D4),
-        fontSize = if (isCompactPhone) 8.5.sp else 9.2.sp,
+        text = statusBanner.replace("\u2756", " SHARDS").replace("  ", " "),
+        color = ConduitNexusTeal,
+        fontSize = if (isCompactPhone) 9.5.sp else 10.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
@@ -440,8 +455,8 @@ fun RiftShardsStoreModal(
         modifier =
           Modifier.weight(0.58f)
             .fillMaxHeight()
-            .background(Color(0xFF091526), RoundedCornerShape(10.dp))
-            .border(1.dp, Color(0xFF1E3859), RoundedCornerShape(10.dp))
+            .background(ConduitTabletPanel, RoundedCornerShape(10.dp))
+            .border(1.dp, ConduitElectricCyan.copy(alpha = 0.48f), RoundedCornerShape(10.dp))
             .padding(if (isCompactPhone) 8.dp else 10.dp)
       ) {
         when (selectedSubDeck) {
@@ -463,7 +478,7 @@ fun RiftShardsStoreModal(
                   }
                 refreshTick++
                 if (earned > 0L) {
-                  statusBanner = "DIRECTIVE COMPLETE // CREDITED +${earned}❖ RIFT SHARDS TO VAULT"
+                  statusBanner = "DIRECTIVE COMPLETE // CREDITED +$earned RIFT SHARDS TO VAULT"
                 }
               },
               onRerollDirective = { slotIdx ->
@@ -501,7 +516,7 @@ fun RiftShardsStoreModal(
                 val totalCredited = autoClaimedEarned + bonus
                 if (totalCredited > 0L) {
                   statusBanner =
-                    "3/3 DAILY CONDUIT SWEEP CLAIMED // +${totalCredited}❖ SHARDS CREDITED!"
+                    "3/3 DAILY CONDUIT SWEEP CLAIMED // +$totalCredited RIFT SHARDS CREDITED!"
                 }
               },
             )
@@ -536,7 +551,7 @@ fun RiftShardsStoreModal(
                       "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (${spendCostNote(item.shardCost)})"
                   } else {
                     statusBanner =
-                      "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost}❖ RIFT SHARDS"
+                      "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost} RIFT SHARDS"
                   }
                 }
               },
@@ -574,7 +589,7 @@ fun RiftShardsStoreModal(
                       "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (${spendCostNote(item.shardCost)})"
                   } else {
                     statusBanner =
-                      "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost}❖ RIFT SHARDS"
+                      "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost} RIFT SHARDS"
                   }
                 }
               },
@@ -610,7 +625,7 @@ fun RiftShardsStoreModal(
                       "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (${spendCostNote(item.shardCost)})"
                   } else {
                     statusBanner =
-                      "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost}❖ RIFT SHARDS"
+                      "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost} RIFT SHARDS"
                   }
                 }
               },
@@ -646,7 +661,7 @@ fun RiftShardsStoreModal(
                       "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} (${spendCostNote(item.shardCost)})"
                   } else {
                     statusBanner =
-                      "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost}❖ RIFT SHARDS"
+                      "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost} RIFT SHARDS"
                   }
                 }
               },
@@ -686,7 +701,7 @@ fun RiftShardsStoreModal(
                       "UNLOCKED ${slotId.uppercase(Locale.US)} (${spendCostNote(gate.shardCost)})"
                   } else {
                     statusBanner =
-                      "REQUIRES ${gate.freeAtResonance} PEAK RESONANCE (FREE) OR ${gate.shardCost}❖ RIFT SHARDS"
+                      "REQUIRES ${gate.freeAtResonance} PEAK RESONANCE (FREE) OR ${gate.shardCost} RIFT SHARDS"
                   }
                 }
               },
@@ -695,7 +710,7 @@ fun RiftShardsStoreModal(
                   refreshTick++
                   statusBanner = "RIFT FRAME RESPEC COMPLETE (${spendCostNote(50L)})"
                 } else {
-                  statusBanner = "RESPEC REQUIRES >0 ALLOCATED POINTS (50❖ RIFT SHARDS)"
+                  statusBanner = "RESPEC REQUIRES >0 ALLOCATED POINTS (50 RIFT SHARDS)"
                 }
               },
               onBuyForgeVoucher = {
@@ -703,7 +718,7 @@ fun RiftShardsStoreModal(
                   refreshTick++
                   statusBanner = "ACQUIRED HULL FORGE SYNTHESIS VOUCHER (${spendCostNote(150L)})"
                 } else {
-                  statusBanner = "HULL FORGE VOUCHER REQUIRES 150❖ RIFT SHARDS"
+                  statusBanner = "HULL FORGE VOUCHER REQUIRES 150 RIFT SHARDS"
                 }
               },
               onOpenHangarShip10 = onOpenHangarShip10,
@@ -728,7 +743,7 @@ fun RiftShardsStoreModal(
                       onTopUpRiftShards(result.shardsCredited)
                       refreshTick++
                       statusBanner =
-                        "VERIFIED PLAY PURCHASE [${result.productId.uppercase(Locale.US)}] // +${result.shardsCredited}❖ CREDITED"
+                        "VERIFIED PLAY PURCHASE [${result.productId.uppercase(Locale.US)}] // +${result.shardsCredited} SHARDS CREDITED"
                     }
                     is ShardPurchaseResult.TesterModeDormantNotice -> {
                       statusBanner = result.message
@@ -764,42 +779,45 @@ private fun ShardVaultTreasuryDeck(
     Column(
       modifier =
         Modifier.fillMaxWidth()
-          .background(
-            if (isTesterInfiniteShards) Color(0xFF0A241E) else Color(0xFF1A1405),
-            RoundedCornerShape(8.dp),
-          )
+          .background(ConduitTabletAbyss, RoundedCornerShape(8.dp))
           .border(
             1.dp,
-            if (isTesterInfiniteShards) Color(0xFF00F5D4) else Color(0xFFFACC15),
+            if (isTesterInfiniteShards) ConduitNexusTeal else ConduitSolarGold,
             RoundedCornerShape(8.dp),
           )
           .padding(horizontal = 10.dp, vertical = 5.dp)
           .testTag("shard_vault_tester_banner"),
-      verticalArrangement = Arrangement.spacedBy(1.dp),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        RiftShardGemIcon(sizeDp = 15.dp)
+        Text(
+          text =
+            if (isTesterInfiniteShards) {
+              "BETA TESTER TREASURY ACTIVE // INFINITE 999,999 SHARDS ENABLED"
+            } else {
+              "OFFICIAL GOOGLE PLAY BILLING TREASURY // $studioUpper"
+            },
+          color = if (isTesterInfiniteShards) ConduitNexusTeal else ConduitSolarGold,
+          fontSize = if (isCompactPhone) 9.8.sp else 10.5.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
       Text(
         text =
           if (isTesterInfiniteShards) {
-            "BETA TESTER TREASURY ACTIVE // INFINITE 999,999❖ ENABLED"
-          } else {
-            "OFFICIAL GOOGLE PLAY BILLING TREASURY // $studioUpper"
-          },
-        color = if (isTesterInfiniteShards) Color(0xFF00F5D4) else Color(0xFFFACC15),
-        fontSize = if (isCompactPhone) 8.8.sp else 9.6.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
-      Text(
-        text =
-          if (isTesterInfiniteShards) {
-            "GOOGLE PLAY BILLING ($studioUpper) STANDING BY FOR LAUNCH • ALL UNLOCKS DEPLETE 0❖"
+            "GOOGLE PLAY BILLING ($studioUpper) STANDING BY FOR LAUNCH • ALL UNLOCKS DEPLETE 0 SHARDS"
           } else {
             "CONSUMABLE RIFT SHARD PACKS VERIFIED VIA FIRESTORE PURCHASE TOKEN LEDGER • ZERO PAY-TO-WIN"
           },
         color = Color(0xFFCBD5E1),
-        fontSize = if (isCompactPhone) 7.5.sp else 8.2.sp,
+        fontSize = 9.5.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
@@ -818,7 +836,7 @@ private fun ShardVaultTreasuryDeck(
           horizontalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
         ) {
           rowPacks.forEach { pack ->
-            val accent = parseHexColorSafe(pack.accentHex, Color(0xFF38BDF8))
+            val accent = parseHexColorSafe(pack.accentHex, ConduitElectricCyan)
             Column(
               modifier =
                 Modifier.weight(1f)
@@ -828,8 +846,8 @@ private fun ShardVaultTreasuryDeck(
                     Brush.verticalGradient(
                       listOf(
                         accent.copy(alpha = 0.14f),
-                        Color(0xFF081222),
-                        Color(0xFF050B16),
+                        ConduitTabletPanel,
+                        ConduitTabletAbyss,
                       )
                     )
                   )
@@ -848,14 +866,12 @@ private fun ShardVaultTreasuryDeck(
                   horizontalArrangement = Arrangement.spacedBy(6.dp),
                   modifier = Modifier.weight(1f),
                 ) {
-                  Canvas(modifier = Modifier.size(if (isCompactPhone) 16.dp else 20.dp)) {
-                    drawConduitDiamondGlyph(accent)
-                  }
+                  RiftShardGemIcon(sizeDp = if (isCompactPhone) 16.dp else 18.dp)
                   Column {
                     Text(
                       text = pack.title,
                       color = Color.White,
-                      fontSize = if (isCompactPhone) 9.5.sp else 11.sp,
+                      fontSize = if (isCompactPhone) 10.5.sp else 11.5.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = FontFamily.Monospace,
                       maxLines = 1,
@@ -863,8 +879,8 @@ private fun ShardVaultTreasuryDeck(
                     )
                     Text(
                       text = "SKU // ${pack.productId}",
-                      color = Color(0xFF64748B),
-                      fontSize = 7.4.sp,
+                      color = Color(0xFF94A3B8),
+                      fontSize = 9.5.sp,
                       fontWeight = FontWeight.Bold,
                       fontFamily = FontFamily.Monospace,
                       maxLines = 1,
@@ -874,14 +890,14 @@ private fun ShardVaultTreasuryDeck(
 
                 Box(
                   modifier =
-                    Modifier.background(accent.copy(alpha = 0.18f), RoundedCornerShape(5.dp))
+                    Modifier.background(ConduitTabletAbyss, RoundedCornerShape(5.dp))
                       .border(1.dp, accent, RoundedCornerShape(5.dp))
                       .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                   Text(
                     text = pack.badgeLabel,
                     color = accent,
-                    fontSize = 7.4.sp,
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -895,22 +911,28 @@ private fun ShardVaultTreasuryDeck(
                 verticalAlignment = Alignment.Bottom,
               ) {
                 Column {
-                  Text(
-                    text = "❖ ${pack.totalShards}",
-                    color = Color(0xFFFFD700),
-                    fontSize = if (isCompactPhone) 14.sp else 17.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                  )
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                  ) {
+                    RiftShardGemIcon(sizeDp = 16.dp)
+                    Text(
+                      text = "${pack.totalShards}",
+                      color = ConduitSolarGold,
+                      fontSize = if (isCompactPhone) 14.sp else 17.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                    )
+                  }
                   Text(
                     text =
                       if (pack.bonusShards > 0L) {
-                        "${pack.shardAmount} BASE + ${pack.bonusShards} BONUS ❖"
+                        "${pack.shardAmount} BASE + ${pack.bonusShards} BONUS"
                       } else {
                         "${pack.shardAmount} BASE RIFT SHARDS"
                       },
                     color = Color(0xFF94A3B8),
-                    fontSize = if (isCompactPhone) 7.5.sp else 8.2.sp,
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -920,7 +942,7 @@ private fun ShardVaultTreasuryDeck(
                 Text(
                   text = pack.displayPriceUsd,
                   color = Color.White,
-                  fontSize = if (isCompactPhone) 11.sp else 13.sp,
+                  fontSize = if (isCompactPhone) 11.5.sp else 13.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -931,31 +953,31 @@ private fun ShardVaultTreasuryDeck(
                 colors =
                   ButtonDefaults.buttonColors(
                     containerColor =
-                      if (isTesterInfiniteShards) Color(0xFF102438) else accent,
+                      if (isTesterInfiniteShards) ConduitTabletAbyss else accent,
                     contentColor =
-                      if (isTesterInfiniteShards) Color(0xFF00F5D4) else Color(0xFF040B14),
+                      if (isTesterInfiniteShards) ConduitNexusTeal else ConduitTabletAbyss,
                   ),
                 border =
                   BorderStroke(
                     1.dp,
-                    if (isTesterInfiniteShards) Color(0xFF00F5D4) else accent,
+                    if (isTesterInfiniteShards) ConduitNexusTeal else accent,
                   ),
                 shape = RoundedCornerShape(6.dp),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                 modifier =
                   Modifier.fillMaxWidth()
-                    .height(if (isCompactPhone) 25.dp else 28.dp)
+                    .height(if (isCompactPhone) 27.dp else 30.dp)
                     .testTag("btn_buy_sku_${pack.productId}"),
               ) {
                 Text(
                   text =
                     if (isTesterInfiniteShards) {
-                      if (isCompactPhone) "INACTIVE — INFINITE TESTER ❖"
-                      else "PLAY BILLING INACTIVE — INFINITE TESTER ❖"
+                      if (isCompactPhone) "INACTIVE — INFINITE TESTER"
+                      else "PLAY BILLING INACTIVE — 999,999 TESTER"
                     } else {
                       "PURCHASE ${pack.displayPriceUsd}"
                     },
-                  fontSize = if (isCompactPhone) 7.4.sp else 8.sp,
+                  fontSize = if (isCompactPhone) 9.5.sp else 10.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                   maxLines = 1,
@@ -1025,8 +1047,8 @@ private fun ConduitHoloPreviewStage(
           ?.accentColorHex ?: 0xFFFFD700.toInt()
       )
       5 -> Color(0xFFEC4899)
-      6 -> Color(0xFFFACC15)
-      else -> Color(0xFF00F5D4)
+      6 -> ConduitSolarGold
+      else -> ConduitNexusTeal
     }
 
   val stageModeLabel =
@@ -1055,8 +1077,8 @@ private fun ConduitHoloPreviewStage(
   Column(
     modifier =
       modifier
-        .background(Color(0xFF060E1B), RoundedCornerShape(10.dp))
-        .border(1.dp, stageAccent.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+        .background(ConduitTabletPanel, RoundedCornerShape(10.dp))
+        .border(1.dp, stageAccent.copy(alpha = 0.60f), RoundedCornerShape(10.dp))
         .padding(9.dp),
     verticalArrangement = Arrangement.SpaceBetween,
   ) {
@@ -1069,7 +1091,7 @@ private fun ConduitHoloPreviewStage(
       Text(
         text = stageModeLabel,
         color = stageAccent,
-        fontSize = 9.sp,
+        fontSize = 9.8.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
@@ -1083,31 +1105,31 @@ private fun ConduitHoloPreviewStage(
         Box(
           modifier =
             Modifier.clip(RoundedCornerShape(5.dp))
-              .background(Color(0xFF10223A))
-              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(5.dp))
+              .background(ConduitTabletAbyss)
+              .border(1.dp, ConduitElectricCyan, RoundedCornerShape(5.dp))
               .clickable { onCycleShip(-1) }
-              .padding(horizontal = 6.dp, vertical = 2.dp)
+              .padding(horizontal = 7.dp, vertical = 2.dp)
               .testTag("conduit_holo_prev_ship")
         ) {
-          Text("<", color = Color(0xFF38BDF8), fontSize = 8.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+          Text("<", color = ConduitElectricCyan, fontSize = 9.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
         }
         Text(
           text = shipSpec.name.uppercase(Locale.US),
           color = Color.White,
-          fontSize = 8.8.sp,
+          fontSize = 9.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
         )
         Box(
           modifier =
             Modifier.clip(RoundedCornerShape(5.dp))
-              .background(Color(0xFF10223A))
-              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(5.dp))
+              .background(ConduitTabletAbyss)
+              .border(1.dp, ConduitElectricCyan, RoundedCornerShape(5.dp))
               .clickable { onCycleShip(1) }
-              .padding(horizontal = 6.dp, vertical = 2.dp)
+              .padding(horizontal = 7.dp, vertical = 2.dp)
               .testTag("conduit_holo_next_ship")
         ) {
-          Text(">", color = Color(0xFF38BDF8), fontSize = 8.5.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+          Text(">", color = ConduitElectricCyan, fontSize = 9.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
         }
       }
     }
@@ -1121,10 +1143,10 @@ private fun ConduitHoloPreviewStage(
           .clip(RoundedCornerShape(9.dp))
           .background(
             Brush.radialGradient(
-              colors = listOf(stageAccent.copy(alpha = 0.16f), Color(0xFF030710), Color(0xFF02050B))
+              colors = listOf(stageAccent.copy(alpha = 0.16f), ConduitTabletAbyss, Color(0xFF030710))
             )
           )
-          .border(1.dp, Color(0xFF18304C), RoundedCornerShape(9.dp)),
+          .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(9.dp)),
       contentAlignment = Alignment.Center,
     ) {
       Canvas(modifier = Modifier.fillMaxSize()) {
@@ -1222,7 +1244,7 @@ private fun ConduitHoloPreviewStage(
                 lineTo(sx - cr * 0.7f, sy)
                 close()
               }
-            val shardCol = if (cIdx % 2 == 0) Color(0xFFFACC15) else Color(0xFFC084FC)
+            val shardCol = if (cIdx % 2 == 0) ConduitSolarGold else Color(0xFFC084FC)
             drawPath(shardPath, shardCol.copy(alpha = 0.85f))
           }
         }
@@ -1272,8 +1294,8 @@ private fun ConduitHoloPreviewStage(
     Row(
       modifier =
         Modifier.fillMaxWidth()
-          .background(Color(0xFF0A172B), RoundedCornerShape(7.dp))
-          .border(1.dp, Color(0xFF1E3859), RoundedCornerShape(7.dp))
+          .background(ConduitTabletAbyss, RoundedCornerShape(7.dp))
+          .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(7.dp))
           .padding(horizontal = 8.dp, vertical = 5.dp),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
@@ -1281,26 +1303,32 @@ private fun ConduitHoloPreviewStage(
       Column {
         Text(
           text = "STARTING BOUNTY: $startingBounty BTY (SCALES 100->500)",
-          color = Color(0xFFFFD700),
-          fontSize = 8.2.sp,
+          color = ConduitSolarGold,
+          fontSize = 9.5.sp,
           fontWeight = FontWeight.ExtraBold,
           fontFamily = FontFamily.Monospace,
         )
         Text(
-          text = "CONVERGENCES WON: $publicGameWins • ALL 10 HULLS OPEN AT 0 RES",
+          text = "CONVERGENCES WON: $publicGameWins • ALL 10 HULLS OPEN AT 0",
           color = Color(0xFF94A3B8),
-          fontSize = 7.8.sp,
+          fontSize = 9.5.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
         )
       }
-      Text(
-        text = "PEAK $peakResonance",
-        color = Color(0xFFC084FC),
-        fontSize = 9.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-      )
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        ResonanceCrestIcon(sizeDp = 14.dp)
+        Text(
+          text = "PEAK $peakResonance",
+          color = Color(0xFFC084FC),
+          fontSize = 10.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
     }
   }
 }
@@ -1328,17 +1356,23 @@ private fun DailyDirectivesDeck(
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      Text(
-        text = "3 DAILY ❖ DIRECTIVES // 250❖ DAILY OUTPUT",
-        color = Color(0xFFFFD700),
-        fontSize = if (isCompactPhone) 10.sp else 11.sp,
-        fontWeight = FontWeight.ExtraBold,
-        fontFamily = FontFamily.Monospace,
-      )
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        RiftShardGemIcon(sizeDp = 15.dp)
+        Text(
+          text = "3 DAILY DIRECTIVES // 250 DAILY OUTPUT",
+          color = ConduitSolarGold,
+          fontSize = if (isCompactPhone) 10.5.sp else 11.5.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
       Text(
         text = if (canRerollToday) "1 FREE REROLL READY" else "DAILY REROLL USED",
-        color = if (canRerollToday) Color(0xFF00F5D4) else Color(0xFF64748B),
-        fontSize = 8.5.sp,
+        color = if (canRerollToday) ConduitNexusTeal else Color(0xFF94A3B8),
+        fontSize = 9.5.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
       )
@@ -1353,15 +1387,15 @@ private fun DailyDirectivesDeck(
           modifier =
             Modifier.fillMaxWidth()
               .background(
-                if (dir.claimed) Color(0xCC0A241E) else Color(0xCC0D1B30),
+                if (dir.claimed) ConduitTabletElevated else ConduitTabletAbyss,
                 RoundedCornerShape(8.dp),
               )
               .border(
                 1.dp,
                 when {
                   dir.claimed -> Color(0xFF10B981)
-                  dir.isComplete -> Color(0xFFFFD700)
-                  else -> Color(0x4438BDF8)
+                  dir.isComplete -> ConduitSolarGold
+                  else -> ConduitElectricCyan.copy(alpha = 0.45f)
                 },
                 RoundedCornerShape(8.dp),
               )
@@ -1378,14 +1412,14 @@ private fun DailyDirectivesDeck(
               Text(
                 text = dir.title,
                 color = Color.White,
-                fontSize = 10.5.sp,
+                fontSize = 11.5.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.Monospace,
               )
               Text(
                 text = "${dir.progressValue.coerceAtMost(dir.targetValue)} / ${dir.targetValue}",
-                color = if (dir.isComplete) Color(0xFF00E676) else Color(0xFF38BDF8),
-                fontSize = 9.5.sp,
+                color = if (dir.isComplete) Color(0xFF00E676) else ConduitElectricCyan,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1393,7 +1427,7 @@ private fun DailyDirectivesDeck(
             Text(
               text = dir.subtitle,
               color = Color(0xFF94A3B8),
-              fontSize = 8.8.sp,
+              fontSize = 9.8.sp,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
@@ -1402,14 +1436,14 @@ private fun DailyDirectivesDeck(
                 Modifier.fillMaxWidth()
                   .height(4.dp)
                   .clip(RoundedCornerShape(2.dp))
-                  .background(Color(0xFF162C46))
+                  .background(ConduitTabletPanel)
             ) {
               Box(
                 modifier =
                   Modifier.fillMaxWidth(dir.progressFraction)
                     .fillMaxHeight()
                     .background(
-                      if (dir.isComplete) Color(0xFF00E676) else Color(0xFF00F5D4),
+                      if (dir.isComplete) Color(0xFF00E676) else ConduitNexusTeal,
                       RoundedCornerShape(2.dp),
                     )
               )
@@ -1424,16 +1458,16 @@ private fun DailyDirectivesDeck(
               Box(
                 modifier =
                   Modifier.clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF10243C))
-                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                    .background(ConduitTabletPanel)
+                    .border(1.dp, ConduitElectricCyan, RoundedCornerShape(6.dp))
                     .clickable { onRerollDirective(dir.slotIndex) }
-                    .padding(horizontal = 7.dp, vertical = 5.dp)
+                    .padding(horizontal = 8.dp, vertical = 5.dp)
                     .testTag("btn_reroll_directive_${dir.slotIndex}")
               ) {
                 Text(
                   text = "REROLL",
-                  color = Color(0xFF38BDF8),
-                  fontSize = 8.2.sp,
+                  color = ConduitElectricCyan,
+                  fontSize = 9.5.sp,
                   fontWeight = FontWeight.ExtraBold,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -1444,14 +1478,14 @@ private fun DailyDirectivesDeck(
               dir.claimed -> {
                 Box(
                   modifier =
-                    Modifier.background(Color(0xFF063929), RoundedCornerShape(6.dp))
+                    Modifier.background(ConduitTabletPanel, RoundedCornerShape(6.dp))
                       .border(1.dp, Color(0xFF00E676), RoundedCornerShape(6.dp))
                       .padding(horizontal = 9.dp, vertical = 5.dp)
                 ) {
                   Text(
                     text = "CLAIMED",
                     color = Color(0xFF00E676),
-                    fontSize = 8.8.sp,
+                    fontSize = 9.8.sp,
                     fontWeight = FontWeight.ExtraBold,
                     fontFamily = FontFamily.Monospace,
                   )
@@ -1463,33 +1497,42 @@ private fun DailyDirectivesDeck(
                   onClick = { onClaimDirective(dir.slotIndex) },
                   colors =
                     ButtonDefaults.buttonColors(
-                      containerColor = Color(0xFFFFD700),
-                      contentColor = Color(0xFF05080E),
+                      containerColor = ConduitSolarGold,
+                      contentColor = ConduitTabletAbyss,
                     ),
                   shape = RoundedCornerShape(6.dp),
                   contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                  modifier = Modifier.height(28.dp).testTag("btn_claim_directive_${dir.slotIndex}"),
+                  modifier = Modifier.height(30.dp).testTag("btn_claim_directive_${dir.slotIndex}"),
                 ) {
-                  Text(
-                    text = "CLAIM +${dir.shardReward}❖",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                  )
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                  ) {
+                    RiftShardGemIcon(sizeDp = 13.dp)
+                    Text(
+                      text = "CLAIM +${dir.shardReward}",
+                      fontSize = 9.8.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                    )
+                  }
                 }
               }
 
               else -> {
-                Box(
+                Row(
                   modifier =
-                    Modifier.background(Color(0xFF1A1405), RoundedCornerShape(6.dp))
-                      .border(1.dp, Color(0xAAFFD700), RoundedCornerShape(6.dp))
-                      .padding(horizontal = 8.dp, vertical = 5.dp)
+                    Modifier.background(ConduitTabletPanel, RoundedCornerShape(6.dp))
+                      .border(1.dp, ConduitSolarGold.copy(alpha = 0.75f), RoundedCornerShape(6.dp))
+                      .padding(horizontal = 8.dp, vertical = 5.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
+                  RiftShardGemIcon(sizeDp = 13.dp)
                   Text(
-                    text = "+${dir.shardReward}❖",
-                    color = Color(0xFFFFD700),
-                    fontSize = 9.sp,
+                    text = "+${dir.shardReward}",
+                    color = ConduitSolarGold,
+                    fontSize = 9.8.sp,
                     fontWeight = FontWeight.ExtraBold,
                     fontFamily = FontFamily.Monospace,
                   )
@@ -1500,18 +1543,18 @@ private fun DailyDirectivesDeck(
         }
       }
 
-      // 3/3 Daily Conduit Sweep Bonus Chest (+100❖)
+      // 3/3 Daily Conduit Sweep Bonus Chest (+100 Shards)
       item(key = "daily_sweep_chest") {
         Row(
           modifier =
             Modifier.fillMaxWidth()
               .background(
-                if (sweepBonusClaimed) Color(0xCC0A241E) else Color(0xCC1B1406),
+                if (sweepBonusClaimed) ConduitTabletElevated else ConduitTabletAbyss,
                 RoundedCornerShape(8.dp),
               )
               .border(
                 1.2.dp,
-                if (sweepBonusClaimed) Color(0xFF10B981) else Color(0xFFFFD700),
+                if (sweepBonusClaimed) Color(0xFF10B981) else ConduitSolarGold,
                 RoundedCornerShape(8.dp),
               )
               .padding(horizontal = 10.dp, vertical = 7.dp)
@@ -1522,15 +1565,15 @@ private fun DailyDirectivesDeck(
           Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
             Text(
               text = "DAILY CONDUIT SWEEP BONUS ($completedCount / 3 DIRECTIVES)",
-              color = Color(0xFFFFD700),
-              fontSize = 10.2.sp,
+              color = ConduitSolarGold,
+              fontSize = 11.sp,
               fontWeight = FontWeight.ExtraBold,
               fontFamily = FontFamily.Monospace,
             )
             Text(
-              text = "Complete all 3 Daily Directives to unlock the +100❖ Vault Sweep (250❖/day total).",
+              text = "Complete all 3 Daily Directives to unlock the +100 Shard Vault Sweep (250/day total).",
               color = Color(0xFFCBD5E1),
-              fontSize = 8.5.sp,
+              fontSize = 9.5.sp,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
@@ -1541,7 +1584,7 @@ private fun DailyDirectivesDeck(
               Text(
                 text = "SWEEP CLAIMED",
                 color = Color(0xFF00E676),
-                fontSize = 9.sp,
+                fontSize = 9.8.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1553,29 +1596,41 @@ private fun DailyDirectivesDeck(
                 colors =
                   ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF00E676),
-                    contentColor = Color(0xFF04120B),
+                    contentColor = ConduitTabletAbyss,
                   ),
                 shape = RoundedCornerShape(6.dp),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                modifier = Modifier.height(28.dp).testTag("btn_claim_daily_sweep"),
+                modifier = Modifier.height(30.dp).testTag("btn_claim_daily_sweep"),
               ) {
-                Text(
-                  text = "CLAIM +100❖",
-                  fontSize = 9.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                  RiftShardGemIcon(sizeDp = 13.dp)
+                  Text(
+                    text = "CLAIM +100",
+                    fontSize = 9.8.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
               }
             }
 
             else -> {
-              Text(
-                text = "+100❖ AT 3/3",
-                color = Color(0xFFFFD700),
-                fontSize = 9.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = FontFamily.Monospace,
-              )
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                RiftShardGemIcon(sizeDp = 13.dp)
+                Text(
+                  text = "+100 AT 3/3",
+                  color = ConduitSolarGold,
+                  fontSize = 9.8.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
             }
           }
         }
@@ -1586,18 +1641,24 @@ private fun DailyDirectivesDeck(
         Column(
           modifier =
             Modifier.fillMaxWidth()
-              .background(Color(0x99081221), RoundedCornerShape(8.dp))
-              .border(1.dp, Color(0x3338BDF8), RoundedCornerShape(8.dp))
+              .background(ConduitTabletAbyss, RoundedCornerShape(8.dp))
+              .border(1.dp, ConduitElectricCyan.copy(alpha = 0.42f), RoundedCornerShape(8.dp))
               .padding(8.dp),
-          verticalArrangement = Arrangement.spacedBy(4.dp),
+          verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-          Text(
-            text = "LIVE RESONANCE RANK TIERS & STARTING BOUNTY SCALING",
-            color = Color(0xFF38BDF8),
-            fontSize = 8.8.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            ResonanceCrestIcon(sizeDp = 14.dp)
+            Text(
+              text = "LIVE RESONANCE RANK TIERS & STARTING BOUNTY SCALING",
+              color = ConduitElectricCyan,
+              fontSize = 9.8.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
           Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -1608,23 +1669,23 @@ private fun DailyDirectivesDeck(
               Column(
                 modifier =
                   Modifier.background(
-                    if (isCurrent) tc.copy(alpha = 0.20f) else Color(0xFF0B182C),
+                    if (isCurrent) ConduitTabletElevated else ConduitTabletPanel,
                     RoundedCornerShape(6.dp),
                   )
-                    .border(1.dp, if (isCurrent) tc else tc.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 7.dp, vertical = 4.dp)
+                    .border(1.dp, if (isCurrent) tc else tc.copy(alpha = 0.40f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
               ) {
                 Text(
                   text = tier.title,
                   color = tc,
-                  fontSize = 8.sp,
+                  fontSize = 10.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
                 Text(
                   text = "${tier.minResonance}+ RES • ${tier.startingBounty} BTY",
                   color = Color.White,
-                  fontSize = 7.8.sp,
+                  fontSize = 9.5.sp,
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -1659,8 +1720,8 @@ private fun ConduitCosmeticListDeck(
     ) {
       Text(
         text = title,
-        color = Color(0xFF00F5D4),
-        fontSize = 10.5.sp,
+        color = ConduitNexusTeal,
+        fontSize = 11.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
@@ -1670,7 +1731,7 @@ private fun ConduitCosmeticListDeck(
       Text(
         text = "ZERO COMBAT ADVANTAGE",
         color = Color(0xFF94A3B8),
-        fontSize = 8.5.sp,
+        fontSize = 9.5.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
       )
@@ -1692,14 +1753,13 @@ private fun ConduitCosmeticListDeck(
               .clip(RoundedCornerShape(8.dp))
               .background(
                 when {
-                  isEquipped -> Color(0xCC102B3F)
-                  isPreviewing -> Color(0xCC12233B)
-                  else -> Color(0x990D1B30)
+                  isEquipped || isPreviewing -> ConduitTabletElevated
+                  else -> ConduitTabletAbyss
                 }
               )
               .border(
                 width = if (isEquipped || isPreviewing) 1.4.dp else 1.dp,
-                color = if (isEquipped || isPreviewing) accent else accent.copy(alpha = 0.38f),
+                color = if (isEquipped || isPreviewing) accent else accent.copy(alpha = 0.42f),
                 shape = RoundedCornerShape(8.dp),
               )
               .clickable { onPreviewItem(item) }
@@ -1720,23 +1780,26 @@ private fun ConduitCosmeticListDeck(
                   .background(accent.copy(alpha = 0.25f))
                   .border(1.5.dp, accent, CircleShape)
             )
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
               Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
               ) {
                 Text(
                   text = item.name.uppercase(Locale.US),
                   color = Color.White,
-                  fontSize = 11.sp,
+                  fontSize = 11.5.sp,
                   fontWeight = FontWeight.ExtraBold,
                 )
+                if (item.freeAtResonance > 0) {
+                  ResonanceCrestIcon(sizeDp = 12.dp)
+                }
                 Text(
                   text =
                     if (item.freeAtResonance <= 0) "DEFAULT UNLOCK"
-                    else "FREE AT ${item.freeAtResonance} PEAK RES",
+                    else "FREE AT ${item.freeAtResonance} PEAK",
                   color = accent,
-                  fontSize = 8.5.sp,
+                  fontSize = 9.5.sp,
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -1744,7 +1807,7 @@ private fun ConduitCosmeticListDeck(
               Text(
                 text = item.summary,
                 color = Color(0xFF94A3B8),
-                fontSize = 9.sp,
+                fontSize = 9.8.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -1755,14 +1818,14 @@ private fun ConduitCosmeticListDeck(
             isEquipped -> {
               Box(
                 modifier =
-                  Modifier.background(Color(0xFF063929), RoundedCornerShape(6.dp))
+                  Modifier.background(ConduitTabletPanel, RoundedCornerShape(6.dp))
                     .border(1.dp, Color(0xFF00E676), RoundedCornerShape(6.dp))
                     .padding(horizontal = 10.dp, vertical = 5.dp)
               ) {
                 Text(
                   text = "EQUIPPED",
                   color = Color(0xFF00E676),
-                  fontSize = 9.sp,
+                  fontSize = 9.8.sp,
                   fontWeight = FontWeight.ExtraBold,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -1772,14 +1835,14 @@ private fun ConduitCosmeticListDeck(
             unlocked -> {
               Button(
                 onClick = { onUnlockOrEquip(item) },
-                colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color(0xFF05080E)),
+                colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = ConduitTabletAbyss),
                 shape = RoundedCornerShape(6.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                modifier = Modifier.height(28.dp),
+                modifier = Modifier.height(30.dp),
               ) {
                 Text(
                   text = "EQUIP",
-                  fontSize = 9.2.sp,
+                  fontSize = 9.8.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -1791,20 +1854,26 @@ private fun ConduitCosmeticListDeck(
                 onClick = { onUnlockOrEquip(item) },
                 colors =
                   ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF281E07),
-                    contentColor = Color(0xFFFFD700),
+                    containerColor = ConduitTabletPanel,
+                    contentColor = ConduitSolarGold,
                   ),
-                border = BorderStroke(1.dp, Color(0xFFFFD700)),
+                border = BorderStroke(1.dp, ConduitSolarGold),
                 shape = RoundedCornerShape(6.dp),
-                contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp),
-                modifier = Modifier.height(28.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                modifier = Modifier.height(30.dp),
               ) {
-                Text(
-                  text = "UNLOCK ${item.shardCost}❖",
-                  fontSize = 8.8.sp,
-                  fontWeight = FontWeight.ExtraBold,
-                  fontFamily = FontFamily.Monospace,
-                )
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                  RiftShardGemIcon(sizeDp = 13.dp)
+                  Text(
+                    text = "UNLOCK ${item.shardCost}",
+                    fontSize = 9.8.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
               }
             }
           }
@@ -1840,25 +1909,25 @@ private fun ConduitFrameBaysDeck(
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Text(
-        text = "RIFT FRAME BAYS (A–E) // FULL 100-PT PARITY AT 0 RES",
+        text = "RIFT FRAME BAYS (A–E) // FULL 100-PT PARITY AT 0",
         color = Color(0xFFEC4899),
-        fontSize = 10.2.sp,
+        fontSize = 11.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = FontFamily.Monospace,
       )
       Box(
         modifier =
           Modifier.clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF1E1038))
+            .background(ConduitTabletAbyss)
             .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(6.dp))
             .clickable { onOpenHangarShip10() }
-            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
             .testTag("conduit_btn_open_hangar_ship10")
       ) {
         Text(
           text = "OPEN IN HANGAR DECK >",
           color = Color(0xFFE9D5FF),
-          fontSize = 8.2.sp,
+          fontSize = 9.5.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
         )
@@ -1877,13 +1946,13 @@ private fun ConduitFrameBaysDeck(
           modifier =
             Modifier.fillMaxWidth()
               .clip(RoundedCornerShape(8.dp))
-              .background(if (unlocked) Color(0xCC0D2821) else Color(0x990D1B30))
+              .background(if (isActive || unlocked) ConduitTabletElevated else ConduitTabletAbyss)
               .border(
                 1.dp,
                 when {
                   isActive -> Color(0xFFEC4899)
                   unlocked -> Color(0xFF10B981)
-                  else -> Color(0x55FFD700)
+                  else -> ConduitSolarGold.copy(alpha = 0.65f)
                 },
                 RoundedCornerShape(8.dp),
               )
@@ -1892,24 +1961,25 @@ private fun ConduitFrameBaysDeck(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-          Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+          Column(modifier = Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(
               verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
               Text(
                 text = "${gate.slotId.uppercase(Locale.US)} // ${gate.archetypeTitle.uppercase(Locale.US)}",
-                color = if (unlocked) Color(0xFF00E676) else Color(0xFFFFD700),
-                fontSize = 10.2.sp,
+                color = if (unlocked) Color(0xFF00E676) else ConduitSolarGold,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.Monospace,
               )
+              ResonanceCrestIcon(sizeDp = 12.dp)
               Text(
                 text =
-                  if (gate.freeAtResonance <= 0) "OPEN AT 0 RES"
-                  else "FREE AT ${gate.freeAtResonance} PEAK RES",
-                color = Color(0xFF38BDF8),
-                fontSize = 8.2.sp,
+                  if (gate.freeAtResonance <= 0) "OPEN AT 0"
+                  else "FREE AT ${gate.freeAtResonance} PEAK",
+                color = ConduitElectricCyan,
+                fontSize = 9.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1917,7 +1987,7 @@ private fun ConduitFrameBaysDeck(
             Text(
               text = gate.summary,
               color = Color(0xFF94A3B8),
-              fontSize = 8.6.sp,
+              fontSize = 9.8.sp,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
@@ -1928,17 +1998,17 @@ private fun ConduitFrameBaysDeck(
               onClick = { onUnlockOrSelectSlot(gate.slotId) },
               colors =
                 ButtonDefaults.buttonColors(
-                  containerColor = if (isActive) Color(0xFF581C87) else Color(0xFF063929),
+                  containerColor = ConduitTabletAbyss,
                   contentColor = if (isActive) Color.White else Color(0xFF00E676),
                 ),
               border = BorderStroke(1.dp, if (isActive) Color(0xFFEC4899) else Color(0xFF00E676)),
               shape = RoundedCornerShape(6.dp),
-              contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp),
-              modifier = Modifier.height(27.dp),
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+              modifier = Modifier.height(29.dp),
             ) {
               Text(
                 text = if (isActive) "ACTIVE BAY" else "SELECT BAY",
-                fontSize = 8.6.sp,
+                fontSize = 9.8.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1948,20 +2018,26 @@ private fun ConduitFrameBaysDeck(
               onClick = { onUnlockOrSelectSlot(gate.slotId) },
               colors =
                 ButtonDefaults.buttonColors(
-                  containerColor = Color(0xFF281E07),
-                  contentColor = Color(0xFFFFD700),
+                  containerColor = ConduitTabletPanel,
+                  contentColor = ConduitSolarGold,
                 ),
-              border = BorderStroke(1.dp, Color(0xFFFFD700)),
+              border = BorderStroke(1.dp, ConduitSolarGold),
               shape = RoundedCornerShape(6.dp),
-              contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp),
-              modifier = Modifier.height(27.dp),
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+              modifier = Modifier.height(29.dp),
             ) {
-              Text(
-                text = "UNLOCK ${gate.shardCost}❖",
-                fontSize = 8.6.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = FontFamily.Monospace,
-              )
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                RiftShardGemIcon(sizeDp = 13.dp)
+                Text(
+                  text = "UNLOCK ${gate.shardCost}",
+                  fontSize = 9.8.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
             }
           }
         }
@@ -1976,8 +2052,8 @@ private fun ConduitFrameBaysDeck(
             modifier =
               Modifier.weight(1f)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF0F2038))
-                .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
+                .background(ConduitTabletAbyss)
+                .border(1.dp, ConduitElectricCyan, RoundedCornerShape(8.dp))
                 .clickable { onRespecPoints() }
                 .padding(horizontal = 8.dp, vertical = 6.dp)
                 .testTag("btn_respec_custom_pts"),
@@ -1988,31 +2064,37 @@ private fun ConduitFrameBaysDeck(
               Text(
                 text = "RIFT FRAME RESPEC",
                 color = Color.White,
-                fontSize = 9.2.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.Monospace,
               )
               Text(
                 text = "$availablePts / $totalCustomizationPoints PTS FREE",
                 color = Color(0xFF94A3B8),
-                fontSize = 8.sp,
+                fontSize = 9.5.sp,
                 fontFamily = FontFamily.Monospace,
               )
             }
-            Text(
-              text = if (isTesterInfiniteShards) "0❖ TEST" else "50❖",
-              color = Color(0xFF38BDF8),
-              fontSize = 9.5.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+              RiftShardGemIcon(sizeDp = 14.dp)
+              Text(
+                text = if (isTesterInfiniteShards) "0 TEST" else "50",
+                color = ConduitElectricCyan,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
           }
 
           Row(
             modifier =
               Modifier.weight(1f)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF181030))
+                .background(ConduitTabletAbyss)
                 .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(8.dp))
                 .clickable { onBuyForgeVoucher() }
                 .padding(horizontal = 8.dp, vertical = 6.dp)
@@ -2024,24 +2106,30 @@ private fun ConduitFrameBaysDeck(
               Text(
                 text = "HULL FORGE VOUCHER",
                 color = Color.White,
-                fontSize = 9.2.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.ExtraBold,
                 fontFamily = FontFamily.Monospace,
               )
               Text(
                 text = "$aiShipDesignTokens VOUCHERS HELD",
                 color = Color(0xFF94A3B8),
-                fontSize = 8.sp,
+                fontSize = 9.5.sp,
                 fontFamily = FontFamily.Monospace,
               )
             }
-            Text(
-              text = if (isTesterInfiniteShards) "0❖ TEST" else "150❖",
-              color = Color(0xFFC084FC),
-              fontSize = 9.5.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+              RiftShardGemIcon(sizeDp = 14.dp)
+              Text(
+                text = if (isTesterInfiniteShards) "0 TEST" else "150",
+                color = Color(0xFFC084FC),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
           }
         }
       }
@@ -2054,8 +2142,8 @@ private fun ConduitMetricInline(label: String, value: String, color: Color) {
   Column {
     Text(
       text = label,
-      color = Color(0xFF64748B),
-      fontSize = 7.2.sp,
+      color = Color(0xFF94A3B8),
+      fontSize = 9.5.sp,
       fontWeight = FontWeight.Bold,
       fontFamily = FontFamily.Monospace,
       maxLines = 1,
@@ -2063,27 +2151,10 @@ private fun ConduitMetricInline(label: String, value: String, color: Color) {
     Text(
       text = value,
       color = color,
-      fontSize = 10.sp,
+      fontSize = 11.sp,
       fontWeight = FontWeight.ExtraBold,
       fontFamily = FontFamily.Monospace,
       maxLines = 1,
     )
   }
-}
-
-private fun DrawScope.drawConduitDiamondGlyph(color: Color) {
-  val cx = size.width * 0.5f
-  val cy = size.height * 0.5f
-  val r = size.minDimension * 0.46f
-  val path =
-    Path().apply {
-      moveTo(cx, cy - r)
-      lineTo(cx + r * 0.78f, cy)
-      lineTo(cx, cy + r)
-      lineTo(cx - r * 0.78f, cy)
-      close()
-    }
-  drawPath(path = path, color = color.copy(alpha = 0.25f))
-  drawPath(path = path, color = color, style = Stroke(width = 1.6.dp.toPx()))
-  drawCircle(color = Color.White, radius = r * 0.22f, center = Offset(cx, cy))
 }

@@ -30,17 +30,22 @@ service cloud.firestore {
     }
 
     function isValidSectorMode(m) {
-      return m is string && m.size() <= 30 && m in [
-        'FFA',
-        'SECTOR_CONVERGENCE',
-        'RIFT_SKIRMISH',
-        'FLUX_CORE',
-        'STASIS_BREACH',
-        'SYNDICATE_WARS',
-        'warzone_10v10',
-        'ranked_3v3',
-        'ranked_5v5'
-      ];
+      return m is string && m.size() <= 30 && (
+        m in [
+          'FFA',
+          'SECTOR_CONVERGENCE',
+          'RIFT_SKIRMISH',
+          'RIFT_CONTROL',
+          'FLUX_CORE',
+          'STASIS_BREACH',
+          'SYNDICATE_WARS',
+          'NEXUS_LOBBY',
+          'warzone_10v10',
+          'ranked_3v3',
+          'ranked_5v5'
+        ] ||
+        m.matches('^CUSTOM_[a-zA-Z0-9_\\-]{1,23}$')
+      );
     }
 
     // 1. PilotDossier Validation Blueprint
@@ -106,6 +111,7 @@ service cloud.firestore {
              data.energy is int && data.energy >= 0 && data.energy <= 10000 &&
              data.maxEnergy is int && data.maxEnergy >= 100 && data.maxEnergy <= 10000 &&
              data.bounty is int && data.bounty >= 0 && data.bounty <= 100000000 &&
+             (!('liveResonance' in data) || (data.liveResonance is int && data.liveResonance >= 0 && data.liveResonance <= 1000000)) &&
              data.lastPingType is string && data.lastPingType.size() <= 16 &&
              data.lastPingType in ['NONE', 'ATTACK', 'DEFEND', 'CONVERGENCE'] &&
              (data.lastPingX is int || data.lastPingX is float) && data.lastPingX >= -100000 && data.lastPingX <= 100000 &&
@@ -247,7 +253,7 @@ service cloud.firestore {
                          'shipId', 'freq',
                          'x', 'y', 'vx', 'vy', 'angle', 'weaponAngle',
                          'isFiringPrimary', 'isAfterburning', 'isCloaked',
-                         'energy', 'maxEnergy', 'bounty',
+                         'energy', 'maxEnergy', 'bounty', 'liveResonance',
                          'lastPingType', 'lastPingX', 'lastPingY',
                          'createdAt', 'updatedAt'
                        ]) &&
@@ -264,7 +270,7 @@ service cloud.firestore {
                          'shipId', 'freq',
                          'x', 'y', 'vx', 'vy', 'angle', 'weaponAngle',
                          'isFiringPrimary', 'isAfterburning', 'isCloaked',
-                         'energy', 'maxEnergy', 'bounty',
+                         'energy', 'maxEnergy', 'bounty', 'liveResonance',
                          'lastPingType', 'lastPingX', 'lastPingY',
                          'updatedAt'
                        ]);

@@ -11,20 +11,21 @@ import kotlin.math.roundToInt
 
 /**
  * Dynamically compiles the complete, authoritative NEXUS (Threshold Dynamics Studio, LLC) Engine,
- * AGSL Shader & Pixel-Rendering, 100-Point Ship Math, Rift Conduit Resonance, Daily Directives,
- * 12-Buff Supply Registry, Unstable Rift Convergence, Destructible Crystal Asteroids, Station Novas,
- * Calibration, Pilot Dossier, and Cloud Leaderboard Ground-Truth Snapshot for `#nexus-ai`.
+ * AGSL Shader & Pixel-Rendering, Unified #060D1A Sci-Fi Command Tablet Hub & Pinch-to-Zoom Overwatch,
+ * 5x DS9 Metallic Safe-Zone Station, 100-Point Ship Math, Rift Conduit Resonance, Daily Directives,
+ * 12-Buff Supply Registry, 440px Gravity Rift Implosion, Unstable Rift Convergence, Crystal Asteroids,
+ * Station Novas, Calibration, Pilot Dossier, and Cloud Leaderboard Ground-Truth Snapshot for `#nexus-ai`.
  */
 object RiftNexusKnowledge {
 
   const val NEXUS_SYSTEM_INSTRUCTION: String =
     """
-You are NEXUS, the omniscient Ring-Space tactical intelligence stationed at the central Nexus Hub inside SUBSPACE COMMS (`#nexus-ai` channel) of NEXUS (developed by Threshold Dynamics Studio, LLC), a mobile-first competitive 120Hz 2D Newtonian space arena game on Android.
+You are NEXUS, the omniscient tactical intelligence stationed inside the `CHAT & NEXUS AI` (`#nexus-ai` channel) module of the `#060D1A` Sci-Fi Command Tablet in NEXUS (developed by Threshold Dynamics Studio, LLC), a mobile-first competitive 120Hz 2D Newtonian space arena game on Android.
 
 CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
-1. EXCLUSIVE NEXUS & RIFT-SECTOR KNOWLEDGE BASE: Your ONLY knowledge base is NEXUS itself — its Newtonian physics, GPU AGSL shaders & pixel-level rendering math, 10 ship classes (all 10 ships unlocked from 0 Resonance: Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, Eclipse, and modular custom ship Rift Frame at full 100-Point parity + Frame A through Frame E), Rift Conduit Live Resonance & Peak Resonance (scaling Starting Bounty from 100 to 500 Max + 3 Daily Directives paying up to 250❖/day, plus 999,999❖ non-depleting Tester Shards while commercial Play Billing is dormant), 12-item Supply Buff pool (including 5-drone zig-zagging SWARM and N-stacking Stasis Barriers) + custom forged buffs, Playfield Rifts (Plasma Rift, Repulsor Rift with supersonic inner-core slingshot, Gravity Rift with 420px max-size obstacle/barrier pull, Paired Phase Rifts A & B, and live 10.0s Unstable Rift convergence dealing 75% Max Flux Doomsday detonation + shattering Crystal Asteroids), destructible 2,400 HP Crystal Asteroids (guaranteed Supply Crate drop + 20.0s respawn), 10-hit Orbital/Asteroid Station 16-bolt 360-degree Defense Novas, wall-less circular 3D Safe-Zone Rift & Open-Space Anti-AFK rules (active ONLY in Sector Convergence and Flux Core; disabled in Rift Control, Stasis Breach, Rift Skirmish, and Syndicate Wars), Rippling 3D Rift-Cloud Storm Boundary + 220px proximity arc lightning, Ring-Space NEXUS CORE (`NEXUS HUB` + 7 swirling 3D Rifts: `CONVERGENCE GATE`, `HANGAR DECK`, `STAR FORGE`, `RIFT CONDUIT`, `SYNDICATE CITADEL`, `ARCHIVE & CODEX`, `HELM SYSTEMS`), `Mode -> Hangar Deck -> Enter Rift` Swirling NEXUS hull lock-in & `APEX` halo, all 6 Official Ranked Modes, Custom Rifts (`speedMult` & `damageMult` missile/ordnance scaling + `MegaFat Bullets` + `100` custom starting bounty), Syndicate War Trophies, Pilot Dossier & Executioner telemetry, and Sworn Pilot Cloud Leaderboard records.
-2. REFUSE NON-NEXUS TOPICS IN CHARACTER: If the user asks about anything outside NEXUS, briefly decline in character: "NEXUS CORE TELEMETRY BOUNDARY // Query falls outside NEXUS sector parameters. Submit a query regarding NEXUS ships, pixel/physics telemetry, custom builds, Rift Conduit Resonance, Playfield Rifts, Ranked Modes, buffs, or bounty records."
-3. PINPOINT NUMERICAL & PIXEL PRECISION: Cite exact live engine numbers, world-pixel dimensions, DPS, Flux costs (HP + weapon energy, floored at 1 Flux on self-drain), Rift Shards (❖) economy, Live & Peak Resonance, custom frames (`Frame A-E`), Eclipse two-way `Stasis` (6.0s duration, 275px radius, 320 Flux cost, 8.5s CD), Unstable Rift 10.0s timer & 75% Max Flux Doomsday blast, Ranked Mode telemetry, Calibration overrides, and Sworn Pilot Leaderboard records. Never use decorative emojis or literal star icons; write "Flux" for ship energy/HP and ❖ strictly for Rift Shards.
+1. EXCLUSIVE NEXUS & RIFT-SECTOR KNOWLEDGE BASE: Your ONLY knowledge base is NEXUS itself — its Newtonian physics, GPU AGSL shaders & pixel-level rendering math, 10 ship classes (all 10 ships unlocked from 0 Resonance: Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor, Valkyrie, Manta, Eclipse, and modular custom ship Rift Frame at full 100-Point parity + Frame A through Frame E), Rift Conduit Live Resonance & Peak Resonance (scaling Starting Bounty from 100 to 500 Max + 3 Daily Directives paying up to 250❖/day, plus 999,999❖ non-depleting Tester Shards while commercial Play Billing is dormant), 12-item Supply Buff pool (including 5-drone zig-zagging SWARM and N-stacking Stasis Barriers) + custom forged buffs, Playfield Rifts (Plasma Rift, Repulsor Rift with supersonic inner-core slingshot, Gravity Rift with swept 0.92x visible-disc weapon absorption — +18px per primary bolt, +40px per bomb/torpedo, +14px per drone/phantom up to 440px max with crackling rim lightning — and >= 260px swollen mass dragging Crystal Asteroids, Orbital/Asteroid Stations, Debris, and Stasis Barriers into the core at 950/s tidal crush damage -> implosion + Supply Crate + 20.0s respawn + 16-bolt 360-degree Overload Nova on Stations, Paired Phase Rifts A & B, and live 10.0s Unstable Rift convergence dealing 75% Max Flux Doomsday detonation + shattering Crystal Asteroids), destructible 2,400 Flux Crystal Asteroids (guaranteed Supply Crate drop + 20.0s respawn), 10-hit Orbital/Asteroid Station 16-bolt 360-degree Defense Novas, wall-less circular Safe-Zone Harbor anchored by a 5x ship-scale (180px world radius) DS9 Metallic Station sprite with a revolving cyan/gold Ops Holo-Ring & radial stabilizer beams editable live in `STAR FORGE` (active ONLY in Sector Convergence and Flux Core with 15s max stay / weapon-lockout; disabled in Rift Control, Stasis Breach, Rift Skirmish, and Syndicate Wars, alongside Open-Space Anti-AFK), Rippling 3D Rift-Cloud Storm Boundary + 220px proximity arc lightning, the unified `#060D1A` Sci-Fi Command Tablet `NEXUS` Hub (`SHIPS & BUILDS`, `RANKS & QUESTS`, `SKINS & AUDIO`, `CHAT & NEXUS AI`, `CLANS & SQUADS`, `STATS & CODEX` + Top Bar `[? HOW TO PLAY]`, `[HELM SYSTEMS]`, `[PRACTICE RIFT >]`) framing a Round Rippling Dynamic-Lit Pinch-to-Zoom (`1.0x..6.0x`) & Pan Orbital Overwatch aperture auto-selecting `[FAV]` or Highest Combined Pilot Resonance (`Game Type • RIFT #XX`) + `[QUICK ZONE IN]` & `[ALL MODES]`, Hangar Swirling NEXUS hull lock-in & `APEX` halo, all 6 Official Ranked Modes, Custom Rifts (`speedMult` & `damageMult` missile/ordnance scaling + `MegaFat Bullets` + `100` custom starting bounty), Syndicate War Trophies, Pilot Dossier & Executioner telemetry, and Sworn Pilot Cloud Leaderboard records.
+2. REFUSE NON-NEXUS TOPICS IN CHARACTER: If the user asks about anything outside NEXUS, briefly decline in character: "NEXUS CORE TELEMETRY BOUNDARY // Query falls outside NEXUS sector parameters. Submit a query regarding NEXUS ships, pixel/physics telemetry, custom builds, Rift Conduit Resonance, Playfield Rifts, 5x DS9 Safe-Zone Station, Hub Overwatch, Ranked Modes, buffs, or bounty records."
+3. PINPOINT NUMERICAL & PIXEL PRECISION: Cite exact live engine numbers, world-pixel dimensions, DPS, Flux costs (HP + weapon energy, floored at 1 Flux on self-drain), Rift Shards (❖) economy, Live & Peak Resonance, custom frames (`Frame A-E`), Eclipse two-way `Stasis` (6.0s duration, 275px radius, 320 Flux cost, 8.5s CD), Gravity Rift 440px swept growth & >= 260px 950/s tidal implosion, Unstable Rift 10.0s timer & 75% Max Flux Doomsday blast, 5x (180px) DS9 Safe-Zone Station, Ranked Mode telemetry, Calibration overrides, and Sworn Pilot Leaderboard records. Never use decorative emojis or literal star icons; write "Flux" for ship energy/HP and ❖ strictly for Rift Shards.
 4. ANDROID TOUCH HUD & TWIN-STICK CONTROLLER TERMINOLOGY ONLY: Support native Android Landscape Touch HUD (Left Movement Stick, Manual [BRAKE], Right Primary Fire Stick, Secondary, Special Buff, Repel, Native Multi-Shot, Collapsible Living-Teammate Spectator Box, Graphical Dual-Rift Tug-of-War Top Bar in Rift Control, and Bottom Console with 3D AGSL Plasma Flux Ring wrapping the 1:1 circular minimap) AND Bluetooth/USB Twin-Stick Controllers (including LB/RB teammate spectator cycling). Never mention PC keyboard shortcuts.
 5. PURE TEXT Q&A & THEORYCRAFTING: Deliver clear, structured tactical answers and 100-point Rift Frame theorycrafting breakdowns (all 10 ships and full 100-point parity open from 0 Resonance).
 """
@@ -66,7 +67,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     pvpPeakSnapshot: PeakBountyRunSnapshot?,
     syndicateHistory: List<SyndicateServiceEntry>,
   ): String {
-    val sb = StringBuilder(16_000)
+    val sb = StringBuilder(17_000)
     val camScale = engine.effectiveCameraScale()
     val projScale = RiftCalibrationState.projectileScale
     val shipVisScale = RiftCalibrationState.shipScale
@@ -75,15 +76,18 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     val customSpdMult = engine.currentCustomGame?.speedMult ?: 1.0f
     val customDmgMult = engine.currentCustomGame?.damageMult ?: 1.0f
 
-    sb.appendLine("=== [LIVE NEXUS GROUND-TRUTH TELEMETRY SNAPSHOT — BUILD #61] ===")
+    sb.appendLine("=== [LIVE NEXUS GROUND-TRUTH TELEMETRY SNAPSHOT — BUILD #72] ===")
 
     sb.appendLine()
-    sb.appendLine("[1. EXACT PIXEL, SHADER & ARENA BOUNDARY SPECIFICATIONS]")
+    sb.appendLine("[1. SCI-FI COMMAND TABLET HUB, OVERWATCH, 5X DS9 SAFE HARBOR & PIXEL/SHADER SPECS]")
     sb.appendLine(
-      "- World Arena & Rippling Rift-Cloud Storm Wall: 8000 x 8000 world pixels (8x8 sectors A1..H8, each sector = 1000 x 1000 world px; circular perimeter radius = ${engine.arenaRadius.toInt()} world px). Outer boundary renders a GPU AGSL 3D Rift-Cloud Storm Wall bleeding 260px inward with live branching proximity arc lightning striking ships within 220px of the perimeter."
+      "- NEXUS Sci-Fi Command Tablet Hub: #060D1A tablet shell with 6 192x192 5-stop metallic station-styled module cards — Left Wing: SHIPS & BUILDS (HANGAR DECK), RANKS & QUESTS (RIFT CONDUIT), SKINS & AUDIO (STAR FORGE); Right Wing: CHAT & NEXUS AI (SUBSPACE COMMS), CLANS & SQUADS (SYNDICATE CITADEL), STATS & CODEX (ARCHIVE & CODEX) — framing a center Round Rippling Dynamic-Lit Digitized Aperture with live 1.0x..6.0x 2-finger pinch-to-zoom & 1-finger pan Orbital Overwatch (world nametags hidden below 1.55x zoom for a clean radar view), auto-selecting [FAV] or the active game with Highest Combined Pilot Resonance (Game Type • RIFT #XX) + 1-tap [QUICK ZONE IN] and [ALL MODES]."
     )
     sb.appendLine(
-      "- Wall-Less Circular 3D Nexus Safe-Zone Rift: Radius = ${engine.getSafeZoneRadius().toInt()} world px centered at (${engine.arenaCenterX.toInt()}, ${engine.arenaCenterY.toInt()}); zero physical hard-light box walls. Active ONLY in SECTOR CONVERGENCE and FLUX CORE (live hasActiveSafeZone() = ${engine.hasActiveSafeZone()}); completely disabled in RIFT CONTROL, STASIS BREACH, RIFT SKIRMISH, and SYNDICATE WARS. Open-Space Anti-AFK Flux drain is likewise restricted strictly to SECTOR CONVERGENCE and FLUX CORE."
+      "- World Arena & Rippling Rift-Cloud Storm Wall: 8000 x 8000 world pixels (8x8 sectors A1..H8, each sector = 1000 x 1000 world px; circular perimeter radius = ${engine.arenaRadius.toInt()} world px). Outer boundary renders a seamless GPU AGSL 3D Rift-Cloud Storm Wall bleeding 260px inward with live branching proximity arc lightning striking ships within 220px of the perimeter."
+    )
+    sb.appendLine(
+      "- Wall-Less Circular Safe-Zone Harbor & 5x DS9 Metallic Station: Safe-Zone radius = ${engine.getSafeZoneRadius().toInt()} world px centered at (${engine.arenaCenterX.toInt()}, ${engine.arenaCenterY.toInt()}), anchored by a 5x ship-scale (180px world radius) Deep Space Nine (DS9) metallic station sprite with a shrunk revolving cyan/gold Ops Holo-Ring and radial stabilizer beams (editable live in STAR FORGE). Active ONLY in SECTOR CONVERGENCE and FLUX CORE (live hasActiveSafeZone() = ${engine.hasActiveSafeZone()}, 15s max stay / weapon-lockout); completely disabled in RIFT CONTROL, STASIS BREACH, RIFT SKIRMISH, and SYNDICATE WARS. Open-Space Anti-AFK Flux drain is likewise restricted strictly to SECTOR CONVERGENCE and FLUX CORE."
     )
     sb.appendLine(
       String.format(
@@ -115,7 +119,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Secondary Warhead & Ability Specs (scaled by projectileScale %.2fx, Custom speedMult %.2fx, Custom damageMult %.2fx): Viper Phase Dash = 135 world px spatial blink + %.0f px/s dodge burst (320 Flux cost, 0.65s CD, +%.0f%% next-shot rail overcharge); Siege Bomb = %.1f world px radius; Bounce & Prox Flak Bomb = %.1f world px radius (Prox Flak fuse = %.0f world px); Disruptor Cloak & 360-deg EMP = 20 Flux entry, %.0f Flux/s cloak drain (50%% cloaked afterburner drain, 4.5s CD, 150 Flux safety floor), 0 Flux manual decloak %.0f world px EMP draining %.0f%% Max Flux (capped at 850 Flux) + %.1fs recharge freeze; Proximity Mine = %.1f world px radius (max %d mines, 30s life); Fast Predictive Seeker Torpedo = %.1f world px radius (%.0f px/s cruise * speedMult, proportional intercept lead, %.1fs flight); Stackable Stasis Barrier = %.0f world px Tethered Cyan Hard-Light Forcefield (%.1fs duration, deploys within 78px stack as BARRIER xN); SWARM = 5 autonomous zig-zagging hunter drones (210 Flux dmg * damageMult each, 560 px/s * speedMult, 6.5s life); Eclipse Stasis (INTERDICTOR_DOME) = %.0f world px radius (%.0f world px diameter) two-way Stasis field active for %.1fs (320 Flux cost, %.1fs CD).",
+        "- Secondary Warhead & Ability Specs (scaled by projectileScale %.2fx, Custom speedMult %.2fx, Custom damageMult %.2fx): Viper Phase Dash = 135 world px spatial blink + %.0f px/s dodge burst (320 Flux cost, 0.65s CD, +%.0f%% next-shot rail overcharge); Siege Bomb = %.1f world px radius; Bounce & Prox Flak Bomb = %.1f world px radius (Prox Flak fuse = %.0f world px); Disruptor Cloak & 360-deg EMP = 20 Flux entry, %.0f Flux/s cloak drain (50%% cloaked afterburner drain, 4.5s CD, 150 Flux safety floor), 0 Flux manual decloak %.0f world px EMP draining %.0f%% Max Flux (capped at 850 Flux) + %.1fs recharge freeze; Proximity Mine = %.1f world px radius (max %d mines, 30s life); Fast Predictive Seeker Torpedo = %.1f world px radius (%.0f px/s cruise * speedMult, proportional intercept lead, %.1fs flight); Stackable Stasis Barrier = %.0f world px Tethered Cyan Hard-Light Forcefield (%.1fs duration, deploys within 78px stack as BARRIER xN); SWARM = 5 autonomous zig-zagging hunter drones (210 Flux dmg * damageMult each, 560 px/s * speedMult, 6.5s life); Eclipse Stasis (INTERDICTOR_DOME) = %.0f world px radius (%.0f world px diameter) two-way Stasis active for %.1fs (320 Flux cost, %.1fs CD).",
         projScale,
         customSpdMult,
         customDmgMult,
@@ -144,7 +148,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Destructible Crystal Asteroids & 10-Hit Station Defense Novas: Crystal Asteroids have 2,400 HP with an on-rock circular Flux integrity ring; shattering one drops a guaranteed Supply Crate and schedules a 20.0s respawn (%d pending respawns). Orbital & Asteroid Stations track weapon impacts with a 10-segment charge ring and unleash a 16-bolt 360-degree Station Defense Nova every 10 hits (damaging all frequencies). Supply Crate world size = %.2f world px; 3D AGSL Plasma Flux Ring wraps the 1:1 arenaRadius Circular Minimap.",
+        "- Destructible Crystal Asteroids & 10-Hit Station Defense Novas: Crystal Asteroids have 2,400 Flux integrity with an on-rock circular integrity ring; shattering one drops a guaranteed Supply Crate and schedules a 20.0s respawn (%d pending respawns). Orbital & Asteroid Stations track weapon impacts with a 10-segment charge ring and unleash a 16-bolt 360-degree Station Defense Nova every 10 hits (or when imploded by a >= 260px Gravity Rift, damaging all frequencies). Supply Crate world size = %.2f world px; 3D AGSL Plasma Flux Ring wraps the 1:1 arenaRadius Circular Minimap.",
         engine.pendingAsteroidRespawns.size,
         78.32f * crateVisScale,
       )
@@ -193,13 +197,13 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
         RiftCalibrationState.cratePickupBounty,
       )
     )
-    sb.appendLine("- 6 Official Ranked Modes + Cloneable Custom Rifts (Mode -> Hangar Hull Staging -> Enter Rift):")
-    sb.appendLine("  - 1) SECTOR CONVERGENCE: 20-Pilot Ranked FFA / 1-5 Strike Wing Bounty | Circular Safe-Zone Rift ON | +100❖.")
+    sb.appendLine("- 6 Official Ranked Modes + Cloneable Custom Rifts (Hub [QUICK ZONE IN] or [ALL MODES] -> Hangar Hull Lock-In -> Enter Rift):")
+    sb.appendLine("  - 1) SECTOR CONVERGENCE: 20-Pilot Ranked FFA / 1-5 Strike Wing Bounty | 5x DS9 Safe-Zone Harbor ON | +100❖.")
     sb.appendLine("  - 2) RIFT SKIRMISH: Ranked 2v2-5v5 Best-of-3 Rounds Team Deathmatch | Safe Zone OFF | Ship Lock ON | Teammate Spectator | +75❖.")
     sb.appendLine(
       String.format(
         Locale.US,
-        "  - 3) FLUX CORE: 20-Pilot Ranked Powerball FFA | Circular Safe-Zone Rift ON | Tier 1-10 Overcharge (+15 Bounty/s; 2x pulsing Gold radar beacon) | Ejects at %.0f px/s on death or Safe Zone entry.",
+        "  - 3) FLUX CORE: 20-Pilot Ranked Powerball FFA | 5x DS9 Safe-Zone Harbor ON | Tier 1-10 Overcharge (+15 Bounty/s; 2x pulsing Gold radar beacon) | Ejects at %.0f px/s on death or Safe Zone entry.",
         RiftCalibrationState.fluxCoreEjectSpeed,
       )
     )
@@ -308,7 +312,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     }
 
     sb.appendLine()
-    sb.appendLine("[5. 12-BUFF SUPPLY POOL, FORGED BUFFS & PLAYFIELD RIFTS (INCLUDING UNSTABLE RIFT)]")
+    sb.appendLine("[5. 12-BUFF SUPPLY POOL, FORGED BUFFS & PLAYFIELD RIFTS (440PX GRAVITY IMPLOSION & UNSTABLE RIFT)]")
     sb.appendLine(
       "- Supply Crate Cap: ${engine.getEffectiveBuffCap()} crates (${engine.greens.size} spawned, ${engine.swarmDrones.size} active Swarm Drones, ${engine.brickWalls.size} active Stasis Barriers). Repel Cost=${RiftCalibrationState.repelCost.toInt()} Flux, Radius=${RiftCalibrationState.repelRadius.toInt()}px."
     )
@@ -325,7 +329,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     sb.appendLine(
       String.format(
         Locale.US,
-        "- Playfield Rifts (%.0fpx base physical core radius, %.0fs lifespan, %d active, %d Unstable Merged): 1) PLASMA RIFT (%.0f%% Max Flux burn/0.6s), 2) REPULSOR RIFT (%.0fpx deflection + inner-core 1.45x afterburner supersonic slingshot), 3) GRAVITY RIFT (%.0fpx pull; at max 420px size pulls nearby obstacles & Stasis Barriers inward), 4) PAIRED PHASE RIFTS (Phase Rift A & B instantaneous gateway, %.2fs re-entry CD), 5) UNSTABLE RIFT (overlapping Rifts merge into a 10.0s multicolored singularity that detonates for 75%% Max Flux Doomsday blast and shatters nearby Crystal Asteroids).",
+        "- Playfield Rifts (%.0fpx base physical core radius, %.0fs lifespan, %d active, %d Unstable Merged): 1) PLASMA RIFT (%.0f%% Max Flux burn/0.6s), 2) REPULSOR RIFT (%.0fpx deflection + inner-core 1.45x afterburner supersonic slingshot), 3) GRAVITY RIFT (%.0fpx pull; swept 0.92x visible-disc weapon absorption grows radius +18px/bolt, +40px/bomb-torpedo, +14px/drone-phantom up to 440px max with crackling rim lightning; at >= 260px swollen mass drags Crystal Asteroids, Orbital/Asteroid Stations, Debris, and Stasis Barriers into the core at 950/s tidal crush -> implosion + Supply Crate + 20.0s respawn + 16-bolt 360-deg Station Overload Nova), 4) PAIRED PHASE RIFTS (Phase Rift A & B instantaneous gateway, %.2fs re-entry CD), 5) UNSTABLE RIFT (overlapping Rifts merge into a 10.0s convergence singularity that detonates for 75%% Max Flux Doomsday blast and shatters nearby Crystal Asteroids).",
         RiftCalibrationState.riftPhysicalRadius * anomVisScale,
         RiftCalibrationState.riftLifespanSec,
         engine.anomalies.size,

@@ -1,16 +1,17 @@
 <resources>
     <string name="app_name">NEXUS</string>
     <string name="auth_title">NEXUS</string>
-    <string name="auth_subtitle">ENTER RING SPACE • CONTROL THE RIFTS • 10 MODULAR HULLS</string>
+    <string name="auth_subtitle">COMMAND TERMINAL • LIVE OVERWATCH • 5X DS9 SAFE HARBOR</string>
     <string name="sign_in_with_google">SIGN IN WITH GOOGLE (SWORN PILOT)</string>
+    <string name="enter_as_drifter">ENTER AS [RFT] DRIFTER (LOCAL SESSION)</string>
     <string name="signing_in">Authenticating NEXUS Link…</string>
-    <string name="auth_feature_physics">10 Modular 3D Hulls • 100-Pt Rift Frame • Newtonian Flight</string>
-    <string name="auth_feature_ships">6 Ranked Rift Modes • Living 3D Rifts • Custom 10-Rule Sandbox</string>
-    <string name="auth_feature_cloud">Threshold Dynamics Studio, LLC • Cloud Syndicates &amp; Resonance</string>
+    <string name="auth_feature_physics">10 Modular Hulls • Full 100-Pt Parity From 0 Resonance</string>
+    <string name="auth_feature_ships">6 Ranked Modes • Custom 6-Char Rifts • Live Overwatch</string>
+    <string name="auth_feature_cloud">Sworn Pilot Cloud Sync • Syndicates &amp; War Trophies</string>
     <string name="sign_out">Sign Out</string>
-    <string name="nexus_orb_content_desc">Open NEXUS Hub &amp; Ring Space Command</string>
-    <string name="nexus_console_title">NEXUS // RING SPACE HUB</string>
-    <string name="nexus_input_placeholder">Ask NEXUS AI anything (100-pt builds, Rift physics, Peak Resonance…)</string>
+    <string name="nexus_orb_content_desc">Open NEXUS Sci-Fi Command Tablet &amp; Live Overwatch</string>
+    <string name="nexus_console_title">NEXUS // COMMAND TABLET HUB</string>
+    <string name="nexus_input_placeholder">Ask NEXUS AI anything (100-pt builds, 440px Gravity Rift, 5x DS9 Station…)</string>
     <string name="nexus_transmit">TRANSMIT</string>
     <string name="nexus_clear">CLEAR</string>
     <string name="nexus_close">CLOSE</string>

@@ -1,6 +1,8 @@
 package com.example.ui
 
 import android.content.Context
+import android.graphics.Matrix
+import android.graphics.RectF
 import android.util.Log
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -14,14 +16,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -37,6 +43,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,13 +53,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
@@ -61,15 +74,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.R
+import com.example.engine.RiftSpriteBaker
+import com.example.engine.RiftVisualForgeState
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -78,8 +93,8 @@ import com.google.firebase.Firebase
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
 import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlinx.coroutines.CoroutineScope
@@ -214,59 +229,76 @@ fun AuthScreen(
   }
 
   Box(
-    modifier = Modifier.fillMaxSize().background(Color(0xFF010308)),
+    modifier = Modifier.fillMaxSize().background(Color(0xFF02050B)),
     contentAlignment = Alignment.Center,
   ) {
-    if (!isHeadlessGlEnvironment()) {
-      AndroidView(
-        factory = { ctx ->
-          NexusSpaceGlView(ctx).apply {
-            isSplashMode = true
-            dimFactor = 0.85f
-          }
-        },
-        update = { view ->
-          view.isSplashMode = true
-          view.dimFactor = 0.85f
-        },
-        modifier = Modifier.fillMaxSize(),
+    // Deep #02050B starlight backdrop + subtle tactical nebula glow
+    Canvas(modifier = Modifier.fillMaxSize()) {
+      val w = size.width
+      val h = size.height
+      drawRect(
+        brush =
+          Brush.radialGradient(
+            colors = listOf(Color(0xFF08162E), Color(0xFF040A16), Color(0xFF02050B)),
+            center = Offset(w * 0.34f, h * 0.50f),
+            radius = maxOf(w, h) * 0.80f,
+          )
       )
-    } else {
-      Canvas(modifier = Modifier.fillMaxSize()) {
-        drawRect(
-          brush =
-            Brush.radialGradient(
-              colors = listOf(Color(0xFF061022), Color(0xFF020610), Color(0xFF010308)),
-              center = Offset(size.width * 0.5f, size.height * 0.36f),
-              radius = maxOf(size.width, size.height) * 0.82f,
-            )
-        )
+      val starCount = 46
+      for (i in 0 until starCount) {
+        val hx = ((i * 73856093) xor 0x5A17) and 0xFFFF
+        val hy = ((i * 19349663) xor 0x2F91) and 0xFFFF
+        val sx = (hx / 65535f) * w
+        val sy = (hy / 65535f) * h
+        val starCol =
+          when {
+            i % 7 == 0 -> Color(0xFF00F5D4).copy(alpha = 0.42f)
+            i % 5 == 0 -> Color(0xFFFACC15).copy(alpha = 0.36f)
+            else -> Color(0xFFCBD5E1).copy(alpha = 0.28f)
+          }
+        val r = if (i % 6 == 0) 1.6.dp.toPx() else 1.0.dp.toPx()
+        drawCircle(color = starCol, radius = r, center = Offset(sx, sy))
       }
     }
 
-    Box(
-      modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
+    BoxWithConstraints(
+      modifier =
+        Modifier.fillMaxSize()
+          .windowInsetsPadding(WindowInsets.safeDrawing)
+          .padding(horizontal = 14.dp, vertical = 8.dp),
       contentAlignment = Alignment.Center,
     ) {
+      val isWideLandscape = maxWidth >= 560.dp
+      val isUltraCompactHeight = maxHeight < 370.dp
+
       Surface(
         modifier =
-          Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-            .widthIn(max = 600.dp)
+          Modifier.widthIn(max = 940.dp)
             .fillMaxWidth()
+            .then(
+              if (isWideLandscape && !isUltraCompactHeight) {
+                Modifier.heightIn(max = 460.dp)
+              } else {
+                Modifier
+              }
+            )
             .border(
-              1.5.dp,
-              Brush.linearGradient(listOf(Color(0xFF00F5D4), Color(0xFFA855F7), Color(0xFF38BDF8))),
-              RoundedCornerShape(16.dp),
+              1.2.dp,
+              Brush.linearGradient(
+                listOf(Color(0xFF00F5D4), Color(0xFF38BDF8), Color(0xFFFACC15))
+              ),
+              RoundedCornerShape(14.dp),
             ),
-        color = Color(0xEC050C18),
-        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFF060D1A),
+        shape = RoundedCornerShape(14.dp),
         tonalElevation = 10.dp,
       ) {
         Box(modifier = Modifier.fillMaxWidth()) {
+          // Sci-Fi Command Tablet chamfer/corner registration brackets
           Canvas(modifier = Modifier.matchParentSize()) {
-            val stroke = 2.0.dp.toPx()
-            val inset = 6.dp.toPx()
-            val arm = 22.dp.toPx()
+            val stroke = 1.8.dp.toPx()
+            val inset = 5.dp.toPx()
+            val arm = 20.dp.toPx()
             val cyan = Color(0xFF00F5D4)
             val gold = Color(0xFFFACC15)
             drawLine(cyan, Offset(inset, inset), Offset(inset + arm, inset), stroke)
@@ -275,222 +307,181 @@ fun AuthScreen(
             drawLine(gold, Offset(size.width - inset, inset), Offset(size.width - inset, inset + arm), stroke)
             drawLine(gold, Offset(inset, size.height - inset - arm), Offset(inset, size.height - inset), stroke)
             drawLine(gold, Offset(inset, size.height - inset), Offset(inset + arm, size.height - inset), stroke)
-            drawLine(cyan, Offset(size.width - inset - arm, size.height - inset), Offset(size.width - inset, size.height - inset), stroke)
-            drawLine(cyan, Offset(size.width - inset, size.height - inset - arm), Offset(size.width - inset, size.height - inset), stroke)
+            drawLine(
+              cyan,
+              Offset(size.width - inset - arm, size.height - inset),
+              Offset(size.width - inset, size.height - inset),
+              stroke,
+            )
+            drawLine(
+              cyan,
+              Offset(size.width - inset, size.height - inset - arm),
+              Offset(size.width - inset, size.height - inset),
+              stroke,
+            )
           }
 
+          val bodyModifier =
+            if (!isWideLandscape || isUltraCompactHeight) {
+              Modifier.fillMaxWidth()
+                .verticalScroll(scrollState)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+            } else {
+              Modifier.fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 12.dp)
+            }
+
           Column(
-            modifier =
-              Modifier.verticalScroll(scrollState)
-                .padding(horizontal = 22.dp, vertical = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = bodyModifier,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
+            // TOP TABLET HEADER STRIP
             Row(
-              modifier = Modifier.fillMaxWidth(),
+              modifier =
+                Modifier.fillMaxWidth()
+                  .clip(RoundedCornerShape(10.dp))
+                  .background(Color(0xFF081326))
+                  .border(1.dp, Color(0x3D38BDF8), RoundedCornerShape(10.dp))
+                  .padding(horizontal = 12.dp, vertical = 6.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.SpaceBetween,
             ) {
               Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.weight(1f),
               ) {
-                NexusMergedBrandEmblem(
-                  modifier = Modifier.size(50.dp),
-                )
-                Column {
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                  ) {
-                    Text(
-                      text = stringResource(R.string.auth_title),
-                      color = Color(0xFF00F5D4),
-                      fontSize = 23.sp,
-                      fontWeight = FontWeight.Black,
-                      fontFamily = FontFamily.Monospace,
-                      letterSpacing = 2.5.sp,
-                    )
-                    Text(
-                      text = "// ENTER THE NEXUS",
-                      color = Color(0xFFC084FC),
-                      fontSize = 10.sp,
-                      fontWeight = FontWeight.ExtraBold,
-                      fontFamily = FontFamily.Monospace,
-                    )
-                  }
+                NexusMergedBrandEmblem(modifier = Modifier.size(28.dp))
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                   Text(
-                    text = stringResource(R.string.auth_subtitle),
+                    text = stringResource(R.string.auth_title),
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 2.0.sp,
+                    maxLines = 1,
+                  )
+                  Text(
+                    text = "// THRESHOLD DYNAMICS STUDIO, LLC",
                     color = Color(0xFFFACC15),
-                    fontSize = 10.sp,
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                   )
                 }
               }
+
+              Spacer(modifier = Modifier.width(8.dp))
 
               Button(
                 onClick = onOpenChangelog,
                 colors =
                   ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF0B1C30),
-                    contentColor = Color(0xFF38BDF8),
+                    containerColor = Color(0xFF0B1C32),
+                    contentColor = Color(0xFF00F5D4),
                   ),
                 border = BorderStroke(1.dp, Color(0xFF38BDF8)),
                 shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                modifier = Modifier.height(34.dp).testTag("auth_changelog_button"),
+                contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
+                modifier =
+                  Modifier.minimumInteractiveComponentSize()
+                    .heightIn(min = 36.dp)
+                    .testTag("auth_changelog_button"),
               ) {
                 Icon(
                   imageVector = RiftAuthIcons.Terminal,
-                  contentDescription = "Version Log",
+                  contentDescription = "Patch Log",
                   tint = Color(0xFF00F5D4),
                   modifier = Modifier.size(14.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                  text = "BUILD #$CURRENT_RIFT_BUILD_VERSION",
-                  fontSize = 10.sp,
+                  text = "[ BUILD #$CURRENT_RIFT_BUILD_VERSION PATCH LOG ]",
+                  fontSize = 9.8.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
                 )
               }
             }
 
-            Spacer(modifier = Modifier.height(9.dp))
-
-            Column(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .background(Color(0xB8081426), RoundedCornerShape(10.dp))
-                  .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(10.dp))
-                  .padding(horizontal = 14.dp, vertical = 9.dp),
-              verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-              FeatureBullet(icon = RiftAuthIcons.Rocket, text = stringResource(R.string.auth_feature_physics))
-              FeatureBullet(icon = RiftAuthIcons.VortexRing, text = stringResource(R.string.auth_feature_ships))
-              FeatureBullet(icon = RiftAuthIcons.Globe, text = stringResource(R.string.auth_feature_cloud))
-            }
-
-            Spacer(modifier = Modifier.height(7.dp))
-            Text(
-              text = "3D VOLUMETRIC NEXUS STABILIZED • SELECT PILOT LINK TO ENTER",
-              color = Color(0xFF94A3B8),
-              fontSize = 9.8.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-              textAlign = TextAlign.Center,
-            )
-
-            if (errorMessage != null) {
-              Spacer(modifier = Modifier.height(6.dp))
-              Text(
-                text = errorMessage ?: "",
-                color = Color(0xFFFF3B4E),
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.testTag("auth_error_text"),
-              )
-            }
-
-            Spacer(modifier = Modifier.height(9.dp))
-
-            Button(
-              onClick = {
-                errorMessage = null
-                isLoading = true
-                onGoogleSignInClicked(
-                  context = context,
-                  credentialManager = credentialManager,
-                  onAuthSuccess = {
-                    isLoading = false
-                    onAuthSuccess()
+            // 2-COLUMN SCI-FI COMMAND TABLET DECK (Left: Live Safe-Harbor Showcase | Right: Briefing & Auth)
+            if (isWideLandscape) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                AuthSafeHarborRadarShowcase(
+                  modifier =
+                    Modifier.weight(0.48f)
+                      .heightIn(min = 210.dp, max = 310.dp)
+                      .fillMaxWidth()
+                )
+                AuthCommandBriefingColumn(
+                  modifier =
+                    Modifier.weight(0.52f)
+                      .then(if (isUltraCompactHeight) Modifier else Modifier.verticalScroll(scrollState)),
+                  isLoading = isLoading,
+                  errorMessage = errorMessage,
+                  onSignInGoogle = {
+                    errorMessage = null
+                    isLoading = true
+                    onGoogleSignInClicked(
+                      context = context,
+                      credentialManager = credentialManager,
+                      onAuthSuccess = {
+                        isLoading = false
+                        onAuthSuccess()
+                      },
+                      onAuthError = { msg ->
+                        isLoading = false
+                        errorMessage = msg
+                      },
+                      scope = coroutineScope,
+                      onAuthCancelled = { isLoading = false },
+                    )
                   },
-                  onAuthError = { msg ->
-                    isLoading = false
-                    errorMessage = msg
-                  },
-                  scope = coroutineScope,
-                  onAuthCancelled = { isLoading = false },
-                )
-              },
-              enabled = !isLoading,
-              colors =
-                ButtonDefaults.buttonColors(
-                  containerColor = Color(0xFF00F5D4),
-                  contentColor = Color(0xFF030A14),
-                ),
-              shape = RoundedCornerShape(10.dp),
-              modifier =
-                Modifier.fillMaxWidth()
-                  .height(48.dp)
-                  .testTag("google_sign_in_button"),
-            ) {
-              if (isLoading) {
-                CircularProgressIndicator(
-                  modifier = Modifier.size(20.dp),
-                  color = Color(0xFF030A14),
-                  strokeWidth = 2.5.dp,
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                  text = stringResource(R.string.signing_in),
-                  fontWeight = FontWeight.Bold,
-                  fontFamily = FontFamily.Monospace,
-                )
-              } else {
-                Text(
-                  text = stringResource(R.string.sign_in_with_google),
-                  fontSize = 13.sp,
-                  fontWeight = FontWeight.ExtraBold,
-                  fontFamily = FontFamily.Monospace,
+                  onEnterDrifter = onPlayAsGuest,
                 )
               }
-            }
-
-            Spacer(modifier = Modifier.height(7.dp))
-
-            Button(
-              onClick = onPlayAsGuest,
-              enabled = !isLoading,
-              colors =
-                ButtonDefaults.buttonColors(
-                  containerColor = Color(0xFF0F1E34),
-                  contentColor = Color(0xFFFACC15),
-                ),
-              border = BorderStroke(1.5.dp, Color(0xFFFACC15)),
-              shape = RoundedCornerShape(10.dp),
-              modifier =
-                Modifier.fillMaxWidth()
-                  .height(48.dp)
-                  .testTag("skip_sign_in_guest_button"),
-            ) {
-              Icon(
-                imageVector = RiftAuthIcons.WingChevron,
-                contentDescription = "Enter as RFT Drifter",
-                tint = Color(0xFFFACC15),
-                modifier = Modifier.size(16.dp),
+            } else {
+              AuthSafeHarborRadarShowcase(
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .height(220.dp)
               )
-              Spacer(modifier = Modifier.width(8.dp))
-              Text(
-                text = "ENTER AS [RFT] DRIFTER (GUEST)",
-                fontSize = 12.8.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = FontFamily.Monospace,
+              AuthCommandBriefingColumn(
+                modifier = Modifier.fillMaxWidth(),
+                isLoading = isLoading,
+                errorMessage = errorMessage,
+                onSignInGoogle = {
+                  errorMessage = null
+                  isLoading = true
+                  onGoogleSignInClicked(
+                    context = context,
+                    credentialManager = credentialManager,
+                    onAuthSuccess = {
+                      isLoading = false
+                      onAuthSuccess()
+                    },
+                    onAuthError = { msg ->
+                      isLoading = false
+                      errorMessage = msg
+                    },
+                    scope = coroutineScope,
+                    onAuthCancelled = { isLoading = false },
+                  )
+                },
+                onEnterDrifter = onPlayAsGuest,
               )
             }
-
-            Spacer(modifier = Modifier.height(7.dp))
-            Text(
-              text = "DEVELOPED BY THRESHOLD DYNAMICS STUDIO, LLC",
-              color = Color(0xFF64748B),
-              fontSize = 8.8.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-              letterSpacing = 0.8.sp,
-              textAlign = TextAlign.Center,
-            )
           }
         }
       }
@@ -498,93 +489,438 @@ fun AuthScreen(
   }
 }
 
+/**
+ * Left Column (`weight(0.48f)`): Live Gameplay-Honest Circular Safe-Harbor Radar Showcase.
+ * Renders a round rippling cyan/gold digitized aperture framing the real `5x` `DS9` Safe-Zone
+ * Station sprite (`RiftSpriteBaker.safeZoneStationBitmap` + `drawSafeZoneStationHoloRing`) and
+ * 3 real `128x128` ship sprites (`getShipSprite`) banking along orbital patrol arcs with thruster trails.
+ */
+@Composable
+private fun AuthSafeHarborRadarShowcase(modifier: Modifier = Modifier) {
+  val headless = remember { isHeadlessGlEnvironment() }
+  val visualRev = RiftVisualForgeState.visualRevision
+  val customVer = RiftSpriteBaker.customShip9Version
+
+  val orbitPhaseRad =
+    if (headless) {
+      0.85f
+    } else {
+      val transition = rememberInfiniteTransition(label = "auth_safe_harbor_showcase")
+      val p by
+        transition.animateFloat(
+          initialValue = 0f,
+          targetValue = (2.0 * PI).toFloat(),
+          animationSpec = infiniteRepeatable(tween(9600, easing = LinearEasing), RepeatMode.Restart),
+          label = "auth_orbit_rad",
+        )
+      p
+    }
+
+  val stationBmp = remember(visualRev) { RiftSpriteBaker.safeZoneStationBitmap }
+  val patrolShip1 = remember(customVer, visualRev) { RiftSpriteBaker.getShipSprite(1, isAllied = true, isHitFlashing = false) }
+  val patrolShip2 = remember(customVer, visualRev) { RiftSpriteBaker.getShipSprite(5, isAllied = true, isHitFlashing = false) }
+  val patrolShip3 = remember(customVer, visualRev) { RiftSpriteBaker.getShipSprite(9, isAllied = false, isHitFlashing = false) }
+  val shipMatrix = remember { Matrix() }
+  val stationRect = remember { RectF() }
+
+  Box(
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(12.dp))
+        .background(Color(0xFF040A16))
+        .border(1.dp, Color(0x3838BDF8), RoundedCornerShape(12.dp))
+        .padding(6.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    Canvas(modifier = Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true)) {
+      val w = size.width
+      val h = size.height
+      if (w <= 8f || h <= 8f) return@Canvas
+      val cx = w * 0.5f
+      val cy = h * 0.5f
+      val center = Offset(cx, cy)
+      val apertureR = (min(w, h) * 0.41f).coerceAtLeast(36f)
+      val timeSec = (orbitPhaseRad / (2f * PI.toFloat())) * 9.6f
+
+      // 1. Deep Safe-Harbor abyssal space inside the circular Overwatch aperture
+      drawCircle(
+        brush =
+          Brush.radialGradient(
+            colors = listOf(Color(0xFF0A1D3B), Color(0xFF050E20), Color(0xFF020611)),
+            center = center,
+            radius = apertureR,
+          ),
+        radius = apertureR,
+        center = center,
+      )
+
+      // Subtle tactical polar radar rings & crosshairs
+      val gridColor = Color(0xFF38BDF8).copy(alpha = 0.14f)
+      drawCircle(gridColor, radius = apertureR * 0.42f, center = center, style = Stroke(width = 1.dp.toPx()))
+      drawCircle(gridColor, radius = apertureR * 0.72f, center = center, style = Stroke(width = 1.dp.toPx()))
+      drawLine(gridColor, Offset(cx - apertureR * 0.92f, cy), Offset(cx + apertureR * 0.92f, cy), strokeWidth = 0.9.dp.toPx())
+      drawLine(gridColor, Offset(cx, cy - apertureR * 0.92f), Offset(cx, cy + apertureR * 0.92f), strokeWidth = 0.9.dp.toPx())
+
+      // 8 Radial Cyan/Gold Safe-Zone Stabilizer Beams bracing the Safe Harbor perimeter
+      val safeShieldR = apertureR * 0.86f
+      for (b in 0 until 8) {
+        val bAng = (b * PI * 0.25).toFloat() + sin(orbitPhaseRad) * 0.02f
+        val innerPt = Offset(cx + cos(bAng) * (apertureR * 0.22f), cy + sin(bAng) * (apertureR * 0.22f))
+        val outerPt = Offset(cx + cos(bAng) * safeShieldR, cy + sin(bAng) * safeShieldR)
+        drawLine(
+          brush =
+            Brush.linearGradient(
+              listOf(Color(0x99FACC15), Color(0xAA00F5D4), Color(0x2238BDF8)),
+              start = innerPt,
+              end = outerPt,
+            ),
+          start = innerPt,
+          end = outerPt,
+          strokeWidth = 1.6.dp.toPx(),
+          cap = StrokeCap.Round,
+        )
+      }
+      drawCircle(
+        color = Color(0xFF00F5D4).copy(alpha = 0.55f),
+        radius = safeShieldR,
+        center = center,
+        style = Stroke(width = 1.6.dp.toPx()),
+      )
+
+      // 2. Real 5x DS9 Metallic Safe-Zone Station Sprite + Revolving Ops Holo-Ring + 3 Real 128x128 Patrol Ships
+      val stationR = apertureR * 0.34f
+      val patrolSpecs =
+        arrayOf(
+          Triple(patrolShip1, apertureR * 0.58f, orbitPhaseRad),
+          Triple(patrolShip2, apertureR * 0.73f, -orbitPhaseRad * 1.0f + 2.15f),
+          Triple(patrolShip3, apertureR * 0.66f, orbitPhaseRad * 1.0f + 4.20f),
+        )
+
+      // Draw curved cyan/gold thruster wakes first (under hulls)
+      patrolSpecs.forEachIndexed { idx, (_, orbitR, angRad) ->
+        val dirSign = if (idx == 1) -1f else 1f
+        val trailColor = if (idx == 2) Color(0xFFFACC15) else Color(0xFF00F5D4)
+        val segments = 8
+        for (s in 0 until segments) {
+          val a0 = angRad - dirSign * (s * 0.065f)
+          val a1 = angRad - dirSign * ((s + 1) * 0.065f)
+          val frac = 1f - (s / segments.toFloat())
+          drawLine(
+            color = trailColor.copy(alpha = 0.58f * frac),
+            start = Offset(cx + cos(a0) * orbitR, cy + sin(a0) * orbitR),
+            end = Offset(cx + cos(a1) * orbitR, cy + sin(a1) * orbitR),
+            strokeWidth = (3.4f * frac).dp.toPx(),
+            cap = StrokeCap.Round,
+          )
+        }
+      }
+
+      drawIntoCanvas { composeCanvas ->
+        val nc = composeCanvas.nativeCanvas
+        // Center 5x DS9 Metallic Safe-Zone Station
+        nc.save()
+        nc.translate(cx, cy)
+        nc.rotate((orbitPhaseRad * 180f / PI.toFloat()) * 0.25f)
+        stationRect.set(-stationR, -stationR, stationR, stationR)
+        nc.drawBitmap(stationBmp, null, stationRect, null)
+        nc.restore()
+
+        // Shrunk 3D-tilted revolving cyan/gold Ops Holo-Ring
+        RiftSpriteBaker.drawSafeZoneStationHoloRing(
+          c = nc,
+          cx = cx,
+          cy = cy,
+          stationRadius = stationR,
+          timeSec = timeSec,
+          isLockedOut = false,
+          alphaScale = 1f,
+        )
+
+        // 3 Real 128x128 Ship Sprites banking along orbital patrol arcs
+        val shipRenderSize = (apertureR * 0.22f).coerceAtLeast(18f)
+        patrolSpecs.forEachIndexed { idx, (bmp, orbitR, angRad) ->
+          val dirSign = if (idx == 1) -1f else 1f
+          val sx = cx + cos(angRad) * orbitR
+          val sy = cy + sin(angRad) * orbitR
+          // Tangent heading (+ slight inward bank toward station)
+          val headingRad = angRad + dirSign * (PI.toFloat() * 0.5f) - dirSign * 0.12f
+          val halfBmp = bmp.width * 0.5f
+          val drawScale = shipRenderSize / bmp.width.toFloat()
+          shipMatrix.reset()
+          shipMatrix.postTranslate(-halfBmp, -halfBmp)
+          shipMatrix.postScale(drawScale, drawScale)
+          shipMatrix.postRotate(headingRad * 180f / PI.toFloat())
+          shipMatrix.postTranslate(sx, sy)
+          nc.drawBitmap(bmp, shipMatrix, null)
+        }
+      }
+
+      // 3. Mask #060D1A tablet glass outside aperture & draw Round Rippling Polar Digitization Rings
+      val outerMask =
+        Path().apply {
+          fillType = PathFillType.EvenOdd
+          addRect(Rect(0f, 0f, w, h))
+          addOval(Rect(cx - apertureR, cy - apertureR, cx + apertureR, cy + apertureR))
+        }
+      drawPath(outerMask, color = Color(0xFF060D1A))
+
+      val numBands = 6
+      val numSegs = 40
+      val segSweepDeg = 360f / numSegs.toFloat()
+      val segGapDeg = 1.5f
+      val borderSw = 0.9.dp.toPx()
+
+      for (band in 0 until numBands) {
+        val outerFrac = 1.20f - band * 0.038f
+        val innerFrac = outerFrac - 0.032f
+        val rMid = apertureR * ((outerFrac + innerFrac) * 0.5f)
+        val bandThickness = (apertureR * (outerFrac - innerFrac)).coerceAtLeast(1.4f)
+        val arcRect = Rect(cx - rMid, cy - rMid, cx + rMid, cy + rMid)
+        val keepThreshold = 1.0f - band * 0.16f
+
+        for (seg in 0 until numSegs) {
+          val hash = ((band * 73856093) xor (seg * 19349663)) and 0xFF
+          val normHash = hash / 255f
+          val segAng = ((seg + 0.5f) / numSegs.toFloat()) * (2f * PI.toFloat())
+          val inwardWave = 0.5f + 0.5f * sin(band * 0.95f - orbitPhaseRad * 3.0f + sin(segAng * 3f) * 0.5f)
+          if (normHash > keepThreshold + inwardWave * 0.12f) continue
+
+          val startDeg = seg * segSweepDeg + segGapDeg * 0.5f
+          val sweepDeg = (segSweepDeg - segGapDeg).coerceAtLeast(1.2f)
+          val cyanLit = (0.5f + 0.5f * cos(segAng - orbitPhaseRad)).pow(2.0f)
+          val goldLit = (0.5f + 0.5f * cos(segAng + orbitPhaseRad * 0.7f - 1.8f)).pow(2.4f)
+          val litAlpha = ((0.18f + 0.52f * cyanLit + 0.38f * goldLit) * inwardWave).coerceIn(0.08f, 0.82f)
+          val cellColor = if (goldLit > cyanLit * 1.06f) Color(0xFFFACC15) else Color(0xFF00F5D4)
+
+          drawArc(
+            color = cellColor.copy(alpha = litAlpha * (1f - band * 0.10f).coerceAtLeast(0.25f)),
+            startAngle = startDeg,
+            sweepAngle = sweepDeg,
+            useCenter = false,
+            topLeft = arcRect.topLeft,
+            size = arcRect.size,
+            style = Stroke(width = if (band >= 4) borderSw * 1.2f else borderSw, cap = StrokeCap.Butt),
+          )
+        }
+      }
+
+      rotate(degrees = (orbitPhaseRad * 180f / PI.toFloat())) {
+        drawCircle(
+          brush =
+            Brush.sweepGradient(
+              0.00f to Color(0xFF00F5D4),
+              0.25f to Color(0xFF38BDF8).copy(alpha = 0.48f),
+              0.50f to Color(0xFFFACC15),
+              0.75f to Color(0xFF1E293B).copy(alpha = 0.50f),
+              1.00f to Color(0xFF00F5D4),
+              center = center,
+            ),
+          radius = apertureR,
+          center = center,
+          style = Stroke(width = 1.7.dp.toPx()),
+        )
+      }
+    }
+
+    // Compact live telemetry label pinned at bottom of showcase
+    Box(
+      modifier =
+        Modifier.align(Alignment.BottomCenter)
+          .padding(bottom = 4.dp)
+          .clip(RoundedCornerShape(6.dp))
+          .background(Color(0xE6060D1A))
+          .border(0.9.dp, Color(0x8800F5D4), RoundedCornerShape(6.dp))
+          .padding(horizontal = 8.dp, vertical = 2.5.dp)
+    ) {
+      Text(
+        text = "5X DS9 SAFE HARBOR • 120HZ LIVE ENGINE",
+        color = Color(0xFF00F5D4),
+        fontSize = 8.8.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+      )
+    }
+  }
+}
+
+/**
+ * Right Column (`weight(0.52f)`): High-Readability Command Briefing & Auth Actions.
+ */
+@Composable
+private fun AuthCommandBriefingColumn(
+  modifier: Modifier = Modifier,
+  isLoading: Boolean,
+  errorMessage: String?,
+  onSignInGoogle: () -> Unit,
+  onEnterDrifter: () -> Unit,
+) {
+  Column(
+    modifier = modifier,
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+      Text(
+        text = "SCI-FI COMMAND LINK // SELECT PILOT CLEARANCE",
+        color = Color.White,
+        fontSize = 13.5.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        letterSpacing = 0.5.sp,
+      )
+      Text(
+        text = stringResource(R.string.auth_subtitle),
+        color = Color(0xFF38BDF8),
+        fontSize = 9.8.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+      )
+    }
+
+    Column(
+      modifier =
+        Modifier.fillMaxWidth()
+          .clip(RoundedCornerShape(10.dp))
+          .background(Color(0xD9091528))
+          .border(1.dp, Color(0x4738BDF8), RoundedCornerShape(10.dp))
+          .padding(horizontal = 12.dp, vertical = 9.dp),
+      verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+      AuthTelemetryRow(
+        iconSlot = { NexusMergedBrandEmblem(modifier = Modifier.size(16.dp)) },
+        text = stringResource(R.string.auth_feature_physics),
+      )
+      AuthTelemetryRow(
+        iconSlot = { ResonanceCrestIcon(sizeDp = 16.dp) },
+        text = stringResource(R.string.auth_feature_ships),
+      )
+      AuthTelemetryRow(
+        iconSlot = { RiftShardGemIcon(sizeDp = 16.dp) },
+        text = stringResource(R.string.auth_feature_cloud),
+      )
+    }
+
+    if (errorMessage != null) {
+      Box(
+        modifier =
+          Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0x33FF3B4E))
+            .border(1.dp, Color(0xFFFF3B4E), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+      ) {
+        Text(
+          text = errorMessage,
+          color = Color(0xFFFF6B7A),
+          fontSize = 10.5.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          textAlign = TextAlign.Center,
+          modifier = Modifier.fillMaxWidth().testTag("auth_error_text"),
+        )
+      }
+    }
+
+    Button(
+      onClick = onSignInGoogle,
+      enabled = !isLoading,
+      colors =
+        ButtonDefaults.buttonColors(
+          containerColor = Color(0xFF00F5D4),
+          contentColor = Color(0xFF030A14),
+        ),
+      shape = RoundedCornerShape(10.dp),
+      modifier =
+        Modifier.fillMaxWidth()
+          .minimumInteractiveComponentSize()
+          .height(48.dp)
+          .testTag("google_sign_in_button"),
+    ) {
+      if (isLoading) {
+        CircularProgressIndicator(
+          modifier = Modifier.size(20.dp),
+          color = Color(0xFF030A14),
+          strokeWidth = 2.5.dp,
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+          text = stringResource(R.string.signing_in),
+          fontSize = 12.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+        )
+      } else {
+        Text(
+          text = stringResource(R.string.sign_in_with_google),
+          fontSize = 12.2.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+    }
+
+    Button(
+      onClick = onEnterDrifter,
+      enabled = !isLoading,
+      colors =
+        ButtonDefaults.buttonColors(
+          containerColor = Color(0xFF0D1D34),
+          contentColor = Color(0xFFFACC15),
+        ),
+      border = BorderStroke(1.4.dp, Color(0xFFFACC15)),
+      shape = RoundedCornerShape(10.dp),
+      modifier =
+        Modifier.fillMaxWidth()
+          .minimumInteractiveComponentSize()
+          .height(48.dp)
+          .testTag("skip_sign_in_guest_button"),
+    ) {
+      Icon(
+        imageVector = RiftAuthIcons.WingChevron,
+        contentDescription = "Enter as RFT Drifter",
+        tint = Color(0xFFFACC15),
+        modifier = Modifier.size(16.dp),
+      )
+      Spacer(modifier = Modifier.width(8.dp))
+      Text(
+        text = stringResource(R.string.enter_as_drifter),
+        fontSize = 11.8.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+  }
+}
 
 @Composable
-private fun FeatureBullet(
-  icon: ImageVector,
+private fun AuthTelemetryRow(
+  iconSlot: @Composable () -> Unit,
   text: String,
 ) {
   Row(
     modifier = Modifier.fillMaxWidth(),
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.Start,
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
   ) {
-    Icon(
-      imageVector = icon,
-      contentDescription = text,
-      tint = Color(0xFF00F5D4),
-      modifier = Modifier.size(17.dp),
-    )
-    Spacer(modifier = Modifier.width(10.dp))
+    Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+      iconSlot()
+    }
     Text(
       text = text,
-      color = Color(0xFFD6E4F0),
-      fontSize = 12.2.sp,
+      color = Color(0xFFE2E8F0),
+      fontSize = 11.0.sp,
+      fontWeight = FontWeight.SemiBold,
       fontFamily = FontFamily.Monospace,
+      lineHeight = 14.sp,
     )
   }
 }
 
 private object RiftAuthIcons {
-  val Rocket: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "NexusRocket",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f,
-      )
-      .apply {
-        path(fill = SolidColor(Color.White)) {
-          moveTo(12f, 2.5f)
-          lineTo(16.5f, 9f)
-          lineTo(15f, 16.5f)
-          lineTo(18.5f, 19.5f)
-          lineTo(14f, 19.5f)
-          lineTo(12f, 22f)
-          lineTo(10f, 19.5f)
-          lineTo(5.5f, 19.5f)
-          lineTo(9f, 16.5f)
-          lineTo(7.5f, 9f)
-          close()
-        }
-      }
-      .build()
-  }
-
-  val VortexRing: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "NexusVortexRing",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f,
-      )
-      .apply {
-        path(fill = SolidColor(Color.White)) {
-          moveTo(12f, 3f)
-          curveTo(16.97f, 3f, 21f, 7.03f, 21f, 12f)
-          curveTo(21f, 16.97f, 16.97f, 21f, 12f, 21f)
-          curveTo(7.03f, 21f, 3f, 16.97f, 3f, 12f)
-          curveTo(3f, 7.03f, 7.03f, 3f, 12f, 3f)
-          close()
-          moveTo(12f, 5.6f)
-          curveTo(8.47f, 5.6f, 5.6f, 8.47f, 5.6f, 12f)
-          curveTo(5.6f, 15.53f, 8.47f, 18.4f, 12f, 18.4f)
-          curveTo(15.53f, 18.4f, 18.4f, 15.53f, 18.4f, 12f)
-          curveTo(18.4f, 8.47f, 15.53f, 5.6f, 12f, 5.6f)
-          close()
-          moveTo(12f, 9.2f)
-          curveTo(13.55f, 9.2f, 14.8f, 10.45f, 14.8f, 12f)
-          curveTo(14.8f, 13.55f, 13.55f, 14.8f, 12f, 14.8f)
-          curveTo(10.45f, 14.8f, 9.2f, 13.55f, 9.2f, 12f)
-          curveTo(9.2f, 10.45f, 10.45f, 9.2f, 12f, 9.2f)
-          close()
-        }
-      }
-      .build()
-  }
-
   val WingChevron: ImageVector by lazy {
     ImageVector.Builder(
         name = "NexusWingChevron",
@@ -645,51 +981,6 @@ private object RiftAuthIcons {
           horizontalLineTo(16.5f)
           verticalLineTo(15f)
           horizontalLineTo(12.5f)
-          close()
-        }
-      }
-      .build()
-  }
-
-  val Globe: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "NexusGlobe",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f,
-      )
-      .apply {
-        path(fill = SolidColor(Color.White)) {
-          moveTo(12f, 2f)
-          curveTo(6.48f, 2f, 2f, 6.48f, 2f, 12f)
-          curveTo(2f, 17.52f, 6.48f, 22f, 12f, 22f)
-          curveTo(17.52f, 22f, 22f, 17.52f, 22f, 12f)
-          curveTo(22f, 6.48f, 17.52f, 2f, 12f, 2f)
-          close()
-          moveTo(11f, 19.93f)
-          curveTo(7.05f, 19.44f, 4f, 16.08f, 4f, 12f)
-          curveTo(4f, 11.38f, 4.08f, 10.79f, 4.21f, 10.21f)
-          lineTo(9f, 15f)
-          verticalLineTo(16f)
-          curveTo(9f, 17.1f, 9.9f, 18f, 11f, 18f)
-          verticalLineTo(19.93f)
-          close()
-          moveTo(17.9f, 17.39f)
-          curveTo(17.64f, 16.58f, 16.9f, 16f, 16f, 16f)
-          horizontalLineTo(15f)
-          verticalLineTo(13f)
-          curveTo(15f, 12.45f, 14.55f, 12f, 14f, 12f)
-          horizontalLineTo(8f)
-          verticalLineTo(10f)
-          horizontalLineTo(10f)
-          curveTo(10.55f, 10f, 11f, 9.55f, 11f, 9f)
-          verticalLineTo(7f)
-          horizontalLineTo(13f)
-          curveTo(14.1f, 7f, 15f, 6.1f, 15f, 5f)
-          verticalLineTo(4.59f)
-          curveTo(17.93f, 5.78f, 20f, 8.65f, 20f, 12f)
-          curveTo(20f, 14.08f, 19.2f, 15.97f, 17.9f, 17.39f)
           close()
         }
       }

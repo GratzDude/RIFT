@@ -1876,10 +1876,10 @@ object RiftCodex {
         id = "gravity_rift",
         title = "GRAVITY RIFT",
         classification = "GROWING SINGULARITY",
-        specBadge = "UP TO 420px • OBSTACLE PULL",
+        specBadge = "UP TO 440px • TIDAL IMPLOSION",
         accentHex = "#C084FC",
-        effectSummary = "Pulls ships, bullets (+6px), bombs (+18px), Swarm drones (+8px), and Holo Phantoms (+14px) inward up to 420px, dragging nearby obstacles and Stasis Barriers at max size.",
-        tacticalNote = "At 420px max horizon, watch nearby asteroids and forcefields creep inward toward the violet core.",
+        effectSummary = "Swept full-disc weapon absorption across 0.92x visible radius (+18px per primary bolt, +40px per bomb/torpedo, +14px per drone/phantom) up to 440px max with crackling rim lightning. At >= 260px swollen mass, drags nearby Crystal Asteroids, Orbital/Asteroid Stations, Debris, and Stasis Barriers into the core (950/s tidal crush damage -> implosion + Supply Crate + 20.0s respawn + 16-bolt 360° Overload Nova on Stations).",
+        tacticalNote = "Feed volleys into a Gravity Rift to swell it past 260px and implode nearby cover or trigger a 16-bolt 360° Station Overload Nova.",
       ),
       RiftAnomalyCodexEntry(
         id = "phase_rift",
@@ -1896,8 +1896,8 @@ object RiftCodex {
         classification = "CONVERGED DOOMSDAY",
         specBadge = "10.0s • 75% MAX FLUX",
         accentHex = "#FACC15",
-        effectSummary = "Formed when two non-paired Playfield Rifts touch or expand into each other, fusing into a volatile 10.0s multicolored singularity that detonates for 75% Max Flux and shatters nearby Crystal Asteroids.",
-        tacticalNote = "Burn Afterburners or Phase Dash outside its 2.15x blast ring before the 10.0s countdown reaches zero!",
+        effectSummary = "Formed when two non-paired Playfield Rifts touch or expand into each other, fusing into a volatile 10.0s convergence timer singularity that unleashes a 75% Max Flux Doomsday blast and shatters nearby Crystal Asteroids.",
+        tacticalNote = "Burn Afterburners or Phase Dash outside its 2.15x blast ring before the 10.0s convergence timer reaches zero!",
       ),
     )
 
@@ -1905,12 +1905,12 @@ object RiftCodex {
     listOf(
       SpatialAnomalyCodexEntry(
         id = "GRAVITY_WELL",
-        title = "SINGULARITY WELL",
+        title = "GRAVITY RIFT SINGULARITY",
         badge = "GRAV",
         accentColorHex = 0xFFC084FC,
-        radiusRule = "380px Pull Horizon • 45px Event Core",
-        mechanicsSummary = "Bends ship and projectile trajectories inward with inverse-distance Newtonian pull.",
-        tacticalCounterplay = "Slingshot around the outer rim to gain free intercept speed.",
+        radiusRule = "180px..440px Swept Disc • >= 260px Tidal Implosion",
+        mechanicsSummary = "Absorbs ordnance across 0.92x visible radius (+18px bolt, +40px bomb/torpedo, +14px drone/phantom up to 440px) and drags Asteroids, Stations, Debris, and Barriers into a 950/s tidal crush core.",
+        tacticalCounterplay = "Slingshot around the outer rim or swell the core >= 260px to implode enemy station cover.",
       ),
       SpatialAnomalyCodexEntry(
         id = "SOLAR_FLARE",
