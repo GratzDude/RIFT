@@ -9104,7 +9104,7 @@ class RiftGameEngine(
               if (s.isLocalPlayer) {
                 sfx.playPrize()
                 onPrizeToast("FLUX CORE ACQUIRED! +15 BOUNTY/S & OVERCHARGE TIER SCALING ACTIVE!")
-              } else {
+              } else if (!isHubOverwatchActive || hasJoinedMatch) {
                 onPrizeToast("${s.callsign} CLAIMED THE FLUX CORE!")
               }
               break

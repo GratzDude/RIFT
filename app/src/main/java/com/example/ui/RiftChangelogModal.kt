@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 69
+const val CURRENT_RIFT_BUILD_VERSION = 70
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,24 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 70,
+      versionTag = "v1.0.70 // BUILD #70",
+      releaseDate = "Nov 18, 2026",
+      headline = "Strict Minimized/Background Audio & Render Silence + Interactive Pinch-to-Zoom & Pan Round Overwatch Aperture",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Added strict Activity & window lifecycle audio/render suspension (MainActivity onResume/onPause/onStop + Compose LifecycleEventObserver + RiftSoundSynthesizer.setAppForeground + RiftArenaView.onWindowVisibilityChanged) so AudioTrack procedural battle music and SoundPool SFX pause, flush, and stay 100% silent whenever the app is minimized, backgrounded, or screen-locked, resuming cleanly on return.",
+          "Added smooth 2-finger pinch-to-zoom (1.0x .. 6.0x anchored to pinch centroid), 1-finger drag panning (clamped within arenaRadius), circular canvas clipping, and double-tap / [1.0x] reset to the NEXUS Hub's Round Overwatch Aperture, plus quieted background FLUX_CORE bot pickup toasts during unjoined Hub Overwatch.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 69,
       versionTag = "v1.0.69 // BUILD #69",
       releaseDate = "Nov 17, 2026",
       headline = "Round Rippling Dynamic-Lit Digitization Into Full-Playfield Highest-Resonance Live Overwatch (RIFT # + Favorite Quick Zone-In) & 5x DS9 Metallic Safe-Zone Station in STAR FORGE",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "HUB OVERWATCH",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

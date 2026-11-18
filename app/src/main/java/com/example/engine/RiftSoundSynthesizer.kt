@@ -298,6 +298,11 @@ class RiftSoundSynthesizer(
       applySfxRecipe(value)
     }
 
+  @Volatile private var appForegroundFlag: Boolean = true
+  val isAppForeground: Boolean
+    get() = appForegroundFlag
+
+  @Volatile private var activeAudioTrack: AudioTrack? = null
   @Volatile private var isReleased: Boolean = false
   private var ambientMusicThread: Thread? = null
   private var sfxBakeGeneration: Int = 0
@@ -316,18 +321,46 @@ class RiftSoundSynthesizer(
   @Volatile private var sfxBounce: Int = 0
 
   init {
+    appForegroundFlag = globalForegroundState
     val attrs =
       AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_GAME)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
         .build()
     soundPool = SoundPool.Builder().setMaxStreams(12).setAudioAttributes(attrs).build()
+    if (!appForegroundFlag) {
+      runCatching { soundPool.autoPause() }
+    }
 
     musicBpm = currentMusicRecipe.bpm.coerceIn(60, 180)
     bakeAllSfxBuffers(sharedSfxRecipe)
 
     activeInstance = this
     startAmbientMusicLoop()
+  }
+
+  fun setAppForeground(foreground: Boolean) {
+    appForegroundFlag = foreground
+    runCatching {
+      if (!foreground) {
+        soundPool.autoPause()
+        activeAudioTrack?.let { tr ->
+          if (tr.playState == AudioTrack.PLAYSTATE_PLAYING) {
+            tr.pause()
+            tr.flush()
+          }
+        }
+      } else if (!isReleased) {
+        soundPool.autoResume()
+        if (musicEnabled && musicVolume > 0.001f) {
+          activeAudioTrack?.let { tr ->
+            if (tr.playState != AudioTrack.PLAYSTATE_PLAYING) {
+              tr.play()
+            }
+          }
+        }
+      }
+    }
   }
 
   private fun bakeAllSfxBuffers(recipe: SfxForgeRecipe) {
@@ -819,21 +852,25 @@ class RiftSoundSynthesizer(
 
   // 1-Tap Audition Triggers for `Soundtrack & SFX Forge`
   fun previewForgedLaser() {
+    if (!isAppForeground || isReleased) return
     val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
     soundPool.play(sfxLaser, v, v, 2, 0, 1.0f)
   }
 
   fun previewForgedExplosion() {
+    if (!isAppForeground || isReleased) return
     val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
     soundPool.play(sfxExplosion, v, v, 3, 0, 1.0f)
   }
 
   fun previewForgedShieldHit() {
+    if (!isAppForeground || isReleased) return
     val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
     soundPool.play(sfxRepel, v, v, 3, 0, 1.0f)
   }
 
   fun previewForgedPrizeChime() {
+    if (!isAppForeground || isReleased) return
     val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
     soundPool.play(sfxPrize, v, v, 2, 0, 1.0f)
   }
@@ -875,7 +912,10 @@ class RiftSoundSynthesizer(
                 .setBufferSizeInBytes(minBuf)
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
-            track.play()
+            activeAudioTrack = track
+            if (isAppForeground && musicEnabled) {
+              track.play()
+            }
 
             val progressionScaleIndices = intArrayOf(0, 5, 3, 4)
             val upDownDegrees = intArrayOf(0, 2, 4, 7, 4, 2, 0, 4)
@@ -902,10 +942,24 @@ class RiftSoundSynthesizer(
             val invRate = 1.0 / musicSampleRate.toDouble()
 
             while (!isReleased) {
+              if (!isAppForeground) {
+                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                  runCatching {
+                    track.pause()
+                    track.flush()
+                  }
+                }
+                Thread.sleep(60L)
+                continue
+              }
               val volTarget = musicVolume.coerceIn(0f, 1f).toDouble()
               if (!musicEnabled || volTarget <= 0.001) {
-                for (i in 0 until chunkSamples) pcmChunk[i] = 0
-                track.write(pcmChunk, 0, chunkSamples)
+                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                  runCatching {
+                    track.pause()
+                    track.flush()
+                  }
+                }
                 Thread.sleep(50L)
                 continue
               }
@@ -1054,10 +1108,19 @@ class RiftSoundSynthesizer(
                 pcmChunk[i] = (gained * 32767.0).toInt().toShort()
               }
 
+              if (!isAppForeground) {
+                continue
+              }
+              if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
+                runCatching { track.play() }
+              }
               track.write(pcmChunk, 0, chunkSamples)
             }
           } catch (_: Throwable) {
           } finally {
+            if (activeAudioTrack === track) {
+              activeAudioTrack = null
+            }
             try {
               track?.stop()
             } catch (_: Throwable) {}
@@ -1075,6 +1138,7 @@ class RiftSoundSynthesizer(
   }
 
   private fun playSfxScaled(soundId: Int, baseVol: Float, priority: Int, rate: Float = 1.0f) {
+    if (!isAppForeground || isReleased) return
     val v = (baseVol * sfxVolume.coerceIn(0f, 1f)).coerceIn(0f, 1f)
     if (enabled && v > 0.001f && soundId > 0) {
       soundPool.play(soundId, v, v, priority, 0, rate.coerceIn(0.5f, 2.0f))
@@ -1131,6 +1195,7 @@ class RiftSoundSynthesizer(
 
   fun release() {
     isReleased = true
+    activeAudioTrack = null
     if (activeInstance === this) {
       activeInstance = null
     }
@@ -1242,6 +1307,14 @@ class RiftSoundSynthesizer(
 
   companion object {
     @Volatile var activeInstance: RiftSoundSynthesizer? = null
+    @Volatile private var globalForegroundState: Boolean = true
+
+    fun isAppCurrentlyForeground(): Boolean = globalForegroundState
+
+    fun notifyAppForegroundState(foreground: Boolean) {
+      globalForegroundState = foreground
+      activeInstance?.setAppForeground(foreground)
+    }
 
     private fun buildDefaultTrackSlots(): List<MusicForgeRecipe> =
       listOf(

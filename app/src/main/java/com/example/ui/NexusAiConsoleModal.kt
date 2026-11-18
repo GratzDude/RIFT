@@ -16,6 +16,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -663,6 +665,11 @@ fun NexusAiConsoleModal(
   onToggleFavoriteOverwatchKey: (String) -> Unit = {},
   onQuickZoneIntoOverwatch: (OverwatchRiftInstance) -> Unit = {},
   onUpdateOverwatchViewport: (cx: Float, cy: Float, radiusPx: Float) -> Unit = { _, _, _ -> },
+  overwatchZoom: Float = 1.0f,
+  onOverwatchTransformGesture:
+    (centroidRootX: Float, centroidRootY: Float, panDxPx: Float, panDyPx: Float, zoomChange: Float) -> Unit =
+    { _, _, _, _, _ -> },
+  onResetOverwatchCamera: () -> Unit = {},
   onStageRankedModeViaHangar: ((RankedGameMode, Int) -> Unit)? = null,
   onStageCustomGameViaHangar: ((CustomGameConfig) -> Unit)? = null,
   onStageExistingCustomInstanceViaHangar: ((String) -> Unit)? = null,
@@ -1046,6 +1053,9 @@ fun NexusAiConsoleModal(
             onSelectOverwatchKey = onSelectOverwatchKey,
             onToggleFavoriteOverwatchKey = onToggleFavoriteOverwatchKey,
             onQuickZoneIntoOverwatch = onQuickZoneIntoOverwatch,
+            overwatchZoom = overwatchZoom,
+            onOverwatchTransformGesture = onOverwatchTransformGesture,
+            onResetOverwatchCamera = onResetOverwatchCamera,
             onApertureRootBoundsChanged = { cx, cy, r ->
               if (
                 abs(hubApertureRootBounds.first - cx) > 0.5f ||
@@ -1325,6 +1335,10 @@ private fun OrbitalHubSpatialStage(
   onSelectOverwatchKey: (String) -> Unit,
   onToggleFavoriteOverwatchKey: (String) -> Unit,
   onQuickZoneIntoOverwatch: (OverwatchRiftInstance) -> Unit,
+  overwatchZoom: Float,
+  onOverwatchTransformGesture:
+    (centroidRootX: Float, centroidRootY: Float, panDxPx: Float, panDyPx: Float, zoomChange: Float) -> Unit,
+  onResetOverwatchCamera: () -> Unit,
   onApertureRootBoundsChanged: (cx: Float, cy: Float, radiusPx: Float) -> Unit,
   @Suppress("UNUSED_PARAMETER") onToggleBootToNexusHub: (Boolean) -> Unit,
   onLeaveMatch: () -> Unit,
@@ -1646,9 +1660,12 @@ private fun OrbitalHubSpatialStage(
             overwatchInstances = overwatchInstances,
             activeInstance = activeOverwatchInstance,
             favoriteOverwatchKey = favoriteOverwatchKey,
+            overwatchZoom = overwatchZoom,
             onSelectOverwatchKey = onSelectOverwatchKey,
             onToggleFavoriteOverwatchKey = onToggleFavoriteOverwatchKey,
             onQuickZoneIntoOverwatch = onQuickZoneIntoOverwatch,
+            onOverwatchTransformGesture = onOverwatchTransformGesture,
+            onResetOverwatchCamera = onResetOverwatchCamera,
             onOpenAllModesGate = { onSelectNode(0, NexusCoreNode.CONVERGENCE_GATE) },
             onApertureRootBoundsChanged = onApertureRootBoundsChanged,
           )
@@ -1883,13 +1900,18 @@ private fun RoundRipplingOverwatchAperture(
   overwatchInstances: List<OverwatchRiftInstance>,
   activeInstance: OverwatchRiftInstance,
   favoriteOverwatchKey: String,
+  overwatchZoom: Float,
   onSelectOverwatchKey: (String) -> Unit,
   onToggleFavoriteOverwatchKey: (String) -> Unit,
   onQuickZoneIntoOverwatch: (OverwatchRiftInstance) -> Unit,
+  onOverwatchTransformGesture:
+    (centroidRootX: Float, centroidRootY: Float, panDxPx: Float, panDyPx: Float, zoomChange: Float) -> Unit,
+  onResetOverwatchCamera: () -> Unit,
   onOpenAllModesGate: () -> Unit,
   onApertureRootBoundsChanged: (cx: Float, cy: Float, radiusPx: Float) -> Unit,
 ) {
   val headless = remember { isHeadlessGlEnvironment() }
+  val density = LocalDensity.current
   val ripplePhase =
     if (headless) {
       0.45f
@@ -1913,9 +1935,19 @@ private fun RoundRipplingOverwatchAperture(
   val isFavorite = favoriteOverwatchKey.isNotBlank() && favoriteOverwatchKey == activeInstance.key
   val energyNorm = (activeInstance.combinedResonance / 1600f).coerceIn(0.22f, 1.0f)
 
+  var apertureContainerSize by remember { mutableStateOf(IntSize.Zero) }
+  var gestureSurfaceRootOrigin by remember { mutableStateOf(Offset.Zero) }
+  val gestureCircleDiameterDp =
+    with(density) {
+      val minDim = min(apertureContainerSize.width, apertureContainerSize.height).toFloat()
+      val rPx = if (minDim > 8f) (minDim * 0.41f).coerceAtLeast(48f) else 120.dp.toPx()
+      (rPx * 2f).toDp()
+    }
+
   Box(
     modifier =
       modifier.onGloballyPositioned { coords ->
+        apertureContainerSize = coords.size
         val rootPos = coords.positionInRoot()
         val w = coords.size.width.toFloat()
         val h = coords.size.height.toFloat()
@@ -2110,134 +2142,190 @@ private fun RoundRipplingOverwatchAperture(
       }
     }
 
-    // TOP COMPACT OVERWATCH INSTANCE SWITCHER PILL:
+    // INTERACTIVE CIRCULAR OVERWATCH TOUCH SURFACE:
+    // 2-Finger Pinch-to-Zoom (1.0x .. 6.0x anchored to centroid), 1-Finger Drag Pan, & Double-Tap Reset
+    Box(
+      modifier =
+        Modifier.align(Alignment.Center)
+          .size(gestureCircleDiameterDp)
+          .clip(CircleShape)
+          .onGloballyPositioned { coords ->
+            gestureSurfaceRootOrigin = coords.positionInRoot()
+          }
+          .pointerInput(activeInstance.key) {
+            detectTapGestures(
+              onDoubleTap = { onResetOverwatchCamera() },
+            )
+          }
+          .pointerInput(activeInstance.key) {
+            detectTransformGestures { centroid, pan, zoom, _ ->
+              onOverwatchTransformGesture(
+                gestureSurfaceRootOrigin.x + centroid.x,
+                gestureSurfaceRootOrigin.y + centroid.y,
+                pan.x,
+                pan.y,
+                zoom,
+              )
+            }
+          }
+          .testTag("nexus_overwatch_gesture_surface"),
+    )
+
+    // TOP COMPACT OVERWATCH INSTANCE SWITCHER PILL + ZOOM RESET BADGE:
     // [ < ]  GAME TYPE • RIFT #XX • 1,420 RES  [ FAV ]  [ > ]
-    Row(
+    Column(
       modifier =
         Modifier.align(Alignment.TopCenter)
-          .padding(top = 4.dp, start = 8.dp, end = 8.dp)
-          .clip(RoundedCornerShape(9.dp))
-          .background(Color(0xEB060D1A))
-          .border(
-            1.dp,
-            Brush.horizontalGradient(listOf(Color(0xAA00F5D4), Color(0x8838BDF8), Color(0xAAFACC15))),
-            RoundedCornerShape(9.dp),
-          )
-          .padding(horizontal = 6.dp, vertical = 4.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(6.dp),
+          .padding(top = 4.dp, start = 8.dp, end = 8.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-      // Previous RIFT # Instance
-      Box(
-        modifier =
-          Modifier.clip(RoundedCornerShape(5.dp))
-            .background(Color(0xFF0B192E))
-            .border(0.9.dp, Color(0xFF38BDF8).copy(alpha = 0.75f), RoundedCornerShape(5.dp))
-            .clickable {
-              val prevIdx = if (currentIdx <= 0) totalInstances - 1 else currentIdx - 1
-              onSelectOverwatchKey(overwatchInstances[prevIdx].key)
-            }
-            .padding(horizontal = 7.dp, vertical = 3.dp)
-            .testTag("nexus_overwatch_prev"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = "<",
-          color = Color(0xFF00F5D4),
-          fontSize = 9.5.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-
-      // Active Match Mode + RIFT # + Combined Pilot Resonance
       Row(
+        modifier =
+          Modifier.clip(RoundedCornerShape(9.dp))
+            .background(Color(0xEB060D1A))
+            .border(
+              1.dp,
+              Brush.horizontalGradient(listOf(Color(0xAA00F5D4), Color(0x8838BDF8), Color(0xAAFACC15))),
+              RoundedCornerShape(9.dp),
+            )
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        Text(
-          text = "${activeInstance.modeTitle} • ${activeInstance.riftLabel}",
-          color = Color.White,
-          fontSize = 7.8.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-          text = "•",
-          color = Color(0xFF64748B),
-          fontSize = 7.8.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
-        )
-        ResonanceCrestIcon(sizeDp = 12.dp)
-        Text(
-          text = "${formatOverwatchResonance(activeInstance.combinedResonance)} RES",
-          color = Color(0xFFFACC15),
-          fontSize = 7.8.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-        )
-        if (activeInstance.pilotCount > 0) {
+        // Previous RIFT # Instance
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(5.dp))
+              .background(Color(0xFF0B192E))
+              .border(0.9.dp, Color(0xFF38BDF8).copy(alpha = 0.75f), RoundedCornerShape(5.dp))
+              .clickable {
+                val prevIdx = if (currentIdx <= 0) totalInstances - 1 else currentIdx - 1
+                onSelectOverwatchKey(overwatchInstances[prevIdx].key)
+              }
+              .padding(horizontal = 7.dp, vertical = 3.dp)
+              .testTag("nexus_overwatch_prev"),
+          contentAlignment = Alignment.Center,
+        ) {
           Text(
-            text = "• ${activeInstance.pilotCount}P",
-            color = Color(0xFF34D399),
-            fontSize = 7.4.sp,
+            text = "<",
+            color = Color(0xFF00F5D4),
+            fontSize = 9.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+
+        // Active Match Mode + RIFT # + Combined Pilot Resonance
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          Text(
+            text = "${activeInstance.modeTitle} • ${activeInstance.riftLabel}",
+            color = Color.White,
+            fontSize = 7.8.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            text = "•",
+            color = Color(0xFF64748B),
+            fontSize = 7.8.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+          )
+          ResonanceCrestIcon(sizeDp = 12.dp)
+          Text(
+            text = "${formatOverwatchResonance(activeInstance.combinedResonance)} RES",
+            color = Color(0xFFFACC15),
+            fontSize = 7.8.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+          if (activeInstance.pilotCount > 0) {
+            Text(
+              text = "• ${activeInstance.pilotCount}P",
+              color = Color(0xFF34D399),
+              fontSize = 7.4.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
+          }
+        }
+
+        // [ FAV ] Pin Toggle
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(5.dp))
+              .background(if (isFavorite) Color(0x33FACC15) else Color(0xFF0B192E))
+              .border(
+                0.9.dp,
+                if (isFavorite) Color(0xFFFACC15) else Color(0xFF64748B).copy(alpha = 0.8f),
+                RoundedCornerShape(5.dp),
+              )
+              .clickable { onToggleFavoriteOverwatchKey(activeInstance.key) }
+              .padding(horizontal = 6.dp, vertical = 3.dp)
+              .testTag("nexus_overwatch_fav_toggle"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = if (isFavorite) "[FAV *]" else "[FAV]",
+            color = if (isFavorite) Color(0xFFFACC15) else Color(0xFFCBD5E1),
+            fontSize = 7.3.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
           )
         }
+
+        // Next RIFT # Instance
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(5.dp))
+              .background(Color(0xFF0B192E))
+              .border(0.9.dp, Color(0xFF38BDF8).copy(alpha = 0.75f), RoundedCornerShape(5.dp))
+              .clickable {
+                val nextIdx = (currentIdx + 1) % totalInstances
+                onSelectOverwatchKey(overwatchInstances[nextIdx].key)
+              }
+              .padding(horizontal = 7.dp, vertical = 3.dp)
+              .testTag("nexus_overwatch_next"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = ">",
+            color = Color(0xFF00F5D4),
+            fontSize = 9.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
       }
 
-      // [ FAV ] Pin Toggle
-      Box(
-        modifier =
-          Modifier.clip(RoundedCornerShape(5.dp))
-            .background(if (isFavorite) Color(0x33FACC15) else Color(0xFF0B192E))
-            .border(
-              0.9.dp,
-              if (isFavorite) Color(0xFFFACC15) else Color(0xFF64748B).copy(alpha = 0.8f),
-              RoundedCornerShape(5.dp),
-            )
-            .clickable { onToggleFavoriteOverwatchKey(activeInstance.key) }
-            .padding(horizontal = 6.dp, vertical = 3.dp)
-            .testTag("nexus_overwatch_fav_toggle"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = if (isFavorite) "[FAV *]" else "[FAV]",
-          color = if (isFavorite) Color(0xFFFACC15) else Color(0xFFCBD5E1),
-          fontSize = 7.3.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-        )
-      }
-
-      // Next RIFT # Instance
-      Box(
-        modifier =
-          Modifier.clip(RoundedCornerShape(5.dp))
-            .background(Color(0xFF0B192E))
-            .border(0.9.dp, Color(0xFF38BDF8).copy(alpha = 0.75f), RoundedCornerShape(5.dp))
-            .clickable {
-              val nextIdx = (currentIdx + 1) % totalInstances
-              onSelectOverwatchKey(overwatchInstances[nextIdx].key)
-            }
-            .padding(horizontal = 7.dp, vertical = 3.dp)
-            .testTag("nexus_overwatch_next"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = ">",
-          color = Color(0xFF00F5D4),
-          fontSize = 9.5.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
+      if (overwatchZoom > 1.03f) {
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(6.dp))
+              .background(Color(0xEB061428))
+              .border(0.9.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+              .clickable { onResetOverwatchCamera() }
+              .padding(horizontal = 8.dp, vertical = 3.dp)
+              .testTag("nexus_overwatch_zoom_reset"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = "${String.format(Locale.US, "%.1fx", overwatchZoom)} • [1.0x]",
+            color = Color(0xFF00F5D4),
+            fontSize = 7.4.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
       }
     }
 

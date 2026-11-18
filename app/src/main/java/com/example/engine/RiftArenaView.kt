@@ -114,6 +114,8 @@ class RiftArenaView(
   private var camX: Float = engine.localPlayer.x
   private var camY: Float = engine.localPlayer.y
 
+  @Volatile private var isWindowVisibleForRender: Boolean = true
+
   var isModalOverlayOpen: Boolean = false
     set(value) {
       val wasOpen = field
@@ -127,7 +129,11 @@ class RiftArenaView(
         engine.fireStickActive = false
         engine.bombStickActive = false
       }
-      if ((wasOpen && !value) || !value || isHubOverwatchMode || RiftCalibrationState.isUiUnlockedForDragging) {
+      if (
+        isWindowVisibleForRender &&
+          RiftSoundSynthesizer.isAppCurrentlyForeground() &&
+          ((wasOpen && !value) || !value || isHubOverwatchMode || RiftCalibrationState.isUiUnlockedForDragging)
+      ) {
         lastFrameNs = System.nanoTime()
         postInvalidateOnAnimation()
       }
@@ -137,7 +143,12 @@ class RiftArenaView(
     set(value) {
       val changed = field != value
       field = value
-      if (value || changed) {
+      if (!value && changed) {
+        overwatchZoom = 1.0f
+        overwatchPanWorldX = 0f
+        overwatchPanWorldY = 0f
+      }
+      if (isWindowVisibleForRender && RiftSoundSynthesizer.isAppCurrentlyForeground() && (value || changed)) {
         lastFrameNs = System.nanoTime()
         postInvalidateOnAnimation()
       }
@@ -146,6 +157,126 @@ class RiftArenaView(
   var overwatchCenterX: Float = 0f
   var overwatchCenterY: Float = 0f
   var overwatchRadiusPx: Float = 0f
+  var overwatchZoom: Float = 1.0f
+    private set
+  var overwatchPanWorldX: Float = 0f
+    private set
+  var overwatchPanWorldY: Float = 0f
+    private set
+  private val overwatchClipPath = Path()
+
+  override fun onWindowVisibilityChanged(visibility: Int) {
+    super.onWindowVisibilityChanged(visibility)
+    val nowVisible = visibility == View.VISIBLE
+    isWindowVisibleForRender = nowVisible
+    if (!nowVisible) {
+      leftPointerId = MotionEvent.INVALID_POINTER_ID
+      firePointerId = MotionEvent.INVALID_POINTER_ID
+      bombPointerId = MotionEvent.INVALID_POINTER_ID
+      engine.leftStickActive = false
+      engine.leftStickMag = 0f
+      engine.fireStickActive = false
+      engine.bombStickActive = false
+    } else if (
+      RiftSoundSynthesizer.isAppCurrentlyForeground() &&
+        (!isModalOverlayOpen || isHubOverwatchMode || RiftCalibrationState.isUiUnlockedForDragging)
+    ) {
+      lastFrameNs = System.nanoTime()
+      postInvalidateOnAnimation()
+    }
+  }
+
+  fun onHostForegroundChanged(foreground: Boolean) {
+    if (!foreground) {
+      leftPointerId = MotionEvent.INVALID_POINTER_ID
+      firePointerId = MotionEvent.INVALID_POINTER_ID
+      bombPointerId = MotionEvent.INVALID_POINTER_ID
+      engine.leftStickActive = false
+      engine.leftStickMag = 0f
+      engine.fireStickActive = false
+      engine.bombStickActive = false
+    } else if (
+      isWindowVisibleForRender &&
+        (!isModalOverlayOpen || isHubOverwatchMode || RiftCalibrationState.isUiUnlockedForDragging)
+    ) {
+      lastFrameNs = System.nanoTime()
+      postInvalidateOnAnimation()
+    }
+  }
+
+  fun resetOverwatchCamera() {
+    overwatchZoom = 1.0f
+    overwatchPanWorldX = 0f
+    overwatchPanWorldY = 0f
+    if (isWindowVisibleForRender && RiftSoundSynthesizer.isAppCurrentlyForeground() && isHubOverwatchMode) {
+      postInvalidateOnAnimation()
+    }
+  }
+
+  fun applyOverwatchTransformGesture(
+    centroidScreenX: Float,
+    centroidScreenY: Float,
+    panDxPx: Float,
+    panDyPx: Float,
+    zoomChange: Float,
+  ): Float {
+    val vw = width.toFloat().coerceAtLeast(1f)
+    val vh = height.toFloat().coerceAtLeast(1f)
+    val effectiveOverwatchR =
+      if (overwatchRadiusPx > 24f) overwatchRadiusPx else (min(vw, vh) * 0.36f).coerceAtLeast(120f)
+    val pivotX = if (overwatchCenterX > 1f) overwatchCenterX else vw * 0.5f
+    val pivotY = if (overwatchCenterY > 1f) overwatchCenterY else vh * 0.5f
+    val baseScale =
+      ((effectiveOverwatchR * 0.93f) / (engine.arenaRadius + 190f).coerceAtLeast(1200f))
+        .coerceAtLeast(0.0001f)
+
+    val oldZoom = overwatchZoom.coerceIn(1.0f, 6.0f)
+    val safeZoomFactor = if (zoomChange.isFinite() && zoomChange > 0.01f) zoomChange else 1.0f
+    val rawNewZoom = (oldZoom * safeZoomFactor).coerceIn(1.0f, 6.0f)
+    val newZoom = if (rawNewZoom < 1.01f && safeZoomFactor <= 1.0f) 1.0f else rawNewZoom
+
+    val oldWorldScale = baseScale * oldZoom
+    val newWorldScale = baseScale * newZoom
+
+    val safeCentroidX = if (centroidScreenX.isFinite()) centroidScreenX else pivotX
+    val safeCentroidY = if (centroidScreenY.isFinite()) centroidScreenY else pivotY
+    val safePanDx = if (panDxPx.isFinite()) panDxPx else 0f
+    val safePanDy = if (panDyPx.isFinite()) panDyPx else 0f
+
+    val prevRelX = (safeCentroidX - safePanDx) - pivotX
+    val prevRelY = (safeCentroidY - safePanDy) - pivotY
+    val curRelX = safeCentroidX - pivotX
+    val curRelY = safeCentroidY - pivotY
+
+    val anchorWorldOffsetX = overwatchPanWorldX + (prevRelX / oldWorldScale)
+    val anchorWorldOffsetY = overwatchPanWorldY + (prevRelY / oldWorldScale)
+
+    var candidatePanX = anchorWorldOffsetX - (curRelX / newWorldScale)
+    var candidatePanY = anchorWorldOffsetY - (curRelY / newWorldScale)
+
+    val zoomProgress = ((newZoom - 1.0f) / 0.35f).coerceIn(0f, 1f)
+    val maxPanWorldRadius =
+      if (newZoom <= 1.005f) {
+        0f
+      } else {
+        engine.arenaRadius * (1f - 1f / newZoom).coerceAtLeast(0f) + 180f * zoomProgress
+      }
+    val panDist = hypot(candidatePanX, candidatePanY)
+    if (panDist > maxPanWorldRadius && panDist > 0.001f) {
+      val clampScale = maxPanWorldRadius / panDist
+      candidatePanX *= clampScale
+      candidatePanY *= clampScale
+    }
+
+    overwatchZoom = newZoom
+    overwatchPanWorldX = candidatePanX
+    overwatchPanWorldY = candidatePanY
+
+    if (isWindowVisibleForRender && RiftSoundSynthesizer.isAppCurrentlyForeground() && isHubOverwatchMode) {
+      postInvalidateOnAnimation()
+    }
+    return overwatchZoom
+  }
 
   private fun blendColorsInt(c1: Int, c2: Int, frac: Float): Int {
     val t = frac.coerceIn(0f, 1f)
@@ -692,6 +823,10 @@ class RiftArenaView(
   override fun onDraw(canvas: Canvas) {
     super.onDraw(canvas)
 
+    if (!isWindowVisibleForRender || !RiftSoundSynthesizer.isAppCurrentlyForeground()) {
+      return
+    }
+
     val vw = width.toFloat()
     val vh = height.toFloat()
 
@@ -766,8 +901,33 @@ class RiftArenaView(
     val shakeAngleDeg =
       if (traumaSq > 0.0001f) (traumaSq * 0.035f * sin(tSec * 39.0f)) * (180f / PI.toFloat()) else 0f
 
-    val effectiveCamX = if (isHubOverwatchMode) engine.arenaCenterX else camX + shakeOffsetX
-    val effectiveCamY = if (isHubOverwatchMode) engine.arenaCenterY else camY + shakeOffsetY
+    val effectiveOverwatchR =
+      if (overwatchRadiusPx > 24f) overwatchRadiusPx else (min(vw, vh) * 0.36f).coerceAtLeast(120f)
+    val pivotScreenX = if (isHubOverwatchMode && overwatchCenterX > 1f) overwatchCenterX else vw * 0.5f
+    val pivotScreenY = if (isHubOverwatchMode && overwatchCenterY > 1f) overwatchCenterY else vh * 0.5f
+    val activeOverwatchZoom = overwatchZoom.coerceIn(1.0f, 6.0f)
+    val worldScale =
+      if (isHubOverwatchMode) {
+        val baseOverwatchScale =
+          (effectiveOverwatchR * 0.93f) / (engine.arenaRadius + 190f).coerceAtLeast(1200f)
+        baseOverwatchScale * activeOverwatchZoom
+      } else {
+        engine.effectiveCameraScale()
+      }
+
+    val effectiveCamX =
+      if (isHubOverwatchMode) engine.arenaCenterX + overwatchPanWorldX else camX + shakeOffsetX
+    val effectiveCamY =
+      if (isHubOverwatchMode) engine.arenaCenterY + overwatchPanWorldY else camY + shakeOffsetY
+
+    val clippedToOverwatchCircle = isHubOverwatchMode
+    if (clippedToOverwatchCircle) {
+      canvas.drawColor(Color.parseColor("#02050B"))
+      canvas.save()
+      overwatchClipPath.reset()
+      overwatchClipPath.addCircle(pivotScreenX, pivotScreenY, effectiveOverwatchR, Path.Direction.CW)
+      canvas.clipPath(overwatchClipPath)
+    }
 
     // [Z-0] Obsidian Void (#030712) + [Z-1] 3-Tier Parallax Background
     canvas.drawColor(Color.parseColor("#030712"))
@@ -796,18 +956,7 @@ class RiftArenaView(
       canvas.drawRect(0f, 0f, vw, vh, ambientDarknessPaint)
     }
 
-    // 3. World-Space Camera Transform (Full-Playfield Orbital Overwatch when isHubOverwatchMode, else Pilot Camera)
-    val effectiveOverwatchR =
-      if (overwatchRadiusPx > 24f) overwatchRadiusPx else (min(vw, vh) * 0.36f).coerceAtLeast(120f)
-    val worldScale =
-      if (isHubOverwatchMode) {
-        (effectiveOverwatchR * 0.93f) / (engine.arenaRadius + 190f).coerceAtLeast(1200f)
-      } else {
-        engine.effectiveCameraScale()
-      }
-    val pivotScreenX = if (isHubOverwatchMode && overwatchCenterX > 1f) overwatchCenterX else vw * 0.5f
-    val pivotScreenY = if (isHubOverwatchMode && overwatchCenterY > 1f) overwatchCenterY else vh * 0.5f
-
+    // 3. World-Space Camera Transform (Zoomable/Pannable Orbital Overwatch when isHubOverwatchMode, else Pilot Camera)
     canvas.save()
     canvas.translate(pivotScreenX, pivotScreenY)
     if (shakeAngleDeg != 0f) {
@@ -816,10 +965,11 @@ class RiftArenaView(
     canvas.scale(worldScale, worldScale)
     canvas.translate(-effectiveCamX, -effectiveCamY)
 
+    val safeWorldScale = worldScale.coerceAtLeast(0.0001f)
     val halfWorldW =
-      if (isHubOverwatchMode) (engine.arenaRadius + 460f) else (vw / worldScale) * 0.56f
+      if (isHubOverwatchMode) (effectiveOverwatchR / safeWorldScale) + 380f else (vw / safeWorldScale) * 0.56f
     val halfWorldH =
-      if (isHubOverwatchMode) (engine.arenaRadius + 460f) else (vh / worldScale) * 0.56f
+      if (isHubOverwatchMode) (effectiveOverwatchR / safeWorldScale) + 380f else (vh / safeWorldScale) * 0.56f
     val viewLeft = effectiveCamX - halfWorldW
     val viewRight = effectiveCamX + halfWorldW
     val viewTop = effectiveCamY - halfWorldH
@@ -2072,6 +2222,9 @@ class RiftArenaView(
     }
 
     canvas.restore()
+    if (clippedToOverwatchCircle) {
+      canvas.restore()
+    }
 
     // Suppress screen-space Arena HUD overlays behind NEXUS Master Window, Overwatch & modals (Law #4)
     if ((!isModalOverlayOpen && !isHubOverwatchMode) || RiftCalibrationState.isUiUnlockedForDragging) {
@@ -2087,8 +2240,10 @@ class RiftArenaView(
       }
     }
 
-    // Schedule next 60+ FPS frame
-    postInvalidateOnAnimation()
+    // Schedule next 60+ FPS frame only while window is visible and app is foregrounded
+    if (isWindowVisibleForRender && RiftSoundSynthesizer.isAppCurrentlyForeground()) {
+      postInvalidateOnAnimation()
+    }
   }
 
   private fun drawStasisBreachPlayfieldStructures(

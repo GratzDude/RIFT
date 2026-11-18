@@ -62,7 +62,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.credentials.CredentialManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -180,6 +183,22 @@ class MainActivity : ComponentActivity() {
         AppNavigation()
       }
     }
+  }
+
+  override fun onResume() {
+    super.onResume()
+    RiftSoundSynthesizer.notifyAppForegroundState(true)
+    hideSystemBars()
+  }
+
+  override fun onPause() {
+    RiftSoundSynthesizer.notifyAppForegroundState(false)
+    super.onPause()
+  }
+
+  override fun onStop() {
+    RiftSoundSynthesizer.notifyAppForegroundState(false)
+    super.onStop()
   }
 
   override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -301,6 +320,7 @@ fun RiftArenaScreen(
   val isNexusStreaming =
     nexusStreamState is NexusStreamState.Loading || nexusStreamState is NexusStreamState.Streaming
 
+  val lifecycleOwner = LocalLifecycleOwner.current
   val sfx = remember {
     RiftSoundSynthesizer(context.cacheDir).apply {
       enabled = localPrefs.getSfxEnabled()
@@ -1108,6 +1128,43 @@ fun RiftArenaScreen(
       }
     }
 
+  var overwatchZoomUi by remember { mutableFloatStateOf(1.0f) }
+
+  DisposableEffect(lifecycleOwner, sfx) {
+    val isCurrentlyResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+    RiftSoundSynthesizer.notifyAppForegroundState(isCurrentlyResumed)
+    sfx.setAppForeground(isCurrentlyResumed)
+    arenaViewRef?.onHostForegroundChanged(isCurrentlyResumed)
+
+    val observer = LifecycleEventObserver { _, event ->
+      when (event) {
+        Lifecycle.Event.ON_RESUME -> {
+          RiftSoundSynthesizer.notifyAppForegroundState(true)
+          sfx.setAppForeground(true)
+          arenaViewRef?.onHostForegroundChanged(true)
+        }
+        Lifecycle.Event.ON_PAUSE,
+        Lifecycle.Event.ON_STOP,
+        Lifecycle.Event.ON_DESTROY -> {
+          RiftSoundSynthesizer.notifyAppForegroundState(false)
+          sfx.setAppForeground(false)
+          arenaViewRef?.onHostForegroundChanged(false)
+        }
+        else -> Unit
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose {
+      lifecycleOwner.lifecycle.removeObserver(observer)
+      sfx.setAppForeground(false)
+    }
+  }
+
+  LaunchedEffect(effectiveOverwatchInstance.key) {
+    overwatchZoomUi = 1.0f
+    arenaViewRef?.resetOverwatchCamera()
+  }
+
   LaunchedEffect(
     isHubOverwatchVisible,
     effectiveOverwatchInstance.key,
@@ -1127,6 +1184,8 @@ fun RiftArenaScreen(
       }
     } else if (!isHubOverwatchVisible) {
       engine.isHubOverwatchActive = false
+      overwatchZoomUi = 1.0f
+      arenaViewRef?.resetOverwatchCamera()
     }
   }
 
@@ -3235,11 +3294,16 @@ fun RiftArenaScreen(
               favoriteOverwatchKey = favoriteOverwatchKey,
               onSelectOverwatchKey = { nextKey ->
                 if (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift) {
-                  engine.leaveActiveMatchToNexusOrbit()
+                  sfx.playMutedClick()
+                  toastMessage = "LEAVE ACTIVE MATCH FIRST TO SWITCH OVERWATCH RIFT"
+                  toastVersion++
+                } else {
+                  userSelectedOverwatchKey = nextKey
+                  overwatchZoomUi = 1.0f
+                  arenaViewRef?.resetOverwatchCamera()
+                  sfx.playMutedClick()
+                  frameTick++
                 }
-                userSelectedOverwatchKey = nextKey
-                sfx.playMutedClick()
-                frameTick++
               },
               onToggleFavoriteOverwatchKey = { targetKey ->
                 val updatedFav = if (favoriteOverwatchKey == targetKey) "" else targetKey
@@ -3260,6 +3324,17 @@ fun RiftArenaScreen(
                   view.overwatchCenterY = cy
                   view.overwatchRadiusPx = r
                 }
+              },
+              overwatchZoom = overwatchZoomUi,
+              onOverwatchTransformGesture = { cx, cy, panDx, panDy, zoomChange ->
+                val updatedZoom =
+                  arenaViewRef?.applyOverwatchTransformGesture(cx, cy, panDx, panDy, zoomChange) ?: 1.0f
+                overwatchZoomUi = updatedZoom
+              },
+              onResetOverwatchCamera = {
+                arenaViewRef?.resetOverwatchCamera()
+                overwatchZoomUi = 1.0f
+                sfx.playMutedClick()
               },
               onQuickZoneIntoOverwatch = { inst ->
                 val customCfg = inst.customConfig
