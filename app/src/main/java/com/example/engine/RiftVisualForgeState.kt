@@ -32,11 +32,10 @@ enum class ForgeElementTarget(
   "Cryo Horizon" to "Glacial ice-blue circular Rift rim with frost-white horizon shimmer",
   "Crimson Lockdown" to "High-energy crimson circular Rift containment rim with deep obsidian edge",
  )),
- SAFE_ZONE_PAD("safe_zone_pad", "Safe Zone Nexus Aperture", "Swirling dimensional Rift looking into Nexus Hub", ForgeElementLayer.WORLD, listOf(
-  "Ring-Space Cyan" to "Deep cyan-indigo Ring-Space aperture looking down into the glowing Nexus Hub",
-  "Deep Sapphire" to "Luminous sapphire dimensional Rift aperture with sky-cyan caustic rings",
-  "Golden Citadel" to "Regal amber-gold dimensional Rift aperture with warm sovereign Hub core",
-  "Minimal Void" to "Ultra-clean translucent void Rift aperture with razor-thin cyan horizon",
+ SAFE_ZONE_PAD("safe_zone_pad", "Safe Zone DS9 Station", "5x ship-scale metallic DS9 citadel & Ops holographic ring", ForgeElementLayer.WORLD, listOf(
+  "Sovereign Titanium" to "Brushed titanium steel DS9 docking ring and curved pylons with sky-cyan Ops holo-ring",
+  "Cardassian Gold" to "Gilded bronze-gold Cardassian bastion armor with warm solar-amber Ops holo-ring",
+  "Obsidian Bastion" to "Pitch-black obsidian citadel armor with electric teal clamps and Ops holo-ring",
  )),
  PLACED_STASIS_BARRIER("placed_stasis_barrier", "Placed Stasis Barrier", "45.0s deployed tethered hard-light forcefield", ForgeElementLayer.WORLD, listOf(
   "Tethered Cyan" to "Tethered electric cyan hard-light forcefield beam with twin emitter nodes",
@@ -320,7 +319,7 @@ data class VisualElementRecipe(
    val k = target.key
    return when (target) {
     ForgeElementTarget.SAFE_ZONE_WALL -> VisualElementRecipe(k, "#040914", "#38BDF8", "#00F5D4", surfaceOpacity = 0.92f, rimLightDepth = 0.75f, detailDensity = 0.70f)
-    ForgeElementTarget.SAFE_ZONE_PAD -> VisualElementRecipe(k, "#040914", "#0E7490", "#00F5D4", surfaceOpacity = 0.85f, rimLightDepth = 0.65f, detailDensity = 0.65f)
+    ForgeElementTarget.SAFE_ZONE_PAD -> VisualElementRecipe(k, "#0F172A", "#38BDF8", "#00F5D4", surfaceOpacity = 0.96f, rimLightDepth = 0.85f, detailDensity = 0.80f)
     ForgeElementTarget.PLACED_STASIS_BARRIER -> VisualElementRecipe(k, "#040914", "#38BDF8", "#00F5D4", surfaceOpacity = 0.94f, rimLightDepth = 0.80f, detailDensity = 0.75f)
     ForgeElementTarget.OBSTACLE_ORBITAL_STATION -> VisualElementRecipe(k, "#040914", "#1E3A5F", "#00F5D4", surfaceOpacity = 0.98f, rimLightDepth = 0.80f, detailDensity = 0.75f)
     ForgeElementTarget.OBSTACLE_ASTEROID_STATION -> VisualElementRecipe(k, "#060D1C", "#38BDF8", "#00F5D4", surfaceOpacity = 0.98f, rimLightDepth = 0.80f, detailDensity = 0.75f)

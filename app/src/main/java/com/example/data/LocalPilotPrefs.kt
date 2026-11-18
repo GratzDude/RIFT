@@ -1970,6 +1970,13 @@ class LocalPilotPrefs(context: Context) {
       else -> "Rift Frame"
     }
 
+  fun getFavoriteOverwatchRiftKey(): String =
+    (userSettingsPrefs.getString("favorite_overwatch_rift_key", "") ?: "").trim()
+
+  fun setFavoriteOverwatchRiftKey(key: String) {
+    userSettingsPrefs.edit().putString("favorite_overwatch_rift_key", key.trim()).apply()
+  }
+
   companion object {
     val DRIFTER_NAMES: List<String> =
       listOf(

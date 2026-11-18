@@ -12,6 +12,10 @@ import android.graphics.PorterDuffColorFilter
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 object RiftSpriteBaker {
   val alliedShipBitmaps: Map<Int, Bitmap>
@@ -26,6 +30,7 @@ object RiftSpriteBaker {
     private set
   var riftShardIconBitmap: Bitmap = bake3dRiftShardIcon(64)
     private set
+  var safeZoneStationBitmap: Bitmap = bakeSafeZoneDs9StationBitmap(256)
   var spriteVisualRevision: Int = 1
     private set
   var activeHullTrimStyle: Int = 0 // 0=Standard, 1=Obsidian Ice-Cyan, 2=Sovereign Gold, 3=Rift Violet
@@ -127,6 +132,7 @@ object RiftSpriteBaker {
       ForgeElementTarget.SAFE_ZONE_PAD -> {
         wallTileBitmap = bakeWallTile()
         wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        safeZoneStationBitmap = bakeSafeZoneDs9StationBitmap(256)
       }
       ForgeElementTarget.CURRENCY_FLUX_ICON -> {
         fluxIconBitmap = bake3dFluxReactorIcon(64)
@@ -149,6 +155,7 @@ object RiftSpriteBaker {
     spaceObstacleBitmapCache.clear()
     wallTileBitmap = bakeWallTile()
     wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+    safeZoneStationBitmap = bakeSafeZoneDs9StationBitmap(256)
     fluxIconBitmap = bake3dFluxReactorIcon(64)
     resonanceIconBitmap = bake3dResonanceCrestIcon(64)
     riftShardIconBitmap = bake3dRiftShardIcon(64)
@@ -3939,6 +3946,515 @@ object RiftSpriteBaker {
         close()
       }
     c.drawPath(vCoreInner, whiteCorePaint)
+
+    c.restore()
+  }
+
+  private fun blendDs9Rgb(c0: Int, c1: Int, t: Float, alpha: Int = 255): Int {
+    val f = t.coerceIn(0f, 1f)
+    val r = (Color.red(c0) + (Color.red(c1) - Color.red(c0)) * f).roundToInt().coerceIn(0, 255)
+    val g = (Color.green(c0) + (Color.green(c1) - Color.green(c0)) * f).roundToInt().coerceIn(0, 255)
+    val b = (Color.blue(c0) + (Color.blue(c1) - Color.blue(c0)) * f).roundToInt().coerceIn(0, 255)
+    return Color.argb(alpha.coerceIn(0, 255), r, g, b)
+  }
+
+  /**
+   * Bakes the 5x Ship-Size (`180px` world radius / `360px` diameter) Deep Space Nine (`DS9`)
+   * Metallic Safe-Zone Station Sprite using the exact 5-stop steel/titanium armor shading,
+   * dark readability outlines, sunlit specular bevels, and lit viewport craft of `drawMetallicShipOnCanvas`,
+   * dynamically driven by `ForgeElementTarget.SAFE_ZONE_PAD` in `STAR FORGE`.
+   */
+  fun bakeSafeZoneDs9StationBitmap(sizePx: Int = 256): Bitmap {
+    val sz = sizePx.coerceIn(96, 512)
+    val bmp = Bitmap.createBitmap(sz, sz, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val cx = sz * 0.5f
+    val cy = sz * 0.5f
+    val r = sz * 0.48f
+
+    val rec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SAFE_ZONE_PAD)
+    val prim = rec.primaryColorInt
+    val trim = rec.trimColorInt
+    val glow = rec.glowColorInt
+    val rimDepth = rec.rimLightDepth.coerceIn(0.15f, 1.50f)
+    val density = rec.detailDensity.coerceIn(0.20f, 1.50f)
+    val borderWt = rec.borderWeight.coerceIn(0.45f, 2.20f)
+    val glowInt = rec.glowIntensity.coerceIn(0.25f, 2.20f)
+
+    // 5-stop metallic steel/titanium armor palette tinted by SAFE_ZONE_PAD recipe
+    val stopDark0 = blendDs9Rgb(Color.rgb(15, 23, 42), prim, 0.36f)
+    val stopMid1 = blendDs9Rgb(Color.rgb(51, 65, 85), prim, 0.24f)
+    val stopSpec2 =
+      blendDs9Rgb(
+        Color.rgb(203, 213, 225),
+        blendDs9Rgb(Color.WHITE, trim, 0.22f),
+        (0.32f * rimDepth).coerceIn(0.10f, 0.55f),
+      )
+    val stopSlope3 = blendDs9Rgb(Color.rgb(71, 85, 105), prim, 0.26f)
+    val stopShadow4 = blendDs9Rgb(Color.rgb(12, 19, 34), prim, 0.42f)
+
+    val armorPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader =
+          LinearGradient(
+            cx - r * 0.92f,
+            cy - r * 0.92f,
+            cx + r * 0.92f,
+            cy + r * 0.92f,
+            intArrayOf(stopDark0, stopMid1, stopSpec2, stopSlope3, stopShadow4),
+            floatArrayOf(0f, 0.28f, 0.48f, 0.72f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      }
+
+    val upperDeckPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader =
+          LinearGradient(
+            cx - r * 0.65f,
+            cy - r * 0.65f,
+            cx + r * 0.65f,
+            cy + r * 0.65f,
+            intArrayOf(
+              blendDs9Rgb(Color.rgb(30, 41, 59), trim, 0.16f),
+              blendDs9Rgb(Color.rgb(226, 232, 240), Color.WHITE, 0.35f),
+              blendDs9Rgb(Color.rgb(51, 65, 85), prim, 0.28f),
+              Color.rgb(15, 23, 42),
+            ),
+            floatArrayOf(0f, 0.36f, 0.72f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      }
+
+    val shadowPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(175, 3, 7, 18)
+      }
+
+    val darkOutlinePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = (sz / 128f) * 1.45f * borderWt
+        strokeJoin = Paint.Join.ROUND
+        strokeCap = Paint.Cap.ROUND
+        color = Color.argb(235, 2, 6, 23)
+      }
+
+    val seamPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = (sz / 128f) * 0.90f
+        strokeCap = Paint.Cap.ROUND
+        color = Color.argb(190, 9, 14, 28)
+      }
+
+    val specularBevelPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = (sz / 128f) * 1.05f
+        strokeCap = Paint.Cap.ROUND
+        shader =
+          LinearGradient(
+            cx - r,
+            cy - r,
+            cx + r * 0.55f,
+            cy + r * 0.55f,
+            intArrayOf(
+              Color.argb((225 * rimDepth).roundToInt().coerceIn(80, 255), 248, 250, 252),
+              blendDs9Rgb(Color.rgb(148, 163, 184), trim, 0.35f, alpha = 125),
+              Color.argb(0, 15, 23, 42),
+            ),
+            floatArrayOf(0f, 0.46f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      }
+
+    val trimStrokePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = (sz / 128f) * 1.30f * borderWt
+        color = blendDs9Rgb(trim, Color.WHITE, 0.14f, alpha = 225)
+      }
+
+    val conduitPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = (sz / 128f) * 1.15f
+        strokeCap = Paint.Cap.ROUND
+        color = blendDs9Rgb(glow, Color.WHITE, 0.20f, alpha = (185 * glowInt).roundToInt().coerceIn(70, 245))
+      }
+
+    val beaconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
+    fun buildAnnulusPath(rOuter: Float, rInner: Float): Path =
+      Path().apply {
+        fillType = Path.FillType.EVEN_ODD
+        addCircle(cx, cy, rOuter, Path.Direction.CW)
+        addCircle(cx, cy, rInner, Path.Direction.CW)
+      }
+
+    val outerRingOut = r * 0.94f
+    val outerRingIn = r * 0.78f
+    val promRingOut = r * 0.55f
+    val promRingIn = r * 0.42f
+    val opsBaseR = r * 0.22f
+    val opsDeckR = r * 0.145f
+
+    val outerRingPath = buildAnnulusPath(outerRingOut, outerRingIn)
+    val promRingPath = buildAnnulusPath(promRingOut, promRingIn)
+
+    // 1. 3 Heavy Crossover Structural Bridges (6 Radial Spokes at 0°, 60°, 120°)
+    val bridgesPath = Path()
+    val bridgeHalfW = r * 0.056f
+    for (bIdx in 0 until 3) {
+      val ang = bIdx * (PI.toFloat() / 3f)
+      val ca = cos(ang)
+      val sa = sin(ang)
+      val px = -sa * bridgeHalfW
+      val py = ca * bridgeHalfW
+      val spanR = outerRingIn + r * 0.02f
+      val p =
+        Path().apply {
+          moveTo(cx - ca * spanR + px, cy - sa * spanR + py)
+          lineTo(cx + ca * spanR + px, cy + sa * spanR + py)
+          lineTo(cx + ca * spanR - px, cy + sa * spanR - py)
+          lineTo(cx - ca * spanR - px, cy - sa * spanR - py)
+          close()
+        }
+      bridgesPath.addPath(p)
+    }
+
+    // Under-chassis drop shadows for 3D deck separation
+    val shOff = (sz / 256f) * 3.2f
+    c.save()
+    c.translate(shOff, shOff * 1.15f)
+    c.drawPath(bridgesPath, shadowPaint)
+    c.drawPath(outerRingPath, shadowPaint)
+    c.drawPath(promRingPath, shadowPaint)
+    c.restore()
+
+    // Draw Crossover Bridges + Glowing Power Conduits
+    c.drawPath(bridgesPath, armorPaint)
+    c.drawPath(bridgesPath, darkOutlinePaint)
+    c.drawPath(bridgesPath, specularBevelPaint)
+    for (sIdx in 0 until 6) {
+      val ang = sIdx * (PI.toFloat() / 3f)
+      val ca = cos(ang)
+      val sa = sin(ang)
+      c.drawLine(
+        cx + ca * (opsBaseR * 0.92f),
+        cy + sa * (opsBaseR * 0.92f),
+        cx + ca * (outerRingIn * 0.99f),
+        cy + sa * (outerRingIn * 0.99f),
+        conduitPaint,
+      )
+    }
+
+    // 2. Outer Sovereign Docking Ring (0.78r..0.94r) with Segmented Seams & 12 Lit Docking Airlocks
+    c.drawPath(outerRingPath, armorPaint)
+    c.drawCircle(cx, cy, outerRingOut, trimStrokePaint)
+    c.drawCircle(cx, cy, outerRingOut, darkOutlinePaint)
+    c.drawCircle(cx, cy, outerRingIn, darkOutlinePaint)
+    c.drawCircle(cx, cy, (outerRingOut + outerRingIn) * 0.5f, seamPaint)
+    c.drawCircle(cx, cy, outerRingOut - (sz / 256f) * 1.6f, specularBevelPaint)
+
+    val outerSeams = (18 + (10 * density).roundToInt()).coerceIn(16, 36)
+    for (i in 0 until outerSeams) {
+      val a = i * (2f * PI.toFloat() / outerSeams.toFloat())
+      val ca = cos(a)
+      val sa = sin(a)
+      c.drawLine(
+        cx + ca * outerRingIn,
+        cy + sa * outerRingIn,
+        cx + ca * outerRingOut,
+        cy + sa * outerRingOut,
+        seamPaint,
+      )
+    }
+
+    // 12 Recessed Docking Airlocks & Lit Approach Beacons around 0.86r
+    val airlockMidR = (outerRingOut + outerRingIn) * 0.5f
+    for (dIdx in 0 until 12) {
+      val a = dIdx * (PI.toFloat() / 6f) + (PI.toFloat() / 12f)
+      val ax = cx + cos(a) * airlockMidR
+      val ay = cy + sin(a) * airlockMidR
+      beaconPaint.color = Color.rgb(10, 16, 30)
+      c.drawCircle(ax, ay, r * 0.030f, beaconPaint)
+      val portCol = if (dIdx % 3 == 0) Color.rgb(250, 204, 21) else glow
+      beaconPaint.color = blendDs9Rgb(portCol, Color.WHITE, 0.25f, alpha = 235)
+      c.drawCircle(ax, ay, r * 0.017f, beaconPaint)
+      beaconPaint.color = Color.WHITE
+      c.drawCircle(ax, ay, r * 0.008f, beaconPaint)
+    }
+
+    // 3. Inner Habitat & Promenade Ring (0.42r..0.55r) with Lit Micro-Windows
+    c.drawPath(promRingPath, upperDeckPaint)
+    c.drawCircle(cx, cy, promRingOut, trimStrokePaint)
+    c.drawCircle(cx, cy, promRingOut, darkOutlinePaint)
+    c.drawCircle(cx, cy, promRingIn, darkOutlinePaint)
+    c.drawCircle(cx, cy, promRingOut - (sz / 256f) * 1.4f, specularBevelPaint)
+
+    val promWinCount = (18 + (8 * density).roundToInt()).coerceIn(16, 32)
+    val promMidR = (promRingOut + promRingIn) * 0.5f
+    for (wIdx in 0 until promWinCount) {
+      val wa = wIdx * (2f * PI.toFloat() / promWinCount.toFloat())
+      val wx = cx + cos(wa) * promMidR
+      val wy = cy + sin(wa) * promMidR
+      beaconPaint.color =
+        when {
+          wIdx % 4 == 0 -> Color.rgb(250, 204, 21)
+          wIdx % 2 == 0 -> blendDs9Rgb(glow, Color.WHITE, 0.35f)
+          else -> blendDs9Rgb(trim, Color.WHITE, 0.25f)
+        }
+      c.drawCircle(wx, wy, r * 0.012f, beaconPaint)
+    }
+
+    // 4. 6 Swept DS9-Style Curved Docking Pylons (3 Upper-Swept + 3 Lower-Swept Symmetric Pylons)
+    // Arcing inward from the Outer Docking Ring (0.93r) over the Promenade gap with glowing clamps!
+    for (pIdx in 0 until 6) {
+      val baseAng = pIdx * (PI.toFloat() / 3f) + (PI.toFloat() / 6f)
+      val curveDir = if (pIdx % 2 == 0) 1f else -1f // Alternating upper/lower canted 3D sweep
+      val baseSpread = 0.135f
+      val tipAngleOffset = curveDir * 0.20f
+
+      val aOuterL = baseAng - baseSpread
+      val aOuterR = baseAng + baseSpread
+      val rBase = r * 0.93f
+      val rCtrl = r * 0.76f
+      val rTip = r * 0.56f
+      val aTip = baseAng + tipAngleOffset
+      val tipSpread = 0.034f
+
+      val bxL = cx + cos(aOuterL) * rBase
+      val byL = cy + sin(aOuterL) * rBase
+      val bxR = cx + cos(aOuterR) * rBase
+      val byR = cy + sin(aOuterR) * rBase
+
+      val ctrlL = baseAng - baseSpread * 0.42f + tipAngleOffset * 0.58f
+      val ctrlR = baseAng + baseSpread * 0.42f + tipAngleOffset * 0.58f
+      val cxL = cx + cos(ctrlL) * rCtrl
+      val cyL = cy + sin(ctrlL) * rCtrl
+      val cxR = cx + cos(ctrlR) * rCtrl
+      val cyR = cy + sin(ctrlR) * rCtrl
+
+      val txL = cx + cos(aTip - tipSpread) * rTip
+      val tyL = cy + sin(aTip - tipSpread) * rTip
+      val txR = cx + cos(aTip + tipSpread) * rTip
+      val tyR = cy + sin(aTip + tipSpread) * rTip
+
+      val pylonPath =
+        Path().apply {
+          moveTo(bxL, byL)
+          quadTo(cxL, cyL, txL, tyL)
+          lineTo(txR, tyR)
+          quadTo(cxR, cyR, bxR, byR)
+          close()
+        }
+
+      c.save()
+      c.translate(shOff * 0.85f, shOff)
+      c.drawPath(pylonPath, shadowPaint)
+      c.restore()
+
+      c.drawPath(pylonPath, upperDeckPaint)
+      c.drawPath(pylonPath, darkOutlinePaint)
+      c.drawPath(pylonPath, specularBevelPaint)
+
+      // Center curved spine rib along pylon
+      val spinePath =
+        Path().apply {
+          moveTo(cx + cos(baseAng) * (rBase * 0.98f), cy + sin(baseAng) * (rBase * 0.98f))
+          quadTo(
+            cx + cos(baseAng + tipAngleOffset * 0.55f) * rCtrl,
+            cy + sin(baseAng + tipAngleOffset * 0.55f) * rCtrl,
+            cx + cos(aTip) * rTip,
+            cy + sin(aTip) * rTip,
+          )
+        }
+      c.drawPath(spinePath, trimStrokePaint)
+
+      // Glowing Cyan/Gold Docking Clamp at Pylon Apex
+      val clampX = (txL + txR) * 0.5f
+      val clampY = (tyL + tyR) * 0.5f
+      val clampColor = if (pIdx % 2 == 0) glow else Color.rgb(250, 204, 21)
+      beaconPaint.color = blendDs9Rgb(clampColor, Color.WHITE, 0.15f, alpha = 95)
+      c.drawCircle(clampX, clampY, r * 0.044f, beaconPaint)
+      beaconPaint.color = blendDs9Rgb(clampColor, Color.WHITE, 0.30f, alpha = 240)
+      c.drawCircle(clampX, clampY, r * 0.022f, beaconPaint)
+      beaconPaint.color = Color.WHITE
+      c.drawCircle(clampX, clampY, r * 0.010f, beaconPaint)
+    }
+
+    // 5. Central Armored Ops Spire & Singularity Reactor Core (0.22r)
+    val opsOctagon =
+      Path().apply {
+        for (v in 0 until 8) {
+          val va = v * (PI.toFloat() * 0.25f) + (PI.toFloat() / 8f)
+          val vx = cx + cos(va) * opsBaseR
+          val vy = cy + sin(va) * opsBaseR
+          if (v == 0) moveTo(vx, vy) else lineTo(vx, vy)
+        }
+        close()
+      }
+    c.save()
+    c.translate(shOff * 0.7f, shOff * 0.85f)
+    c.drawPath(opsOctagon, shadowPaint)
+    c.restore()
+
+    c.drawPath(opsOctagon, armorPaint)
+    c.drawPath(opsOctagon, trimStrokePaint)
+    c.drawPath(opsOctagon, darkOutlinePaint)
+    c.drawPath(opsOctagon, specularBevelPaint)
+
+    c.drawCircle(cx, cy, opsDeckR, upperDeckPaint)
+    c.drawCircle(cx, cy, opsDeckR, darkOutlinePaint)
+
+    for (wIdx in 0 until 8) {
+      val wa = wIdx * (PI.toFloat() * 0.25f)
+      val wx = cx + cos(wa) * (opsBaseR * 0.74f)
+      val wy = cy + sin(wa) * (opsBaseR * 0.74f)
+      beaconPaint.color = if (wIdx % 2 == 0) Color.rgb(250, 204, 21) else glow
+      c.drawCircle(wx, wy, r * 0.013f, beaconPaint)
+    }
+
+    val coreR = r * 0.088f
+    val reactorCorePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader =
+          RadialGradient(
+            cx - coreR * 0.22f,
+            cy - coreR * 0.22f,
+            coreR * 1.45f,
+            intArrayOf(
+              Color.WHITE,
+              blendDs9Rgb(glow, Color.WHITE, 0.35f),
+              trim,
+              Color.argb(0, Color.red(trim), Color.green(trim), Color.blue(trim)),
+            ),
+            floatArrayOf(0f, 0.38f, 0.74f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      }
+    c.drawCircle(cx, cy, coreR * 1.42f, reactorCorePaint)
+    beaconPaint.color = Color.WHITE
+    c.drawCircle(cx, cy, coreR * 0.42f, beaconPaint)
+
+    return bmp
+  }
+
+  private val ds9HoloArcRect = RectF()
+  private val ds9HoloBandPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeCap = Paint.Cap.ROUND
+    }
+
+  /**
+   * Draws the shrunk, crisp 3D-tilted revolving cyan/gold holographic ring orbiting at
+   * `stationRadius * 0.34f` around the central Ops spire of the `5x` DS9 Safe-Zone Station
+   * (turning high-alert crimson when `isLockedOut` is true).
+   */
+  fun drawSafeZoneStationHoloRing(
+    c: Canvas,
+    cx: Float,
+    cy: Float,
+    stationRadius: Float,
+    timeSec: Float,
+    isLockedOut: Boolean = false,
+    alphaScale: Float = 1f,
+  ) {
+    if (stationRadius <= 4f || alphaScale <= 0.02f) return
+    val rec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SAFE_ZONE_PAD)
+    val op = (alphaScale * rec.surfaceOpacity.coerceIn(0.35f, 1f)).coerceIn(0.05f, 1f)
+    val holoR = stationRadius * 0.34f
+
+    val primaryHolo =
+      if (isLockedOut) Color.rgb(244, 63, 94) else rec.glowColorInt
+    val secondaryHolo =
+      if (isLockedOut) Color.rgb(251, 146, 60) else Color.rgb(250, 204, 21)
+    val trimHolo =
+      if (isLockedOut) Color.rgb(251, 113, 133) else rec.trimColorInt
+
+    val spinDeg = (timeSec * 46f) % 360f
+    val counterDeg = (-timeSec * 32f) % 360f
+    val unitStroke = (stationRadius / 180f).coerceIn(0.45f, 2.4f)
+
+    c.save()
+    c.translate(cx, cy)
+    // Subtle 3D orbital tilt around the central Ops tower
+    c.rotate(-16f)
+    c.scale(1.0f, 0.72f)
+
+    ds9HoloArcRect.set(-holoR, -holoR, holoR, holoR)
+
+    // 1. Soft translucent holographic carrier band
+    ds9HoloBandPaint.strokeWidth = 6.2f * unitStroke
+    ds9HoloBandPaint.color =
+      Color.argb(
+        (58 * op).roundToInt().coerceIn(0, 255),
+        Color.red(primaryHolo),
+        Color.green(primaryHolo),
+        Color.blue(primaryHolo),
+      )
+    c.drawOval(ds9HoloArcRect, ds9HoloBandPaint)
+
+    // 2. Revolving primary cyan/crimson segmented holographic arcs
+    ds9HoloBandPaint.strokeWidth = 2.4f * unitStroke
+    ds9HoloBandPaint.color =
+      Color.argb(
+        (225 * op).roundToInt().coerceIn(0, 255),
+        Color.red(primaryHolo),
+        Color.green(primaryHolo),
+        Color.blue(primaryHolo),
+      )
+    for (seg in 0 until 4) {
+      c.drawArc(ds9HoloArcRect, spinDeg + seg * 90f, 54f, false, ds9HoloBandPaint)
+    }
+
+    // 3. Counter-revolving inner gold/amber harmonic ring
+    val innerR = holoR * 0.86f
+    ds9HoloArcRect.set(-innerR, -innerR, innerR, innerR)
+    ds9HoloBandPaint.strokeWidth = 1.6f * unitStroke
+    ds9HoloBandPaint.color =
+      Color.argb(
+        (205 * op).roundToInt().coerceIn(0, 255),
+        Color.red(secondaryHolo),
+        Color.green(secondaryHolo),
+        Color.blue(secondaryHolo),
+      )
+    for (seg in 0 until 6) {
+      c.drawArc(ds9HoloArcRect, counterDeg + seg * 60f, 28f, false, ds9HoloBandPaint)
+    }
+
+    // 4. 18 Precision Holographic Data Telemetry Ticks
+    ds9HoloBandPaint.strokeWidth = 1.35f * unitStroke
+    val tickBaseRad = (spinDeg * PI.toFloat()) / 180f
+    for (t in 0 until 18) {
+      val ta = tickBaseRad + t * (2f * PI.toFloat() / 18f)
+      val ca = cos(ta)
+      val sa = sin(ta)
+      val r0 = holoR * 0.93f
+      val r1 = holoR * (if (t % 3 == 0) 1.10f else 1.04f)
+      val col = if (t % 3 == 0) secondaryHolo else trimHolo
+      ds9HoloBandPaint.color =
+        Color.argb(
+          (215 * op).roundToInt().coerceIn(0, 255),
+          Color.red(col),
+          Color.green(col),
+          Color.blue(col),
+        )
+      c.drawLine(ca * r0, sa * r0, ca * r1, sa * r1, ds9HoloBandPaint)
+    }
+
+    // 5. Traveling White-Hot Scanline Sheen Crest
+    ds9HoloArcRect.set(-holoR, -holoR, holoR, holoR)
+    ds9HoloBandPaint.strokeWidth = 2.8f * unitStroke
+    ds9HoloBandPaint.color = Color.argb((235 * op).roundToInt().coerceIn(0, 255), 255, 255, 255)
+    c.drawArc(ds9HoloArcRect, (spinDeg * 1.6f) % 360f, 22f, false, ds9HoloBandPaint)
 
     c.restore()
   }

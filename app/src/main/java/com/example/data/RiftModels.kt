@@ -84,6 +84,7 @@ data class LivePilotState(
   val energy: Long = 2400L,
   val maxEnergy: Long = 2400L,
   val bounty: Long = 100L,
+  val liveResonance: Long = 0L,
   val lastPingType: String = "NONE",
   val lastPingX: Double = 0.0,
   val lastPingY: Double = 0.0,

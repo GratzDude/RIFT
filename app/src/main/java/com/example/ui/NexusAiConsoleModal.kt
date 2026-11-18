@@ -65,10 +65,13 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -170,6 +173,20 @@ private enum class ConvergenceGateTab {
   OFFICIAL_RANKED,
   CUSTOM_RIFT_GATE,
 }
+
+data class OverwatchRiftInstance(
+  val key: String,
+  val modeTitle: String,
+  val riftLabel: String,
+  val rankedMode: RankedGameMode,
+  val customConfig: CustomGameConfig? = null,
+  val pilotCount: Int,
+  val combinedResonance: Int,
+  val seedSalt: Int,
+)
+
+private fun formatOverwatchResonance(value: Int): String =
+  String.format(Locale.US, "%,d", value.coerceAtLeast(0))
 
 
 internal fun generateSixCharRoomCode(seedSalt: Long = System.currentTimeMillis()): String {
@@ -639,6 +656,13 @@ fun NexusAiConsoleModal(
   hideTopHeaderForFullScreenStage: Boolean = false,
   liveResonance: Int = -1,
   isGoogleAuthenticated: Boolean = true,
+  overwatchInstances: List<OverwatchRiftInstance> = emptyList(),
+  selectedOverwatchKey: String = "",
+  favoriteOverwatchKey: String = "",
+  onSelectOverwatchKey: (String) -> Unit = {},
+  onToggleFavoriteOverwatchKey: (String) -> Unit = {},
+  onQuickZoneIntoOverwatch: (OverwatchRiftInstance) -> Unit = {},
+  onUpdateOverwatchViewport: (cx: Float, cy: Float, radiusPx: Float) -> Unit = { _, _, _ -> },
   onStageRankedModeViaHangar: ((RankedGameMode, Int) -> Unit)? = null,
   onStageCustomGameViaHangar: ((CustomGameConfig) -> Unit)? = null,
   onStageExistingCustomInstanceViaHangar: ((String) -> Unit)? = null,
@@ -853,17 +877,36 @@ fun NexusAiConsoleModal(
       (activeNode == NexusCoreNode.STAR_FORGE || activeModuleKey == "FORGE")
 
   var glViewRef by remember { mutableStateOf<NexusSpaceGlView?>(null) }
+  var hubApertureRootBounds by remember { mutableStateOf(Triple(0f, 0f, 0f)) }
+
+  val resolvedOverwatchInstances =
+    remember(overwatchInstances) {
+      overwatchInstances.ifEmpty {
+        listOf(
+          OverwatchRiftInstance(
+            key = "SECTOR_CONVERGENCE_1",
+            modeTitle = "SECTOR CONVERGENCE",
+            riftLabel = "RIFT #01",
+            rankedMode = RankedGameMode.SECTOR_CONVERGENCE,
+            customConfig = null,
+            pilotCount = 0,
+            combinedResonance = 1040,
+            seedSalt = 101,
+          )
+        )
+      }
+    }
+  val activeOverwatchInstance =
+    remember(resolvedOverwatchInstances, selectedOverwatchKey) {
+      resolvedOverwatchInstances.firstOrNull { it.key == selectedOverwatchKey }
+        ?: resolvedOverwatchInstances.first()
+    }
+
   LaunchedEffect(activeNode, focusedOrbitalIndex, glViewRef, liveTrafficShipIds) {
     val view = glViewRef ?: return@LaunchedEffect
     view.updateOnlinePilotShips(liveTrafficShipIds)
-    if (activeNode == NexusCoreNode.ORBITAL_HUB) {
-      view.dimFactor = 1.0f
-      view.focusedTearIndex = focusedOrbitalIndex
-      view.resetCameraDive()
-    } else {
-      view.dimFactor = 0.44f
-      view.focusedTearIndex = -1
-    }
+    view.dimFactor = 0.44f
+    view.focusedTearIndex = -1
   }
 
   val terminalScale by
@@ -879,11 +922,31 @@ fun NexusAiConsoleModal(
       label = "terminal_emerge_alpha",
     )
 
-  // Full-bleed #02050B container BEFORE safeDrawing so zero Arena entities bleed around screen edges
+  // Full-bleed container BEFORE safeDrawing:
+  // On ORBITAL_HUB, masks #060D1A sci-fi tablet glass everywhere outside the exact circular Overwatch aperture!
   Box(
     modifier =
       Modifier.fillMaxSize()
-        .background(if (isCalibrationPeekActive) Color(0x1802050B) else Color(0xFF02050B))
+        .drawBehind {
+          when {
+            isCalibrationPeekActive -> drawRect(Color(0x1802050B))
+            activeNode == NexusCoreNode.ORBITAL_HUB -> {
+              val (acx, acy, ar) = hubApertureRootBounds
+              if (ar > 8f) {
+                val maskPath =
+                  Path().apply {
+                    fillType = PathFillType.EvenOdd
+                    addRect(Rect(0f, 0f, size.width, size.height))
+                    addOval(Rect(acx - ar, acy - ar, acx + ar, acy + ar))
+                  }
+                drawPath(maskPath, color = Color(0xFF060D1A))
+              } else {
+                drawRect(Color(0xFF060D1A))
+              }
+            }
+            else -> drawRect(Color(0xFF02050B))
+          }
+        }
         .onPreviewKeyEvent { keyEvent ->
           if (activeNode != NexusCoreNode.ORBITAL_HUB) return@onPreviewKeyEvent false
           val native = keyEvent.nativeKeyEvent
@@ -905,8 +968,11 @@ fun NexusAiConsoleModal(
               KeyEvent.KEYCODE_DPAD_CENTER,
               KeyEvent.KEYCODE_ENTER -> {
                 val chosenIdx = focusedOrbitalIndex.coerceIn(0, NEXUS_3D_RIFT_TEARS.lastIndex)
-                glViewRef?.triggerDiveIntoTear(chosenIdx)
-                onSelectNode(NEXUS_3D_RIFT_TEARS[chosenIdx].node)
+                if (chosenIdx == 0) {
+                  onQuickZoneIntoOverwatch(activeOverwatchInstance)
+                } else {
+                  onSelectNode(NEXUS_3D_RIFT_TEARS[chosenIdx].node)
+                }
                 true
               }
               else -> false
@@ -918,14 +984,19 @@ fun NexusAiConsoleModal(
         .testTag("nexus_ai_console_modal"),
     contentAlignment = Alignment.Center,
   ) {
-    // Native OpenGL ES 3.0 3D NEXUS Station + Live Real-Ship Traffic + 7 Outward-Bleeding 3D Rifts
-    if (!isCalibrationPeekActive && !isFullScreenForgeStage && !isHeadlessGlEnvironment()) {
+    // Sub-modal 3D backdrop (NOT mounted on ORBITAL_HUB, which opens directly onto live RiftArenaView Overwatch!)
+    if (
+      activeNode != NexusCoreNode.ORBITAL_HUB &&
+        !isCalibrationPeekActive &&
+        !isFullScreenForgeStage &&
+        !isHeadlessGlEnvironment()
+    ) {
       AndroidView(
         factory = { ctx ->
           NexusSpaceGlView(ctx).apply {
             isSplashMode = false
-            dimFactor = if (activeNode == NexusCoreNode.ORBITAL_HUB) 1.0f else 0.44f
-            focusedTearIndex = if (activeNode == NexusCoreNode.ORBITAL_HUB) focusedOrbitalIndex else -1
+            dimFactor = 0.44f
+            focusedTearIndex = -1
             updateOnlinePilotShips(liveTrafficShipIds)
             updateStationHologramTelemetry(totalOnlinePilots, unreadCommsCount)
             glViewRef = this
@@ -934,7 +1005,7 @@ fun NexusAiConsoleModal(
         update = { view ->
           glViewRef = view
           view.isSplashMode = false
-          view.dimFactor = if (activeNode == NexusCoreNode.ORBITAL_HUB) 1.0f else 0.44f
+          view.dimFactor = 0.44f
           view.updateOnlinePilotShips(liveTrafficShipIds)
           view.updateStationHologramTelemetry(totalOnlinePilots, unreadCommsCount)
         },
@@ -969,13 +1040,27 @@ fun NexusAiConsoleModal(
             isInMatch = isInMatch,
             isStreaming = isStreaming,
             focusedOrbitalIndex = focusedOrbitalIndex,
-            glViewRef = glViewRef,
+            overwatchInstances = resolvedOverwatchInstances,
+            activeOverwatchInstance = activeOverwatchInstance,
+            favoriteOverwatchKey = favoriteOverwatchKey,
+            onSelectOverwatchKey = onSelectOverwatchKey,
+            onToggleFavoriteOverwatchKey = onToggleFavoriteOverwatchKey,
+            onQuickZoneIntoOverwatch = onQuickZoneIntoOverwatch,
+            onApertureRootBoundsChanged = { cx, cy, r ->
+              if (
+                abs(hubApertureRootBounds.first - cx) > 0.5f ||
+                  abs(hubApertureRootBounds.second - cy) > 0.5f ||
+                  abs(hubApertureRootBounds.third - r) > 0.5f
+              ) {
+                hubApertureRootBounds = Triple(cx, cy, r)
+              }
+              onUpdateOverwatchViewport(cx, cy, r)
+            },
             onToggleBootToNexusHub = onToggleBootToNexusHub,
             onLeaveMatch = onLeaveMatch,
             onEnterPracticeRift = onEnterPracticeRift,
             onCloseModal = onCloseModal,
-            onSelectNode = { tearIdx, node ->
-              glViewRef?.triggerDiveIntoTear(tearIdx)
+            onSelectNode = { _, node ->
               onSelectNode(node)
             },
           )
@@ -1234,7 +1319,13 @@ private fun OrbitalHubSpatialStage(
   isInMatch: Boolean,
   isStreaming: Boolean,
   focusedOrbitalIndex: Int,
-  glViewRef: NexusSpaceGlView?,
+  overwatchInstances: List<OverwatchRiftInstance>,
+  activeOverwatchInstance: OverwatchRiftInstance,
+  favoriteOverwatchKey: String,
+  onSelectOverwatchKey: (String) -> Unit,
+  onToggleFavoriteOverwatchKey: (String) -> Unit,
+  onQuickZoneIntoOverwatch: (OverwatchRiftInstance) -> Unit,
+  onApertureRootBoundsChanged: (cx: Float, cy: Float, radiusPx: Float) -> Unit,
   @Suppress("UNUSED_PARAMETER") onToggleBootToNexusHub: (Boolean) -> Unit,
   onLeaveMatch: () -> Unit,
   onEnterPracticeRift: () -> Unit,
@@ -1544,132 +1635,23 @@ private fun OrbitalHubSpatialStage(
             )
           }
 
-          // CENTER DIGITIZING VIEWPORT (~52% width):
-          // Dissolves the flat #060D1A tablet screen inward via holographic matrix cells & receding depth frames
-          // directly into the 3D Safe-Zone Sanctuary (leaving the 3D NEXUS Orbital Station 100% unobstructed!)
+          // CENTER ROUND RIPPLING DIGITIZED APERTURE (~52% width):
+          // Circular aperture whose rim digitizes inward via concentric polar voxel/matrix rings with
+          // dynamic cyan/gold directional lighting, looking straight down into Full-Playfield Live Active Game Overwatch!
           val centerFocused = focusedOrbitalIndex == 0
-          Box(
-            modifier =
-              Modifier.weight(0.52f)
-                .fillMaxHeight()
-                .pointerInput(glViewRef) {
-                  detectDragGestures(
-                    onDragEnd = { glViewRef?.releaseCameraLookSpring() },
-                    onDragCancel = { glViewRef?.releaseCameraLookSpring() },
-                  ) { change, dragAmount ->
-                    change.consume()
-                    glViewRef?.addCameraLookDelta(dragAmount.x, dragAmount.y)
-                  }
-                }
-                .clickable { onSelectNode(0, NexusCoreNode.CONVERGENCE_GATE) }
-                .testTag("nexus_node_convergence_gate"),
-          ) {
-            DigitizedSafeZoneViewportOverlay(
-              isFocused = centerFocused,
-              drawHeadlessSafeZoneFallback = headless,
-            )
-
-            // Top-Edge Micro Telemetry Readouts Tucked Cleanly Into Digitized Viewport Corners
-            Row(
-              modifier =
-                Modifier.align(Alignment.TopCenter)
-                  .fillMaxWidth()
-                  .padding(horizontal = 16.dp, vertical = 10.dp),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Text(
-                text = "SAFE HARBOR // 3D SANCTUARY",
-                color = Color(0xFF00F5D4).copy(alpha = 0.78f),
-                fontSize = 7.2.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 0.8.sp,
-              )
-              Text(
-                text = "SHIELD BRACE: ACTIVE",
-                color = Color(0xFFFACC15).copy(alpha = 0.78f),
-                fontSize = 7.2.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 0.8.sp,
-              )
-            }
-
-            // Unobstructed Lower-Center [ PLAY // ENTER THE RIFT ] Launch Bar
-            // Anchored cleanly below the 3D NEXUS Orbital Station spire & patrolling ships!
-            val playTitleGlow =
-              remember(centerFocused) {
-                Shadow(
-                  color = if (centerFocused) Color.White else Color(0xFF00F5D4),
-                  offset = Offset.Zero,
-                  blurRadius = 12f,
-                )
-              }
-            Box(
-              modifier =
-                Modifier.align(Alignment.BottomCenter)
-                  .padding(bottom = 10.dp)
-                  .clip(RoundedCornerShape(10.dp))
-                  .background(
-                    Brush.horizontalGradient(
-                      listOf(Color(0xEB050D1C), Color(0xF208182E), Color(0xEB050D1C))
-                    )
-                  )
-                  .border(
-                    width = if (centerFocused) 1.6.dp else 1.1.dp,
-                    brush =
-                      Brush.horizontalGradient(
-                        listOf(Color(0xDD00F5D4), Color(0xCCFACC15), Color(0xDD38BDF8))
-                      ),
-                    shape = RoundedCornerShape(10.dp),
-                  )
-                  .padding(horizontal = 20.dp, vertical = 7.dp),
-              contentAlignment = Alignment.Center,
-            ) {
-              Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-              ) {
-                Row(
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                  Text(
-                    text = "[",
-                    color = Color(0xFFFACC15),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                  )
-                  Text(
-                    text = "PLAY // ENTER THE RIFT",
-                    color = Color.White,
-                    fontSize = 13.8.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    letterSpacing = 1.6.sp,
-                    style = TextStyle(shadow = playTitleGlow),
-                  )
-                  Text(
-                    text = "]",
-                    color = Color(0xFFFACC15),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                  )
-                }
-                Text(
-                  text = "6 Ranked Modes • Custom Lobbies",
-                  color = Color(0xFFCBD5E1),
-                  fontSize = 7.8.sp,
-                  fontWeight = FontWeight.Bold,
-                  fontFamily = FontFamily.Monospace,
-                  letterSpacing = 0.5.sp,
-                )
-              }
-            }
-          }
+          RoundRipplingOverwatchAperture(
+            modifier = Modifier.weight(0.52f).fillMaxHeight(),
+            isFocused = centerFocused,
+            drawHeadlessSafeZoneFallback = headless,
+            overwatchInstances = overwatchInstances,
+            activeInstance = activeOverwatchInstance,
+            favoriteOverwatchKey = favoriteOverwatchKey,
+            onSelectOverwatchKey = onSelectOverwatchKey,
+            onToggleFavoriteOverwatchKey = onToggleFavoriteOverwatchKey,
+            onQuickZoneIntoOverwatch = onQuickZoneIntoOverwatch,
+            onOpenAllModesGate = { onSelectNode(0, NexusCoreNode.CONVERGENCE_GATE) },
+            onApertureRootBoundsChanged = onApertureRootBoundsChanged,
+          )
 
           // RIGHT SCI-FI TABLET DOCK (3 Chamfered #060D1A Terminal Cards)
           Column(
@@ -1885,190 +1867,451 @@ private fun SciFiTabletModuleCard(
 }
 
 /**
- * Digitizes the flat `#060D1A` Sci-Fi Command Tablet viewport inward into deep 3D Safe-Zone space via:
- * 1. Stepped dissolving `#060D1A` & `#00F5D4` rectangular holographic voxel/matrix grid tiles along all 4 margins
- *    whose opacity & scale step down (`0.90 -> 0.46 -> 0.16 -> 0.04 -> 0.0`) inward toward the 3D Sanctuary.
- * 2. Three nested 3D-perspective cyan/slate wireframe depth rings connected by receding corner depth vectors
- *    and precision rangefinder ticks (zero cartoon glass cracks, zero magenta fracture lines).
+ * Round Rippling Dynamic-Lit Digitized Aperture (`ORBITAL_HUB` Center Column):
+ * 1. Masks `#060D1A` sci-fi tablet glass outside an exact circular aperture so `RiftArenaView` renders a
+ *    live top-down Full-Playfield Orbital Overwatch match (`100%` of `arenaRadius` visible inside the circle).
+ * 2. Concentric polar voxel/matrix rings (`0.96r .. 1.22r`) ripple inward (`sin(band - wt)`) from solid
+ *    `#060D1A` tablet glass into live space, lit by directional cyan/gold rim-lighting reacting to Combined Resonance.
+ * 3. Top Compact Switcher Pill (`<` • `Game Type • RIFT #XX • Combined RES` • `[FAV]` • `>`) +
+ *    Bottom Compact Action Row (`[ QUICK ZONE IN // RIFT #XX ]` + `[ ALL MODES ]`).
  */
 @Composable
-private fun DigitizedSafeZoneViewportOverlay(
+private fun RoundRipplingOverwatchAperture(
+  modifier: Modifier,
   isFocused: Boolean,
   drawHeadlessSafeZoneFallback: Boolean,
+  overwatchInstances: List<OverwatchRiftInstance>,
+  activeInstance: OverwatchRiftInstance,
+  favoriteOverwatchKey: String,
+  onSelectOverwatchKey: (String) -> Unit,
+  onToggleFavoriteOverwatchKey: (String) -> Unit,
+  onQuickZoneIntoOverwatch: (OverwatchRiftInstance) -> Unit,
+  onOpenAllModesGate: () -> Unit,
+  onApertureRootBoundsChanged: (cx: Float, cy: Float, radiusPx: Float) -> Unit,
 ) {
   val headless = remember { isHeadlessGlEnvironment() }
-  val scanPhase =
+  val ripplePhase =
     if (headless) {
-      0.35f
+      0.45f
     } else {
-      val transition = rememberInfiniteTransition(label = "digitized_viewport_scan")
+      val transition = rememberInfiniteTransition(label = "round_rippling_aperture")
       val p by
         transition.animateFloat(
           initialValue = 0f,
           targetValue = (2.0 * PI).toFloat(),
-          animationSpec = infiniteRepeatable(tween(5400, easing = LinearEasing), RepeatMode.Restart),
-          label = "digitized_scan_rad",
+          animationSpec = infiniteRepeatable(tween(4600, easing = LinearEasing), RepeatMode.Restart),
+          label = "round_ripple_rad",
         )
       p
     }
 
-  Canvas(modifier = Modifier.fillMaxSize()) {
-    val w = size.width
-    val h = size.height
-    if (w <= 8f || h <= 8f) return@Canvas
-    val cx = w * 0.5f
-    val cy = h * 0.48f
-    val center = Offset(cx, cy)
+  val totalInstances = overwatchInstances.size.coerceAtLeast(1)
+  val currentIdx =
+    remember(overwatchInstances, activeInstance.key) {
+      overwatchInstances.indexOfFirst { it.key == activeInstance.key }.let { if (it < 0) 0 else it }
+    }
+  val isFavorite = favoriteOverwatchKey.isNotBlank() && favoriteOverwatchKey == activeInstance.key
+  val energyNorm = (activeInstance.combinedResonance / 1600f).coerceIn(0.22f, 1.0f)
 
-    // Clean Headless Safe-Zone Schematic Fallback (used only in JVM/Robolectric tests without GLES30)
-    if (drawHeadlessSafeZoneFallback) {
-      val shieldR = min(w, h) * 0.36f
-      drawCircle(color = Color(0xFF050E1D), radius = shieldR * 1.24f, center = center)
-      drawCircle(color = Color(0xFF020814), radius = shieldR, center = center)
-      for (b in 0 until 8) {
-        val ang = (b * PI * 0.25).toFloat()
-        val innerPt = Offset(cx + cos(ang) * (shieldR * 0.24f), cy + sin(ang) * (shieldR * 0.24f))
-        val outerPt = Offset(cx + cos(ang) * shieldR, cy + sin(ang) * shieldR)
-        drawLine(
-          brush = Brush.linearGradient(listOf(Color(0xFFFACC15), Color(0xFF00F5D4)), start = innerPt, end = outerPt),
-          start = innerPt,
-          end = outerPt,
-          strokeWidth = 2.dp.toPx(),
+  Box(
+    modifier =
+      modifier.onGloballyPositioned { coords ->
+        val rootPos = coords.positionInRoot()
+        val w = coords.size.width.toFloat()
+        val h = coords.size.height.toFloat()
+        if (w > 8f && h > 8f) {
+          val cx = rootPos.x + w * 0.5f
+          val cy = rootPos.y + h * 0.5f
+          val radius = (min(w, h) * 0.41f).coerceAtLeast(48f)
+          onApertureRootBoundsChanged(cx, cy, radius)
+        }
+      },
+  ) {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+      val w = size.width
+      val h = size.height
+      if (w <= 8f || h <= 8f) return@Canvas
+      val cx = w * 0.5f
+      val cy = h * 0.5f
+      val center = Offset(cx, cy)
+      val apertureR = (min(w, h) * 0.41f).coerceAtLeast(48f)
+
+      // 1. Mask #060D1A tablet glass everywhere outside the exact circular Overwatch aperture
+      val outerMask =
+        Path().apply {
+          fillType = PathFillType.EvenOdd
+          addRect(Rect(0f, 0f, w, h))
+          addOval(Rect(cx - apertureR, cy - apertureR, cx + apertureR, cy + apertureR))
+        }
+      drawPath(outerMask, color = Color(0xFF060D1A))
+
+      // Headless JVM/Robolectric Full-Playfield Orbital Overwatch Schematic Fallback
+      if (drawHeadlessSafeZoneFallback) {
+        drawCircle(color = Color(0xFF030917), radius = apertureR, center = center)
+        val stormR = apertureR * 0.90f
+        drawCircle(
+          color = Color(0xFF00F5D4).copy(alpha = 0.52f),
+          radius = stormR,
+          center = center,
+          style = Stroke(width = 2.dp.toPx()),
+        )
+        val safeR = stormR * 0.16f
+        for (b in 0 until 8) {
+          val ang = (b * PI * 0.25).toFloat()
+          val innerPt = Offset(cx + cos(ang) * (safeR * 0.32f), cy + sin(ang) * (safeR * 0.32f))
+          val outerPt = Offset(cx + cos(ang) * safeR, cy + sin(ang) * safeR)
+          drawLine(
+            brush = Brush.linearGradient(listOf(Color(0xFFFACC15), Color(0xFF00F5D4)), start = innerPt, end = outerPt),
+            start = innerPt,
+            end = outerPt,
+            strokeWidth = 1.6.dp.toPx(),
+          )
+        }
+        drawCircle(color = Color(0xFF334155), radius = safeR * 0.42f, center = center)
+        drawCircle(
+          color = Color(0xFF00F5D4),
+          radius = safeR * 0.20f,
+          center = center,
+          style = Stroke(width = 1.3.dp.toPx()),
+        )
+      }
+
+      // 2. Concentric Polar Voxel / Matrix Rings Rippling Inward (sin(band - wt)) + Dynamic Directional Lighting
+      val numBands = 7
+      val numSegs = 48
+      val segSweepDeg = 360f / numSegs.toFloat()
+      val segGapDeg = 1.35f
+      val lightDirRad = ripplePhase * 0.75f
+      val secondaryLightRad = -ripplePhase * 0.5f + 2.1f
+      val borderSw = 0.9.dp.toPx()
+
+      for (band in 0 until numBands) {
+        // band 0 = outermost (#060D1A solid tablet rim) -> band 6 = innermost (dissolving into live Overwatch space)
+        val outerFrac = 1.22f - band * 0.038f
+        val innerFrac = outerFrac - 0.033f
+        val rMid = apertureR * ((outerFrac + innerFrac) * 0.5f)
+        val bandThickness = (apertureR * (outerFrac - innerFrac)).coerceAtLeast(1.6f)
+        val arcRect = Rect(cx - rMid, cy - rMid, cx + rMid, cy + rMid)
+
+        val keepThreshold =
+          when (band) {
+            0 -> 1.00f
+            1 -> 0.92f
+            2 -> 0.78f
+            3 -> 0.60f
+            4 -> 0.40f
+            5 -> 0.22f
+            else -> 0.10f
+          }
+        val baseTabletAlpha =
+          when (band) {
+            0 -> 0.95f
+            1 -> 0.78f
+            2 -> 0.56f
+            3 -> 0.34f
+            4 -> 0.18f
+            5 -> 0.09f
+            else -> 0.04f
+          }
+
+        for (seg in 0 until numSegs) {
+          val hash = ((band * 73856093) xor (seg * 19349663)) and 0xFF
+          val normHash = hash / 255f
+          // Inward-propagating polar ripple: as ripplePhase advances, crest travels from band 0 -> band 6 (inward!)
+          val segAngleRad = ((seg + 0.5f) / numSegs.toFloat()) * (2f * PI.toFloat())
+          val inwardWave = 0.5f + 0.5f * sin(band * 0.95f - ripplePhase * 3.0f + sin(segAngleRad * 3f) * 0.55f)
+          if (normHash > keepThreshold + inwardWave * 0.12f) continue
+
+          val startDeg = seg * segSweepDeg + segGapDeg * 0.5f
+          val sweepDeg = (segSweepDeg - segGapDeg).coerceAtLeast(1.2f)
+
+          // Dissolving #060D1A polar matrix cell fill
+          val fillAlpha = (baseTabletAlpha * (0.76f + 0.24f * inwardWave)).coerceIn(0f, 0.96f)
+          if (fillAlpha > 0.02f) {
+            drawArc(
+              color = Color(0xFF060D1A).copy(alpha = fillAlpha),
+              startAngle = startDeg,
+              sweepAngle = sweepDeg,
+              useCenter = false,
+              topLeft = arcRect.topLeft,
+              size = arcRect.size,
+              style = Stroke(width = bandThickness, cap = StrokeCap.Butt),
+            )
+          }
+
+          // Dynamic Directional Cyan / Solar-Gold Rim-Lighting on Polar Voxel Cells
+          val primaryLit = (0.5f + 0.5f * cos(segAngleRad - lightDirRad)).pow(2.2f)
+          val goldLit = (0.5f + 0.5f * cos(segAngleRad - secondaryLightRad)).pow(2.6f)
+          val highlightStrength =
+            ((0.18f + 0.56f * primaryLit + 0.38f * goldLit) * inwardWave * (0.55f + 0.45f * energyNorm))
+              .coerceIn(0f, 0.88f)
+
+          if (band >= 1 && ((hash and 3) == 0 || inwardWave > 0.72f)) {
+            val litColor =
+              when {
+                goldLit > primaryLit * 1.05f -> Color(0xFFFACC15)
+                (hash and 4) == 0 -> Color(0xFF00F5D4)
+                else -> Color(0xFF38BDF8)
+              }
+            drawArc(
+              color = litColor.copy(alpha = highlightStrength * (1f - band * 0.08f).coerceAtLeast(0.28f)),
+              startAngle = startDeg,
+              sweepAngle = sweepDeg,
+              useCenter = false,
+              topLeft = arcRect.topLeft,
+              size = arcRect.size,
+              style = Stroke(width = if (band >= 4) borderSw * 1.25f else borderSw, cap = StrokeCap.Butt),
+            )
+          }
+        }
+      }
+
+      // 3. Dynamic-Lit Circular Aperture Bezel Rings + Azimuth Rangefinder Ticks
+      rotate(degrees = (lightDirRad * 180f / PI.toFloat())) {
+        drawCircle(
+          brush =
+            Brush.sweepGradient(
+              0.00f to Color(0xFF00F5D4).copy(alpha = if (isFocused) 0.95f else 0.78f),
+              0.22f to Color(0xFF38BDF8).copy(alpha = 0.42f),
+              0.50f to Color(0xFFFACC15).copy(alpha = 0.82f),
+              0.78f to Color(0xFF1E293B).copy(alpha = 0.45f),
+              1.00f to Color(0xFF00F5D4).copy(alpha = if (isFocused) 0.95f else 0.78f),
+              center = center,
+            ),
+          radius = apertureR,
+          center = center,
+          style = Stroke(width = if (isFocused) 2.2.dp.toPx() else 1.6.dp.toPx()),
         )
       }
       drawCircle(
-        color = Color(0xFF00F5D4),
-        radius = shieldR,
+        color = Color(0xFF38BDF8).copy(alpha = 0.28f + 0.16f * energyNorm),
+        radius = apertureR * 1.055f,
         center = center,
-        style = Stroke(width = 2.dp.toPx()),
+        style = Stroke(width = 0.9.dp.toPx()),
       )
-      drawCircle(color = Color(0xFF1E293B), radius = shieldR * 0.20f, center = center)
-      drawCircle(color = Color(0xFF38BDF8), radius = shieldR * 0.08f, center = center)
-    }
 
-    // 1. Dissolving Digital Voxel / Matrix Grid Cells Along Outer Tablet Viewport Margins
-    // Stepped 10dp grid cells fade smoothly from #060D1A solid peripheral bezel into pure 3D space.
-    val cellPx = 10.5.dp.toPx().coerceAtLeast(6f)
-    val cols = (w / cellPx).toInt().coerceAtLeast(8)
-    val rows = (h / cellPx).toInt().coerceAtLeast(6)
-    val cellW = w / cols.toFloat()
-    val cellH = h / rows.toFloat()
-    val maxBandDepth = 4 // 4 stepped digital dissolution bands around all 4 edges
-    val tileGap = 1.2.dp.toPx()
-    val borderStroke = 0.8.dp.toPx()
-
-    for (r in 0 until rows) {
-      for (c in 0 until cols) {
-        val distLeft = c
-        val distRight = (cols - 1) - c
-        val distTop = r
-        val distBottom = (rows - 1) - r
-        val edgeSteps = min(min(distLeft, distRight), min(distTop, distBottom))
-        if (edgeSteps >= maxBandDepth) continue
-
-        // Deterministic spatial hash so select digital tiles dissolve/step cleanly without random flicker
-        val hash = ((c * 73856093) xor (r * 19349663)) and 0xFF
-        val normHash = hash / 255f
-        // Skip inner-band tiles progressively so the boundary digitizes like dissolving holographic voxels
-        val keepThreshold =
-          when (edgeSteps) {
-            0 -> 1.00f
-            1 -> 0.82f
-            2 -> 0.50f
-            else -> 0.24f
-          }
-        if (normHash > keepThreshold) continue
-
-        val baseFillAlpha =
-          when (edgeSteps) {
-            0 -> 0.88f
-            1 -> 0.46f
-            2 -> 0.18f
-            else -> 0.06f
-          }
-        val shimmer = 0.82f + 0.18f * sin(scanPhase + c * 0.45f + r * 0.35f)
-        val shrink = edgeSteps * 0.75.dp.toPx()
-        val left = c * cellW + tileGap * 0.5f + shrink * 0.5f
-        val top = r * cellH + tileGap * 0.5f + shrink * 0.5f
-        val rw = (cellW - tileGap - shrink).coerceAtLeast(1.5f)
-        val rh = (cellH - tileGap - shrink).coerceAtLeast(1.5f)
-
-        drawRect(
-          color = Color(0xFF060D1A).copy(alpha = (baseFillAlpha * shimmer).coerceIn(0f, 0.94f)),
-          topLeft = Offset(left, top),
-          size = Size(rw, rh),
+      // 12 Precision Radial Rangefinder Notches Around the Circular Overwatch Rim
+      val tickStroke = 1.2.dp.toPx()
+      for (t in 0 until 12) {
+        val ang = (t * PI / 6.0).toFloat()
+        val isCardinal = t % 3 == 0
+        val r0 = apertureR * (if (isCardinal) 0.968f else 0.982f)
+        val r1 = apertureR * (if (isCardinal) 1.032f else 1.016f)
+        val col =
+          if (isCardinal) Color(0xFFFACC15).copy(alpha = 0.78f)
+          else Color(0xFF00F5D4).copy(alpha = 0.45f)
+        drawLine(
+          color = col,
+          start = Offset(cx + cos(ang) * r0, cy + sin(ang) * r0),
+          end = Offset(cx + cos(ang) * r1, cy + sin(ang) * r1),
+          strokeWidth = tickStroke,
+          cap = StrokeCap.Round,
         )
-
-        // Crisp cyan/sky digital cell outline on select dissolving matrix tiles
-        if (edgeSteps >= 1 && (hash and 3) == 0) {
-          val wireAlpha =
-            when (edgeSteps) {
-              1 -> 0.36f
-              2 -> 0.24f
-              else -> 0.14f
-            } * shimmer
-          val wireCol = if ((hash and 4) == 0) Color(0xFF00F5D4) else Color(0xFF38BDF8)
-          drawRect(
-            color = wireCol.copy(alpha = wireAlpha.coerceIn(0f, 0.55f)),
-            topLeft = Offset(left, top),
-            size = Size(rw, rh),
-            style = Stroke(width = borderStroke),
-          )
-        }
       }
     }
 
-    // 2. Three Nested Receding 3D Perspective Wireframe Depth Frames + Corner Depth Rays
-    val insetSteps = floatArrayOf(0.015f, 0.055f, 0.105f)
-    val stepColors =
-      arrayOf(
-        if (isFocused) Color(0xFF00F5D4).copy(alpha = 0.62f) else Color(0xFF00F5D4).copy(alpha = 0.44f),
-        Color(0xFF38BDF8).copy(alpha = 0.28f),
-        Color(0xFF64748B).copy(alpha = 0.18f),
-      )
-    val stepWidths = floatArrayOf(1.3.dp.toPx(), 1.0.dp.toPx(), 0.8.dp.toPx())
+    // TOP COMPACT OVERWATCH INSTANCE SWITCHER PILL:
+    // [ < ]  GAME TYPE • RIFT #XX • 1,420 RES  [ FAV ]  [ > ]
+    Row(
+      modifier =
+        Modifier.align(Alignment.TopCenter)
+          .padding(top = 4.dp, start = 8.dp, end = 8.dp)
+          .clip(RoundedCornerShape(9.dp))
+          .background(Color(0xEB060D1A))
+          .border(
+            1.dp,
+            Brush.horizontalGradient(listOf(Color(0xAA00F5D4), Color(0x8838BDF8), Color(0xAAFACC15))),
+            RoundedCornerShape(9.dp),
+          )
+          .padding(horizontal = 6.dp, vertical = 4.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      // Previous RIFT # Instance
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(5.dp))
+            .background(Color(0xFF0B192E))
+            .border(0.9.dp, Color(0xFF38BDF8).copy(alpha = 0.75f), RoundedCornerShape(5.dp))
+            .clickable {
+              val prevIdx = if (currentIdx <= 0) totalInstances - 1 else currentIdx - 1
+              onSelectOverwatchKey(overwatchInstances[prevIdx].key)
+            }
+            .padding(horizontal = 7.dp, vertical = 3.dp)
+            .testTag("nexus_overwatch_prev"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = "<",
+          color = Color(0xFF00F5D4),
+          fontSize = 9.5.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
 
-    for (i in insetSteps.indices) {
-      val ix = w * insetSteps[i]
-      val iy = h * (insetSteps[i] * 1.15f)
-      val rw = (w - ix * 2f).coerceAtLeast(2f)
-      val rh = (h - iy * 2f).coerceAtLeast(2f)
-      val cut = (12.dp.toPx() * (1f - i * 0.22f)).coerceAtMost(min(rw, rh) * 0.16f)
-
-      val framePath =
-        Path().apply {
-          moveTo(ix + cut, iy)
-          lineTo(ix + rw - cut, iy)
-          lineTo(ix + rw, iy + cut)
-          lineTo(ix + rw, iy + rh - cut)
-          lineTo(ix + rw - cut, iy + rh)
-          lineTo(ix + cut, iy + rh)
-          lineTo(ix, iy + rh - cut)
-          lineTo(ix, iy + cut)
-          close()
+      // Active Match Mode + RIFT # + Combined Pilot Resonance
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        Text(
+          text = "${activeInstance.modeTitle} • ${activeInstance.riftLabel}",
+          color = Color.White,
+          fontSize = 7.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = "•",
+          color = Color(0xFF64748B),
+          fontSize = 7.8.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+        )
+        ResonanceCrestIcon(sizeDp = 12.dp)
+        Text(
+          text = "${formatOverwatchResonance(activeInstance.combinedResonance)} RES",
+          color = Color(0xFFFACC15),
+          fontSize = 7.8.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+        if (activeInstance.pilotCount > 0) {
+          Text(
+            text = "• ${activeInstance.pilotCount}P",
+            color = Color(0xFF34D399),
+            fontSize = 7.4.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
         }
-      drawPath(framePath, color = stepColors[i], style = Stroke(width = stepWidths[i]))
+      }
+
+      // [ FAV ] Pin Toggle
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(5.dp))
+            .background(if (isFavorite) Color(0x33FACC15) else Color(0xFF0B192E))
+            .border(
+              0.9.dp,
+              if (isFavorite) Color(0xFFFACC15) else Color(0xFF64748B).copy(alpha = 0.8f),
+              RoundedCornerShape(5.dp),
+            )
+            .clickable { onToggleFavoriteOverwatchKey(activeInstance.key) }
+            .padding(horizontal = 6.dp, vertical = 3.dp)
+            .testTag("nexus_overwatch_fav_toggle"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = if (isFavorite) "[FAV *]" else "[FAV]",
+          color = if (isFavorite) Color(0xFFFACC15) else Color(0xFFCBD5E1),
+          fontSize = 7.3.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+      }
+
+      // Next RIFT # Instance
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(5.dp))
+            .background(Color(0xFF0B192E))
+            .border(0.9.dp, Color(0xFF38BDF8).copy(alpha = 0.75f), RoundedCornerShape(5.dp))
+            .clickable {
+              val nextIdx = (currentIdx + 1) % totalInstances
+              onSelectOverwatchKey(overwatchInstances[nextIdx].key)
+            }
+            .padding(horizontal = 7.dp, vertical = 3.dp)
+            .testTag("nexus_overwatch_next"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = ">",
+          color = Color(0xFF00F5D4),
+          fontSize = 9.5.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
     }
 
-    // Receding 3D Perspective Corner Vectors Linking Outer Tablet Plane Into Deep Safe-Zone Space
-    val outerIx = w * insetSteps[0]
-    val outerIy = h * (insetSteps[0] * 1.15f)
-    val innerIx = w * 0.155f
-    val innerIy = h * 0.175f
-    val depthRayColor = Color(0xFF00F5D4).copy(alpha = 0.26f)
-    val rayStroke = 1.dp.toPx()
+    // BOTTOM COMPACT ACTION ROW:
+    // 1-Click [ QUICK ZONE IN // RIFT #XX ] + [ ALL MODES ] (CONVERGENCE GATE)
+    val quickZoneGlow =
+      remember(isFocused) {
+        Shadow(
+          color = if (isFocused) Color.White else Color(0xFF00F5D4),
+          offset = Offset.Zero,
+          blurRadius = 10f,
+        )
+      }
+    Row(
+      modifier =
+        Modifier.align(Alignment.BottomCenter)
+          .padding(bottom = 4.dp, start = 8.dp, end = 8.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(9.dp))
+            .background(
+              Brush.horizontalGradient(
+                listOf(Color(0xF0061428), Color(0xF50A223D), Color(0xF0061428))
+              )
+            )
+            .border(
+              width = if (isFocused) 1.5.dp else 1.1.dp,
+              brush =
+                Brush.horizontalGradient(
+                  listOf(Color(0xEE00F5D4), Color(0xCCFACC15), Color(0xEE38BDF8))
+                ),
+              shape = RoundedCornerShape(9.dp),
+            )
+            .clickable { onQuickZoneIntoOverwatch(activeInstance) }
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .testTag("nexus_btn_quick_zone_in"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = "[ QUICK ZONE IN // ${activeInstance.riftLabel} ]",
+          color = Color.White,
+          fontSize = 9.6.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          letterSpacing = 0.8.sp,
+          maxLines = 1,
+          style = TextStyle(shadow = quickZoneGlow),
+        )
+      }
 
-    drawLine(depthRayColor, Offset(outerIx, outerIy), Offset(innerIx, innerIy), strokeWidth = rayStroke)
-    drawLine(depthRayColor, Offset(w - outerIx, outerIy), Offset(w - innerIx, innerIy), strokeWidth = rayStroke)
-    drawLine(depthRayColor, Offset(w - outerIx, h - outerIy), Offset(w - innerIx, h - innerIy), strokeWidth = rayStroke)
-    drawLine(depthRayColor, Offset(outerIx, h - outerIy), Offset(innerIx, h - innerIy), strokeWidth = rayStroke)
-
-    // Subtle Horizon & Azimuth Rangefinder Ticks Along Inner Depth Aperture
-    val tickLen = 7.dp.toPx()
-    val tickCol = Color(0xFF38BDF8).copy(alpha = 0.34f)
-    drawLine(tickCol, Offset(cx - tickLen, outerIy), Offset(cx + tickLen, outerIy), strokeWidth = rayStroke)
-    drawLine(tickCol, Offset(innerIx, cy - tickLen), Offset(innerIx, cy + tickLen), strokeWidth = rayStroke)
-    drawLine(tickCol, Offset(w - innerIx, cy - tickLen), Offset(w - innerIx, cy + tickLen), strokeWidth = rayStroke)
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(9.dp))
+            .background(Color(0xEB071224))
+            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.85f), RoundedCornerShape(9.dp))
+            .clickable { onOpenAllModesGate() }
+            .padding(horizontal = 11.dp, vertical = 6.dp)
+            .testTag("nexus_node_convergence_gate"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = "[ ALL MODES ]",
+          color = Color(0xFF38BDF8),
+          fontSize = 8.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          letterSpacing = 0.6.sp,
+          maxLines = 1,
+        )
+      }
+    }
   }
 }
 

@@ -103,6 +103,7 @@ import com.example.ui.NexusForgeModal
 import com.example.ui.NexusForgeTab
 import com.example.ui.NexusHubLayoutMode
 import com.example.ui.NexusStreamState
+import com.example.ui.OverwatchRiftInstance
 import com.example.ui.RiftCalibrationDialog
 import com.example.ui.RiftChangelogModal
 import com.example.ui.RiftHudOverlay
@@ -344,6 +345,10 @@ fun RiftArenaScreen(
   var isForgeFullScreenStage by remember { mutableStateOf(false) }
   var showFullChangelogModal by remember { mutableStateOf(false) }
   var pendingStagedLaunch by remember { mutableStateOf<StagedRiftLaunch?>(null) }
+  var favoriteOverwatchKey by remember {
+    mutableStateOf(localPrefs.getFavoriteOverwatchRiftKey())
+  }
+  var userSelectedOverwatchKey by remember { mutableStateOf("") }
 
   var callsign by remember(currentUserId, isGoogleAuthenticated) {
     mutableStateOf(
@@ -886,6 +891,7 @@ fun RiftArenaScreen(
         flux = p.flux,
         maxFlux = p.maxFlux,
         bounty = p.bounty,
+        liveResonance = engine.liveResonance,
       )
     }
   }
@@ -984,6 +990,145 @@ fun RiftArenaScreen(
     (isNexusShellOpen ||
       showFullChangelogModal ||
       needsInitialSwornCallsign) && !isLiveHudDragPillOpen
+
+  val isHubOverwatchVisible =
+    isNexusShellOpen &&
+      activeNexusNode == NexusCoreNode.ORBITAL_HUB &&
+      !showFullChangelogModal &&
+      !needsInitialSwornCallsign &&
+      !isLiveHudDragPillOpen
+
+  val overwatchInstances =
+    remember(allOnlineHumansState, blockedPilotUids, frameTick) {
+      val cleanHumans =
+        allOnlineHumansState.filter { p ->
+          val pUid = p.userId.ifEmpty { p.id }
+          pUid.isNotBlank() && pUid !in blockedPilotUids
+        }
+      fun humanStatsForSector(sectorTag: String, fallbackSimResonance: Int): Pair<Int, Int> {
+        val matching = cleanHumans.filter { it.sectorId.equals(sectorTag, ignoreCase = true) }
+        if (matching.isEmpty()) return Pair(0, fallbackSimResonance)
+        val combinedRes =
+          matching.sumOf { p ->
+            if (p.liveResonance > 0L) p.liveResonance.toInt()
+            else (p.bounty.toInt() / 2).coerceAtLeast(180)
+          }
+        return Pair(matching.size, combinedRes)
+      }
+
+      val list = mutableListOf<OverwatchRiftInstance>()
+      val rankedSeeds =
+        listOf(
+          Triple(RankedGameMode.SECTOR_CONVERGENCE, 101, 1420),
+          Triple(RankedGameMode.FLUX_CORE, 202, 1080),
+          Triple(RankedGameMode.RIFT_SKIRMISH, 303, 940),
+          Triple(RankedGameMode.STASIS_BREACH, 404, 860),
+          Triple(RankedGameMode.RIFT_CONTROL, 505, 1190),
+          Triple(RankedGameMode.SYNDICATE_WARS, 606, 890),
+        )
+      rankedSeeds.forEachIndexed { idx, (mode, salt, simRes) ->
+        val (pCount, cRes) = humanStatsForSector(mode.name, simRes)
+        list.add(
+          OverwatchRiftInstance(
+            key = "${mode.name}_1",
+            modeTitle = mode.title.uppercase(Locale.US),
+            riftLabel = String.format(Locale.US, "RIFT #%02d", idx + 1),
+            rankedMode = mode,
+            customConfig = null,
+            pilotCount = pCount,
+            combinedResonance = cRes,
+            seedSalt = salt,
+          )
+        )
+      }
+      // Secondary Sector Convergence instance (RIFT #07) so pilots can cycle multiple FFA Rifts
+      list.add(
+        OverwatchRiftInstance(
+          key = "SECTOR_CONVERGENCE_2",
+          modeTitle = RankedGameMode.SECTOR_CONVERGENCE.title.uppercase(Locale.US),
+          riftLabel = "RIFT #07",
+          rankedMode = RankedGameMode.SECTOR_CONVERGENCE,
+          customConfig = null,
+          pilotCount = 0,
+          combinedResonance = 740,
+          seedSalt = 707,
+        )
+      )
+      // Public Custom Rifts (RIFT #08+)
+      engine.activeCustomGames
+        .filter { !it.instanceId.startsWith("priv_", ignoreCase = true) }
+        .forEachIndexed { cIdx, cfg ->
+          val sectorKey = "CUSTOM_${cfg.instanceId}"
+          val simFallback = 620 + (kotlin.math.abs(cfg.instanceId.hashCode()) % 520)
+          val (pCount, cRes) = humanStatsForSector(sectorKey, simFallback)
+          list.add(
+            OverwatchRiftInstance(
+              key = sectorKey,
+              modeTitle = "CUSTOM • ${cfg.baseMode.title.uppercase(Locale.US)}",
+              riftLabel = String.format(Locale.US, "RIFT #%02d", 8 + cIdx),
+              rankedMode = cfg.baseMode,
+              customConfig = cfg,
+              pilotCount = pCount,
+              combinedResonance = cRes,
+              seedSalt = cfg.instanceId.hashCode(),
+            )
+          )
+        }
+      list.toList()
+    }
+
+  val effectiveOverwatchInstance =
+    remember(overwatchInstances, userSelectedOverwatchKey, favoriteOverwatchKey) {
+      val manualMatch =
+        if (userSelectedOverwatchKey.isNotBlank()) {
+          overwatchInstances.firstOrNull { it.key == userSelectedOverwatchKey }
+        } else {
+          null
+        }
+      val favMatch =
+        if (favoriteOverwatchKey.isNotBlank()) {
+          overwatchInstances.firstOrNull { it.key == favoriteOverwatchKey }
+        } else {
+          null
+        }
+      when {
+        manualMatch != null -> manualMatch
+        favMatch != null -> favMatch
+        else -> {
+          val humanPopulated = overwatchInstances.filter { it.pilotCount > 0 }
+          if (humanPopulated.isNotEmpty()) {
+            humanPopulated.maxWithOrNull(
+              compareBy<OverwatchRiftInstance> { it.combinedResonance }
+                .thenBy { it.pilotCount }
+            ) ?: overwatchInstances.first()
+          } else {
+            overwatchInstances.maxByOrNull { it.combinedResonance } ?: overwatchInstances.first()
+          }
+        }
+      }
+    }
+
+  LaunchedEffect(
+    isHubOverwatchVisible,
+    effectiveOverwatchInstance.key,
+    engine.hasJoinedMatch,
+  ) {
+    arenaViewRef?.isHubOverwatchMode = isHubOverwatchVisible
+    if (isHubOverwatchVisible && !engine.hasJoinedMatch) {
+      engine.configureHubOverwatchInstance(
+        instanceKey = effectiveOverwatchInstance.key,
+        rankedMode = effectiveOverwatchInstance.rankedMode,
+        customConfig = effectiveOverwatchInstance.customConfig,
+        seedSalt = effectiveOverwatchInstance.seedSalt,
+      )
+      val remoteList = (sectorPilotsState as? UiState.Success)?.data
+      if (remoteList != null) {
+        engine.updateRemotePilots(remoteList, currentUserId)
+      }
+    } else if (!isHubOverwatchVisible) {
+      engine.isHubOverwatchActive = false
+    }
+  }
 
   Box(
     modifier =
@@ -1110,11 +1255,13 @@ fun RiftArenaScreen(
               ViewGroup.LayoutParams.MATCH_PARENT,
             )
           isModalOverlayOpen = isAnyModalCoveringArena
+          isHubOverwatchMode = isHubOverwatchVisible
           arenaViewRef = this
         }
       },
       update = { view ->
         view.isModalOverlayOpen = isAnyModalCoveringArena
+        view.isHubOverwatchMode = isHubOverwatchVisible
       },
     )
 
@@ -3083,6 +3230,121 @@ fun RiftArenaScreen(
                 activeNexusNode == NexusCoreNode.STAR_FORGE && RiftCalibrationState.isDraggingAnySlider,
               hideTopHeaderForFullScreenStage = isForgeFullScreenStage,
               liveResonance = engine.liveResonance,
+              overwatchInstances = overwatchInstances,
+              selectedOverwatchKey = effectiveOverwatchInstance.key,
+              favoriteOverwatchKey = favoriteOverwatchKey,
+              onSelectOverwatchKey = { nextKey ->
+                if (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift) {
+                  engine.leaveActiveMatchToNexusOrbit()
+                }
+                userSelectedOverwatchKey = nextKey
+                sfx.playMutedClick()
+                frameTick++
+              },
+              onToggleFavoriteOverwatchKey = { targetKey ->
+                val updatedFav = if (favoriteOverwatchKey == targetKey) "" else targetKey
+                favoriteOverwatchKey = updatedFav
+                localPrefs.setFavoriteOverwatchRiftKey(updatedFav)
+                if (updatedFav.isNotBlank()) {
+                  userSelectedOverwatchKey = updatedFav
+                  toastMessage = "PINNED FAVORITE OVERWATCH // ${effectiveOverwatchInstance.riftLabel}"
+                } else {
+                  toastMessage = "CLEARED FAVORITE OVERWATCH PIN // AUTO HIGHEST RESONANCE"
+                }
+                sfx.playMutedClick()
+                toastVersion++
+              },
+              onUpdateOverwatchViewport = { cx, cy, r ->
+                arenaViewRef?.let { view ->
+                  view.overwatchCenterX = cx
+                  view.overwatchCenterY = cy
+                  view.overwatchRadiusPx = r
+                }
+              },
+              onQuickZoneIntoOverwatch = { inst ->
+                val customCfg = inst.customConfig
+                val targetMode = customCfg?.baseMode ?: inst.rankedMode
+                val targetBracket =
+                  customCfg?.teamSizeBracket
+                    ?: when (inst.rankedMode) {
+                      RankedGameMode.RIFT_SKIRMISH,
+                      RankedGameMode.RIFT_CONTROL,
+                      RankedGameMode.SYNDICATE_WARS -> 3
+                      RankedGameMode.FLUX_CORE,
+                      RankedGameMode.STASIS_BREACH -> 5
+                      RankedGameMode.SECTOR_CONVERGENCE -> 20
+                    }
+
+                if (customCfg == null && inst.rankedMode == RankedGameMode.SYNDICATE_WARS) {
+                  val (eligible, reason) = engine.canQueueSyndicateWars()
+                  if (!eligible) {
+                    sfx.playMutedClick()
+                    toastMessage = reason
+                    toastVersion++
+                    syndicateSubDeck = SyndicateCitadelSubDeck.SYNDICATES_WARS
+                    openNexusNode(NexusCoreNode.SYNDICATE_CITADEL)
+                  } else if (engine.doesModeLockShipSelection(targetMode)) {
+                    stageRankedModeIntoHangar(inst.rankedMode, targetBracket)
+                  } else {
+                    pendingStagedLaunch = null
+                    engine.isShipLockedForMatch = false
+                    engine.switchLocalPlayerShip(selectedShipId.coerceIn(1, 10), forceFromHangar = true)
+                    syncEquippedCosmeticsToEngine(engine)
+                    selectedMode = inst.rankedMode.id
+                    localPrefs.setPreferredMode(inst.rankedMode.id)
+                    engine.deployToRankedMode(inst.rankedMode, targetBracket)
+                    syncEquippedCosmeticsToEngine(engine)
+                    engine.onStatsUpdated()
+                    isNexusShellOpen = false
+                    sfx.playPrize()
+                    toastMessage = "ZONED INTO ${inst.modeTitle} // ${inst.riftLabel}"
+                    toastVersion++
+                    frameTick++
+                  }
+                } else if (engine.doesModeLockShipSelection(targetMode)) {
+                  if (customCfg != null) {
+                    pendingStagedLaunch =
+                      if (engine.activeCustomGames.any { it.instanceId == customCfg.instanceId }) {
+                        StagedRiftLaunch.ExistingCustom(customCfg.instanceId)
+                      } else {
+                        StagedRiftLaunch.NewCustom(customCfg)
+                      }
+                    selectedMode = customCfg.baseMode.id
+                    sfx.playMutedClick()
+                    activeNexusNode = NexusCoreNode.HANGAR_DECK
+                    isNexusShellOpen = true
+                    toastMessage = "STAGED ${inst.riftLabel} // LOCK HULL & ENTER RIFT"
+                    toastVersion++
+                  } else {
+                    stageRankedModeIntoHangar(inst.rankedMode, targetBracket)
+                  }
+                } else {
+                  pendingStagedLaunch = null
+                  engine.isShipLockedForMatch = false
+                  engine.switchLocalPlayerShip(selectedShipId.coerceIn(1, 10), forceFromHangar = true)
+                  syncEquippedCosmeticsToEngine(engine)
+                  if (customCfg != null) {
+                    if (engine.activeCustomGames.any { it.instanceId == customCfg.instanceId }) {
+                      engine.joinCustomGame(customCfg.instanceId)
+                    } else {
+                      engine.createAndJoinCustomGame(customCfg)
+                    }
+                    selectedMode = customCfg.baseMode.id
+                    localPrefs.setPreferredMode(customCfg.baseMode.id)
+                  } else {
+                    selectedMode = inst.rankedMode.id
+                    localPrefs.setPreferredMode(inst.rankedMode.id)
+                    engine.deployToRankedMode(inst.rankedMode, targetBracket)
+                  }
+                  syncEquippedCosmeticsToEngine(engine)
+                  engine.onStatsUpdated()
+                  isNexusShellOpen = false
+                  sfx.playPrize()
+                  toastMessage = "ZONED INTO ${inst.modeTitle} // ${inst.riftLabel}"
+                  toastVersion++
+                  frameTick++
+                }
+              },
               onStageRankedModeViaHangar = { mode, bracket ->
                 stageRankedModeIntoHangar(mode, bracket)
               },

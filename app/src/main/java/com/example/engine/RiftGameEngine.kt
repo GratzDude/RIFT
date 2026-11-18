@@ -744,6 +744,84 @@ class RiftGameEngine(
   // True when flying in the on-demand ephemeral solo PRACTICE RIFT flight sandbox (0 bots, 0 remotes, 0 stat mutations)
   var isEphemeralPracticeRift: Boolean = false
 
+  // True when the NEXUS Hub circular Overwatch aperture is observing an active match without the local pilot joined
+  var isHubOverwatchActive: Boolean = false
+  private var currentOverwatchKey: String = ""
+
+  fun configureHubOverwatchInstance(
+    instanceKey: String,
+    rankedMode: RankedGameMode,
+    customConfig: CustomGameConfig?,
+    seedSalt: Int,
+  ) {
+    if (hasJoinedMatch) return
+    isHubOverwatchActive = true
+    if (currentOverwatchKey != instanceKey || ships.size <= 1) {
+      currentOverwatchKey = instanceKey
+      hasJoinedMatch = false
+      isInLobbyStaging = true
+      isEphemeralPracticeRift = false
+      isShipLockedForMatch = false
+      spectatingTargetShipId = ""
+      currentCustomGame = customConfig
+      activeRankedMode = rankedMode
+      mode = rankedMode.id
+      activeTeamSizeBracket =
+        customConfig?.teamSizeBracket
+          ?: when (rankedMode) {
+            RankedGameMode.RIFT_SKIRMISH -> 5
+            RankedGameMode.STASIS_BREACH -> 10
+            RankedGameMode.RIFT_CONTROL, RankedGameMode.SYNDICATE_WARS -> 5
+            else -> 20
+          }
+      publicMatchDurationSec = 0f
+      publicMatchCycleLimitSec =
+        if (customConfig != null) {
+          (customConfig.matchDurationMinutes.coerceIn(1, 120) * 60f)
+        } else {
+          RiftCalibrationState.publicMatchCycleLimitSec
+        }
+      skirmishRound = 1
+      skirmishWestRoundWins = 0
+      skirmishEastRoundWins = 0
+      skirmishWestKills = 0
+      skirmishEastKills = 0
+      skirmishRoundTimerSec = 180f
+
+      bullets.clear()
+      bombs.clear()
+      decoys.clear()
+      swarmDrones.clear()
+      brickWalls.clear()
+      shockwaves.clear()
+      shipDebrisChunks.clear()
+      interdictorBubbles.clear()
+      killFeed.clear()
+
+      currentArenaSeed = seedSalt
+      generateSectorArena(seedSalt)
+      rebuildRosterForMode(rankedMode.id)
+      resetFluxCoreToCenter()
+      westBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
+      eastBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
+      resetRiftControlZones()
+
+      if (customConfig != null) {
+        for (s in ships) {
+          s.maxFlux = s.spec.maxFlux * customConfig.healthMult
+          s.flux = s.maxFlux
+        }
+      }
+    }
+    localPlayer.respawnTimer = 999f
+    localPlayer.deathLingerTimer = 999f
+    localPlayer.isInStasisBrig = false
+    localPlayer.x = arenaCenterX
+    localPlayer.y = arenaCenterY
+    localPlayer.vx = 0f
+    localPlayer.vy = 0f
+  }
+
   private fun getPracticeRiftOpenSpawnPosition(): Pair<Float, Float> {
     val minR = (getSafeZoneRadius() + 185f).coerceAtLeast(480f)
     val maxR = (arenaRadius * 0.56f).coerceAtLeast(minR + 240f)
@@ -760,6 +838,8 @@ class RiftGameEngine(
   }
 
   fun enterEphemeralPracticeRift() {
+    isHubOverwatchActive = false
+    currentOverwatchKey = ""
     isEphemeralPracticeRift = true
     hasJoinedMatch = true
     isInLobbyStaging = false
@@ -837,6 +917,8 @@ class RiftGameEngine(
   }
 
   fun closeEphemeralPracticeRift() {
+    isHubOverwatchActive = false
+    currentOverwatchKey = ""
     isEphemeralPracticeRift = false
     hasJoinedMatch = false
     isInLobbyStaging = true
@@ -1218,6 +1300,42 @@ class RiftGameEngine(
    *    clears projectiles, resets bounties to 100, restores full Flux, and starts a new 60-minute FFA match cycle.
    */
   fun concludePublicFfaMatchCycle(forceSimulateWinWithPresence: Boolean = false) {
+    if (!hasJoinedMatch) {
+      val newSeed = Random.nextInt(10_000, 999_999)
+      bullets.clear()
+      bombs.clear()
+      decoys.clear()
+      swarmDrones.clear()
+      brickWalls.clear()
+      shockwaves.clear()
+      shipDebrisChunks.clear()
+      shieldRipples.clear()
+      phaseAfterimages.clear()
+      interdictorBubbles.clear()
+      generateSectorArena(seed = newSeed)
+      publicMatchDurationSec = 0f
+      for (s in ships) {
+        s.matchPresenceTimeSec = 0f
+        s.bounty = 100
+        s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
+        s.flux = s.maxFlux
+        if (s.isLocalPlayer) {
+          s.respawnTimer = 999f
+          s.x = arenaCenterX
+          s.y = arenaCenterY
+          s.vx = 0f
+          s.vy = 0f
+        } else {
+          s.respawnTimer = 0f
+          val sp = findRandomOpenPositionOutsideSafeZone()
+          s.x = sp.first
+          s.y = sp.second
+          s.vx = 0f
+          s.vy = 0f
+        }
+      }
+      return
+    }
     if (forceSimulateWinWithPresence) {
       publicMatchDurationSec = 3600f // 60-minute public FFA match
       localPlayer.matchPresenceTimeSec = 2280f // 38 minutes present (63.3% > 50% presence rule)
@@ -1681,7 +1799,7 @@ class RiftGameEngine(
   }
 
   fun enforceBotsEnabledState() {
-    if (!hasJoinedMatch) return
+    if (!hasJoinedMatch && !isHubOverwatchActive) return
     if (isEphemeralPracticeRift) {
       ships.removeAll { !it.isLocalPlayer }
       return
@@ -1696,6 +1814,8 @@ class RiftGameEngine(
   }
 
   fun createAndJoinCustomGame(config: CustomGameConfig) {
+    isHubOverwatchActive = false
+    currentOverwatchKey = ""
     isEphemeralPracticeRift = false
     hasJoinedMatch = true
     isInLobbyStaging = false
@@ -1706,6 +1826,8 @@ class RiftGameEngine(
 
   fun joinCustomGame(instanceId: String) {
     val cfg = activeCustomGames.firstOrNull { it.instanceId == instanceId } ?: return
+    isHubOverwatchActive = false
+    currentOverwatchKey = ""
     isEphemeralPracticeRift = false
     hasJoinedMatch = true
     isInLobbyStaging = false
@@ -1813,6 +1935,8 @@ class RiftGameEngine(
    * Cleanly leaves the active combat instance and returns the pilot to peaceful unjoined NEXUS orbit.
    */
   fun leaveActiveMatchToNexusOrbit() {
+    isHubOverwatchActive = false
+    currentOverwatchKey = ""
     isEphemeralPracticeRift = false
     hasJoinedMatch = false
     isInLobbyStaging = true
@@ -1902,6 +2026,8 @@ class RiftGameEngine(
         return
       }
     }
+    isHubOverwatchActive = false
+    currentOverwatchKey = ""
     isEphemeralPracticeRift = false
     hasJoinedMatch = true
     isInLobbyStaging = false
@@ -2599,9 +2725,10 @@ class RiftGameEngine(
       localPlayer.phaseShieldTimer = RiftCalibrationState.exitPhaseShieldSec
     }
 
+    val overwatchUnjoined = isHubOverwatchActive && !hasJoinedMatch
     val updated = mutableListOf<ShipEntity>()
     updated.add(localPlayer)
-    var friendlyCount = 1
+    var friendlyCount = if (overwatchUnjoined) 0 else 1
     var rivalCount = 0
 
     for (rp in remotePilots.values) {
@@ -2771,7 +2898,7 @@ class RiftGameEngine(
       onlineRemoteSectorByUid.remove(off)
     }
 
-    if (!hasJoinedMatch || isEphemeralPracticeRift) {
+    if ((!hasJoinedMatch && !isHubOverwatchActive) || isEphemeralPracticeRift) {
       if (remotePilots.isNotEmpty()) {
         remotePilots.clear()
       }
@@ -2883,7 +3010,7 @@ class RiftGameEngine(
       rosterChanged = true
     }
 
-    if (rosterChanged && hasJoinedMatch) {
+    if (rosterChanged && (hasJoinedMatch || isHubOverwatchActive)) {
       rebuildRosterForMode(mode)
     }
   }
@@ -5579,6 +5706,22 @@ class RiftGameEngine(
     interdictorBubbles.clear()
     bakeStaticRadarBitmap()
 
+    if (!hasJoinedMatch) {
+      localPlayer.respawnTimer = 999f
+      localPlayer.x = arenaCenterX
+      localPlayer.y = arenaCenterY
+      localPlayer.vx = 0f
+      localPlayer.vy = 0f
+      if (skirmishWestRoundWins >= 2 || skirmishEastRoundWins >= 2) {
+        skirmishRound = 1
+        skirmishWestRoundWins = 0
+        skirmishEastRoundWins = 0
+      } else {
+        skirmishRound = (skirmishWestRoundWins + skirmishEastRoundWins + 1).coerceIn(1, 3)
+      }
+      return
+    }
+
     if (skirmishWestRoundWins >= 2 || skirmishEastRoundWins >= 2) {
       val westWonMatch = skirmishWestRoundWins >= 2
       val isClanWar = activeRankedMode == RankedGameMode.SYNDICATE_WARS
@@ -5637,7 +5780,7 @@ class RiftGameEngine(
 
   private fun checkStasisLockdownVictory() {
     if (!isStasisBreachRulesActive()) return
-    val westTeam = ships.filter { it.freq == 0 }
+    val westTeam = ships.filter { it.freq == 0 && (hasJoinedMatch || !it.isLocalPlayer) }
     val eastTeam = ships.filter { it.freq == 1 }
     val allWestJailed = westTeam.isNotEmpty() && westTeam.all { it.isInStasisBrig }
     val allEastJailed = eastTeam.isNotEmpty() && eastTeam.all { it.isInStasisBrig }
@@ -5645,20 +5788,25 @@ class RiftGameEngine(
 
     val westWon = allEastJailed
     val isClanWar = activeRankedMode == RankedGameMode.SYNDICATE_WARS
-    onDailyDirectiveEvent(DailyDirectiveMetric.MATCHES_PLAYED, 1, false)
     for (s in ships) {
       s.isInStasisBrig = false
-      s.respawnTimer = 0f
       s.deathLingerTimer = 0f
       s.warpInAnimTimer = 0.65f
       s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
       s.flux = s.maxFlux
       s.vx = 0f
       s.vy = 0f
-      val sp = getSkirmishGateSpawnPosition(s.freq)
-      s.x = sp.first
-      s.y = sp.second
-      s.phaseShieldTimer = 3.0f
+      if (s.isLocalPlayer && !hasJoinedMatch) {
+        s.respawnTimer = 999f
+        s.x = arenaCenterX
+        s.y = arenaCenterY
+      } else {
+        s.respawnTimer = 0f
+        val sp = getSkirmishGateSpawnPosition(s.freq)
+        s.x = sp.first
+        s.y = sp.second
+        s.phaseShieldTimer = 3.0f
+      }
     }
     swarmDrones.clear()
     brickWalls.clear()
@@ -5666,7 +5814,9 @@ class RiftGameEngine(
     bakeStaticRadarBitmap()
     westBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
     eastBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
+    if (!hasJoinedMatch) return
 
+    onDailyDirectiveEvent(DailyDirectiveMetric.MATCHES_PLAYED, 1, false)
     if (westWon) {
       riftShards += 100L
       convergencesWon++
@@ -6671,6 +6821,36 @@ class RiftGameEngine(
   }
 
   fun stepSimulation(rawDt: Float) {
+    val inHubOverwatch = isHubOverwatchActive && !hasJoinedMatch
+    val prevSfxEnabled = sfx.enabled
+    if (inHubOverwatch) {
+      sfx.enabled = false
+      isInLobbyStaging = true
+      localPlayer.respawnTimer = 999f
+      localPlayer.deathLingerTimer = 999f
+      localPlayer.isInStasisBrig = false
+      localPlayer.x = arenaCenterX
+      localPlayer.y = arenaCenterY
+      localPlayer.vx = 0f
+      localPlayer.vy = 0f
+    }
+    try {
+      stepSimulationInternal(rawDt)
+    } finally {
+      if (inHubOverwatch) {
+        sfx.enabled = prevSfxEnabled
+        localPlayer.respawnTimer = 999f
+        localPlayer.deathLingerTimer = 999f
+        localPlayer.isInStasisBrig = false
+        localPlayer.x = arenaCenterX
+        localPlayer.y = arenaCenterY
+        localPlayer.vx = 0f
+        localPlayer.vy = 0f
+      }
+    }
+  }
+
+  private fun stepSimulationInternal(rawDt: Float) {
     if (safeZoneToastCooldown > 0f) {
       safeZoneToastCooldown = max(0f, safeZoneToastCooldown - rawDt)
     }
@@ -6687,8 +6867,8 @@ class RiftGameEngine(
         rawDt
       }
 
-    // Unjoined Startup / NEXUS Orbit Mode: peacefully orbit the 3D circular sector with 0 combat ships
-    if (!hasJoinedMatch) {
+    // Unjoined Startup / NEXUS Orbit Mode (when Overwatch is NOT active): peacefully orbit with 0 combat ships
+    if (!hasJoinedMatch && !isHubOverwatchActive) {
       lobbyOrbitAngle = (lobbyOrbitAngle + rawDt * 0.16f) % (PI.toFloat() * 2f)
       localPlayer.x = arenaCenterX + cos(lobbyOrbitAngle) * 760f
       localPlayer.y = arenaCenterY + sin(lobbyOrbitAngle) * 760f
@@ -8700,40 +8880,42 @@ class RiftGameEngine(
     riftControlEastScore = (riftControlEastScore + eastRate * rawDt).coerceAtMost(1000f)
 
     if (riftControlWestScore >= 1000f || riftControlEastScore >= 1000f || riftControlMatchTimerSec <= 0f) {
-      val westWon =
-        when {
-          riftControlWestScore >= 1000f && riftControlWestScore >= riftControlEastScore -> true
-          riftControlEastScore >= 1000f -> false
-          riftControlWestScore > riftControlEastScore + 0.5f -> true
-          riftControlEastScore > riftControlWestScore + 0.5f -> false
-          westLocks > eastLocks -> true
-          eastLocks > westLocks -> false
-          else -> (-riftAlphaControlSec - riftOmegaControlSec) >= 0f
+      if (hasJoinedMatch) {
+        val westWon =
+          when {
+            riftControlWestScore >= 1000f && riftControlWestScore >= riftControlEastScore -> true
+            riftControlEastScore >= 1000f -> false
+            riftControlWestScore > riftControlEastScore + 0.5f -> true
+            riftControlEastScore > riftControlWestScore + 0.5f -> false
+            westLocks > eastLocks -> true
+            eastLocks > westLocks -> false
+            else -> (-riftAlphaControlSec - riftOmegaControlSec) >= 0f
+          }
+        onDailyDirectiveEvent(DailyDirectiveMetric.MATCHES_PLAYED, 1, false)
+        if (westWon) {
+          riftShards += 85L
+          convergencesWon++
+          adjustLocalResonance(30, "RIFT CONTROL WIN")
+          onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
+          val msg =
+            "RIFT CONTROL VICTORY! WEST HORIZON ${riftControlWestScore.toInt()}-${riftControlEastScore.toInt()} (+85 RIFT SHARDS)"
+          highBountyShutdownBanner = msg
+          highBountyShutdownTimer = 5.0f
+          sfx.playPrize()
+          onPrizeToast(msg)
+          onStatsUpdated()
+        } else {
+          if (liveResonance >= 200) {
+            adjustLocalResonance(-12, "MATCH LOSS")
+          }
+          val msg =
+            "RIFT CONTROL CONCLUDED — EAST HORIZON WON ${riftControlEastScore.toInt()}-${riftControlWestScore.toInt()}"
+          highBountyShutdownBanner = msg
+          highBountyShutdownTimer = 4.5f
+          sfx.playWarp()
+          onPrizeToast(msg)
+          onStatsUpdated()
         }
-      onDailyDirectiveEvent(DailyDirectiveMetric.MATCHES_PLAYED, 1, false)
-      if (westWon) {
-        riftShards += 85L
-        convergencesWon++
-        adjustLocalResonance(30, "RIFT CONTROL WIN")
-        onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
-        val msg =
-          "RIFT CONTROL VICTORY! WEST HORIZON ${riftControlWestScore.toInt()}-${riftControlEastScore.toInt()} (+85 RIFT SHARDS)"
-        highBountyShutdownBanner = msg
-        highBountyShutdownTimer = 5.0f
-        sfx.playPrize()
-        onPrizeToast(msg)
-        onStatsUpdated()
-      } else {
-        if (liveResonance >= 200) {
-          adjustLocalResonance(-12, "MATCH LOSS")
-        }
-        val msg =
-          "RIFT CONTROL CONCLUDED — EAST HORIZON WON ${riftControlEastScore.toInt()}-${riftControlWestScore.toInt()}"
-        highBountyShutdownBanner = msg
-        highBountyShutdownTimer = 4.5f
-        sfx.playWarp()
-        onPrizeToast(msg)
-        onStatsUpdated()
       }
       swarmDrones.clear()
       brickWalls.clear()
@@ -8741,17 +8923,23 @@ class RiftGameEngine(
       bakeStaticRadarBitmap()
       resetRiftControlZones()
       for (s in ships) {
-        s.respawnTimer = 0f
         s.deathLingerTimer = 0f
         s.warpInAnimTimer = 0.65f
         s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
         s.flux = s.maxFlux
         s.vx = 0f
         s.vy = 0f
-        val sp = getSkirmishGateSpawnPosition(s.freq)
-        s.x = sp.first
-        s.y = sp.second
-        s.phaseShieldTimer = 3.0f
+        if (s.isLocalPlayer && !hasJoinedMatch) {
+          s.respawnTimer = 999f
+          s.x = arenaCenterX
+          s.y = arenaCenterY
+        } else {
+          s.respawnTimer = 0f
+          val sp = getSkirmishGateSpawnPosition(s.freq)
+          s.x = sp.first
+          s.y = sp.second
+          s.phaseShieldTimer = 3.0f
+        }
       }
     }
   }

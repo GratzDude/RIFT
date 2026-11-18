@@ -670,6 +670,7 @@ class RiftViewModel(
     flux: Float,
     maxFlux: Float,
     bounty: Int,
+    liveResonance: Int = 0,
   ) {
     if (!isCloudSessionReady()) return
     viewModelScope.launch {
@@ -695,6 +696,7 @@ class RiftViewModel(
             energy = flux.toLong().coerceIn(0L, 10000L),
             maxEnergy = maxFlux.toLong().coerceIn(100L, 10000L),
             bounty = bounty.toLong(),
+            liveResonance = liveResonance.toLong(),
             lastPingType = "NONE",
             lastPingX = 0.0,
             lastPingY = 0.0,

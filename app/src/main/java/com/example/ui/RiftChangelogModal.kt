@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 68
+const val CURRENT_RIFT_BUILD_VERSION = 69
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,12 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 69,
+      versionTag = "v1.0.69 // BUILD #69",
+      releaseDate = "Nov 17, 2026",
+      headline = "Round Rippling Dynamic-Lit Digitization Into Full-Playfield Highest-Resonance Live Overwatch (RIFT # + Favorite Quick Zone-In) & 5x DS9 Metallic Safe-Zone Station in STAR FORGE",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Upgraded the Safe-Zone center (SECTOR CONVERGENCE & FLUX CORE) to a 5x ship-scale (180px world radius) Deep Space Nine (DS9) metallic station sprite built with 5-stop ship armor shading, 6 curved docking pylons, inner promenade windows, and a shrunk revolving cyan/gold holographic ring around Ops, wired live into STAR FORGE.",
+          "Replaced the static ORBITAL_HUB 3D station scene with a Round Rippling Dynamic-Lit Digitized Aperture looking straight down at full-playfield scale into a live active match (RiftArenaView Orbital Overwatch), auto-selecting the pilot's [FAV] Rift or the active game with the Highest Combined Pilot Resonance (Game Type • RIFT #XX • Combined RES), with < / > instance switching and 1-tap [QUICK ZONE IN].",
+          "Added liveResonance telemetry to LivePilotState cloud heartbeats and persistent favorite_overwatch_rift_key storage in LocalPilotPrefs, while pausing Hub Overwatch simulation and rendering cleanly whenever sub-modals are open or the pilot deploys into combat.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 68,
       versionTag = "v1.0.68 // BUILD #68",
       releaseDate = "Nov 17, 2026",
       headline = "Sci-Fi Tablet Terminal Digitizing Inward Into Abyssal-Garden 3D Safe-Zone Station Holding Back Outer Storm Space + Persistent Gravity Rift Mass Fix",
-      badgeLabel = "LATEST RELEASE",
-      accentColorHex = "#00F5D4",
+      badgeLabel = "TABLET SHELL",
+      accentColorHex = "#38BDF8",
       highlights =
         listOf(
           "Rebuilt the NEXUS opening screen as a unified #060D1A Sci-Fi Command Tablet whose center viewport digitizes inward (dissolving holographic grid cells, voxel matrix tiles, and stepped depth telemetry) directly into the 3D Safe-Zone Sanctuary.",

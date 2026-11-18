@@ -2202,7 +2202,49 @@ private fun DevPlayfieldAndHudStudioBay(
             timeSec = timeSec,
             recipe = padRec,
           )
-          // Circular wall-less Rift Rim (zero box walls)
+          // Circular wall-less Rift Rim (zero box walls) + 8 Golden-Cyan Stabilizer Beams + 5x DS9 Metallic Station
+          val stationScreenR =
+            (180f * RiftCalibrationState.safeZoneScale * padRec.pixelScale.coerceIn(0.65f, 1.45f) * worldScale)
+              .coerceAtLeast(14f)
+          for (bIdx in 0 until 8) {
+            val ba = -timeSec * 0.14f + bIdx * (PI.toFloat() * 0.25f)
+            val bStart = Offset(szCx + cos(ba) * (stationScreenR * 0.86f), szCy + sin(ba) * (stationScreenR * 0.86f))
+            val bEnd = Offset(szCx + cos(ba) * (szScreenR * 0.985f), szCy + sin(ba) * (szScreenR * 0.985f))
+            drawLine(
+              brush =
+                Brush.linearGradient(
+                  listOf(Color(0xCCFACC15), Color(rimRec.glowColorInt).copy(alpha = 0.72f)),
+                  start = bStart,
+                  end = bEnd,
+                ),
+              start = bStart,
+              end = bEnd,
+              strokeWidth = 2.0.dp.toPx(),
+            )
+          }
+          drawIntoCanvas { canvas ->
+            val nc = canvas.nativeCanvas
+            val bmp = RiftSpriteBaker.safeZoneStationBitmap
+            nc.save()
+            nc.translate(szCx, szCy)
+            nc.rotate((timeSec * 8f) % 360f)
+            nc.drawBitmap(
+              bmp,
+              null,
+              android.graphics.RectF(-stationScreenR, -stationScreenR, stationScreenR, stationScreenR),
+              null,
+            )
+            nc.restore()
+            RiftSpriteBaker.drawSafeZoneStationHoloRing(
+              c = nc,
+              cx = szCx,
+              cy = szCy,
+              stationRadius = stationScreenR,
+              timeSec = timeSec,
+              isLockedOut = false,
+              alphaScale = padRec.surfaceOpacity,
+            )
+          }
           drawCircle(
             color = Color(rimRec.glowColorInt).copy(alpha = (0.32f * rimRec.glowIntensity).coerceIn(0.08f, 0.85f)),
             radius = szScreenR,
@@ -2226,7 +2268,7 @@ private fun DevPlayfieldAndHudStudioBay(
               1.4.dp.toPx(),
             )
           }
-          hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_PAD, szCx, szCy, (szScreenR * 0.55f).coerceIn(28.dp.toPx(), 110.dp.toPx()))
+          hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_PAD, szCx, szCy, max(stationScreenR, 32.dp.toPx()))
           hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_WALL, szCx, szCy - szScreenR, 44.dp.toPx())
 
           // 4. True 1:1 Obstacles & Placed Stasis Barrier (Sector 2: West-NorthWest)
@@ -3438,7 +3480,39 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
   val span = (baseSpan * recipe.pixelScale).coerceAtLeast(18f)
   val spin = timeSec * (0.9f + 0.8f * recipe.shaderTurbulence)
   when (target) {
-    ForgeElementTarget.SAFE_ZONE_PAD,
+    ForgeElementTarget.SAFE_ZONE_PAD -> {
+      drawCircle(Color(0xFF030917), span * 1.04f, Offset(cx, cy))
+      drawCircle(
+        Color(recipe.glowColorInt).copy(alpha = 0.28f),
+        span * 1.04f,
+        Offset(cx, cy),
+        style = Stroke(2.0.dp.toPx() * recipe.borderWeight),
+      )
+      val stationR = span * 0.88f
+      drawIntoCanvas { c ->
+        val nc = c.nativeCanvas
+        val bmp = RiftSpriteBaker.safeZoneStationBitmap
+        nc.save()
+        nc.translate(cx, cy)
+        nc.rotate((timeSec * 12f) % 360f)
+        nc.drawBitmap(
+          bmp,
+          null,
+          android.graphics.RectF(-stationR, -stationR, stationR, stationR),
+          null,
+        )
+        nc.restore()
+        RiftSpriteBaker.drawSafeZoneStationHoloRing(
+          c = nc,
+          cx = cx,
+          cy = cy,
+          stationRadius = stationR,
+          timeSec = timeSec,
+          isLockedOut = false,
+          alphaScale = recipe.surfaceOpacity,
+        )
+      }
+    }
     ForgeElementTarget.SAFE_ZONE_WALL -> {
       drawShaderOrFallbackVortex(vortexAgslShader, 0f, Offset(cx, cy), span, timeSec, recipe)
       drawCircle(Color(recipe.trimColorInt), span, Offset(cx, cy), style = Stroke(2.6.dp.toPx() * recipe.borderWeight))

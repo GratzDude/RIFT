@@ -127,11 +127,25 @@ class RiftArenaView(
         engine.fireStickActive = false
         engine.bombStickActive = false
       }
-      if ((wasOpen && !value) || !value || RiftCalibrationState.isUiUnlockedForDragging) {
+      if ((wasOpen && !value) || !value || isHubOverwatchMode || RiftCalibrationState.isUiUnlockedForDragging) {
         lastFrameNs = System.nanoTime()
         postInvalidateOnAnimation()
       }
     }
+
+  var isHubOverwatchMode: Boolean = false
+    set(value) {
+      val changed = field != value
+      field = value
+      if (value || changed) {
+        lastFrameNs = System.nanoTime()
+        postInvalidateOnAnimation()
+      }
+    }
+
+  var overwatchCenterX: Float = 0f
+  var overwatchCenterY: Float = 0f
+  var overwatchRadiusPx: Float = 0f
 
   private fun blendColorsInt(c1: Int, c2: Int, frac: Float): Int {
     val t = frac.coerceIn(0f, 1f)
@@ -694,7 +708,7 @@ class RiftArenaView(
       return
     }
 
-    if (isModalOverlayOpen && !RiftCalibrationState.isUiUnlockedForDragging) {
+    if (isModalOverlayOpen && !isHubOverwatchMode && !RiftCalibrationState.isUiUnlockedForDragging) {
       canvas.drawColor(Color.parseColor("#02050B"))
       return
     }
@@ -745,16 +759,15 @@ class RiftArenaView(
       camY = p.y
     }
 
-    // Non-Linear Camera Trauma Shake (Offset = Trauma^2 * MaxOffset * Noise(t))
-    val traumaSq = engine.cameraTrauma * engine.cameraTrauma
     val tSec = engine.traumaTimeSec
+    val traumaSq = if (isHubOverwatchMode) 0f else engine.cameraTrauma * engine.cameraTrauma
     val shakeOffsetX = if (traumaSq > 0.0001f) traumaSq * 14f * sin(tSec * 47.0f) else 0f
     val shakeOffsetY = if (traumaSq > 0.0001f) traumaSq * 14f * cos(tSec * 53.0f) else 0f
     val shakeAngleDeg =
       if (traumaSq > 0.0001f) (traumaSq * 0.035f * sin(tSec * 39.0f)) * (180f / PI.toFloat()) else 0f
 
-    val effectiveCamX = camX + shakeOffsetX
-    val effectiveCamY = camY + shakeOffsetY
+    val effectiveCamX = if (isHubOverwatchMode) engine.arenaCenterX else camX + shakeOffsetX
+    val effectiveCamY = if (isHubOverwatchMode) engine.arenaCenterY else camY + shakeOffsetY
 
     // [Z-0] Obsidian Void (#030712) + [Z-1] 3-Tier Parallax Background
     canvas.drawColor(Color.parseColor("#030712"))
@@ -783,18 +796,30 @@ class RiftArenaView(
       canvas.drawRect(0f, 0f, vw, vh, ambientDarknessPaint)
     }
 
-    // 3. World-Space Camera Transform (Base 0.65x * Real-Time Camera Zoom Slider [0.5x..1.5x] + Non-Linear Trauma Shake)
-    val worldScale = engine.effectiveCameraScale()
+    // 3. World-Space Camera Transform (Full-Playfield Orbital Overwatch when isHubOverwatchMode, else Pilot Camera)
+    val effectiveOverwatchR =
+      if (overwatchRadiusPx > 24f) overwatchRadiusPx else (min(vw, vh) * 0.36f).coerceAtLeast(120f)
+    val worldScale =
+      if (isHubOverwatchMode) {
+        (effectiveOverwatchR * 0.93f) / (engine.arenaRadius + 190f).coerceAtLeast(1200f)
+      } else {
+        engine.effectiveCameraScale()
+      }
+    val pivotScreenX = if (isHubOverwatchMode && overwatchCenterX > 1f) overwatchCenterX else vw * 0.5f
+    val pivotScreenY = if (isHubOverwatchMode && overwatchCenterY > 1f) overwatchCenterY else vh * 0.5f
+
     canvas.save()
-    canvas.translate(vw * 0.5f, vh * 0.5f)
+    canvas.translate(pivotScreenX, pivotScreenY)
     if (shakeAngleDeg != 0f) {
       canvas.rotate(shakeAngleDeg)
     }
     canvas.scale(worldScale, worldScale)
     canvas.translate(-effectiveCamX, -effectiveCamY)
 
-    val halfWorldW = (vw / worldScale) * 0.56f
-    val halfWorldH = (vh / worldScale) * 0.56f
+    val halfWorldW =
+      if (isHubOverwatchMode) (engine.arenaRadius + 460f) else (vw / worldScale) * 0.56f
+    val halfWorldH =
+      if (isHubOverwatchMode) (engine.arenaRadius + 460f) else (vh / worldScale) * 0.56f
     val viewLeft = effectiveCamX - halfWorldW
     val viewRight = effectiveCamX + halfWorldW
     val viewTop = effectiveCamY - halfWorldH
@@ -1637,7 +1662,8 @@ class RiftArenaView(
     }
 
     // 10. 2x Playfield 3D Metallic Ship Sprites (88px) + 3D Turn Banking + 360° Bounce Barrel Rolls + Split World Labels:
-    val shipsToRender = if (engine.hasJoinedMatch) engine.ships else listOf(p)
+    val shipsToRender =
+      if (engine.hasJoinedMatch || isHubOverwatchMode || engine.isHubOverwatchActive) engine.ships else listOf(p)
     for (s in shipsToRender) {
       if (s.respawnTimer > 0f) continue
       if (s.x < viewLeft - 110f || s.x > viewRight + 110f || s.y < viewTop - 110f || s.y > viewBottom + 110f) {
@@ -1849,6 +1875,9 @@ class RiftArenaView(
       // 4. Right combat buttons: x >= vw - 180dp && y >= vh - 220dp
       val inRightControls = screenX >= vw - 180f * dpDensity && screenY >= vh - 220f * dpDensity
 
+      if (isHubOverwatchMode) {
+        continue
+      }
       if (inBottomConsole || inTopBar || inLeftStick || inRightControls) {
         continue // Skip drawing nametag when projected under HUD buttons so ship names never bleed over MULTI or BRAKE STOP
       }
@@ -2044,8 +2073,8 @@ class RiftArenaView(
 
     canvas.restore()
 
-    // Suppress screen-space Arena HUD overlays behind NEXUS Master Window & modals (Law #4)
-    if (!isModalOverlayOpen || RiftCalibrationState.isUiUnlockedForDragging) {
+    // Suppress screen-space Arena HUD overlays behind NEXUS Master Window, Overwatch & modals (Law #4)
+    if ((!isModalOverlayOpen && !isHubOverwatchMode) || RiftCalibrationState.isUiUnlockedForDragging) {
       // 11b. Screen-Space Ranked Mode Banner & Off-Screen Objective Indicator (Flux Core / Stasis Breach / Skirmish)
       drawRankedModeScreenOverlay(canvas, vw, vh, p, effectiveCamX, effectiveCamY, worldScale)
 
@@ -2747,17 +2776,19 @@ class RiftArenaView(
     anomalyRingPaint.color = Color.argb((42 * opScale).toInt().coerceIn(18, 72), Color.red(hubSecondary), Color.green(hubSecondary), Color.blue(hubSecondary))
     canvas.drawCircle(szCX, szCY, szR * 0.72f, anomalyRingPaint)
 
-    // Layer 2: High-Contrast Multi-Ring 3D NEXUS Orbital Station Bracing the Outer Shield Rim with 8 Stabilizer Beams
-    val stationOuterR = (szR * 0.40f).coerceAtLeast(38f)
-    val rotSlow = tSec * 0.28f
-    val rotCounter = -tSec * 0.44f
+    // Layer 2: 5x Ship-Size (180px base world radius) Deep Space Nine (DS9) Metallic Safe-Zone Station Sprite
+    // + Revolving Ops Holographic Ring + 8 Golden-Cyan Stabilizer Beams Bracing szR
+    val stationR =
+      (180f * RiftCalibrationState.safeZoneScale * szPadRec.pixelScale.coerceIn(0.65f, 1.45f))
+        .coerceAtMost(szR * 0.86f)
+        .coerceAtLeast(48f)
 
-    // 8 Golden-Cyan Stabilizer Beams projecting from the 3D Station outward to brace the szR Containment Ring + 8 Outward Emitter Chevrons
+    // 8 Golden-Cyan Stabilizer Beams projecting from the DS9 Outer Docking Ring outward to brace the szR Containment Ring + 8 Outward Emitter Chevrons
     for (i in 0 until 8) {
       val ang = i * (PI.toFloat() * 0.25f) + sin(tSec * 0.4f) * 0.02f
       val ca = cos(ang)
       val sa = sin(ang)
-      val bStartR = stationOuterR * 0.88f
+      val bStartR = stationR * 0.86f
       val bEndR = szR - 3f
       val x0 = szCX + ca * bStartR
       val y0 = szCY + sa * bStartR
@@ -2794,80 +2825,43 @@ class RiftArenaView(
       canvas.drawCircle(chevTipX, chevTipY, 2.6f, obstacleBeaconPaint)
     }
 
-    // 3D-Tilted Outer Sovereign Docking Ring (elliptical foreshortening + 6 radial structural spokes)
-    canvas.save()
-    canvas.translate(szCX, szCY)
-    canvas.rotate((rotSlow * 180f / PI.toFloat()) % 360f)
-    val outerRx = stationOuterR
-    val outerRy = stationOuterR * 0.72f
-    arcRect.set(-outerRx, -outerRy, outerRx, outerRy)
-    anomalyRingPaint.strokeWidth = 7.2f
-    anomalyRingPaint.color = Color.argb((225 * opScale).toInt().coerceIn(95, 250), 15, 23, 42)
-    canvas.drawOval(arcRect, anomalyRingPaint)
-    anomalyRingPaint.strokeWidth = 2.6f
-    anomalyRingPaint.color =
-      Color.argb((220 * opScale).toInt().coerceIn(90, 250), Color.red(hubSecondary), Color.green(hubSecondary), Color.blue(hubSecondary))
-    canvas.drawOval(arcRect, anomalyRingPaint)
-    for (sp in 0 until 6) {
-      val sa = sp * (PI.toFloat() / 3f)
-      val sx0 = cos(sa) * (outerRx * 0.34f)
-      val sy0 = sin(sa) * (outerRy * 0.34f)
-      val sx1 = cos(sa) * outerRx
-      val sy1 = sin(sa) * outerRy
-      anomalyRingPaint.strokeWidth = 3.0f
-      anomalyRingPaint.color = Color.argb((215 * opScale).toInt().coerceIn(85, 245), 30, 41, 59)
-      canvas.drawLine(sx0, sy0, sx1, sy1, anomalyRingPaint)
-      obstacleBeaconPaint.color = if (sp % 2 == 0) goldCol else hubAccent
-      canvas.drawCircle(sx1, sy1, 4.2f, obstacleBeaconPaint)
-    }
-    canvas.restore()
+    // Smoothly Rotating 5x Metallic DS9 Safe-Zone Station Sprite (diameter = stationR * 2f)
+    val stationBmp = RiftSpriteBaker.safeZoneStationBitmap
+    val halfBmp = stationBmp.width * 0.5f
+    val stationScale = (stationR * 2f) / stationBmp.width.toFloat().coerceAtLeast(1f)
+    val stationSpinDeg = (tSec * 7.5f) % 360f
 
-    // 3D Cross-Tilted Counter-Rotating Inner Gyro Ring
-    canvas.save()
-    canvas.translate(szCX, szCY)
-    canvas.rotate((rotCounter * 180f / PI.toFloat() + 38f) % 360f)
-    val innerRx = stationOuterR * 0.64f
-    val innerRy = stationOuterR * 0.46f
-    arcRect.set(-innerRx, -innerRy, innerRx, innerRy)
-    anomalyRingPaint.strokeWidth = 4.6f
-    anomalyRingPaint.color = Color.argb((220 * opScale).toInt().coerceIn(90, 245), 17, 30, 52)
-    canvas.drawOval(arcRect, anomalyRingPaint)
-    anomalyRingPaint.strokeWidth = 2.0f
-    anomalyRingPaint.color =
-      Color.argb((225 * opScale).toInt().coerceIn(95, 250), Color.red(goldCol), Color.green(goldCol), Color.blue(goldCol))
-    canvas.drawOval(arcRect, anomalyRingPaint)
-    canvas.restore()
+    // Subtle deep-space under-shadow beneath the 5x DS9 Station
+    shadowMatrix.reset()
+    shadowMatrix.postTranslate(-halfBmp, -halfBmp)
+    shadowMatrix.postScale(stationScale * 0.98f, stationScale * 0.98f)
+    shadowMatrix.postRotate(stationSpinDeg)
+    shadowMatrix.postTranslate(szCX + 10f, szCY + 14f)
+    canvas.drawBitmap(stationBmp, shadowMatrix, shipShadowPaint)
 
-    // Central High-Contrast Octagonal Armored NEXUS Command Spire + Lit Micro-Windows + Reactor Core
-    val spireR = (stationOuterR * 0.32f).coerceAtLeast(16f)
-    obstaclePath.reset()
-    for (v in 0 until 8) {
-      val va = rotSlow * 0.45f + v * (PI.toFloat() * 0.25f)
-      val vx = szCX + cos(va) * spireR
-      val vy = szCY + sin(va) * spireR
-      if (v == 0) obstaclePath.moveTo(vx, vy) else obstaclePath.lineTo(vx, vy)
-    }
-    obstaclePath.close()
-    obstacleCapPaint.color = Color.rgb(13, 23, 41)
-    canvas.drawPath(obstaclePath, obstacleCapPaint)
-    anomalyRingPaint.strokeWidth = 2.2f
-    anomalyRingPaint.color = goldCol
-    canvas.drawPath(obstaclePath, anomalyRingPaint)
-
-    // Lit micro-windows around the octagonal command deck
-    for (wIdx in 0 until 8) {
-      val wa = rotSlow * 0.45f + wIdx * (PI.toFloat() * 0.25f) + 0.19f
-      val wx = szCX + cos(wa) * (spireR * 0.68f)
-      val wy = szCY + sin(wa) * (spireR * 0.68f)
-      obstacleBeaconPaint.color = if (wIdx % 3 == 0) goldCol else Color.rgb(56, 189, 248)
-      canvas.drawCircle(wx, wy, 1.9f, obstacleBeaconPaint)
+    shipMatrix.reset()
+    shipMatrix.postTranslate(-halfBmp, -halfBmp)
+    shipMatrix.postScale(stationScale, stationScale)
+    shipMatrix.postRotate(stationSpinDeg)
+    shipMatrix.postTranslate(szCX, szCY)
+    if (opScale < 0.99f) {
+      buffGlowPaint.alpha = (opScale * 255f).toInt().coerceIn(75, 255)
+      canvas.drawBitmap(stationBmp, shipMatrix, buffGlowPaint)
+      buffGlowPaint.alpha = 255
+    } else {
+      canvas.drawBitmap(stationBmp, shipMatrix, null)
     }
 
-    // Glowing Singularity Reactor Heart at the center of the Station
-    obstacleBeaconPaint.color = hubAccent
-    canvas.drawCircle(szCX, szCY, spireR * 0.36f, obstacleBeaconPaint)
-    obstacleBeaconPaint.color = Color.WHITE
-    canvas.drawCircle(szCX, szCY, spireR * 0.18f, obstacleBeaconPaint)
+    // Shrunk Revolving 3D-Tilted Cyan/Gold Holographic Ring Orbiting Central Ops Spire (stationR * 0.34f)
+    RiftSpriteBaker.drawSafeZoneStationHoloRing(
+      c = canvas,
+      cx = szCX,
+      cy = szCY,
+      stationRadius = stationR,
+      timeSec = tSec,
+      isLockedOut = isLockedOut,
+      alphaScale = opScale,
+    )
 
     // Layer 3: Crisp Braced Stabilizer Containment Shield Ring at exact physics radius szR
     val rimColor = hubAccent
