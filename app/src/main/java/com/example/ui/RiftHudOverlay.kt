@@ -486,6 +486,79 @@ fun RiftHudOverlay(
    }
   }
 
+  // Unobtrusive Rift-Styled 10s Between-Round Ready-Up Pill & 1v1 Abyssal Escalation Alert (Deathmatch / Syndicate Wars)
+  if (engine.isSkirmishRulesActive() && !uiUnlocked) {
+   val readyRem = engine.skirmishReadyCountdownSec
+   val show1v1Banner = engine.skirmishIs1v1Escalated || engine.skirmish1v1AlertTimer > 0f
+   if (readyRem > 0.01f || show1v1Banner) {
+    Column(
+     modifier = Modifier.align(Alignment.TopCenter).padding(top = 34.dp).zIndex(15f),
+     horizontalAlignment = Alignment.CenterHorizontally,
+     verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+     if (readyRem > 0.01f) {
+      val readyFrac = (1f - (readyRem / 10.0f)).coerceIn(0f, 1f)
+      Column(
+       modifier =
+        Modifier.clip(RoundedCornerShape(9.dp))
+         .background(Color(0xE605101F))
+         .border(1.dp, Color(0xFF00F5D4).copy(alpha = 0.82f), RoundedCornerShape(9.dp))
+         .padding(horizontal = (10f * textScale).dp, vertical = (3.5f * textScale).dp)
+         .testTag("hud_skirmish_ready_up_pill"),
+       horizontalAlignment = Alignment.CenterHorizontally,
+       verticalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+       val nextRoundNum = engine.skirmishWestRoundWins + engine.skirmishEastRoundWins + 1
+       Text(
+        text = String.format(Locale.US, "ROUND %d READY-UP • LAUNCH IN %.1fs", nextRoundNum, readyRem),
+        color = Color(0xFF00F5D4),
+        fontSize = (8.2f * textScale).sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        style = WingTelemetryTextStyle,
+        maxLines = 1,
+       )
+       Box(
+        modifier = Modifier.width((168f * textScale).dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF0F1E36))
+       ) {
+        Box(
+         modifier = Modifier.fillMaxWidth(readyFrac).height(3.dp).background(Color(0xFF00F5D4), RoundedCornerShape(2.dp))
+        )
+       }
+      }
+     } else if (show1v1Banner) {
+      val alertText =
+       if (engine.skirmish1v1AlertTimer > 0f && engine.skirmish1v1AlertBanner.isNotBlank()) {
+        engine.skirmish1v1AlertBanner
+       } else {
+        "1V1 ABYSSAL ESCALATION • MAX TEMPO"
+       }
+      Row(
+       modifier =
+        Modifier.clip(RoundedCornerShape(9.dp))
+         .background(Brush.horizontalGradient(listOf(Color(0xD9041821), Color(0xD908262A), Color(0xD9041821))))
+         .border(1.dp, Color(0xFF34D399).copy(alpha = 0.85f), RoundedCornerShape(9.dp))
+         .padding(horizontal = (9f * textScale).dp, vertical = (3f * textScale).dp)
+         .testTag("hud_skirmish_1v1_escalation_pill"),
+       verticalAlignment = Alignment.CenterVertically,
+       horizontalArrangement = Arrangement.spacedBy(5.dp),
+      ) {
+       FluxEmblem(sizeDp = (9f * textScale).dp)
+       Text(
+        text = alertText,
+        color = Color(0xFF6EE7B7),
+        fontSize = (7.8f * textScale).sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        style = WingTelemetryTextStyle,
+        maxLines = 1,
+       )
+      }
+     }
+    }
+   }
+  }
+
   if (levelUpBannerLevel > 1) {
    Box(
     modifier = Modifier.align(Alignment.TopCenter).padding(top = if (showPracticeChecklist) 72.dp else 48.dp).zIndex(22f).clip(RoundedCornerShape(10.dp))
@@ -1014,8 +1087,7 @@ private fun AllySpectatorSelectorCard(
  onCollapse: () -> Unit,
 ) {
  val statusLabel = when {
-  isStasisCaptured -> "IN STASIS BRIG"
-  isRoundEliminated -> "ROUND SIDELINED"
+  isRoundEliminated -> "DEATHMATCH ROUND SIDELINED • WAITING FOR ROUND END"
   else -> String.format(Locale.US, "RESPAWN %.1fs", respawnTimerSec.coerceAtLeast(0f))
  }
 
@@ -1649,20 +1721,44 @@ private fun ActivePowerupsDock(
  val dockBg = if (buffRec.isFactoryDefault) Color(0xD9080E18) else Color(buffRec.primaryColorInt).copy(alpha = buffRec.surfaceOpacity.coerceIn(0.25f, 0.98f))
  val dockBorder = if (buffRec.isFactoryDefault) Color(0x4D38BDF8) else Color(buffRec.trimColorInt)
 
- val slots = listOf(
-  PermanentUpgradeSlot(9, "BNC", when { player.hasBouncingBulletsUpgrade -> "ON"; player.spec.primaryBounces > 0 -> "NAT"; else -> "OFF" }, player.hasBouncingBulletsUpgrade || player.spec.primaryBounces > 0, Color(0xFFA855F7)),
-  PermanentUpgradeSlot(-10, "SPD", "+$spdPct%", player.speedOverchargeStacks > 0, Color(0xFF38BDF8)),
-  PermanentUpgradeSlot(-11, "THR", "+$thrPct%", player.thrustOverchargeStacks > 0, Color(0xFFF59E0B)),
-  PermanentUpgradeSlot(-13, "TURN", "+$turnPct%", player.turnOverchargeStacks > 0, Color(0xFFEC4899)),
-  PermanentUpgradeSlot(-14, "MAX", "+$maxFluxPct%", player.maxFluxOverchargeStacks > 0, Color(0xFF00F5D4)),
-  PermanentUpgradeSlot(-12, "RCH", "+$rchPct%", player.rechargeOverchargeStacks > 0, Color(0xFF10B981)),
- )
+ val activeSpecialReg =
+  when {
+   player.tractorBeamActive -> RiftCodex.BUFF_REGISTRY["TRACTOR_BEAM"]
+   player.lanceBeamActive -> RiftCodex.BUFF_REGISTRY["LANCE_BEAM"]
+   player.specialWeaponCharges > 0 && player.specialWeaponType != "NONE" -> RiftCodex.getBuffRegistryEntry(player.specialWeaponType)
+   else -> null
+  }
+ val slots = buildList {
+  if (activeSpecialReg != null) {
+   val specVal =
+    when {
+     player.tractorBeamActive || player.lanceBeamActive -> "ON"
+     player.specialWeaponStacks > 1 -> "x${player.specialWeaponStacks}"
+     else -> "[${player.specialWeaponCharges}]"
+    }
+   add(
+    PermanentUpgradeSlot(
+     iconType = activeSpecialReg.buffTypeIndex.coerceAtLeast(0),
+     label = activeSpecialReg.shortLabel.take(5),
+     valueText = specVal,
+     isActive = true,
+     accentColor = Color(activeSpecialReg.strokeColorInt),
+    )
+   )
+  }
+  add(PermanentUpgradeSlot(9, "BNC", when { player.hasBouncingBulletsUpgrade -> "ON"; player.spec.primaryBounces > 0 -> "NAT"; else -> "OFF" }, player.hasBouncingBulletsUpgrade || player.spec.primaryBounces > 0, Color(0xFFA855F7)))
+  add(PermanentUpgradeSlot(-10, "SPD", "+$spdPct%", player.speedOverchargeStacks > 0, Color(0xFF38BDF8)))
+  add(PermanentUpgradeSlot(-11, "THR", "+$thrPct%", player.thrustOverchargeStacks > 0, Color(0xFFF59E0B)))
+  add(PermanentUpgradeSlot(-13, "TURN", "+$turnPct%", player.turnOverchargeStacks > 0, Color(0xFFEC4899)))
+  add(PermanentUpgradeSlot(-14, "MAX", "+$maxFluxPct%", player.maxFluxOverchargeStacks > 0, Color(0xFF00F5D4)))
+  add(PermanentUpgradeSlot(-12, "RCH", "+$rchPct%", player.rechargeOverchargeStacks > 0, Color(0xFF10B981)))
+ }
 
  Row(
   modifier = Modifier.wrapContentSize().clip(RoundedCornerShape(9.dp)).background(dockBg)
    .border((0.85f * buffRec.borderWeight).dp, dockBorder, RoundedCornerShape(9.dp))
    .wysiwygUnlockOutline(enabled = uiUnlocked, cornerRadius = 9.dp)
-   .padding(horizontal = (6.0f * textScale).dp, vertical = (2.6f * textScale).dp),
+   .padding(horizontal = (6.5f * textScale).dp, vertical = (2.8f * textScale).dp),
   verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((5.5f * textScale).dp),
  ) {
   slots.forEach { slot -> PermanentUpgradeBadge(slot = slot, textScale = textScale) }

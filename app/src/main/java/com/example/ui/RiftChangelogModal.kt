@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 76
+const val CURRENT_RIFT_BUILD_VERSION = 78
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 78,
+      versionTag = "v1.0.78 // BUILD #78",
+      releaseDate = "Nov 19, 2026",
+      headline = "3 New & Stacked Buff Crates (Tractor Beam, Proximity-Lock Infinite Missile, Continuous Lance Beam), Mode-Specific AI Bot Brains, Deathmatch-Only Spectating & 1v1 Escalation With 10s Ready-Up",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Smooth Beveled Buff Pods & Stacked Crate Scaling (RiftSpriteBaker, RiftArenaView, RiftGameEngine, ShipSpecs): Smoothed Supply Pod housings and buff badges with rounded bevels, calm radial powerup glows, and non-spiky iconography; stacking N Barrier crates deploys N distinct wall segments, N Nova crates unleash N staggered 360-degree Nova waves, and additional Lance stacks scale beam width and range.",
+          "3 New Special Buff Crates (RiftGameEngine, RiftArenaView, RiftSpriteBaker, ShipSpecs): Added Toggleable Tractor Beam (gravimetric laser web slowing and pulling a caught hull toward your ship while draining Flux; tap again to shut off and clear), Proximity-Lock Infinite Missile (infinite duration and bounces with a visible influence radius that locks onto entering hulls and dynamically transfers lock when another ship enters), and Toggleable Continuous Lance Beam (drains Flux, stops on first ship or obstacle hit without penetrating, ticks damage every 0.5s, scales wider/longer with stacks, and clears on toggle off).",
+          "Mode-Specific AI Bot Brains & Deathmatch-Only Spectating (RiftGameEngine): Implemented dedicated tactical AI brains for Sector Convergence (HVT and crate hunting with safe positioning), Flux Core (loose-core sprints, carrier intercepts, and carrier kiting/crate runs avoiding Safe Zone), Stasis Breach (imprisoned bots firing on the brig core to break out while free bots hunt/defend), Rift Control (pushing Alpha/Omega capture zones and contesting enemies), and Rift Skirmish / Syndicate Wars (squad coordination, low-Flux caution, and focus-fire), while restricting teammate spectating strictly to round-based Deathmatch.",
+          "1v1 Deathmatch Escalation & 10-Second Between-Round Ready-Up (RiftGameEngine, RiftArenaView, RiftSoundSynthesizer, RiftHudOverlay): Narrowing a Deathmatch round to 1v1 triggers an unobtrusive Rift convergence alert, smoothly cross-blends the playfield into the bioluminescent abyssal-garden state, and slews music tempo up to 180 BPM; enforced a 10.0s Ready-Up countdown between rounds that smoothly restores visuals, tempo, and round staging.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 76,
       versionTag = "v1.0.76 // BUILD #76",
       releaseDate = "Nov 18, 2026",
       headline = "Live Online Player Visibility, Ship-Style Directional Obstacle Hit Ripples + Retaliatory & Cascading Station Counter-Attacks, and Vertical Animated Instrument Hub Cards",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "STATION SALVOS & HUB",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

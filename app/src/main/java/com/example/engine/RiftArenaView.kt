@@ -838,28 +838,60 @@ class RiftArenaView(
     val scaledDist = arcDistUtil * arcScale
     val scaledR = utilBtnRadius * arcScale
 
-    // Slot 1: Permanently locked at 227.0° -> SPECIAL CRATE ATTACK
+    // Slot 1: Permanently locked at 227.0° -> SPECIAL CRATE ATTACK (or Active Toggle Off for Tractor / Lance)
     val radSpecial = (227.0 * PI / 180.0).toFloat()
-    val hasSpecialCharges = p.specialWeaponCharges > 0
-    val specialCount = if (hasSpecialCharges) p.specialWeaponCharges else if (showAll) 1 else 0
+    val isToggleActive = p.tractorBeamActive || p.lanceBeamActive
+    val hasSpecialCharges = p.specialWeaponCharges > 0 || isToggleActive
+    val specialCount = if (p.specialWeaponCharges > 0) p.specialWeaponCharges else if (showAll) 1 else 0
     val activeType =
-      if (p.specialWeaponType != "NONE") {
-        p.specialWeaponType
-      } else {
-        "NOVA_RING"
+      when {
+        p.tractorBeamActive -> "TRACTOR_BEAM"
+        p.lanceBeamActive -> "LANCE_BEAM"
+        p.specialWeaponType != "NONE" -> p.specialWeaponType
+        else -> "NOVA_RING"
       }
     val reg = RiftCodex.getBuffRegistryEntry(activeType) ?: RiftCodex.BUFF_REGISTRY.getValue("NOVA_RING")
+    val stackBadge =
+      if (p.specialWeaponStacks > 1 && activeType in setOf("STASIS_BARRIER", "NOVA_RING", "LANCE_BEAM")) {
+        "x${p.specialWeaponStacks}"
+      } else {
+        "[$specialCount]"
+      }
+    val specialTitle =
+      when {
+        p.tractorBeamActive -> "TRACTOR ON"
+        p.lanceBeamActive -> if (p.specialWeaponStacks > 1) "LANCE x${p.specialWeaponStacks}" else "LANCE ON"
+        hasSpecialCharges || showAll -> "${reg.shortLabel} $stackBadge"
+        else -> "CRATE [0]"
+      }
+    val specialSub =
+      when {
+        isToggleActive -> "TAP OFF"
+        activeType in setOf("TRACTOR_BEAM", "LANCE_BEAM") && hasSpecialCharges -> "TOGGLE"
+        hasSpecialCharges || showAll -> "0"
+        else -> "EMPTY"
+      }
     activeUtilitySlots.add(
       UtilityButtonSlot(
         type = "SPECIAL",
-        title = if (hasSpecialCharges || showAll) "${reg.shortLabel} [$specialCount]" else "CRATE [0]",
-        sub = if (hasSpecialCharges || showAll) "0" else "EMPTY",
+        title = specialTitle,
+        sub = specialSub,
         cx = baseArcX + cos(radSpecial) * scaledDist + RiftCalibrationState.burstBtnOffset.x,
         cy = baseArcY + sin(radSpecial) * scaledDist + RiftCalibrationState.burstBtnOffset.y,
         r = scaledR,
-        strokeColor = if (hasSpecialCharges || showAll) reg.strokeColorInt else Color.parseColor("#475569"),
-        fillColor = if (hasSpecialCharges || showAll) reg.fillColorArgb else Color.argb(120, 15, 23, 42),
-        enabled = p.canFire && hasSpecialCharges,
+        strokeColor =
+          when {
+            isToggleActive -> Color.parseColor("#00F5D4")
+            hasSpecialCharges || showAll -> reg.strokeColorInt
+            else -> Color.parseColor("#475569")
+          },
+        fillColor =
+          when {
+            isToggleActive -> Color.argb(195, 6, 78, 59)
+            hasSpecialCharges || showAll -> reg.fillColorArgb
+            else -> Color.argb(120, 15, 23, 42)
+          },
+        enabled = isToggleActive || (p.canFire && p.specialWeaponCharges > 0),
         iconBuffType = reg.buffTypeIndex.coerceAtLeast(0),
       )
     )
@@ -1000,24 +1032,37 @@ class RiftArenaView(
       canvas.clipPath(overwatchClipPath)
     }
 
-    // [Z-0] Obsidian Void (#030712) + [Z-1] Multi-Plane Mode-Tinted Deep-Space Parallax Backdrop
+    // [Z-0] Obsidian Void (#030712) + [Z-1] Multi-Plane Mode-Tinted Deep-Space Parallax Backdrop (+ Smooth 1v1 Abyssal-Garden Blend)
+    val abyssalBlend = if (isHubOverwatchMode) 0f else engine.skirmishAbyssalBlend.coerceIn(0f, 1f)
     val nebRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.BACKGROUND_NEBULA)
-    val baseVoidColor =
+    val rawVoidColor =
       if (!nebRec.isFactoryDefault) {
         nebRec.primaryColorInt
       } else {
         Color.parseColor("#030712")
       }
+    val baseVoidColor =
+      if (abyssalBlend > 0.005f) {
+        Color.rgb(
+          (Color.red(rawVoidColor) + (2 - Color.red(rawVoidColor)) * abyssalBlend).roundToInt().coerceIn(0, 255),
+          (Color.green(rawVoidColor) + (18 - Color.green(rawVoidColor)) * abyssalBlend).roundToInt().coerceIn(0, 255),
+          (Color.blue(rawVoidColor) + (29 - Color.blue(rawVoidColor)) * abyssalBlend).roundToInt().coerceIn(0, 255),
+        )
+      } else {
+        rawVoidColor
+      }
     canvas.drawColor(baseVoidColor)
 
-    // Mode-tinted Volumetric Nebula Stamps (respecting custom STAR FORGE BACKGROUND_NEBULA overrides)
+    // Mode-tinted Volumetric Nebula Stamps (smoothly cross-blending into Bioluminescent Abyssal Garden during 1v1 Deathmatch)
+    val abyssalQuant = (abyssalBlend * 40f).roundToInt()
     val nebTintKey =
       (engine.activeRankedMode.ordinal shl 20) xor
         (if (nebRec.isFactoryDefault) 0 else (nebRec.trimColorInt xor (nebRec.glowColorInt shl 3))) xor
-        (nebRec.surfaceOpacity * 100f).roundToInt()
+        ((nebRec.surfaceOpacity * 100f).roundToInt() shl 6) xor
+        abyssalQuant
     if (nebTintKey != cachedNebulaTintKey) {
       cachedNebulaTintKey = nebTintKey
-      val (tintA, tintB) =
+      val (rawTintA, rawTintB) =
         if (!nebRec.isFactoryDefault) {
           nebRec.trimColorInt to nebRec.glowColorInt
         } else {
@@ -1030,24 +1075,45 @@ class RiftArenaView(
             RankedGameMode.RIFT_CONTROL -> Color.rgb(13, 148, 136) to Color.rgb(180, 83, 9)
           }
         }
-      val nebAlpha = (235f * nebRec.surfaceOpacity.coerceIn(0.25f, 1.0f)).roundToInt().coerceIn(60, 255)
+      val tintA =
+        if (abyssalBlend > 0.01f) {
+          Color.rgb(
+            (Color.red(rawTintA) + (0 - Color.red(rawTintA)) * abyssalBlend).roundToInt().coerceIn(0, 255),
+            (Color.green(rawTintA) + (245 - Color.green(rawTintA)) * abyssalBlend).roundToInt().coerceIn(0, 255),
+            (Color.blue(rawTintA) + (196 - Color.blue(rawTintA)) * abyssalBlend).roundToInt().coerceIn(0, 255),
+          )
+        } else {
+          rawTintA
+        }
+      val tintB =
+        if (abyssalBlend > 0.01f) {
+          Color.rgb(
+            (Color.red(rawTintB) + (16 - Color.red(rawTintB)) * abyssalBlend).roundToInt().coerceIn(0, 255),
+            (Color.green(rawTintB) + (142 - Color.green(rawTintB)) * abyssalBlend).roundToInt().coerceIn(0, 255),
+            (Color.blue(rawTintB) + (178 - Color.blue(rawTintB)) * abyssalBlend).roundToInt().coerceIn(0, 255),
+          )
+        } else {
+          rawTintB
+        }
+      val nebAlpha =
+        ((235f + 20f * abyssalBlend) * nebRec.surfaceOpacity.coerceIn(0.25f, 1.0f)).roundToInt().coerceIn(60, 255)
       nebulaPrimaryPaint.alpha = nebAlpha
       nebulaSecondaryPaint.alpha = nebAlpha
       nebulaPrimaryPaint.colorFilter =
-        if (nebRec.isFactoryDefault && engine.activeRankedMode == RankedGameMode.SECTOR_CONVERGENCE) {
+        if (abyssalBlend <= 0.01f && nebRec.isFactoryDefault && engine.activeRankedMode == RankedGameMode.SECTOR_CONVERGENCE) {
           null
         } else {
           android.graphics.PorterDuffColorFilter(
-            Color.argb(175, Color.red(tintA), Color.green(tintA), Color.blue(tintA)),
+            Color.argb(180, Color.red(tintA), Color.green(tintA), Color.blue(tintA)),
             android.graphics.PorterDuff.Mode.SRC_ATOP,
           )
         }
       nebulaSecondaryPaint.colorFilter =
-        if (nebRec.isFactoryDefault && engine.activeRankedMode == RankedGameMode.SECTOR_CONVERGENCE) {
+        if (abyssalBlend <= 0.01f && nebRec.isFactoryDefault && engine.activeRankedMode == RankedGameMode.SECTOR_CONVERGENCE) {
           null
         } else {
           android.graphics.PorterDuffColorFilter(
-            Color.argb(175, Color.red(tintB), Color.green(tintB), Color.blue(tintB)),
+            Color.argb(180, Color.red(tintB), Color.green(tintB), Color.blue(tintB)),
             android.graphics.PorterDuff.Mode.SRC_ATOP,
           )
         }
@@ -1056,12 +1122,44 @@ class RiftArenaView(
     for (nb in nebulaBlobs) {
       val nx = ((nb.x - effectiveCamX * nb.parallax) % vw + vw) % vw
       val ny = ((nb.y - effectiveCamY * nb.parallax) % vh + vh) % vh
-      val scaledR = nb.radius * nebRec.pixelScale.coerceIn(0.65f, 1.45f)
+      val scaledR = nb.radius * nebRec.pixelScale.coerceIn(0.65f, 1.45f) * (1f + 0.14f * abyssalBlend)
       nebulaDstRect.set(nx - scaledR, ny - scaledR, nx + scaledR, ny + scaledR)
       if (nb.isCyan) {
         canvas.drawBitmap(RiftSpriteBaker.nebulaCyanStamp, null, nebulaDstRect, nebulaPrimaryPaint)
       } else {
         canvas.drawBitmap(RiftSpriteBaker.nebulaIndigoStamp, null, nebulaDstRect, nebulaSecondaryPaint)
+      }
+    }
+
+    // 1v1 Abyssal-Garden Bioluminescent Spore Motes & Harmonic Canopy Ripples (smoothly faded by abyssalBlend)
+    if (abyssalBlend > 0.01f) {
+      val gardenAlpha = (abyssalBlend * 110f).roundToInt().coerceIn(0, 130)
+      parallaxMegaArcPaint.strokeWidth = 1.8f
+      for (ringIdx in 0 until 4) {
+        val gPhase = (tSec * 0.22f + ringIdx * 0.25f) % 1.0f
+        val gRad = min(vw, vh) * (0.18f + gPhase * 0.62f)
+        val ringFade = sin(gPhase * PI.toFloat()).coerceIn(0f, 1f)
+        parallaxMegaArcPaint.color =
+          if (ringIdx % 2 == 0) {
+            Color.argb((gardenAlpha * ringFade * 0.65f).roundToInt().coerceIn(0, 95), 0, 245, 212)
+          } else {
+            Color.argb((gardenAlpha * ringFade * 0.55f).roundToInt().coerceIn(0, 85), 52, 211, 153)
+          }
+        canvas.drawCircle(vw * 0.5f, vh * 0.5f, gRad, parallaxMegaArcPaint)
+      }
+      for (spIdx in 0 until 22) {
+        val baseX = ((spIdx * 317f + tSec * (12f + (spIdx % 5) * 3f) - effectiveCamX * 0.11f) % vw + vw) % vw
+        val baseY =
+          ((spIdx * 193f + sin(tSec * 0.9f + spIdx) * 26f - effectiveCamY * 0.11f) % vh + vh) % vh
+        val sporePulse = 0.5f + 0.5f * sin(tSec * 2.4f + spIdx * 1.3f)
+        val spAlpha = (abyssalBlend * (65f + 115f * sporePulse)).roundToInt().coerceIn(0, 200)
+        starPaint.color =
+          when (spIdx % 3) {
+            0 -> Color.argb(spAlpha, 0, 245, 212)
+            1 -> Color.argb(spAlpha, 52, 211, 153)
+            else -> Color.argb(spAlpha, 167, 139, 250)
+          }
+        canvas.drawCircle(baseX, baseY, 2.2f + 1.8f * sporePulse, starPaint)
       }
     }
 
@@ -1207,27 +1305,27 @@ class RiftArenaView(
       drawSpaceObstacle3D(canvas, w, effectiveCamX, effectiveCamY)
     }
 
-    // 6. Contained 3D Hexagonal Gunmetal/Emerald Supply Pods + Rotating Frame + Crisp Buff Icons
+    // 6. Contained Smooth-Beveled 3D Supply Pods + Calm Radial Powerup Aura + Crisp Non-Spiky Buff Icons
     val crateRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SUPPLY_CRATE)
     val buffDrawSize = 88f * 0.89f * RiftCalibrationState.crateScale * crateRec.pixelScale.coerceIn(0.70f, 1.35f)
     val buffHalf = buffDrawSize * 0.5f
     val podBmp = RiftSpriteBaker.supplyPodFrameBitmap
-    val podHalf = buffHalf * 1.12f
+    val podHalf = buffHalf * 1.10f
     val iconHalf = buffHalf * 0.78f
     val podBmpHalfSrc = podBmp.width * 0.5f
     for (g in engine.greens) {
-      g.spinPhase += dt * 2.8f
+      g.spinPhase += dt * 1.85f
       if (g.x < viewLeft - 95f || g.x > viewRight + 95f || g.y < viewTop - 95f || g.y > viewBottom + 95f) {
         continue
       }
-      val bobOffsetY = sin(g.spinPhase) * 3.0f
+      val bobOffsetY = sin(g.spinPhase) * 2.4f
       val gy = g.y + bobOffsetY
-      val pulse = 0.5f + 0.5f * sin(g.spinPhase * 1.8f)
+      val pulse = 0.5f + 0.5f * sin(g.spinPhase * 1.25f)
 
-      // Tight, contained subtle emerald/cyan energy aura (zero oversized fuzzy green haze)
-      val glowRadius = podHalf * (0.98f + 0.14f * pulse)
+      // Calm, smooth radial emerald-cyan powerup halo
+      val glowRadius = podHalf * (1.02f + 0.08f * pulse)
       buffGlowPaint.alpha =
-        ((68f + 42f * pulse) * crateRec.glowIntensity.coerceIn(0.2f, 1.8f)).roundToInt().coerceIn(28, 155)
+        ((56f + 26f * pulse) * crateRec.glowIntensity.coerceIn(0.2f, 1.8f)).roundToInt().coerceIn(24, 128)
       nebulaDstRect.set(
         g.x - glowRadius,
         gy - glowRadius,
@@ -1236,17 +1334,17 @@ class RiftArenaView(
       )
       canvas.drawBitmap(RiftSpriteBaker.emeraldGlowStamp, null, nebulaDstRect, buffGlowPaint)
 
-      // Rotating 3D Hexagonal Gunmetal/Emerald Containment Pod Frame
+      // Smoothly Rotating Beveled Gunmetal/Emerald Containment Pod Frame
       val podScale = (podHalf / podBmpHalfSrc.coerceAtLeast(1f))
       shipMatrix.reset()
       shipMatrix.postTranslate(-podBmpHalfSrc, -podBmpHalfSrc)
-      shipMatrix.postRotate((g.spinPhase * 34f) % 360f)
+      shipMatrix.postRotate((g.spinPhase * 22f) % 360f)
       shipMatrix.postScale(podScale, podScale)
       shipMatrix.postTranslate(g.x, gy)
       obstacleSpritePaint.alpha = (255f * crateRec.surfaceOpacity.coerceIn(0.35f, 1.0f)).roundToInt().coerceIn(90, 255)
       canvas.drawBitmap(podBmp, shipMatrix, obstacleSpritePaint)
 
-      // Crisp Centered Buff Icon inside the Supply Pod
+      // Crisp Centered Rounded Buff Icon inside the Supply Pod
       val buffBmp = RiftSpriteBaker.getBuffIconBitmap(g.buffType)
       nebulaDstRect.set(
         g.x - iconHalf,
@@ -1258,7 +1356,7 @@ class RiftArenaView(
     }
     obstacleSpritePaint.alpha = 255
 
-    // 6b. 4-Layer 3D Playfield Rift Obstacles + Multicolored Unstable Merged Rift (10.0s Doomsday)
+    // 6b. 4-Layer 3D Playfield Rift Obstacles + Multicolored Unstable Merged Rift (10.0s Collapse)
     for (anom in engine.anomalies) {
       val r = anom.physicalRadius * RiftCalibrationState.anomalyScale
       val cullMargin = if (anom.isUnstableMergedRift) r * 2.35f else r * 1.65f
@@ -1291,7 +1389,7 @@ class RiftArenaView(
 
         drawWorldOverheadBanner(
           canvas = canvas,
-          text = String.format(java.util.Locale.US, "UNSTABLE RIFT • %.1fs // DOOMSDAY 75%% FLUX", max(0f, anom.life)),
+          text = String.format(java.util.Locale.US, "UNSTABLE RIFT • %.1fs // COLLAPSE 75%% FLUX", max(0f, anom.life)),
           worldX = anom.x,
           worldY = anom.y - ringR - (20f / safeScale),
           fillColor = if (anom.life <= 3.0f) Color.parseColor("#FB7185") else Color.parseColor("#FACC15"),
@@ -1700,9 +1798,10 @@ class RiftArenaView(
       }
     }
 
-    // 9. Distinct Per-Ship Secondary Warheads, Mines & Seeker Torpedoes (scaled by projScale)
+    // 9. Distinct Per-Ship Secondary Warheads, Mines, Seeker Torpedoes & Infinite Proximity-Lock Missiles (scaled by projScale)
     for (bm in engine.bombs) {
-      if (bm.x < viewLeft - 95f || bm.x > viewRight + 95f || bm.y < viewTop - 95f || bm.y > viewBottom + 95f) {
+      val cullPad = if (bm.isInfiniteProxMissile) bm.proxLockRadius + 60f else 95f
+      if (bm.x < viewLeft - cullPad || bm.x > viewRight + cullPad || bm.y < viewTop - cullPad || bm.y > viewBottom + cullPad) {
         continue
       }
       when (bm.type) {
@@ -1862,6 +1961,83 @@ class RiftArenaView(
           canvas.drawCircle(bm.x + dx * (len * 0.35f), bm.y + dy * (len * 0.35f), 3.8f * projScale, bombPaint)
         }
 
+        "PROX_MISSILE" -> {
+          // Infinite Proximity-Lock Missile: Visible 340px Influence Ring + Dynamic Re-Lock Tether + Solar-Gold/Cyan Warhead
+          val lockR = bm.proxLockRadius.coerceAtLeast(220f)
+          val hasLock = bm.targetShipId.isNotEmpty()
+          val ringCol = if (hasLock) Color.parseColor("#FACC15") else Color.parseColor("#38BDF8")
+          val ringPulse = 0.5f + 0.5f * sin(tSec * (if (hasLock) 8.5f else 3.2f))
+
+          // Subtle translucent influence field fill + crisp segmented proximity ring
+          anomalyFillPaint.color =
+            Color.argb(
+              if (hasLock) 18 else 11,
+              Color.red(ringCol),
+              Color.green(ringCol),
+              Color.blue(ringCol),
+            )
+          canvas.drawCircle(bm.x, bm.y, lockR, anomalyFillPaint)
+
+          safeDashPaint.color =
+            Color.argb(
+              (115f + 65f * ringPulse).roundToInt().coerceIn(85, 195),
+              Color.red(ringCol),
+              Color.green(ringCol),
+              Color.blue(ringCol),
+            )
+          safeDashPaint.strokeWidth = if (hasLock) 2.6f else 2.0f
+          canvas.drawCircle(bm.x, bm.y, lockR, safeDashPaint)
+
+          arcRect.set(bm.x - lockR, bm.y - lockR, bm.x + lockR, bm.y + lockR)
+          bombRingPaint.strokeWidth = 3.0f
+          bombRingPaint.color =
+            Color.argb(185, Color.red(ringCol), Color.green(ringCol), Color.blue(ringCol))
+          val rotDeg = (tSec * (if (hasLock) 72f else 32f)) % 360f
+          for (seg in 0 until 4) {
+            canvas.drawArc(arcRect, rotDeg + seg * 90f, 22f, false, bombRingPaint)
+          }
+
+          if (hasLock) {
+            val lockedShip = engine.ships.firstOrNull { it.id == bm.targetShipId && it.respawnTimer <= 0f }
+            if (lockedShip != null && !lockedShip.isCloaked) {
+              safeDashPaint.color = Color.argb(145, 250, 204, 21)
+              safeDashPaint.strokeWidth = 1.8f
+              canvas.drawLine(bm.x, bm.y, lockedShip.x, lockedShip.y, safeDashPaint)
+            }
+          }
+
+          val spd = hypot(bm.vx, bm.vy).coerceAtLeast(1f)
+          val dx = bm.vx / spd
+          val dy = bm.vy / spd
+          val px = -dy
+          val py = dx
+          val len = 25f * projScale
+          val wid = 10f * projScale
+
+          // Twin cyan-gold plasma exhaust trails
+          for (side in listOf(-0.46f, 0.46f)) {
+            val ex0 = bm.x - dx * (len * 0.52f) + px * (wid * side)
+            val ey0 = bm.y - dy * (len * 0.52f) + py * (wid * side)
+            bulletPaint.color = Color.parseColor("#00F5D4")
+            bulletPaint.strokeWidth = 4.0f * projScale
+            canvas.drawLine(ex0, ey0, ex0 - dx * (24f * projScale), ey0 - dy * (24f * projScale), bulletPaint)
+          }
+
+          plumePath.reset()
+          plumePath.moveTo(bm.x + dx * len, bm.y + dy * len)
+          plumePath.lineTo(bm.x - dx * (len * 0.50f) + px * wid, bm.y - dy * (len * 0.50f) + py * wid)
+          plumePath.lineTo(bm.x - dx * (len * 0.26f), bm.y - dy * (len * 0.26f))
+          plumePath.lineTo(bm.x - dx * (len * 0.50f) - px * wid, bm.y - dy * (len * 0.50f) - py * wid)
+          plumePath.close()
+          bombPaint.color = Color.parseColor("#FACC15")
+          canvas.drawPath(plumePath, bombPaint)
+          bombRingPaint.strokeWidth = 1.8f * projScale
+          bombRingPaint.color = Color.parseColor("#00F5D4")
+          canvas.drawPath(plumePath, bombRingPaint)
+          bombPaint.color = Color.WHITE
+          canvas.drawCircle(bm.x + dx * (len * 0.34f), bm.y + dy * (len * 0.34f), 4.0f * projScale, bombPaint)
+        }
+
         else -> {
           val c =
             when (bm.type) {
@@ -2016,9 +2192,152 @@ class RiftArenaView(
       canvas.drawBitmap(echoBmp, shipMatrix, phaseEchoPaint)
     }
 
-    // 10. 2x Playfield 3D Metallic Ship Sprites (88px) + 3D Turn Banking + 360° Bounce Barrel Rolls + Split World Labels:
+    // 10. 2x Playfield 3D Metallic Ship Sprites (88px) + Active Tractor Webs & Continuous Lance Beams + 3D Turn Banking:
     val shipsToRender =
       if (engine.hasJoinedMatch || isHubOverwatchMode || engine.isHubOverwatchActive) engine.ships else listOf(p)
+    for (beamOwner in shipsToRender) {
+      if (beamOwner.respawnTimer > 0f) continue
+      val aimRad = if (beamOwner.independentAimActive) beamOwner.weaponAngle else beamOwner.angle
+      val muzzleX = beamOwner.x + cos(aimRad) * (beamOwner.radius * 0.85f)
+      val muzzleY = beamOwner.y + sin(aimRad) * (beamOwner.radius * 0.85f)
+
+      // 10-pre-A: Toggleable Tractor Beam Laser Web (scanning cone or braided snare web pulling caught ship)
+      if (beamOwner.tractorBeamActive) {
+        val caught =
+          if (beamOwner.tractorTargetShipId.isNotEmpty()) {
+            engine.ships.firstOrNull { it.id == beamOwner.tractorTargetShipId && it.respawnTimer <= 0f }
+          } else {
+            null
+          }
+        if (caught != null) {
+          val tx = caught.x
+          val ty = caught.y
+          val dx = tx - muzzleX
+          val dy = ty - muzzleY
+          val dist = hypot(dx, dy).coerceAtLeast(1f)
+          val ux = dx / dist
+          val uy = dy / dist
+          val px = -uy
+          val py = ux
+
+          // Soft gravimetric tether glow
+          bulletPaint.color = Color.argb(86, 16, 185, 129)
+          bulletPaint.strokeWidth = 18f
+          canvas.drawLine(muzzleX, muzzleY, tx, ty, bulletPaint)
+
+          // Dual braided laser-web strands + transverse harmonic web rungs
+          val segs = 12
+          var prevAx = muzzleX
+          var prevAy = muzzleY
+          var prevBx = muzzleX
+          var prevBy = muzzleY
+          for (step in 1..segs) {
+            val frac = step / segs.toFloat()
+            val env = sin(frac * PI.toFloat())
+            val wave = sin(frac * 9.5f - tSec * 12f) * (16f * env + 4f)
+            val cxPt = muzzleX + dx * frac
+            val cyPt = muzzleY + dy * frac
+            val ax = cxPt + px * wave
+            val ay = cyPt + py * wave
+            val bx = cxPt - px * wave
+            val by = cyPt - py * wave
+            anomalyRingPaint.strokeWidth = 2.6f
+            anomalyRingPaint.color = Color.argb(225, 52, 211, 153)
+            canvas.drawLine(prevAx, prevAy, ax, ay, anomalyRingPaint)
+            anomalyRingPaint.color = Color.argb(215, 0, 245, 212)
+            canvas.drawLine(prevBx, prevBy, bx, by, anomalyRingPaint)
+            if (step < segs && step % 2 == 0) {
+              anomalyRingPaint.strokeWidth = 1.6f
+              anomalyRingPaint.color = Color.argb(150, 167, 243, 208)
+              canvas.drawLine(ax, ay, bx, by, anomalyRingPaint)
+            }
+            prevAx = ax
+            prevAy = ay
+            prevBx = bx
+            prevBy = by
+          }
+          // Snare containment rings around the caught ship
+          val snareR = caught.radius * (1.16f + 0.06f * sin(tSec * 9f))
+          anomalyRingPaint.strokeWidth = 3.0f
+          anomalyRingPaint.color = Color.argb(225, 52, 211, 153)
+          canvas.drawCircle(tx, ty, snareR, anomalyRingPaint)
+          anomalyRingPaint.strokeWidth = 1.8f
+          anomalyRingPaint.color = Color.argb(180, 0, 245, 212)
+          canvas.drawCircle(tx, ty, snareR * 0.82f, anomalyRingPaint)
+        } else {
+          // Scanning laser-web emitter cone ahead of ship
+          val scanRange = 540f
+          val halfCone = 0.40f
+          val leftX = muzzleX + cos(aimRad - halfCone) * scanRange
+          val leftY = muzzleY + sin(aimRad - halfCone) * scanRange
+          val rightX = muzzleX + cos(aimRad + halfCone) * scanRange
+          val rightY = muzzleY + sin(aimRad + halfCone) * scanRange
+          safeDashPaint.color = Color.argb(120, 52, 211, 153)
+          safeDashPaint.strokeWidth = 1.8f
+          canvas.drawLine(muzzleX, muzzleY, leftX, leftY, safeDashPaint)
+          canvas.drawLine(muzzleX, muzzleY, rightX, rightY, safeDashPaint)
+          arcRect.set(muzzleX - scanRange, muzzleY - scanRange, muzzleX + scanRange, muzzleY + scanRange)
+          val startDeg = ((aimRad - halfCone) * 180f / PI.toFloat())
+          val sweepDeg = (halfCone * 2f * 180f / PI.toFloat())
+          anomalyRingPaint.strokeWidth = 2.2f
+          anomalyRingPaint.color = Color.argb(135, 0, 245, 212)
+          canvas.drawArc(arcRect, startDeg, sweepDeg, false, anomalyRingPaint)
+          val innerArcR = scanRange * (0.35f + 0.55f * ((tSec * 1.35f) % 1.0f))
+          arcRect.set(muzzleX - innerArcR, muzzleY - innerArcR, muzzleX + innerArcR, muzzleY + innerArcR)
+          anomalyRingPaint.strokeWidth = 1.6f
+          anomalyRingPaint.color = Color.argb(95, 52, 211, 153)
+          canvas.drawArc(arcRect, startDeg, sweepDeg, false, anomalyRingPaint)
+        }
+      }
+
+      // 10-pre-B: Toggleable Continuous Lance Beam (stops cleanly at first ship/obstacle impact point!)
+      if (beamOwner.lanceBeamActive) {
+        val endX =
+          if (beamOwner.lanceRenderEndX != 0f || beamOwner.lanceRenderEndY != 0f) {
+            beamOwner.lanceRenderEndX
+          } else {
+            muzzleX + cos(aimRad) * 760f
+          }
+        val endY =
+          if (beamOwner.lanceRenderEndX != 0f || beamOwner.lanceRenderEndY != 0f) {
+            beamOwner.lanceRenderEndY
+          } else {
+            muzzleY + sin(aimRad) * 760f
+          }
+        val wPx = beamOwner.lanceRenderWidthPx.coerceIn(12f, 54f)
+        val pulseW = 1f + 0.09f * sin(tSec * 24f)
+
+        // Outer violet-magenta plasma sheath
+        bulletPaint.color = Color.argb(115, 168, 85, 247)
+        bulletPaint.strokeWidth = wPx * 1.65f * pulseW
+        canvas.drawLine(muzzleX, muzzleY, endX, endY, bulletPaint)
+
+        // Mid focused amethyst-cyan lance body
+        bulletPaint.color = Color.argb(215, 217, 70, 239)
+        bulletPaint.strokeWidth = wPx * 0.92f * pulseW
+        canvas.drawLine(muzzleX, muzzleY, endX, endY, bulletPaint)
+
+        // White-cyan razor core
+        bulletCorePaint.color = Color.WHITE
+        bulletCorePaint.strokeWidth = (wPx * 0.36f).coerceAtLeast(3.4f)
+        canvas.drawLine(muzzleX, muzzleY, endX, endY, bulletCorePaint)
+
+        // Muzzle lens & non-penetrating impact flare
+        bombPaint.color = Color.parseColor("#E879F9")
+        canvas.drawCircle(muzzleX, muzzleY, wPx * 0.52f, bombPaint)
+        bombPaint.color = Color.WHITE
+        canvas.drawCircle(muzzleX, muzzleY, wPx * 0.24f, bombPaint)
+
+        val flareR = wPx * (0.68f + 0.16f * sin(tSec * 28f))
+        bombRingPaint.strokeWidth = 2.6f
+        bombRingPaint.color = Color.parseColor("#00F5D4")
+        canvas.drawCircle(endX, endY, flareR * 1.18f, bombRingPaint)
+        bombPaint.color = Color.parseColor("#D946EF")
+        canvas.drawCircle(endX, endY, flareR * 0.78f, bombPaint)
+        bombPaint.color = Color.WHITE
+        canvas.drawCircle(endX, endY, flareR * 0.38f, bombPaint)
+      }
+    }
     for (s in shipsToRender) {
       if (s.respawnTimer > 0f) continue
       if (s.x < viewLeft - 110f || s.x > viewRight + 110f || s.y < viewTop - 110f || s.y > viewBottom + 110f) {
@@ -3339,8 +3658,29 @@ class RiftArenaView(
     val r = engine.arenaRadius
     val tSec = engine.traumaTimeSec
     val perimRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.ARENA_PERIMETER_RING)
-    val perimTrim = VisualElementRecipe.parseHexColorSafe(perimRec.trimHex, Color.parseColor("#38BDF8"))
-    val perimGlow = VisualElementRecipe.parseHexColorSafe(perimRec.glowHex, Color.parseColor("#00F5D4"))
+    val rawPerimTrim = VisualElementRecipe.parseHexColorSafe(perimRec.trimHex, Color.parseColor("#38BDF8"))
+    val rawPerimGlow = VisualElementRecipe.parseHexColorSafe(perimRec.glowHex, Color.parseColor("#00F5D4"))
+    val perimAbyssal = if (isHubOverwatchMode) 0f else engine.skirmishAbyssalBlend.coerceIn(0f, 1f)
+    val perimTrim =
+      if (perimAbyssal > 0.01f) {
+        Color.rgb(
+          (Color.red(rawPerimTrim) + (16 - Color.red(rawPerimTrim)) * perimAbyssal).roundToInt().coerceIn(0, 255),
+          (Color.green(rawPerimTrim) + (185 - Color.green(rawPerimTrim)) * perimAbyssal).roundToInt().coerceIn(0, 255),
+          (Color.blue(rawPerimTrim) + (129 - Color.blue(rawPerimTrim)) * perimAbyssal).roundToInt().coerceIn(0, 255),
+        )
+      } else {
+        rawPerimTrim
+      }
+    val perimGlow =
+      if (perimAbyssal > 0.01f) {
+        Color.rgb(
+          (Color.red(rawPerimGlow) + (52 - Color.red(rawPerimGlow)) * perimAbyssal).roundToInt().coerceIn(0, 255),
+          (Color.green(rawPerimGlow) + (211 - Color.green(rawPerimGlow)) * perimAbyssal).roundToInt().coerceIn(0, 255),
+          (Color.blue(rawPerimGlow) + (153 - Color.blue(rawPerimGlow)) * perimAbyssal).roundToInt().coerceIn(0, 255),
+        )
+      } else {
+        rawPerimGlow
+      }
 
     // Outer deep-void collar beyond the storm wall
     canvas.drawCircle(cx, cy, r + 245f, perimeterVoidPaint)

@@ -278,10 +278,16 @@ class RiftSoundSynthesizer(
   @Volatile var sfxVolume: Float = 0.85f
   @Volatile var musicVolume: Float = 0.70f
   @Volatile var musicBpm: Int = 128
+  @Volatile var dynamicEscalationTargetBpm: Float = -1f
+  @Volatile var liveEffectiveMusicBpm: Float = 128f
   @Volatile
   var currentMusicRecipe: MusicForgeRecipe =
     trackSlots.getOrNull(activeTrackSlotIndex)
       ?: buildArchetypeRecipe(MusicSynthArchetype.DARK_SYNTHWAVE, 128)
+
+  fun setDynamicEscalationTargetBpm(targetBpm: Float?) {
+    dynamicEscalationTargetBpm = targetBpm?.coerceIn(60f, 180f) ?: -1f
+  }
 
   val musicTrackSlots: SnapshotStateList<MusicForgeRecipe>
     get() = trackSlots
@@ -333,6 +339,7 @@ class RiftSoundSynthesizer(
     }
 
     musicBpm = currentMusicRecipe.bpm.coerceIn(60, 180)
+    liveEffectiveMusicBpm = musicBpm.toFloat()
     bakeAllSfxBuffers(sharedSfxRecipe)
 
     val superseded = activeInstance
@@ -974,7 +981,23 @@ class RiftSoundSynthesizer(
               }
 
               val recipe = currentMusicRecipe
-              val liveBpm = musicBpm.coerceIn(60, 180)
+              val baseBpm = musicBpm.coerceIn(60, 180).toFloat()
+              val desiredBpm =
+                if (dynamicEscalationTargetBpm >= 60f) {
+                  dynamicEscalationTargetBpm.coerceIn(60f, 180f)
+                } else {
+                  baseBpm
+                }
+              val chunkSec = (chunkSamples.toFloat() / musicSampleRate.toFloat()).coerceAtLeast(0.005f)
+              val maxStepBpm = 24f * chunkSec
+              val deltaBpm = desiredBpm - liveEffectiveMusicBpm
+              liveEffectiveMusicBpm =
+                if (kotlin.math.abs(deltaBpm) <= maxStepBpm) {
+                  desiredBpm
+                } else {
+                  liveEffectiveMusicBpm + kotlin.math.sign(deltaBpm) * maxStepBpm
+                }
+              val liveBpm = liveEffectiveMusicBpm.coerceIn(60f, 180f).toDouble()
               val samplesPerSixteenth =
                 (musicSampleRate * 60.0 / (liveBpm * 4.0)).toInt().coerceAtLeast(64)
               val scale =

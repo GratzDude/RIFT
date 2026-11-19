@@ -216,11 +216,23 @@ data class ShipEntity(
   var afterburning: Boolean = false,
   var multifireOn: Boolean = false,
   var repels: Int = spec.initialRepels,
-  var specialWeaponType: String = "NONE", // "NONE", "NOVA_RING", "SHATTER_CONE", "SEEKER_TORPEDO", "HOLO_PHANTOM", "STASIS_BARRIER", "HYPER_SURGE"
+  var specialWeaponType: String = "NONE",
   var specialWeaponCharges: Int = 0,
+  var specialWeaponStacks: Int = 0,
   var shotgunWavesRemaining: Int = 0,
   var shotgunWaveTimer: Float = 0f,
   var shotgunAimAngle: Float = 0f,
+  var novaWavesRemaining: Int = 0,
+  var novaWaveTimer: Float = 0f,
+  var tractorBeamActive: Boolean = false,
+  var tractorTargetShipId: String = "",
+  var lanceBeamActive: Boolean = false,
+  var lanceActiveStacks: Int = 1,
+  var lanceTickTimer: Float = 0f,
+  var lanceRenderEndX: Float = 0f,
+  var lanceRenderEndY: Float = 0f,
+  var lanceRenderWidthPx: Float = 14f,
+  var lanceHitSparkActive: Boolean = false,
   var multiShotCharges: Int = 0, // Shot-limited Multi-Shot (+25 per pickup, stackable)
   var hasBouncingBulletsUpgrade: Boolean = false, // Permanent-until-death +1 primary wall bounce upgrade
   var speedOverchargeStacks: Int = 0, // Stacks up to 3x (+8% Top Speed per stack until death)
@@ -324,7 +336,7 @@ data class BombEntity(
   val ownerArmadaName: String,
   val ownerIsHuman: Boolean,
   val freq: Int,
-  val type: String, // "BOUNCE", "SIEGE", "EMP", "PROX", "MINE", "MISSILE", "CUSTOM_ORB"
+  val type: String, // "BOUNCE", "SIEGE", "EMP", "PROX", "MINE", "MISSILE", "PROX_MISSILE", "CUSTOM_ORB"
   var x: Float,
   var y: Float,
   var vx: Float,
@@ -342,6 +354,9 @@ data class BombEntity(
   val customEffect: CustomBuffEffect = CustomBuffEffect.NONE,
   val customBlastRadius: Float = 0f,
   var armTimer: Float = 0.35f,
+  val isInfiniteProxMissile: Boolean = false,
+  val proxLockRadius: Float = 0f,
+  val shipsInsideRadiusPrevStep: MutableSet<String> = mutableSetOf(),
 )
 
 enum class AnomalyType {
@@ -612,7 +627,7 @@ class RiftGameEngine(
   val activeCustomGames = mutableListOf<CustomGameConfig>()
   var currentCustomGame: CustomGameConfig? = null
 
-  // Mode 2 (RIFT_SKIRMISH) & Syndicate Wars TDM Best-of-3 State (3m rounds, no respawn until round end, ally spectate)
+  // Mode 2 (RIFT_SKIRMISH) & Syndicate Wars TDM Best-of-3 State (3m rounds, no respawn until round end, ally spectate, 1v1 escalation & 10s ready-up)
   var skirmishRound: Int = 1
   val skirmishCurrentRound: Int
     get() = skirmishRound
@@ -621,9 +636,41 @@ class RiftGameEngine(
   var skirmishWestKills: Int = 0
   var skirmishEastKills: Int = 0
   var skirmishRoundTimerSec: Float = 180f
+  var skirmishIs1v1Escalated: Boolean = false
+  var skirmishAbyssalBlend: Float = 0f
+  var skirmish1v1AlertBanner: String = ""
+  var skirmish1v1AlertTimer: Float = 0f
+  var skirmishReadyCountdownSec: Float = 0f
+  val skirmishReadyDurationSec: Float = 10.0f
   var spectatingTargetShipId: String = ""
   var rivalSyndicateWarTag: String = "BOT"
   var onSyndicateWarFinished: (won: Boolean, trophyDelta: Int) -> Unit = { _, _ -> }
+
+  private fun clearShipToggleBuffs(ship: ShipEntity, clearSlotIfActive: Boolean = false) {
+    val hadToggleActive = ship.tractorBeamActive || ship.lanceBeamActive
+    ship.tractorBeamActive = false
+    ship.tractorTargetShipId = ""
+    ship.lanceBeamActive = false
+    ship.lanceHitSparkActive = false
+    ship.lanceTickTimer = 0f
+    ship.novaWavesRemaining = 0
+    ship.novaWaveTimer = 0f
+    if (clearSlotIfActive && hadToggleActive) {
+      ship.specialWeaponType = "NONE"
+      ship.specialWeaponCharges = 0
+      ship.specialWeaponStacks = 0
+      if (ship.isLocalPlayer) buffVersion++
+    }
+  }
+
+  private fun resetDeathmatchEscalationAndReadyState() {
+    skirmishIs1v1Escalated = false
+    skirmishAbyssalBlend = 0f
+    skirmish1v1AlertBanner = ""
+    skirmish1v1AlertTimer = 0f
+    skirmishReadyCountdownSec = 0f
+    sfx.setDynamicEscalationTargetBpm(null)
+  }
 
   // Mode 3 (FLUX_CORE) Volatile Singularity State
   val fluxCoreOrb = FluxCoreOrbState()
@@ -1002,6 +1049,7 @@ class RiftGameEngine(
     localPlayer.deathLingerTimer = 0f
     localPlayer.warpInAnimTimer = 0.65f
     localPlayer.afterburning = false
+    clearShipToggleBuffs(localPlayer, clearSlotIfActive = true)
     spectatingTargetShipId = ""
     if (isTeamBasedRankedMode() || !hasActiveSafeZone()) {
       val sp = getSkirmishGateSpawnPosition(localPlayer.freq)
@@ -1758,19 +1806,24 @@ class RiftGameEngine(
     targetMode == RankedGameMode.RIFT_SKIRMISH || targetMode == RankedGameMode.SYNDICATE_WARS
 
   fun getLivingSpectatableTeammates(): List<ShipEntity> =
-    ships.filter {
-      !it.isLocalPlayer &&
-        it.respawnTimer <= 0f &&
-        !it.isInStasisBrig &&
-        areAllied(localPlayer, it)
+    if (!isSkirmishRulesActive() || skirmishReadyCountdownSec > 0f) {
+      emptyList()
+    } else {
+      ships.filter {
+        !it.isLocalPlayer &&
+          it.respawnTimer <= 0f &&
+          !it.isInStasisBrig &&
+          areAllied(localPlayer, it)
+      }
     }
 
   fun isActivelySpectatingTeammates(): Boolean =
     hasJoinedMatch &&
       !isInLobbyStaging &&
+      isSkirmishRulesActive() &&
+      skirmishReadyCountdownSec <= 0f &&
       localPlayer.respawnTimer > 0f &&
       localPlayer.deathLingerTimer <= 0f &&
-      !isStasisBreachRulesActive() &&
       getLivingSpectatableTeammates().isNotEmpty()
 
   fun selectSpectatorTarget(shipId: String): Boolean {
@@ -1845,6 +1898,7 @@ class RiftGameEngine(
     skirmishWestKills = 0
     skirmishEastKills = 0
     skirmishRoundTimerSec = 180f
+    resetDeathmatchEscalationAndReadyState()
     spectatingTargetShipId = ""
     resetFluxCoreToCenter()
     westBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
@@ -1944,6 +1998,7 @@ class RiftGameEngine(
     isInLobbyStaging = true
     isShipLockedForMatch = false
     currentCustomGame = null
+    resetDeathmatchEscalationAndReadyState()
     spectatingTargetShipId = ""
     ships.clear()
     remotePilots.clear()
@@ -1960,6 +2015,7 @@ class RiftGameEngine(
     localPlayer.flux = localPlayer.maxFlux
     localPlayer.isCloaked = false
     localPlayer.afterburning = false
+    clearShipToggleBuffs(localPlayer, clearSlotIfActive = true)
     localPlayer.visualBankRoll = 0f
     localPlayer.barrelRollTimer = 0f
     updateDynamicArenaGeometryForShipCount(20, regenerateObstacles = true)
@@ -2057,6 +2113,7 @@ class RiftGameEngine(
     skirmishWestKills = 0
     skirmishEastKills = 0
     skirmishRoundTimerSec = 180f
+    resetDeathmatchEscalationAndReadyState()
     spectatingTargetShipId = ""
     rivalSyndicateWarTag = "BOT"
 
@@ -2528,7 +2585,7 @@ class RiftGameEngine(
     return if (customIndices.isNotEmpty() && Random.nextFloat() < 0.16f) {
       customIndices[Random.nextInt(customIndices.size)]
     } else {
-      when (val baseRoll = Random.nextInt(12)) {
+      when (val baseRoll = Random.nextInt(15)) {
         10 ->
           when (Random.nextInt(5)) {
             0 -> -10 // Speed Overcharge (+8% Top Speed)
@@ -3905,14 +3962,25 @@ class RiftGameEngine(
   fun grantSpecialBuffWeapon(ship: ShipEntity, newType: String, baseGrant: Int) {
     val canonicalType = RiftCodex.normalizeSpecialBuffId(newType)
     val currentCanonical = RiftCodex.normalizeSpecialBuffId(ship.specialWeaponType)
-    if (currentCanonical == canonicalType && ship.specialWeaponCharges > 0) {
+    if (
+      currentCanonical == canonicalType &&
+        (ship.specialWeaponCharges > 0 || ship.tractorBeamActive || ship.lanceBeamActive)
+    ) {
       ship.specialWeaponCharges = min(12, ship.specialWeaponCharges + baseGrant)
+      ship.specialWeaponStacks = min(6, max(1, ship.specialWeaponStacks) + 1)
       ship.specialWeaponType = canonicalType
+      if (ship.lanceBeamActive && canonicalType == "LANCE_BEAM") {
+        ship.lanceActiveStacks = ship.specialWeaponStacks
+      }
     } else {
+      clearShipToggleBuffs(ship, clearSlotIfActive = false)
       ship.specialWeaponType = canonicalType
       ship.specialWeaponCharges = baseGrant
+      ship.specialWeaponStacks = 1
       ship.shotgunWavesRemaining = 0
       ship.shotgunWaveTimer = 0f
+      ship.novaWavesRemaining = 0
+      ship.novaWaveTimer = 0f
     }
   }
 
@@ -4147,11 +4215,16 @@ class RiftGameEngine(
     barDur: Float,
     accent: Int,
     labelTitle: String,
+    perpOffsetPx: Float = 0f,
+    allowSameSpotStack: Boolean = true,
+    emitFeedback: Boolean = true,
   ) {
     val thickness = 48f
     val deployDist = 98f
-    var cx = ship.x + cos(deployAngle) * deployDist
-    var cy = ship.y + sin(deployAngle) * deployDist
+    val perpX = -sin(deployAngle)
+    val perpY = cos(deployAngle)
+    var cx = ship.x + cos(deployAngle) * deployDist + perpX * perpOffsetPx
+    var cy = ship.y + sin(deployAngle) * deployDist + perpY * perpOffsetPx
     val dCenter = hypot(cx - arenaCenterX, cy - arenaCenterY)
     val maxBarrierDist = (arenaRadius - span * 0.5f - 48f).coerceAtLeast(620f)
     if (dCenter > maxBarrierDist) {
@@ -4161,9 +4234,13 @@ class RiftGameEngine(
     if (isInsideSafeZone(cx, cy)) return
 
     val stackMate =
-      brickWalls.firstOrNull { bw ->
-        (bw.ownerId == ship.id || (isTeamBasedRankedMode() && bw.freq == ship.freq)) &&
-          hypot((bw.x + bw.w * 0.5f) - cx, (bw.y + bw.h * 0.5f) - cy) <= 78f
+      if (allowSameSpotStack) {
+        brickWalls.firstOrNull { bw ->
+          (bw.ownerId == ship.id || (isTeamBasedRankedMode() && bw.freq == ship.freq)) &&
+            hypot((bw.x + bw.w * 0.5f) - cx, (bw.y + bw.h * 0.5f) - cy) <= 78f
+        }
+      } else {
+        null
       }
     if (stackMate != null) {
       stackMate.stackCount = (stackMate.stackCount + 1).coerceAtMost(9)
@@ -4172,7 +4249,7 @@ class RiftGameEngine(
       val mCy = stackMate.y + stackMate.h * 0.5f
       shockwaves.add(ShockwaveEntity(mCx, mCy, 14f, 130f, accent))
       bakeStaticRadarBitmap()
-      if (ship.isLocalPlayer) {
+      if (emitFeedback && ship.isLocalPlayer) {
         sfx.playBounce()
         spawnPooledFct("BARRIER STACK x${stackMate.stackCount}", mCx, mCy - 26f, accent)
       }
@@ -4210,18 +4287,118 @@ class RiftGameEngine(
     }
     bakeStaticRadarBitmap()
     shockwaves.add(ShockwaveEntity(cx, cy, 12f, 110f, accent))
-    if (ship.isLocalPlayer) {
+    if (emitFeedback && ship.isLocalPlayer) {
       sfx.playBounce()
       spawnPooledFct("$labelTitle (${barDur.toInt()}s)", cx, cy - 24f, accent)
     }
   }
 
+  private fun launchInfiniteProximityMissile(ship: ShipEntity, aimAngle: Float) {
+    if (ship.isLocalPlayer) {
+      sfx.playBomb()
+      addTrauma(0.20f)
+    }
+    val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+    val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
+    val cruiseSpd = 540f * customSpdMult
+    val lockR = 340f
+    val mx = ship.x + cos(aimAngle) * 48f
+    val my = ship.y + sin(aimAngle) * 48f
+    if (isInsideSafeZone(mx, my)) return
+
+    val initialInside = mutableSetOf<String>()
+    var initialLock: ShipEntity? = null
+    var initialBestDist = lockR
+    for (other in ships) {
+      if (
+        !(isInLobbyStaging && other.isLocalPlayer) &&
+          !areAllied(ship, other) &&
+          other.respawnTimer <= 0f &&
+          !other.isCloaked &&
+          !isInsideSafeZone(other.x, other.y)
+      ) {
+        val d = hypot(other.x - mx, other.y - my)
+        if (d <= lockR) {
+          initialInside.add(other.id)
+          if (d < initialBestDist) {
+            initialBestDist = d
+            initialLock = other
+          }
+        }
+      }
+    }
+
+    spawnBombWithMuzzleCheck(
+      ship.x,
+      ship.y,
+      BombEntity(
+        ownerId = ship.id,
+        ownerCallsign = ship.callsign,
+        ownerSyndicateTag = ship.syndicateTag,
+        ownerArmadaName = ship.armadaName,
+        ownerIsHuman = ship.isHuman,
+        freq = ship.freq,
+        type = "PROX_MISSILE",
+        x = mx,
+        y = my,
+        vx = cos(aimAngle) * cruiseSpd,
+        vy = sin(aimAngle) * cruiseSpd,
+        damage = 840f * customDmgMult,
+        bouncesLeft = 999_999,
+        passWalls = false,
+        life = 999_999f,
+        radius = 18f,
+        targetShipId = initialLock?.id ?: "",
+        ownerShipLabel = formatShipLabel(ship),
+        weaponLabel = "Proximity Missile",
+        armTimer = 0.20f,
+        isInfiniteProxMissile = true,
+        proxLockRadius = lockR,
+        shipsInsideRadiusPrevStep = initialInside,
+      ),
+    )
+    if (ship.isLocalPlayer) {
+      spawnPooledFct(
+        text = if (initialLock != null) "PROX LOCK: ${initialLock.callsign}" else "PROX MISSILE ACTIVE",
+        x = ship.x,
+        y = ship.y - 28f,
+        color = Color.parseColor("#FACC15"),
+      )
+    }
+  }
+
   /**
-   * Activates a Bucket A Special Buff Slot charge (0 Flux Cost) for any ship (Local Player or AI Bot),
-   * including the 7 core BUFF_REGISTRY items (with 5-drone SWARM) and live AI-Forged Custom Buffs!
+   * Activates or toggles a Bucket A Special Buff Slot item for any ship (Local Player or AI Bot),
+   * including N-stacked Nova/Barrier/Lance scaling and toggleable Tractor & Lance beams.
    */
   fun activateShipSpecialBuff(ship: ShipEntity) {
-    if (ship.respawnTimer > 0f || ship.specialWeaponCharges <= 0 || ship.specialWeaponType == "NONE") return
+    if (
+      ship.respawnTimer > 0f ||
+        (isInLobbyStaging && ship.isLocalPlayer) ||
+        (isSkirmishRulesActive() && skirmishReadyCountdownSec > 0f)
+    ) {
+      return
+    }
+
+    // Toggle OFF if Tractor Beam or Lance Beam is already active (clears the buff immediately)
+    if (ship.tractorBeamActive) {
+      clearShipToggleBuffs(ship, clearSlotIfActive = true)
+      if (ship.isLocalPlayer) {
+        sfx.playMutedClick()
+        spawnPooledFct("TRACTOR BEAM OFF", ship.x, ship.y - 26f, Color.parseColor("#34D399"))
+      }
+      return
+    }
+    if (ship.lanceBeamActive) {
+      clearShipToggleBuffs(ship, clearSlotIfActive = true)
+      if (ship.isLocalPlayer) {
+        sfx.playMutedClick()
+        spawnPooledFct("LANCE BEAM OFF", ship.x, ship.y - 26f, Color.parseColor("#A855F7"))
+      }
+      return
+    }
+
+    if (ship.specialWeaponCharges <= 0 || ship.specialWeaponType == "NONE") return
     if (isInsideSafeZone(ship.x, ship.y)) {
       if (ship.isLocalPlayer) triggerSafeZoneWeaponLockout(ship)
       return
@@ -4231,16 +4408,6 @@ class RiftGameEngine(
     }
 
     val activeType = RiftCodex.normalizeSpecialBuffId(ship.specialWeaponType)
-    ship.specialWeaponCharges--
-    if (ship.specialWeaponCharges <= 0) {
-      ship.specialWeaponCharges = 0
-      ship.specialWeaponType = "NONE"
-    }
-    if (ship.isLocalPlayer) {
-      currentLifeStats.shotsFired++
-      buffVersion++
-    }
-
     val aimAngle =
       if (ship.independentAimActive) {
         ship.weaponAngle
@@ -4252,10 +4419,140 @@ class RiftGameEngine(
         ship.angle
       }
 
-    when (activeType) {
-      "NOVA_RING" -> {
-        fireRadialBurstProjectiles(ship)
+    if (activeType == "TRACTOR_BEAM") {
+      if (ship.flux <= 60f) {
+        if (ship.isLocalPlayer) {
+          onPrizeToast("INSUFFICIENT FLUX FOR TRACTOR BEAM")
+        }
+        return
       }
+      ship.tractorBeamActive = true
+      ship.tractorTargetShipId = ""
+      ship.specialWeaponType = "TRACTOR_BEAM"
+      ship.specialWeaponCharges = 1
+      if (ship.isLocalPlayer) {
+        currentLifeStats.shotsFired++
+        buffVersion++
+        sfx.playWarp()
+        spawnPooledFct("TRACTOR WEB ENGAGED", ship.x, ship.y - 28f, Color.parseColor("#34D399"))
+      }
+      return
+    }
+
+    if (activeType == "LANCE_BEAM") {
+      if (ship.flux <= 60f) {
+        if (ship.isLocalPlayer) {
+          onPrizeToast("INSUFFICIENT FLUX FOR LANCE BEAM")
+        }
+        return
+      }
+      val stacks = max(1, max(ship.specialWeaponStacks, ship.specialWeaponCharges)).coerceIn(1, 6)
+      ship.lanceBeamActive = true
+      ship.lanceActiveStacks = stacks
+      ship.lanceTickTimer = 0.05f
+      ship.lanceHitSparkActive = false
+      ship.specialWeaponType = "LANCE_BEAM"
+      ship.specialWeaponCharges = 1
+      ship.specialWeaponStacks = stacks
+      if (ship.isLocalPlayer) {
+        currentLifeStats.shotsFired++
+        buffVersion++
+        sfx.playLaser()
+        spawnPooledFct(
+          if (stacks > 1) "LANCE BEAM x$stacks ENGAGED" else "LANCE BEAM ENGAGED",
+          ship.x,
+          ship.y - 28f,
+          Color.parseColor("#A855F7"),
+        )
+      }
+      return
+    }
+
+    if (activeType == "NOVA_RING") {
+      val novaWaves = max(1, max(ship.specialWeaponStacks, ship.specialWeaponCharges)).coerceIn(1, 6)
+      ship.specialWeaponCharges = 0
+      ship.specialWeaponStacks = 0
+      ship.specialWeaponType = "NONE"
+      if (ship.isLocalPlayer) {
+        currentLifeStats.shotsFired++
+        buffVersion++
+        if (novaWaves > 1) {
+          spawnPooledFct("NOVA RING x$novaWaves WAVES", ship.x, ship.y - 28f, Color.parseColor("#F97316"))
+        }
+      }
+      fireRadialBurstProjectiles(ship)
+      ship.novaWavesRemaining = (novaWaves - 1).coerceAtLeast(0)
+      ship.novaWaveTimer = 0.22f
+      return
+    }
+
+    if (activeType == "STASIS_BARRIER") {
+      val segCount = max(1, max(ship.specialWeaponStacks, ship.specialWeaponCharges)).coerceIn(1, 6)
+      ship.specialWeaponCharges = 0
+      ship.specialWeaponStacks = 0
+      ship.specialWeaponType = "NONE"
+      if (ship.isLocalPlayer) {
+        currentLifeStats.shotsFired++
+        buffVersion++
+      }
+      val span = RiftCalibrationState.stasisBarrierLength
+      val barDur = RiftCalibrationState.stasisBarrierDuration.coerceAtLeast(5.0f)
+      val accent = Color.parseColor("#00F5D4")
+      if (segCount <= 1) {
+        deployOrStackStasisBarrier(
+          ship = ship,
+          deployAngle = ship.angle,
+          span = span,
+          barDur = barDur,
+          accent = accent,
+          labelTitle = "STASIS BARRIER",
+          perpOffsetPx = 0f,
+          allowSameSpotStack = true,
+          emitFeedback = true,
+        )
+      } else {
+        val segStride = span + 16f
+        for (idx in 0 until segCount) {
+          val offset = (idx - (segCount - 1) * 0.5f) * segStride
+          deployOrStackStasisBarrier(
+            ship = ship,
+            deployAngle = ship.angle,
+            span = span,
+            barDur = barDur,
+            accent = accent,
+            labelTitle = "STASIS BARRIER",
+            perpOffsetPx = offset,
+            allowSameSpotStack = false,
+            emitFeedback = false,
+          )
+        }
+        if (ship.isLocalPlayer) {
+          sfx.playBounce()
+          spawnPooledFct(
+            "BARRIER WALL ($segCount SEGMENTS)",
+            ship.x + cos(ship.angle) * 98f,
+            ship.y + sin(ship.angle) * 98f - 26f,
+            accent,
+          )
+        }
+      }
+      return
+    }
+
+    ship.specialWeaponCharges--
+    if (ship.specialWeaponCharges <= 0) {
+      ship.specialWeaponCharges = 0
+      ship.specialWeaponStacks = 0
+      ship.specialWeaponType = "NONE"
+    } else {
+      ship.specialWeaponStacks = min(ship.specialWeaponStacks, ship.specialWeaponCharges).coerceAtLeast(1)
+    }
+    if (ship.isLocalPlayer) {
+      currentLifeStats.shotsFired++
+      buffVersion++
+    }
+
+    when (activeType) {
       "SHATTER_CONE" -> {
         ship.weaponAngle = aimAngle
         fireShotgunWave(ship, aimAngle)
@@ -4265,6 +4562,9 @@ class RiftGameEngine(
       }
       "SEEKER_TORPEDO" -> {
         launchLockOnBouncingMissile(ship, aimAngle)
+      }
+      "PROX_SEEKER" -> {
+        launchInfiniteProximityMissile(ship, aimAngle)
       }
       "SWARM_DRONES" -> {
         val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
@@ -4337,7 +4637,7 @@ class RiftGameEngine(
           )
         )
         for (bm in bombs) {
-          if (bm.type == "MISSILE" && bm.targetShipId == ship.id) {
+          if ((bm.type == "MISSILE" || bm.type == "PROX_MISSILE") && bm.targetShipId == ship.id) {
             bm.targetShipId = decoyId
           }
         }
@@ -4351,16 +4651,6 @@ class RiftGameEngine(
           sfx.playWarp()
           spawnPooledFct("HOLO PHANTOM (${dur.toInt()}s)", ship.x, ship.y - 28f, Color.parseColor("#2DD4BF"))
         }
-      }
-      "STASIS_BARRIER" -> {
-        deployOrStackStasisBarrier(
-          ship = ship,
-          deployAngle = ship.angle,
-          span = RiftCalibrationState.stasisBarrierLength,
-          barDur = RiftCalibrationState.stasisBarrierDuration.coerceAtLeast(5.0f),
-          accent = Color.parseColor("#00F5D4"),
-          labelTitle = "STASIS BARRIER",
-        )
       }
       "HYPER_SURGE" -> {
         val dur = RiftCalibrationState.hyperSurgeDuration
@@ -4378,7 +4668,6 @@ class RiftGameEngine(
         }
       }
       else -> {
-        // Custom AI-Forged Buff execution from BUFF_REGISTRY!
         val forged = RiftCodex.getBuffRegistryEntry(activeType) ?: return
         val accent = forged.strokeColorInt
         val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
@@ -4480,7 +4769,20 @@ class RiftGameEngine(
   }
 
   fun activateUtility(type: String) {
-    if (localPlayer.respawnTimer > 0f) return
+    if (
+      localPlayer.respawnTimer > 0f ||
+        isInLobbyStaging ||
+        (isSkirmishRulesActive() && skirmishReadyCountdownSec > 0f)
+    ) {
+      return
+    }
+    if (
+      (type == "SPECIAL" || RiftCodex.getBuffRegistryEntry(type) != null) &&
+        (localPlayer.tractorBeamActive || localPlayer.lanceBeamActive)
+    ) {
+      activateShipSpecialBuff(localPlayer)
+      return
+    }
     if (isInsideSafeZone(localPlayer.x, localPlayer.y)) {
       triggerSafeZoneWeaponLockout(localPlayer)
       return
@@ -4492,7 +4794,6 @@ class RiftGameEngine(
       type == "SPECIAL" ||
         RiftCodex.getBuffRegistryEntry(type) != null
     ) {
-      // Bucket A Special Buff Slot Pickups are strictly Charge-Based (0 Flux Cost!)
       activateShipSpecialBuff(localPlayer)
       return
     }
@@ -5825,12 +6126,14 @@ class RiftGameEngine(
   }
 
   private fun handleRankedModeShipEliminated(victim: ShipEntity, attacker: ShipEntity?) {
+    clearShipToggleBuffs(victim, clearSlotIfActive = true)
+
     // 1. Mode 3: FLUX_CORE — Eject Flux Core at 1,650 px/s upon carrier elimination
     if (activeRankedMode == RankedGameMode.FLUX_CORE) {
       ejectFluxCoreFromShip(victim, reason = "CARRIER TERMINATED")
     }
 
-    // 2. Mode 2: RIFT_SKIRMISH (or 3v3/5v5 SYNDICATE_WARS) — 3-Minute Rounds, No Respawn Until Round End
+    // 2. Mode 2: RIFT_SKIRMISH (or 3v3/5v5 SYNDICATE_WARS) — 3-Minute Rounds, No Respawn Until Round End, 1v1 Escalation
     if (isSkirmishRulesActive()) {
       victim.respawnTimer = 9999f
       if (victim.freq == 1) {
@@ -5845,11 +6148,19 @@ class RiftGameEngine(
         resolveSkirmishRoundWon(winningFreq = 0)
       } else if (westAlive == 0 || skirmishEastKills >= killTarget) {
         resolveSkirmishRoundWon(winningFreq = 1)
+      } else if (westAlive == 1 && eastAlive == 1 && !skirmishIs1v1Escalated) {
+        skirmishIs1v1Escalated = true
+        skirmish1v1AlertBanner = "1V1 CONVERGENCE // ABYSSAL DUEL • 180 BPM"
+        skirmish1v1AlertTimer = 4.6f
+        sfx.setDynamicEscalationTargetBpm(180f)
+        if (hasJoinedMatch && !isInLobbyStaging) {
+          sfx.playPortal()
+        }
       }
     }
 
-    // Auto-select top-bounty living teammate for interactive spectator camera whenever local pilot is eliminated
-    if (victim.isLocalPlayer && !isStasisBreachRulesActive()) {
+    // Auto-select top-bounty living teammate for interactive spectator camera strictly in round-based Deathmatch
+    if (victim.isLocalPlayer && isSkirmishRulesActive() && skirmishReadyCountdownSec <= 0f) {
       val bestAlly = getLivingSpectatableTeammates().maxByOrNull { it.bounty }
       spectatingTargetShipId = bestAlly?.id ?: ""
     }
@@ -5873,10 +6184,13 @@ class RiftGameEngine(
     skirmishWestKills = 0
     skirmishEastKills = 0
     skirmishRoundTimerSec = 180f
+    skirmishIs1v1Escalated = false
+    skirmish1v1AlertTimer = 0f
     spectatingTargetShipId = ""
 
-    // Respawn & heal all ships at their West/East Horizon Warp Gates for the next round
+    // Stage & heal all ships at their West/East Horizon Warp Gates for the 10-second Ready-Up countdown
     for (s in ships) {
+      clearShipToggleBuffs(s, clearSlotIfActive = true)
       s.respawnTimer = 0f
       s.deathLingerTimer = 0f
       s.warpInAnimTimer = 0.65f
@@ -5899,6 +6213,9 @@ class RiftGameEngine(
     bakeStaticRadarBitmap()
 
     if (!hasJoinedMatch) {
+      skirmishReadyCountdownSec = 0f
+      skirmishAbyssalBlend = 0f
+      sfx.setDynamicEscalationTargetBpm(null)
       localPlayer.respawnTimer = 999f
       localPlayer.x = arenaCenterX
       localPlayer.y = arenaCenterY
@@ -5912,6 +6229,13 @@ class RiftGameEngine(
         skirmishRound = (skirmishWestRoundWins + skirmishEastRoundWins + 1).coerceIn(1, 3)
       }
       return
+    }
+
+    skirmishReadyCountdownSec = skirmishReadyDurationSec
+    for (s in ships) {
+      s.weaponsLocked = true
+      s.canFire = false
+      s.weaponState = "READY-UP"
     }
 
     if (skirmishWestRoundWins >= 2 || skirmishEastRoundWins >= 2) {
@@ -5962,7 +6286,7 @@ class RiftGameEngine(
       skirmishRound = (skirmishWestRoundWins + skirmishEastRoundWins + 1).coerceIn(1, 3)
       val roundWinnerName = if (winningFreq == 0) "WEST HORIZON" else "EAST HORIZON"
       val banner =
-        "$roundWinnerName WINS ROUND ${skirmishRound - 1}! SERIES: $skirmishWestRoundWins - $skirmishEastRoundWins (ROUND $skirmishRound STARTING)"
+        "$roundWinnerName WINS ROUND ${skirmishRound - 1}! SERIES: $skirmishWestRoundWins - $skirmishEastRoundWins • 10S READY-UP"
       highBountyShutdownBanner = banner
       highBountyShutdownTimer = 4.0f
       sfx.playWarp()
@@ -6488,8 +6812,110 @@ class RiftGameEngine(
     }
   }
 
+  private fun hasClearBotLineOfSight(x0: Float, y0: Float, x1: Float, y1: Float): Boolean {
+    return segmentFirstWallHit(x0, y0, x1, y1, pad = 2f) == null
+  }
+
+  private fun steerBotAwayFromVolatileRifts(bot: ShipEntity, baseAngle: Float): Float {
+    var outX = cos(baseAngle)
+    var outY = sin(baseAngle)
+    for (anom in anomalies) {
+      val dangerR =
+        when {
+          anom.isUnstableMergedRift -> anom.physicalRadius * 2.25f
+          anom.type == AnomalyType.GRAVITY_RIFT && anom.physicalRadius >= 240f -> anom.physicalRadius * 1.45f
+          anom.type == AnomalyType.PLASMA_RIFT -> anom.physicalRadius * 1.25f
+          else -> 0f
+        }
+      if (dangerR <= 0f) continue
+      val dx = bot.x - anom.x
+      val dy = bot.y - anom.y
+      val d = hypot(dx, dy).coerceAtLeast(1f)
+      if (d < dangerR) {
+        val push = ((dangerR - d) / dangerR) * 2.1f
+        outX += (dx / d) * push
+        outY += (dy / d) * push
+      }
+    }
+    return atan2(outY, outX)
+  }
+
+  private fun stepBotToggleableAndSpecialBuffs(
+    bot: ShipEntity,
+    fluxRatio: Float,
+    primaryTarget: ShipEntity?,
+    primaryTargetDist: Float,
+    incomingThreatAngle: Float?,
+    isFluxCoreMode: Boolean,
+    isBotFluxCoreCarrier: Boolean,
+    lowFluxRetreat: Boolean,
+  ) {
+    if (isInsideSafeZone(bot.x, bot.y)) return
+
+    if (bot.tractorBeamActive) {
+      if (fluxRatio < 0.30f || primaryTarget == null || primaryTargetDist > 610f) {
+        activateShipSpecialBuff(bot)
+      } else {
+        bot.weaponAngle = atan2(primaryTarget.y - bot.y, primaryTarget.x - bot.x)
+        bot.independentAimActive = true
+      }
+      return
+    }
+
+    if (bot.lanceBeamActive) {
+      val clearLos =
+        primaryTarget != null &&
+          primaryTargetDist <= 620f + (bot.lanceActiveStacks - 1) * 150f &&
+          hasClearBotLineOfSight(bot.x, bot.y, primaryTarget.x, primaryTarget.y)
+      if (fluxRatio < 0.28f || !clearLos) {
+        activateShipSpecialBuff(bot)
+      } else {
+        bot.weaponAngle = atan2(primaryTarget.y - bot.y, primaryTarget.x - bot.x)
+        bot.independentAimActive = true
+      }
+      return
+    }
+
+    if (bot.specialWeaponCharges <= 0 || bot.specialWeaponType == "NONE") return
+    val normType = RiftCodex.normalizeSpecialBuffId(bot.specialWeaponType)
+    val shouldTrigger =
+      when (normType) {
+        "HOLO_PHANTOM", "STASIS_BARRIER" ->
+          incomingThreatAngle != null ||
+            (primaryTarget != null && primaryTargetDist < 540f && (fluxRatio < 0.75f || isBotFluxCoreCarrier))
+        "HYPER_SURGE" ->
+          lowFluxRetreat ||
+            isBotFluxCoreCarrier ||
+            (isFluxCoreMode && fluxCoreCarrierEntityId.isEmpty()) ||
+            (primaryTarget != null && primaryTargetDist in 620f..1600f)
+        "SHATTER_CONE", "NOVA_RING" -> primaryTarget != null && primaryTargetDist < 480f
+        "SEEKER_TORPEDO", "SWARM_DRONES", "PROX_SEEKER" -> primaryTarget != null && primaryTargetDist < 1200f
+        "TRACTOR_BEAM" ->
+          fluxRatio > 0.55f &&
+            primaryTarget != null &&
+            primaryTargetDist in 160f..520f &&
+            hasClearBotLineOfSight(bot.x, bot.y, primaryTarget.x, primaryTarget.y)
+        "LANCE_BEAM" ->
+          fluxRatio > 0.52f &&
+            primaryTarget != null &&
+            primaryTargetDist <= 580f &&
+            hasClearBotLineOfSight(bot.x, bot.y, primaryTarget.x, primaryTarget.y)
+        else ->
+          RiftCodex.getBuffRegistryEntry(bot.specialWeaponType)?.isCustomForged == true &&
+            primaryTarget != null &&
+            primaryTargetDist < 780f
+      }
+    if (shouldTrigger && Random.nextFloat() < RiftCalibrationState.botSpecialBuffChance) {
+      if (primaryTarget != null) {
+        bot.weaponAngle = atan2(primaryTarget.y - bot.y, primaryTarget.x - bot.x)
+        bot.independentAimActive = true
+      }
+      activateShipSpecialBuff(bot)
+    }
+  }
+
   private fun updateAiBot(bot: ShipEntity, dt: Float) {
-    if (bot.respawnTimer > 0f) return
+    if (bot.respawnTimer > 0f || !bot.canFire) return
     bot.afterburning = false
 
     val isFluxCoreMode = isFluxCoreRulesActive()
@@ -6501,7 +6927,7 @@ class RiftGameEngine(
         (bot.id == fluxCoreCarrierEntityId ||
           (fluxCoreOrb.carrierShipId == bot.shipId && fluxCoreCarrierEntityId.isNotEmpty()))
 
-    // Mode 4 (STASIS_BREACH): Imprisoned AI bots orbit the Stasis Core at ~160px and fire continuously to break out!
+    // Mode 4A (STASIS_BREACH): Imprisoned bots orbit the Stasis Brig Core and focus all fire on breaking out!
     if (isStasisBreachMode && bot.isInStasisBrig) {
       val coreX = if (bot.freq == 0) eastBrigReactorX else westBrigReactorX
       val coreY = if (bot.freq == 0) eastBrigReactorY else westBrigReactorY
@@ -6518,10 +6944,25 @@ class RiftGameEngine(
       if (bot.spec.supportsNativeMultifire) {
         bot.multifireOn = bot.flux > bot.maxFlux * 0.42f
       }
+      if (bot.lanceBeamActive && bot.flux < bot.maxFlux * 0.25f) {
+        activateShipSpecialBuff(bot)
+      } else if (
+        !bot.lanceBeamActive &&
+          bot.specialWeaponCharges > 0 &&
+          RiftCodex.normalizeSpecialBuffId(bot.specialWeaponType) == "LANCE_BEAM" &&
+          bot.flux > bot.maxFlux * 0.50f
+      ) {
+        activateShipSpecialBuff(bot)
+      }
       if (bot.flux > bot.maxFlux * 0.18f) {
         firePrimaryGun(bot)
       }
-      if (bot.spec.hasBomb && bot.spec.bombType !in setOf("PHASE_DASH", "CLOAK_EMP", "INTERDICTOR_DOME") && bot.flux > bot.maxFlux * 0.55f && bot.bombTimer <= 0f) {
+      if (
+        bot.spec.hasBomb &&
+          bot.spec.bombType !in setOf("PHASE_DASH", "CLOAK_EMP", "INTERDICTOR_DOME") &&
+          bot.flux > bot.maxFlux * 0.55f &&
+          bot.bombTimer <= 0f
+      ) {
         fireSecondaryBomb(bot, aimAng)
       }
       return
@@ -6531,7 +6972,6 @@ class RiftGameEngine(
     val lowFluxRetreat = fluxRatio < RiftCalibrationState.botRetreatFluxRatio
     val insideSafeBanZone = isWithinBotBanPerimeter(bot.x, bot.y)
 
-    // Anti-Corner Bot Pathfinding & 1.2s Strafe/Reverse Override
     val speed = hypot(bot.vx, bot.vy)
     val moveDirX = if (speed > 8f) bot.vx / speed else cos(bot.angle)
     val moveDirY = if (speed > 8f) bot.vy / speed else sin(bot.angle)
@@ -6562,21 +7002,21 @@ class RiftGameEngine(
       return
     }
 
-    // Mode 3 (FLUX_CORE) Carrier Hard Guardrail: NEVER enter within 280px of safeZone!
+    // Mode 3 Carrier Hard Guardrail: NEVER approach Safe Zone while holding the Flux Core!
     val nearSafeForCarrier =
       isBotFluxCoreCarrier &&
         hasActiveSafeZone() &&
-        hypot(bot.x - arenaCenterX, bot.y - arenaCenterY) <= getSafeZoneRadius() + 280f
+        hypot(bot.x - arenaCenterX, bot.y - arenaCenterY) <= getSafeZoneRadius() + 300f
 
     if (nearSafeForCarrier || (!lowFluxRetreat && insideSafeBanZone)) {
       val cx = WORLD_SIZE / 2f
       val cy = WORLD_SIZE / 2f
       val radialAway = atan2(bot.y - cy, bot.x - cx)
-      val tangSign = if ((bot.aiSeed.toInt() and 1) == 0) 0.42f else -0.42f
+      val tangSign = if ((bot.aiSeed.toInt() and 1) == 0) 0.44f else -0.44f
       val awayAngle = if (nearSafeForCarrier) (radialAway + tangSign) else radialAway
       val damp = 0.28.pow(dt.toDouble()).toFloat()
-      bot.vx = bot.vx * damp + cos(awayAngle) * bot.spec.thrust * 1.05f * dt
-      bot.vy = bot.vy * damp + sin(awayAngle) * bot.spec.thrust * 1.05f * dt
+      bot.vx = bot.vx * damp + cos(awayAngle) * bot.spec.thrust * 1.08f * dt
+      bot.vy = bot.vy * damp + sin(awayAngle) * bot.spec.thrust * 1.08f * dt
       if (hypot(bot.vx, bot.vy) > 2f) {
         bot.angle = atan2(bot.vy, bot.vx)
       }
@@ -6588,7 +7028,7 @@ class RiftGameEngine(
       return
     }
 
-    // Scan valid enemy targets (preserving isInLobbyStaging check for localPlayer!)
+    // Scan valid enemy targets across the playfield
     var nearestEnemy: ShipEntity? = null
     var nearestDist = Float.MAX_VALUE
     var lowestFluxSkirmishEnemy: ShipEntity? = null
@@ -6596,8 +7036,14 @@ class RiftGameEngine(
     var lowestFluxDist = Float.MAX_VALUE
     var nearestHvtEnemy: ShipEntity? = null
     var nearestHvtDist = Float.MAX_VALUE
+    var bestHvtBounty = 0
     var fluxCoreCarrierEnemy: ShipEntity? = null
     var fluxCoreCarrierDist = Float.MAX_VALUE
+    var enemyAttackingOurBrig: ShipEntity? = null
+    var enemyAttackingOurBrigDist = Float.MAX_VALUE
+
+    val myTeamBrigX = if (bot.freq == 0) westBrigReactorX else eastBrigReactorX
+    val myTeamBrigY = if (bot.freq == 0) westBrigReactorY else eastBrigReactorY
 
     for (other in ships) {
       if (
@@ -6618,61 +7064,74 @@ class RiftGameEngine(
           fluxCoreCarrierEnemy = other
           fluxCoreCarrierDist = d
         }
-        if (isSkirmishMode && d < 880f && other.flux < lowestFluxVal) {
+        if (isSkirmishMode && d < 980f && other.flux < lowestFluxVal) {
           lowestFluxVal = other.flux
           lowestFluxSkirmishEnemy = other
           lowestFluxDist = d
         }
-        if (other.bounty >= RiftCalibrationState.hvtBountyThreshold && d < 1450f && d < nearestHvtDist) {
-          nearestHvtDist = d
-          nearestHvtEnemy = other
+        if (other.bounty >= RiftCalibrationState.hvtBountyThreshold && d < 1750f) {
+          if (other.bounty > bestHvtBounty || (other.bounty == bestHvtBounty && d < nearestHvtDist)) {
+            bestHvtBounty = other.bounty
+            nearestHvtDist = d
+            nearestHvtEnemy = other
+          }
+        }
+        if (isStasisBreachMode && hypot(other.x - myTeamBrigX, other.y - myTeamBrigY) <= stasisJailRadius + 480f && d < enemyAttackingOurBrigDist) {
+          enemyAttackingOurBrigDist = d
+          enemyAttackingOurBrig = other
         }
       }
     }
 
-    // Mode 2 & 6 (RIFT_SKIRMISH / SYNDICATE_WARS — no respawn until round end):
-    // When below 35% Flux, retreat defensively toward nearest green Supply Crate or allied wingman!
-    if (isSkirmishMode && fluxRatio < 0.35f) {
-      triggerBotDefensiveRepel(bot, triggerRadius = 360f)
-      val defensiveCrate = findNearestSupplyCrateForBot(bot, maxSearchDist = 1600f)
-      val nearestAlly =
+    // Deathmatch Low-Flux Caution (Rift Skirmish / Syndicate Wars): preserve single round life!
+    if (isSkirmishMode && fluxRatio < 0.38f) {
+      if (bot.tractorBeamActive || bot.lanceBeamActive) {
+        activateShipSpecialBuff(bot)
+      }
+      triggerBotDefensiveRepel(bot, triggerRadius = 380f)
+      val defensiveCrate = findNearestSupplyCrateForBot(bot, maxSearchDist = 1750f)
+      val healthiestAlly =
         ships
           .filter { it.id != bot.id && areAllied(bot, it) && it.respawnTimer <= 0f && !(isInLobbyStaging && it.isLocalPlayer) }
-          .minByOrNull { hypot(it.x - bot.x, it.y - bot.y) }
+          .maxByOrNull { it.flux }
       val retreatAngle =
-        when {
-          defensiveCrate != null -> atan2(defensiveCrate.y - bot.y, defensiveCrate.x - bot.x)
-          nearestAlly != null && hypot(nearestAlly.x - bot.x, nearestAlly.y - bot.y) > 220f ->
-            atan2(nearestAlly.y - bot.y, nearestAlly.x - bot.x)
-          nearestEnemy != null -> atan2(bot.y - nearestEnemy.y, bot.x - nearestEnemy.x)
-          else -> atan2(WORLD_SIZE / 2f - bot.y, WORLD_SIZE / 2f - bot.x)
-        }
-      if (nearestEnemy != null && nearestDist < 620f && fluxRatio > 0.22f) {
-        fireBotCombatOrdnanceAt(bot, nearestEnemy, nearestDist, minFluxRatio = 0.22f)
+        steerBotAwayFromVolatileRifts(
+          bot,
+          when {
+            defensiveCrate != null -> atan2(defensiveCrate.y - bot.y, defensiveCrate.x - bot.x)
+            healthiestAlly != null && hypot(healthiestAlly.x - bot.x, healthiestAlly.y - bot.y) > 200f ->
+              atan2(healthiestAlly.y - bot.y, healthiestAlly.x - bot.x)
+            nearestEnemy != null -> atan2(bot.y - nearestEnemy.y, bot.x - nearestEnemy.x) + 0.35f
+            else -> atan2(WORLD_SIZE / 2f - bot.y, WORLD_SIZE / 2f - bot.x)
+          },
+        )
+      if (nearestEnemy != null && nearestDist < 580f && fluxRatio > 0.24f) {
+        fireBotCombatOrdnanceAt(bot, nearestEnemy, nearestDist, minFluxRatio = 0.24f)
       } else {
         bot.independentAimActive = false
         bot.weaponAngle = retreatAngle
       }
       val damp = 0.28.pow(dt.toDouble()).toFloat()
-      bot.vx = bot.vx * damp + cos(retreatAngle) * bot.spec.thrust * 1.08f * dt
-      bot.vy = bot.vy * damp + sin(retreatAngle) * bot.spec.thrust * 1.08f * dt
+      bot.vx = bot.vx * damp + cos(retreatAngle) * bot.spec.thrust * 1.10f * dt
+      bot.vy = bot.vy * damp + sin(retreatAngle) * bot.spec.thrust * 1.10f * dt
       if (hypot(bot.vx, bot.vy) > 2f) {
         bot.angle = atan2(bot.vy, bot.vx)
       }
       return
     }
 
-    // Protective Survival Retreat in standard modes (never in FLUX_CORE so bots never enter Safe Zone with or chasing the ball)
+    // Safe-Zone Survival Retreat strictly in Sector Convergence (never in Flux Core or non-Safe-Zone modes)
     if (
       lowFluxRetreat &&
+        hasActiveSafeZone() &&
         !isFluxCoreMode &&
-        !isRiftControlMode &&
         bot.safeZoneLockoutTimer <= 0f &&
         !isInsideSafeZone(bot.x, bot.y)
     ) {
-      val cx = WORLD_SIZE / 2f
-      val cy = WORLD_SIZE / 2f
-      val toSafeAngle = atan2(cy - bot.y, cx - bot.x)
+      if (bot.tractorBeamActive || bot.lanceBeamActive) {
+        activateShipSpecialBuff(bot)
+      }
+      val toSafeAngle = steerBotAwayFromVolatileRifts(bot, atan2(arenaCenterY - bot.y, arenaCenterX - bot.x))
       val urgency = if (fluxRatio < 0.22f) 1.25f else 1.0f
       val damp = 0.28.pow(dt.toDouble()).toFloat()
       bot.vx = bot.vx * damp + cos(toSafeAngle) * bot.spec.thrust * urgency * dt
@@ -6685,7 +7144,7 @@ class RiftGameEngine(
       return
     }
 
-    // Scan for incoming projectile threats to dodge proactively
+    // Incoming ordnance dodge scan
     var incomingThreatAngle: Float? = null
     var threatMinDist = 380f
     for (b in bullets) {
@@ -6704,22 +7163,21 @@ class RiftGameEngine(
         }
       }
     }
-
     for (bm in bombs) {
       if (bm.ownerId != bot.id && !isBombAlliedWithShip(bm, bot)) {
         val dist = hypot(bm.x - bot.x, bm.y - bot.y)
-        if (dist < 460f) {
+        val alertR = if (bm.isInfiniteProxMissile) (bm.proxLockRadius + 80f) else 460f
+        if (dist < alertR) {
           threatMinDist = dist
           incomingThreatAngle = atan2(bot.y - bm.y, bot.x - bm.x)
         }
       }
     }
 
-    // Select primary tactical enemy target based on active game mode
     val primaryTarget: ShipEntity?
     val primaryTargetDist: Float
     when {
-      isFluxCoreMode && !isBotFluxCoreCarrier && fluxCoreCarrierEnemy != null && nearestDist >= 250f -> {
+      isFluxCoreMode && !isBotFluxCoreCarrier && fluxCoreCarrierEnemy != null && nearestDist >= 220f -> {
         primaryTarget = fluxCoreCarrierEnemy
         primaryTargetDist = fluxCoreCarrierDist
       }
@@ -6727,7 +7185,11 @@ class RiftGameEngine(
         primaryTarget = lowestFluxSkirmishEnemy
         primaryTargetDist = lowestFluxDist
       }
-      !isTeamBasedRankedMode() && !isFluxCoreMode && nearestHvtEnemy != null && fluxRatio >= 0.52f && nearestDist >= 320f -> {
+      isStasisBreachMode && enemyAttackingOurBrig != null && nearestDist >= 280f -> {
+        primaryTarget = enemyAttackingOurBrig
+        primaryTargetDist = enemyAttackingOurBrigDist
+      }
+      !isTeamBasedRankedMode() && !isFluxCoreMode && nearestHvtEnemy != null && fluxRatio >= 0.48f && nearestDist >= 290f -> {
         primaryTarget = nearestHvtEnemy
         primaryTargetDist = nearestHvtDist
       }
@@ -6737,35 +7199,17 @@ class RiftGameEngine(
       }
     }
 
-    // AI Bot Special Buff Slot Deployment (Core 6 + Custom AI-Forged Buffs)
-    if (bot.specialWeaponCharges > 0 && bot.specialWeaponType != "NONE" && !isInsideSafeZone(bot.x, bot.y)) {
-      val shouldTriggerBuff =
-        when (RiftCodex.normalizeSpecialBuffId(bot.specialWeaponType)) {
-          "HOLO_PHANTOM", "STASIS_BARRIER" ->
-            incomingThreatAngle != null ||
-              (primaryTarget != null && primaryTargetDist < 540f && (fluxRatio < 0.75f || isBotFluxCoreCarrier))
-          "HYPER_SURGE" ->
-            lowFluxRetreat ||
-              isBotFluxCoreCarrier ||
-              (isFluxCoreMode && fluxCoreCarrierEntityId.isEmpty()) ||
-              (primaryTarget != null && primaryTargetDist in 620f..1600f)
-          "SHATTER_CONE", "NOVA_RING" -> primaryTarget != null && primaryTargetDist < 480f
-          "SEEKER_TORPEDO", "SWARM_DRONES" -> primaryTarget != null && primaryTargetDist < 1150f
-          else ->
-            RiftCodex.getBuffRegistryEntry(bot.specialWeaponType)?.isCustomForged == true &&
-              primaryTarget != null &&
-              primaryTargetDist < 780f
-        }
-      if (shouldTriggerBuff && Random.nextFloat() < RiftCalibrationState.botSpecialBuffChance) {
-        if (primaryTarget != null) {
-          bot.weaponAngle = atan2(primaryTarget.y - bot.y, primaryTarget.x - bot.x)
-          bot.independentAimActive = true
-        }
-        activateShipSpecialBuff(bot)
-      }
-    }
+    stepBotToggleableAndSpecialBuffs(
+      bot = bot,
+      fluxRatio = fluxRatio,
+      primaryTarget = primaryTarget,
+      primaryTargetDist = primaryTargetDist,
+      incomingThreatAngle = incomingThreatAngle,
+      isFluxCoreMode = isFluxCoreMode,
+      isBotFluxCoreCarrier = isBotFluxCoreCarrier,
+      lowFluxRetreat = lowFluxRetreat,
+    )
 
-    // AI Bot Native Split Multi-Shot Toggle (Suppressor & Twinfang)
     if (bot.spec.supportsNativeMultifire) {
       bot.multifireOn = (primaryTarget != null && primaryTargetDist in 240f..650f) || bot.multiShotCharges > 0
     } else {
@@ -6775,219 +7219,326 @@ class RiftGameEngine(
     var desiredAngle: Float
     var wantsAfterburner = false
 
-    if (isBotFluxCoreCarrier) {
-      // Mode 3A: Bot HAS the Flux Core -> kite pursuers, fire backward independently, Repel < 190px, scavenge crates < 65% Flux, NEVER steer into Safe Zone!
-      if (nearestEnemy != null && nearestDist < 190f) {
-        triggerBotDefensiveRepel(bot, triggerRadius = 190f)
-      }
-      val carrierCrate =
-        if (fluxRatio < 0.65f) findNearestSupplyCrateForBot(bot, maxSearchDist = 1800f, extraSafeMargin = 280f) else null
-
-      desiredAngle =
-        when {
-          incomingThreatAngle != null -> incomingThreatAngle
-          nearestEnemy != null && nearestDist < 540f -> {
-            val awayFromPursuer = atan2(bot.y - nearestEnemy.y, bot.x - nearestEnemy.x)
-            val strafe = if ((bot.aiSeed.toInt() and 1) == 0) 0.42f else -0.42f
-            wantsAfterburner = fluxRatio > 0.45f
-            awayFromPursuer + strafe
+    when {
+      // BRAIN 1: FLUX CORE MODE (Sprint for loose Core, intercept carrier, or kite/grab crates/avoid Safe Zone as Carrier)
+      isFluxCoreMode -> {
+        if (isBotFluxCoreCarrier) {
+          if (nearestEnemy != null && nearestDist < 205f) {
+            triggerBotDefensiveRepel(bot, triggerRadius = 205f)
           }
-          carrierCrate != null -> {
-            wantsAfterburner = fluxRatio > 0.55f
-            atan2(carrierCrate.y - bot.y, carrierCrate.x - bot.x)
-          }
-          else -> {
-            val t = (System.currentTimeMillis() % 600000L) * 0.00042f
-            val orbitR = (arenaRadius * 0.65f).coerceIn(1200f, 2550f)
-            val gx = arenaCenterX + cos(t + bot.aiSeed) * orbitR
-            val gy = arenaCenterY + sin(t * 1.12f + bot.aiSeed) * orbitR
-            atan2(gy - bot.y, gx - bot.x)
-          }
-        }
-
-      // Tangential Safe Zone repulsion so carrier never steers toward (4000, 4000)
-      val cx = WORLD_SIZE / 2f
-      val cy = WORLD_SIZE / 2f
-      val toCenterDist = hypot(cx - bot.x, cy - bot.y).coerceAtLeast(1f)
-      val toCenterX = (cx - bot.x) / toCenterDist
-      val toCenterY = (cy - bot.y) / toCenterDist
-      val steerDotCenter = cos(desiredAngle) * toCenterX + sin(desiredAngle) * toCenterY
-      if (toCenterDist < 1250f && steerDotCenter > 0.15f) {
-        val tangSign = if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f
-        val tangX = -toCenterY * tangSign - toCenterX * 0.55f
-        val tangY = toCenterX * tangSign - toCenterY * 0.55f
-        desiredAngle = atan2(tangY, tangX)
-      }
-
-      if (nearestEnemy != null && nearestDist < RiftCalibrationState.botGunFireRange) {
-        fireBotCombatOrdnanceAt(bot, nearestEnemy, nearestDist, minFluxRatio = 0.24f)
-      } else {
-        bot.independentAimActive = false
-        bot.weaponAngle = desiredAngle
-      }
-    } else if (incomingThreatAngle != null) {
-      desiredAngle = incomingThreatAngle
-      bot.vx += cos(incomingThreatAngle) * bot.spec.thrust * 1.1f * dt
-      bot.vy += sin(incomingThreatAngle) * bot.spec.thrust * 1.1f * dt
-      if (bot.spec.bombType == "PHASE_DASH" && bot.bombTimer <= 0f && bot.flux > 450f) {
-        fireSecondaryBomb(bot, incomingThreatAngle)
-      }
-      if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
-        fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
-      }
-    } else if (isFluxCoreMode && fluxCoreCarrierEntityId.isEmpty() && !isInsideSafeZone(fluxCoreOrb.x, fluxCoreOrb.y)) {
-      // Mode 3B: Flux Core is Unclaimed -> steer directly to loose orb with afterburners while shooting enemies along the way!
-      val distToOrb = hypot(fluxCoreOrb.x - bot.x, fluxCoreOrb.y - bot.y)
-      desiredAngle = atan2(fluxCoreOrb.y - bot.y, fluxCoreOrb.x - bot.x)
-      wantsAfterburner = fluxRatio > 0.40f && distToOrb > 320f
-      if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
-        fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
-      } else {
-        bot.weaponAngle = desiredAngle
-        bot.independentAimActive = false
-      }
-    } else if (isFluxCoreMode && fluxCoreCarrierEnemy != null) {
-      // Mode 3C: Another ship holds the Flux Core -> hunt the carrier with afterburners and focus-fire!
-      val leadT = min(0.75f, fluxCoreCarrierDist / bot.spec.primarySpeed.coerceAtLeast(120f))
-      val interceptAngle =
-        atan2(
-          (fluxCoreCarrierEnemy.y + fluxCoreCarrierEnemy.vy * leadT) - bot.y,
-          (fluxCoreCarrierEnemy.x + fluxCoreCarrierEnemy.vx * leadT) - bot.x,
-        )
-      desiredAngle =
-        if (fluxCoreCarrierDist < 280f) {
-          val strafeSign = if ((bot.aiSeed.toInt() and 1) == 0) 0.55f else -0.55f
-          interceptAngle + strafeSign
-        } else {
-          interceptAngle
-        }
-      wantsAfterburner = fluxRatio > 0.38f && fluxCoreCarrierDist > 380f
-      val shootTarget = if (nearestEnemy != null && nearestDist < 250f) nearestEnemy else fluxCoreCarrierEnemy
-      val shootDist = if (shootTarget === nearestEnemy) nearestDist else fluxCoreCarrierDist
-      fireBotCombatOrdnanceAt(bot, shootTarget, shootDist, minFluxRatio = 0.22f)
-    } else if (isRiftControlMode) {
-      // Mode 5 (RIFT_CONTROL): Move to unlocked Control Rifts AND dogfight enemies inside/near the 340px capture ring!
-      val myTeam = bot.freq
-      val alphaUnlocked = riftAlphaLockedBy != myTeam
-      val omegaUnlocked = riftOmegaLockedBy != myTeam
-      val distAlpha = hypot(bot.x - riftAlphaX, bot.y - riftAlphaY)
-      val distOmega = hypot(bot.x - riftOmegaX, bot.y - riftOmegaY)
-      val targetAlpha =
-        when {
-          alphaUnlocked && !omegaUnlocked -> true
-          !alphaUnlocked && omegaUnlocked -> false
-          else -> distAlpha <= distOmega
-        }
-      val rx = if (targetAlpha) riftAlphaX else riftOmegaX
-      val ry = if (targetAlpha) riftAlphaY else riftOmegaY
-      val distToRift = hypot(rx - bot.x, ry - bot.y)
-      val toRiftAng = atan2(ry - bot.y, rx - bot.x)
-
-      if (primaryTarget != null && primaryTargetDist <= 680f) {
-        // Enemy is contesting or near the ring: dogfight & shoot while staying inside the 340px capture radius!
-        fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist, minFluxRatio = 0.22f)
-        desiredAngle =
-          if (distToRift > riftCaptureRadius - 45f) {
-            toRiftAng
-          } else {
-            val strafeDir = if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f
-            val toEnemyAng = atan2(primaryTarget.y - bot.y, primaryTarget.x - bot.x)
-            if (primaryTargetDist < 240f) {
-              toRiftAng + (PI.toFloat() * 0.45f * strafeDir)
-            } else {
-              toEnemyAng + (PI.toFloat() * 0.35f * strafeDir)
+          val carrierCrate =
+            findNearestSupplyCrateForBot(
+              bot,
+              maxSearchDist = if (fluxRatio < 0.72f) 1950f else 950f,
+              extraSafeMargin = 310f,
+            )
+          desiredAngle =
+            when {
+              incomingThreatAngle != null -> incomingThreatAngle
+              nearestEnemy != null && nearestDist < 580f -> {
+                val awayFromPursuer = atan2(bot.y - nearestEnemy.y, bot.x - nearestEnemy.x)
+                val strafe = if ((bot.aiSeed.toInt() and 1) == 0) 0.44f else -0.44f
+                wantsAfterburner = fluxRatio > 0.42f
+                awayFromPursuer + strafe
+              }
+              carrierCrate != null -> {
+                wantsAfterburner = fluxRatio > 0.50f
+                atan2(carrierCrate.y - bot.y, carrierCrate.x - bot.x)
+              }
+              else -> {
+                val t = (System.currentTimeMillis() % 600000L) * 0.00042f
+                val orbitR = (arenaRadius * 0.66f).coerceIn(1250f, 2600f)
+                val gx = arenaCenterX + cos(t + bot.aiSeed) * orbitR
+                val gy = arenaCenterY + sin(t * 1.12f + bot.aiSeed) * orbitR
+                atan2(gy - bot.y, gx - bot.x)
+              }
             }
+          val toCenterDist = hypot(arenaCenterX - bot.x, arenaCenterY - bot.y).coerceAtLeast(1f)
+          val toCenterX = (arenaCenterX - bot.x) / toCenterDist
+          val toCenterY = (arenaCenterY - bot.y) / toCenterDist
+          val steerDotCenter = cos(desiredAngle) * toCenterX + sin(desiredAngle) * toCenterY
+          if (toCenterDist < getSafeZoneRadius() + 920f && steerDotCenter > 0.10f) {
+            val tangSign = if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f
+            val tangX = -toCenterY * tangSign - toCenterX * 0.62f
+            val tangY = toCenterX * tangSign - toCenterY * 0.62f
+            desiredAngle = atan2(tangY, tangX)
           }
-      } else {
-        wantsAfterburner = fluxRatio > 0.48f && distToRift > riftCaptureRadius + 240f
-        val orbitDir = if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f
-        desiredAngle =
-          if (distToRift > 185f) toRiftAng else (toRiftAng + PI.toFloat() * 0.5f * orbitDir)
-        if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
-          fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          if (nearestEnemy != null && nearestDist < RiftCalibrationState.botGunFireRange) {
+            fireBotCombatOrdnanceAt(bot, nearestEnemy, nearestDist, minFluxRatio = 0.24f)
+          } else {
+            bot.independentAimActive = false
+            bot.weaponAngle = desiredAngle
+          }
+        } else if (fluxCoreCarrierEntityId.isEmpty() && !isInsideSafeZone(fluxCoreOrb.x, fluxCoreOrb.y)) {
+          val distToOrb = hypot(fluxCoreOrb.x - bot.x, fluxCoreOrb.y - bot.y)
+          desiredAngle = incomingThreatAngle ?: atan2(fluxCoreOrb.y - bot.y, fluxCoreOrb.x - bot.x)
+          wantsAfterburner = fluxRatio > 0.35f && distToOrb > 260f
+          if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
+            fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          } else {
+            bot.weaponAngle = desiredAngle
+            bot.independentAimActive = false
+          }
+        } else if (fluxCoreCarrierEnemy != null) {
+          val leadT = min(0.75f, fluxCoreCarrierDist / bot.spec.primarySpeed.coerceAtLeast(120f))
+          val interceptAngle =
+            atan2(
+              (fluxCoreCarrierEnemy.y + fluxCoreCarrierEnemy.vy * leadT) - bot.y,
+              (fluxCoreCarrierEnemy.x + fluxCoreCarrierEnemy.vx * leadT) - bot.x,
+            )
+          desiredAngle =
+            incomingThreatAngle
+              ?: if (fluxCoreCarrierDist < 280f) {
+                val strafeSign = if ((bot.aiSeed.toInt() and 1) == 0) 0.55f else -0.55f
+                interceptAngle + strafeSign
+              } else {
+                interceptAngle
+              }
+          wantsAfterburner = fluxRatio > 0.36f && fluxCoreCarrierDist > 360f
+          val shootTarget = if (nearestEnemy != null && nearestDist < 240f) nearestEnemy else fluxCoreCarrierEnemy
+          val shootDist = if (shootTarget === nearestEnemy) nearestDist else fluxCoreCarrierDist
+          fireBotCombatOrdnanceAt(bot, shootTarget, shootDist, minFluxRatio = 0.20f)
         } else {
+          val fallbackCrate = findNearestSupplyCrateForBot(bot, maxSearchDist = 1400f, extraSafeMargin = 220f)
+          desiredAngle =
+            if (fallbackCrate != null) atan2(fallbackCrate.y - bot.y, fallbackCrate.x - bot.x)
+            else atan2(arenaCenterY - bot.y, arenaCenterX - bot.x) + 1.1f
           bot.weaponAngle = desiredAngle
           bot.independentAimActive = false
         }
       }
-    } else {
-      // Mode 4 (Free Stasis Breach bots), Mode 2/6 (Healthy Skirmish/Syndicate Wars), and Mode 1 (FFA Bounty + Crates)
-      val imprisonedAlliesCount =
-        if (isStasisBreachMode) {
-          ships.count { it.freq == bot.freq && it.isInStasisBrig && it.respawnTimer <= 0f }
-        } else {
-          0
-        }
-      val ffaCrate =
-        if (!isTeamBasedRankedMode() && !isFluxCoreMode) {
-          val maxCrateDist = if (fluxRatio < 0.72f) 920f else 420f
-          findNearestSupplyCrateForBot(bot, maxSearchDist = maxCrateDist)
-        } else {
-          null
-        }
 
-      if (isStasisBreachMode && imprisonedAlliesCount >= 3 && (primaryTarget == null || primaryTargetDist > 450f)) {
-        // 3+ allies imprisoned and no enemy within 450px -> push toward enemy Stasis Brig reactor to clear defenders & assist breakout!
-        val enemyBrigX = if (bot.freq == 0) eastBrigReactorX else westBrigReactorX
-        val enemyBrigY = if (bot.freq == 0) eastBrigReactorY else westBrigReactorY
-        val distToEnemyBrig = hypot(enemyBrigX - bot.x, enemyBrigY - bot.y)
-        val toBrigAng = atan2(enemyBrigY - bot.y, enemyBrigX - bot.x)
-        wantsAfterburner = fluxRatio > 0.48f && distToEnemyBrig > stasisJailRadius + 320f
-        val orbitDir = if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f
-        desiredAngle =
-          if (distToEnemyBrig > stasisJailRadius + 95f) toBrigAng else (toBrigAng + PI.toFloat() * 0.5f * orbitDir)
-        if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
-          fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
-        } else {
-          bot.weaponAngle = desiredAngle
-          bot.independentAimActive = false
-        }
-      } else if (ffaCrate != null && (primaryTarget == null || primaryTargetDist > 380f)) {
-        // Mode 1 FFA: Scavenge nearby green Supply Crates while keeping independent turret aim on threats!
-        desiredAngle = atan2(ffaCrate.y - bot.y, ffaCrate.x - bot.x)
-        if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
-          fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
-        } else {
-          bot.weaponAngle = desiredAngle
-          bot.independentAimActive = false
-        }
-      } else if (primaryTarget != null && primaryTargetDist < max(RiftCalibrationState.botEngageRange, if (isTeamBasedRankedMode()) 2200f else 0f)) {
-        fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
-        val aimAngle = bot.weaponAngle
-        if (primaryTargetDist < 360f) {
-          val backAngle = atan2(bot.y - primaryTarget.y, bot.x - primaryTarget.x)
-          val strafeSign = if ((bot.aiSeed.toInt() and 1) == 0) 0.65f else -0.65f
-          desiredAngle = backAngle + strafeSign
-        } else if (primaryTargetDist > 750f) {
-          desiredAngle = aimAngle
-          wantsAfterburner = fluxRatio > 0.58f && primaryTargetDist > 1100f
-        } else {
-          val strafeAngle = aimAngle + (PI.toFloat() * 0.45f * if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f)
-          desiredAngle = strafeAngle
-        }
-      } else {
-        bot.independentAimActive = false
-        val nearestLivingAlly =
-          if (isSkirmishMode) {
-            ships
-              .filter { it.id != bot.id && areAllied(bot, it) && it.respawnTimer <= 0f && !(isInLobbyStaging && it.isLocalPlayer) }
-              .minByOrNull { hypot(it.x - bot.x, it.y - bot.y) }
-          } else {
-            null
+      // BRAIN 2: RIFT CONTROL MODE (Push Alpha/Omega capture rings & dogfight contesting enemies inside the ring)
+      isRiftControlMode -> {
+        val myTeam = bot.freq
+        val alphaLockedMine = riftAlphaLockedBy == myTeam
+        val omegaLockedMine = riftOmegaLockedBy == myTeam
+        val alphaContested = (myTeam == 0 && riftAlphaEastCount > 0) || (myTeam == 1 && riftAlphaWestCount > 0)
+        val omegaContested = (myTeam == 0 && riftOmegaEastCount > 0) || (myTeam == 1 && riftOmegaWestCount > 0)
+        val distAlpha = hypot(bot.x - riftAlphaX, bot.y - riftAlphaY)
+        val distOmega = hypot(bot.x - riftOmegaX, bot.y - riftOmegaY)
+        val preferAlphaBySeed = (bot.aiSeed.toInt() and 1) == 0
+        val targetAlpha =
+          when {
+            alphaContested && !omegaContested -> true
+            omegaContested && !alphaContested -> false
+            !alphaLockedMine && omegaLockedMine -> true
+            alphaLockedMine && !omegaLockedMine -> false
+            !alphaLockedMine && !omegaLockedMine -> if (kotlin.math.abs(distAlpha - distOmega) < 520f) preferAlphaBySeed else distAlpha <= distOmega
+            else -> preferAlphaBySeed
           }
-        if (nearestLivingAlly != null && hypot(nearestLivingAlly.x - bot.x, nearestLivingAlly.y - bot.y) > 420f) {
-          desiredAngle = atan2(nearestLivingAlly.y - bot.y, nearestLivingAlly.x - bot.x)
+        val rx = if (targetAlpha) riftAlphaX else riftOmegaX
+        val ry = if (targetAlpha) riftAlphaY else riftOmegaY
+        val distToRift = hypot(rx - bot.x, ry - bot.y)
+        val toRiftAng = atan2(ry - bot.y, rx - bot.x)
+
+        if (primaryTarget != null && primaryTargetDist <= 740f) {
+          fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist, minFluxRatio = 0.20f)
+          desiredAngle =
+            if (distToRift > riftCaptureRadius - 42f) {
+              toRiftAng
+            } else if (incomingThreatAngle != null && distToRift < riftCaptureRadius - 95f) {
+              incomingThreatAngle
+            } else {
+              val strafeDir = if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f
+              val toEnemyAng = atan2(primaryTarget.y - bot.y, primaryTarget.x - bot.x)
+              if (primaryTargetDist < 250f) {
+                toRiftAng + (PI.toFloat() * 0.45f * strafeDir)
+              } else {
+                toEnemyAng + (PI.toFloat() * 0.36f * strafeDir)
+              }
+            }
         } else {
+          wantsAfterburner = fluxRatio > 0.45f && distToRift > riftCaptureRadius + 210f
+          val orbitDir = if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f
+          desiredAngle =
+            if (distToRift > 180f) toRiftAng else (toRiftAng + PI.toFloat() * 0.5f * orbitDir)
+          if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
+            fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          } else {
+            bot.weaponAngle = desiredAngle
+            bot.independentAimActive = false
+          }
+        }
+      }
+
+      // BRAIN 3: STASIS BREACH FREE-ROAM (Hunt unjailed enemies, defend friendly Brig from raiders, relieve imprisoned allies)
+      isStasisBreachMode -> {
+        val imprisonedAllies = ships.count { it.freq == bot.freq && it.isInStasisBrig && it.respawnTimer <= 0f }
+        val jailedEnemies = ships.count { it.freq != bot.freq && it.isInStasisBrig && it.respawnTimer <= 0f }
+        val defenderRole = (bot.aiSeed.toInt() % 3 == 0) && jailedEnemies >= 2
+        if (incomingThreatAngle != null) {
+          desiredAngle = incomingThreatAngle
+          if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
+            fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          }
+        } else if (defenderRole && enemyAttackingOurBrig != null) {
+          fireBotCombatOrdnanceAt(bot, enemyAttackingOurBrig, enemyAttackingOurBrigDist, minFluxRatio = 0.22f)
+          wantsAfterburner = fluxRatio > 0.45f && enemyAttackingOurBrigDist > 480f
+          desiredAngle = atan2(enemyAttackingOurBrig.y - bot.y, enemyAttackingOurBrig.x - bot.x)
+        } else if (imprisonedAllies >= 3 && (primaryTarget == null || primaryTargetDist > 480f)) {
+          val enemyBrigX = if (bot.freq == 0) eastBrigReactorX else westBrigReactorX
+          val enemyBrigY = if (bot.freq == 0) eastBrigReactorY else westBrigReactorY
+          val distToEnemyBrig = hypot(enemyBrigX - bot.x, enemyBrigY - bot.y)
+          val toBrigAng = atan2(enemyBrigY - bot.y, enemyBrigX - bot.x)
+          wantsAfterburner = fluxRatio > 0.48f && distToEnemyBrig > stasisJailRadius + 300f
+          val orbitDir = if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f
+          desiredAngle =
+            if (distToEnemyBrig > stasisJailRadius + 95f) toBrigAng else (toBrigAng + PI.toFloat() * 0.5f * orbitDir)
+          if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
+            fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          } else {
+            bot.weaponAngle = desiredAngle
+            bot.independentAimActive = false
+          }
+        } else if (primaryTarget != null) {
+          fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          val aimAngle = bot.weaponAngle
+          desiredAngle =
+            when {
+              primaryTargetDist < 340f ->
+                atan2(bot.y - primaryTarget.y, bot.x - primaryTarget.x) +
+                  (if ((bot.aiSeed.toInt() and 1) == 0) 0.62f else -0.62f)
+              primaryTargetDist > 720f -> {
+                wantsAfterburner = fluxRatio > 0.54f && primaryTargetDist > 1050f
+                aimAngle
+              }
+              else -> aimAngle + (PI.toFloat() * 0.44f * if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f)
+            }
+        } else {
+          val guardR = stasisJailRadius + 180f
+          val orbitAng = (System.currentTimeMillis() % 600000L) * 0.0005f + bot.aiSeed
+          val gx = myTeamBrigX + cos(orbitAng) * guardR
+          val gy = myTeamBrigY + sin(orbitAng) * guardR
+          desiredAngle = atan2(gy - bot.y, gx - bot.x)
+          bot.weaponAngle = desiredAngle
+          bot.independentAimActive = false
+        }
+      }
+
+      // BRAIN 4: DEATHMATCH SQUAD COORDINATION (Rift Skirmish & Syndicate Wars — wing formation, crate control & focus-fire)
+      isSkirmishMode -> {
+        val wingAnchor =
+          ships
+            .filter { it.id != bot.id && areAllied(bot, it) && it.respawnTimer <= 0f && !(isInLobbyStaging && it.isLocalPlayer) }
+            .minByOrNull { hypot(it.x - bot.x, it.y - bot.y) }
+        val wingCrate = if (bot.specialWeaponCharges == 0 || fluxRatio < 0.78f) findNearestSupplyCrateForBot(bot, maxSearchDist = 720f) else null
+
+        if (incomingThreatAngle != null) {
+          desiredAngle = incomingThreatAngle
+          if (bot.spec.bombType == "PHASE_DASH" && bot.bombTimer <= 0f && bot.flux > 450f) {
+            fireSecondaryBomb(bot, incomingThreatAngle)
+          }
+          if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
+            fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          }
+        } else if (wingCrate != null && (primaryTarget == null || primaryTargetDist > 520f)) {
+          desiredAngle = atan2(wingCrate.y - bot.y, wingCrate.x - bot.x)
+          if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
+            fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          } else {
+            bot.weaponAngle = desiredAngle
+            bot.independentAimActive = false
+          }
+        } else if (primaryTarget != null) {
+          fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist, minFluxRatio = 0.25f)
+          val aimAngle = bot.weaponAngle
+          val allyDist = if (wingAnchor != null) hypot(wingAnchor.x - bot.x, wingAnchor.y - bot.y) else 0f
+          desiredAngle =
+            if (allyDist > 560f && primaryTargetDist > 480f && wingAnchor != null) {
+              atan2((primaryTarget.y + wingAnchor.y) * 0.5f - bot.y, (primaryTarget.x + wingAnchor.x) * 0.5f - bot.x)
+            } else if (primaryTargetDist < 380f) {
+              atan2(bot.y - primaryTarget.y, bot.x - primaryTarget.x) +
+                (if ((bot.aiSeed.toInt() and 1) == 0) 0.68f else -0.68f)
+            } else if (primaryTargetDist > 760f) {
+              wantsAfterburner = fluxRatio > 0.62f && primaryTargetDist > 1150f
+              aimAngle
+            } else {
+              aimAngle + (PI.toFloat() * 0.46f * if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f)
+            }
+        } else if (wingAnchor != null && hypot(wingAnchor.x - bot.x, wingAnchor.y - bot.y) > 340f) {
+          desiredAngle = atan2(wingAnchor.y - bot.y, wingAnchor.x - bot.x)
+          bot.weaponAngle = desiredAngle
+          bot.independentAimActive = false
+        } else {
+          val t = (System.currentTimeMillis() % 600000L) * 0.00038f
+          val orbitRadius = (arenaRadius * 0.56f).coerceIn(980f, 2200f)
+          val gx = arenaCenterX + cos(t + bot.aiSeed) * orbitRadius
+          val gy = arenaCenterY + sin(t * 1.15f + bot.aiSeed) * orbitRadius
+          desiredAngle = atan2(gy - bot.y, gx - bot.x)
+          bot.weaponAngle = desiredAngle
+          bot.independentAimActive = false
+        }
+      }
+
+      // BRAIN 5: SECTOR CONVERGENCE (HVT bounty hunting, aggressive crate stacking & safe standoff positioning)
+      else -> {
+        val ffaCrate =
+          findNearestSupplyCrateForBot(
+            bot,
+            maxSearchDist = if (bot.specialWeaponCharges < 2 || fluxRatio < 0.76f) 980f else 480f,
+          )
+        val nearbyEnemyCount =
+          ships.count {
+            !(isInLobbyStaging && it.isLocalPlayer) &&
+              !areAllied(bot, it) &&
+              it.respawnTimer <= 0f &&
+              !it.isCloaked &&
+              hypot(it.x - bot.x, it.y - bot.y) < 580f
+          }
+        if (incomingThreatAngle != null) {
+          desiredAngle = incomingThreatAngle
+          if (bot.spec.bombType == "PHASE_DASH" && bot.bombTimer <= 0f && bot.flux > 450f) {
+            fireSecondaryBomb(bot, incomingThreatAngle)
+          }
+          if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
+            fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          }
+        } else if (nearbyEnemyCount >= 3 && fluxRatio < 0.65f && nearestEnemy != null) {
+          // Disengage safely from crowded multi-ship crossfire
+          val escapeAng = atan2(bot.y - nearestEnemy.y, bot.x - nearestEnemy.x) + 0.45f
+          desiredAngle = if (ffaCrate != null) atan2(ffaCrate.y - bot.y, ffaCrate.x - bot.x) else escapeAng
+          wantsAfterburner = fluxRatio > 0.44f
+          if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
+            fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          }
+        } else if (ffaCrate != null && (primaryTarget == null || (primaryTargetDist > 410f && nearestHvtEnemy == null))) {
+          desiredAngle = atan2(ffaCrate.y - bot.y, ffaCrate.x - bot.x)
+          wantsAfterburner = fluxRatio > 0.64f && hypot(ffaCrate.x - bot.x, ffaCrate.y - bot.y) > 480f
+          if (primaryTarget != null && primaryTargetDist < RiftCalibrationState.botGunFireRange) {
+            fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          } else {
+            bot.weaponAngle = desiredAngle
+            bot.independentAimActive = false
+          }
+        } else if (primaryTarget != null && primaryTargetDist < max(RiftCalibrationState.botEngageRange, 1850f)) {
+          fireBotCombatOrdnanceAt(bot, primaryTarget, primaryTargetDist)
+          val aimAngle = bot.weaponAngle
+          val isHuntingHvt = primaryTarget === nearestHvtEnemy
+          desiredAngle =
+            when {
+              primaryTargetDist < 380f ->
+                atan2(bot.y - primaryTarget.y, bot.x - primaryTarget.x) +
+                  (if ((bot.aiSeed.toInt() and 1) == 0) 0.66f else -0.66f)
+              primaryTargetDist > 720f -> {
+                wantsAfterburner = fluxRatio > 0.52f && (isHuntingHvt || primaryTargetDist > 1080f)
+                aimAngle
+              }
+              else -> aimAngle + (PI.toFloat() * 0.45f * if ((bot.aiSeed.toInt() and 1) == 0) 1f else -1f)
+            }
+        } else {
+          bot.independentAimActive = false
           val t = (System.currentTimeMillis() % 600000L) * 0.00035f
           val orbitRadius = (arenaRadius * 0.62f).coerceIn(1150f, 2400f)
           val gx = arenaCenterX + cos(t + bot.aiSeed) * orbitRadius
           val gy = arenaCenterY + sin(t * 1.15f + bot.aiSeed) * orbitRadius
           desiredAngle = atan2(gy - bot.y, gx - bot.x)
+          bot.weaponAngle = bot.angle
         }
-        bot.weaponAngle = bot.angle
       }
     }
 
+    desiredAngle = steerBotAwayFromVolatileRifts(bot, desiredAngle)
     if (wallHit != null) {
       val steerX = cos(desiredAngle) + wallHit.normalX * 1.8f
       val steerY = sin(desiredAngle) + wallHit.normalY * 1.8f
@@ -7009,6 +7560,279 @@ class RiftGameEngine(
     bot.vy = bot.vy * sideDamp + sin(desiredAngle) * bot.spec.thrust * thrustSurgeMult * turnMult * afterburnAccelMult * dt
     if (hypot(bot.vx, bot.vy) > 2f) {
       bot.angle = atan2(bot.vy, bot.vx)
+    }
+  }
+
+  private fun stepContinuousToggleBuffs(ship: ShipEntity, dt: Float) {
+    if (ship.respawnTimer > 0f || !ship.canFire || isInsideSafeZone(ship.x, ship.y) || ship.empTimer > 0f) {
+      if (ship.tractorBeamActive || ship.lanceBeamActive) {
+        clearShipToggleBuffs(ship, clearSlotIfActive = true)
+      }
+      return
+    }
+
+    val aimAngle =
+      if (ship.independentAimActive) {
+        ship.weaponAngle
+      } else {
+        ship.angle
+      }
+
+    // 1. Toggleable Tractor Beam: laser web slows and pulls caught ship toward user while draining Flux
+    if (ship.tractorBeamActive) {
+      val drain = 112f * dt
+      selfDrainFlux(ship, drain)
+      if (ship.flux <= 45f) {
+        clearShipToggleBuffs(ship, clearSlotIfActive = true)
+        if (ship.isLocalPlayer) {
+          sfx.playMutedClick()
+          onPrizeToast("TRACTOR BEAM DEPLETED (FLUX FLOOR)")
+        }
+        return
+      }
+      val maxWebRange = 560f
+      var caught =
+        ships.firstOrNull {
+          it.id == ship.tractorTargetShipId &&
+            !(isInLobbyStaging && it.isLocalPlayer) &&
+            !areAllied(ship, it) &&
+            it.respawnTimer <= 0f &&
+            !it.isCloaked &&
+            !isInsideSafeZone(it.x, it.y) &&
+            hypot(it.x - ship.x, it.y - ship.y) <= maxWebRange + 65f &&
+            hasClearBotLineOfSight(ship.x, ship.y, it.x, it.y)
+        }
+      if (caught == null) {
+        var bestScore = Float.MAX_VALUE
+        for (cand in ships) {
+          if (
+            !(isInLobbyStaging && cand.isLocalPlayer) &&
+              !areAllied(ship, cand) &&
+              cand.respawnTimer <= 0f &&
+              !cand.isCloaked &&
+              !isInsideSafeZone(cand.x, cand.y)
+          ) {
+            val dx = cand.x - ship.x
+            val dy = cand.y - ship.y
+            val dist = hypot(dx, dy)
+            if (dist > maxWebRange || dist < 1f) continue
+            val angDiff = kotlin.math.abs(atan2(sin(atan2(dy, dx) - aimAngle), cos(atan2(dy, dx) - aimAngle)))
+            if (angDiff <= 0.92f && hasClearBotLineOfSight(ship.x, ship.y, cand.x, cand.y)) {
+              val score = dist * (0.55f + angDiff * 0.7f)
+              if (score < bestScore) {
+                bestScore = score
+                caught = cand
+              }
+            }
+          }
+        }
+      }
+      ship.tractorTargetShipId = caught?.id ?: ""
+      if (caught != null) {
+        val slowDamp = 0.16.pow(dt.toDouble()).toFloat()
+        caught.vx *= slowDamp
+        caught.vy *= slowDamp
+        val pullDx = ship.x - caught.x
+        val pullDy = ship.y - caught.y
+        val pullDist = hypot(pullDx, pullDy).coerceAtLeast(1f)
+        if (pullDist > ship.radius + caught.radius + 14f) {
+          val pullAccel = 690f * (currentCustomGame?.speedMult ?: 1.0f)
+          caught.vx += (pullDx / pullDist) * pullAccel * dt
+          caught.vy += (pullDy / pullDist) * pullAccel * dt
+        }
+      }
+    }
+
+    // 2. Toggleable Continuous Lance Beam: stops on FIRST ship/obstacle hit (no penetration), ticks damage every 0.5s, scales wider/longer with stacks
+    if (ship.lanceBeamActive) {
+      val stacks = ship.lanceActiveStacks.coerceIn(1, 6)
+      val drain = (132f + (stacks - 1) * 22f) * dt
+      selfDrainFlux(ship, drain)
+      if (ship.flux <= 45f) {
+        clearShipToggleBuffs(ship, clearSlotIfActive = true)
+        if (ship.isLocalPlayer) {
+          sfx.playMutedClick()
+          onPrizeToast("LANCE BEAM DEPLETED (FLUX FLOOR)")
+        }
+        return
+      }
+
+      val beamLen = 620f + (stacks - 1) * 165f
+      val beamWidth = 14f + (stacks - 1) * 6.5f
+      ship.lanceRenderWidthPx = beamWidth
+
+      val dirX = cos(aimAngle)
+      val dirY = sin(aimAngle)
+      val startX = ship.x + dirX * (ship.radius + 6f)
+      val startY = ship.y + dirY * (ship.radius + 6f)
+      val maxEndX = startX + dirX * beamLen
+      val maxEndY = startY + dirY * beamLen
+
+      var bestT = 1.0f
+      var hitKind = 0 // 0 = none, 1 = wall/obstacle, 2 = ship, 3 = decoy, 4 = brigCore, 5 = boundary/safeZone
+      var hitWallIdx = -1
+      var hitShip: ShipEntity? = null
+      var hitDecoyIdx = -1
+      var hitBrigFreq = -1
+
+      // A. Raycast walls & placed Stasis Barriers
+      val wallImpact = segmentFirstWallHit(startX, startY, maxEndX, maxEndY, pad = (beamWidth * 0.28f).coerceAtMost(10f))
+      if (wallImpact != null && wallImpact.t < bestT) {
+        bestT = wallImpact.t.coerceIn(0f, 1f)
+        hitKind = 1
+        hitWallIdx = wallImpact.wallIndex
+      }
+
+      // Helper for ray-circle entry t along [0..1]
+      fun rayCircleFirstT(cx: Float, cy: Float, rad: Float): Float? {
+        val fx = startX - cx
+        val fy = startY - cy
+        val segDx = maxEndX - startX
+        val segDy = maxEndY - startY
+        val a = segDx * segDx + segDy * segDy
+        if (a <= 0.0001f) return null
+        val b = 2f * (fx * segDx + fy * segDy)
+        val c = fx * fx + fy * fy - rad * rad
+        if (c <= 0f) return 0f
+        val disc = b * b - 4f * a * c
+        if (disc < 0f) return null
+        val t0 = (-b - sqrt(disc)) / (2f * a)
+        return if (t0 in 0f..1f) t0 else null
+      }
+
+      // B. Safe Zone outer rim (if active)
+      if (hasActiveSafeZone()) {
+        val szT = rayCircleFirstT(arenaCenterX, arenaCenterY, getSafeZoneRadius() + 4f)
+        if (szT != null && szT < bestT) {
+          bestT = szT
+          hitKind = 5
+        }
+      }
+
+      // C. Outer Storm Wall boundary
+      val segDx = maxEndX - startX
+      val segDy = maxEndY - startY
+      val endCenterDist = hypot(maxEndX - arenaCenterX, maxEndY - arenaCenterY)
+      if (endCenterDist > arenaRadius) {
+        val fx = startX - arenaCenterX
+        val fy = startY - arenaCenterY
+        val a = segDx * segDx + segDy * segDy
+        val b = 2f * (fx * segDx + fy * segDy)
+        val c = fx * fx + fy * fy - arenaRadius * arenaRadius
+        val disc = b * b - 4f * a * c
+        if (disc >= 0f && a > 0.0001f) {
+          val tExit = (-b + sqrt(disc)) / (2f * a)
+          if (tExit in 0f..bestT) {
+            bestT = tExit
+            hitKind = 5
+          }
+        }
+      }
+
+      // D. Stasis Brig Reactor Core (when imprisoned in Stasis Breach)
+      if (isStasisBreachRulesActive() && ship.isInStasisBrig) {
+        val targetBrigFreq = if (ship.freq == 0) 1 else 0
+        val coreX = if (targetBrigFreq == 1) eastBrigReactorX else westBrigReactorX
+        val coreY = if (targetBrigFreq == 1) eastBrigReactorY else westBrigReactorY
+        val coreT = rayCircleFirstT(coreX, coreY, brigReactorRadius + beamWidth * 0.45f)
+        if (coreT != null && coreT < bestT) {
+          bestT = coreT
+          hitKind = 4
+          hitBrigFreq = targetBrigFreq
+        }
+      }
+
+      // E. Hostile Holo Phantom Decoys
+      for (dIdx in decoys.indices) {
+        val dec = decoys[dIdx]
+        if (dec.ownerId != ship.id && dec.freq != ship.freq && !isInsideSafeZone(dec.x, dec.y)) {
+          val dT = rayCircleFirstT(dec.x, dec.y, 36f + beamWidth * 0.45f)
+          if (dT != null && dT < bestT) {
+            bestT = dT
+            hitKind = 3
+            hitDecoyIdx = dIdx
+          }
+        }
+      }
+
+      // F. Hostile Ships (strictly stops on the VERY FIRST ship hit — zero penetration!)
+      for (cand in ships) {
+        if (
+          cand.id != ship.id &&
+            !(isInLobbyStaging && cand.isLocalPlayer) &&
+            !areAllied(ship, cand) &&
+            cand.respawnTimer <= 0f &&
+            !isInsideSafeZone(cand.x, cand.y)
+        ) {
+          val sT = rayCircleFirstT(cand.x, cand.y, cand.radius + beamWidth * 0.45f)
+          if (sT != null && sT < bestT) {
+            bestT = sT
+            hitKind = 2
+            hitShip = cand
+          }
+        }
+      }
+
+      val stopX = startX + segDx * bestT
+      val stopY = startY + segDy * bestT
+      ship.lanceRenderEndX = stopX
+      ship.lanceRenderEndY = stopY
+      ship.lanceHitSparkActive = hitKind != 0
+
+      ship.lanceTickTimer -= dt
+      if (ship.lanceTickTimer <= 0f) {
+        ship.lanceTickTimer = 0.50f
+        val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
+        val tickDmg = (265f + (stacks - 1) * 48f) * customDmgMult
+        when (hitKind) {
+          1 -> {
+            if (hitWallIdx in walls.indices) {
+              onObstacleProjectileHit(
+                wallIndex = hitWallIdx,
+                damage = tickDmg,
+                hitX = stopX,
+                hitY = stopY,
+                attackerId = ship.id,
+              )
+            }
+          }
+          2 -> {
+            val victim = hitShip
+            if (victim != null) {
+              applyProjectileDamage(
+                target = victim,
+                attackerId = ship.id,
+                attackerIsHuman = ship.isHuman,
+                rawDamage = tickDmg,
+                impactAngle = aimAngle + PI.toFloat(),
+                isHeavyImpact = stacks >= 2,
+                isEmp = false,
+                attackerShipLabel = formatShipLabel(ship),
+                weaponLabel = if (stacks > 1) "Lance Beam x$stacks" else "Lance Beam",
+              )
+              if (ship.isLocalPlayer) {
+                currentLifeStats.shotsHit++
+                sfx.playLaser()
+              }
+            }
+          }
+          3 -> {
+            if (hitDecoyIdx in decoys.indices) {
+              val dec = decoys.removeAt(hitDecoyIdx)
+              spawnExplosion(dec.x, dec.y, Color.parseColor("#2DD4BF"))
+            }
+          }
+          4 -> {
+            if (hitBrigFreq >= 0) {
+              damageBrigReactorCore(
+                targetBrigFreq = hitBrigFreq,
+                attacker = ship,
+                rawDamage = tickDmg,
+              )
+            }
+          }
+        }
+      }
     }
   }
 
@@ -7086,6 +7910,45 @@ class RiftGameEngine(
       return
     }
 
+    if (skirmish1v1AlertTimer > 0f) {
+      skirmish1v1AlertTimer = max(0f, skirmish1v1AlertTimer - rawDt)
+    }
+
+    // Smooth abyssal-garden visual blend & 10-second between-round Deathmatch Ready-Up countdown
+    if (isSkirmishRulesActive()) {
+      if (skirmishReadyCountdownSec > 0f) {
+        skirmishReadyCountdownSec = max(0f, skirmishReadyCountdownSec - rawDt)
+        if (skirmishReadyCountdownSec <= 6.5f) {
+          sfx.setDynamicEscalationTargetBpm(null)
+          skirmishAbyssalBlend = max(0f, skirmishAbyssalBlend - rawDt * 0.28f)
+        }
+        if (skirmishReadyCountdownSec <= 0f) {
+          skirmishReadyCountdownSec = 0f
+          skirmishAbyssalBlend = 0f
+          sfx.setDynamicEscalationTargetBpm(null)
+          for (s in ships) {
+            s.weaponsLocked = false
+            s.canFire = true
+            s.weaponState = "ARMED"
+            s.warpInAnimTimer = 0.55f
+            s.phaseShieldTimer = RiftCalibrationState.exitPhaseShieldSec
+          }
+          if (hasJoinedMatch && !isInLobbyStaging) {
+            sfx.playWarp()
+            onPrizeToast("ROUND $skirmishRound LIVE — WEAPONS HOT!")
+          }
+        }
+      } else if (skirmishIs1v1Escalated) {
+        skirmishAbyssalBlend = min(1f, skirmishAbyssalBlend + rawDt * 0.24f)
+      } else {
+        skirmishAbyssalBlend = max(0f, skirmishAbyssalBlend - rawDt * 0.35f)
+      }
+    } else {
+      skirmishAbyssalBlend = max(0f, skirmishAbyssalBlend - rawDt * 0.45f)
+    }
+
+    val inDeathmatchReadyHold = isSkirmishRulesActive() && skirmishReadyCountdownSec > 0f
+
     // 1. Local Player Thrust, Afterburner, Hyper Surge, Overcharge Surge, Manual HUD Brake & Live Life Stats
     if (isInLobbyStaging) {
       localPlayer.isIdleDraining = false
@@ -7095,6 +7958,14 @@ class RiftGameEngine(
       localPlayer.vx = 0f
       localPlayer.vy = 0f
       localPlayer.afterburning = false
+      localPlayer.flux = localPlayer.maxFlux
+    } else if (inDeathmatchReadyHold) {
+      localPlayer.vx = 0f
+      localPlayer.vy = 0f
+      localPlayer.afterburning = false
+      localPlayer.weaponsLocked = true
+      localPlayer.canFire = false
+      localPlayer.weaponState = "READY-UP"
       localPlayer.flux = localPlayer.maxFlux
     } else if (localPlayer.respawnTimer <= 0f) {
       currentLifeStats.timeSurvivedSec += rawDt
@@ -7390,7 +8261,7 @@ class RiftGameEngine(
         if (s.deathLingerTimer > 0f) {
           s.deathLingerTimer = max(0f, s.deathLingerTimer - rawDt)
         }
-        if (s.isLocalPlayer && !isStasisBreachRulesActive() && s.deathLingerTimer <= 0f) {
+        if (s.isLocalPlayer && isSkirmishRulesActive() && skirmishReadyCountdownSec <= 0f && s.deathLingerTimer <= 0f) {
           val livingAllies = getLivingSpectatableTeammates()
           val curTarget = livingAllies.firstOrNull { it.id == spectatingTargetShipId }
           if (curTarget == null) {
@@ -7437,8 +8308,15 @@ class RiftGameEngine(
           s.repels = s.spec.initialRepels
           s.specialWeaponType = "NONE"
           s.specialWeaponCharges = 0
+          s.specialWeaponStacks = 0
           s.shotgunWavesRemaining = 0
           s.shotgunWaveTimer = 0f
+          s.novaWavesRemaining = 0
+          s.novaWaveTimer = 0f
+          s.tractorBeamActive = false
+          s.tractorTargetShipId = ""
+          s.lanceBeamActive = false
+          s.lanceHitSparkActive = false
           s.missileLockWarningTimer = 0f
           s.plasmaRiftTickTimer = 0f
           s.visualBankRoll = 0f
@@ -7464,6 +8342,18 @@ class RiftGameEngine(
           s.playfieldIdleTimer = 0f
           s.isIdleDraining = false
         }
+        continue
+      }
+
+      if (inDeathmatchReadyHold) {
+        s.vx = 0f
+        s.vy = 0f
+        s.afterburning = false
+        s.weaponsLocked = true
+        s.canFire = false
+        s.weaponState = "READY-UP"
+        s.flux = s.maxFlux
+        s.phaseShieldTimer = 3.0f
         continue
       }
 
@@ -7500,7 +8390,7 @@ class RiftGameEngine(
         }
       }
 
-      // Step Disruptor Stealth Cloak continuous drain (cloakDrainPerSec; forced uncloak at 150 Flux floor without firing EMP)
+      // Step Disruptor Stealth Cloak continuous drain
       if (s.isCloaked) {
         selfDrainFlux(s, RiftCalibrationState.cloakDrainPerSec * dt)
         if (s.flux <= 150f || isInsideSafeZone(s.x, s.y)) {
@@ -7524,6 +8414,21 @@ class RiftGameEngine(
           val waveAim = if (s.isLocalPlayer && s.independentAimActive) s.weaponAngle else s.shotgunAimAngle
           fireShotgunWave(s, waveAim)
         }
+      }
+
+      // Step staggered N-stack 360-degree Nova waves
+      if (s.novaWavesRemaining > 0) {
+        s.novaWaveTimer -= dt
+        if (s.novaWaveTimer <= 0f) {
+          s.novaWavesRemaining--
+          s.novaWaveTimer = 0.22f
+          fireRadialBurstProjectiles(s)
+        }
+      }
+
+      // Step active Toggleable Tractor Beam & Continuous Lance Beam
+      if (s.tractorBeamActive || s.lanceBeamActive) {
+        stepContinuousToggleBuffs(s, dt)
       }
 
       var currentlyInSafe = isInsideSafeZone(s.x, s.y)
@@ -7616,7 +8521,7 @@ class RiftGameEngine(
           (currentCustomGame?.rechargeMult ?: 1.0f)
       if (s.empTimer > 0f) {
         s.empTimer = max(0f, s.empTimer - dt)
-      } else if (!s.isIdleDraining && !s.isCloaked) {
+      } else if (!s.isIdleDraining && !s.isCloaked && !s.tractorBeamActive && !s.lanceBeamActive) {
         val safeBonus = if (currentlyInSafe) RiftCalibrationState.safeZoneRechargeMult else 1.0f
         s.flux = min(s.maxFlux, s.flux + s.spec.rechargeRate * rechargeSurgeMult * safeBonus * dt)
       }
@@ -7833,7 +8738,7 @@ class RiftGameEngine(
             val effectiveDelay = baseDelay / RiftCalibrationState.buffRespawnFrequency
             pendingBuffSpawns.add(effectiveDelay)
           }
-          val customForgedEntry = if (gr.buffType >= 12) RiftCodex.getBuffRegistryByIndex(gr.buffType) else null
+          val customForgedEntry = if (gr.buffType >= 15) RiftCodex.getBuffRegistryByIndex(gr.buffType) else null
           val pickupBty =
             if (gr.buffType == 6) RiftCalibrationState.fullChargeCrateBounty else RiftCalibrationState.cratePickupBounty
           s.bounty += pickupBty
@@ -7847,6 +8752,9 @@ class RiftGameEngine(
             gr.buffType == 4 -> grantSpecialBuffWeapon(s, "STASIS_BARRIER", RiftCodex.BUFF_REGISTRY["STASIS_BARRIER"]?.chargesPerPickup ?: 1)
             gr.buffType == 5 -> grantSpecialBuffWeapon(s, "HYPER_SURGE", RiftCodex.BUFF_REGISTRY["HYPER_SURGE"]?.chargesPerPickup ?: 1)
             gr.buffType == 11 -> grantSpecialBuffWeapon(s, "SWARM_DRONES", RiftCodex.BUFF_REGISTRY["SWARM_DRONES"]?.chargesPerPickup ?: 1)
+            gr.buffType == 12 -> grantSpecialBuffWeapon(s, "TRACTOR_BEAM", RiftCodex.BUFF_REGISTRY["TRACTOR_BEAM"]?.chargesPerPickup ?: 1)
+            gr.buffType == 13 -> grantSpecialBuffWeapon(s, "PROX_SEEKER", RiftCodex.BUFF_REGISTRY["PROX_SEEKER"]?.chargesPerPickup ?: 1)
+            gr.buffType == 14 -> grantSpecialBuffWeapon(s, "LANCE_BEAM", RiftCodex.BUFF_REGISTRY["LANCE_BEAM"]?.chargesPerPickup ?: 1)
             gr.buffType == 6 -> s.flux = s.maxFlux
             gr.buffType == 7 -> s.repels = min(6, s.repels + 1)
             gr.buffType == 8 -> {
@@ -7900,8 +8808,8 @@ class RiftGameEngine(
                   "FORGED BUFF: ${customForgedEntry.officialName} (+${customForgedEntry.chargesPerPickup} CHARGES • ${s.specialWeaponCharges} TOTAL)"
                 }
                 gr.buffType == 0 -> {
-                  spawnPooledFct("NOVA [${s.specialWeaponCharges}] (0 FLUX)", s.x, s.y - 24f, Color.parseColor("#F97316"))
-                  "SPECIAL BUFF: NOVA RING (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0 FLUX)"
+                  spawnPooledFct("NOVA x${s.specialWeaponStacks} WAVES", s.x, s.y - 24f, Color.parseColor("#F97316"))
+                  "SPECIAL BUFF: NOVA RING (x${s.specialWeaponStacks} STAGGERED 360° WAVES • 0 FLUX)"
                 }
                 gr.buffType == 1 -> {
                   spawnPooledFct("SHATTER [${s.specialWeaponCharges}] (0 FLUX)", s.x, s.y - 24f, Color.parseColor("#FB7185"))
@@ -7916,8 +8824,8 @@ class RiftGameEngine(
                   "SPECIAL BUFF: HOLO PHANTOM (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0 FLUX)"
                 }
                 gr.buffType == 4 -> {
-                  spawnPooledFct("BARRIER [${s.specialWeaponCharges}] (0 FLUX)", s.x, s.y - 24f, Color.parseColor("#38BDF8"))
-                  "SPECIAL BUFF: STASIS BARRIER (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 0 FLUX)"
+                  spawnPooledFct("BARRIER x${s.specialWeaponStacks} SEG", s.x, s.y - 24f, Color.parseColor("#38BDF8"))
+                  "SPECIAL BUFF: STASIS BARRIER (${s.specialWeaponStacks} WALL SEGMENTS READY • 0 FLUX)"
                 }
                 gr.buffType == 5 -> {
                   spawnPooledFct("SURGE [${s.specialWeaponCharges}] (0 FLUX)", s.x, s.y - 24f, Color.parseColor("#F43F5E"))
@@ -7926,6 +8834,18 @@ class RiftGameEngine(
                 gr.buffType == 11 -> {
                   spawnPooledFct("SWARM [${s.specialWeaponCharges}] (0 FLUX)", s.x, s.y - 24f, Color.parseColor("#00F5D4"))
                   "SPECIAL BUFF: SWARM (+1 CHARGE • ${s.specialWeaponCharges} TOTAL • 5 AUTONOMOUS DRONES)"
+                }
+                gr.buffType == 12 -> {
+                  spawnPooledFct("TRACTOR BEAM READY", s.x, s.y - 24f, Color.parseColor("#34D399"))
+                  "SPECIAL BUFF: TRACTOR BEAM (TOGGLE LASER WEB • DRAINS FLUX)"
+                }
+                gr.buffType == 13 -> {
+                  spawnPooledFct("PROX MISSILE [${s.specialWeaponCharges}]", s.x, s.y - 24f, Color.parseColor("#FACC15"))
+                  "SPECIAL BUFF: PROXIMITY MISSILE (INFINITE DURATION & BOUNCES • RE-LOCK RING)"
+                }
+                gr.buffType == 14 -> {
+                  spawnPooledFct("LANCE BEAM x${s.specialWeaponStacks}", s.x, s.y - 24f, Color.parseColor("#A855F7"))
+                  "SPECIAL BUFF: LANCE BEAM (x${s.specialWeaponStacks} WIDTH/RANGE • TOGGLE CONTINUOUS)"
                 }
                 gr.buffType == 6 -> {
                   spawnPooledFct("FULL FLUX +$pickupBty BTY", s.x, s.y - 24f, Color.parseColor("#10B981"))
@@ -8198,8 +9118,10 @@ class RiftGameEngine(
     val seekerMaxTurnRad = max(RiftCalibrationState.seekerTurnRate, 6.2f) * customSpdMult
     for (i in bombs.indices.reversed()) {
       val b = bombs[i]
-      b.life -= dt
-      if (b.life <= 0f) {
+      if (!b.isInfiniteProxMissile) {
+        b.life -= dt
+      }
+      if (!b.isInfiniteProxMissile && b.life <= 0f) {
         val isMissile = b.type == "MISSILE"
         val isCustomOrb = b.type == "CUSTOM_ORB"
         val expRadius =
@@ -8425,11 +9347,118 @@ class RiftGameEngine(
         }
       }
 
+      if (b.isInfiniteProxMissile) {
+        val lockR = b.proxLockRadius.coerceAtLeast(220f)
+        val insideShips =
+          ships.filter { cand ->
+            !(isInLobbyStaging && cand.isLocalPlayer) &&
+              !isBombAlliedWithShip(b, cand) &&
+              cand.respawnTimer <= 0f &&
+              !cand.isCloaked &&
+              !isInsideSafeZone(cand.x, cand.y) &&
+              hypot(cand.x - b.x, cand.y - b.y) <= lockR
+          }
+        val newlyEntered =
+          insideShips.filter { cand ->
+            cand.id !in b.shipsInsideRadiusPrevStep && cand.id != b.targetShipId
+          }
+        b.shipsInsideRadiusPrevStep.clear()
+        for (cand in insideShips) {
+          b.shipsInsideRadiusPrevStep.add(cand.id)
+        }
+
+        var lockedTarget =
+          ships.firstOrNull {
+            !(isInLobbyStaging && it.isLocalPlayer) &&
+              it.id == b.targetShipId &&
+              it.respawnTimer <= 0f &&
+              !it.isCloaked &&
+              !isInsideSafeZone(it.x, it.y)
+          }
+        if (lockedTarget == null && b.targetShipId.isNotEmpty()) {
+          b.targetShipId = ""
+        }
+
+        if (newlyEntered.isNotEmpty()) {
+          val switchedTarget = newlyEntered.minByOrNull { hypot(it.x - b.x, it.y - b.y) }
+          if (switchedTarget != null) {
+            val wasPursuingAnother = lockedTarget != null && lockedTarget.id != switchedTarget.id
+            lockedTarget = switchedTarget
+            b.targetShipId = switchedTarget.id
+            if (b.ownerId == localPlayer.id || switchedTarget.isLocalPlayer) {
+              sfx.playMissileLockBeep()
+              if (wasPursuingAnother && b.ownerId == localPlayer.id) {
+                spawnPooledFct(
+                  text = "LOCK SWITCH: ${switchedTarget.callsign}",
+                  x = b.x,
+                  y = b.y - 18f,
+                  color = Color.parseColor("#FACC15"),
+                )
+              }
+            }
+          }
+        } else if (lockedTarget == null && insideShips.isNotEmpty()) {
+          val acquiredTarget = insideShips.minByOrNull { hypot(it.x - b.x, it.y - b.y) }
+          if (acquiredTarget != null) {
+            lockedTarget = acquiredTarget
+            b.targetShipId = acquiredTarget.id
+            if (b.ownerId == localPlayer.id || acquiredTarget.isLocalPlayer) {
+              sfx.playMissileLockBeep()
+            }
+          }
+        }
+
+        val proxCruiseSpeed = 540f * customSpdMult
+        val proxTurnRate = 6.8f * customSpdMult
+        if (lockedTarget != null) {
+          lockedTarget.missileLockWarningTimer = max(lockedTarget.missileLockWarningTimer, 0.22f)
+          if (
+            (lockedTarget.isLocalPlayer || b.ownerId == localPlayer.id) &&
+              lockedTarget.missileBeepCooldown <= 0f
+          ) {
+            lockedTarget.missileBeepCooldown = 0.42f
+            sfx.playMissileLockBeep()
+          }
+          val dist = hypot(lockedTarget.x - b.x, lockedTarget.y - b.y)
+          val leadT = (dist / proxCruiseSpeed.coerceAtLeast(1f)).coerceIn(0f, 0.42f)
+          val aimX = lockedTarget.x + lockedTarget.vx * leadT
+          val aimY = lockedTarget.y + lockedTarget.vy * leadT
+          val desiredAngle = atan2(aimY - b.y, aimX - b.x)
+          val curAngle = atan2(b.vy, b.vx)
+          val diff = atan2(sin(desiredAngle - curAngle), cos(desiredAngle - curAngle))
+          val maxTurn = proxTurnRate * dt
+          val newAngle = curAngle + diff.coerceIn(-maxTurn, maxTurn)
+          b.vx = cos(newAngle) * proxCruiseSpeed
+          b.vy = sin(newAngle) * proxCruiseSpeed
+        } else {
+          val curSp = hypot(b.vx, b.vy).coerceAtLeast(1f)
+          b.vx = (b.vx / curSp) * proxCruiseSpeed
+          b.vy = (b.vy / curSp) * proxCruiseSpeed
+        }
+      }
+
       val nx = b.x + b.vx * dt
       val ny = b.y + b.vy * dt
       if (isInsideSafeZone(nx, ny) || isInsideSafeZone(b.x, b.y)) {
-        bombs.removeAt(i)
-        continue
+        if (b.isInfiniteProxMissile) {
+          val dx = nx - arenaCenterX
+          val dy = ny - arenaCenterY
+          val dSafe = hypot(dx, dy).coerceAtLeast(0.001f)
+          val rnx = if (hypot(dx, dy) > 0.001f) dx / dSafe else 1f
+          val rny = if (hypot(dx, dy) > 0.001f) dy / dSafe else 0f
+          val pushR = getSafeZoneRadius() + b.radius + 6f
+          b.x = arenaCenterX + rnx * pushR
+          b.y = arenaCenterY + rny * pushR
+          val dot = b.vx * rnx + b.vy * rny
+          if (dot < 0f) {
+            b.vx -= 2f * dot * rnx
+            b.vy -= 2f * dot * rny
+          }
+          continue
+        } else {
+          bombs.removeAt(i)
+          continue
+        }
       }
       var hitWall = false
 
@@ -8446,9 +9475,16 @@ class RiftGameEngine(
               attackerId = b.ownerId,
             )
           }
-          if (b.bouncesLeft > 0) {
-            b.bouncesLeft--
-            val bounceRestitution = if (b.type == "MISSILE" || b.type == "BOUNCE" || b.type == "CUSTOM_ORB") 1.0f else 0.85f
+          if (b.isInfiniteProxMissile || b.bouncesLeft > 0) {
+            if (!b.isInfiniteProxMissile) {
+              b.bouncesLeft--
+            }
+            val bounceRestitution =
+              if (b.isInfiniteProxMissile || b.type == "MISSILE" || b.type == "BOUNCE" || b.type == "CUSTOM_ORB") {
+                1.0f
+              } else {
+                0.85f
+              }
             b.x = bombWallHit.hitX + bombWallHit.normalX * 3.5f
             b.y = bombWallHit.hitY + bombWallHit.normalY * 3.5f
             val dot = b.vx * bombWallHit.normalX + b.vy * bombWallHit.normalY
@@ -8480,15 +9516,22 @@ class RiftGameEngine(
           val nextPerimDist = hypot(nx - arenaCenterX, ny - arenaCenterY)
           if (nextPerimDist + b.radius >= arenaRadius) {
             hitWall = true
-            if (b.bouncesLeft > 0) {
-              b.bouncesLeft--
+            if (b.isInfiniteProxMissile || b.bouncesLeft > 0) {
+              if (!b.isInfiniteProxMissile) {
+                b.bouncesLeft--
+              }
               val dSafe = nextPerimDist.coerceAtLeast(0.001f)
               val rnx = (nx - arenaCenterX) / dSafe
               val rny = (ny - arenaCenterY) / dSafe
               b.x = arenaCenterX + rnx * (arenaRadius - b.radius - 3f)
               b.y = arenaCenterY + rny * (arenaRadius - b.radius - 3f)
               val dot = b.vx * rnx + b.vy * rny
-              val bounceRestitution = if (b.type == "MISSILE" || b.type == "BOUNCE" || b.type == "CUSTOM_ORB") 1.0f else 0.85f
+              val bounceRestitution =
+                if (b.isInfiniteProxMissile || b.type == "MISSILE" || b.type == "BOUNCE" || b.type == "CUSTOM_ORB") {
+                  1.0f
+                } else {
+                  0.85f
+                }
               if (dot > 0f) {
                 b.vx = (b.vx - 2f * dot * rnx) * bounceRestitution
                 b.vy = (b.vy - 2f * dot * rny) * bounceRestitution
@@ -8613,7 +9656,7 @@ class RiftGameEngine(
         when (b.type) {
           "PROX" -> RiftCalibrationState.proxFuseRadius
           "MINE" -> b.radius + 28f
-          "MISSILE" -> b.radius + 10f
+          "MISSILE", "PROX_MISSILE" -> b.radius + 10f
           "CUSTOM_ORB" -> if (b.customEffect == CustomBuffEffect.PULL) b.radius + 6f else b.radius + 14f
           else -> b.radius
         }
@@ -8686,6 +9729,7 @@ class RiftGameEngine(
                 "CUSTOM_ORB" -> if (b.customColor != 0) b.customColor else Color.parseColor("#22D3EE")
                 "EMP" -> Color.parseColor("#B388FF")
                 "MISSILE" -> Color.parseColor("#EF4444")
+                "PROX_MISSILE" -> Color.parseColor("#FACC15")
                 else -> Color.parseColor("#F59E0B")
               },
             )
@@ -8980,8 +10024,8 @@ class RiftGameEngine(
     // 8. Step FLUX CORE Singularity Mode (Overcharge Tiers, Bounty Tick, Safe Zone Ejection & 30s Supersonic Deceleration)
     stepFluxCoreMode(dt, rawDt)
 
-    // 9. Step RIFT SKIRMISH 3-Minute Round Timer & Tiebreaker
-    if (isSkirmishRulesActive()) {
+    // 9. Step RIFT SKIRMISH 3-Minute Round Timer & Tiebreaker (paused during 10s between-round Ready-Up)
+    if (isSkirmishRulesActive() && skirmishReadyCountdownSec <= 0f) {
       skirmishRoundTimerSec = max(0f, skirmishRoundTimerSec - rawDt)
       if (skirmishRoundTimerSec <= 0f) {
         val westAlive = ships.count { it.freq == 0 && it.respawnTimer <= 0f }
@@ -9406,7 +10450,7 @@ class RiftGameEngine(
             shockwaves.add(ShockwaveEntity(mx, my, 18f, mergedRadius * 1.35f, Color.parseColor("#EC4899")))
             shockwaves.add(ShockwaveEntity(mx, my, 12f, mergedRadius * 0.95f, Color.parseColor("#00F5D4")))
             if (hasJoinedMatch && !isInLobbyStaging) {
-              highBountyShutdownBanner = "UNSTABLE RIFT CONVERGED • 10.0s DOOMSDAY!"
+              highBountyShutdownBanner = "UNSTABLE RIFT CONVERGED • 10.0s COLLAPSE!"
               highBountyShutdownTimer = 4.2f
               sfx.playWarp()
               addTrauma(0.35f)
@@ -9419,7 +10463,7 @@ class RiftGameEngine(
       }
     }
 
-    // 2. Step anomaly life, rotation, physics fields & Unstable Rift Doomsday
+    // 2. Step anomaly life, rotation, physics fields & Unstable Rift Collapse
     val expiredPairsToRespawn = mutableListOf<AnomalyType>()
     val expiredSinglesToRespawn = mutableListOf<AnomalyType>()
     var unstableDetonatedThisStep = false
@@ -9455,7 +10499,7 @@ class RiftGameEngine(
           )
         }
 
-        // 10.0s Doomsday Detonation: 75% Max Flux blast + shatters nearby Crystal Asteroids!
+        // 10.0s Convergence Collapse Detonation: 75% Max Flux shockwave + shatters nearby Crystal Asteroids!
         if (anom.life <= 0f) {
           val blastR = anom.physicalRadius * 2.15f
           shockwaves.add(ShockwaveEntity(anom.x, anom.y, 36f, blastR, Color.parseColor("#FACC15")))
@@ -9477,17 +10521,17 @@ class RiftGameEngine(
               s.vx += nx * 1150f
               s.vy += ny * 1150f
               s.rocketBoostTimer = max(s.rocketBoostTimer, 0.40f)
-              val doomsdayDmg = s.maxFlux * 0.75f
+              val collapseDmg = s.maxFlux * 0.75f
               applyProjectileDamage(
                 target = s,
                 attackerId = "unstable_rift",
                 attackerIsHuman = false,
-                rawDamage = doomsdayDmg,
+                rawDamage = collapseDmg,
                 impactAngle = atan2(anom.y - s.y, anom.x - s.x),
                 isHeavyImpact = true,
                 isEmp = false,
                 attackerShipLabel = "Unstable Rift",
-                weaponLabel = "Unstable Rift Doomsday",
+                weaponLabel = "Unstable Rift Collapse",
               )
             }
           }
@@ -9530,7 +10574,7 @@ class RiftGameEngine(
             sfx.playExplosion()
             addTrauma(0.65f)
             spawnPooledFct(
-              text = "UNSTABLE RIFT DOOMSDAY (-75% MAX FLUX)",
+              text = "UNSTABLE RIFT COLLAPSE (-75% MAX FLUX)",
               x = anom.x,
               y = anom.y - 36f,
               color = Color.parseColor("#FACC15"),
@@ -10264,7 +11308,7 @@ class RiftGameEngine(
       }
     }
 
-    // Cleanly respawn expired Rifts on 45s cycles & replenish sector Rifts after Unstable Rift Doomsday
+    // Cleanly respawn expired Rifts on 45s cycles & replenish sector Rifts after Unstable Rift Collapse
     for (singleType in expiredSinglesToRespawn) {
       spawnSingleAnomaly(singleType)
     }

@@ -1557,7 +1557,7 @@ object RiftCodex {
           aimMode = BuffAimMode.TAP_INSTANT,
           strokeColorHex = "#F97316",
           fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#F97316"),
-          summary = "Fires 16 1-bounce plasma bolts in a full 360° ring at 0 Flux cost.",
+          summary = "Fires 16 1-bounce plasma bolts in a full 360° ring at 0 Flux cost; N stacked crates unleash N staggered 360° Nova waves.",
           isCustomForged = false,
           projectileSpeed = 780f,
           flightDuration = 1.6f,
@@ -1626,7 +1626,7 @@ object RiftCodex {
           aimMode = BuffAimMode.AIM_DIRECTIONAL,
           strokeColorHex = "#38BDF8",
           fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#38BDF8"),
-          summary = "Deploys a 45.0s tethered cyan hard-light forcefield ahead of your ship; stacks N× on the same spot.",
+          summary = "Deploys 45.0s tethered cyan hard-light forcefield ahead of your ship; N stacked crates deploy N distinct wall segments.",
           isCustomForged = false,
           projectileSpeed = 0f,
           flightDuration = 45.0f,
@@ -1669,6 +1669,57 @@ object RiftCodex {
           damage = 210f,
           blastRadius = 110f,
         ),
+      "TRACTOR_BEAM" to
+        SpecialBuffRegistryEntry(
+          id = "TRACTOR_BEAM",
+          buffTypeIndex = 12,
+          officialName = "TRACTOR BEAM",
+          shortLabel = "TRACTOR",
+          chargesPerPickup = 1,
+          aimMode = BuffAimMode.AIM_DIRECTIONAL,
+          strokeColorHex = "#34D399",
+          fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#34D399"),
+          summary = "Toggleable gravimetric laser web that slows and pulls a caught hostile hull toward your ship while draining Flux; tap again to shut off and clear.",
+          isCustomForged = false,
+          projectileSpeed = 0f,
+          flightDuration = 12.0f,
+          damage = 0f,
+          blastRadius = 560f,
+        ),
+      "PROX_SEEKER" to
+        SpecialBuffRegistryEntry(
+          id = "PROX_SEEKER",
+          buffTypeIndex = 13,
+          officialName = "PROXIMITY MISSILE",
+          shortLabel = "PROX LOCK",
+          chargesPerPickup = 1,
+          aimMode = BuffAimMode.AIM_DIRECTIONAL,
+          strokeColorHex = "#FACC15",
+          fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#FACC15"),
+          summary = "Infinite-duration, infinite-bounce warhead with a visible proximity ring; locks onto entering hulls and dynamically switches target lock if another ship enters.",
+          isCustomForged = false,
+          projectileSpeed = 540f,
+          flightDuration = 999f,
+          damage = 840f,
+          blastRadius = 340f,
+        ),
+      "LANCE_BEAM" to
+        SpecialBuffRegistryEntry(
+          id = "LANCE_BEAM",
+          buffTypeIndex = 14,
+          officialName = "LANCE BEAM",
+          shortLabel = "LANCE",
+          chargesPerPickup = 1,
+          aimMode = BuffAimMode.AIM_DIRECTIONAL,
+          strokeColorHex = "#A855F7",
+          fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#A855F7"),
+          summary = "Toggleable continuous plasma lance that drains Flux, stops on first target or obstacle hit, ticks damage every 0.5s, scales wider/longer with stacks, and clears on toggle off.",
+          isCustomForged = false,
+          projectileSpeed = 0f,
+          flightDuration = 12.0f,
+          damage = 280f,
+          blastRadius = 640f,
+        ),
     )
 
   val BUFF_REGISTRY: MutableMap<String, SpecialBuffRegistryEntry> = createCoreBuffRegistry()
@@ -1683,6 +1734,9 @@ object RiftCodex {
       "BRICK", "BARRIER", "STASIS_BARRIER" -> "STASIS_BARRIER"
       "ROCKET", "SURGE", "HYPER_SURGE", "PHASE_BLINK" -> "HYPER_SURGE"
       "SWARM", "DRONES", "SWARM_DRONES" -> "SWARM_DRONES"
+      "TRACTOR", "TRACTOR_BEAM", "WEB" -> "TRACTOR_BEAM"
+      "PROX_MISSILE", "PROX_SEEKER", "PROX_LOCK", "INFINITE_MISSILE" -> "PROX_SEEKER"
+      "LANCE", "LANCE_BEAM", "CONTINUOUS_LANCE" -> "LANCE_BEAM"
       else -> clean
     }
   }
@@ -1701,13 +1755,13 @@ object RiftCodex {
   }
 
   fun nextCustomBuffTypeIndex(): Int {
-    val maxExisting = BUFF_REGISTRY.values.maxOfOrNull { it.buffTypeIndex } ?: 11
-    return max(12, maxExisting + 1)
+    val maxExisting = BUFF_REGISTRY.values.maxOfOrNull { it.buffTypeIndex } ?: 14
+    return max(15, maxExisting + 1)
   }
 
   fun registerCustomBuff(entry: SpecialBuffRegistryEntry) {
     val safeEntry =
-      if (entry.isCustomForged && entry.buffTypeIndex <= 11) {
+      if (entry.isCustomForged && entry.buffTypeIndex <= 14) {
         entry.copy(buffTypeIndex = nextCustomBuffTypeIndex())
       } else {
         entry
@@ -1893,10 +1947,10 @@ object RiftCodex {
       RiftAnomalyCodexEntry(
         id = "unstable_rift",
         title = "UNSTABLE RIFT",
-        classification = "CONVERGED DOOMSDAY",
+        classification = "CONVERGENCE COLLAPSE",
         specBadge = "10.0s • 75% MAX FLUX",
         accentHex = "#FACC15",
-        effectSummary = "Formed when two non-paired Playfield Rifts touch or expand into each other, fusing into a volatile 10.0s convergence timer singularity that unleashes a 75% Max Flux Doomsday blast and shatters nearby Crystal Asteroids.",
+        effectSummary = "Formed when two non-paired Playfield Rifts touch or expand into each other, fusing into a volatile 10.0s convergence timer singularity that unleashes a 75% Max Flux collapse shockwave and shatters nearby Crystal Asteroids.",
         tacticalNote = "Burn Afterburners or Phase Dash outside its 2.15x blast ring before the 10.0s convergence timer reaches zero!",
       ),
     )
@@ -2358,17 +2412,17 @@ object RiftCodex {
       PowerUpCodexEntry(
         id = "special_nova_ring",
         buffTypeIndex = 0,
-        title = "NOVA RING (+1 CHARGE • 0 FLUX)",
-        dropRatePercent = 8,
+        title = "NOVA RING (STACKABLE • N WAVES)",
+        dropRatePercent = 7,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
-        effectSummary = "Loads +1 Nova Ring charge (up to 3) into your 4th Special Buff Button. Fires 16 1-bounce plasma bolts in a full 360° ring at 0 Flux cost!",
-        tacticalNote = "Picking up another Nova Ring crate stacks up to 3 charges; picking up a different Special Buff swaps your active slot!",
+        effectSummary = "Stacks Nova Ring crates in your Special Buff Slot. Triggering unleashes N staggered 16-bolt 360° plasma waves at 0 Flux cost!",
+        tacticalNote = "Stack multiple Nova crates before firing to sweep corridors with consecutive 360° shockwaves!",
       ),
       PowerUpCodexEntry(
         id = "special_shatter_cone",
         buffTypeIndex = 1,
         title = "SHATTER CONE (+2 CHARGES • 0 FLUX)",
-        dropRatePercent = 8,
+        dropRatePercent = 7,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
         effectSummary = "Loads +2 Shatter Cone charges (up to 4) into your Special Buff Button. Unleashes a close-quarters kinetic fan blast!",
         tacticalNote = "Devastating point-blank ambush tool—melts heavy hulls in two zero-Flux pulls!",
@@ -2377,7 +2431,7 @@ object RiftCodex {
         id = "special_seeker_torpedo",
         buffTypeIndex = 2,
         title = "SEEKER TORPEDO (+1 CHARGE • 0 FLUX)",
-        dropRatePercent = 8,
+        dropRatePercent = 7,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
         effectSummary = "Loads +1 Predictive Homing Seeker Torpedo into your Special Buff Button. Leads enemy velocity vectors at high speed!",
         tacticalNote = "Forces evasive hulls to burn a Repel or duck behind sector stations!",
@@ -2386,7 +2440,7 @@ object RiftCodex {
         id = "special_holo_decoy",
         buffTypeIndex = 3,
         title = "HOLO PHANTOM (+1 CHARGE • 0 FLUX)",
-        dropRatePercent = 8,
+        dropRatePercent = 6,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
         effectSummary = "Launches a mirrored holographic clone flying forward while cloaking your real hull!",
         tacticalNote = "Enemy Seekers and bots lock onto your Holo Phantom—detonate it for EMP Flux drain!",
@@ -2394,17 +2448,17 @@ object RiftCodex {
       PowerUpCodexEntry(
         id = "special_stasis_barrier",
         buffTypeIndex = 4,
-        title = "STASIS BARRIER (+1 CHARGE • 0 FLUX)",
-        dropRatePercent = 7,
+        title = "STASIS BARRIER (STACKABLE • N SEGMENTS)",
+        dropRatePercent = 6,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
-        effectSummary = "Deploys a 45.0s tethered cyan hard-light forcefield ahead of your ship that reflects ships & shots and stacks N× on the same spot!",
-        tacticalNote = "Deploy multiple barriers on the same chokepoint to build a stacked BARRIER xN fortification!",
+        effectSummary = "Deploys 45.0s tethered cyan hard-light forcefields ahead of your ship; N stacked crates deploy N distinct wall segments (or reinforce N× on the same spot)!",
+        tacticalNote = "Stack Barrier crates to span wide sector lanes with multi-segment hard-light walls!",
       ),
       PowerUpCodexEntry(
         id = "special_hyper_surge",
         buffTypeIndex = 5,
         title = "HYPER SURGE (+1 CHARGE • 0 FLUX)",
-        dropRatePercent = 7,
+        dropRatePercent = 6,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
         effectSummary = "Ignites hyper-thrusters for supersonic intercept velocity at 0 Flux cost!",
         tacticalNote = "Escape gravity wells or chase down fleeing High-Value Targets!",
@@ -2413,10 +2467,37 @@ object RiftCodex {
         id = "special_swarm_drones",
         buffTypeIndex = 11,
         title = "SWARM (+1 CHARGE • 0 FLUX)",
-        dropRatePercent = 8,
+        dropRatePercent = 6,
         category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
         effectSummary = "Loads +1 Swarm charge (up to 3) into your Special Buff Button. Launches 5 zig-zagging hunter micro-drones (210 Flux each) at 0 Flux cost!",
         tacticalNote = "Unleash all 5 weaving micro-drones down corridors to overwhelm evasive interceptors!",
+      ),
+      PowerUpCodexEntry(
+        id = "special_tractor_beam",
+        buffTypeIndex = 12,
+        title = "TRACTOR BEAM (TOGGLE • FLUX DRAIN)",
+        dropRatePercent = 5,
+        category = "BUCKET A: SPECIAL BUFF SLOT (ACTIVE TOGGLE)",
+        effectSummary = "Projects a gravimetric laser web that slows and pulls a caught hostile hull toward your ship while continually draining Flux. Tap again to turn off and clear.",
+        tacticalNote = "Snare fleeing Flux Core carriers or drag targets into close-quarters shatter volleys!",
+      ),
+      PowerUpCodexEntry(
+        id = "special_prox_seeker",
+        buffTypeIndex = 13,
+        title = "PROXIMITY MISSILE (INFINITE • RE-LOCK)",
+        dropRatePercent = 5,
+        category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
+        effectSummary = "Launches an infinite-duration, infinite-bounce warhead surrounded by a visible proximity ring; locks onto entering pilots and switches lock if another hull enters!",
+        tacticalNote = "Patrols sector corridors indefinitely—bait enemies across its influence ring to transfer the lock!",
+      ),
+      PowerUpCodexEntry(
+        id = "special_lance_beam",
+        buffTypeIndex = 14,
+        title = "LANCE BEAM (TOGGLE • STACKS WIDTH/RANGE)",
+        dropRatePercent = 5,
+        category = "BUCKET A: SPECIAL BUFF SLOT (ACTIVE TOGGLE)",
+        effectSummary = "Fires a continuous non-penetrating plasma lance that drains Flux, stops on first ship or obstacle hit, deals tick damage every 0.5s, scales wider/longer per stack, and clears on toggle off.",
+        tacticalNote = "Stack Lance crates before activating for a wide, long-reach thermal cutting beam!",
       ),
       PowerUpCodexEntry(
         id = "flux_restore",
