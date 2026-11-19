@@ -335,6 +335,10 @@ class RiftSoundSynthesizer(
     musicBpm = currentMusicRecipe.bpm.coerceIn(60, 180)
     bakeAllSfxBuffers(sharedSfxRecipe)
 
+    val superseded = activeInstance
+    if (superseded != null && superseded !== this) {
+      runCatching { superseded.release() }
+    }
     activeInstance = this
     startAmbientMusicLoop()
   }
@@ -940,6 +944,9 @@ class RiftSoundSynthesizer(
 
             val twoPi = 2.0 * PI
             val invRate = 1.0 / musicSampleRate.toDouble()
+            val chunkDurationNs = (chunkSamples * 1_000_000_000L) / musicSampleRate
+            val maxAheadBufferNs = chunkDurationNs * 6L
+            var virtualPlaybackHeadNs = System.nanoTime()
 
             while (!isReleased) {
               if (!isAppForeground) {
@@ -950,6 +957,7 @@ class RiftSoundSynthesizer(
                   }
                 }
                 Thread.sleep(60L)
+                virtualPlaybackHeadNs = System.nanoTime()
                 continue
               }
               val volTarget = musicVolume.coerceIn(0f, 1f).toDouble()
@@ -961,6 +969,7 @@ class RiftSoundSynthesizer(
                   }
                 }
                 Thread.sleep(50L)
+                virtualPlaybackHeadNs = System.nanoTime()
                 continue
               }
 
@@ -1114,7 +1123,22 @@ class RiftSoundSynthesizer(
               if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
                 runCatching { track.play() }
               }
-              track.write(pcmChunk, 0, chunkSamples)
+              val written = track.write(pcmChunk, 0, chunkSamples)
+              val nowNs = System.nanoTime()
+              if (written <= 0) {
+                Thread.sleep(45L)
+                virtualPlaybackHeadNs = System.nanoTime()
+              } else {
+                if (virtualPlaybackHeadNs < nowNs) {
+                  virtualPlaybackHeadNs = nowNs
+                }
+                virtualPlaybackHeadNs += chunkDurationNs
+                val aheadNs = virtualPlaybackHeadNs - nowNs
+                if (aheadNs > maxAheadBufferNs) {
+                  val sleepMs = ((aheadNs - maxAheadBufferNs) / 1_000_000L).coerceIn(15L, 50L)
+                  Thread.sleep(sleepMs)
+                }
+              }
             }
           } catch (_: Throwable) {
           } finally {

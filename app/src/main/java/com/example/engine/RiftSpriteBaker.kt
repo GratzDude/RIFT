@@ -18,27 +18,50 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 object RiftSpriteBaker {
+  private val trimmedShipSpriteCache = mutableMapOf<Int, Bitmap>()
+  private val spaceObstacleBitmapCache = mutableMapOf<Int, Bitmap>()
+  private val nexusHubModuleEmblemCache = mutableMapOf<String, Bitmap>()
+  private val customBuffIconCache = mutableMapOf<Int, Bitmap>()
+
+  private val sharedRiftFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+  private val sharedRiftStrokePaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeCap = Paint.Cap.ROUND
+      strokeJoin = Paint.Join.ROUND
+    }
+  private val sharedRiftRibbonPath = Path()
+  private val sharedRiftSpinePath = Path()
+  private val sharedRiftArcRect = RectF()
+
+  private val ds9HoloArcRect = RectF()
+  private val ds9HoloBandPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeCap = Paint.Cap.ROUND
+    }
+
+  var spriteVisualRevision: Int = 1
+    private set
+  var activeHullTrimStyle: Int = 0 // 0=Standard, 1=Obsidian Ice-Cyan, 2=Sovereign Gold, 3=Rift Violet
+  var customShip9Version: Int = 1
+    private set
+
   val alliedShipBitmaps: Map<Int, Bitmap>
   val hostileShipBitmaps: Map<Int, Bitmap>
   val flashShipBitmaps: Map<Int, Bitmap>
   val buffIconBitmaps: Map<Int, Bitmap>
   var riftAnomalyIconBitmaps: Map<String, Bitmap>
     private set
-  var fluxIconBitmap: Bitmap = bake3dFluxReactorIcon(64)
+  var fluxIconBitmap: Bitmap
     private set
-  var resonanceIconBitmap: Bitmap = bake3dResonanceCrestIcon(64)
+  var resonanceIconBitmap: Bitmap
     private set
-  var riftShardIconBitmap: Bitmap = bake3dRiftShardIcon(64)
+  var riftShardIconBitmap: Bitmap
     private set
-  var safeZoneStationBitmap: Bitmap = bakeSafeZoneDs9StationBitmap(256)
-  var supplyPodFrameBitmap: Bitmap = bakeSupplyPodFrameBitmap(128)
+  var safeZoneStationBitmap: Bitmap
+  var supplyPodFrameBitmap: Bitmap
     private set
-  var spriteVisualRevision: Int = 1
-    private set
-  var activeHullTrimStyle: Int = 0 // 0=Standard, 1=Obsidian Ice-Cyan, 2=Sovereign Gold, 3=Rift Violet
-  private val trimmedShipSpriteCache = mutableMapOf<Int, Bitmap>()
-  private val spaceObstacleBitmapCache = mutableMapOf<Int, Bitmap>()
-  private val nexusHubModuleEmblemCache = mutableMapOf<String, Bitmap>()
 
   var wallTileBitmap: Bitmap
     private set
@@ -61,10 +84,14 @@ object RiftSpriteBaker {
     private set
   var customShip9FlashBitmap: Bitmap
     private set
-  var customShip9Version: Int = 1
-    private set
 
   init {
+    fluxIconBitmap = bake3dFluxReactorIcon(64)
+    resonanceIconBitmap = bake3dResonanceCrestIcon(64)
+    riftShardIconBitmap = bake3dRiftShardIcon(64)
+    safeZoneStationBitmap = bakeSafeZoneDs9StationBitmap(256)
+    supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(128)
+
     wallTileBitmap = bakeWallTile()
     hazardBorderBitmap = bakeHazardBorderTile()
     wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
@@ -1772,8 +1799,6 @@ object RiftSpriteBaker {
     return map[shipId] ?: map[1] ?: bakeShipBitmap(RiftCodex.getShipById(shipId), 128, isAllied)
   }
 
-  private val customBuffIconCache = mutableMapOf<Int, Bitmap>()
-
   fun invalidateCustomBuffIcon(buffType: Int) {
     customBuffIconCache.remove(buffType)
   }
@@ -2803,17 +2828,6 @@ object RiftSpriteBaker {
       pulsePhaseOverride = pulsePhaseOverride,
     )
   }
-
-  private val sharedRiftFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-  private val sharedRiftStrokePaint =
-    Paint(Paint.ANTI_ALIAS_FLAG).apply {
-      style = Paint.Style.STROKE
-      strokeCap = Paint.Cap.ROUND
-      strokeJoin = Paint.Join.ROUND
-    }
-  private val sharedRiftRibbonPath = Path()
-  private val sharedRiftSpinePath = Path()
-  private val sharedRiftArcRect = RectF()
 
   /**
    * Official `NEXUS` App-Icon Ribbon Vortex Aesthetic:
@@ -4978,13 +4992,6 @@ object RiftSpriteBaker {
 
     return bmp
   }
-
-  private val ds9HoloArcRect = RectF()
-  private val ds9HoloBandPaint =
-    Paint(Paint.ANTI_ALIAS_FLAG).apply {
-      style = Paint.Style.STROKE
-      strokeCap = Paint.Cap.ROUND
-    }
 
   /**
    * Draws the shrunk, crisp 3D-tilted revolving cyan/gold holographic ring orbiting at

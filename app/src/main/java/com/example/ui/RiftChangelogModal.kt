@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 74
+const val CURRENT_RIFT_BUILD_VERSION = 75
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 75,
+      versionTag = "v1.0.75 // BUILD #75",
+      releaseDate = "Nov 18, 2026",
+      headline = "RiftSpriteBaker Static Initialization Order Fix (AuthScreen & Startup Crash Resolution)",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Resolved a startup ExceptionInInitializerError in AuthSafeHarborRadarShowcase caused by Kotlin top-to-bottom object <clinit> ordering in RiftSpriteBaker, where buildRiftAnomalyIconMap() invoked draw3dPlayfieldRiftColors() before sharedRiftFillPaint, sharedRiftStrokePaint, sharedRiftRibbonPath, sharedRiftSpinePath, and sharedRiftArcRect were initialized.",
+          "Hoisted all reusable Paint, Path, RectF, and sprite cache instances to the top of RiftSpriteBaker ahead of init {}, unified deterministic Bitmap baking inside init {}, and skipped redundant full-sprite re-bakes in RiftVisualForgeState when all recipes are already at factory default.",
+          "Hardened RiftSoundSynthesizer to automatically release superseded synthesizer instances and pace non-blocking AudioTrack sinks, verified across ExampleRobolectricTest and the full 14-test RiftAuditConsistencyTest suite.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 74,
       versionTag = "v1.0.74 // BUILD #74",
       releaseDate = "Nov 18, 2026",
       headline = "Inner Sub-Modal #060D1A Sci-Fi Tablet Restyle, Enlarged Readable Typography (9.5sp–14sp) & Unified Custom Resonance/Shard/Flux Iconography Across Hangar, Conduit, Citadel, Dossier & Helm Systems",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "TABLET MODALS",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

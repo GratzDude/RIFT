@@ -767,6 +767,7 @@ object RiftVisualForgeState {
  }
 
  fun resetAllVisualTargetsToDefault() {
+  val hadCustomRecipes = activeRecipes.values.any { !it.isFactoryDefault }
   for (target in ForgeElementTarget.entries) activeRecipes[target.key] = VisualElementRecipe.defaultFor(target)
   pointLightEnabled = true
   pointLightTestOrbWorldPos = null
@@ -775,7 +776,9 @@ object RiftVisualForgeState {
   ambientSpaceDarkness = 0.0f
   activeSyndicateCrestRecipe = SyndicateCrestRecipe()
   undoStacks.clear()
-  RiftSpriteBaker.invalidateAllVisualTargets()
+  if (hadCustomRecipes) {
+   RiftSpriteBaker.invalidateAllVisualTargets()
+  }
   visualRevision++
  }
 
@@ -795,6 +798,8 @@ object RiftVisualForgeState {
  }
 
  fun loadFromJsonObject(obj: JSONObject?) {
+  val hadCustomBefore = activeRecipes.values.any { !it.isFactoryDefault }
+  var loadedCustomNow = false
   for (target in ForgeElementTarget.entries) activeRecipes[target.key] = VisualElementRecipe.defaultFor(target)
   if (obj != null) {
    pointLightEnabled = obj.optBoolean("pointLightEnabled", true)
@@ -808,11 +813,15 @@ object RiftVisualForgeState {
      val k = keys.next()
      val target = ForgeElementTarget.fromKey(k) ?: continue
      val recJson = recipesObj.optJSONObject(k) ?: continue
-     activeRecipes[target.key] = VisualElementRecipe.fromJson(recJson).copy(targetKey = target.key)
+     val loadedRec = VisualElementRecipe.fromJson(recJson).copy(targetKey = target.key)
+     activeRecipes[target.key] = loadedRec
+     if (!loadedRec.isFactoryDefault) loadedCustomNow = true
     }
    }
   }
-  RiftSpriteBaker.invalidateAllVisualTargets()
+  if (hadCustomBefore || loadedCustomNow) {
+   RiftSpriteBaker.invalidateAllVisualTargets()
+  }
   visualRevision++
  }
 }
