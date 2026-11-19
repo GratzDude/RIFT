@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 80
+const val CURRENT_RIFT_BUILD_VERSION = 81
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 81,
+      versionTag = "v1.0.81 // BUILD #81",
+      releaseDate = "Nov 19, 2026",
+      headline = "Instant SurfaceSyncGroup Startup & Landscape Window Sync, Off-Main-Thread Sprite Prewarming & Asynchronous SFX WAV Synthesis",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Zero-Stall SurfaceSyncGroup First-Frame Commit & Landscape Window Sync (MainActivity, AndroidManifest, themes.xml, colors.xml): Eliminated the 1,000ms SurfaceSyncGroup startup timeout (wmsSync-VRI[MainActivity] & VRI[MainActivity]) by configuring an immediate #060D1A window background, invoking enableEdgeToEdge() before super.onCreate, avoiding redundant mid-launch orientation/inset transactions, and committing lightweight initial Choreographer frames before mounting heavy cockpit surfaces.",
+          "Off-Main-Thread Procedural Sprite & Emblem Prewarming (RiftSpriteBaker, MainActivity): Added thread-safe cache synchronization and prewarmStartupAssets(...) executed on Dispatchers.Default right after Frame #1 commits—pre-baking all ship hulls, spacetime-tear Rifts, DS9 Safe-Zone station, 16 224x224 Space Obstacle variants, and all 6 192x192 NEXUS Hub metallic module emblems off the UI thread.",
+          "Asynchronous Procedural SFX WAV Synthesis & SoundPool Loading (RiftSoundSynthesizer): Offloaded all 12 procedural combat WAV file syntheses, cache writes, and SoundPool.load calls onto a dedicated background daemon executor with synchronized lifecycle release safety, while preserving immediate background/minimized audio silence.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 80,
       versionTag = "v1.0.80 // BUILD #80",
       releaseDate = "Nov 19, 2026",
       headline = "Spacetime-Tear Playfield & Unstable Rifts, Any-Rift Insta-Kill Convergence, Supply Pod Hazard Clearance, Station Counter-Attack Attribution, Disruptor Needler & Full Zero-Flash Purge",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "SPACETIME RIFTS",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

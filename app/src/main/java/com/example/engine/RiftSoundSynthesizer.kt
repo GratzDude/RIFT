@@ -15,6 +15,7 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
+import java.util.concurrent.Executors
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.pow
@@ -310,6 +311,14 @@ class RiftSoundSynthesizer(
 
   @Volatile private var activeAudioTrack: AudioTrack? = null
   @Volatile private var isReleased: Boolean = false
+  private val sfxBakeLock = Any()
+  private val sfxBakeExecutor =
+    Executors.newSingleThreadExecutor { runnable ->
+      Thread(runnable, "RiftSfxBaker").apply {
+        isDaemon = true
+        priority = (Thread.NORM_PRIORITY - 1).coerceAtLeast(Thread.MIN_PRIORITY)
+      }
+    }
   private var ambientMusicThread: Thread? = null
   private var sfxBakeGeneration: Int = 0
 
@@ -340,7 +349,7 @@ class RiftSoundSynthesizer(
 
     musicBpm = currentMusicRecipe.bpm.coerceIn(60, 180)
     liveEffectiveMusicBpm = musicBpm.toFloat()
-    bakeAllSfxBuffers(sharedSfxRecipe)
+    scheduleBakeAllSfxBuffers(sharedSfxRecipe)
 
     val superseded = activeInstance
     if (superseded != null && superseded !== this) {
@@ -374,7 +383,23 @@ class RiftSoundSynthesizer(
     }
   }
 
+  private fun scheduleBakeAllSfxBuffers(recipe: SfxForgeRecipe) {
+    if (isReleased) return
+    runCatching {
+      sfxBakeExecutor.execute {
+        if (!isReleased) {
+          synchronized(sfxBakeLock) {
+            if (!isReleased) {
+              runCatching { bakeAllSfxBuffers(recipe) }
+            }
+          }
+        }
+      }
+    }
+  }
+
   private fun bakeAllSfxBuffers(recipe: SfxForgeRecipe) {
+    if (isReleased) return
     val gen = ++sfxBakeGeneration
     val pitch = recipe.laserPitchMultiplier.coerceIn(0.55f, 1.75f).toDouble()
     val drive = recipe.laserHarmonicDrive.coerceIn(0.10f, 1.00f).toDouble()
@@ -851,7 +876,7 @@ class RiftSoundSynthesizer(
   fun applySfxRecipe(recipe: SfxForgeRecipe) {
     sharedSfxRecipe = recipe
     if (!isReleased) {
-      bakeAllSfxBuffers(recipe)
+      scheduleBakeAllSfxBuffers(recipe)
     }
   }
 
@@ -864,26 +889,34 @@ class RiftSoundSynthesizer(
   // 1-Tap Audition Triggers for `Soundtrack & SFX Forge`
   fun previewForgedLaser() {
     if (!isAppForeground || isReleased) return
+    val id = sfxLaser
+    if (id <= 0) return
     val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
-    soundPool.play(sfxLaser, v, v, 2, 0, 1.0f)
+    soundPool.play(id, v, v, 2, 0, 1.0f)
   }
 
   fun previewForgedExplosion() {
     if (!isAppForeground || isReleased) return
+    val id = sfxExplosion
+    if (id <= 0) return
     val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
-    soundPool.play(sfxExplosion, v, v, 3, 0, 1.0f)
+    soundPool.play(id, v, v, 3, 0, 1.0f)
   }
 
   fun previewForgedShieldHit() {
     if (!isAppForeground || isReleased) return
+    val id = sfxRepel
+    if (id <= 0) return
     val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
-    soundPool.play(sfxRepel, v, v, 3, 0, 1.0f)
+    soundPool.play(id, v, v, 3, 0, 1.0f)
   }
 
   fun previewForgedPrizeChime() {
     if (!isAppForeground || isReleased) return
+    val id = sfxPrize
+    if (id <= 0) return
     val v = sfxVolume.coerceAtLeast(0.45f).coerceIn(0f, 1f)
-    soundPool.play(sfxPrize, v, v, 2, 0, 1.0f)
+    soundPool.play(id, v, v, 2, 0, 1.0f)
   }
 
   fun exportAudioForgeObject(): JSONObject = exportAudioForgeJson()
@@ -1247,9 +1280,14 @@ class RiftSoundSynthesizer(
       activeInstance = null
     }
     try {
+      sfxBakeExecutor.shutdownNow()
+    } catch (_: Throwable) {}
+    try {
       ambientMusicThread?.interrupt()
     } catch (_: Throwable) {}
-    soundPool.release()
+    synchronized(sfxBakeLock) {
+      runCatching { soundPool.release() }
+    }
   }
 
   private fun synthSweep(

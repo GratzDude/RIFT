@@ -19,6 +19,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 object RiftSpriteBaker {
+  private val cacheLock = Any()
   private val trimmedShipSpriteCache = mutableMapOf<Int, Bitmap>()
   private val spaceObstacleBitmapCache = mutableMapOf<Int, Bitmap>()
   private val nexusHubModuleEmblemCache = mutableMapOf<String, Bitmap>()
@@ -82,6 +83,7 @@ object RiftSpriteBaker {
     private set
   var customShip9HostileBitmap: Bitmap
     private set
+  private var lastCustomShip9Recipe: CustomHullVisualRecipe? = null
 
   init {
     fluxIconBitmap = bake3dFluxReactorIcon(64)
@@ -112,6 +114,7 @@ object RiftSpriteBaker {
     hostileShipBitmaps = hostile
 
     val initialRecipe = RiftCodex.activeCustomShipSlot.visualRecipe
+    lastCustomShip9Recipe = initialRecipe
     customShip9AlliedBitmap = bakeCustomShip9Bitmap(initialRecipe, 128, isAllied = true)
     customShip9HostileBitmap = bakeCustomShip9Bitmap(initialRecipe, 128, isAllied = false)
 
@@ -144,53 +147,95 @@ object RiftSpriteBaker {
    * edited in `NEXUS FORGE`.
    */
   fun invalidateVisualTarget(target: ForgeElementTarget) {
-    when (target) {
-      ForgeElementTarget.OBSTACLE_ORBITAL_STATION,
-      ForgeElementTarget.OBSTACLE_ASTEROID_STATION,
-      ForgeElementTarget.OBSTACLE_SPACE_ASTEROID,
-      ForgeElementTarget.OBSTACLE_FLOATING_DEBRIS,
-      ForgeElementTarget.PLACED_STASIS_BARRIER -> {
-        spaceObstacleBitmapCache.clear()
+    synchronized(cacheLock) {
+      when (target) {
+        ForgeElementTarget.OBSTACLE_ORBITAL_STATION,
+        ForgeElementTarget.OBSTACLE_ASTEROID_STATION,
+        ForgeElementTarget.OBSTACLE_SPACE_ASTEROID,
+        ForgeElementTarget.OBSTACLE_FLOATING_DEBRIS,
+        ForgeElementTarget.PLACED_STASIS_BARRIER -> {
+          spaceObstacleBitmapCache.clear()
+        }
+        ForgeElementTarget.SAFE_ZONE_WALL,
+        ForgeElementTarget.SAFE_ZONE_PAD -> {
+          wallTileBitmap = bakeWallTile()
+          wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+          safeZoneStationBitmap = bakeSafeZoneDs9StationBitmap(256)
+        }
+        ForgeElementTarget.CURRENCY_FLUX_ICON -> {
+          fluxIconBitmap = bake3dFluxReactorIcon(64)
+        }
+        ForgeElementTarget.CURRENCY_SHARD_ICON -> {
+          riftShardIconBitmap = bake3dRiftShardIcon(64)
+        }
+        ForgeElementTarget.RIFT_PLASMA,
+        ForgeElementTarget.RIFT_REPULSOR,
+        ForgeElementTarget.RIFT_GRAVITY,
+        ForgeElementTarget.RIFT_PHASE_PAIR -> {
+          riftAnomalyIconBitmaps = buildRiftAnomalyIconMap()
+        }
+        ForgeElementTarget.SUPPLY_CRATE -> {
+          supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(128)
+        }
+        else -> Unit
       }
-      ForgeElementTarget.SAFE_ZONE_WALL,
-      ForgeElementTarget.SAFE_ZONE_PAD -> {
-        wallTileBitmap = bakeWallTile()
-        wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
-        safeZoneStationBitmap = bakeSafeZoneDs9StationBitmap(256)
-      }
-      ForgeElementTarget.CURRENCY_FLUX_ICON -> {
-        fluxIconBitmap = bake3dFluxReactorIcon(64)
-      }
-      ForgeElementTarget.CURRENCY_SHARD_ICON -> {
-        riftShardIconBitmap = bake3dRiftShardIcon(64)
-      }
-      ForgeElementTarget.RIFT_PLASMA,
-      ForgeElementTarget.RIFT_REPULSOR,
-      ForgeElementTarget.RIFT_GRAVITY,
-      ForgeElementTarget.RIFT_PHASE_PAIR -> {
-        riftAnomalyIconBitmaps = buildRiftAnomalyIconMap()
-      }
-      ForgeElementTarget.SUPPLY_CRATE -> {
-        supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(128)
-      }
-      else -> Unit
+      nexusHubModuleEmblemCache.clear()
+      spriteVisualRevision++
     }
-    nexusHubModuleEmblemCache.clear()
-    spriteVisualRevision++
   }
 
   fun invalidateAllVisualTargets() {
-    spaceObstacleBitmapCache.clear()
-    nexusHubModuleEmblemCache.clear()
-    wallTileBitmap = bakeWallTile()
-    wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
-    safeZoneStationBitmap = bakeSafeZoneDs9StationBitmap(256)
-    supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(128)
-    fluxIconBitmap = bake3dFluxReactorIcon(64)
-    resonanceIconBitmap = bake3dResonanceCrestIcon(64)
-    riftShardIconBitmap = bake3dRiftShardIcon(64)
-    riftAnomalyIconBitmaps = buildRiftAnomalyIconMap()
-    spriteVisualRevision++
+    synchronized(cacheLock) {
+      spaceObstacleBitmapCache.clear()
+      nexusHubModuleEmblemCache.clear()
+      wallTileBitmap = bakeWallTile()
+      wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+      safeZoneStationBitmap = bakeSafeZoneDs9StationBitmap(256)
+      supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(128)
+      fluxIconBitmap = bake3dFluxReactorIcon(64)
+      resonanceIconBitmap = bake3dResonanceCrestIcon(64)
+      riftShardIconBitmap = bake3dRiftShardIcon(64)
+      riftAnomalyIconBitmaps = buildRiftAnomalyIconMap()
+      spriteVisualRevision++
+    }
+  }
+
+  /**
+   * Prewarms heavy procedural sprites (all 224x224 Space Obstacle variants, active hull trim sprites,
+   * and all 6 192x192 NEXUS Hub metallic module emblems) on a background worker thread after Frame #1
+   * commits, eliminating main-thread SurfaceSyncGroup stalls.
+   */
+  fun prewarmStartupAssets(
+    activeShipId: Int = 1,
+    trimStyle: Int = 0,
+    syndicateTag: String = "",
+  ) {
+    val clampedShip = activeShipId.coerceIn(1, 10)
+    val clampedTrim = trimStyle.coerceIn(0, 3)
+    if (clampedTrim != 0 && clampedShip in 1..9) {
+      getShipSprite(clampedShip, isAllied = true, trimStyleOverride = clampedTrim)
+    }
+    val obstacleTypes =
+      arrayOf(
+        SpaceObstacleType.CRYSTAL_ASTEROID,
+        SpaceObstacleType.ORBITAL_STATION,
+        SpaceObstacleType.ASTEROID_STATION,
+        SpaceObstacleType.FLOATING_DEBRIS,
+      )
+    for (type in obstacleTypes) {
+      for (variant in 0..3) {
+        getSpaceObstacleBitmap(type, variant)
+      }
+    }
+    val hubModules = arrayOf("HANGAR", "CONDUIT", "FORGE", "COMMS", "CITADEL", "ARCHIVE")
+    for (modKey in hubModules) {
+      getNexusHubModuleEmblemBitmap(
+        moduleKey = modKey,
+        activeShipId = clampedShip,
+        syndicateTag = syndicateTag,
+        sizePx = 192,
+      )
+    }
   }
 
   fun getRiftAnomalyIconBitmap(riftId: String): Bitmap {
@@ -1046,10 +1091,15 @@ object RiftSpriteBaker {
   fun getSpaceObstacleBitmap(type: SpaceObstacleType, variant: Int): Bitmap {
     val v = variant and 3
     val key = (type.ordinal shl 4) or v
-    spaceObstacleBitmapCache[key]?.let { return it }
+    synchronized(cacheLock) {
+      spaceObstacleBitmapCache[key]?.let { return it }
+    }
     val baked = bakeSpaceObstacleBitmap(type, v, 224)
-    spaceObstacleBitmapCache[key] = baked
-    return baked
+    synchronized(cacheLock) {
+      spaceObstacleBitmapCache[key]?.let { return it }
+      spaceObstacleBitmapCache[key] = baked
+      return baked
+    }
   }
 
   fun bakeSpaceObstacleBitmap(type: SpaceObstacleType, variant: Int, sizePx: Int = 224): Bitmap {
@@ -1744,9 +1794,17 @@ object RiftSpriteBaker {
   }
 
   fun updateCustomShip9Sprites(recipe: CustomHullVisualRecipe) {
-    customShip9AlliedBitmap = bakeCustomShip9Bitmap(recipe, 128, isAllied = true)
-    customShip9HostileBitmap = bakeCustomShip9Bitmap(recipe, 128, isAllied = false)
-    customShip9Version++
+    synchronized(cacheLock) {
+      if (recipe == lastCustomShip9Recipe) return
+    }
+    val alliedBmp = bakeCustomShip9Bitmap(recipe, 128, isAllied = true)
+    val hostileBmp = bakeCustomShip9Bitmap(recipe, 128, isAllied = false)
+    synchronized(cacheLock) {
+      lastCustomShip9Recipe = recipe
+      customShip9AlliedBitmap = alliedBmp
+      customShip9HostileBitmap = hostileBmp
+      customShip9Version++
+    }
   }
 
   fun bakeCustomShip9Bitmap(
@@ -1804,29 +1862,41 @@ object RiftSpriteBaker {
     val effectiveTrim = trimStyleOverride.coerceIn(0, 3)
     if (effectiveTrim != 0) {
       val cacheKey = (shipId shl 4) or (effectiveTrim shl 1) or (if (isAllied) 1 else 0)
-      trimmedShipSpriteCache[cacheKey]?.let { return it }
+      synchronized(cacheLock) {
+        trimmedShipSpriteCache[cacheKey]?.let { return it }
+      }
       val baked = bakeShipBitmap(RiftCodex.getShipById(shipId), 128, isAllied, effectiveTrim)
-      trimmedShipSpriteCache[cacheKey] = baked
-      return baked
+      synchronized(cacheLock) {
+        trimmedShipSpriteCache[cacheKey]?.let { return it }
+        trimmedShipSpriteCache[cacheKey] = baked
+        return baked
+      }
     }
     val map = if (isAllied) alliedShipBitmaps else hostileShipBitmaps
     return map[shipId] ?: map[1] ?: bakeShipBitmap(RiftCodex.getShipById(shipId), 128, isAllied)
   }
 
   fun invalidateCustomBuffIcon(buffType: Int) {
-    customBuffIconCache.remove(buffType)
+    synchronized(cacheLock) {
+      customBuffIconCache.remove(buffType)
+    }
   }
 
   fun getBuffIconBitmap(buffType: Int): Bitmap {
     if (buffType in 0..14 || buffType in -14..-10) {
       return buffIconBitmaps[buffType] ?: buffIconBitmaps[10]!!
     }
-    customBuffIconCache[buffType]?.let { return it }
+    synchronized(cacheLock) {
+      customBuffIconCache[buffType]?.let { return it }
+    }
     val entry = RiftCodex.getBuffRegistryByIndex(buffType)
     if (entry != null) {
       val baked = bakeCustomBuffIconBitmap(entry, 68)
-      customBuffIconCache[buffType] = baked
-      return baked
+      synchronized(cacheLock) {
+        customBuffIconCache[buffType]?.let { return it }
+        customBuffIconCache[buffType] = baked
+        return baked
+      }
     }
     return buffIconBitmaps[buffType.mod(15)] ?: buffIconBitmaps[0]!!
   }
@@ -5260,11 +5330,10 @@ object RiftSpriteBaker {
     val cleanTag = syndicateTag.trim().take(4)
     val cacheKey =
       "$cleanKey:$cleanShip:$spriteVisualRevision:$customShip9Version:$activeHullTrimStyle:${crestRecipe.hashCode()}:$cleanTag:$cleanSize"
-    nexusHubModuleEmblemCache[cacheKey]?.let { cached ->
-      if (!cached.isRecycled) return cached
-    }
-    if (nexusHubModuleEmblemCache.size > 36) {
-      nexusHubModuleEmblemCache.clear()
+    synchronized(cacheLock) {
+      nexusHubModuleEmblemCache[cacheKey]?.let { cached ->
+        if (!cached.isRecycled) return cached
+      }
     }
     val baked =
       bakeNexusHubModuleEmblem(
@@ -5274,8 +5343,16 @@ object RiftSpriteBaker {
         syndicateTag = cleanTag,
         sizePx = cleanSize,
       )
-    nexusHubModuleEmblemCache[cacheKey] = baked
-    return baked
+    synchronized(cacheLock) {
+      nexusHubModuleEmblemCache[cacheKey]?.let { cached ->
+        if (!cached.isRecycled) return cached
+      }
+      if (nexusHubModuleEmblemCache.size > 36) {
+        nexusHubModuleEmblemCache.clear()
+      }
+      nexusHubModuleEmblemCache[cacheKey] = baked
+      return baked
+    }
   }
 
   /**

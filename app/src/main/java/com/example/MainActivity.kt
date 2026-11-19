@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -125,10 +126,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 private sealed interface StagedRiftLaunch {
@@ -173,11 +176,13 @@ fun DeviceAwareModalAutoScaler(content: @Composable () -> Unit) {
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     configureAppCheck(this, intent)
-    enableEdgeToEdge()
-    hideSystemBars()
-    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    if (requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+      requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    }
+    window.decorView.post { hideSystemBars() }
 
     setContent {
       MyApplicationTheme {
@@ -189,7 +194,7 @@ class MainActivity : ComponentActivity() {
   override fun onResume() {
     super.onResume()
     RiftSoundSynthesizer.notifyAppForegroundState(true)
-    hideSystemBars()
+    window.decorView.post { hideSystemBars() }
   }
 
   override fun onPause() {
@@ -205,7 +210,7 @@ class MainActivity : ComponentActivity() {
   override fun onWindowFocusChanged(hasFocus: Boolean) {
     super.onWindowFocusChanged(hasFocus)
     if (hasFocus) {
-      hideSystemBars()
+      window.decorView.post { hideSystemBars() }
     }
   }
 
@@ -229,9 +234,35 @@ fun AppNavigation(
   var isGuestMode by remember { mutableStateOf(localPrefs.isGuestBypassEnabled()) }
   var drifterSessionEpoch by remember { mutableIntStateOf(0) }
   var showPreAuthChangelog by remember { mutableStateOf(false) }
+  var isStartupAssetsReady by remember { mutableStateOf(false) }
   val user = currentUser
 
-  Box(modifier = Modifier.fillMaxSize()) {
+  LaunchedEffect(Unit) {
+    // Allow ViewRootImpl to immediately commit initial frames to satisfy WMS SurfaceSyncGroup (<30ms)
+    withFrameNanos { }
+    withFrameNanos { }
+    val prewarmUid = auth.currentUser?.uid ?: permanentDeviceUid
+    withContext(Dispatchers.Default) {
+      val preferredShip = localPrefs.getPreferredShipId().coerceIn(1, 10)
+      val equippedTrim = localPrefs.getEquippedCosmeticId("HULL_TRIM", prewarmUid).coerceIn(0, 3)
+      val activeSlotId = localPrefs.getActiveCustomSlotId(prewarmUid)
+      val loadedSlot = localPrefs.getCustomShipSlot(activeSlotId, prewarmUid)
+      val savedTag = localPrefs.getSyndicateTag()
+      RiftSpriteBaker.activeHullTrimStyle = equippedTrim
+      RiftCodex.updateActiveCustomShipSlot(loadedSlot)
+      RiftSpriteBaker.prewarmStartupAssets(
+        activeShipId = preferredShip,
+        trimStyle = equippedTrim,
+        syndicateTag = savedTag,
+      )
+    }
+    isStartupAssetsReady = true
+  }
+
+  Box(modifier = Modifier.fillMaxSize().background(Color(0xFF060D1A))) {
+    if (!isStartupAssetsReady) {
+      return@Box
+    }
     if (user == null && !isGuestMode) {
       AuthScreen(
         onAuthSuccess = {
