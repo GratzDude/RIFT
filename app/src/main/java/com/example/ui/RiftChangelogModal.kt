@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 81
+const val CURRENT_RIFT_BUILD_VERSION = 82
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 82,
+      versionTag = "v1.0.82 // BUILD #82",
+      releaseDate = "Nov 19, 2026",
+      headline = "NEXUS Hub 2-Line Module Cards, Codex Sub-Deck in Helm Systems, Enlarged Clickable Top Bar, Unified Syndicate Terminology & Active-Match-Safe How-To-Play Tutorial Routing",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Codex Sub-Deck in Helm Systems & Streamlined 2-Line Hub Module Cards (SettingsModal, NexusAiConsoleModal, MainActivity): Added a dedicated [CODEX] sub-deck tab inside HELM SYSTEMS rendering CodexModal and routed all Codex launches to HELM SYSTEMS; renamed the bottom-right Hub card to PILOT DOSSIER (opening straight into Pilot Dossier), renamed the middle-right card to two-line SYNDICATE / STRIKE WING, and removed the third secondaryDetail line across all 6 SciFiTabletModuleCard modules so each card showcases only its metallic emblem, bold title, and primary live telemetry.",
+          "Unified Syndicate & Strike Wing Terminology (NexusAiConsoleModal): Purged all legacy group wording across NEXUS Hub cards, Syndicate Wars mode descriptions, and Syndicate server channel badges in favor of Syndicate and Strike Wing terminology.",
+          "Enlarged Clickable NEXUS Top Bar & Safe [? HOW TO PLAY] Practice Rift Routing (NexusAiConsoleModal, MainActivity): Enlarged top-bar telemetry typography and wired clickable quick-navigation segments (Callsign -> Pilot Dossier, Resonance -> Rift Conduit, Rift Shards -> Rift Conduit, SYN -> Syndicate Citadel Syndicates, WING -> Syndicate Citadel Strike Wing, ONLINE -> Subspace Comms); routed [? HOW TO PLAY] directly into the 8-step in-arena Practice Rift tutorial with active-match suspension/restoration and explicit LEAVE MATCH warp-off confirmation so active matches are never falsely terminated.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 81,
       versionTag = "v1.0.81 // BUILD #81",
       releaseDate = "Nov 19, 2026",
       headline = "Instant SurfaceSyncGroup Startup & Landscape Window Sync, Off-Main-Thread Sprite Prewarming & Asynchronous SFX WAV Synthesis",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "STARTUP SYNC",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

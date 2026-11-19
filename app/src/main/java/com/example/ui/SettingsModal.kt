@@ -295,6 +295,10 @@ fun SettingsModal(
   onCloseModal: () -> Unit = {},
   onOpenChangelog: () -> Unit = {},
   onOpenAudioForge: () -> Unit = {},
+  initialSubDeck: Int = 0,
+  onSubDeckChanged: (Int) -> Unit = {},
+  isNexusStreaming: Boolean = false,
+  onOpenNexusFromCodex: () -> Unit = onCloseModal,
 ) {
   val context = LocalContext.current
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
@@ -320,7 +324,11 @@ fun SettingsModal(
     }
   val visualRev = RiftVisualForgeState.visualRevision
   var forgePromptDraft by remember(initialMusicPrompt) { mutableStateOf(initialMusicPrompt) }
-  var subDeck by remember { mutableIntStateOf(0) }
+  var subDeck by remember(initialSubDeck) { mutableIntStateOf(initialSubDeck.coerceIn(0, 3)) }
+  LaunchedEffect(initialSubDeck) {
+    val clamped = initialSubDeck.coerceIn(0, 3)
+    if (subDeck != clamped) subDeck = clamped
+  }
 
   val shardReadoutText =
     if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) {
@@ -389,6 +397,7 @@ fun SettingsModal(
           testTag = "settings_subdeck_audio",
         ) {
           subDeck = 0
+          onSubDeckChanged(0)
         }
         HelmSubDeckPill(
           label = "[DISPLAY & DETAIL]",
@@ -397,6 +406,7 @@ fun SettingsModal(
           testTag = "settings_subdeck_display",
         ) {
           subDeck = 1
+          onSubDeckChanged(1)
         }
         HelmSubDeckPill(
           label = "[TWIN-STICK & HUD]",
@@ -405,6 +415,16 @@ fun SettingsModal(
           testTag = "settings_subdeck_controller",
         ) {
           subDeck = 2
+          onSubDeckChanged(2)
+        }
+        HelmSubDeckPill(
+          label = "[CODEX]",
+          selected = subDeck == 3,
+          accent = Color(0xFF34D399),
+          testTag = "settings_subdeck_codex",
+        ) {
+          subDeck = 3
+          onSubDeckChanged(3)
         }
       }
 
@@ -1189,8 +1209,24 @@ fun SettingsModal(
         }
 
         // SUB-DECK 2: TWIN-STICK & HUD (Full-Width Side-by-Side Controller Schematic + 6 Action Binds)
-        else -> {
+        2 -> {
           ControllerDiagramAndMapperCard(context = context, modifier = Modifier.fillMaxSize())
+        }
+
+        // SUB-DECK 3: CODEX (Embedded Tactical Ship, Buff & Rift Field Manual inside HELM SYSTEMS)
+        else -> {
+          Box(
+            modifier =
+              Modifier.fillMaxSize()
+                .background(TabletCardBg, RoundedCornerShape(10.dp))
+                .border(1.dp, Color(0xFF34D399).copy(alpha = 0.55f), RoundedCornerShape(10.dp)),
+          ) {
+            CodexModal(
+              isNexusStreaming = isNexusStreaming,
+              onOpenNexus = onOpenNexusFromCodex,
+              onCloseModal = onCloseModal,
+            )
+          }
         }
       }
     }

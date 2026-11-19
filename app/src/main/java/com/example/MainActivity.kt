@@ -79,9 +79,14 @@ import com.example.data.RiftBillingManager
 import com.example.data.RiftRepository
 import com.example.data.SyndicateChatMessage
 import com.example.data.UgcModeration
+import com.example.engine.BrickWallEntity
 import com.example.engine.CustomGameConfig
 import com.example.engine.CustomHullVisualRecipe
 import com.example.engine.CustomShipLoadoutSlot
+import com.example.engine.FluxCoreOrbState
+import com.example.engine.GreenCrate
+import com.example.engine.InterdictorBubbleEntity
+import com.example.engine.KillFeedEntry
 import com.example.engine.MusicSynthArchetype
 import com.example.engine.RankedGameMode
 import com.example.engine.RiftArenaView
@@ -93,7 +98,10 @@ import com.example.engine.RiftProgressionCatalog
 import com.example.engine.RiftSoundSynthesizer
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.RiftVisualForgeState
+import com.example.engine.ShipEntity
+import com.example.engine.SpatialAnomalyEntity
 import com.example.engine.SyndicateCrestRecipe
+import com.example.engine.WallRect
 import com.example.ui.ArchiveCodexSubDeck
 import com.example.ui.ArmadaFleetModal
 import com.example.ui.AuthScreen
@@ -140,6 +148,255 @@ private sealed interface StagedRiftLaunch {
   data class NewCustom(val config: CustomGameConfig) : StagedRiftLaunch
 
   data class ExistingCustom(val instanceId: String) : StagedRiftLaunch
+}
+
+private data class SuspendedActiveMatchSnapshot(
+  val sectorTag: String,
+  val selectedShipId: Int,
+  val selectedModeId: String,
+  val mode: String,
+  val activeRankedMode: RankedGameMode,
+  val activeTeamSizeBracket: Int,
+  val teamSize: Int,
+  val isShipLockedForMatch: Boolean,
+  val currentCustomGame: CustomGameConfig?,
+  val arenaRadius: Float,
+  val westBrigReactorX: Float,
+  val eastBrigReactorX: Float,
+  val westBrigGeneratorHp: Float,
+  val eastBrigGeneratorHp: Float,
+  val riftAlphaX: Float,
+  val riftOmegaX: Float,
+  val riftAlphaControlSec: Float,
+  val riftOmegaControlSec: Float,
+  val riftAlphaLockedBy: Int,
+  val riftOmegaLockedBy: Int,
+  val riftControlWestScore: Float,
+  val riftControlEastScore: Float,
+  val riftControlMatchTimerSec: Float,
+  val skirmishRound: Int,
+  val skirmishWestRoundWins: Int,
+  val skirmishEastRoundWins: Int,
+  val skirmishWestKills: Int,
+  val skirmishEastKills: Int,
+  val skirmishRoundTimerSec: Float,
+  val skirmishIs1v1Escalated: Boolean,
+  val skirmishAbyssalBlend: Float,
+  val skirmish1v1AlertBanner: String,
+  val skirmish1v1AlertTimer: Float,
+  val skirmishReadyCountdownSec: Float,
+  val spectatingTargetShipId: String,
+  val rivalSyndicateWarTag: String,
+  val fluxCoreOrbSnapshot: FluxCoreOrbState,
+  val fluxCoreCarrierEntityId: String,
+  val localPlayerSnapshot: ShipEntity,
+  val nonRemoteShipsSnapshot: List<ShipEntity>,
+  val wallsSnapshot: List<WallRect>,
+  val greensSnapshot: List<GreenCrate>,
+  val anomaliesSnapshot: List<SpatialAnomalyEntity>,
+  val brickWallsSnapshot: List<BrickWallEntity>,
+  val interdictorBubblesSnapshot: List<InterdictorBubbleEntity>,
+  val killFeedSnapshot: List<KillFeedEntry>,
+)
+
+private fun captureActiveMatchSnapshot(
+  engine: RiftGameEngine,
+  selectedShipId: Int,
+  selectedModeId: String,
+): SuspendedActiveMatchSnapshot {
+  return SuspendedActiveMatchSnapshot(
+    sectorTag = engine.activeMatchSectorTag(),
+    selectedShipId = selectedShipId,
+    selectedModeId = selectedModeId,
+    mode = engine.mode,
+    activeRankedMode = engine.activeRankedMode,
+    activeTeamSizeBracket = engine.activeTeamSizeBracket,
+    teamSize = engine.teamSize,
+    isShipLockedForMatch = engine.isShipLockedForMatch,
+    currentCustomGame = engine.currentCustomGame?.copy(),
+    arenaRadius = engine.arenaRadius,
+    westBrigReactorX = engine.westBrigReactorX,
+    eastBrigReactorX = engine.eastBrigReactorX,
+    westBrigGeneratorHp = engine.westBrigGeneratorHp,
+    eastBrigGeneratorHp = engine.eastBrigGeneratorHp,
+    riftAlphaX = engine.riftAlphaX,
+    riftOmegaX = engine.riftOmegaX,
+    riftAlphaControlSec = engine.riftAlphaControlSec,
+    riftOmegaControlSec = engine.riftOmegaControlSec,
+    riftAlphaLockedBy = engine.riftAlphaLockedBy,
+    riftOmegaLockedBy = engine.riftOmegaLockedBy,
+    riftControlWestScore = engine.riftControlWestScore,
+    riftControlEastScore = engine.riftControlEastScore,
+    riftControlMatchTimerSec = engine.riftControlMatchTimerSec,
+    skirmishRound = engine.skirmishRound,
+    skirmishWestRoundWins = engine.skirmishWestRoundWins,
+    skirmishEastRoundWins = engine.skirmishEastRoundWins,
+    skirmishWestKills = engine.skirmishWestKills,
+    skirmishEastKills = engine.skirmishEastKills,
+    skirmishRoundTimerSec = engine.skirmishRoundTimerSec,
+    skirmishIs1v1Escalated = engine.skirmishIs1v1Escalated,
+    skirmishAbyssalBlend = engine.skirmishAbyssalBlend,
+    skirmish1v1AlertBanner = engine.skirmish1v1AlertBanner,
+    skirmish1v1AlertTimer = engine.skirmish1v1AlertTimer,
+    skirmishReadyCountdownSec = engine.skirmishReadyCountdownSec,
+    spectatingTargetShipId = engine.spectatingTargetShipId,
+    rivalSyndicateWarTag = engine.rivalSyndicateWarTag,
+    fluxCoreOrbSnapshot = engine.fluxCoreOrb.copy(),
+    fluxCoreCarrierEntityId = engine.fluxCoreCarrierEntityId,
+    localPlayerSnapshot = engine.localPlayer.copy(),
+    nonRemoteShipsSnapshot = engine.ships.filter { !it.isLocalPlayer && !it.isHuman }.map { it.copy() },
+    wallsSnapshot = engine.walls.map { it.copy() },
+    greensSnapshot = engine.greens.map { it.copy() },
+    anomaliesSnapshot = engine.anomalies.map { it.copy() },
+    brickWallsSnapshot = engine.brickWalls.map { it.copy() },
+    interdictorBubblesSnapshot = engine.interdictorBubbles.map { it.copy() },
+    killFeedSnapshot = engine.killFeed.map { it.copy() },
+  )
+}
+
+private fun restoreActiveMatchSnapshot(
+  engine: RiftGameEngine,
+  snap: SuspendedActiveMatchSnapshot,
+) {
+  engine.isHubOverwatchActive = false
+  engine.isEphemeralPracticeRift = false
+  engine.practiceTutorialActive = false
+  engine.practiceTutorialStepIndex = 0
+  engine.practiceTutorialStepJumpFlashSec = 0f
+  engine.hasJoinedMatch = true
+  engine.isInLobbyStaging = true
+  engine.mode = snap.mode
+  engine.activeRankedMode = snap.activeRankedMode
+  engine.activeTeamSizeBracket = snap.activeTeamSizeBracket
+  engine.teamSize = snap.teamSize
+  engine.currentCustomGame = snap.currentCustomGame?.copy()
+  engine.arenaRadius = snap.arenaRadius
+  engine.westBrigReactorX = snap.westBrigReactorX
+  engine.eastBrigReactorX = snap.eastBrigReactorX
+  engine.westBrigRect.set(
+    snap.westBrigReactorX - engine.stasisJailRadius,
+    engine.westBrigReactorY - engine.stasisJailRadius,
+    snap.westBrigReactorX + engine.stasisJailRadius,
+    engine.westBrigReactorY + engine.stasisJailRadius,
+  )
+  engine.eastBrigRect.set(
+    snap.eastBrigReactorX - engine.stasisJailRadius,
+    engine.eastBrigReactorY - engine.stasisJailRadius,
+    snap.eastBrigReactorX + engine.stasisJailRadius,
+    engine.eastBrigReactorY + engine.stasisJailRadius,
+  )
+  engine.westBrigGeneratorHp = snap.westBrigGeneratorHp
+  engine.eastBrigGeneratorHp = snap.eastBrigGeneratorHp
+  engine.riftAlphaX = snap.riftAlphaX
+  engine.riftOmegaX = snap.riftOmegaX
+  engine.riftAlphaControlSec = snap.riftAlphaControlSec
+  engine.riftOmegaControlSec = snap.riftOmegaControlSec
+  engine.riftAlphaLockedBy = snap.riftAlphaLockedBy
+  engine.riftOmegaLockedBy = snap.riftOmegaLockedBy
+  engine.riftControlWestScore = snap.riftControlWestScore
+  engine.riftControlEastScore = snap.riftControlEastScore
+  engine.riftControlMatchTimerSec = snap.riftControlMatchTimerSec
+  engine.skirmishRound = snap.skirmishRound
+  engine.skirmishWestRoundWins = snap.skirmishWestRoundWins
+  engine.skirmishEastRoundWins = snap.skirmishEastRoundWins
+  engine.skirmishWestKills = snap.skirmishWestKills
+  engine.skirmishEastKills = snap.skirmishEastKills
+  engine.skirmishRoundTimerSec = snap.skirmishRoundTimerSec
+  engine.skirmishIs1v1Escalated = snap.skirmishIs1v1Escalated
+  engine.skirmishAbyssalBlend = snap.skirmishAbyssalBlend
+  engine.skirmish1v1AlertBanner = snap.skirmish1v1AlertBanner
+  engine.skirmish1v1AlertTimer = snap.skirmish1v1AlertTimer
+  engine.skirmishReadyCountdownSec = snap.skirmishReadyCountdownSec
+  engine.spectatingTargetShipId = snap.spectatingTargetShipId
+  engine.rivalSyndicateWarTag = snap.rivalSyndicateWarTag
+  engine.fluxCoreOrb.x = snap.fluxCoreOrbSnapshot.x
+  engine.fluxCoreOrb.y = snap.fluxCoreOrbSnapshot.y
+  engine.fluxCoreOrb.vx = snap.fluxCoreOrbSnapshot.vx
+  engine.fluxCoreOrb.vy = snap.fluxCoreOrbSnapshot.vy
+  engine.fluxCoreOrb.carrierShipId = snap.fluxCoreOrbSnapshot.carrierShipId
+  engine.fluxCoreOrb.holdDurationSec = snap.fluxCoreOrbSnapshot.holdDurationSec
+  engine.fluxCoreOrb.overchargeTier = snap.fluxCoreOrbSnapshot.overchargeTier
+  engine.fluxCoreOrb.ejectDecelTimerSec = snap.fluxCoreOrbSnapshot.ejectDecelTimerSec
+  engine.fluxCoreOrb.pickupImmunitySec = snap.fluxCoreOrbSnapshot.pickupImmunitySec
+  engine.fluxCoreOrb.pulsePhase = snap.fluxCoreOrbSnapshot.pulsePhase
+  engine.fluxCoreCarrierEntityId = snap.fluxCoreCarrierEntityId
+
+  val lp = engine.localPlayer
+  val sp = snap.localPlayerSnapshot
+  engine.isShipLockedForMatch = false
+  engine.switchLocalPlayerShip(sp.shipId, forceFromHangar = true)
+  engine.isShipLockedForMatch = snap.isShipLockedForMatch
+  lp.callsign = sp.callsign
+  lp.syndicateTag = sp.syndicateTag
+  lp.armadaName = sp.armadaName
+  lp.freq = sp.freq
+  lp.x = sp.x
+  lp.y = sp.y
+  lp.vx = sp.vx
+  lp.vy = sp.vy
+  lp.angle = sp.angle
+  lp.weaponAngle = sp.weaponAngle
+  lp.independentAimActive = sp.independentAimActive
+  lp.flux = sp.flux
+  lp.maxFlux = sp.maxFlux
+  lp.bounty = sp.bounty
+  lp.kills = sp.kills
+  lp.deaths = sp.deaths
+  lp.gunTimer = sp.gunTimer
+  lp.bombTimer = sp.bombTimer
+  lp.empTimer = sp.empTimer
+  lp.respawnTimer = sp.respawnTimer
+  lp.deathX = sp.deathX
+  lp.deathY = sp.deathY
+  lp.afterburning = false
+  lp.multifireOn = sp.multifireOn
+  lp.repels = sp.repels
+  lp.specialWeaponType = sp.specialWeaponType
+  lp.specialWeaponCharges = sp.specialWeaponCharges
+  lp.specialWeaponStacks = sp.specialWeaponStacks
+  lp.multiShotCharges = sp.multiShotCharges
+  lp.hasBouncingBulletsUpgrade = sp.hasBouncingBulletsUpgrade
+  lp.speedOverchargeStacks = sp.speedOverchargeStacks
+  lp.thrustOverchargeStacks = sp.thrustOverchargeStacks
+  lp.rechargeOverchargeStacks = sp.rechargeOverchargeStacks
+  lp.turnOverchargeStacks = sp.turnOverchargeStacks
+  lp.maxFluxOverchargeStacks = sp.maxFluxOverchargeStacks
+  lp.sniperOverchargeReady = sp.sniperOverchargeReady
+  lp.isCloaked = sp.isCloaked
+  lp.rocketBoostTimer = sp.rocketBoostTimer
+  lp.phaseDashTimer = sp.phaseDashTimer
+  lp.wasInSafeZone = sp.wasInSafeZone
+  lp.inSafeZone = sp.inSafeZone
+  lp.safeZoneLockoutTimer = sp.safeZoneLockoutTimer
+  lp.weaponsLocked = sp.weaponsLocked
+  lp.phaseShieldTimer = sp.phaseShieldTimer
+  lp.canFire = sp.canFire
+  lp.weaponState = sp.weaponState
+  lp.blackHoleImmunityTimer = sp.blackHoleImmunityTimer
+  lp.phaseRiftCooldownTimer = sp.phaseRiftCooldownTimer
+  lp.safeZoneStayTimer = 0f
+  lp.playfieldIdleTimer = 0f
+  lp.isIdleDraining = false
+  lp.matchPresenceTimeSec = sp.matchPresenceTimeSec
+  lp.isInStasisBrig = sp.isInStasisBrig
+  lp.deathLingerTimer = sp.deathLingerTimer
+  lp.pendingRespawnBountyPenalty = sp.pendingRespawnBountyPenalty
+
+  engine.ships.clear()
+  engine.ships.add(lp)
+  engine.ships.addAll(snap.nonRemoteShipsSnapshot.map { it.copy() })
+  engine.walls.clear()
+  engine.walls.addAll(snap.wallsSnapshot.map { it.copy() })
+  engine.greens.clear()
+  engine.greens.addAll(snap.greensSnapshot.map { it.copy() })
+  engine.anomalies.clear()
+  engine.anomalies.addAll(snap.anomaliesSnapshot.map { it.copy() })
+  engine.brickWalls.clear()
+  engine.brickWalls.addAll(snap.brickWallsSnapshot.map { it.copy() })
+  engine.interdictorBubbles.clear()
+  engine.interdictorBubbles.addAll(snap.interdictorBubblesSnapshot.map { it.copy() })
+  engine.killFeed.clear()
+  engine.killFeed.addAll(snap.killFeedSnapshot.map { it.copy() })
 }
 
 internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
@@ -425,12 +682,14 @@ fun RiftArenaScreen(
   var activeNexusNode by remember { mutableStateOf(NexusCoreNode.ORBITAL_HUB) }
   var syndicateSubDeck by remember { mutableStateOf(SyndicateCitadelSubDeck.SYNDICATES_WARS) }
   var archiveSubDeck by remember { mutableStateOf(ArchiveCodexSubDeck.PILOT_DOSSIER) }
+  var helmInitialSubDeck by remember { mutableIntStateOf(0) }
   var previousNodeBeforeConduit by remember { mutableStateOf(NexusCoreNode.ORBITAL_HUB) }
   var nexusInitialLayoutMode by remember { mutableStateOf(NexusHubLayoutMode.DECK_ONLY) }
   var forgeInitialTab by remember { mutableStateOf(NexusForgeTab.SHIP_COSMETICS) }
   var isForgeFullScreenStage by remember { mutableStateOf(false) }
   var showFullChangelogModal by remember { mutableStateOf(false) }
   var pendingStagedLaunch by remember { mutableStateOf<StagedRiftLaunch?>(null) }
+  var suspendedActiveMatch by remember { mutableStateOf<SuspendedActiveMatchSnapshot?>(null) }
   var favoriteOverwatchKey by remember {
     mutableStateOf(localPrefs.getFavoriteOverwatchRiftKey())
   }
@@ -574,20 +833,47 @@ fun RiftArenaScreen(
     }
   }
 
-  fun openNexusNode(node: NexusCoreNode) {
+  fun openNexusNode(node: NexusCoreNode, helmSubDeckOverride: Int? = null) {
     if (engine.isEphemeralPracticeRift) {
       engine.closeEphemeralPracticeRift()
+      val snap = suspendedActiveMatch
+      if (snap != null) {
+        restoreActiveMatchSnapshot(engine, snap)
+        selectedShipId = snap.selectedShipId
+        selectedMode = snap.selectedModeId
+        syncEquippedCosmeticsToEngine(engine)
+        suspendedActiveMatch = null
+        frameTick++
+      }
     }
-    if (node == NexusCoreNode.SUBSPACE_COMMS) {
+    val resolvedNode =
+      if (
+        node == NexusCoreNode.ARCHIVE_CODEX &&
+          archiveSubDeck == ArchiveCodexSubDeck.TACTICAL_CODEX
+      ) {
+        archiveSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER
+        NexusCoreNode.HELM_SYSTEMS
+      } else {
+        node
+      }
+    if (resolvedNode == NexusCoreNode.HELM_SYSTEMS) {
+      helmInitialSubDeck =
+        helmSubDeckOverride
+          ?: if (node == NexusCoreNode.ARCHIVE_CODEX) 3 else helmInitialSubDeck.takeIf { it in 0..3 } ?: 0
+    }
+    if (resolvedNode == NexusCoreNode.ARCHIVE_CODEX) {
+      archiveSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER
+    }
+    if (resolvedNode == NexusCoreNode.SUBSPACE_COMMS) {
       unreadCommsCount = 0
     }
-    if (node != NexusCoreNode.STAR_FORGE) {
+    if (resolvedNode != NexusCoreNode.STAR_FORGE) {
       isForgeFullScreenStage = false
     }
-    if (node == NexusCoreNode.CONVERGENCE_GATE) {
+    if (resolvedNode == NexusCoreNode.CONVERGENCE_GATE) {
       pendingStagedLaunch = null
     }
-    activeNexusNode = node
+    activeNexusNode = resolvedNode
     isNexusShellOpen = true
   }
 
@@ -969,13 +1255,16 @@ fun RiftArenaScreen(
 
   fun pushLivePilotHeartbeatNow() {
     if (!isGoogleAuthenticated) return
-    val p = engine.localPlayer
+    val suspended = suspendedActiveMatch
+    val p = suspended?.localPlayerSnapshot ?: engine.localPlayer
+    val activeLiveMatch =
+      suspended != null || (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift)
     val safeCallsign =
       p.callsign.trim().ifBlank { callsign.trim() }.ifBlank { "PILOT" }.take(24).let {
         if (it.length < 2) "PILOT" else it
       }
     viewModel.syncNativeLiveState(
-      sectorId = engine.activeMatchSectorTag(),
+      sectorId = suspended?.sectorTag ?: engine.activeMatchSectorTag(),
       callsign = safeCallsign,
       syndicateTag = p.syndicateTag.take(12),
       armadaName = p.armadaName.take(12),
@@ -983,14 +1272,18 @@ fun RiftArenaScreen(
       freq = p.freq.coerceIn(0, 99),
       x = p.x.coerceIn(-99000f, 99000f),
       y = p.y.coerceIn(-99000f, 99000f),
-      vx = p.vx.coerceIn(-4900f, 4900f),
-      vy = p.vy.coerceIn(-4900f, 4900f),
+      vx = if (suspended != null) 0f else p.vx.coerceIn(-4900f, 4900f),
+      vy = if (suspended != null) 0f else p.vy.coerceIn(-4900f, 4900f),
       angle = p.angle.coerceIn(-99f, 99f),
       weaponAngle = p.weaponAngle.coerceIn(-99f, 99f),
       isFiringPrimary =
-        engine.hasJoinedMatch && engine.fireStickActive && !engine.isCancelActive && p.canFire,
-      isAfterburning = engine.hasJoinedMatch && p.afterburning,
-      isCloaked = engine.hasJoinedMatch && p.isCloaked,
+        suspended == null &&
+          activeLiveMatch &&
+          engine.fireStickActive &&
+          !engine.isCancelActive &&
+          p.canFire,
+      isAfterburning = suspended == null && activeLiveMatch && p.afterburning,
+      isCloaked = activeLiveMatch && p.isCloaked,
       flux = p.flux.coerceIn(0f, 10000f),
       maxFlux = p.maxFlux.coerceIn(100f, 10000f),
       bounty = p.bounty.coerceAtLeast(0),
@@ -998,8 +1291,10 @@ fun RiftArenaScreen(
     )
   }
 
-  LaunchedEffect(mergedLivePilots) {
-    engine.updateRemotePilots(mergedLivePilots, currentUserId)
+  LaunchedEffect(mergedLivePilots, suspendedActiveMatch == null) {
+    if (!engine.isEphemeralPracticeRift) {
+      engine.updateRemotePilots(mergedLivePilots, currentUserId)
+    }
   }
 
   LaunchedEffect(cloudSyndicatesState) {
@@ -1030,7 +1325,11 @@ fun RiftArenaScreen(
     pushLivePilotHeartbeatNow()
     while (true) {
       val intervalMs =
-        if (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift) 350L else 4000L
+        if (suspendedActiveMatch != null || (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift)) {
+          350L
+        } else {
+          4000L
+        }
       delay(intervalMs)
       pushLivePilotHeartbeatNow()
     }
@@ -1449,8 +1748,7 @@ fun RiftArenaScreen(
       isModalOpen = isAnyModalCoveringArena,
       onOpenHangar = { openNexusNode(NexusCoreNode.HANGAR_DECK) },
       onOpenCodex = {
-        archiveSubDeck = ArchiveCodexSubDeck.TACTICAL_CODEX
-        openNexusNode(NexusCoreNode.ARCHIVE_CODEX)
+        openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 3)
       },
       onOpenSyndicateCommand = {
         syndicateStatusBanner = null
@@ -1474,7 +1772,7 @@ fun RiftArenaScreen(
         previousNodeBeforeConduit = NexusCoreNode.ORBITAL_HUB
         openNexusNode(NexusCoreNode.RIFT_CONDUIT)
       },
-      onOpenSettings = { openNexusNode(NexusCoreNode.HELM_SYSTEMS) },
+      onOpenSettings = { openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 0) },
       onCycleCameraZoom = {
         val nextZoom =
           when {
@@ -1772,9 +2070,9 @@ fun RiftArenaScreen(
                 NexusCoreNode.SYNDICATE_CITADEL ->
                   if (syndicateSubDeck == SyndicateCitadelSubDeck.STRIKE_WING) "ARMADA"
                   else "SYNDICATES"
-                NexusCoreNode.ARCHIVE_CODEX ->
-                  if (archiveSubDeck == ArchiveCodexSubDeck.TACTICAL_CODEX) "CODEX" else "DOSSIER"
-                NexusCoreNode.HELM_SYSTEMS -> "SETTINGS"
+                NexusCoreNode.ARCHIVE_CODEX -> "DOSSIER"
+                NexusCoreNode.HELM_SYSTEMS ->
+                  if (helmInitialSubDeck == 3) "CODEX" else "SETTINGS"
               }
 
             val closeEmbeddedModal: () -> Unit = {
@@ -2099,6 +2397,9 @@ fun RiftArenaScreen(
                             engine.syncLocalArmadaSelfSlot()
 
                             val staged = pendingStagedLaunch
+                            if (staged != null) {
+                              suspendedActiveMatch = null
+                            }
                             if (staged != null || !engine.hasJoinedMatch) {
                               // Allow hull selection in Hangar staging before mode hull-lock engages
                               engine.isShipLockedForMatch = false
@@ -2642,11 +2943,10 @@ fun RiftArenaScreen(
 
                       NexusCoreNode.ARCHIVE_CODEX -> {
                         if (archiveSubDeck == ArchiveCodexSubDeck.TACTICAL_CODEX) {
-                          CodexModal(
-                            isNexusStreaming = isNexusStreaming,
-                            onOpenNexus = { openNexusNode(NexusCoreNode.ORBITAL_HUB) },
-                            onCloseModal = closeEmbeddedModal,
-                          )
+                          LaunchedEffect(Unit) {
+                            archiveSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER
+                            openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 3)
+                          }
                         } else {
                           val (curLvlXp, nextLvlSpan, lvlFrac) =
                             remember(frameTick) { engine.getXpProgressInCurrentLevel() }
@@ -2795,6 +3095,10 @@ fun RiftArenaScreen(
                           cameraZoom = cameraZoom,
                           playfieldTextScale = playfieldTextScale,
                           isGoogleAuthenticated = isGoogleAuthenticated,
+                          initialSubDeck = helmInitialSubDeck,
+                          onSubDeckChanged = { helmInitialSubDeck = it },
+                          isNexusStreaming = isNexusStreaming,
+                          onOpenNexusFromCodex = { openNexusNode(NexusCoreNode.ORBITAL_HUB) },
                           onToggleSfx = toggleSfxShared,
                           onToggleMusic = toggleMusicShared,
                           onChangeMusicBpm = changeMusicBpmShared,
@@ -2952,14 +3256,44 @@ fun RiftArenaScreen(
               totalOnlinePilots = humanPilotsOnline,
               syndicateOnlineCount = syndicateOnlineCount,
               strikeWingOnlineCount = strikeWingOnlineCount,
-              isInMatch = engine.hasJoinedMatch && !engine.isEphemeralPracticeRift,
+              isInMatch =
+                suspendedActiveMatch != null ||
+                  (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift),
               onEnterPracticeRift = {
+                if (
+                  engine.hasJoinedMatch &&
+                    !engine.isEphemeralPracticeRift &&
+                    suspendedActiveMatch == null
+                ) {
+                  suspendedActiveMatch =
+                    captureActiveMatchSnapshot(engine, selectedShipId, selectedMode)
+                }
                 pendingStagedLaunch = null
+                engine.isShipLockedForMatch = false
                 engine.switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
                 syncEquippedCosmeticsToEngine(engine)
                 engine.enterEphemeralPracticeRift(startTutorial = true)
                 isNexusShellOpen = false
                 toastMessage = "PRACTICE RIFT INITIALIZED // SOLO FLIGHT BRIEFING"
+                toastVersion++
+                frameTick++
+              },
+              onOpenHowToPlayTutorial = {
+                if (
+                  engine.hasJoinedMatch &&
+                    !engine.isEphemeralPracticeRift &&
+                    suspendedActiveMatch == null
+                ) {
+                  suspendedActiveMatch =
+                    captureActiveMatchSnapshot(engine, selectedShipId, selectedMode)
+                }
+                pendingStagedLaunch = null
+                engine.isShipLockedForMatch = false
+                engine.switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
+                syncEquippedCosmeticsToEngine(engine)
+                engine.enterEphemeralPracticeRift(startTutorial = true)
+                isNexusShellOpen = false
+                toastMessage = "HOW TO PLAY // INTERACTIVE PRACTICE RIFT TUTORIAL"
                 toastVersion++
                 frameTick++
               },
@@ -2984,6 +3318,7 @@ fun RiftArenaScreen(
               },
               onLeaveMatch = {
                 pendingStagedLaunch = null
+                suspendedActiveMatch = null
                 engine.leaveActiveMatchToNexusOrbit()
                 pushLivePilotHeartbeatNow()
                 toastMessage = "LEFT MATCH // ORBITING NEXUS SECTOR"
@@ -3038,10 +3373,9 @@ fun RiftArenaScreen(
                 openNexusNode(NexusCoreNode.ARCHIVE_CODEX)
               },
               onOpenCodex = {
-                archiveSubDeck = ArchiveCodexSubDeck.TACTICAL_CODEX
-                openNexusNode(NexusCoreNode.ARCHIVE_CODEX)
+                openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 3)
               },
-              onOpenSettings = { openNexusNode(NexusCoreNode.HELM_SYSTEMS) },
+              onOpenSettings = { openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 0) },
               onOpenForge = {
                 RiftCalibrationState.isUiUnlockedForDragging = false
                 RiftCalibrationState.isCalibrationModalOpen = false
@@ -3392,7 +3726,14 @@ fun RiftArenaScreen(
               syndicateSubDeck = syndicateSubDeck,
               onSelectSyndicateSubDeck = { syndicateSubDeck = it },
               archiveSubDeck = archiveSubDeck,
-              onSelectArchiveSubDeck = { archiveSubDeck = it },
+              onSelectArchiveSubDeck = { sub ->
+                if (sub == ArchiveCodexSubDeck.TACTICAL_CODEX) {
+                  archiveSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER
+                  openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 3)
+                } else {
+                  archiveSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER
+                }
+              },
               onSelectNexusLobby = { openNexusNode(NexusCoreNode.ORBITAL_HUB) },
               isCalibrationLivePeeking =
                 activeNexusNode == NexusCoreNode.STAR_FORGE && RiftCalibrationState.isDraggingAnySlider,
@@ -3446,6 +3787,18 @@ fun RiftArenaScreen(
                 sfx.playMutedClick()
               },
               onQuickZoneIntoOverwatch = { inst ->
+                if (
+                  engine.hasJoinedMatch &&
+                    !engine.isEphemeralPracticeRift &&
+                    inst.key.equals(engine.activeMatchSectorTag(), ignoreCase = true)
+                ) {
+                  isNexusShellOpen = false
+                  sfx.playPrize()
+                  toastMessage = "RETURNED TO ACTIVE MATCH // ${inst.riftLabel}"
+                  toastVersion++
+                  frameTick++
+                  return@NexusAiConsoleModal
+                }
                 val customCfg = inst.customConfig
                 val targetMode = customCfg?.baseMode ?: inst.rankedMode
                 val targetBracket =
@@ -3471,6 +3824,7 @@ fun RiftArenaScreen(
                     stageRankedModeIntoHangar(inst.rankedMode, targetBracket)
                   } else {
                     pendingStagedLaunch = null
+                    suspendedActiveMatch = null
                     engine.isShipLockedForMatch = false
                     engine.switchLocalPlayerShip(selectedShipId.coerceIn(1, 10), forceFromHangar = true)
                     syncEquippedCosmeticsToEngine(engine)
@@ -3505,6 +3859,7 @@ fun RiftArenaScreen(
                   }
                 } else {
                   pendingStagedLaunch = null
+                  suspendedActiveMatch = null
                   engine.isShipLockedForMatch = false
                   engine.switchLocalPlayerShip(selectedShipId.coerceIn(1, 10), forceFromHangar = true)
                   syncEquippedCosmeticsToEngine(engine)
