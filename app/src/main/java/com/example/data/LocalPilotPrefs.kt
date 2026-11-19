@@ -506,11 +506,24 @@ class LocalPilotPrefs(context: Context) {
   }
 
   /**
-   * Best Ship Avatar Calculator:
-   * Returns the ship ID (1..10) from the pilot's PvP Peak Bounty Snapshot or All-Time Peak Bounty Snapshot
-   * (whichever has the higher bountyReached), falling back to getLastShipId() / fallbackShipId (1..10).
+   * Best Ship Calculator:
+   * Returns the ship ID (1..10) with the highest earned per-ship Resonance,
+   * tie-breaking with PvP/All-Time Peak Snapshots and fallbackShipId (1..10).
    */
   fun getBestShipId(uid: String? = null, fallbackShipId: Int = getLastShipId()): Int {
+    ensureShipResonancesMigrated(uid)
+    var topShipId = -1
+    var topShipRes = 0
+    for (id in 1..10) {
+      val res = getShipResonanceRaw(id, uid)
+      if (res > topShipRes) {
+        topShipRes = res
+        topShipId = id
+      }
+    }
+    if (topShipId in 1..10 && topShipRes > 0) {
+      return topShipId
+    }
     val pvpSnap = getPvpPeakBountySnapshot(uid)
     val allSnap = getAllTimePeakBountySnapshot(uid)
     val bestSnap =
@@ -835,8 +848,86 @@ class LocalPilotPrefs(context: Context) {
   }
 
   // =========================================================================
-  // RIFT CONDUIT LIVE / PEAK RESONANCE & 3 DAILY ❖ DIRECTIVES (250❖ / DAY)
+  // RIFT CONDUIT PER-SHIP & OVERALL RESONANCE + 3 DAILY DIRECTIVES (250 SHARDS / DAY)
   // =========================================================================
+  private fun shipResonanceBaseKey(shipId: Int): String =
+    "${KEY_SHIP_RESONANCE_PREFIX}${shipId.coerceIn(1, 10)}"
+
+  private fun getShipResonanceRaw(shipId: Int, uid: String? = null): Int {
+    val base = shipResonanceBaseKey(shipId)
+    return prefs.getInt(uidKey(base, uid), prefs.getInt(base, 0)).coerceAtLeast(0)
+  }
+
+  private fun ensureShipResonancesMigrated(uid: String? = null) {
+    ensureResonanceMigrated(uid)
+    val migKey = uidKey(KEY_SHIP_RESONANCE_MIGRATED, uid)
+    if (prefs.getBoolean(migKey, false)) return
+    var sum = 0
+    for (id in 1..10) {
+      sum += getShipResonanceRaw(id, uid)
+    }
+    val existingLive =
+      prefs
+        .getInt(uidKey(KEY_LIVE_RESONANCE, uid), prefs.getInt(KEY_LIVE_RESONANCE, 0))
+        .coerceAtLeast(0)
+    val ed = prefs.edit().putBoolean(migKey, true)
+    if (sum == 0 && existingLive > 0) {
+      val seedShipId = getLastShipId().coerceIn(1, 10)
+      val base = shipResonanceBaseKey(seedShipId)
+      ed.putInt(base, existingLive)
+      ed.putInt(uidKey(base, uid), existingLive)
+    }
+    ed.apply()
+  }
+
+  fun getShipResonance(shipId: Int, uid: String? = null): Int {
+    ensureShipResonancesMigrated(uid)
+    return getShipResonanceRaw(shipId.coerceIn(1, 10), uid)
+  }
+
+  fun getAllShipResonances(uid: String? = null): Map<Int, Int> {
+    ensureShipResonancesMigrated(uid)
+    val out = LinkedHashMap<Int, Int>(10)
+    for (id in 1..10) {
+      out[id] = getShipResonanceRaw(id, uid)
+    }
+    return out
+  }
+
+  fun setShipResonance(shipId: Int, value: Int, uid: String? = null): Pair<Int, Int> {
+    ensureShipResonancesMigrated(uid)
+    val cleanId = shipId.coerceIn(1, 10)
+    val cleanVal = value.coerceAtLeast(0)
+    val base = shipResonanceBaseKey(cleanId)
+    prefs
+      .edit()
+      .putInt(base, cleanVal)
+      .putInt(uidKey(base, uid), cleanVal)
+      .apply()
+    var totalLive = 0
+    for (id in 1..10) {
+      totalLive += if (id == cleanId) cleanVal else getShipResonanceRaw(id, uid)
+    }
+    val nextPeak = kotlin.math.max(getPeakResonance(uid), totalLive)
+    prefs
+      .edit()
+      .putInt(KEY_LIVE_RESONANCE, totalLive)
+      .putInt(uidKey(KEY_LIVE_RESONANCE, uid), totalLive)
+      .putInt(KEY_PEAK_RESONANCE, nextPeak)
+      .putInt(uidKey(KEY_PEAK_RESONANCE, uid), nextPeak)
+      .apply()
+    return cleanVal to totalLive
+  }
+
+  fun applyShipResonanceDelta(shipId: Int, delta: Int, uid: String? = null): Triple<Int, Int, Int> {
+    ensureShipResonancesMigrated(uid)
+    val cleanId = shipId.coerceIn(1, 10)
+    val currentShipRes = getShipResonanceRaw(cleanId, uid)
+    val nextShipRes = (currentShipRes + delta).coerceAtLeast(0)
+    val (savedShipRes, totalLive) = setShipResonance(cleanId, nextShipRes, uid)
+    return Triple(savedShipRes, totalLive, getPeakResonance(uid))
+  }
+
   private fun ensureResonanceMigrated(uid: String? = null) {
     val scopedKey = uidKey(KEY_RESONANCE_MIGRATED, uid)
     if (prefs.getBoolean(scopedKey, false)) return
@@ -859,18 +950,60 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getLiveResonance(uid: String? = null): Int {
-    ensureResonanceMigrated(uid)
-    return prefs
-      .getInt(uidKey(KEY_LIVE_RESONANCE, uid), prefs.getInt(KEY_LIVE_RESONANCE, 0))
-      .coerceAtLeast(0)
+    ensureShipResonancesMigrated(uid)
+    var sum = 0
+    for (id in 1..10) {
+      sum += getShipResonanceRaw(id, uid)
+    }
+    val rawLive =
+      prefs
+        .getInt(uidKey(KEY_LIVE_RESONANCE, uid), prefs.getInt(KEY_LIVE_RESONANCE, 0))
+        .coerceAtLeast(0)
+    return kotlin.math.max(sum, rawLive)
   }
 
   fun setLiveResonance(value: Int, uid: String? = null) {
-    ensureResonanceMigrated(uid)
+    ensureShipResonancesMigrated(uid)
     val clean = value.coerceAtLeast(0)
+    var sum = 0
+    for (id in 1..10) {
+      sum += getShipResonanceRaw(id, uid)
+    }
+    val ed = prefs.edit()
+    if (clean > sum) {
+      val diff = clean - sum
+      val targetShip = getBestShipId(uid, getLastShipId()).coerceIn(1, 10)
+      val base = shipResonanceBaseKey(targetShip)
+      val updatedShipRes = getShipResonanceRaw(targetShip, uid) + diff
+      ed.putInt(base, updatedShipRes)
+      ed.putInt(uidKey(base, uid), updatedShipRes)
+    } else if (clean < sum && sum > 0) {
+      var remainingDrop = sum - clean
+      val activeShip = getLastShipId().coerceIn(1, 10)
+      val activeRes = getShipResonanceRaw(activeShip, uid)
+      val dropActive = kotlin.math.min(activeRes, remainingDrop)
+      if (dropActive > 0) {
+        val base = shipResonanceBaseKey(activeShip)
+        ed.putInt(base, activeRes - dropActive)
+        ed.putInt(uidKey(base, uid), activeRes - dropActive)
+        remainingDrop -= dropActive
+      }
+      if (remainingDrop > 0) {
+        for (id in 1..10) {
+          if (id == activeShip || remainingDrop <= 0) continue
+          val r = getShipResonanceRaw(id, uid)
+          val d = kotlin.math.min(r, remainingDrop)
+          if (d > 0) {
+            val base = shipResonanceBaseKey(id)
+            ed.putInt(base, r - d)
+            ed.putInt(uidKey(base, uid), r - d)
+            remainingDrop -= d
+          }
+        }
+      }
+    }
     val nextPeak = kotlin.math.max(getPeakResonance(uid), clean)
-    prefs
-      .edit()
+    ed
       .putInt(KEY_LIVE_RESONANCE, clean)
       .putInt(uidKey(KEY_LIVE_RESONANCE, uid), clean)
       .putInt(KEY_PEAK_RESONANCE, nextPeak)
@@ -902,9 +1035,9 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun applyResonanceDelta(delta: Int, uid: String? = null): Pair<Int, Int> {
-    val nextLive = (getLiveResonance(uid) + delta).coerceAtLeast(0)
-    setLiveResonance(nextLive, uid)
-    return nextLive to getPeakResonance(uid)
+    val activeShip = getLastShipId().coerceIn(1, 10)
+    val (_, nextLive, nextPeak) = applyShipResonanceDelta(activeShip, delta, uid)
+    return nextLive to nextPeak
   }
 
   private fun currentUtcDayIndex(): Long = System.currentTimeMillis() / 86_400_000L
@@ -2098,6 +2231,8 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_LIVE_RESONANCE = "conduit_live_resonance"
     private const val KEY_PEAK_RESONANCE = "conduit_peak_resonance"
     private const val KEY_RESONANCE_MIGRATED = "conduit_resonance_migrated_v57"
+    private const val KEY_SHIP_RESONANCE_PREFIX = "conduit_ship_resonance_v83_"
+    private const val KEY_SHIP_RESONANCE_MIGRATED = "conduit_ship_resonance_migrated_v83"
     private const val KEY_DAILY_DIRECTIVES_UTC_DAY = "daily_directives_utc_day"
     private const val KEY_DAILY_DIRECTIVE_PROGRESS_PREFIX = "daily_directive_prog_"
     private const val KEY_DAILY_DIRECTIVE_CLAIMED_PREFIX = "daily_directive_claimed_"

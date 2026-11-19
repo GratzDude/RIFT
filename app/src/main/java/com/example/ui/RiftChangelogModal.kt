@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 82
+const val CURRENT_RIFT_BUILD_VERSION = 83
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,27 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 83,
+      versionTag = "v1.0.83 // BUILD #83",
+      releaseDate = "Nov 19, 2026",
+      headline = "1:1 Dyson Sun Star Forge & Supply Crate Buff Studio, Smooth Circular 2.5D Metallic Rifts & Nexus Station, Per-Ship Solar-Gold Resonance & Distinct Hangar Borders, 15s Resonance Matchmaking & Rift In, Plain-English Auth + Offline/Online Sync & Dynamic Aspect-Ratio Scaling",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Plain-English Auth Screen, Tagline #2 & Seamless Offline/Online Multi-Device Sync (AuthScreen, strings.xml, RiftRepository, RiftViewModel, MainActivity, NexusAiConsoleModal): Rewrote the Auth screen in welcoming plain English featuring Tagline #2 ('Master the Rifts. Build Your Resonance. Rule the Sector.'), 'NEXUS STATION • LIVE SAFE HARBOR', and a live ONLINE / OFFLINE connectivity badge powered by NetworkConnectivityMonitor; enabled instant offline startup and Drifter/cached-pilot entry without network hangs, and implemented local-monotonic-time presence tracking in RiftRepository + active-sector initialization in RiftViewModel so online players sync reliably across devices regardless of device clock skew.",
+          "Full-Screen 1:1 Dyson Sun Star Forge & Clickable Playfield + 15 Supply Crate Buff Specimens (NexusForgeModal, RiftSpriteBaker, MainActivity): Routed STAR FORGE directly into the unscaled 1:1 Playfield Forge centered on a 180px Dyson Sun with rotating 5-stop metallic Dyson rings emitting 'STAR FORGE' that opens the Glass Dyson Creation Overlay on tap; staged every playfield object (Nexus Station, Rifts, Space Obstacles, Barriers, Ships, Weapons, Flux Core) plus all 15 Supply Crate buffs as individually clickable 1:1 specimens with live glass inspectors, while isolating [120HZ TEST FLIGHT] onto a dedicated sandbox engine so ranked live state is never mutated.",
+          "Smooth Circular 2.5D Metallic-Collared Rifts & Unified Nexus Station Naming (RiftSpriteBaker, RiftArenaView, CodexModal, RiftNexusKnowledge): Re-engineered Gravity, Repulsor, Phase, and Unstable Rift rendering into smooth circular 2.5D spatial wells framed by high-definition 5-stop metallic collars, specular arcs, and concentric plasma depth lenses, and unified all Safe-Zone central station naming and Codex/AI references to Nexus Station.",
+          "Per-Ship & Overall Solar-Gold Resonance, Distinct Hangar Borders, 'Rift In' & <=15s Resonance Matchmaking (LocalPilotPrefs, RiftGameEngine, RiftArenaView, HangarModal, NexusAiConsoleModal, RiftHudOverlay, MainActivity): Replaced playfield/HUD bounty telemetry with Solar-Gold Resonance backed by persisted per-ship Resonance (Hulls 1-10) earned from combat performance, Kills/Assists, and objective captures; removed legacy hull crown text in Hangar Deck in favor of per-ship Solar-Gold Resonance badges and visually distinct Best Ship (Solar-Gold Harmonic Crown double-bezel) vs Selected/Locked (Cyan NEXUS Conduit) borders; updated the Hub deployment CTA to 'Rift In'; and added Resonance-based team matchmaking capped at a hard 15.0s maximum queue (widening to mismatched opponents after 7.5s or cancelling cleanly with 'No other available teams' at 15.0s).",
+          "Dynamic Multi-Resolution & Aspect-Ratio Scaling (MainActivity, AuthScreen, NexusAiConsoleModal, RiftHudOverlay): Upgraded DeviceAwareModalAutoScaler and responsive cockpit/Auth layouts to adapt cleanly across ultra-wide phones, standard handsets, foldables, and tablets while bypassing scaling for the 1:1 native-pixel Star Forge stage.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 82,
       versionTag = "v1.0.82 // BUILD #82",
       releaseDate = "Nov 19, 2026",
       headline = "NEXUS Hub 2-Line Module Cards, Codex Sub-Deck in Helm Systems, Enlarged Clickable Top Bar, Unified Syndicate Terminology & Active-Match-Safe How-To-Play Tutorial Routing",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "HUB & CODEX",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

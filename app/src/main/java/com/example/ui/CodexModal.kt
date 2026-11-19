@@ -201,7 +201,7 @@ fun CodexModal(
           )
           if (!isCompactPhone) {
             Text(
-              text = "SUPPLY BUFFS • PLAYFIELD RIFTS & 5X DS9 SAFE HARBOR • 10-HULL 0-RESONANCE PARITY",
+              text = "SUPPLY BUFFS • PLAYFIELD RIFTS & 5X NEXUS STATION • 10-HULL 0-RESONANCE PARITY",
               color = Color(0xFF00F5D4),
               fontSize = 9.8.sp,
               fontWeight = FontWeight.Bold,
@@ -535,8 +535,8 @@ fun CodexModal(
 }
 
 /**
- * Dedicated Safe-Zone `DS9` Citadel & Sector Obstacles reference card inside the Playfield Rifts tab.
- * Renders the live `RiftSpriteBaker.safeZoneStationBitmap` (`5x` ship-scale `180px` DS9 metallic station)
+ * Dedicated Safe-Zone `Nexus Station` & Sector Obstacles reference card inside the Playfield Rifts tab.
+ * Renders the live `RiftSpriteBaker.safeZoneStationBitmap` (`5x` ship-scale `180px` Nexus Station)
  * + revolving Ops Holo-Ring alongside exact Safe Harbor, `2,400` Flux Crystal Asteroid, and `10`-Hit Station Nova rules.
  */
 @Composable
@@ -549,13 +549,13 @@ private fun SafeZoneAndSectorObstaclesCard(
     if (headless) {
       0.6f
     } else {
-      val transition = rememberInfiniteTransition(label = "codex_ds9_station_spin")
+      val transition = rememberInfiniteTransition(label = "codex_nexus_station_spin")
       val p by
         transition.animateFloat(
           initialValue = 0f,
           targetValue = 1f,
           animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Restart),
-          label = "ds9_spin_frac",
+          label = "nexus_station_spin_frac",
         )
       p
     }
@@ -643,7 +643,7 @@ private fun SafeZoneAndSectorObstaclesCard(
           modifier = Modifier.weight(1f, fill = false),
         ) {
           Text(
-            text = "SAFE-ZONE DS9 CITADEL & SECTOR OBSTACLES",
+            text = "NEXUS STATION SAFE HARBOR & SECTOR OBSTACLES",
             color = Color(0xFF00F5D4),
             fontSize = if (isCompactPhone) 11.8.sp else 13.5.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -683,7 +683,7 @@ private fun SafeZoneAndSectorObstaclesCard(
 
       Text(
         text =
-          "SAFE HARBOR (SECTOR CONVERGENCE & FLUX CORE ONLY): Anchored by a 5x ship-scale (180px radius) DS9 metallic station with a revolving cyan/gold Ops Holo-Ring & radial stabilizer beams (editable in STAR FORGE). Weapons are locked inside; exceeding the 15s max stay or firing in combat triggers a 15s Safe-Zone lockout (ejects Flux Core at 1,650 px/s).",
+          "SAFE HARBOR (SECTOR CONVERGENCE & FLUX CORE ONLY): Anchored by a 5x ship-scale (180px radius) Nexus Station with a revolving cyan/gold Ops Holo-Ring & radial stabilizer beams (editable in STAR FORGE). Weapons are locked inside; exceeding the 15s max stay or firing in combat triggers a 15s Safe-Zone lockout (ejects Flux Core at 1,650 px/s).",
         color = Color.White,
         fontSize = if (isCompactPhone) 10.0.sp else 11.2.sp,
         lineHeight = if (isCompactPhone) 13.2.sp else 14.8.sp,

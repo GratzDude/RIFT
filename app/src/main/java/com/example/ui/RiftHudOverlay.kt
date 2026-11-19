@@ -1482,8 +1482,8 @@ private fun SymmetricBottomConsoleLayout(
   ) {
    Column(verticalArrangement = Arrangement.spacedBy(lineGap)) {
     Text(
-     "BTY ${player.bounty} • K/D ${engine.allTimeKills}/${engine.allTimeDeaths}",
-     color = Color(0xFFFACC15), fontSize = (8.0f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1,
+     "SHIP ${engine.getShipResonance(player.shipId)} RES • K/D ${engine.allTimeKills}/${engine.allTimeDeaths}",
+     color = Color(0xFFFFD700), fontSize = (8.0f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1,
      modifier = Modifier.clickable(enabled = !uiUnlocked) { onOpenNexus() }.testTag("hud_bounty_kd_readout"),
     )
     Row(
@@ -1496,7 +1496,7 @@ private fun SymmetricBottomConsoleLayout(
       filterQuality = FilterQuality.High,
       modifier = Modifier.size((10.5f * textScale).dp),
      )
-     Text("${engine.liveResonance}", color = Color(0xFFFACC15), fontSize = (7.4f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+     Text("${engine.liveResonance} RES", color = Color(0xFFFFD700), fontSize = (7.4f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
      Text("•", color = Color(0xFF64748B), fontSize = (7.0f * textScale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
      Image(
       bitmap = riftShardIcon,

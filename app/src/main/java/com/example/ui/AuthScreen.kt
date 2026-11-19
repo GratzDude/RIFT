@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,6 +84,7 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.R
+import com.example.data.NetworkConnectivityMonitor
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.RiftVisualForgeState
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
@@ -112,6 +114,10 @@ fun attemptAutoSignIn(
 ) {
   if (Firebase.auth.currentUser != null) {
     onAuthSuccess()
+    return
+  }
+  if (!NetworkConnectivityMonitor.isCurrentlyOnline(context)) {
+    onUnauthenticated()
     return
   }
   val clientId =
@@ -157,6 +163,16 @@ fun onGoogleSignInClicked(
   scope: CoroutineScope,
   onAuthCancelled: () -> Unit = {},
 ) {
+  if (!NetworkConnectivityMonitor.isCurrentlyOnline(context)) {
+    if (Firebase.auth.currentUser != null) {
+      onAuthSuccess()
+    } else {
+      onAuthError(
+        "Device is currently offline. Tap Play as Drifter below for instant offline play, or connect to the internet to sign in with Google."
+      )
+    }
+    return
+  }
   val clientId =
     try {
       context.getString(R.string.default_web_client_id)
@@ -221,6 +237,9 @@ fun AuthScreen(
   var isLoading by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
   val scrollState = rememberScrollState()
+  val isOnline by
+    remember(context) { NetworkConnectivityMonitor.observeOnlineState(context) }
+      .collectAsState(initial = NetworkConnectivityMonitor.isCurrentlyOnline(context))
 
   LaunchedEffect(Unit) {
     if (Firebase.auth.currentUser != null) {
@@ -268,18 +287,21 @@ fun AuthScreen(
           .padding(horizontal = 14.dp, vertical = 8.dp),
       contentAlignment = Alignment.Center,
     ) {
-      val isWideLandscape = maxWidth >= 560.dp
-      val isUltraCompactHeight = maxHeight < 370.dp
+      val viewportMaxHeight = maxHeight
+      val aspect = if (viewportMaxHeight.value > 0f) maxWidth.value / viewportMaxHeight.value else 1.6f
+      val isWideLandscape = maxWidth >= 560.dp && aspect >= 1.15f
+      val isUltraCompactHeight = viewportMaxHeight < 410.dp
+      val cardMaxWidth = if (maxWidth >= 1000.dp) 980.dp else 940.dp
 
       Surface(
         modifier =
-          Modifier.widthIn(max = 940.dp)
+          Modifier.widthIn(max = cardMaxWidth)
             .fillMaxWidth()
             .then(
               if (isWideLandscape && !isUltraCompactHeight) {
-                Modifier.heightIn(max = 460.dp)
+                Modifier.heightIn(max = (maxHeight * 0.94f).coerceAtMost(540.dp))
               } else {
-                Modifier
+                Modifier.heightIn(max = maxHeight * 0.96f)
               }
             )
             .border(
@@ -379,40 +401,71 @@ fun AuthScreen(
 
               Spacer(modifier = Modifier.width(8.dp))
 
-              Button(
-                onClick = onOpenChangelog,
-                colors =
-                  ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF0B1C32),
-                    contentColor = Color(0xFF00F5D4),
-                  ),
-                border = BorderStroke(1.dp, Color(0xFF38BDF8)),
-                shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
-                modifier =
-                  Modifier.minimumInteractiveComponentSize()
-                    .heightIn(min = 36.dp)
-                    .testTag("auth_changelog_button"),
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
               ) {
-                Icon(
-                  imageVector = RiftAuthIcons.Terminal,
-                  contentDescription = "Patch Log",
-                  tint = Color(0xFF00F5D4),
-                  modifier = Modifier.size(14.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                  text = "[ BUILD #$CURRENT_RIFT_BUILD_VERSION PATCH LOG ]",
-                  fontSize = 9.8.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                )
+                val netColor = if (isOnline) Color(0xFF10B981) else Color(0xFFF59E0B)
+                val netBg = if (isOnline) Color(0x2610B981) else Color(0x2EF59E0B)
+                Row(
+                  modifier =
+                    Modifier.clip(RoundedCornerShape(8.dp))
+                      .background(netBg)
+                      .border(1.dp, netColor, RoundedCornerShape(8.dp))
+                      .padding(horizontal = 8.dp, vertical = 5.dp)
+                      .testTag("auth_network_status_badge"),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                  Canvas(modifier = Modifier.size(7.dp)) {
+                    drawCircle(color = netColor)
+                  }
+                  Text(
+                    text = if (isOnline) "ONLINE" else "OFFLINE",
+                    color = netColor,
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                  )
+                }
+
+                Button(
+                  onClick = onOpenChangelog,
+                  colors =
+                    ButtonDefaults.buttonColors(
+                      containerColor = Color(0xFF0B1C32),
+                      contentColor = Color(0xFF00F5D4),
+                    ),
+                  border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                  shape = RoundedCornerShape(8.dp),
+                  contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
+                  modifier =
+                    Modifier.minimumInteractiveComponentSize()
+                      .heightIn(min = 36.dp)
+                      .testTag("auth_changelog_button"),
+                ) {
+                  Icon(
+                    imageVector = RiftAuthIcons.Terminal,
+                    contentDescription = "Patch Log",
+                    tint = Color(0xFF00F5D4),
+                    modifier = Modifier.size(14.dp),
+                  )
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text(
+                    text = "[ BUILD #$CURRENT_RIFT_BUILD_VERSION PATCH LOG ]",
+                    fontSize = 9.8.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                  )
+                }
               }
             }
 
             // 2-COLUMN SCI-FI COMMAND TABLET DECK (Left: Live Safe-Harbor Showcase | Right: Briefing & Auth)
             if (isWideLandscape) {
+              val showcaseMaxH = (viewportMaxHeight * 0.66f).coerceIn(185.dp, 310.dp)
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -420,14 +473,15 @@ fun AuthScreen(
               ) {
                 AuthSafeHarborRadarShowcase(
                   modifier =
-                    Modifier.weight(0.48f)
-                      .heightIn(min = 210.dp, max = 310.dp)
+                    Modifier.weight(0.46f)
+                      .heightIn(min = 180.dp, max = showcaseMaxH)
                       .fillMaxWidth()
                 )
                 AuthCommandBriefingColumn(
                   modifier =
-                    Modifier.weight(0.52f)
+                    Modifier.weight(0.54f)
                       .then(if (isUltraCompactHeight) Modifier else Modifier.verticalScroll(scrollState)),
+                  isOnline = isOnline,
                   isLoading = isLoading,
                   errorMessage = errorMessage,
                   onSignInGoogle = {
@@ -452,13 +506,15 @@ fun AuthScreen(
                 )
               }
             } else {
+              val portraitShowcaseH = (viewportMaxHeight * 0.28f).coerceIn(160.dp, 225.dp)
               AuthSafeHarborRadarShowcase(
                 modifier =
                   Modifier.fillMaxWidth()
-                    .height(220.dp)
+                    .height(portraitShowcaseH)
               )
               AuthCommandBriefingColumn(
                 modifier = Modifier.fillMaxWidth(),
+                isOnline = isOnline,
                 isLoading = isLoading,
                 errorMessage = errorMessage,
                 onSignInGoogle = {
@@ -490,9 +546,9 @@ fun AuthScreen(
 }
 
 /**
- * Left Column (`weight(0.48f)`): Live Gameplay-Honest Circular Safe-Harbor Radar Showcase.
- * Renders a round rippling cyan/gold digitized aperture framing the real `5x` `DS9` Safe-Zone
- * Station sprite (`RiftSpriteBaker.safeZoneStationBitmap` + `drawSafeZoneStationHoloRing`) and
+ * Left Column (`weight(0.46f)`): Live Gameplay-Honest Circular Safe-Harbor Radar Showcase.
+ * Renders a round rippling cyan/gold digitized aperture framing the real `5x` `Nexus Station`
+ * sprite (`RiftSpriteBaker.safeZoneStationBitmap` + `drawSafeZoneStationHoloRing`) and
  * 3 real `128x128` ship sprites (`getShipSprite`) banking along orbital patrol arcs with thruster trails.
  */
 @Composable
@@ -587,7 +643,7 @@ private fun AuthSafeHarborRadarShowcase(modifier: Modifier = Modifier) {
         style = Stroke(width = 1.6.dp.toPx()),
       )
 
-      // 2. Real 5x DS9 Metallic Safe-Zone Station Sprite + Revolving Ops Holo-Ring + 3 Real 128x128 Patrol Ships
+      // 2. Real 5x Nexus Station Sprite + Revolving Ops Holo-Ring + 3 Real 128x128 Patrol Ships
       val stationR = apertureR * 0.34f
       val patrolSpecs =
         arrayOf(
@@ -617,7 +673,7 @@ private fun AuthSafeHarborRadarShowcase(modifier: Modifier = Modifier) {
 
       drawIntoCanvas { composeCanvas ->
         val nc = composeCanvas.nativeCanvas
-        // Center 5x DS9 Metallic Safe-Zone Station
+        // Center 5x Nexus Station
         nc.save()
         nc.translate(cx, cy)
         nc.rotate((orbitPhaseRad * 180f / PI.toFloat()) * 0.25f)
@@ -733,7 +789,7 @@ private fun AuthSafeHarborRadarShowcase(modifier: Modifier = Modifier) {
           .padding(horizontal = 8.dp, vertical = 2.5.dp)
     ) {
       Text(
-        text = "5X DS9 SAFE HARBOR • 120HZ LIVE ENGINE",
+        text = "NEXUS STATION • LIVE SAFE HARBOR",
         color = Color(0xFF00F5D4),
         fontSize = 8.8.sp,
         fontWeight = FontWeight.Black,
@@ -745,11 +801,12 @@ private fun AuthSafeHarborRadarShowcase(modifier: Modifier = Modifier) {
 }
 
 /**
- * Right Column (`weight(0.52f)`): High-Readability Command Briefing & Auth Actions.
+ * Right Column (`weight(0.54f)`): Plain-English Briefing, Tagline #2 & Auth Actions.
  */
 @Composable
 private fun AuthCommandBriefingColumn(
   modifier: Modifier = Modifier,
+  isOnline: Boolean = true,
   isLoading: Boolean,
   errorMessage: String?,
   onSignInGoogle: () -> Unit,
@@ -757,24 +814,49 @@ private fun AuthCommandBriefingColumn(
 ) {
   Column(
     modifier = modifier,
-    verticalArrangement = Arrangement.spacedBy(8.dp),
+    verticalArrangement = Arrangement.spacedBy(7.dp),
   ) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
       Text(
-        text = "SCI-FI COMMAND LINK // SELECT PILOT CLEARANCE",
+        text = "Fast-Paced Competitive 2.5D Space Dogfighter",
         color = Color.White,
-        fontSize = 13.5.sp,
+        fontSize = 14.0.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
-        letterSpacing = 0.5.sp,
       )
       Text(
-        text = stringResource(R.string.auth_subtitle),
+        text = "Solo • Syndicate • Strike Wing — 6 Competitive Modes + Custom Arenas",
         color = Color(0xFF38BDF8),
-        fontSize = 9.8.sp,
+        fontSize = 10.2.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
       )
+      Text(
+        text = stringResource(R.string.auth_tagline_two),
+        color = Color(0xFFFACC15),
+        fontSize = 10.6.sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontFamily = FontFamily.Monospace,
+      )
+    }
+
+    if (!isOnline) {
+      Box(
+        modifier =
+          Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0x26F59E0B))
+            .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+      ) {
+        Text(
+          text = "OFFLINE MODE READY — Practice Rift, Custom Arenas & Bot Matches work offline.",
+          color = Color(0xFFFDE68A),
+          fontSize = 9.8.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
     }
 
     Column(
@@ -783,8 +865,8 @@ private fun AuthCommandBriefingColumn(
           .clip(RoundedCornerShape(10.dp))
           .background(Color(0xD9091528))
           .border(1.dp, Color(0x4738BDF8), RoundedCornerShape(10.dp))
-          .padding(horizontal = 12.dp, vertical = 9.dp),
-      verticalArrangement = Arrangement.spacedBy(7.dp),
+          .padding(horizontal = 12.dp, vertical = 8.dp),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
       AuthTelemetryRow(
         iconSlot = { NexusMergedBrandEmblem(modifier = Modifier.size(16.dp)) },

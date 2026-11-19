@@ -16,10 +16,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -134,6 +137,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
 import java.util.Locale
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -149,6 +153,16 @@ private sealed interface StagedRiftLaunch {
 
   data class ExistingCustom(val instanceId: String) : StagedRiftLaunch
 }
+
+private data class MatchmakingQueueRequest(
+  val modeTitle: String,
+  val riftLabel: String,
+  val targetSectorKey: String,
+  val rankedMode: RankedGameMode,
+  val requiresOpponentTeam: Boolean,
+  val teamAvgResonance: Int,
+  val onExecuteLaunch: () -> Unit,
+)
 
 private data class SuspendedActiveMatchSnapshot(
   val sectorTag: String,
@@ -412,18 +426,39 @@ internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
  * clipped text, zero crushed top pills, and clean multi-column ergonomics.
  */
 @Composable
-fun DeviceAwareModalAutoScaler(content: @Composable () -> Unit) {
+fun DeviceAwareModalAutoScaler(
+  bypassScaling: Boolean = false,
+  content: @Composable () -> Unit,
+) {
   BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
     val baseDensity = LocalDensity.current
-    val scaleH = (maxHeight.value / 560f).coerceIn(0.66f, 1.15f)
-    val scaleW = (maxWidth.value / 1060f).coerceIn(0.70f, 1.15f)
-    val scale = minOf(scaleH, scaleW)
     val scaledDensity =
-      remember(baseDensity.density, baseDensity.fontScale, scale) {
-        Density(
-          density = baseDensity.density * scale,
-          fontScale = baseDensity.fontScale.coerceAtMost(1.08f),
-        )
+      if (bypassScaling) {
+        remember(baseDensity.density, baseDensity.fontScale) {
+          Density(
+            density = baseDensity.density,
+            fontScale = baseDensity.fontScale.coerceAtMost(1.08f),
+          )
+        }
+      } else {
+        val safeH = maxHeight.value.coerceAtLeast(1f)
+        val safeW = maxWidth.value.coerceAtLeast(1f)
+        val aspect = safeW / safeH
+        val refW =
+          when {
+            aspect < 1.45f -> 900f
+            aspect < 1.70f -> 980f
+            else -> 1060f
+          }
+        val scaleH = (safeH / 560f).coerceIn(0.62f, 1.25f)
+        val scaleW = (safeW / refW).coerceIn(0.62f, 1.25f)
+        val scale = minOf(scaleH, scaleW)
+        remember(baseDensity.density, baseDensity.fontScale, scale) {
+          Density(
+            density = baseDensity.density * scale,
+            fontScale = baseDensity.fontScale.coerceAtMost(1.08f),
+          )
+        }
       }
     CompositionLocalProvider(LocalDensity provides scaledDensity) {
       content()
@@ -610,6 +645,11 @@ fun RiftArenaScreen(
   val nexusStreamState by nexusViewModel.streamState.collectAsStateWithLifecycle()
   val isNexusStreaming =
     nexusStreamState is NexusStreamState.Loading || nexusStreamState is NexusStreamState.Streaming
+  val isDeviceOnline by
+    remember(context) { com.example.data.NetworkConnectivityMonitor.observeOnlineState(context) }
+      .collectAsStateWithLifecycle(
+        initialValue = com.example.data.NetworkConnectivityMonitor.isCurrentlyOnline(context)
+      )
 
   val lifecycleOwner = LocalLifecycleOwner.current
   val sfx = remember {
@@ -685,10 +725,13 @@ fun RiftArenaScreen(
   var helmInitialSubDeck by remember { mutableIntStateOf(0) }
   var previousNodeBeforeConduit by remember { mutableStateOf(NexusCoreNode.ORBITAL_HUB) }
   var nexusInitialLayoutMode by remember { mutableStateOf(NexusHubLayoutMode.DECK_ONLY) }
-  var forgeInitialTab by remember { mutableStateOf(NexusForgeTab.SHIP_COSMETICS) }
+  var forgeInitialTab by remember { mutableStateOf(NexusForgeTab.DEV_STUDIO_STAGE) }
   var isForgeFullScreenStage by remember { mutableStateOf(false) }
   var showFullChangelogModal by remember { mutableStateOf(false) }
   var pendingStagedLaunch by remember { mutableStateOf<StagedRiftLaunch?>(null) }
+  var activeMatchmakingQueue by remember { mutableStateOf<MatchmakingQueueRequest?>(null) }
+  var matchmakingElapsedSec by remember { mutableFloatStateOf(0f) }
+  var matchmakingNoTeamsNotice by remember { mutableStateOf<String?>(null) }
   var suspendedActiveMatch by remember { mutableStateOf<SuspendedActiveMatchSnapshot?>(null) }
   var favoriteOverwatchKey by remember {
     mutableStateOf(localPrefs.getFavoriteOverwatchRiftKey())
@@ -761,6 +804,9 @@ fun RiftArenaScreen(
   var syndicateHistory by remember(currentUserId) {
     mutableStateOf(localPrefs.getSyndicateServiceHistory(currentUserId))
   }
+  var shipResonancesState by remember(currentUserId) {
+    mutableStateOf(localPrefs.getAllShipResonances(currentUserId))
+  }
 
   val chatMessages = remember { mutableStateListOf<SyndicateChatMessage>() }
 
@@ -809,6 +855,7 @@ fun RiftArenaScreen(
       localPrefs.setRiftShards(riftShards, currentUserId)
       liveResonance = localPrefs.getLiveResonance(currentUserId)
       peakResonance = localPrefs.getPeakResonance(currentUserId)
+      loadShipResonances(localPrefs.getAllShipResonances(currentUserId), liveResonance)
       highestMilestoneLevelClaimed = localPrefs.getHighestMilestoneLevelClaimed(currentUserId)
       spentCustomizationPoints = localPrefs.getSpentCustomizationPoints(currentUserId)
       unlockedExtraSlots = localPrefs.getUnlockedExtraSlots(currentUserId)
@@ -867,7 +914,9 @@ fun RiftArenaScreen(
     if (resolvedNode == NexusCoreNode.SUBSPACE_COMMS) {
       unreadCommsCount = 0
     }
-    if (resolvedNode != NexusCoreNode.STAR_FORGE) {
+    if (resolvedNode == NexusCoreNode.STAR_FORGE) {
+      isForgeFullScreenStage = (forgeInitialTab == NexusForgeTab.DEV_STUDIO_STAGE)
+    } else {
       isForgeFullScreenStage = false
     }
     if (resolvedNode == NexusCoreNode.CONVERGENCE_GATE) {
@@ -879,6 +928,14 @@ fun RiftArenaScreen(
 
   DisposableEffect(engine, viewModel) {
     syncEquippedCosmeticsToEngine(engine)
+    engine.onShipResonanceChanged = { shipId, shipRes, overallRes ->
+      if (!engine.isEphemeralPracticeRift) {
+        localPrefs.setShipResonance(shipId, shipRes, currentUserId)
+        localPrefs.setLiveResonance(overallRes, currentUserId)
+        localPrefs.setPeakResonance(engine.peakResonance, currentUserId)
+        shipResonancesState = localPrefs.getAllShipResonances(currentUserId)
+      }
+    }
     engine.onDailyDirectiveEvent = { metric, amount, isAbsolutePeak ->
       if (!engine.isEphemeralPracticeRift) {
         localPrefs.recordDailyDirectiveProgress(metric, amount, isAbsolutePeak, currentUserId)
@@ -932,7 +989,7 @@ fun RiftArenaScreen(
         allTimePeakSnapshot = localPrefs.getAllTimePeakBountySnapshot(currentUserId)
         pvpPeakSnapshot = localPrefs.getPvpPeakBountySnapshot(currentUserId)
       }
-      if (isGoogleAuthenticated) {
+      if (isGoogleAuthenticated && isDeviceOnline) {
         viewModel.syncNativePilotStats(
           callsign = engine.localPlayer.callsign,
           shipId = engine.localPlayer.shipId,
@@ -1015,8 +1072,8 @@ fun RiftArenaScreen(
   }
 
   // Observe live Syndicate Crest, custom channels & guest passes from Firestore
-  LaunchedEffect(syndicateTag, isGoogleAuthenticated) {
-    if (!isGoogleAuthenticated) return@LaunchedEffect
+  LaunchedEffect(syndicateTag, isGoogleAuthenticated, isDeviceOnline) {
+    if (!isGoogleAuthenticated || !isDeviceOnline) return@LaunchedEffect
     val cleanSyn = RiftGameEngine.cleanTag(syndicateTag)
     if (cleanSyn.isEmpty() || cleanSyn in setOf("GUEST", "FREE", "RFT", "BOT", "SOLO")) {
       return@LaunchedEffect
@@ -1038,14 +1095,20 @@ fun RiftArenaScreen(
 
   // Push local Syndicate Crest, channel list & guest passes to Firestore when updated
   val activeCrestRecipe = RiftVisualForgeState.activeSyndicateCrestRecipe
-  LaunchedEffect(activeCrestRecipe, syndicateChannelsRefreshKey, syndicateTag, isGoogleAuthenticated) {
+  LaunchedEffect(
+    activeCrestRecipe,
+    syndicateChannelsRefreshKey,
+    syndicateTag,
+    isGoogleAuthenticated,
+    isDeviceOnline,
+  ) {
     val cleanSyn = RiftGameEngine.cleanTag(syndicateTag)
     if (cleanSyn.isEmpty() || cleanSyn in setOf("GUEST", "FREE", "RFT", "BOT", "SOLO")) {
       return@LaunchedEffect
     }
     val crestJson = activeCrestRecipe.toJson().toString()
     localPrefs.setSyndicateCrestJson(cleanSyn, crestJson)
-    if (isGoogleAuthenticated) {
+    if (isGoogleAuthenticated && isDeviceOnline) {
       viewModel.syncSyndicateMetaToCloud(
         tag = cleanSyn,
         crestJson = crestJson,
@@ -1207,22 +1270,24 @@ fun RiftArenaScreen(
           localPrefs.setHasChosenInitialCallsign(true, currentUserId)
           needsInitialSwornCallsign = false
           engine.localPlayer.callsign = saved
-          viewModel.syncNativePilotStats(
-            callsign = saved,
-            shipId = engine.localPlayer.shipId,
-            foundry = engine.localPlayer.spec.role,
-            mode = engine.mode,
-            pvpKills = engine.pvpKills,
-            pvpDeaths = engine.pvpDeaths,
-            pvpBountyPeak = engine.pvpBountyPeak,
-            allTimeKills = engine.allTimeKills,
-            allTimeDeaths = engine.allTimeDeaths,
-            allTimeBountyPeak = engine.allTimeBountyPeak,
-            convergencesWon = engine.convergencesWon,
-            syndicateTag = engine.localPlayer.syndicateTag,
-            armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
-            armadaTierSize = engine.getCurrentArmadaSize(),
-          )
+          if (isDeviceOnline) {
+            viewModel.syncNativePilotStats(
+              callsign = saved,
+              shipId = engine.localPlayer.shipId,
+              foundry = engine.localPlayer.spec.role,
+              mode = engine.mode,
+              pvpKills = engine.pvpKills,
+              pvpDeaths = engine.pvpDeaths,
+              pvpBountyPeak = engine.pvpBountyPeak,
+              allTimeKills = engine.allTimeKills,
+              allTimeDeaths = engine.allTimeDeaths,
+              allTimeBountyPeak = engine.allTimeBountyPeak,
+              convergencesWon = engine.convergencesWon,
+              syndicateTag = engine.localPlayer.syndicateTag,
+              armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
+              armadaTierSize = engine.getCurrentArmadaSize(),
+            )
+          }
         }
       }
     }
@@ -1254,7 +1319,7 @@ fun RiftArenaScreen(
     }
 
   fun pushLivePilotHeartbeatNow() {
-    if (!isGoogleAuthenticated) return
+    if (!isGoogleAuthenticated || !isDeviceOnline) return
     val suspended = suspendedActiveMatch
     val p = suspended?.localPlayerSnapshot ?: engine.localPlayer
     val activeLiveMatch =
@@ -1291,6 +1356,146 @@ fun RiftArenaScreen(
     )
   }
 
+  fun findEligibleRemoteOpponentsForSector(
+    targetSectorKey: String,
+    rankedMode: RankedGameMode,
+  ): List<LivePilotState> {
+    if (!isDeviceOnline) return emptyList()
+    val localWing = engine.activeArmadaName.trim()
+    val localSyn = RiftGameEngine.cleanTag(syndicateTag)
+    return mergedLivePilots.filter { st ->
+      val rUid = st.userId.ifEmpty { st.id }
+      if (rUid.isBlank() || rUid == currentUserId) return@filter false
+      if (!st.sectorId.equals(targetSectorKey, ignoreCase = true)) return@filter false
+      if (localWing.isNotBlank() && st.armadaName.trim().equals(localWing, ignoreCase = true)) {
+        return@filter false
+      }
+      if (
+        rankedMode == RankedGameMode.SYNDICATE_WARS &&
+          localSyn.isNotBlank() &&
+          RiftGameEngine.cleanTag(st.syndicateTag) == localSyn
+      ) {
+        return@filter false
+      }
+      true
+    }
+  }
+
+  fun computeLocalTeamAvgResonance(): Int {
+    val localWing = engine.activeArmadaName.trim()
+    if (localWing.isBlank() || !isDeviceOnline) return engine.liveResonance
+    val wingResList = mutableListOf(engine.liveResonance)
+    mergedLivePilots.forEach { st ->
+      val rUid = st.userId.ifEmpty { st.id }
+      if (
+        rUid.isNotBlank() &&
+          rUid != currentUserId &&
+          st.armadaName.trim().equals(localWing, ignoreCase = true)
+      ) {
+        wingResList.add(st.liveResonance.toInt().coerceAtLeast(0))
+      }
+    }
+    return (wingResList.sum() / wingResList.size.coerceAtLeast(1)).coerceAtLeast(0)
+  }
+
+  fun enqueueOrExecuteResonanceMatchmaking(
+    modeTitle: String,
+    riftLabel: String,
+    targetSectorKey: String,
+    rankedMode: RankedGameMode,
+    isCustomInstance: Boolean,
+    onExecuteLaunch: () -> Unit,
+  ) {
+    matchmakingNoTeamsNotice = null
+    val isTeamRankedMode =
+      !isCustomInstance &&
+        rankedMode in
+          setOf(
+            RankedGameMode.SYNDICATE_WARS,
+            RankedGameMode.RIFT_SKIRMISH,
+            RankedGameMode.RIFT_CONTROL,
+            RankedGameMode.FLUX_CORE,
+            RankedGameMode.STASIS_BREACH,
+          )
+    val requiresOpponentTeam =
+      !isCustomInstance &&
+        (rankedMode == RankedGameMode.SYNDICATE_WARS ||
+          (!RiftCalibrationState.botsEnabled && isTeamRankedMode))
+
+    if (!isTeamRankedMode || (!isDeviceOnline && !requiresOpponentTeam)) {
+      activeMatchmakingQueue = null
+      onExecuteLaunch()
+      return
+    }
+
+    val teamAvgRes = computeLocalTeamAvgResonance()
+    val remoteOpponents = findEligibleRemoteOpponentsForSector(targetSectorKey, rankedMode)
+    val hasBalancedMatchNow =
+      remoteOpponents.any { abs(it.liveResonance.toInt() - teamAvgRes) <= 250 }
+
+    if (hasBalancedMatchNow) {
+      activeMatchmakingQueue = null
+      onExecuteLaunch()
+      return
+    }
+
+    if (!isDeviceOnline && requiresOpponentTeam) {
+      activeMatchmakingQueue = null
+      matchmakingNoTeamsNotice = "No other available teams"
+      toastMessage = "No other available teams"
+      toastVersion++
+      return
+    }
+
+    matchmakingElapsedSec = 0f
+    activeMatchmakingQueue =
+      MatchmakingQueueRequest(
+        modeTitle = modeTitle,
+        riftLabel = riftLabel,
+        targetSectorKey = targetSectorKey,
+        rankedMode = rankedMode,
+        requiresOpponentTeam = requiresOpponentTeam,
+        teamAvgResonance = teamAvgRes,
+        onExecuteLaunch = onExecuteLaunch,
+      )
+  }
+
+  LaunchedEffect(activeMatchmakingQueue) {
+    val req = activeMatchmakingQueue ?: return@LaunchedEffect
+    var elapsed = 0f
+    while (activeMatchmakingQueue === req && elapsed < 15.0f) {
+      delay(100L)
+      elapsed = (elapsed + 0.1f).coerceAtMost(15.0f)
+      matchmakingElapsedSec = elapsed
+      val opponents = findEligibleRemoteOpponentsForSector(req.targetSectorKey, req.rankedMode)
+      if (elapsed < 7.5f) {
+        if (opponents.any { abs(it.liveResonance.toInt() - req.teamAvgResonance) <= 250 }) {
+          activeMatchmakingQueue = null
+          req.onExecuteLaunch()
+          return@LaunchedEffect
+        }
+      } else {
+        // After 7.5s, accept mismatched Resonance teams rather than waiting past 15s
+        if (opponents.isNotEmpty()) {
+          activeMatchmakingQueue = null
+          req.onExecuteLaunch()
+          return@LaunchedEffect
+        }
+      }
+    }
+    if (activeMatchmakingQueue === req) {
+      val opponents = findEligibleRemoteOpponentsForSector(req.targetSectorKey, req.rankedMode)
+      activeMatchmakingQueue = null
+      if (opponents.isNotEmpty() || !req.requiresOpponentTeam) {
+        req.onExecuteLaunch()
+      } else {
+        matchmakingNoTeamsNotice = "No other available teams"
+        toastMessage = "No other available teams"
+        toastVersion++
+      }
+    }
+  }
+
   LaunchedEffect(mergedLivePilots, suspendedActiveMatch == null) {
     if (!engine.isEphemeralPracticeRift) {
       engine.updateRemotePilots(mergedLivePilots, currentUserId)
@@ -1320,8 +1525,8 @@ fun RiftArenaScreen(
     }
   }
 
-  LaunchedEffect(currentUserId, isGoogleAuthenticated) {
-    if (!isGoogleAuthenticated) return@LaunchedEffect
+  LaunchedEffect(currentUserId, isGoogleAuthenticated, isDeviceOnline) {
+    if (!isGoogleAuthenticated || !isDeviceOnline) return@LaunchedEffect
     pushLivePilotHeartbeatNow()
     while (true) {
       val intervalMs =
@@ -1812,10 +2017,17 @@ fun RiftArenaScreen(
       isNexusShellOpen ||
         showFullChangelogModal ||
         isLiveHudDragPillOpen ||
-        needsInitialSwornCallsign
+        needsInitialSwornCallsign ||
+        activeMatchmakingQueue != null ||
+        matchmakingNoTeamsNotice != null
 
     if (hasAnyModalVisible) {
-      DeviceAwareModalAutoScaler {
+      DeviceAwareModalAutoScaler(
+        bypassScaling =
+          isNexusShellOpen &&
+            activeNexusNode == NexusCoreNode.STAR_FORGE &&
+            isForgeFullScreenStage
+      ) {
         Box(modifier = Modifier.fillMaxSize()) {
           if (isNexusShellOpen) {
             val rawCloudLeaderboard =
@@ -1947,6 +2159,7 @@ fun RiftArenaScreen(
                 selectedShipId,
                 allTimePeakSnapshot,
                 pvpPeakSnapshot,
+                shipResonancesState,
                 frameTick,
               ) {
                 localPrefs.getBestShipId(currentUserId, selectedShipId)
@@ -1972,8 +2185,12 @@ fun RiftArenaScreen(
                 localPrefs.getFriendsList()
               }
             val humanPilotsOnline =
-              remember(frameTick, sectorPilotsState, onlineHumanPilotsList) {
-                maxOf(engine.getTotalHumanPilotsOnline(), onlineHumanPilotsList.size)
+              remember(frameTick, sectorPilotsState, onlineHumanPilotsList, isDeviceOnline) {
+                if (!isDeviceOnline) {
+                  0
+                } else {
+                  maxOf(engine.getTotalHumanPilotsOnline(), onlineHumanPilotsList.size)
+                }
               }
             val syndicateOnlineCount =
               remember(syndicateTag, frameTick, friendsRefreshKey, sectorPilotsState, onlineHumanPilotsList) {
@@ -2123,7 +2340,7 @@ fun RiftArenaScreen(
                   engine.aiShipDesignTokens > 0 ||
                   RiftBillingManager.canAffordShardSpend(engine.riftShards, 150L)
               if (!canAfford) {
-                Pair(false, "NEED 150 ❖ RIFT SHARDS FOR HULL RE-DESIGN (OPEN RIFT CONDUIT).")
+                Pair(false, "NEED 150 RIFT SHARDS FOR HULL RE-DESIGN (OPEN RIFT CONDUIT).")
               } else {
                 if (!isFirstFree) {
                   if (engine.aiShipDesignTokens > 0) {
@@ -2152,8 +2369,8 @@ fun RiftArenaScreen(
                 val costNote =
                   when {
                     isFirstFree -> "FREE 1ST DESIGN"
-                    RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE -> "TESTER 0❖ DEPLETED"
-                    else -> "-150 ❖"
+                    RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE -> "TESTER 0 SHARDS DEPLETED"
+                    else -> "-150 SHARDS"
                   }
                 Pair(true, "HULL FORGED ($costNote): [$finalTitle] (${finalRecipe.silhouette})")
               }
@@ -2316,6 +2533,7 @@ fun RiftArenaScreen(
                           slot9EUnlocked = slot9EUnlocked,
                           liveResonance = engine.liveResonance,
                           peakResonance = engine.peakResonance,
+                          shipResonances = shipResonancesState,
                           stagedTargetTitle = stagedTargetTitle,
                           stagedHullLockNotice = stagedHullLockNotice,
                           onCancelStagedModeToGate =
@@ -2370,6 +2588,7 @@ fun RiftArenaScreen(
                           onOpenNexus = { openNexusNode(NexusCoreNode.ORBITAL_HUB) },
                           onOpenShipForge = {
                             forgeInitialTab = NexusForgeTab.SHIP_COSMETICS
+                            isForgeFullScreenStage = false
                             openNexusNode(NexusCoreNode.STAR_FORGE)
                           },
                           onDeployPilot = { newCallsign, newShipId, _, asGuest ->
@@ -2397,54 +2616,86 @@ fun RiftArenaScreen(
                             engine.syncLocalArmadaSelfSlot()
 
                             val staged = pendingStagedLaunch
-                            if (staged != null) {
-                              suspendedActiveMatch = null
+                            val finalizeHangarLaunch: () -> Unit = {
+                              if (staged != null) {
+                                suspendedActiveMatch = null
+                              }
+                              if (staged != null || !engine.hasJoinedMatch) {
+                                engine.isShipLockedForMatch = false
+                              }
+                              engine.switchLocalPlayerShip(clampedShipId, forceFromHangar = true)
+                              syncEquippedCosmeticsToEngine(engine)
+
+                              when (staged) {
+                                is StagedRiftLaunch.Ranked -> {
+                                  selectedMode = staged.mode.id
+                                  localPrefs.setPreferredMode(staged.mode.id)
+                                  engine.deployToRankedMode(staged.mode, staged.teamSizeBracket)
+                                }
+                                is StagedRiftLaunch.NewCustom -> {
+                                  selectedMode = staged.config.baseMode.id
+                                  localPrefs.setPreferredMode(staged.config.baseMode.id)
+                                  engine.createAndJoinCustomGame(staged.config)
+                                }
+                                is StagedRiftLaunch.ExistingCustom -> {
+                                  engine.joinCustomGame(staged.instanceId)
+                                  val resolvedModeId =
+                                    engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
+                                  selectedMode = resolvedModeId
+                                  localPrefs.setPreferredMode(resolvedModeId)
+                                }
+                                null -> {
+                                  val activeModeId =
+                                    engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
+                                  selectedMode = activeModeId
+                                  localPrefs.setPreferredMode(activeModeId)
+                                  if (!engine.hasJoinedMatch) {
+                                    engine.deployToRankedMode(
+                                      engine.activeRankedMode,
+                                      engine.activeTeamSizeBracket,
+                                    )
+                                  }
+                                }
+                              }
+
+                              syncEquippedCosmeticsToEngine(engine)
+                              engine.onStatsUpdated()
+                              if (engine.hasJoinedMatch) {
+                                pushLivePilotHeartbeatNow()
+                                pendingStagedLaunch = null
+                                isNexusShellOpen = false
+                              }
                             }
-                            if (staged != null || !engine.hasJoinedMatch) {
-                              // Allow hull selection in Hangar staging before mode hull-lock engages
-                              engine.isShipLockedForMatch = false
-                            }
-                            engine.switchLocalPlayerShip(clampedShipId, forceFromHangar = true)
-                            syncEquippedCosmeticsToEngine(engine)
 
                             when (staged) {
                               is StagedRiftLaunch.Ranked -> {
-                                selectedMode = staged.mode.id
-                                localPrefs.setPreferredMode(staged.mode.id)
-                                engine.deployToRankedMode(staged.mode, staged.teamSizeBracket)
+                                enqueueOrExecuteResonanceMatchmaking(
+                                  modeTitle = staged.mode.title.uppercase(Locale.US),
+                                  riftLabel = "${staged.teamSizeBracket}V${staged.teamSizeBracket}",
+                                  targetSectorKey = staged.mode.id,
+                                  rankedMode = staged.mode,
+                                  isCustomInstance = false,
+                                  onExecuteLaunch = finalizeHangarLaunch,
+                                )
                               }
-                              is StagedRiftLaunch.NewCustom -> {
-                                selectedMode = staged.config.baseMode.id
-                                localPrefs.setPreferredMode(staged.config.baseMode.id)
-                                engine.createAndJoinCustomGame(staged.config)
-                              }
+                              is StagedRiftLaunch.NewCustom,
                               is StagedRiftLaunch.ExistingCustom -> {
-                                engine.joinCustomGame(staged.instanceId)
-                                val resolvedModeId =
-                                  engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
-                                selectedMode = resolvedModeId
-                                localPrefs.setPreferredMode(resolvedModeId)
+                                finalizeHangarLaunch()
                               }
                               null -> {
-                                val activeModeId =
-                                  engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
-                                selectedMode = activeModeId
-                                localPrefs.setPreferredMode(activeModeId)
-                                if (!engine.hasJoinedMatch) {
-                                  engine.deployToRankedMode(
-                                    engine.activeRankedMode,
-                                    engine.activeTeamSizeBracket,
+                                if (!engine.hasJoinedMatch && engine.currentCustomGame == null) {
+                                  enqueueOrExecuteResonanceMatchmaking(
+                                    modeTitle = engine.activeRankedMode.title.uppercase(Locale.US),
+                                    riftLabel = engine.activeRankedMode.teamFormatBadge,
+                                    targetSectorKey = engine.activeRankedMode.id,
+                                    rankedMode = engine.activeRankedMode,
+                                    isCustomInstance = false,
+                                    onExecuteLaunch = finalizeHangarLaunch,
                                   )
+                                } else {
+                                  finalizeHangarLaunch()
                                 }
                               }
-                            }
-
-                            syncEquippedCosmeticsToEngine(engine)
-                            engine.onStatsUpdated()
-                            if (engine.hasJoinedMatch) {
-                              pushLivePilotHeartbeatNow()
-                              pendingStagedLaunch = null
-                              isNexusShellOpen = false
                             }
                           },
                           onCloseModal = closeEmbeddedModal,
@@ -2608,15 +2859,15 @@ fun RiftArenaScreen(
                               engine.onStatsUpdated()
                               val spendNote =
                                 if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) {
-                                  "TESTER 0❖ DEPLETED"
+                                  "TESTER 0 SHARDS DEPLETED"
                                 } else {
-                                  "-${item.shardCost}❖"
+                                  "-${item.shardCost} SHARDS"
                                 }
                               true to
                                 "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} ($spendNote)"
                             } else {
                               false to
-                                "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost}❖ RIFT SHARDS"
+                                "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost} RIFT SHARDS"
                             }
                           },
                           onUnlockOrSelectFrameSlot = { slotId ->
@@ -2644,13 +2895,13 @@ fun RiftArenaScreen(
                                   engine.peakResonance >= gate.freeAtResonance ->
                                     "PEAK RESONANCE MILESTONE"
                                   RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE ->
-                                    "TESTER 0❖ DEPLETED"
-                                  else -> "-${gate.shardCost}❖ RIFT SHARDS"
+                                    "TESTER 0 SHARDS DEPLETED"
+                                  else -> "-${gate.shardCost} RIFT SHARDS"
                                 }
                               true to "UNLOCKED ${slotId.uppercase(Locale.US)} ($freeNote)"
                             } else {
                               false to
-                                "REQUIRES ${gate.freeAtResonance} PEAK RESONANCE (FREE) OR ${gate.shardCost}❖ RIFT SHARDS"
+                                "REQUIRES ${gate.freeAtResonance} PEAK RESONANCE (FREE) OR ${gate.shardCost} RIFT SHARDS"
                             }
                           },
                           onSpendRiftShards = { cost ->
@@ -3035,6 +3286,8 @@ fun RiftArenaScreen(
                               localPrefs.setRiftShards(engine.riftShards, currentUserId)
                               engine.liveResonance = 0
                               engine.peakResonance = 0
+                              shipResonancesState = localPrefs.getAllShipResonances(currentUserId)
+                              engine.loadShipResonances(shipResonancesState, 0)
                               engine.highestMilestoneLevelClaimed = 0
                               engine.spentCustomizationPoints = 0
                               engine.unlockedExtraSlots = 0
@@ -3132,6 +3385,7 @@ fun RiftArenaScreen(
                           onOpenChangelog = { showFullChangelogModal = true },
                           onOpenAudioForge = {
                             forgeInitialTab = NexusForgeTab.AUDIO_SFX
+                            isForgeFullScreenStage = false
                             openNexusNode(NexusCoreNode.STAR_FORGE)
                           },
                         )
@@ -3254,6 +3508,7 @@ fun RiftArenaScreen(
                 localPrefs.setBootToNexusHub(true)
               },
               totalOnlinePilots = humanPilotsOnline,
+              isNetworkOnline = isDeviceOnline,
               syndicateOnlineCount = syndicateOnlineCount,
               strikeWingOnlineCount = strikeWingOnlineCount,
               isInMatch =
@@ -3379,12 +3634,15 @@ fun RiftArenaScreen(
               onOpenForge = {
                 RiftCalibrationState.isUiUnlockedForDragging = false
                 RiftCalibrationState.isCalibrationModalOpen = false
+                forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+                isForgeFullScreenStage = true
                 openNexusNode(NexusCoreNode.STAR_FORGE)
               },
               onOpenCalibration = {
                 RiftCalibrationState.isUiUnlockedForDragging = false
                 RiftCalibrationState.isCalibrationModalOpen = false
                 forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+                isForgeFullScreenStage = true
                 openNexusNode(NexusCoreNode.STAR_FORGE)
               },
               onOpenHangarForShip = { targetShipId ->
@@ -3823,22 +4081,34 @@ fun RiftArenaScreen(
                   } else if (engine.doesModeLockShipSelection(targetMode)) {
                     stageRankedModeIntoHangar(inst.rankedMode, targetBracket)
                   } else {
-                    pendingStagedLaunch = null
-                    suspendedActiveMatch = null
-                    engine.isShipLockedForMatch = false
-                    engine.switchLocalPlayerShip(selectedShipId.coerceIn(1, 10), forceFromHangar = true)
-                    syncEquippedCosmeticsToEngine(engine)
-                    selectedMode = inst.rankedMode.id
-                    localPrefs.setPreferredMode(inst.rankedMode.id)
-                    engine.deployToRankedMode(inst.rankedMode, targetBracket)
-                    syncEquippedCosmeticsToEngine(engine)
-                    engine.onStatsUpdated()
-                    pushLivePilotHeartbeatNow()
-                    isNexusShellOpen = false
-                    sfx.playPrize()
-                    toastMessage = "ZONED INTO ${inst.modeTitle} // ${inst.riftLabel}"
-                    toastVersion++
-                    frameTick++
+                    enqueueOrExecuteResonanceMatchmaking(
+                      modeTitle = inst.modeTitle,
+                      riftLabel = inst.riftLabel,
+                      targetSectorKey = inst.key,
+                      rankedMode = inst.rankedMode,
+                      isCustomInstance = false,
+                      onExecuteLaunch = {
+                        pendingStagedLaunch = null
+                        suspendedActiveMatch = null
+                        engine.isShipLockedForMatch = false
+                        engine.switchLocalPlayerShip(
+                          selectedShipId.coerceIn(1, 10),
+                          forceFromHangar = true,
+                        )
+                        syncEquippedCosmeticsToEngine(engine)
+                        selectedMode = inst.rankedMode.id
+                        localPrefs.setPreferredMode(inst.rankedMode.id)
+                        engine.deployToRankedMode(inst.rankedMode, targetBracket)
+                        syncEquippedCosmeticsToEngine(engine)
+                        engine.onStatsUpdated()
+                        pushLivePilotHeartbeatNow()
+                        isNexusShellOpen = false
+                        sfx.playPrize()
+                        toastMessage = "RIFTED INTO ${inst.modeTitle} // ${inst.riftLabel}"
+                        toastVersion++
+                        frameTick++
+                      },
+                    )
                   }
                 } else if (engine.doesModeLockShipSelection(targetMode)) {
                   if (customCfg != null) {
@@ -3858,32 +4128,45 @@ fun RiftArenaScreen(
                     stageRankedModeIntoHangar(inst.rankedMode, targetBracket)
                   }
                 } else {
-                  pendingStagedLaunch = null
-                  suspendedActiveMatch = null
-                  engine.isShipLockedForMatch = false
-                  engine.switchLocalPlayerShip(selectedShipId.coerceIn(1, 10), forceFromHangar = true)
-                  syncEquippedCosmeticsToEngine(engine)
-                  if (customCfg != null) {
-                    if (engine.activeCustomGames.any { it.instanceId == customCfg.instanceId }) {
-                      engine.joinCustomGame(customCfg.instanceId)
+                  val executeDirectRiftIn: () -> Unit = {
+                    pendingStagedLaunch = null
+                    suspendedActiveMatch = null
+                    engine.isShipLockedForMatch = false
+                    engine.switchLocalPlayerShip(
+                      selectedShipId.coerceIn(1, 10),
+                      forceFromHangar = true,
+                    )
+                    syncEquippedCosmeticsToEngine(engine)
+                    if (customCfg != null) {
+                      if (engine.activeCustomGames.any { it.instanceId == customCfg.instanceId }) {
+                        engine.joinCustomGame(customCfg.instanceId)
+                      } else {
+                        engine.createAndJoinCustomGame(customCfg)
+                      }
+                      selectedMode = customCfg.baseMode.id
+                      localPrefs.setPreferredMode(customCfg.baseMode.id)
                     } else {
-                      engine.createAndJoinCustomGame(customCfg)
+                      selectedMode = inst.rankedMode.id
+                      localPrefs.setPreferredMode(inst.rankedMode.id)
+                      engine.deployToRankedMode(inst.rankedMode, targetBracket)
                     }
-                    selectedMode = customCfg.baseMode.id
-                    localPrefs.setPreferredMode(customCfg.baseMode.id)
-                  } else {
-                    selectedMode = inst.rankedMode.id
-                    localPrefs.setPreferredMode(inst.rankedMode.id)
-                    engine.deployToRankedMode(inst.rankedMode, targetBracket)
+                    syncEquippedCosmeticsToEngine(engine)
+                    engine.onStatsUpdated()
+                    pushLivePilotHeartbeatNow()
+                    isNexusShellOpen = false
+                    sfx.playPrize()
+                    toastMessage = "RIFTED INTO ${inst.modeTitle} // ${inst.riftLabel}"
+                    toastVersion++
+                    frameTick++
                   }
-                  syncEquippedCosmeticsToEngine(engine)
-                  engine.onStatsUpdated()
-                  pushLivePilotHeartbeatNow()
-                  isNexusShellOpen = false
-                  sfx.playPrize()
-                  toastMessage = "ZONED INTO ${inst.modeTitle} // ${inst.riftLabel}"
-                  toastVersion++
-                  frameTick++
+                  enqueueOrExecuteResonanceMatchmaking(
+                    modeTitle = inst.modeTitle,
+                    riftLabel = inst.riftLabel,
+                    targetSectorKey = inst.key,
+                    rankedMode = targetMode,
+                    isCustomInstance = customCfg != null,
+                    onExecuteLaunch = executeDirectRiftIn,
+                  )
                 }
               },
               onStageRankedModeViaHangar = { mode, bracket ->
@@ -4045,6 +4328,182 @@ fun RiftArenaScreen(
                     Text(
                       text = "CONFIRM SWORN PILOT CALLSIGN",
                       fontSize = 11.5.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                    )
+                  }
+                }
+              }
+            }
+          }
+
+          val queueReq = activeMatchmakingQueue
+          if (queueReq != null) {
+            Box(
+              modifier =
+                Modifier.fillMaxSize()
+                  .zIndex(45f)
+                  .background(Color(0xD9030712))
+                  .clickable(enabled = false) {}
+                  .padding(20.dp)
+                  .testTag("resonance_matchmaking_modal"),
+              contentAlignment = Alignment.Center,
+            ) {
+              val remainingSec = (15.0f - matchmakingElapsedSec).coerceIn(0f, 15f)
+              val toleranceLabel =
+                if (matchmakingElapsedSec < 7.5f) {
+                  "BALANCED WINDOW (+/- 250 RES)"
+                } else {
+                  "OPEN BRACKET (ACCEPTING ANY AVAILABLE TEAM)"
+                }
+              Surface(
+                modifier =
+                  Modifier.widthIn(max = 460.dp)
+                    .fillMaxWidth()
+                    .border(1.5.dp, Color(0xFFFFD166), RoundedCornerShape(16.dp)),
+                color = Color(0xF5060D1A),
+                shape = RoundedCornerShape(16.dp),
+              ) {
+                Column(
+                  modifier = Modifier.padding(18.dp),
+                  verticalArrangement = Arrangement.spacedBy(10.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                  Text(
+                    text = "RESONANCE MATCHMAKING // ${queueReq.modeTitle}",
+                    color = Color(0xFFFFD166),
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Text(
+                    text =
+                      "${queueReq.riftLabel} • TEAM AVG ${queueReq.teamAvgResonance} RES • $toleranceLabel",
+                    color = Color(0xFFE2E8F0),
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Text(
+                    text =
+                      String.format(
+                        Locale.US,
+                        "QUEUE TIME: %.1fs / 15.0s MAX (%.1fs REMAINING)",
+                        matchmakingElapsedSec,
+                        remainingSec,
+                      ),
+                    color = Color(0xFF00F5D4),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                  ) {
+                    if (!queueReq.requiresOpponentTeam) {
+                      Button(
+                        onClick = {
+                          val action = queueReq.onExecuteLaunch
+                          activeMatchmakingQueue = null
+                          action()
+                        },
+                        colors =
+                          ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF0E7490),
+                            contentColor = Color.White,
+                          ),
+                        border = BorderStroke(1.dp, Color(0xFF00F5D4)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier =
+                          Modifier.weight(1f)
+                            .height(40.dp)
+                            .testTag("matchmaking_deploy_now_btn"),
+                      ) {
+                        Text(
+                          text = "RIFT IN NOW",
+                          fontSize = 11.sp,
+                          fontWeight = FontWeight.Black,
+                          fontFamily = FontFamily.Monospace,
+                        )
+                      }
+                    }
+                    Button(
+                      onClick = {
+                        activeMatchmakingQueue = null
+                        sfx.playMutedClick()
+                      },
+                      colors =
+                        ButtonDefaults.buttonColors(
+                          containerColor = Color(0xFF1E293B),
+                          contentColor = Color(0xFFFCA5A5),
+                        ),
+                      border = BorderStroke(1.dp, Color(0xFFF87171)),
+                      shape = RoundedCornerShape(10.dp),
+                      modifier =
+                        Modifier.weight(1f)
+                          .height(40.dp)
+                          .testTag("matchmaking_cancel_btn"),
+                    ) {
+                      Text(
+                        text = "CANCEL QUEUE",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          val noTeamsMsg = matchmakingNoTeamsNotice
+          if (noTeamsMsg != null && activeMatchmakingQueue == null) {
+            Box(
+              modifier =
+                Modifier.fillMaxSize()
+                  .zIndex(46f)
+                  .background(Color(0xB802050B))
+                  .clickable { matchmakingNoTeamsNotice = null }
+                  .padding(20.dp)
+                  .testTag("matchmaking_no_teams_banner"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Surface(
+                modifier =
+                  Modifier.widthIn(max = 400.dp)
+                    .fillMaxWidth()
+                    .border(1.5.dp, Color(0xFFF87171), RoundedCornerShape(14.dp)),
+                color = Color(0xF5060D1A),
+                shape = RoundedCornerShape(14.dp),
+              ) {
+                Column(
+                  modifier = Modifier.padding(18.dp),
+                  verticalArrangement = Arrangement.spacedBy(10.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                  Text(
+                    text = noTeamsMsg,
+                    color = Color(0xFFFCA5A5),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Button(
+                    onClick = { matchmakingNoTeamsNotice = null },
+                    colors =
+                      ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1E293B),
+                        contentColor = Color.White,
+                      ),
+                    border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                  ) {
+                    Text(
+                      text = "ACKNOWLEDGE",
+                      fontSize = 11.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = FontFamily.Monospace,
                     )

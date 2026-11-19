@@ -683,6 +683,7 @@ fun NexusAiConsoleModal(
   onStageRankedModeViaHangar: ((RankedGameMode, Int) -> Unit)? = null,
   onStageCustomGameViaHangar: ((CustomGameConfig) -> Unit)? = null,
   onStageExistingCustomInstanceViaHangar: ((String) -> Unit)? = null,
+  isNetworkOnline: Boolean = true,
   embeddedModuleContent: (@Composable () -> Unit)? = null,
 ) {
   val context = LocalContext.current
@@ -1061,6 +1062,7 @@ fun NexusAiConsoleModal(
             syndicateOnlineCount = syndicateOnlineCount,
             strikeWingOnlineCount = strikeWingOnlineCount,
             unreadCommsCount = unreadCommsCount,
+            isNetworkOnline = isNetworkOnline,
             bootToNexusHub = bootToNexusHub,
             isInMatch = isInMatch,
             isStreaming = isStreaming,
@@ -1407,6 +1409,7 @@ private fun OrbitalHubSpatialStage(
   syndicateOnlineCount: Int,
   strikeWingOnlineCount: Int,
   unreadCommsCount: Int,
+  isNetworkOnline: Boolean = true,
   @Suppress("UNUSED_PARAMETER") bootToNexusHub: Boolean,
   isInMatch: Boolean,
   isStreaming: Boolean,
@@ -1502,11 +1505,10 @@ private fun OrbitalHubSpatialStage(
     }
   val citadelPrimaryStat = "$syndicateCardLabel • $wingLabel"
 
-  val currentSessionBounty = (engine?.localPlayer?.bounty ?: 100).toLong()
-  val peakBounty = maxOf(localPrefs.getAllTimeBountyPeak(), currentSessionBounty)
+  val peakResonance = maxOf(liveResonance, localPrefs.getPeakResonance(currentUserId.ifBlank { null }))
   val totalWins = localPrefs.getConvergencesWon()
   val archiveBadge = if (totalWins > 0L) "${totalWins}W" else null
-  val archivePrimaryStat = "PEAK ${String.format(Locale.US, "%,d", peakBounty)} BTY • $totalWins WINS"
+  val archivePrimaryStat = "PEAK ${String.format(Locale.US, "%,d", peakResonance)} RES • $totalWins WINS"
 
   val hangarEmblem =
     remember(clampedShipId, spriteRev, customShipRev, hullTrim) {
@@ -1746,20 +1748,24 @@ private fun OrbitalHubSpatialStage(
               )
             }
 
-            // Clickable ONLINE -> Chat & NEXUS AI (Subspace Comms)
+            // Clickable ONLINE / OFFLINE -> Chat & NEXUS AI (Subspace Comms)
             Box(
               modifier =
                 Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(Color(0xFF071E1B))
-                  .border(0.9.dp, Color(0xFF34D399).copy(alpha = 0.70f), RoundedCornerShape(6.dp))
+                  .background(if (isNetworkOnline) Color(0xFF071E1B) else Color(0xFF281906))
+                  .border(
+                    0.9.dp,
+                    if (isNetworkOnline) Color(0xFF34D399).copy(alpha = 0.78f) else Color(0xFFF59E0B).copy(alpha = 0.85f),
+                    RoundedCornerShape(6.dp),
+                  )
                   .clickable { onClickOnline() }
                   .padding(horizontal = 7.dp, vertical = 3.5.dp)
                   .testTag("nexus_top_online"),
               contentAlignment = Alignment.Center,
             ) {
               Text(
-                text = "$totalOnlinePilots ONLINE",
-                color = Color(0xFF34D399),
+                text = if (isNetworkOnline) "ONLINE • $totalOnlinePilots" else "OFFLINE • LOCAL",
+                color = if (isNetworkOnline) Color(0xFF34D399) else Color(0xFFFBBF24),
                 fontSize = 11.4.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
@@ -2313,7 +2319,7 @@ private fun HubMetallicEmblemPedestal(
  * 2. Concentric polar voxel/matrix rings (`0.96r .. 1.22r`) ripple inward (`sin(band - wt)`) from solid
  *    `#060D1A` tablet glass into live space, lit by directional cyan/gold rim-lighting reacting to Combined Resonance.
  * 3. Top Compact Switcher Pill (`<` • `Game Type • RIFT #XX • Combined RES` • `[FAV]` • `>`) +
- *    Bottom Compact Action Row (`[ QUICK ZONE IN // RIFT #XX ]` + `[ ALL MODES ]`).
+ *    Bottom Compact Action Row (`[ RIFT IN // RIFT #XX ]` + `[ ALL MODES ]`).
  */
 @Composable
 private fun RoundRipplingOverwatchAperture(
@@ -2753,7 +2759,7 @@ private fun RoundRipplingOverwatchAperture(
     }
 
     // BOTTOM COMPACT ACTION ROW:
-    // 1-Click [ QUICK ZONE IN // RIFT #XX ] + [ ALL MODES ] (CONVERGENCE GATE)
+    // 1-Click [ RIFT IN // RIFT #XX ] + [ ALL MODES ] (CONVERGENCE GATE)
     val quickZoneGlow =
       remember(isFocused) {
         Shadow(
@@ -2791,7 +2797,7 @@ private fun RoundRipplingOverwatchAperture(
         contentAlignment = Alignment.Center,
       ) {
         Text(
-          text = "[ QUICK ZONE IN // ${activeInstance.riftLabel} ]",
+          text = "[ RIFT IN // ${activeInstance.riftLabel} ]",
           color = Color.White,
           fontSize = 11.6.sp,
           fontWeight = FontWeight.Black,
@@ -3634,7 +3640,7 @@ private fun ZeroScrollRankedModeCard(
   val title = if (mode == RankedGameMode.RIFT_CONTROL) "RIFT CONTROL" else mode.title.uppercase(Locale.US)
   val desc =
     when (mode) {
-      RankedGameMode.SECTOR_CONVERGENCE -> "20-Pilot FFA / 1-5 Strike Wing • Circular Rift Safe Zone • +100❖ #1 Bounty."
+      RankedGameMode.SECTOR_CONVERGENCE -> "20-Pilot FFA / 1-5 Strike Wing • Nexus Station Safe Zone • +100 Shards #1 Resonance."
       RankedGameMode.RIFT_SKIRMISH -> "Best-of-3 Team Rounds • Opposite Warp Rifts • Locks Hull on Hangar Entry."
       RankedGameMode.FLUX_CORE -> "20-Pilot Carrier FFA • +1 Overcharge Tier / 5s • 30s Safe-Zone Eject."
       RankedGameMode.STASIS_BREACH -> "10v10 Stasis Jailbreak • No Safe Zone • Destroy 8,000 Flux Jail Core to free allies."

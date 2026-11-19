@@ -2561,7 +2561,18 @@ class RiftArenaView(
           s.syndicateTag.isNotEmpty() && s.syndicateTag !in RiftGameEngine.LEGACY_FOUNDRY_TAGS -> "[${s.syndicateTag}]"
           else -> "[GUEST]"
         }
-      val bountyText = if (isHvt) "HVT ${s.bounty}" else "${s.bounty}"
+      val displayedResonance =
+        when {
+          s.isLocalPlayer ->
+            engine.getShipResonance(s.shipId).let { if (it > 0) it else engine.liveResonance }
+          s.isHuman -> s.liveResonanceRating
+          else ->
+            kotlin.math.max(
+              s.liveResonanceRating,
+              (s.kills * 16 + kotlin.math.max(0, s.bounty - 100) / 4 - s.deaths * 4).coerceAtLeast(0),
+            )
+        }
+      val bountyText = if (isHvt) "HVT $displayedResonance RES" else "$displayedResonance RES"
       val teamColor =
         when {
           isFriendly -> Color.parseColor("#60A5FA")
@@ -3471,14 +3482,14 @@ class RiftArenaView(
     anomalyRingPaint.color = Color.argb((42 * opScale).toInt().coerceIn(18, 72), Color.red(hubSecondary), Color.green(hubSecondary), Color.blue(hubSecondary))
     canvas.drawCircle(szCX, szCY, szR * 0.72f, anomalyRingPaint)
 
-    // Layer 2: 5x Ship-Size (180px base world radius) Deep Space Nine (DS9) Metallic Safe-Zone Station Sprite
+    // Layer 2: 5x Ship-Size (180px base world radius) Nexus Station Metallic Safe-Zone Station Sprite
     // + Revolving Ops Holographic Ring + 8 Golden-Cyan Stabilizer Beams Bracing szR
     val stationR =
       (180f * RiftCalibrationState.safeZoneScale * szPadRec.pixelScale.coerceIn(0.65f, 1.45f))
         .coerceAtMost(szR * 0.86f)
         .coerceAtLeast(48f)
 
-    // 8 Golden-Cyan Stabilizer Beams projecting from the DS9 Outer Docking Ring outward to brace the szR Containment Ring + 8 Outward Emitter Chevrons
+    // 8 Golden-Cyan Stabilizer Beams projecting from the Nexus Station Outer Docking Ring outward to brace the szR Containment Ring + 8 Outward Emitter Chevrons
     for (i in 0 until 8) {
       val ang = i * (PI.toFloat() * 0.25f) + sin(tSec * 0.4f) * 0.02f
       val ca = cos(ang)
@@ -3520,13 +3531,13 @@ class RiftArenaView(
       canvas.drawCircle(chevTipX, chevTipY, 2.6f, obstacleBeaconPaint)
     }
 
-    // Smoothly Rotating 5x Metallic DS9 Safe-Zone Station Sprite (diameter = stationR * 2f)
+    // Smoothly Rotating 5x Metallic Nexus Station Sprite (diameter = stationR * 2f)
     val stationBmp = RiftSpriteBaker.safeZoneStationBitmap
     val halfBmp = stationBmp.width * 0.5f
     val stationScale = (stationR * 2f) / stationBmp.width.toFloat().coerceAtLeast(1f)
     val stationSpinDeg = (tSec * 7.5f) % 360f
 
-    // Subtle deep-space under-shadow beneath the 5x DS9 Station
+    // Subtle deep-space under-shadow beneath the 5x Nexus Station
     shadowMatrix.reset()
     shadowMatrix.postTranslate(-halfBmp, -halfBmp)
     shadowMatrix.postScale(stationScale * 0.98f, stationScale * 0.98f)

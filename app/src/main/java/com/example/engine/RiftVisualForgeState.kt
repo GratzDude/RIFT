@@ -32,10 +32,10 @@ enum class ForgeElementTarget(
   "Cryo Horizon" to "Glacial ice-blue circular Rift rim with frost-white horizon shimmer",
   "Crimson Lockdown" to "High-energy crimson circular Rift containment rim with deep obsidian edge",
  )),
- SAFE_ZONE_PAD("safe_zone_pad", "Safe Zone DS9 Station", "5x ship-scale metallic DS9 citadel & Ops holographic ring", ForgeElementLayer.WORLD, listOf(
-  "Sovereign Titanium" to "Brushed titanium steel DS9 docking ring and curved pylons with sky-cyan Ops holo-ring",
-  "Cardassian Gold" to "Gilded bronze-gold Cardassian bastion armor with warm solar-amber Ops holo-ring",
-  "Obsidian Bastion" to "Pitch-black obsidian citadel armor with electric teal clamps and Ops holo-ring",
+ SAFE_ZONE_PAD("safe_zone_pad", "Nexus Station", "5x ship-scale metallic Nexus Station & Ops holographic ring", ForgeElementLayer.WORLD, listOf(
+  "Sovereign Titanium" to "Brushed titanium steel Nexus Station docking ring and curved pylons with sky-cyan Ops holo-ring",
+  "Solar Gold" to "Gilded bronze-gold Nexus Station bastion armor with warm solar-amber Ops holo-ring",
+  "Obsidian Bastion" to "Pitch-black obsidian Nexus Station armor with electric teal clamps and Ops holo-ring",
  )),
  PLACED_STASIS_BARRIER("placed_stasis_barrier", "Placed Stasis Barrier", "45.0s deployed tethered hard-light forcefield", ForgeElementLayer.WORLD, listOf(
   "Tethered Cyan" to "Tethered electric cyan hard-light forcefield beam with twin emitter nodes",

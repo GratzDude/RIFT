@@ -100,6 +100,7 @@ import com.example.engine.ForgeElementTarget
 import com.example.engine.GreenCrate
 import com.example.engine.InterdictorBubbleEntity
 import com.example.engine.MusicSynthArchetype
+import com.example.engine.PowerUpCodexEntry
 import com.example.engine.RankedGameMode
 import com.example.engine.RiftArenaView
 import com.example.engine.RiftCalibrationState
@@ -133,6 +134,13 @@ enum class NexusForgeTab(val label: String, val accent: Color) {
   DEV_STUDIO_STAGE("1:1 PLAYFIELD STUDIO", Color(0xFFC084FC)),
 }
 
+private enum class DysonCreationTab(val label: String, val accent: Color) {
+  SHIPS_RIFT_FRAME("SHIPS & RIFT FRAME", Color(0xFF38BDF8)),
+  CUSTOM_BUFF_LAB("CUSTOM BUFF LAB", Color(0xFF34D399)),
+  AUDIO_SFX_LAB("TRACK A-C AUDIO & SFX", Color(0xFF00F5D4)),
+  SYNDICATE_CREST("SYNDICATE CREST", Color(0xFFFACC15)),
+}
+
 private enum class InspectorSubTab(val label: String) {
   SHADER_PALETTE("PROCEDURAL SHADER & PALETTE"),
   PHYSICS_HUD("PHYSICS & HUD ATTRIBUTES"),
@@ -147,6 +155,14 @@ private data class StudioBookmark(
 
 private data class StageHitEntry(
   val target: ForgeElementTarget,
+  val screenX: Float,
+  val screenY: Float,
+  val hitRadiusPx: Float,
+)
+
+private data class StageCrateBuffHitEntry(
+  val codexEntry: PowerUpCodexEntry?,
+  val customBuff: SpecialBuffRegistryEntry?,
   val screenX: Float,
   val screenY: Float,
   val hitRadiusPx: Float,
@@ -394,11 +410,43 @@ fun NexusForgeModal(
         context = context,
         engine = engine,
         sfx = sfx,
+        localPrefs = localPrefs,
+        currentUserId = currentUserId,
+        callsign = callsign,
+        syndicateTag = syndicateTag,
+        pilotLevel = pilotLevel,
+        riftShards = riftShards,
+        selectedShipId = selectedShipId,
+        activeCustomSlot = activeCustomSlot,
+        slot9BUnlocked = slot9BUnlocked,
+        slot9CUnlocked = slot9CUnlocked,
+        slot9DUnlocked = slot9DUnlocked,
+        slot9EUnlocked = slot9EUnlocked,
+        unlockFullNinthShipOverride = unlockFullNinthShipOverride,
+        sfxEnabled = sfxEnabled,
+        musicEnabled = musicEnabled,
+        musicBpm = musicBpm,
+        musicVolume = musicVolume,
+        sfxVolume = sfxVolume,
+        isCompactPhone = isCompactPhone,
         visualRev = visualRev,
         calibRev = calibRev,
         isFullScreenStage = true,
         shardBitmap = shardBitmap,
         shardReadoutText = shardReadoutText,
+        onSelectShipForDeploy = onSelectShipForDeploy,
+        onSaveCustomSlot = onSaveCustomSlot,
+        onSwitchCustomSlot = onSwitchCustomSlot,
+        onUnlockCustomSlot = onUnlockCustomSlot,
+        onForgeAiHullDesign = onForgeAiHullDesign,
+        onSpendRiftShards = onSpendRiftShards,
+        onToggleSfx = onToggleSfx,
+        onToggleMusic = onToggleMusic,
+        onChangeMusicBpm = onChangeMusicBpm,
+        onChangeMusicVolume = onChangeMusicVolume,
+        onChangeSfxVolume = onChangeSfxVolume,
+        onSelectMusicArchetype = onSelectMusicArchetype,
+        onForgeCustomMusicPrompt = onForgeCustomMusicPrompt,
         onExitToForgeTabs = {
           onToggleFullScreenStage(false)
           activeTab = NexusForgeTab.SHIP_COSMETICS
@@ -537,11 +585,43 @@ fun NexusForgeModal(
             context = context,
             engine = engine,
             sfx = sfx,
+            localPrefs = localPrefs,
+            currentUserId = currentUserId,
+            callsign = callsign,
+            syndicateTag = syndicateTag,
+            pilotLevel = pilotLevel,
+            riftShards = riftShards,
+            selectedShipId = selectedShipId,
+            activeCustomSlot = activeCustomSlot,
+            slot9BUnlocked = slot9BUnlocked,
+            slot9CUnlocked = slot9CUnlocked,
+            slot9DUnlocked = slot9DUnlocked,
+            slot9EUnlocked = slot9EUnlocked,
+            unlockFullNinthShipOverride = unlockFullNinthShipOverride,
+            sfxEnabled = sfxEnabled,
+            musicEnabled = musicEnabled,
+            musicBpm = musicBpm,
+            musicVolume = musicVolume,
+            sfxVolume = sfxVolume,
+            isCompactPhone = isCompactPhone,
             visualRev = visualRev,
             calibRev = calibRev,
             isFullScreenStage = false,
             shardBitmap = shardBitmap,
             shardReadoutText = shardReadoutText,
+            onSelectShipForDeploy = onSelectShipForDeploy,
+            onSaveCustomSlot = onSaveCustomSlot,
+            onSwitchCustomSlot = onSwitchCustomSlot,
+            onUnlockCustomSlot = onUnlockCustomSlot,
+            onForgeAiHullDesign = onForgeAiHullDesign,
+            onSpendRiftShards = onSpendRiftShards,
+            onToggleSfx = onToggleSfx,
+            onToggleMusic = onToggleMusic,
+            onChangeMusicBpm = onChangeMusicBpm,
+            onChangeMusicVolume = onChangeMusicVolume,
+            onChangeSfxVolume = onChangeSfxVolume,
+            onSelectMusicArchetype = onSelectMusicArchetype,
+            onForgeCustomMusicPrompt = onForgeCustomMusicPrompt,
             onExitToForgeTabs = { activeTab = NexusForgeTab.SHIP_COSMETICS },
             onToggleFullScreenStage = onToggleFullScreenStage,
             onEnterHudDragArenaMode = onEnterHudDragArenaMode,
@@ -825,7 +905,7 @@ private fun ShipAndCosmeticTurntableBay(
               if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) {
                 "[UNLOCK ${slotName.uppercase(Locale.US)} • 0]"
               } else {
-                "[UNLOCK ${slotName.uppercase(Locale.US)} • ❖${gate.shardCost}]"
+                "[UNLOCK ${slotName.uppercase(Locale.US)} • ${gate.shardCost} SHARDS]"
               }
             ForgeChip(
               text = if (unlocked) slotName.uppercase(Locale.US) else lockedLabel,
@@ -836,7 +916,7 @@ private fun ShipAndCosmeticTurntableBay(
               inspectedShipId = 10
               if (unlocked) onSwitchCustomSlot(slotName)
               else if (!onUnlockCustomSlot(slotName)) {
-                onShowToast("Requires ❖ ${gate.shardCost} Rift Shards")
+                onShowToast("Requires ${gate.shardCost} Rift Shards")
               }
             }
           }
@@ -904,7 +984,7 @@ private fun ShipAndCosmeticTurntableBay(
                 .testTag("forge_btn_synthesize_hull"),
           ) {
             Text(
-              if (isFirstFree) "[FORGE HULL • FREE]" else "[FORGE • ❖ 150]",
+              if (isFirstFree) "[FORGE HULL • FREE]" else "[FORGE • 150 SHARDS]",
               color = Color.White,
               fontSize = 8.5.sp,
               fontWeight = FontWeight.Black,
@@ -1011,7 +1091,7 @@ private fun ShipAndCosmeticTurntableBay(
                 isEquipped -> "[EQUIPPED]"
                 isUnlocked -> "[EQUIP]"
                 RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE -> "[UNLOCK • 0]"
-                else -> "[UNLOCK ❖${item.shardCost}]"
+                else -> "[UNLOCK ${item.shardCost} SHARDS]"
               }
             ForgeChip(
               text = unlockBtnLabel,
@@ -1046,7 +1126,7 @@ private fun ShipAndCosmeticTurntableBay(
                 cosmeticRefreshTick++
                 onShowToast("Unlocked & Equipped ${item.name}")
               } else {
-                onShowToast("Requires ❖ ${item.shardCost} Rift Shards")
+                onShowToast("Requires ${item.shardCost} Rift Shards")
               }
             }
           }
@@ -1924,11 +2004,43 @@ private fun DevPlayfieldAndHudStudioBay(
   context: Context,
   engine: RiftGameEngine,
   sfx: RiftSoundSynthesizer,
+  localPrefs: LocalPilotPrefs,
+  currentUserId: String,
+  callsign: String,
+  syndicateTag: String,
+  pilotLevel: Int,
+  riftShards: Long,
+  selectedShipId: Int,
+  activeCustomSlot: CustomShipLoadoutSlot,
+  slot9BUnlocked: Boolean,
+  slot9CUnlocked: Boolean,
+  slot9DUnlocked: Boolean,
+  slot9EUnlocked: Boolean,
+  unlockFullNinthShipOverride: Boolean,
+  sfxEnabled: Boolean,
+  musicEnabled: Boolean,
+  musicBpm: Int,
+  musicVolume: Float,
+  sfxVolume: Float,
+  isCompactPhone: Boolean,
   visualRev: Int,
   calibRev: Int,
   isFullScreenStage: Boolean,
   shardBitmap: androidx.compose.ui.graphics.ImageBitmap,
   shardReadoutText: String,
+  onSelectShipForDeploy: (Int) -> Unit,
+  onSaveCustomSlot: (CustomShipLoadoutSlot) -> Unit,
+  onSwitchCustomSlot: (String) -> Unit,
+  onUnlockCustomSlot: (String) -> Boolean,
+  onForgeAiHullDesign: (String, String) -> Pair<Boolean, String>,
+  onSpendRiftShards: (Long) -> Boolean,
+  onToggleSfx: () -> Unit,
+  onToggleMusic: () -> Unit,
+  onChangeMusicBpm: (Int) -> Unit,
+  onChangeMusicVolume: (Float) -> Unit,
+  onChangeSfxVolume: (Float) -> Unit,
+  onSelectMusicArchetype: (MusicSynthArchetype) -> Unit,
+  onForgeCustomMusicPrompt: (String) -> Unit,
   onExitToForgeTabs: () -> Unit,
   onToggleFullScreenStage: (Boolean) -> Unit,
   onEnterHudDragArenaMode: () -> Unit,
@@ -1936,14 +2048,32 @@ private fun DevPlayfieldAndHudStudioBay(
   onShowToast: (String) -> Unit,
 ) {
   var isTestFlightMode by remember { mutableStateOf(false) }
-  var wasInLiveMatchBeforeStudio by remember { mutableStateOf(engine.hasJoinedMatch) }
   var layerFilter by remember { mutableStateOf<ForgeElementLayer?>(null) }
   var selectedTarget by remember { mutableStateOf(ForgeElementTarget.SAFE_ZONE_PAD) }
   var editingModalTarget by remember { mutableStateOf<ForgeElementTarget?>(null) }
+  var showDysonCreationOverlay by remember { mutableStateOf(false) }
+  var activeDysonTab by remember { mutableStateOf(DysonCreationTab.SHIPS_RIFT_FRAME) }
+  var editingCrateBuffSelection by remember { mutableStateOf<Pair<PowerUpCodexEntry?, SpecialBuffRegistryEntry?>?>(null) }
+  var customBuffRosterTick by remember { mutableIntStateOf(0) }
   var showCombatSandboxModal by remember { mutableStateOf(false) }
   var showImportJsonDialog by remember { mutableStateOf(false) }
   var importJsonDraft by remember { mutableStateOf("") }
   var sandboxShipFilter by remember { mutableIntStateOf(0) }
+
+  // Isolated Sandbox RiftGameEngine for [120HZ TEST FLIGHT] — NEVER mutates the live ranked `engine`!
+  val sandboxFlightEngine = remember {
+    RiftGameEngine(
+      sfx = sfx,
+      onStatsUpdated = {},
+      onPrizeToast = onShowToast,
+    ).apply {
+      localPlayer.callsign = callsign
+      localPlayer.syndicateTag = syndicateTag
+      cameraZoom = engine.cameraZoom
+      playfieldTextScale = engine.playfieldTextScale
+      switchLocalPlayerShip(selectedShipId.coerceIn(1, 10), forceFromHangar = true)
+    }
+  }
 
   var camWorldX by remember { mutableFloatStateOf(4000f) }
   var camWorldY by remember { mutableFloatStateOf(4000f) }
@@ -1973,33 +2103,31 @@ private fun DevPlayfieldAndHudStudioBay(
       ForgeElementTarget.entries.filter { layerFilter == null || it.layer == layerFilter }
     }
 
+  val customForgedBuffsOnStage =
+    remember(calibRev, visualRev, customBuffRosterTick) {
+      RiftCodex.getCustomForgedBuffs()
+    }
+
   fun exitTestFlightCleanly() {
     isTestFlightMode = false
-    if (!wasInLiveMatchBeforeStudio) {
-      engine.leaveActiveMatchToNexusOrbit()
-    }
-    engine.isInLobbyStaging = true
+    sandboxFlightEngine.leaveActiveMatchToNexusOrbit()
+    sandboxFlightEngine.isInLobbyStaging = true
   }
 
   DisposableEffect(Unit) {
     onDispose {
-      if (isTestFlightMode && !wasInLiveMatchBeforeStudio) {
-        engine.leaveActiveMatchToNexusOrbit()
+      if (isTestFlightMode) {
+        sandboxFlightEngine.leaveActiveMatchToNexusOrbit()
       }
     }
   }
 
   Box(modifier = Modifier.fillMaxSize().background(Color(0xFF02050B))) {
     if (isTestFlightMode) {
-      DisposableEffect(Unit) {
-        val prevStaging = engine.isInLobbyStaging
-        engine.isInLobbyStaging = false
-        onDispose { engine.isInLobbyStaging = prevStaging }
-      }
       AndroidView(
         modifier = Modifier.fillMaxSize().testTag("dev_forge_test_flight_arena"),
         factory = { ctx ->
-          RiftArenaView(context = ctx, engine = engine).apply {
+          RiftArenaView(context = ctx, engine = sandboxFlightEngine).apply {
             isModalOverlayOpen = false
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             requestFocus()
@@ -2008,13 +2136,13 @@ private fun DevPlayfieldAndHudStudioBay(
         update = { view -> view.isModalOverlayOpen = false },
       )
       RiftHudOverlay(
-        engine = engine,
+        engine = sandboxFlightEngine,
         fps = 120,
         sfxEnabled = true,
         unreadCommsCount = 0,
         toastMessage = null,
         frameTick = testFlightFrameTick,
-        cameraZoom = engine.cameraZoom,
+        cameraZoom = sandboxFlightEngine.cameraZoom,
         onOpenHangar = { exitTestFlightCleanly() },
         onOpenCodex = { exitTestFlightCleanly() },
         onOpenSyndicateCommand = { exitTestFlightCleanly() },
@@ -2024,8 +2152,8 @@ private fun DevPlayfieldAndHudStudioBay(
         onOpenSettings = { exitTestFlightCleanly() },
         isModalOpen = false,
         onOpenNexus = { exitTestFlightCleanly() },
-        onEngageBrake = { engine.autoBraking = !engine.autoBraking },
-        onToggleMultifire = { engine.localPlayer.multifireOn = !engine.localPlayer.multifireOn },
+        onEngageBrake = { sandboxFlightEngine.autoBraking = !sandboxFlightEngine.autoBraking },
+        onToggleMultifire = { sandboxFlightEngine.localPlayer.multifireOn = !sandboxFlightEngine.localPlayer.multifireOn },
       )
       Row(
         modifier =
@@ -2052,7 +2180,7 @@ private fun DevPlayfieldAndHudStudioBay(
         ) { exitTestFlightCleanly() }
         Text("HULL:", color = Color(0xFF00F5D4), fontSize = 8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
         for (shipId in 1..10) {
-          val active = engine.localPlayer.shipId == shipId
+          val active = sandboxFlightEngine.localPlayer.shipId == shipId
           ForgeChip(
             text = "$shipId",
             bg = if (active) Color(0xFF0284C7) else Color(0xFF0F172A),
@@ -2061,11 +2189,15 @@ private fun DevPlayfieldAndHudStudioBay(
             radius = 5.dp,
             px = 6.dp,
             py = 2.5.dp,
-          ) { engine.switchLocalPlayerShip(shipId, forceFromHangar = true) }
+          ) { sandboxFlightEngine.switchLocalPlayerShip(shipId, forceFromHangar = true) }
         }
       }
     } else {
       val hitEntriesState = remember { mutableListOf<StageHitEntry>() }
+      val crateBuffHitsState = remember { mutableListOf<StageCrateBuffHitEntry>() }
+      var dysonSunScreenCenter by remember { mutableStateOf(Offset.Zero) }
+      var dysonSunHitRadiusPx by remember { mutableFloatStateOf(0f) }
+
       Canvas(
         modifier =
           Modifier.fillMaxSize()
@@ -2074,7 +2206,6 @@ private fun DevPlayfieldAndHudStudioBay(
                 val orb = RiftVisualForgeState.pointLightTestOrbWorldPos
                 val baseScale = engine.effectiveCameraScale() * studioZoom
                 if (orb != null && hypot(pan.x, pan.y) > 0.5f && zoom == 1f) {
-                  // Check if dragging near the test orb; otherwise pan the 1:1 camera
                   val w = size.width.toFloat()
                   val h = size.height.toFloat()
                   val orbSx = w * 0.5f + (orb.x - camWorldX) * baseScale
@@ -2091,8 +2222,37 @@ private fun DevPlayfieldAndHudStudioBay(
                 }
               }
             }
-            .pointerInput(layerFilter, visualRev, calibRev, camWorldX, camWorldY, studioZoom) {
+            .pointerInput(layerFilter, visualRev, calibRev, camWorldX, camWorldY, studioZoom, customBuffRosterTick) {
               detectTapGestures { tapOffset ->
+                // 1. Check 180px Dyson Sun "STAR FORGE" Centerpiece tap first
+                if (
+                  layerFilter != ForgeElementLayer.HUD &&
+                    dysonSunHitRadiusPx > 4f &&
+                    hypot(tapOffset.x - dysonSunScreenCenter.x, tapOffset.y - dysonSunScreenCenter.y) <= dysonSunHitRadiusPx
+                ) {
+                  editingModalTarget = null
+                  editingCrateBuffSelection = null
+                  showDysonCreationOverlay = true
+                  sfx.playPrize()
+                  return@detectTapGestures
+                }
+
+                // 2. Check individual Supply Crate Buff specimens on the 1:1 playfield
+                if (layerFilter != ForgeElementLayer.HUD) {
+                  val crateHit =
+                    crateBuffHitsState
+                      .filter { hypot(tapOffset.x - it.screenX, tapOffset.y - it.screenY) <= it.hitRadiusPx }
+                      .minByOrNull { hypot(tapOffset.x - it.screenX, tapOffset.y - it.screenY) }
+                  if (crateHit != null) {
+                    editingModalTarget = null
+                    showDysonCreationOverlay = false
+                    editingCrateBuffSelection = Pair(crateHit.codexEntry, crateHit.customBuff)
+                    sfx.playMutedClick()
+                    return@detectTapGestures
+                  }
+                }
+
+                // 3. Check 36 World & HUD ForgeElementTarget specimens
                 val hit =
                   hitEntriesState
                     .filter { layerFilter == null || it.target.layer == layerFilter }
@@ -2100,6 +2260,8 @@ private fun DevPlayfieldAndHudStudioBay(
                     .minByOrNull { hypot(tapOffset.x - it.screenX, tapOffset.y - it.screenY) / it.hitRadiusPx.coerceAtLeast(16f) }
                 if (hit != null) {
                   selectedTarget = hit.target
+                  editingCrateBuffSelection = null
+                  showDysonCreationOverlay = false
                   editingModalTarget = hit.target
                   sfx.playMutedClick()
                 }
@@ -2118,6 +2280,8 @@ private fun DevPlayfieldAndHudStudioBay(
         fun w2sY(wy: Float): Float = h * 0.5f + (wy - camWorldY) * worldScale
 
         hitEntriesState.clear()
+        crateBuffHitsState.clear()
+        dysonSunHitRadiusPx = 0f
 
         // 1. Deep-Space Nebula & Stars (1:1 backdrop)
         val bgRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.BACKGROUND_NEBULA)
@@ -2158,7 +2322,7 @@ private fun DevPlayfieldAndHudStudioBay(
         hitEntriesState += StageHitEntry(ForgeElementTarget.BACKGROUND_NEBULA, w * 0.08f, h * 0.20f, 44.dp.toPx())
 
         if (layerFilter != ForgeElementLayer.HUD) {
-          // 2. Outer Playfield Rift Storm Cloud Wall (at true arenaRadius = 3200f for studio clarity or engine.arenaRadius)
+          // 2. Outer Playfield Rift Storm Cloud Wall (1:1 at arenaRadius = 3200f)
           val perimRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.ARENA_PERIMETER_RING)
           val stormWorldR = 3200f
           val stormScreenCx = w2sX(4000f)
@@ -2172,7 +2336,6 @@ private fun DevPlayfieldAndHudStudioBay(
             timeSec = timeSec,
             recipe = perimRec,
           )
-          // Proximity branching arc lightning striking toward boundary scout hull within 220px
           val stormTopY = w2sY(4000f - stormWorldR)
           val scoutX = w2sX(4000f)
           val scoutY = w2sY(4000f - stormWorldR + 175f)
@@ -2187,7 +2350,7 @@ private fun DevPlayfieldAndHudStudioBay(
             hitEntriesState += StageHitEntry(ForgeElementTarget.ARENA_PERIMETER_RING, scoutX, stormTopY + 18f, 64.dp.toPx())
           }
 
-          // 3. Wall-less Circular Safe Zone Nexus Aperture + Safe Zone Rift Rim (1:1 at 4000, 4000)
+          // 3. Center (4000, 4000): 180px Dyson Sun "STAR FORGE" Centerpiece + Safe-Zone Rift Rim + Clickable Nexus Station Specimen
           val padRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SAFE_ZONE_PAD)
           val rimRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SAFE_ZONE_WALL)
           val szWorldR = 400f * RiftCalibrationState.safeZoneScale * padRec.pixelScale.coerceIn(0.65f, 1.35f)
@@ -2202,13 +2365,13 @@ private fun DevPlayfieldAndHudStudioBay(
             timeSec = timeSec,
             recipe = padRec,
           )
-          // Circular wall-less Rift Rim (zero box walls) + 8 Golden-Cyan Stabilizer Beams + 5x DS9 Metallic Station
-          val stationScreenR =
+          // 180px Dyson Sun with rotating 5-stop metallic Dyson rings emitting holographic "STAR FORGE"
+          val dysonScreenR =
             (180f * RiftCalibrationState.safeZoneScale * padRec.pixelScale.coerceIn(0.65f, 1.45f) * worldScale)
-              .coerceAtLeast(14f)
+              .coerceAtLeast(18f)
           for (bIdx in 0 until 8) {
             val ba = -timeSec * 0.14f + bIdx * (PI.toFloat() * 0.25f)
-            val bStart = Offset(szCx + cos(ba) * (stationScreenR * 0.86f), szCy + sin(ba) * (stationScreenR * 0.86f))
+            val bStart = Offset(szCx + cos(ba) * (dysonScreenR * 0.88f), szCy + sin(ba) * (dysonScreenR * 0.88f))
             val bEnd = Offset(szCx + cos(ba) * (szScreenR * 0.985f), szCy + sin(ba) * (szScreenR * 0.985f))
             drawLine(
               brush =
@@ -2224,27 +2387,44 @@ private fun DevPlayfieldAndHudStudioBay(
           }
           drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
+            RiftSpriteBaker.drawDysonSunStarForgeCenterpiece(
+              c = nc,
+              cx = szCx,
+              cy = szCy,
+              stationRadius = dysonScreenR,
+              timeSec = timeSec,
+              isSelected = showDysonCreationOverlay,
+            )
+
+            // Clickable Nexus Station Safe-Zone Specimen (north of Dyson Sun at 4000, 3420)
+            val nexusStationCx = w2sX(4000f)
+            val nexusStationCy = w2sY(3420f)
+            val nexusStationR = (118f * padRec.pixelScale.coerceIn(0.65f, 1.45f) * worldScale).coerceAtLeast(14f)
             val bmp = RiftSpriteBaker.safeZoneStationBitmap
             nc.save()
-            nc.translate(szCx, szCy)
+            nc.translate(nexusStationCx, nexusStationCy)
             nc.rotate((timeSec * 8f) % 360f)
             nc.drawBitmap(
               bmp,
               null,
-              android.graphics.RectF(-stationScreenR, -stationScreenR, stationScreenR, stationScreenR),
+              android.graphics.RectF(-nexusStationR, -nexusStationR, nexusStationR, nexusStationR),
               null,
             )
             nc.restore()
             RiftSpriteBaker.drawSafeZoneStationHoloRing(
               c = nc,
-              cx = szCx,
-              cy = szCy,
-              stationRadius = stationScreenR,
+              cx = nexusStationCx,
+              cy = nexusStationCy,
+              stationRadius = nexusStationR,
               timeSec = timeSec,
               isLockedOut = false,
               alphaScale = padRec.surfaceOpacity,
             )
+            hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_PAD, nexusStationCx, nexusStationCy, max(nexusStationR, 30.dp.toPx()))
           }
+          dysonSunScreenCenter = Offset(szCx, szCy)
+          dysonSunHitRadiusPx = max(dysonScreenR * 1.05f, 38.dp.toPx())
+
           drawCircle(
             color = Color(rimRec.glowColorInt).copy(alpha = (0.32f * rimRec.glowIntensity).coerceIn(0.08f, 0.85f)),
             radius = szScreenR,
@@ -2268,10 +2448,9 @@ private fun DevPlayfieldAndHudStudioBay(
               1.4.dp.toPx(),
             )
           }
-          hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_PAD, szCx, szCy, max(stationScreenR, 32.dp.toPx()))
-          hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_WALL, szCx, szCy - szScreenR, 44.dp.toPx())
+          hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_WALL, szCx + szScreenR, szCy, 44.dp.toPx())
 
-          // 4. True 1:1 Obstacles & Placed Stasis Barrier (Sector 2: West-NorthWest)
+          // 4. True 1:1 Obstacles & Round Metallic-Collared 2.5D Playfield Rifts
           drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
             fun drawObstacle1To1(target: ForgeElementTarget, type: SpaceObstacleType, wx: Float, wy: Float, worldRadius: Float) {
@@ -2288,7 +2467,6 @@ private fun DevPlayfieldAndHudStudioBay(
             drawObstacle1To1(ForgeElementTarget.OBSTACLE_SPACE_ASTEROID, SpaceObstacleType.CRYSTAL_ASTEROID, 2940f, 3740f, 84f)
             drawObstacle1To1(ForgeElementTarget.OBSTACLE_FLOATING_DEBRIS, SpaceObstacleType.FLOATING_DEBRIS, 3340f, 3740f, 70f)
 
-            // 5. True 1:1 Playfield Rifts (Sector 3: East-NorthEast)
             val baseRiftR = RiftCalibrationState.riftPhysicalRadius * RiftCalibrationState.anomalyScale
             fun drawRift1To1(target: ForgeElementTarget, anomType: AnomalyType, wx: Float, wy: Float) {
               val rec = RiftVisualForgeState.getRecipe(target)
@@ -2311,9 +2489,8 @@ private fun DevPlayfieldAndHudStudioBay(
             RiftSpriteBaker.draw3dPlayfieldRift(nc, AnomalyType.PHASE_RIFT_B, pBx, pBy, pR, -spinAngle)
             hitEntriesState += StageHitEntry(ForgeElementTarget.RIFT_PHASE_PAIR, (pAx + pBx) * 0.5f, (pAy + pBy) * 0.5f, max(pR * 1.5f, 36.dp.toPx()))
 
-            // Ship & Aura specimen (near center-east of Safe Zone Rift)
             val shipAuraRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SHIP_AURA_LABELS)
-            val shipSx = w2sX(4260f)
+            val shipSx = w2sX(4320f)
             val shipSy = w2sY(4080f)
             val shipR = 36f * RiftCalibrationState.shipScale * shipAuraRec.pixelScale * worldScale
             RiftSpriteBaker.drawMetallicShipOnCanvas(nc, shipSx, shipSy, shipR.coerceAtLeast(14f), engine.localPlayer.spec, isAllied = true)
@@ -2321,7 +2498,7 @@ private fun DevPlayfieldAndHudStudioBay(
           }
 
           val shipAuraRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SHIP_AURA_LABELS)
-          val shipSx = w2sX(4260f)
+          val shipSx = w2sX(4320f)
           val shipSy = w2sY(4080f)
           val shipAuraR = 46f * RiftCalibrationState.shipScale * shipAuraRec.pixelScale * worldScale
           drawArc(
@@ -2337,7 +2514,7 @@ private fun DevPlayfieldAndHudStudioBay(
           // Placed Stasis Barrier (1:1 length)
           val barRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.PLACED_STASIS_BARRIER)
           val barHalf = (RiftCalibrationState.stasisBarrierLength * 0.5f * barRec.pixelScale) * worldScale
-          val barX = w2sX(3520f)
+          val barX = w2sX(3480f)
           val barY = w2sY(3980f)
           drawLine(
             Color(barRec.glowColorInt).copy(alpha = 0.36f * barRec.glowIntensity.coerceIn(0.2f, 2f)),
@@ -2357,10 +2534,10 @@ private fun DevPlayfieldAndHudStudioBay(
           drawCircle(Color.White, 4.5.dp.toPx(), Offset(barX, barY + barHalf))
           hitEntriesState += StageHitEntry(ForgeElementTarget.PLACED_STASIS_BARRIER, barX, barY, max(barHalf, 32.dp.toPx()))
 
-          // 6. Sector 4 (South): Eclipse Stasis (275px), Flux Core Orb, Stasis Brig Jail, Supply Crate, Bolts & Proximity Mine
+          // 6. Sector 4 (South): Eclipse Stasis, Flux Core Orb, Stasis Brig Jail, Master Supply Crate Shader, Bolts, Proximity Mine & ALL Individual Supply Crate Buffs
           val stasisRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.ECLIPSE_STASIS_BUBBLE)
-          val stasisCx = w2sX(3640f)
-          val stasisCy = w2sY(4740f)
+          val stasisCx = w2sX(3540f)
+          val stasisCy = w2sY(4660f)
           val stasisR = (RiftCalibrationState.interdictorBubbleRadius * stasisRec.pixelScale * worldScale).coerceAtLeast(20f)
           drawShaderOrFallbackVortex(
             shader = vortexAgslShader,
@@ -2373,8 +2550,8 @@ private fun DevPlayfieldAndHudStudioBay(
           hitEntriesState += StageHitEntry(ForgeElementTarget.ECLIPSE_STASIS_BUBBLE, stasisCx, stasisCy, max(stasisR * 0.85f, 34.dp.toPx()))
 
           val coreRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.FLUX_CORE_ORB)
-          val coreCx = w2sX(4020f)
-          val coreCy = w2sY(4620f)
+          val coreCx = w2sX(4000f)
+          val coreCy = w2sY(4560f)
           val coreR = (38f * coreRec.pixelScale * worldScale).coerceAtLeast(12f)
           drawCircle(Color(coreRec.glowColorInt).copy(alpha = 0.34f), coreR * 1.65f, Offset(coreCx, coreCy))
           drawCircle(Color(coreRec.primaryColorInt), coreR, Offset(coreCx, coreCy))
@@ -2383,8 +2560,8 @@ private fun DevPlayfieldAndHudStudioBay(
           hitEntriesState += StageHitEntry(ForgeElementTarget.FLUX_CORE_ORB, coreCx, coreCy, max(coreR * 1.6f, 28.dp.toPx()))
 
           val brigRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.STASIS_BRIG_JAIL)
-          val brigCx = w2sX(4460f)
-          val brigCy = w2sY(4760f)
+          val brigCx = w2sX(4480f)
+          val brigCy = w2sY(4680f)
           val brigR = (360f * brigRec.pixelScale * worldScale).coerceAtLeast(26f)
           val brigCoreR = (54f * brigRec.pixelScale * worldScale).coerceAtLeast(10f)
           drawCircle(Color(brigRec.primaryColorInt).copy(alpha = 0.45f * brigRec.surfaceOpacity), brigR, Offset(brigCx, brigCy))
@@ -2394,8 +2571,8 @@ private fun DevPlayfieldAndHudStudioBay(
           hitEntriesState += StageHitEntry(ForgeElementTarget.STASIS_BRIG_JAIL, brigCx, brigCy, max(brigCoreR * 2.2f, 36.dp.toPx()))
 
           val crateRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SUPPLY_CRATE)
-          val crateCx = w2sX(3920f)
-          val crateCy = w2sY(4880f)
+          val crateCx = w2sX(3860f)
+          val crateCy = w2sY(4780f)
           val crateR = (39f * RiftCalibrationState.crateScale * crateRec.pixelScale * worldScale).coerceAtLeast(13f)
           drawCircle(
             Color(crateRec.glowColorInt).copy(alpha = (0.24f * crateRec.glowIntensity).coerceIn(0.06f, 0.55f)),
@@ -2415,11 +2592,71 @@ private fun DevPlayfieldAndHudStudioBay(
             val buffBmp = RiftSpriteBaker.getBuffIconBitmap(0)
             nc.drawBitmap(buffBmp, null, android.graphics.RectF(crateCx - iconR, crateCy - iconR, crateCx + iconR, crateCy + iconR), null)
           }
-          hitEntriesState += StageHitEntry(ForgeElementTarget.SUPPLY_CRATE, crateCx, crateCy, max(crateR * 1.8f, 28.dp.toPx()))
+          hitEntriesState += StageHitEntry(ForgeElementTarget.SUPPLY_CRATE, crateCx, crateCy, max(crateR * 1.55f, 26.dp.toPx()))
+
+          // ALL 15 Individual Supply Crate Buffs (RiftCodex.POWERUP_CODEX) + Custom Forged Buffs on 1:1 Playfield!
+          val officialBuffs = RiftCodex.POWERUP_CODEX
+          val totalBuffCount = officialBuffs.size + customForgedBuffsOnStage.size
+          val colsPerRow = 8
+          val labelPaint =
+            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+              color = android.graphics.Color.rgb(226, 232, 240)
+              textAlign = android.graphics.Paint.Align.CENTER
+              typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+              textSize = (11f * worldScale).coerceIn(8.5f, 13.5f)
+            }
+          drawIntoCanvas { c ->
+            val nc = c.nativeCanvas
+            val podBmp = RiftSpriteBaker.supplyPodFrameBitmap
+            for (idx in 0 until totalBuffCount) {
+              val row = idx / colsPerRow
+              val col = idx % colsPerRow
+              val wx = 3300f + col * 200f
+              val wy = 5080f + row * 195f
+              val bx = w2sX(wx)
+              val by = w2sY(wy)
+              val bCrateR = (36f * RiftCalibrationState.crateScale * crateRec.pixelScale * worldScale).coerceAtLeast(12f)
+              val podR = bCrateR * 1.12f
+              val iconR = bCrateR * 0.78f
+
+              val codexItem = officialBuffs.getOrNull(idx)
+              val customItem = if (codexItem == null) customForgedBuffsOnStage.getOrNull(idx - officialBuffs.size) else null
+              val buffBmp =
+                when {
+                  codexItem != null -> RiftSpriteBaker.getBuffIconBitmap(codexItem.buffTypeIndex)
+                  customItem != null -> RiftSpriteBaker.bakeCustomBuffIconBitmap(customItem, 64)
+                  else -> RiftSpriteBaker.getBuffIconBitmap(0)
+                }
+
+              nc.save()
+              nc.translate(bx, by)
+              nc.rotate(((timeSec * 32f) + idx * 24f) % 360f)
+              nc.drawBitmap(podBmp, null, android.graphics.RectF(-podR, -podR, podR, podR), null)
+              nc.restore()
+              nc.drawBitmap(buffBmp, null, android.graphics.RectF(bx - iconR, by - iconR, bx + iconR, by + iconR), null)
+
+              if (worldScale >= 0.44f) {
+                val shortTag =
+                  codexItem?.title?.substringBefore("(")?.trim()?.take(11)
+                    ?: customItem?.shortLabel?.take(11)
+                    ?: "BUFF"
+                nc.drawText(shortTag, bx, by + podR + (12f * worldScale).coerceAtLeast(10f), labelPaint)
+              }
+
+              crateBuffHitsState +=
+                StageCrateBuffHitEntry(
+                  codexEntry = codexItem,
+                  customBuff = customItem,
+                  screenX = bx,
+                  screenY = by,
+                  hitRadiusPx = max(podR * 1.25f, 24.dp.toPx()),
+                )
+            }
+          }
 
           val boltRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.PROJECTILE_PRIMARY_BOLT)
           val boltCx = w2sX(4120f)
-          val boltCy = w2sY(4860f)
+          val boltCy = w2sY(4760f)
           val boltLen = (34f * RiftCalibrationState.projectileScale * boltRec.pixelScale * worldScale).coerceAtLeast(14f)
           drawLine(
             Color(boltRec.glowColorInt).copy(alpha = 0.45f),
@@ -2439,7 +2676,7 @@ private fun DevPlayfieldAndHudStudioBay(
 
           val mineRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.PROJECTILE_PROXIMITY_MINE)
           val mineCx = w2sX(4120f)
-          val mineCy = w2sY(4980f)
+          val mineCy = w2sY(4890f)
           val mineR = (22f * RiftCalibrationState.projectileScale * mineRec.pixelScale * worldScale).coerceAtLeast(10f)
           val fuseR = (RiftCalibrationState.proxFuseRadius * 0.35f * worldScale).coerceAtLeast(mineR * 1.6f)
           drawCircle(Color(mineRec.glowColorInt).copy(alpha = 0.25f), fuseR, Offset(mineCx, mineCy), style = Stroke(1.2.dp.toPx()))
@@ -2509,7 +2746,6 @@ private fun DevPlayfieldAndHudStudioBay(
           drawHudPillSpecimen(ForgeElementTarget.HUD_SPECIAL_BUFF_BTN, w - 186.dp.toPx(), h - 166.dp.toPx(), 52.dp.toPx(), 52.dp.toPx(), isCircle = true)
           drawHudPillSpecimen(ForgeElementTarget.HUD_REPEL_BTN, w - 116.dp.toPx(), h - 206.dp.toPx(), 52.dp.toPx(), 52.dp.toPx(), isCircle = true)
 
-          // 3D Swirling Plasma Flux Toroid & Rift Shard Crystal specimens
           val fluxX = w * 0.50f - 104.dp.toPx()
           val fluxY = h - 76.dp.toPx()
           val shardX = w * 0.50f + 104.dp.toPx()
@@ -2525,7 +2761,7 @@ private fun DevPlayfieldAndHudStudioBay(
           hitEntriesState += StageHitEntry(ForgeElementTarget.CURRENCY_SHARD_ICON, shardX, shardY, 26.dp.toPx())
         }
 
-        // Subtle selection reticle around every staged specimen so any of the 36 targets is unmistakable to tap
+        // Subtle selection reticle around every staged specimen
         hitEntriesState.forEach { entry ->
           val isSel = entry.target == selectedTarget
           val rec = RiftVisualForgeState.getRecipe(entry.target)
@@ -2549,8 +2785,8 @@ private fun DevPlayfieldAndHudStudioBay(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(
-          "TAP ANY 1:1 ASSET OR CHIP TO REFORGE:",
-          color = Color(0xFFC084FC),
+          "TAP DYSON SUN, ANY CRATE BUFF, OR 1:1 ASSET:",
+          color = Color(0xFFFACC15),
           fontSize = 7.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
@@ -2604,6 +2840,20 @@ private fun DevPlayfieldAndHudStudioBay(
           ) { onExitToForgeTabs() }
         }
         ForgeChip(
+          text = "[DYSON FORGE CORE]",
+          bg = if (showDysonCreationOverlay) Color(0xFF523504) else Color(0xFF281906),
+          border = Color(0xFFFFD700),
+          textColor = Color(0xFFFEF08A),
+          fontSize = 8.sp,
+          px = 8.dp,
+          tag = "forge_btn_open_dyson_overlay",
+        ) {
+          editingModalTarget = null
+          editingCrateBuffSelection = null
+          showDysonCreationOverlay = !showDysonCreationOverlay
+          sfx.playPrize()
+        }
+        ForgeChip(
           text = "[1:1 FROZEN STAGE]",
           bg = if (!isTestFlightMode) Color(0xFF4C1D95) else Color(0xFF0E1B2E),
           border = Color(0xFFC084FC),
@@ -2623,12 +2873,31 @@ private fun DevPlayfieldAndHudStudioBay(
           tag = "dev_forge_mode_test_flight",
         ) {
           if (!isTestFlightMode) {
-            wasInLiveMatchBeforeStudio = engine.hasJoinedMatch
-            populateStudioShowcaseSector(engine)
-            engine.isInLobbyStaging = false
+            sandboxFlightEngine.localPlayer.callsign = callsign
+            sandboxFlightEngine.localPlayer.syndicateTag = syndicateTag
+            sandboxFlightEngine.switchLocalPlayerShip(selectedShipId.coerceIn(1, 10), forceFromHangar = true)
+            populateStudioShowcaseSector(sandboxFlightEngine)
+            sandboxFlightEngine.isInLobbyStaging = false
             editingModalTarget = null
+            editingCrateBuffSelection = null
+            showDysonCreationOverlay = false
             isTestFlightMode = true
           }
+        }
+        ForgeChip(
+          text = "[CRATE BUFFS (${RiftCodex.POWERUP_CODEX.size + customForgedBuffsOnStage.size})]",
+          bg = Color(0xFF0A241E),
+          border = Color(0xFF34D399),
+          textColor = Color(0xFFA7F3D0),
+          fontSize = 7.8.sp,
+          px = 7.dp,
+          tag = "forge_btn_jump_crate_buffs",
+        ) {
+          layerFilter = ForgeElementLayer.WORLD
+          camWorldX = 4000f
+          camWorldY = 5140f
+          studioZoom = 1.05f
+          sfx.playMutedClick()
         }
         listOf(null to "ALL (36)", ForgeElementLayer.WORLD to "WORLD (20)", ForgeElementLayer.HUD to "HUD (16)").forEach { (flt, lbl) ->
           val sel = layerFilter == flt
@@ -2776,6 +3045,169 @@ private fun DevPlayfieldAndHudStudioBay(
       }
     }
 
+    // 95% Obsidian-Glass Dyson Creation Overlay (opened by clicking the 180px Dyson Sun "STAR FORGE" centerpiece)
+    if (showDysonCreationOverlay) {
+      BackHandler { showDysonCreationOverlay = false }
+      Box(
+        modifier =
+          Modifier.fillMaxSize()
+            .background(Color(0xD902050B))
+            .clickable { showDysonCreationOverlay = false }
+            .zIndex(78f)
+            .testTag("forge_dyson_creation_overlay"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Column(
+          modifier =
+            Modifier.fillMaxWidth(0.95f)
+              .fillMaxHeight(0.94f)
+              .clip(RoundedCornerShape(16.dp))
+              .background(Color(0xF6060D1A))
+              .border(
+                1.5.dp,
+                Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFF00F5D4), Color(0xFFC084FC))),
+                RoundedCornerShape(16.dp),
+              )
+              .clickable(enabled = false) {}
+              .padding(12.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Row(
+              modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                "STAR FORGE // DYSON CREATION CORE",
+                color = Color(0xFFFFD700),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+              DysonCreationTab.entries.forEach { dTab ->
+                val isSel = activeDysonTab == dTab
+                ForgeChip(
+                  text = dTab.label,
+                  bg = if (isSel) dTab.accent.copy(alpha = 0.25f) else Color(0xFF0B1528),
+                  border = if (isSel) dTab.accent else dTab.accent.copy(alpha = 0.45f),
+                  textColor = if (isSel) Color.White else dTab.accent,
+                  fontSize = 8.4.sp,
+                  px = 9.dp,
+                  py = 5.dp,
+                  tag = "dyson_tab_${dTab.name.lowercase(Locale.US)}",
+                ) { activeDysonTab = dTab }
+              }
+              ForgeChip(
+                text = "[NEXUS STATION SHADER]",
+                bg = Color(0xFF0E293D),
+                border = Color(0xFF38BDF8),
+                textColor = Color(0xFFBAE6FD),
+                fontSize = 8.2.sp,
+                px = 8.dp,
+                py = 5.dp,
+              ) {
+                showDysonCreationOverlay = false
+                selectedTarget = ForgeElementTarget.SAFE_ZONE_PAD
+                editingModalTarget = ForgeElementTarget.SAFE_ZONE_PAD
+              }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            ForgeChip(
+              text = "[CLOSE TO 1:1 STAGE]",
+              bg = Color(0xFF4C1D95),
+              border = Color(0xFF00F5D4),
+              textColor = Color.White,
+              fontSize = 8.4.sp,
+              px = 10.dp,
+              py = 5.5.dp,
+              tag = "dyson_overlay_close_btn",
+            ) { showDysonCreationOverlay = false }
+          }
+
+          Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            when (activeDysonTab) {
+              DysonCreationTab.SHIPS_RIFT_FRAME ->
+                ShipAndCosmeticTurntableBay(
+                  localPrefs = localPrefs,
+                  currentUserId = currentUserId,
+                  pilotLevel = pilotLevel,
+                  riftShards = riftShards,
+                  selectedShipId = selectedShipId,
+                  activeCustomSlot = activeCustomSlot,
+                  slot9BUnlocked = slot9BUnlocked,
+                  slot9CUnlocked = slot9CUnlocked,
+                  slot9DUnlocked = slot9DUnlocked,
+                  slot9EUnlocked = slot9EUnlocked,
+                  unlockFullNinthShipOverride = unlockFullNinthShipOverride,
+                  isCompactPhone = isCompactPhone,
+                  onSelectShipForDeploy = onSelectShipForDeploy,
+                  onSaveCustomSlot = onSaveCustomSlot,
+                  onSwitchCustomSlot = onSwitchCustomSlot,
+                  onUnlockCustomSlot = onUnlockCustomSlot,
+                  onForgeAiHullDesign = onForgeAiHullDesign,
+                  onSpendRiftShards = onSpendRiftShards,
+                  onShowToast = onShowToast,
+                )
+              DysonCreationTab.CUSTOM_BUFF_LAB ->
+                CustomBuffForgeBay(context, engine, sfx, calibRev, onShowToast)
+              DysonCreationTab.AUDIO_SFX_LAB ->
+                SoundtrackAndSfxForgeBay(
+                  context = context,
+                  sfx = sfx,
+                  sfxEnabled = sfxEnabled,
+                  musicEnabled = musicEnabled,
+                  musicBpm = musicBpm,
+                  musicVolume = musicVolume,
+                  sfxVolume = sfxVolume,
+                  isCompactPhone = isCompactPhone,
+                  onToggleSfx = onToggleSfx,
+                  onToggleMusic = onToggleMusic,
+                  onChangeMusicBpm = onChangeMusicBpm,
+                  onChangeMusicVolume = onChangeMusicVolume,
+                  onChangeSfxVolume = onChangeSfxVolume,
+                  onSelectMusicArchetype = onSelectMusicArchetype,
+                  onForgeCustomMusicPrompt = onForgeCustomMusicPrompt,
+                  onShowToast = onShowToast,
+                )
+              DysonCreationTab.SYNDICATE_CREST ->
+                SyndicateCrestForgeBay(context, sfx, syndicateTag, callsign, visualRev, onShowToast)
+            }
+          }
+        }
+      }
+    }
+
+    // 95% Obsidian-Glass Individual Supply Crate Buff Inspector Modal (opened by clicking any Crate Buff on the 1:1 playfield)
+    val activeCrateBuffPair = editingCrateBuffSelection
+    if (activeCrateBuffPair != null) {
+      CrateBuffGlassInspectorModal(
+        codexEntry = activeCrateBuffPair.first,
+        initialCustomBuff = activeCrateBuffPair.second,
+        context = context,
+        engine = engine,
+        sfx = sfx,
+        continuousNanos = continuousNanos,
+        onOpenDysonCustomBuffLab = {
+          editingCrateBuffSelection = null
+          activeDysonTab = DysonCreationTab.CUSTOM_BUFF_LAB
+          showDysonCreationOverlay = true
+        },
+        onOpenPodShaderModal = {
+          editingCrateBuffSelection = null
+          selectedTarget = ForgeElementTarget.SUPPLY_CRATE
+          editingModalTarget = ForgeElementTarget.SUPPLY_CRATE
+        },
+        onBuffRosterChanged = { customBuffRosterTick++ },
+        onDismiss = { editingCrateBuffSelection = null },
+        onShowToast = onShowToast,
+      )
+    }
+
     // 95% Obsidian-Glass Combat Physics Sandbox Modal (when toggled)
     if (showCombatSandboxModal) {
       BackHandler { showCombatSandboxModal = false }
@@ -2864,6 +3296,253 @@ private fun DevPlayfieldAndHudStudioBay(
         onDismiss = { editingModalTarget = null },
         onShowToast = onShowToast,
       )
+    }
+  }
+}
+
+@Composable
+private fun CrateBuffGlassInspectorModal(
+  codexEntry: PowerUpCodexEntry?,
+  initialCustomBuff: SpecialBuffRegistryEntry?,
+  context: Context,
+  engine: RiftGameEngine,
+  sfx: RiftSoundSynthesizer,
+  continuousNanos: Long,
+  onOpenDysonCustomBuffLab: () -> Unit,
+  onOpenPodShaderModal: () -> Unit,
+  onBuffRosterChanged: () -> Unit,
+  onDismiss: () -> Unit,
+  onShowToast: (String) -> Unit,
+) {
+  BackHandler { onDismiss() }
+  var editableCustom by remember(initialCustomBuff) { mutableStateOf(initialCustomBuff) }
+  val title = codexEntry?.title ?: editableCustom?.officialName ?: "SUPPLY CRATE BUFF"
+  val category = codexEntry?.category ?: "CUSTOM FORGED SPECIAL BUFF (0 FLUX)"
+  val dropLabel =
+    if (codexEntry != null) "${codexEntry.dropRatePercent}% CRATE DROP WEIGHT"
+    else "CUSTOM FORGED CRATE POOL"
+  val summary =
+    codexEntry?.effectSummary
+      ?: editableCustom?.let {
+        "Custom ${it.specialEffect.name} tactical payload dealing ${it.damage.roundToInt()} DMG across ${it.blastRadius.roundToInt()}px radius at ${it.projectileSpeed.roundToInt()} px/s."
+      }
+      ?: ""
+  val tacticalNote =
+    codexEntry?.tacticalNote
+      ?: "Synthesized in the Dyson Star Forge Custom Buff Lab and injected directly into Supply Crates."
+
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .background(Color(0xD902050B))
+        .clickable { onDismiss() }
+        .zIndex(79f)
+        .testTag("forge_crate_buff_inspector_modal"),
+    contentAlignment = Alignment.Center,
+  ) {
+    Column(
+      modifier =
+        Modifier.fillMaxWidth(0.88f)
+          .fillMaxHeight(0.86f)
+          .clip(RoundedCornerShape(16.dp))
+          .background(Color(0xF6060D1A))
+          .border(
+            1.5.dp,
+            Brush.linearGradient(listOf(Color(0xFF34D399), Color(0xFF00F5D4), Color(0xFFFACC15))),
+            RoundedCornerShape(16.dp),
+          )
+          .clickable(enabled = false) {}
+          .padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = "1:1 SUPPLY CRATE BUFF INSPECTOR // $category",
+            color = Color(0xFF34D399),
+            fontSize = 9.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          Text(
+            text = title,
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          ForgeChip(
+            text = "[POD SHADER]",
+            bg = Color(0xFF0E293D),
+            border = Color(0xFF38BDF8),
+            textColor = Color(0xFFBAE6FD),
+            fontSize = 8.2.sp,
+            px = 8.dp,
+            py = 5.dp,
+          ) { onOpenPodShaderModal() }
+          ForgeChip(
+            text = "[DONE]",
+            bg = Color(0xFF065F46),
+            border = Color(0xFF00F5D4),
+            textColor = Color.White,
+            fontSize = 8.4.sp,
+            px = 10.dp,
+            py = 5.dp,
+          ) { onDismiss() }
+        }
+      }
+
+      Row(
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Box(
+          modifier =
+            Modifier.weight(0.38f)
+              .fillMaxHeight()
+              .clip(RoundedCornerShape(12.dp))
+              .background(Color(0xFF040914))
+              .border(1.dp, Color(0x5534D399), RoundedCornerShape(12.dp)),
+          contentAlignment = Alignment.Center,
+        ) {
+          Canvas(modifier = Modifier.fillMaxSize()) {
+            if (continuousNanos == Long.MIN_VALUE) return@Canvas
+            val t = (System.currentTimeMillis() % 60000L) / 1000f
+            val cx = size.width * 0.5f
+            val cy = size.height * 0.5f
+            val podR = (size.minDimension * 0.30f).coerceIn(28f, 84f)
+            val iconR = podR * 0.72f
+            drawCircle(Color(0x2834D399), podR * 1.32f, Offset(cx, cy))
+            drawIntoCanvas { c ->
+              val nc = c.nativeCanvas
+              val podBmp = RiftSpriteBaker.supplyPodFrameBitmap
+              val buffBmp =
+                when {
+                  codexEntry != null -> RiftSpriteBaker.getBuffIconBitmap(codexEntry.buffTypeIndex)
+                  editableCustom != null -> RiftSpriteBaker.bakeCustomBuffIconBitmap(editableCustom!!, 96)
+                  else -> RiftSpriteBaker.getBuffIconBitmap(0)
+                }
+              nc.save()
+              nc.translate(cx, cy)
+              nc.rotate((t * 34f) % 360f)
+              nc.drawBitmap(podBmp, null, android.graphics.RectF(-podR, -podR, podR, podR), null)
+              nc.restore()
+              nc.drawBitmap(buffBmp, null, android.graphics.RectF(cx - iconR, cy - iconR, cx + iconR, cy + iconR), null)
+            }
+          }
+          Text(
+            text = dropLabel,
+            color = Color(0xFFFACC15),
+            fontSize = 8.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+          )
+        }
+
+        Column(
+          modifier =
+            Modifier.weight(0.62f)
+              .fillMaxHeight()
+              .background(Color(0xFF071120), RoundedCornerShape(12.dp))
+              .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(12.dp))
+              .padding(12.dp)
+              .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+          Text(
+            text = summary,
+            color = Color(0xFFE2E8F0),
+            fontSize = 10.5.sp,
+            lineHeight = 15.sp,
+          )
+          Text(
+            text = "TACTICAL NOTE: $tacticalNote",
+            color = Color(0xFF67E8F9),
+            fontSize = 9.5.sp,
+            lineHeight = 13.5.sp,
+            fontFamily = FontFamily.Monospace,
+          )
+
+          val customSpec = editableCustom
+          if (customSpec != null) {
+            CompactForgeSliderRow(
+              "Payload Damage",
+              customSpec.damage,
+              40f..1400f,
+              "${customSpec.damage.roundToInt()} DMG",
+              Color(0xFF34D399),
+              onChange = {
+                val updated = customSpec.copy(damage = it)
+                editableCustom = updated
+                RiftCodex.registerCustomBuff(updated)
+                RiftCalibrationState.savePersistedLayout(context)
+                onBuffRosterChanged()
+              },
+            )
+            CompactForgeSliderRow(
+              "Blast / Field Radius",
+              customSpec.blastRadius,
+              60f..520f,
+              "${customSpec.blastRadius.roundToInt()} px",
+              Color(0xFF38BDF8),
+              onChange = {
+                val updated = customSpec.copy(blastRadius = it)
+                editableCustom = updated
+                RiftCodex.registerCustomBuff(updated)
+                RiftCalibrationState.savePersistedLayout(context)
+                onBuffRosterChanged()
+              },
+            )
+            CompactForgeSliderRow(
+              "Projectile Velocity",
+              customSpec.projectileSpeed,
+              160f..1300f,
+              "${customSpec.projectileSpeed.roundToInt()} px/s",
+              Color(0xFFFACC15),
+              onChange = {
+                val updated = customSpec.copy(projectileSpeed = it)
+                editableCustom = updated
+                RiftCodex.registerCustomBuff(updated)
+                RiftCalibrationState.savePersistedLayout(context)
+                onBuffRosterChanged()
+              },
+            )
+          }
+
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ForgeChip(
+              text = "[CLONE / FORGE VARIANT IN DYSON BUFF LAB]",
+              bg = Color(0xFF065F46),
+              border = Color(0xFF34D399),
+              textColor = Color.White,
+              fontSize = 8.5.sp,
+              px = 10.dp,
+              py = 6.dp,
+            ) {
+              if (codexEntry != null) {
+                val synth =
+                  SpecialBuffRegistryEntry.synthesizeFromPrompt(
+                    codexEntry.title + " " + codexEntry.effectSummary,
+                    RiftCodex.nextCustomBuffTypeIndex(),
+                  )
+                RiftCodex.registerCustomBuff(synth)
+                RiftCalibrationState.savePersistedLayout(context)
+                onBuffRosterChanged()
+                sfx.playPrize()
+                onShowToast("Cloned [${synth.officialName}] into Custom Crate Buff Roster")
+              }
+              onOpenDysonCustomBuffLab()
+            }
+          }
+        }
+      }
     }
   }
 }

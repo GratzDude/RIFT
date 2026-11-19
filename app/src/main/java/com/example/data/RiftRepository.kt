@@ -1,9 +1,14 @@
 package com.example.data
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import com.example.R
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
+import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -12,18 +17,81 @@ import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.MemoryCacheSettings
 import com.google.firebase.firestore.snapshots
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 
+object NetworkConnectivityMonitor {
+  fun isCurrentlyOnline(context: Context): Boolean {
+    return try {
+      val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+      val activeNet = cm.activeNetwork ?: return false
+      val caps = cm.getNetworkCapabilities(activeNet) ?: return false
+      caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  fun observeOnlineState(context: Context): Flow<Boolean> =
+    callbackFlow {
+        val appContext = context.applicationContext
+        val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        if (cm == null) {
+          trySend(false)
+          awaitClose {}
+          return@callbackFlow
+        }
+        trySend(isCurrentlyOnline(appContext))
+        val callback =
+          object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+              trySend(isCurrentlyOnline(appContext))
+            }
+
+            override fun onLost(network: Network) {
+              trySend(isCurrentlyOnline(appContext))
+            }
+
+            override fun onCapabilitiesChanged(
+              network: Network,
+              networkCapabilities: NetworkCapabilities,
+            ) {
+              val hasNet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+              trySend(hasNet || isCurrentlyOnline(appContext))
+            }
+          }
+        val registered =
+          try {
+            val req =
+              NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            cm.registerNetworkCallback(req, callback)
+            true
+          } catch (_: Exception) {
+            false
+          }
+        awaitClose {
+          if (registered) {
+            runCatching { cm.unregisterNetworkCallback(callback) }
+          }
+        }
+      }
+      .distinctUntilChanged()
+}
+
 typealias LiveCalibrationBroadcast = RiftRepository.LiveCalibrationBroadcast
 
 class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
+  private val localSeenMsByUid = ConcurrentHashMap<String, Long>()
 
   data class LiveCalibrationBroadcast(
     val customGameId: String = "",
@@ -433,6 +501,21 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     }
   }
 
+  private fun isPilotFreshEnough(
+    uid: String,
+    updatedAtMs: Long?,
+    nowMs: Long,
+    initialWindowMs: Long = 120_000L,
+  ): Boolean {
+    val lastSeenLocal = if (uid.isNotEmpty()) localSeenMsByUid[uid] else null
+    if (lastSeenLocal != null && (nowMs - lastSeenLocal) <= 95_000L) {
+      return true
+    }
+    if (updatedAtMs == null) return true
+    val skewSafeDelta = kotlin.math.abs(nowMs - updatedAtMs)
+    return skewSafeDelta <= initialWindowMs
+  }
+
   fun observeSectorPilots(sectorId: String): Flow<List<LivePilotState>> {
     val path = "sector_pilots"
     val safeSector = sanitizeMode(sectorId)
@@ -441,15 +524,38 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .snapshots()
       .map { snapshot ->
         val nowMs = System.currentTimeMillis()
+        for (change in snapshot.documentChanges) {
+          val docId = change.document.id.trim()
+          if (docId.isEmpty()) continue
+          when (change.type) {
+            DocumentChange.Type.ADDED -> {
+              val serverMs = change.document.getTimestamp("updatedAt")?.toDate()?.time
+              if (serverMs == null || kotlin.math.abs(nowMs - serverMs) <= 120_000L) {
+                localSeenMsByUid[docId] = nowMs
+              }
+            }
+            DocumentChange.Type.MODIFIED -> {
+              localSeenMsByUid[docId] = nowMs
+            }
+            DocumentChange.Type.REMOVED -> {
+              localSeenMsByUid.remove(docId)
+            }
+          }
+        }
         snapshot
           .toObjects(
             LivePilotState::class.java,
             DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
           )
           .filter { state ->
+            val cleanUid = state.userId.ifBlank { state.id }.trim()
             val updatedAtMs = state.updatedAt?.toDate()?.time
-            updatedAtMs == null || (nowMs - updatedAtMs) <= 60_000L
+            isPilotFreshEnough(cleanUid, updatedAtMs, nowMs, initialWindowMs = 120_000L)
           }
+          .sortedWith(
+            compareByDescending<LivePilotState> { it.liveResonance }
+              .thenByDescending { it.bounty }
+          )
       }
       .catch { error ->
         val firestoreError =
@@ -471,6 +577,24 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .snapshots()
       .map { snapshot ->
         val nowMs = System.currentTimeMillis()
+        for (change in snapshot.documentChanges) {
+          val docId = change.document.id.trim()
+          if (docId.isEmpty()) continue
+          when (change.type) {
+            DocumentChange.Type.ADDED -> {
+              val serverMs = change.document.getTimestamp("updatedAt")?.toDate()?.time
+              if (serverMs == null || kotlin.math.abs(nowMs - serverMs) <= 120_000L) {
+                localSeenMsByUid[docId] = nowMs
+              }
+            }
+            DocumentChange.Type.MODIFIED -> {
+              localSeenMsByUid[docId] = nowMs
+            }
+            DocumentChange.Type.REMOVED -> {
+              localSeenMsByUid.remove(docId)
+            }
+          }
+        }
         snapshot
           .toObjects(
             LivePilotState::class.java,
@@ -485,9 +609,12 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
               !cleanUid.startsWith("bot_", ignoreCase = true) &&
               cleanTag != "BOT" &&
               !state.callsign.contains("[BOT]", ignoreCase = true) &&
-              (updatedAtMs == null || (nowMs - updatedAtMs) <= 45_000L)
+              isPilotFreshEnough(cleanUid, updatedAtMs, nowMs, initialWindowMs = 120_000L)
           }
-          .sortedByDescending { it.bounty }
+          .sortedWith(
+            compareByDescending<LivePilotState> { it.liveResonance }
+              .thenByDescending { it.bounty }
+          )
       }
       .catch { error ->
         val firestoreError =

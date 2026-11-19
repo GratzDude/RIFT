@@ -248,7 +248,7 @@ private fun SwirlingNexusLockBackdrop(modifier: Modifier = Modifier, phase: Floa
   }
 }
 
-private fun DrawScope.drawApexResonanceHalo(phase: Float) {
+private fun DrawScope.drawBestShipResonanceCrownHalo(phase: Float) {
   val cx = size.width * 0.5f
   val cy = size.height * 0.5f
   val outerR = size.minDimension * 0.48f
@@ -257,56 +257,125 @@ private fun DrawScope.drawApexResonanceHalo(phase: Float) {
   val deg = Math.toDegrees(phase.toDouble()).toFloat()
   val strokeOuter = (outerR * 0.085f).coerceAtLeast(1.2f)
   val strokeInner = (outerR * 0.07f).coerceAtLeast(1.0f)
-  for (seg in 0 until 2) {
+  for (seg in 0 until 3) {
     drawArc(
-      color = HangarSolarGold.copy(alpha = 0.92f),
-      startAngle = deg + seg * 180f,
-      sweepAngle = 112f,
+      color = Color(0xFFFFD700).copy(alpha = 0.94f),
+      startAngle = deg + seg * 120f,
+      sweepAngle = 76f,
       useCenter = false,
       topLeft = Offset(cx - outerR, cy - outerR),
       size = Size(outerR * 2f, outerR * 2f),
       style = Stroke(width = strokeOuter, cap = StrokeCap.Round),
     )
     drawArc(
-      color = HangarNexusTeal.copy(alpha = 0.88f),
-      startAngle = -deg * 1.35f + 45f + seg * 180f,
-      sweepAngle = 96f,
+      color = Color(0xFFF59E0B).copy(alpha = 0.88f),
+      startAngle = -deg * 1.25f + 30f + seg * 120f,
+      sweepAngle = 64f,
       useCenter = false,
       topLeft = Offset(cx - innerR, cy - innerR),
       size = Size(innerR * 2f, innerR * 2f),
       style = Stroke(width = strokeInner, cap = StrokeCap.Round),
     )
   }
-  for (t in 0 until 8) {
-    val rad = phase * 0.65f + t * (Math.PI.toFloat() * 0.25f)
-    val c = cos(rad)
-    val s = sin(rad)
-    val tickCol = if (t % 2 == 0) HangarSolarGold else HangarNexusTeal
-    drawLine(
-      color = tickCol,
-      start = Offset(cx + c * (outerR * 0.90f), cy + s * (outerR * 0.90f)),
-      end = Offset(cx + c * (outerR * 1.04f), cy + s * (outerR * 1.04f)),
-      strokeWidth = strokeInner,
-      cap = StrokeCap.Round,
+}
+
+private fun DrawScope.drawDistinctHullCardBorders(
+  cornerRadiusPx: Float,
+  isBestShip: Boolean,
+  isLocked: Boolean,
+  isSelected: Boolean,
+  isEquipped: Boolean,
+  phase: Float,
+) {
+  val w = size.width
+  val h = size.height
+  if (w <= 8f || h <= 8f) return
+
+  // 1. BEST SHIP BORDER: Solar-Gold Harmonic Double-Bezel + 4 Golden Crown Corner Finials
+  if (isBestShip) {
+    val goldBright = Color(0xFFFFD700)
+    val goldDeep = Color(0xFFF59E0B)
+    val outerPad = 1.0.dp.toPx()
+    val innerPad = 3.6.dp.toPx()
+    drawRoundRect(
+      color = goldBright,
+      topLeft = Offset(outerPad, outerPad),
+      size = Size(w - outerPad * 2f, h - outerPad * 2f),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadiusPx, cornerRadiusPx),
+      style = Stroke(width = 1.7.dp.toPx()),
     )
+    drawRoundRect(
+      color = goldDeep.copy(alpha = 0.72f),
+      topLeft = Offset(innerPad, innerPad),
+      size = Size((w - innerPad * 2f).coerceAtLeast(2f), (h - innerPad * 2f).coerceAtLeast(2f)),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius((cornerRadiusPx - 2.dp.toPx()).coerceAtLeast(2f)),
+      style = Stroke(width = 0.9.dp.toPx()),
+    )
+    val finialArm = 8.dp.toPx()
+    val sw = 2.0.dp.toPx()
+    // 4 Crown Corner Finials
+    drawLine(goldBright, Offset(outerPad, outerPad + finialArm), Offset(outerPad, outerPad), sw, StrokeCap.Round)
+    drawLine(goldBright, Offset(outerPad, outerPad), Offset(outerPad + finialArm, outerPad), sw, StrokeCap.Round)
+    drawLine(goldBright, Offset(w - outerPad - finialArm, outerPad), Offset(w - outerPad, outerPad), sw, StrokeCap.Round)
+    drawLine(goldBright, Offset(w - outerPad, outerPad), Offset(w - outerPad, outerPad + finialArm), sw, StrokeCap.Round)
+    drawLine(goldBright, Offset(outerPad, h - outerPad - finialArm), Offset(outerPad, h - outerPad), sw, StrokeCap.Round)
+    drawLine(goldBright, Offset(outerPad, h - outerPad), Offset(outerPad + finialArm, h - outerPad), sw, StrokeCap.Round)
+    drawLine(goldBright, Offset(w - outerPad - finialArm, h - outerPad), Offset(w - outerPad, h - outerPad), sw, StrokeCap.Round)
+    drawLine(goldBright, Offset(w - outerPad, h - outerPad - finialArm), Offset(w - outerPad, h - outerPad), sw, StrokeCap.Round)
+  }
+
+  // 2. SELECTED / LOCKED / EQUIPPED BORDER: Cyan/Teal Swirling NEXUS Conduit Rail (inset if also Best Ship)
+  if (isLocked || isSelected || isEquipped) {
+    val inset = if (isBestShip) 5.2.dp.toPx() else 1.1.dp.toPx()
+    val conduitColor = if (isLocked) HangarNexusTeal else HangarElectricCyan
+    val dash =
+      androidx.compose.ui.graphics.PathEffect.dashPathEffect(
+        floatArrayOf(12.dp.toPx(), 4.5.dp.toPx()),
+        phase * 16f,
+      )
+    val cr = (cornerRadiusPx - inset * 0.65f).coerceAtLeast(3f)
+    drawRoundRect(
+      color = conduitColor,
+      topLeft = Offset(inset, inset),
+      size = Size((w - inset * 2f).coerceAtLeast(2f), (h - inset * 2f).coerceAtLeast(2f)),
+      cornerRadius = androidx.compose.ui.geometry.CornerRadius(cr, cr),
+      style = Stroke(width = if (isLocked) 1.9.dp.toPx() else 1.3.dp.toPx(), pathEffect = if (isLocked) dash else null),
+    )
+    // Mid-edge Cyan NEXUS Conduit LockChevrons so Selected/Locked never resembles Best Ship corners
+    val midX = w * 0.5f
+    val midY = h * 0.5f
+    val notch = 6.dp.toPx()
+    drawLine(conduitColor, Offset(midX - notch, inset), Offset(midX + notch, inset), 2.4.dp.toPx(), StrokeCap.Round)
+    drawLine(conduitColor, Offset(midX - notch, h - inset), Offset(midX + notch, h - inset), 2.4.dp.toPx(), StrokeCap.Round)
+    drawLine(conduitColor, Offset(inset, midY - notch), Offset(inset, midY + notch), 2.4.dp.toPx(), StrokeCap.Round)
+    drawLine(conduitColor, Offset(w - inset, midY - notch), Offset(w - inset, midY + notch), 2.4.dp.toPx(), StrokeCap.Round)
   }
 }
 
 @Composable
-private fun ApexMicroCrest(modifier: Modifier = Modifier) {
-  Box(
+private fun ShipResonanceGoldBadge(
+  shipResonance: Int,
+  isBestShip: Boolean = false,
+  modifier: Modifier = Modifier,
+) {
+  Row(
     modifier =
       modifier
         .clip(RoundedCornerShape(4.dp))
-        .background(HangarTabletAbyss)
-        .border(1.dp, HangarSolarGold, RoundedCornerShape(4.dp))
-        .padding(horizontal = 5.dp, vertical = 1.5.dp),
-    contentAlignment = Alignment.Center,
+        .background(Color(0xFF141004))
+        .border(
+          width = if (isBestShip) 1.1.dp else 0.85.dp,
+          color = if (isBestShip) Color(0xFFFFD700) else Color(0xFFF59E0B).copy(alpha = 0.78f),
+          shape = RoundedCornerShape(4.dp),
+        )
+        .padding(horizontal = 4.5.dp, vertical = 1.5.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(2.5.dp),
   ) {
     Text(
-      text = "APEX",
-      color = Color(0xFFFDE047),
-      fontSize = 8.5.sp,
+      text = "$shipResonance RES",
+      color = Color(0xFFFFD700),
+      fontSize = 8.4.sp,
       fontWeight = FontWeight.Black,
       fontFamily = Mono,
       maxLines = 1,
@@ -351,6 +420,7 @@ fun HangarModal(
   stagedTargetTitle: String? = null,
   stagedHullLockNotice: Boolean = false,
   onCancelStagedModeToGate: (() -> Unit)? = null,
+  shipResonances: Map<Int, Int> = emptyMap(),
 ) {
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   var callsignInput by remember(initialCallsign) { mutableStateOf(initialCallsign) }
@@ -559,8 +629,8 @@ fun HangarModal(
         ) {
           ResonanceCrestIcon(sizeDp = 15.dp)
           Text(
-            text = "$liveResonance ($startBounty BTY)",
-            color = HangarNexusTeal,
+            text = "$liveResonance RES",
+            color = Color(0xFFFFD700),
             fontSize = if (isCompactPhone) 9.5.sp else 10.sp,
             fontWeight = FontWeight.Black,
             fontFamily = Mono,
@@ -870,6 +940,7 @@ fun HangarModal(
                 MatrixShipComparisonCell(
                   modifier = Modifier.weight(1f).fillMaxHeight(),
                   ship = ship,
+                  shipResonance = shipResonances[ship.id] ?: 0,
                   spriteVersion = spriteVersion,
                   isSelected = currentShipId == ship.id,
                   isLocked = lockedShipId == ship.id,
@@ -888,6 +959,7 @@ fun HangarModal(
           val isTenthLocked = lockedShipId == 10
           val isTenthBest = clampedBestShipId == 10
           val isTenthEquipped = selectedShipId == 10
+          val tenthShipResonance = shipResonances[10] ?: 0
           val normalizedSlot = CustomShipLoadoutSlot.normalizeSlotId(activeCustomSlot.slotId)
           Box(
             modifier =
@@ -904,25 +976,20 @@ fun HangarModal(
                   )
                 )
                 .border(
-                  width = if (isTenthLocked || isTenthSelected || isTenthEquipped || isTenthBest) 1.6.dp else 1.dp,
-                  color =
-                    when {
-                      isTenthLocked -> HangarNexusTeal
-                      isTenthBest -> HangarSolarGold
-                      isTenthSelected -> Color(0xFFEC4899)
-                      isTenthEquipped -> HangarNexusTeal
-                      else -> Color(0xFFC084FC)
-                    },
+                  width = 1.dp,
+                  color = Color(0xFF332052),
                   shape = RoundedCornerShape(9.dp),
                 )
                 .clickable { handleHullTap(10) }
           ) {
             Canvas(modifier = Modifier.matchParentSize()) {
-              drawCornerTicks(
-                9.dp.toPx(),
-                2.dp.toPx(),
-                if (isTenthLocked) HangarNexusTeal else Color(0xFFC084FC),
-                if (isTenthBest) HangarSolarGold else Color(0xFFEC4899),
+              drawDistinctHullCardBorders(
+                cornerRadiusPx = 9.dp.toPx(),
+                isBestShip = isTenthBest,
+                isLocked = isTenthLocked,
+                isSelected = isTenthSelected,
+                isEquipped = isTenthEquipped,
+                phase = nexusSpinPhase,
               )
             }
             Row(
@@ -942,8 +1009,8 @@ fun HangarModal(
                       .border(
                         1.dp,
                         when {
+                          isTenthBest -> Color(0xFFFFD700)
                           isTenthLocked -> HangarNexusTeal
-                          isTenthBest -> HangarSolarGold
                           else -> Color(0xFFC084FC)
                         },
                         RoundedCornerShape(7.dp),
@@ -962,7 +1029,7 @@ fun HangarModal(
                   }
                   if (isTenthBest) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                      drawApexResonanceHalo(nexusSpinPhase)
+                      drawBestShipResonanceCrownHalo(nexusSpinPhase)
                     }
                   }
                   ShipSpritePreview(shipId = 10, sizeDp = 36)
@@ -981,9 +1048,7 @@ fun HangarModal(
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis,
                     )
-                    if (isTenthBest) {
-                      ApexMicroCrest()
-                    }
+                    ShipResonanceGoldBadge(shipResonance = tenthShipResonance, isBestShip = isTenthBest)
                     Text(
                       text =
                         when {
@@ -1084,6 +1149,7 @@ fun HangarModal(
         ShipComparisonInspectorPanel(
           modifier = Modifier.weight(0.38f).fillMaxHeight(),
           ship = inspectedShip,
+          shipResonance = shipResonances[inspectedShip.id] ?: 0,
           equippedShip = equippedShip,
           lockedShip = lockedShipSpec,
           isBestShip = inspectedShip.id == clampedBestShipId,
@@ -1115,6 +1181,7 @@ fun HangarModal(
 private fun MatrixShipComparisonCell(
   modifier: Modifier = Modifier,
   ship: ShipSpec,
+  shipResonance: Int = 0,
   spriteVersion: Int,
   isSelected: Boolean,
   isLocked: Boolean = false,
@@ -1125,13 +1192,6 @@ private fun MatrixShipComparisonCell(
   onSelect: () -> Unit,
 ) {
   val accentColor = Color(ship.accentColorHex)
-  val borderColor =
-    when {
-      isLocked -> HangarNexusTeal
-      isBestShip -> HangarSolarGold
-      isSelected || isEquipped -> HangarElectricCyan
-      else -> Color(0xFF1E3A5F)
-    }
   val bgColor =
     when {
       isLocked -> HangarTabletElevated
@@ -1146,25 +1206,17 @@ private fun MatrixShipComparisonCell(
         .testTag("hangar_ship_card_${ship.id}")
         .clip(RoundedCornerShape(8.dp))
         .background(bgColor)
-        .border(
-          if (isLocked || isBestShip || isSelected || isEquipped) 1.5.dp else 1.dp,
-          borderColor,
-          RoundedCornerShape(8.dp),
-        )
+        .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(8.dp))
         .clickable { onSelect() }
   ) {
     Canvas(modifier = Modifier.matchParentSize()) {
-      drawCornerTicks(
-        8.dp.toPx(),
-        1.8.dp.toPx(),
-        if (isLocked) HangarNexusTeal
-        else if (isBestShip) HangarSolarGold
-        else if (isSelected || isEquipped) HangarElectricCyan
-        else Color(0xFF1E3A5F),
-        if (isBestShip) HangarSolarGold
-        else if (isLocked) HangarNexusTeal
-        else if (isSelected || isEquipped) HangarElectricCyan
-        else Color(0xFF1E3A5F),
+      drawDistinctHullCardBorders(
+        cornerRadiusPx = 8.dp.toPx(),
+        isBestShip = isBestShip,
+        isLocked = isLocked,
+        isSelected = isSelected,
+        isEquipped = isEquipped,
+        phase = nexusSpinPhase,
       )
     }
     Column(
@@ -1197,8 +1249,8 @@ private fun MatrixShipComparisonCell(
                 .border(
                   1.dp,
                   when {
+                    isBestShip -> Color(0xFFFFD700)
                     isLocked -> HangarNexusTeal
-                    isBestShip -> HangarSolarGold
                     else -> accentColor.copy(alpha = 0.60f)
                   },
                   RoundedCornerShape(7.dp),
@@ -1217,7 +1269,7 @@ private fun MatrixShipComparisonCell(
             }
             if (isBestShip) {
               Canvas(modifier = Modifier.fillMaxSize()) {
-                drawApexResonanceHalo(nexusSpinPhase)
+                drawBestShipResonanceCrownHalo(nexusSpinPhase)
               }
             }
             Image(
@@ -1242,9 +1294,7 @@ private fun MatrixShipComparisonCell(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
-              if (isBestShip) {
-                ApexMicroCrest()
-              }
+              ShipResonanceGoldBadge(shipResonance = shipResonance, isBestShip = isBestShip)
             }
             Text(
               text = ship.role.uppercase(Locale.US),
@@ -1413,6 +1463,7 @@ private fun InspectorStatComparisonRow(
 private fun ShipComparisonInspectorPanel(
   modifier: Modifier = Modifier,
   ship: ShipSpec,
+  shipResonance: Int = 0,
   equippedShip: ShipSpec,
   lockedShip: ShipSpec? = null,
   isBestShip: Boolean = false,
@@ -1512,7 +1563,7 @@ private fun ShipComparisonInspectorPanel(
               style = Stroke(width = 1.dp.toPx()),
             )
             if (isBestShip) {
-              drawApexResonanceHalo(nexusSpinPhase)
+              drawBestShipResonanceCrownHalo(nexusSpinPhase)
             }
           }
           Image(
@@ -1534,9 +1585,7 @@ private fun ShipComparisonInspectorPanel(
               fontWeight = FontWeight.Black,
               fontFamily = Mono,
             )
-            if (isBestShip) {
-              ApexMicroCrest()
-            }
+            ShipResonanceGoldBadge(shipResonance = shipResonance, isBestShip = isBestShip)
           }
           Text(
             text = cleanTitle,

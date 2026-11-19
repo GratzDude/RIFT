@@ -53,7 +53,7 @@ sealed interface ShardPurchaseResult {
  * (Threshold Dynamics Studio, LLC).
  *
  * While [ENABLE_LIVE_PLAY_BILLING] is `false`, all testers operate with a non-depleting
- * `999,999❖` Rift Shard treasury so every cosmetic, Rift Frame bay (A–E), respec, and
+ * `999,999` Rift Shard treasury so every cosmetic, Rift Frame bay (A–E), respec, and
  * Hull Forge voucher can be tested freely while commercial Play Billing stays cleanly dormant.
  */
 object RiftBillingManager {
@@ -142,7 +142,7 @@ object RiftBillingManager {
       return ShardPurchaseResult.TesterModeDormantNotice(
         productId = sku.productId,
         message =
-          "TESTER TREASURY ACTIVE: INFINITE 999,999❖ ENABLED. " +
+          "TESTER TREASURY ACTIVE: INFINITE 999,999 RIFT SHARDS ENABLED. " +
             "GOOGLE PLAY BILLING ($STUDIO_LEGAL_NAME) STANDING BY FOR COMMERCIAL RELEASE.",
       )
     }
@@ -156,7 +156,7 @@ object RiftBillingManager {
     val signedInUid = Firebase.auth.currentUser?.uid?.trim().orEmpty().ifEmpty { currentUid.trim() }
     if (signedInUid.isEmpty() || signedInUid.startsWith("dev_")) {
       return ShardPurchaseResult.BillingUnavailable(
-        reason = "LINK GOOGLE PLAY / SWORN PILOT ACCOUNT IN HELM SYSTEMS BEFORE PURCHASING ❖."
+        reason = "LINK GOOGLE PLAY / SWORN PILOT ACCOUNT IN HELM SYSTEMS BEFORE PURCHASING RIFT SHARDS."
       )
     }
 

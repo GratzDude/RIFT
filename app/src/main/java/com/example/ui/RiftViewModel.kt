@@ -46,7 +46,7 @@ class RiftViewModel(
   val isGoogleAuthenticated: Boolean = Firebase.auth.currentUser != null,
 ) : ViewModel() {
 
-  private val _activeSectorId = MutableStateFlow("FFA")
+  private val _activeSectorId = MutableStateFlow("SECTOR_CONVERGENCE")
   val activeSectorId: StateFlow<String> = _activeSectorId.asStateFlow()
 
   private fun isCloudSessionReady(): Boolean {
@@ -605,8 +605,9 @@ class RiftViewModel(
     armadaTag: String = "SOLO",
     armadaTierSize: Int = 1,
   ) {
-    if (_activeSectorId.value != "FFA") {
-      _activeSectorId.value = "FFA"
+    val cleanMode = mode.trim().uppercase(java.util.Locale.US)
+    if (cleanMode.isNotEmpty() && _activeSectorId.value == "FFA") {
+      _activeSectorId.value = cleanMode
     }
     if (!isCloudSessionReady()) return
     viewModelScope.launch {
@@ -672,13 +673,17 @@ class RiftViewModel(
     bounty: Int,
     liveResonance: Int = 0,
   ) {
+    val cleanSector = sectorId.trim().uppercase(java.util.Locale.US).ifEmpty { "SECTOR_CONVERGENCE" }
+    if (_activeSectorId.value != cleanSector) {
+      _activeSectorId.value = cleanSector
+    }
     if (!isCloudSessionReady()) return
     viewModelScope.launch {
       try {
         repository.saveLivePilotState(
           LivePilotState(
             userId = currentUserId,
-            sectorId = sectorId,
+            sectorId = cleanSector,
             callsign = callsign,
             syndicateTag = syndicateTag,
             armadaName = armadaName,
