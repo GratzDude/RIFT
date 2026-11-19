@@ -1612,8 +1612,11 @@ fun RiftArenaScreen(
       RiftCalibrationState.isCalibrationModalOpen = false
     } else if (showFullChangelogModal) {
       showFullChangelogModal = false
-    } else if (isNexusShellOpen && activeNexusNode == NexusCoreNode.STAR_FORGE && isForgeFullScreenStage) {
+    } else if (isNexusShellOpen && activeNexusNode == NexusCoreNode.STAR_FORGE) {
+      RiftCalibrationState.isDraggingAnySlider = false
       isForgeFullScreenStage = false
+      forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+      activeNexusNode = NexusCoreNode.ORBITAL_HUB
     } else if (!isNexusShellOpen && engine.isEphemeralPracticeRift) {
       openNexusNode(NexusCoreNode.ORBITAL_HUB)
     } else if (isNexusShellOpen && activeNexusNode != NexusCoreNode.ORBITAL_HUB) {
@@ -3416,6 +3419,12 @@ fun RiftArenaScreen(
                           initialTab = forgeInitialTab,
                           isFullScreenStage = isForgeFullScreenStage,
                           onToggleFullScreenStage = { expanded -> isForgeFullScreenStage = expanded },
+                          onExitToNexusHub = {
+                            RiftCalibrationState.isDraggingAnySlider = false
+                            isForgeFullScreenStage = false
+                            forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+                            openNexusNode(NexusCoreNode.ORBITAL_HUB)
+                          },
                           onSelectShipForDeploy = { targetShipId ->
                             val clamped = targetShipId.coerceIn(1, 10)
                             selectedShipId = clamped

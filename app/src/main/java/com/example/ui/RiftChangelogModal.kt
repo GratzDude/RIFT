@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 83
+const val CURRENT_RIFT_BUILD_VERSION = 84
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,24 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 84,
+      versionTag = "v1.0.84 // BUILD #84",
+      releaseDate = "Nov 19, 2026",
+      headline = "Clean Single-Action Exit From 1:1 Star Forge to NEXUS Hub & Center Shifting Multicolored Dyson Sun Emitting Holographic 'STAR FORGE' Graphic Letters",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Clean Single-Action Exit From 1:1 Star Forge Back to NEXUS Hub (NexusForgeModal, MainActivity): Wired the 1:1 STAR FORGE top-bar [< NEXUS HUB] exit control, 120Hz Test Flight HUD/bar exit controls, and system Back navigation to exit STAR FORGE straight back to the NEXUS Hub (ORBITAL_HUB) in a single action without dropping into an intermediate sub-tab view, while ensuring Back inside 1:1 STAR FORGE cleanly dismisses any open glass overlay or Test Flight session first and clears all overlay flags on exit.",
+          "Center Shifting Multicolored Dyson Sun & Upward Holographic 'STAR FORGE' Graphic Letters (NexusForgeModal): Upgraded the Safe-Zone center (4000, 4000) 180px Dyson Sun centerpiece on the 1:1 STAR FORGE playfield with a continuously phase-shifting multicolored stellar photosphere, solar prominences, and 3D-occluded counter-rotating 5-stop metallic Dyson rings emitting upward volumetric projector rays, rising plasma motes, and custom beveled 3D holographic vector graphic letters spelling 'STAR FORGE', preserving 1-tap access to the Glass Dyson Creation Overlay without mutating live ranked state.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 83,
       versionTag = "v1.0.83 // BUILD #83",
       releaseDate = "Nov 19, 2026",
       headline = "1:1 Dyson Sun Star Forge & Supply Crate Buff Studio, Smooth Circular 2.5D Metallic Rifts & Nexus Station, Per-Ship Solar-Gold Resonance & Distinct Hangar Borders, 15s Resonance Matchmaking & Rift In, Plain-English Auth + Offline/Online Sync & Dynamic Aspect-Ratio Scaling",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "DYSON FORGE & RES",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
