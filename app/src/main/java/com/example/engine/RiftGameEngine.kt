@@ -281,6 +281,7 @@ data class ShipEntity(
   var warpInAnimTimer: Float = 0.65f,
   var deathLingerTimer: Float = 0f,
   var prevHeadingForBank: Float = angle,
+  var pendingRespawnBountyPenalty: Int = 0,
 ) {
   var empDisableTimer: Float
     get() = empTimer
@@ -327,6 +328,7 @@ data class BulletEntity(
   var phaseRiftCooldownTimer: Float = 0f,
   val ownerShipLabel: String = "Viper",
   val weaponLabel: String = "Primary Blaster",
+  val triggeredByShipId: String = "",
 )
 
 data class BombEntity(
@@ -379,6 +381,68 @@ data class SpatialAnomalyEntity(
   var partnerId: String = "",
   var absorbedWeaponCount: Int = 0,
   var isUnstableMergedRift: Boolean = false,
+)
+
+enum class PracticeTutorialStep(
+  val stepNumber: Int,
+  val title: String,
+  val body: String,
+) {
+  MOVEMENT_AND_BOOST(
+    stepNumber = 1,
+    title = "LEFT STICK: DRIFT & BOOST",
+    body =
+      "Drag the Left Stick to thrust with zero-G Newtonian drift. Push past the 80% amber ring to ignite Afterburner boost.",
+  ),
+  FIRING_AND_SHARED_FLUX(
+    stepNumber = 2,
+    title = "RIGHT STICK & SHARED FLUX",
+    body =
+      "Aim and fire with the Right Stick & Secondary controls. Weapons and hull shields share the center Flux Ring—over-firing drains your shields.",
+  ),
+  BUFF_CRATE(
+    stepNumber = 3,
+    title = "SUPPLY POD BUFF CRATES",
+    body =
+      "Fly over glowing 3D Supply Pods to equip tactical ordnance, Swarm Drones, Tractor/Lance beams, or stacked ammo upgrades.",
+  ),
+  OBSTACLE(
+    stepNumber = 4,
+    title = "OBSTACLES & ARMED STATIONS",
+    body =
+      "Crystal Asteroids shatter at 2,400 Flux damage to drop Supply Pods. Armed Stations return fire and unleash a 360-degree Nova every 10 hits.",
+  ),
+  PLAYFIELD_RIFT(
+    stepNumber = 5,
+    title = "ACTIVE PLAYFIELD RIFTS",
+    body =
+      "Spacetime Rifts bend combat: Phase Rifts teleport ships and fire, Repulsors slingshot hulls, Plasma Rifts sear shields, and Gravity Rifts swallow fire up to 440px.",
+  ),
+  SAFE_ZONE(
+    stepNumber = 6,
+    title = "CENTER SAFE-ZONE HARBOR",
+    body =
+      "The central 5x Orbital Station Safe Harbor disarms weapons and accelerates Flux recharge. Exiting grants a brief Phase Shield.",
+  ),
+  FREE_FLIGHT(
+    stepNumber = 7,
+    title = "FREE FLIGHT PRACTICE",
+    body =
+      "Fly around freely to get the feel of drift turns, bounce barrel-rolls, 1-10 hull swapping at top, and Shared Flux pacing.",
+  ),
+  ADD_BOT_AND_NEXUS(
+    stepNumber = 8,
+    title = "ADD SPARRING BOTS OR ENTER NEXUS",
+    body =
+      "Tap the stationary [+ ADD BOT] button in the top-left anytime to spawn AI sparring rivals, or tap [EXIT TO NEXUS] when ready for live Rifts.",
+  ),
+}
+
+data class PracticeHighlightWorldTarget(
+  val x: Float,
+  val y: Float,
+  val radius: Float,
+  val tagLabel: String,
 )
 
 data class PendingAsteroidRespawn(
@@ -790,8 +854,213 @@ class RiftGameEngine(
   // True while the player is browsing the NEXUS Command Hub / Modal windows before deploying into combat
   var isInLobbyStaging: Boolean = true
 
-  // True when flying in the on-demand ephemeral solo PRACTICE RIFT flight sandbox (0 bots, 0 remotes, 0 stat mutations)
+  // True when flying in the on-demand ephemeral solo PRACTICE RIFT flight sandbox (0 initial bots, 0 remotes, 0 stat mutations)
   var isEphemeralPracticeRift: Boolean = false
+  var practiceTutorialActive: Boolean = false
+  var practiceTutorialStepIndex: Int = 0
+  var practiceTutorialStepJumpFlashSec: Float = 0f
+  var practiceSpawnedBotCounter: Int = 0
+
+  fun currentPracticeTutorialStep(): PracticeTutorialStep? =
+    if (isEphemeralPracticeRift && practiceTutorialActive) {
+      PracticeTutorialStep.entries.getOrNull(practiceTutorialStepIndex)
+    } else {
+      null
+    }
+
+  /**
+   * Advances the Practice Rift tutorial strictly on manual [NEXT] button tap (never auto-advanced).
+   */
+  fun advancePracticeTutorialStep() {
+    if (!isEphemeralPracticeRift || !practiceTutorialActive) return
+    if (practiceTutorialStepIndex < PracticeTutorialStep.entries.lastIndex) {
+      practiceTutorialStepIndex++
+      practiceTutorialStepJumpFlashSec = 0.42f
+      ensurePracticeTutorialTargetsPresent()
+      sfx.playMutedClick()
+    } else {
+      practiceTutorialActive = false
+      practiceTutorialStepJumpFlashSec = 0f
+      sfx.playPrize()
+    }
+    onStatsUpdated()
+  }
+
+  /**
+   * Dismisses the Practice Rift tutorial strictly on manual [SKIP] button tap while keeping the pilot in Practice Rift.
+   */
+  fun skipPracticeTutorial() {
+    if (!practiceTutorialActive) return
+    practiceTutorialActive = false
+    practiceTutorialStepJumpFlashSec = 0f
+    sfx.playMutedClick()
+    onStatsUpdated()
+  }
+
+  fun activePracticeBotCount(): Int =
+    if (isEphemeralPracticeRift) ships.count { !it.isLocalPlayer && !it.isHuman } else 0
+
+  fun ensurePracticeTutorialTargetsPresent() {
+    if (!isEphemeralPracticeRift) return
+    if (greens.isEmpty()) {
+      val baseAng = localPlayer.angle
+      var placed = false
+      for (attempt in 0 until 20) {
+        val ang = baseAng + (attempt * 0.42f)
+        val dist = 340f + (attempt % 4) * 55f
+        val gx = (localPlayer.x + cos(ang) * dist).coerceIn(arenaCenterX - arenaRadius + 220f, arenaCenterX + arenaRadius - 220f)
+        val gy = (localPlayer.y + sin(ang) * dist).coerceIn(arenaCenterY - arenaRadius + 220f, arenaCenterY + arenaRadius - 220f)
+        if (isClearCrateSpawnPosition(gx, gy)) {
+          greens.add(
+            GreenCrate(
+              x = gx,
+              y = gy,
+              spinPhase = 0f,
+              buffType = attempt % 15,
+            )
+          )
+          placed = true
+          break
+        }
+      }
+      if (!placed) {
+        val sp = getPracticeRiftOpenSpawnPosition()
+        val clearSp = resolveClearCrateDropPosition(sp.first, sp.second)
+        greens.add(GreenCrate(x = clearSp.first, y = clearSp.second, spinPhase = 0f, buffType = 8))
+      }
+    }
+    if (walls.isEmpty()) {
+      val sp = getPracticeRiftOpenSpawnPosition()
+      walls.add(
+        WallRect(
+          x = sp.first - 96f,
+          y = sp.second - 96f,
+          w = 192f,
+          h = 192f,
+          style = SpaceObstacleStyle.CRYSTAL_ASTEROID,
+          variantSeed = 79,
+          hp = 2400f,
+          maxHp = 2400f,
+        )
+      )
+    }
+    if (anomalies.isEmpty()) {
+      spawnSingleAnomaly(AnomalyType.GRAVITY_RIFT)
+    }
+  }
+
+  fun resolvePracticeTutorialWorldTarget(): PracticeHighlightWorldTarget? {
+    val step = currentPracticeTutorialStep() ?: return null
+    val px = localPlayer.x
+    val py = localPlayer.y
+    return when (step) {
+      PracticeTutorialStep.BUFF_CRATE -> {
+        val crate = greens.minByOrNull { hypot(it.x - px, it.y - py) } ?: return null
+        PracticeHighlightWorldTarget(
+          x = crate.x,
+          y = crate.y,
+          radius = 66f,
+          tagLabel = "SUPPLY POD CRATE",
+        )
+      }
+      PracticeTutorialStep.OBSTACLE -> {
+        val wall =
+          walls.minByOrNull { hypot((it.x + it.w * 0.5f) - px, (it.y + it.h * 0.5f) - py) }
+            ?: return null
+        val wx = wall.x + wall.w * 0.5f
+        val wy = wall.y + wall.h * 0.5f
+        val rad = (hypot(wall.w, wall.h) * 0.52f + 22f).coerceAtLeast(86f)
+        val label =
+          when (wall.style) {
+            SpaceObstacleStyle.CRYSTAL_ASTEROID -> "CRYSTAL ASTEROID"
+            SpaceObstacleStyle.ORBITAL_STATION,
+            SpaceObstacleStyle.ASTEROID_STATION -> "ARMED STATION"
+            else -> "SECTOR OBSTACLE"
+          }
+        PracticeHighlightWorldTarget(x = wx, y = wy, radius = rad, tagLabel = label)
+      }
+      PracticeTutorialStep.PLAYFIELD_RIFT -> {
+        val anom = anomalies.minByOrNull { hypot(it.x - px, it.y - py) } ?: return null
+        val riftTitle =
+          when (anom.type) {
+            AnomalyType.GRAVITY_RIFT -> "GRAVITY RIFT"
+            AnomalyType.PLASMA_RIFT -> "PLASMA RIFT"
+            AnomalyType.REPULSOR_RIFT -> "REPULSOR RIFT"
+            AnomalyType.PHASE_RIFT_A,
+            AnomalyType.PHASE_RIFT_B -> "PHASE RIFT"
+          }
+        PracticeHighlightWorldTarget(
+          x = anom.x,
+          y = anom.y,
+          radius = anom.physicalRadius + 28f,
+          tagLabel = riftTitle,
+        )
+      }
+      PracticeTutorialStep.SAFE_ZONE -> {
+        PracticeHighlightWorldTarget(
+          x = arenaCenterX,
+          y = arenaCenterY,
+          radius = getSafeZoneRadius() + 20f,
+          tagLabel = "SAFE-ZONE HARBOR",
+        )
+      }
+      else -> null
+    }
+  }
+
+  fun spawnPracticeBot(): ShipEntity? {
+    if (!isEphemeralPracticeRift) return null
+    val idx = practiceSpawnedBotCounter++
+    val shipId = (idx % 9) + 1
+    val spec = RiftCodex.getShipById(shipId)
+    var spawnX = arenaCenterX + 760f
+    var spawnY = arenaCenterY
+    for (attempt in 0 until 36) {
+      val ang = localPlayer.angle + ((attempt * 0.55f) - 1.1f)
+      val dist = 620f + (attempt % 5) * 85f
+      val candX =
+        (localPlayer.x + cos(ang) * dist).coerceIn(
+          arenaCenterX - arenaRadius + 200f,
+          arenaCenterX + arenaRadius - 200f,
+        )
+      val candY =
+        (localPlayer.y + sin(ang) * dist).coerceIn(
+          arenaCenterY - arenaRadius + 200f,
+          arenaCenterY + arenaRadius - 200f,
+        )
+      if (!circleIntersectsWalls(candX, candY, 48f) && !isInsideSafeZone(candX, candY)) {
+        spawnX = candX
+        spawnY = candY
+        break
+      }
+    }
+    val headingToPlayer = atan2(localPlayer.y - spawnY, localPlayer.x - spawnX)
+    val bot =
+      ShipEntity(
+        id = "practice_bot_${idx + 1}",
+        callsign = BOT_CALLSIGNS[idx % BOT_CALLSIGNS.size],
+        syndicateTag = "BOT",
+        armadaName = "",
+        shipId = shipId,
+        spec = spec,
+        freq = 1,
+        isHuman = false,
+        isLocalPlayer = false,
+        x = spawnX,
+        y = spawnY,
+        angle = headingToPlayer,
+        weaponAngle = headingToPlayer,
+        bounty = 100,
+        phaseShieldTimer = 1.0f,
+        warpInAnimTimer = 0.65f,
+      )
+    ships.add(bot)
+    shockwaves.add(ShockwaveEntity(spawnX, spawnY, 16f, 165f, Color.parseColor("#00F5D4")))
+    sfx.playWarp()
+    onPrizeToast("PRACTICE BOT DEPLOYED // ${activePracticeBotCount()} IN SECTOR")
+    onStatsUpdated()
+    return bot
+  }
 
   // True when the NEXUS Hub circular Overwatch aperture is observing an active match without the local pilot joined
   var isHubOverwatchActive: Boolean = false
@@ -810,6 +1079,7 @@ class RiftGameEngine(
       hasJoinedMatch = false
       isInLobbyStaging = true
       isEphemeralPracticeRift = false
+      practiceTutorialActive = false
       isShipLockedForMatch = false
       spectatingTargetShipId = ""
       currentCustomGame = customConfig
@@ -886,10 +1156,14 @@ class RiftGameEngine(
     return (arenaCenterX + minR) to arenaCenterY
   }
 
-  fun enterEphemeralPracticeRift() {
+  fun enterEphemeralPracticeRift(startTutorial: Boolean = true) {
     isHubOverwatchActive = false
     currentOverwatchKey = ""
     isEphemeralPracticeRift = true
+    practiceTutorialActive = startTutorial
+    practiceTutorialStepIndex = 0
+    practiceTutorialStepJumpFlashSec = if (startTutorial) 0.42f else 0f
+    practiceSpawnedBotCounter = 0
     hasJoinedMatch = true
     isInLobbyStaging = false
     currentCustomGame = null
@@ -931,10 +1205,9 @@ class RiftGameEngine(
 
     generateSectorArena(Random.nextInt(10_000, 999_999))
 
-    ships.removeAll { !it.isLocalPlayer }
-    if (ships.none { it.isLocalPlayer }) {
-      ships.add(localPlayer)
-    }
+    // Strict 0-bot, 0-remote initial solo Practice Rift roster
+    ships.clear()
+    ships.add(localPlayer)
 
     val sp = getPracticeRiftOpenSpawnPosition()
     localPlayer.respawnTimer = 0f
@@ -945,6 +1218,9 @@ class RiftGameEngine(
     localPlayer.y = sp.second
     localPlayer.vx = 0f
     localPlayer.vy = 0f
+    localPlayer.kills = 0
+    localPlayer.deaths = 0
+    localPlayer.bounty = getLocalStartingBounty()
     localPlayer.visualBankRoll = 0f
     localPlayer.barrelRollTimer = 0f
     localPlayer.afterburning = false
@@ -962,6 +1238,20 @@ class RiftGameEngine(
     localPlayer.canFire = true
     localPlayer.weaponState = "ARMED"
     localPlayer.phaseShieldTimer = 1.25f
+
+    // Place a guaranteed visible Supply Pod near the pilot's practice spawn so Step 3 always has a close target
+    ensurePracticeTutorialTargetsPresent()
+    for (attempt in 0 until 20) {
+      val ang = localPlayer.angle + attempt * 0.45f
+      val dist = 300f + (attempt % 3) * 60f
+      val gx = localPlayer.x + cos(ang) * dist
+      val gy = localPlayer.y + sin(ang) * dist
+      if (isClearCrateSpawnPosition(gx, gy)) {
+        greens.removeAll { hypot(it.x - gx, it.y - gy) < 120f }
+        greens.add(0, GreenCrate(x = gx, y = gy, spinPhase = 0f, buffType = 8))
+        break
+      }
+    }
     sfx.playWarp()
   }
 
@@ -969,10 +1259,15 @@ class RiftGameEngine(
     isHubOverwatchActive = false
     currentOverwatchKey = ""
     isEphemeralPracticeRift = false
+    practiceTutorialActive = false
+    practiceTutorialStepIndex = 0
+    practiceTutorialStepJumpFlashSec = 0f
+    practiceSpawnedBotCounter = 0
     hasJoinedMatch = false
     isInLobbyStaging = true
     isShipLockedForMatch = false
     spectatingTargetShipId = ""
+    clearShipToggleBuffs(localPlayer, clearSlotIfActive = true)
     bullets.clear()
     bombs.clear()
     decoys.clear()
@@ -989,11 +1284,15 @@ class RiftGameEngine(
     ships.removeAll { !it.isLocalPlayer }
     localPlayer.vx = 0f
     localPlayer.vy = 0f
+    localPlayer.kills = 0
+    localPlayer.deaths = 0
+    localPlayer.bounty = getLocalStartingBounty()
     localPlayer.respawnTimer = 0f
     localPlayer.flux = localPlayer.maxFlux
     localPlayer.afterburning = false
     localPlayer.isIdleDraining = false
     localPlayer.playfieldIdleTimer = 0f
+    localPlayer.safeZoneStayTimer = 0f
   }
 
   fun computeTargetArenaRadius(totalShips: Int): Float =
@@ -1123,7 +1422,11 @@ class RiftGameEngine(
       RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
     }
 
-  fun adjustLocalResonance(delta: Int, reasonLabel: String = "") {
+  fun adjustLocalResonance(
+    delta: Int,
+    reasonLabel: String = "",
+    showFctEvenIfRespawning: Boolean = false,
+  ) {
     if (currentCustomGame != null || isEphemeralPracticeRift || delta == 0) return
     val prev = liveResonance
     liveResonance = (liveResonance + delta).coerceAtLeast(0)
@@ -1131,7 +1434,7 @@ class RiftGameEngine(
       peakResonance = liveResonance
     }
     val applied = liveResonance - prev
-    if (applied != 0 && localPlayer.respawnTimer <= 0f) {
+    if (applied != 0 && (localPlayer.respawnTimer <= 0f || showFctEvenIfRespawning)) {
       val sign = if (applied > 0) "+" else ""
       val suffix = if (reasonLabel.isNotBlank()) " ($reasonLabel)" else ""
       spawnPooledFct(
@@ -1139,7 +1442,7 @@ class RiftGameEngine(
         x = localPlayer.x,
         y = localPlayer.y - 42f,
         color = if (applied > 0) Color.parseColor("#00F5D4") else Color.parseColor("#F59E0B"),
-        maxLife = 1.15f,
+        maxLife = 1.25f,
       )
     }
   }
@@ -2397,9 +2700,9 @@ class RiftGameEngine(
     pendingBuffSpawns.clear()
     recentBuffSpawnLocations.clear()
     interdictorBubbles.clear()
+    spawnInitialSpatialAnomalies()
     val initialCap = getEffectiveBuffCap()
     repeat(initialCap) { spawnGreenCrate() }
-    spawnInitialSpatialAnomalies()
     bakeStaticRadarBitmap()
   }
 
@@ -2507,6 +2810,62 @@ class RiftGameEngine(
     return false
   }
 
+  fun circleIntersectsActiveAnomalies(cx: Float, cy: Float, padRadius: Float = 58f): Boolean {
+    for (a in anomalies) {
+      if (hypot(cx - a.x, cy - a.y) < a.physicalRadius + padRadius) return true
+    }
+    return false
+  }
+
+  fun isClearCrateSpawnPosition(
+    cx: Float,
+    cy: Float,
+    wallMargin: Float = 52f,
+    riftMargin: Float = 58f,
+  ): Boolean {
+    if (hypot(cx - arenaCenterX, cy - arenaCenterY) + wallMargin > arenaRadius) return false
+    if (isInsideSafeZone(cx, cy)) return false
+    if (circleIntersectsWalls(cx, cy, wallMargin)) return false
+    if (circleIntersectsActiveAnomalies(cx, cy, riftMargin)) return false
+    return true
+  }
+
+  fun resolveClearCrateDropPosition(prefX: Float, prefY: Float): Pair<Float, Float> {
+    if (isClearCrateSpawnPosition(prefX, prefY)) return prefX to prefY
+    for (ring in 1..14) {
+      val searchR = ring * 68f
+      for (step in 0 until 16) {
+        val ang = (step / 16f) * (PI.toFloat() * 2f) + ring * 0.27f
+        val candX = prefX + cos(ang) * searchR
+        val candY = prefY + sin(ang) * searchR
+        if (isClearCrateSpawnPosition(candX, candY)) {
+          return candX to candY
+        }
+      }
+    }
+    val maxSpawnR = (arenaRadius - 180f).coerceAtLeast(680f)
+    for (attempt in 0 until 48) {
+      val ang = (attempt / 48f) * (PI.toFloat() * 2f)
+      val dist = 620f + (attempt % 6) * ((maxSpawnR - 620f) / 6f)
+      val candX = arenaCenterX + cos(ang) * dist
+      val candY = arenaCenterY + sin(ang) * dist
+      if (isClearCrateSpawnPosition(candX, candY)) {
+        return candX to candY
+      }
+    }
+    return prefX to prefY
+  }
+
+  private fun relocateOverlappingCrates() {
+    for (g in greens) {
+      if (!isClearCrateSpawnPosition(g.x, g.y)) {
+        val clearPos = resolveClearCrateDropPosition(g.x, g.y)
+        g.x = clearPos.first
+        g.y = clearPos.second
+      }
+    }
+  }
+
   fun spawnGreenCrate(): Boolean {
     val cap = getEffectiveBuffCap()
     if (greens.size >= cap) return false
@@ -2516,9 +2875,9 @@ class RiftGameEngine(
     var found = false
     val maxSpawnR = (arenaRadius - 160f).coerceAtLeast(650f)
 
-    // Attempt to pick a non-repeating random spot inside the circular playfield
-    for (attempt in 0 until 60) {
-      val minSeparation = if (attempt < 40) 250f else 150f
+    // Attempt to pick a non-repeating random spot clear of obstacles, placed barriers, and active Playfield Rifts
+    for (attempt in 0 until 80) {
+      val minSeparation = if (attempt < 45) 250f else 140f
       val angle = Random.nextFloat() * (PI.toFloat() * 2f)
       val dist =
         if (Random.nextFloat() < 0.35f) {
@@ -2529,7 +2888,7 @@ class RiftGameEngine(
       val x = arenaCenterX + cos(angle) * dist
       val y = arenaCenterY + sin(angle) * dist
 
-      if (circleIntersectsWalls(x, y, 44f) || isInsideSafeZone(x, y)) {
+      if (!isClearCrateSpawnPosition(x, y)) {
         continue
       }
 
@@ -2558,8 +2917,12 @@ class RiftGameEngine(
 
     if (!found) {
       val fallbackAng = Random.nextFloat() * PI.toFloat() * 2f
-      chosenX = arenaCenterX + cos(fallbackAng) * 720f
-      chosenY = arenaCenterY + sin(fallbackAng) * 720f
+      val rawX = arenaCenterX + cos(fallbackAng) * 720f
+      val rawY = arenaCenterY + sin(fallbackAng) * 720f
+      val clearFallback = resolveClearCrateDropPosition(rawX, rawY)
+      if (!isClearCrateSpawnPosition(clearFallback.first, clearFallback.second)) return false
+      chosenX = clearFallback.first
+      chosenY = clearFallback.second
     }
 
     if (recentBuffSpawnLocations.size >= 64) {
@@ -2645,6 +3008,7 @@ class RiftGameEngine(
       partnerId = partnerId,
     )
     anomalies.add(anomaly)
+    relocateOverlappingCrates()
     return anomaly
   }
 
@@ -2678,6 +3042,7 @@ class RiftGameEngine(
       partnerId = idA,
     )
     anomalies.add(b)
+    relocateOverlappingCrates()
   }
 
   private fun spawnInitialSpatialAnomalies() {
@@ -2738,7 +3103,7 @@ class RiftGameEngine(
   fun rebuildRosterForMode(newMode: String = activeRankedMode.id) {
     if (isEphemeralPracticeRift) {
       remotePilots.clear()
-      ships.removeAll { !it.isLocalPlayer }
+      ships.removeAll { !it.isLocalPlayer && it.isHuman }
       if (ships.none { it.isLocalPlayer }) {
         ships.add(localPlayer)
       }
@@ -2965,7 +3330,7 @@ class RiftGameEngine(
         remotePilots.clear()
       }
       if (isEphemeralPracticeRift) {
-        ships.removeAll { !it.isLocalPlayer }
+        ships.removeAll { !it.isLocalPlayer && it.isHuman }
       }
       return
     }
@@ -4275,6 +4640,7 @@ class RiftGameEngine(
         stackCount = 1,
       )
     )
+    relocateOverlappingCrates()
     val closestX = ship.x.coerceIn(bx, bx + w)
     val closestY = ship.y.coerceIn(by, by + h)
     val dx = ship.x - closestX
@@ -5006,7 +5372,10 @@ class RiftGameEngine(
   fun triggerStationAttackResponse(station: WallRect, attacker: ShipEntity?, impactAngle: Float) {
     station.lastHitAngle = impactAngle
     station.hitFlashTimer = 0.22f
-    station.lastAttackerShipId = attacker?.id ?: ""
+    val triggerShipId = attacker?.id?.takeIf { it.isNotEmpty() } ?: station.lastAttackerShipId
+    if (triggerShipId.isNotEmpty()) {
+      station.lastAttackerShipId = triggerShipId
+    }
     station.stationHitCounter++
 
     val stCx = station.x + station.w * 0.5f
@@ -5063,6 +5432,7 @@ class RiftGameEngine(
             isHeavyBurst = true,
             ownerShipLabel = "Orbital Station",
             weaponLabel = "NOVA_BOLT",
+            triggeredByShipId = triggerShipId,
           )
         )
       }
@@ -5095,6 +5465,9 @@ class RiftGameEngine(
         val nCy = neighbor.y + neighbor.h * 0.5f
         neighbor.lastHitAngle = impactAngle
         neighbor.hitFlashTimer = max(neighbor.hitFlashTimer, 0.16f)
+        if (triggerShipId.isNotEmpty()) {
+          neighbor.lastAttackerShipId = triggerShipId
+        }
         val nAim = atan2(target.y - nCy, target.x - nCx)
         val nExitR = hypot(neighbor.w * 0.5f, neighbor.h * 0.5f) + 10f
         for (cSpread in cascadeSpreads) {
@@ -5122,6 +5495,7 @@ class RiftGameEngine(
               isHeavyBurst = true,
               ownerShipLabel = "Orbital Station",
               weaponLabel = "NOVA_BOLT",
+              triggeredByShipId = triggerShipId,
             )
           )
         }
@@ -5158,6 +5532,7 @@ class RiftGameEngine(
             isHeavyBurst = true,
             ownerShipLabel = "Orbital Station",
             weaponLabel = "Station Defense Nova",
+            triggeredByShipId = triggerShipId,
           )
         )
       }
@@ -5212,10 +5587,11 @@ class RiftGameEngine(
           )
         )
         walls.removeAt(wallIndex)
+        val clearDrop = resolveClearCrateDropPosition(cx, cy)
         greens.add(
           GreenCrate(
-            x = cx,
-            y = cy,
+            x = clearDrop.first,
+            y = clearDrop.second,
             spinPhase = Random.nextFloat() * (PI.toFloat() * 2f),
             buffType = rollRandomCrateBuffType(),
           )
@@ -5853,6 +6229,8 @@ class RiftGameEngine(
     isEmp: Boolean = false,
     attackerShipLabel: String = "",
     weaponLabel: String = "Primary Blaster",
+    stationTriggeredByShipId: String = "",
+    forceUnstableRiftInstaKill: Boolean = false,
   ) {
     if (target.respawnTimer > 0f) return
     if (isInLobbyStaging && target.isLocalPlayer) return
@@ -5870,13 +6248,14 @@ class RiftGameEngine(
       }
     }
 
-    val phaseDodged = target.phaseDashTimer > 0f && !isEmp
-    val shieldAbsorbed = target.phaseShieldTimer > 0f
+    val phaseDodged = !forceUnstableRiftInstaKill && target.phaseDashTimer > 0f && !isEmp
+    val shieldAbsorbed = !forceUnstableRiftInstaKill && target.phaseShieldTimer > 0f
     // Disruptor (#6) EMP Cap: calibrated % of target maxFlux (default 25%), capped at 850 Flux, calibrated recharge lock (default 2.0s)
     val empFluxDrain = if (isEmp) min(850f, target.maxFlux * RiftCalibrationState.empFluxDrainPct) else 0f
     val baseCombined = max(rawDamage, empFluxDrain)
     val effectiveDamage =
       when {
+        forceUnstableRiftInstaKill -> max(rawDamage, target.flux + target.maxFlux + 9999f)
         phaseDodged -> 0f
         shieldAbsorbed -> baseCombined * 0.25f
         else -> baseCombined
@@ -5995,47 +6374,144 @@ class RiftGameEngine(
       val victimPreDeathBounty = target.bounty
       val attacker = ships.find { it.id == attackerId }
       val attackerPreKillBounty = attacker?.bounty ?: 100
+      val isUnstableRiftKill = forceUnstableRiftInstaKill || attackerId == "unstable_rift"
+      val isStationKill = isStationDefenseOwner(attackerId)
+      val isEnemyStationTriggerKill =
+        isStationKill && stationTriggeredByShipId.isNotEmpty() && stationTriggeredByShipId != target.id
+      val isSelfStationTriggerDeath =
+        isStationKill && stationTriggeredByShipId.isNotEmpty() && stationTriggeredByShipId == target.id
+
       if (attacker != null) {
         attacker.kills++
         attacker.bounty += bountyAward
       }
 
+      // Station Counter-Attack Trigger Credit: 10% of normal kill Bounty & Live Resonance
+      val triggerShip =
+        if (isEnemyStationTriggerKill) ships.find { it.id == stationTriggeredByShipId } else null
+      val stationAssistBounty =
+        if (isEnemyStationTriggerKill) max(1, (bountyAward * 0.10f).roundToInt()) else 0
+      if (triggerShip != null && stationAssistBounty > 0) {
+        triggerShip.bounty += stationAssistBounty
+      }
+
+      // Self-Triggered Station Counter-Attack Death Penalty: deduct Bounty now & on next respawn
+      val selfStationBountyPenalty =
+        if (isSelfStationTriggerDeath) max(25, (victimPreDeathBounty * 0.15f).roundToInt()) else 0
+      if (isSelfStationTriggerDeath) {
+        target.bounty = max(50, target.bounty - selfStationBountyPenalty)
+        target.pendingRespawnBountyPenalty = min(50, selfStationBountyPenalty)
+      }
+
+      val explosionFallbackName =
+        when {
+          isUnstableRiftKill -> "UNSTABLE RIFT"
+          isStationKill -> "STATION DEFENSE"
+          else -> "ORDNANCE"
+        }
       triggerMultiStageShipExplosion(
         target = target,
         attacker = attacker,
         weaponLabel = weaponLabel,
-        fallbackKillerName = "ORDNANCE",
+        fallbackKillerName = explosionFallbackName,
       )
 
-      spawnPooledFct(
-        text = if (wasHvt) "+$bountyAward HVT!" else "+$bountyAward BTY",
-        x = target.x,
-        y = target.y - 26f,
-        color = if (wasHvt) Color.parseColor("#F59E0B") else Color.parseColor("#10B981"),
-        maxLife = 1.15f,
-      )
+      when {
+        isUnstableRiftKill ->
+          spawnPooledFct(
+            text = "UNSTABLE RIFT // -25 RES",
+            x = target.x,
+            y = target.y - 26f,
+            color = Color.parseColor("#FACC15"),
+            maxLife = 1.35f,
+          )
+        isSelfStationTriggerDeath ->
+          spawnPooledFct(
+            text = "-${selfStationBountyPenalty} BTY // STATION BACKFIRE",
+            x = target.x,
+            y = target.y - 26f,
+            color = Color.parseColor("#EF4444"),
+            maxLife = 1.30f,
+          )
+        isEnemyStationTriggerKill && stationAssistBounty > 0 ->
+          spawnPooledFct(
+            text = "+$stationAssistBounty BTY (10% STATION)",
+            x = target.x,
+            y = target.y - 26f,
+            color = Color.parseColor("#38BDF8"),
+            maxLife = 1.25f,
+          )
+        else ->
+          spawnPooledFct(
+            text = if (wasHvt) "+$bountyAward HVT!" else "+$bountyAward BTY",
+            x = target.x,
+            y = target.y - 26f,
+            color = if (wasHvt) Color.parseColor("#F59E0B") else Color.parseColor("#10B981"),
+            maxLife = 1.15f,
+          )
+      }
 
       pushKillFeedEntry(
         killerTag =
           when {
-            attacker == null -> "SECTOR"
-            attacker.armadaName.isNotEmpty() -> attacker.armadaName
-            else -> attacker.syndicateTag
+            attacker != null ->
+              if (attacker.armadaName.isNotEmpty()) attacker.armadaName else attacker.syndicateTag
+            triggerShip != null ->
+              if (triggerShip.armadaName.isNotEmpty()) triggerShip.armadaName else triggerShip.syndicateTag
+            else -> "SECTOR"
           },
-        killerName = attacker?.callsign ?: "ORDNANCE",
-        killerIsLocal = attacker?.isLocalPlayer == true,
-        killerIsAllied = attacker != null && areAllied(localPlayer, attacker),
+        killerName =
+          when {
+            attacker != null -> attacker.callsign
+            triggerShip != null -> "${triggerShip.callsign} [STN]"
+            isUnstableRiftKill -> "UNSTABLE RIFT"
+            isStationKill -> "STATION DEFENSE"
+            else -> "ORDNANCE"
+          },
+        killerIsLocal = attacker?.isLocalPlayer == true || triggerShip?.isLocalPlayer == true,
+        killerIsAllied =
+          (attacker != null && areAllied(localPlayer, attacker)) ||
+            (triggerShip != null && areAllied(localPlayer, triggerShip)),
         victimTag =
           if (target.armadaName.isNotEmpty()) target.armadaName else target.syndicateTag,
         victimName = target.callsign,
         victimIsLocal = target.isLocalPlayer,
         victimIsAllied = areAllied(localPlayer, target),
         victimBounty = victimPreDeathBounty,
-        bountyAwarded = bountyAward,
+        bountyAwarded = if (isEnemyStationTriggerKill) stationAssistBounty else bountyAward,
         wasHvt = wasHvt,
       )
 
-      if (attackerId == localPlayer.id) {
+      if (!isEphemeralPracticeRift && isEnemyStationTriggerKill && triggerShip?.isLocalPlayer == true) {
+        allTimeBountyPeak = max(allTimeBountyPeak, localPlayer.bounty.toLong())
+        currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, localPlayer.bounty)
+        onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
+        val normalKillRes =
+          if (target.isHuman) {
+            currentLifeHadPvp = true
+            pvpBountyPeak = max(pvpBountyPeak, localPlayer.bounty.toLong())
+            if (wasHvt) 28 else 18
+          } else {
+            when {
+              liveResonance < 250 -> 6
+              liveResonance < 500 -> 3
+              else -> 10
+            }
+          }
+        val stationResCredit = max(1, (normalKillRes * 0.10f).roundToInt())
+        adjustLocalResonance(stationResCredit, "10% STATION TRIGGER", showFctEvenIfRespawning = true)
+        awardPilotXp(
+          bountyEarnedXp = stationAssistBounty * 2f,
+          bountyKilledXp = victimPreDeathBounty * 0.05f,
+          notifyChange = false,
+        )
+        onPrizeToast(
+          "STATION TRIGGER KILL CREDIT (10%) // +$stationAssistBounty BOUNTY & +$stationResCredit RES"
+        )
+        onStatsUpdated()
+      }
+
+      if (!isEphemeralPracticeRift && attackerId == localPlayer.id) {
         allTimeKills++
         onDailyDirectiveEvent(DailyDirectiveMetric.KILLS_EARNED, 1, false)
         if (wasHvt) {
@@ -6072,31 +6548,54 @@ class RiftGameEngine(
         onArmadaTierKill(getCurrentArmadaSize(), localPlayer.bounty.toLong())
         onSyndicateContribution(1L, localPlayer.bounty.toLong(), 0L)
         onStatsUpdated()
-      } else if (target.isLocalPlayer) {
+      } else if (!isEphemeralPracticeRift && target.isLocalPlayer) {
         allTimeDeaths++
         if (attackerIsHuman) pvpDeaths++
-        val shots = currentLifeStats.shotsFired
-        val accMod =
-          if (shots >= 8) {
-            val accPct = (currentLifeStats.shotsHit * 100) / shots.coerceAtLeast(1)
-            when {
-              accPct >= 45 -> 4
-              accPct < 15 -> -2
-              else -> 0
+        when {
+          isUnstableRiftKill -> {
+            if (currentCustomGame == null) {
+              adjustLocalResonance(-25, "UNSTABLE RIFT", showFctEvenIfRespawning = true)
+            } else {
+              liveResonance = (liveResonance - 25).coerceAtLeast(0)
             }
-          } else {
-            0
+            onPrizeToast("KILLED OUTSIDE SAFE ZONE BY UNSTABLE RIFT // -25 LIVE RESONANCE")
           }
-        val baseDeathPenalty = if (liveResonance >= 200) -10 else -5
-        adjustLocalResonance(baseDeathPenalty + accMod, "HULL LOST")
+          isSelfStationTriggerDeath -> {
+            if (currentCustomGame == null) {
+              adjustLocalResonance(-15, "SELF-STATION PENALTY", showFctEvenIfRespawning = true)
+            } else {
+              liveResonance = (liveResonance - 15).coerceAtLeast(0)
+            }
+            onPrizeToast(
+              "SELF-TRIGGERED STATION DEATH // -${selfStationBountyPenalty} BOUNTY & -15 LIVE RESONANCE"
+            )
+          }
+          else -> {
+            val shots = currentLifeStats.shotsFired
+            val accMod =
+              if (shots >= 8) {
+                val accPct = (currentLifeStats.shotsHit * 100) / shots.coerceAtLeast(1)
+                when {
+                  accPct >= 45 -> 4
+                  accPct < 15 -> -2
+                  else -> 0
+                }
+              } else {
+                0
+              }
+            val baseDeathPenalty = if (liveResonance >= 200) -10 else -5
+            adjustLocalResonance(baseDeathPenalty + accMod, "HULL LOST")
+          }
+        }
         currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, victimPreDeathBounty)
         currentLifeStats.shipId = localPlayer.spec.id
         currentLifeStats.shipFlown = formatShipLabel(localPlayer)
         val execTag =
           when {
-            attacker == null -> "GUEST"
-            attacker.armadaName.isNotEmpty() -> cleanTag(attacker.armadaName)
-            else -> cleanTag(attacker.syndicateTag)
+            attacker != null ->
+              if (attacker.armadaName.isNotEmpty()) cleanTag(attacker.armadaName) else cleanTag(attacker.syndicateTag)
+            isUnstableRiftKill || isStationKill -> "SECTOR"
+            else -> "GUEST"
           }
         val execShip =
           when {
@@ -6109,7 +6608,7 @@ class RiftGameEngine(
             executioner =
               com.example.data.ExecutionerTelemetry(
                 survivedToConvergence = false,
-                killerCallsign = attacker?.callsign ?: "ORDNANCE",
+                killerCallsign = attacker?.callsign ?: explosionFallbackName,
                 killerSyndicateTag = execTag,
                 killerShip = execShip,
                 killingWeapon = weaponLabel,
@@ -6118,6 +6617,8 @@ class RiftGameEngine(
               )
           )
         onLifeRunEnded(finalizedSnapshot, currentLifeHadPvp || attackerIsHuman)
+        onStatsUpdated()
+      } else if (isEphemeralPracticeRift) {
         onStatsUpdated()
       }
 
@@ -8037,12 +8538,12 @@ class RiftGameEngine(
       if (gSpeed > 1f) {
         val nx = g.x + g.vx * dt
         val ny = g.y + g.vy * dt
-        if (circleIntersectsWalls(nx, g.y, 38f)) {
+        if (circleIntersectsWalls(nx, g.y, 38f) || circleIntersectsActiveAnomalies(nx, g.y, 48f)) {
           g.vx = -g.vx * 0.7f
         } else {
           g.x = nx
         }
-        if (circleIntersectsWalls(g.x, ny, 38f)) {
+        if (circleIntersectsWalls(g.x, ny, 38f) || circleIntersectsActiveAnomalies(g.x, ny, 48f)) {
           g.vy = -g.vy * 0.7f
         } else {
           g.y = ny
@@ -8133,6 +8634,7 @@ class RiftGameEngine(
         }
       }
       if (respawnedAny) {
+        relocateOverlappingCrates()
         bakeStaticRadarBitmap()
       }
     }
@@ -8216,6 +8718,12 @@ class RiftGameEngine(
     }
 
     publicMatchDurationSec += rawDt
+    if (practiceTutorialStepJumpFlashSec > 0f) {
+      practiceTutorialStepJumpFlashSec = max(0f, practiceTutorialStepJumpFlashSec - rawDt)
+    }
+    if (isEphemeralPracticeRift && practiceTutorialActive) {
+      ensurePracticeTutorialTargetsPresent()
+    }
     for (s in ships) {
       s.matchPresenceTimeSec += rawDt
     }
@@ -8290,7 +8798,14 @@ class RiftGameEngine(
           s.y = pos.second
           s.vx = 0f
           s.vy = 0f
-          s.bounty = if (s.isLocalPlayer) getLocalStartingBounty() else 100
+          val baseRespawnBty = if (s.isLocalPlayer) getLocalStartingBounty() else 100
+          s.bounty =
+            if (s.pendingRespawnBountyPenalty > 0) {
+              max(50, baseRespawnBty - s.pendingRespawnBountyPenalty)
+            } else {
+              baseRespawnBty
+            }
+          s.pendingRespawnBountyPenalty = 0
           s.speedOverchargeStacks = 0
           s.thrustOverchargeStacks = 0
           s.rechargeOverchargeStacks = 0
@@ -8438,29 +8953,33 @@ class RiftGameEngine(
         }
         s.playfieldIdleTimer = 0f
         s.isIdleDraining = false
-        s.safeZoneStayTimer += rawDt
-        if (s.safeZoneStayTimer >= RiftCalibrationState.safeZoneIdleLimitSec) {
-          val dest = findRandomOpenPositionOutsideSafeZone()
-          s.x = dest.first
-          s.y = dest.second
-          s.vx = 0f
-          s.vy = 0f
+        if (isEphemeralPracticeRift) {
           s.safeZoneStayTimer = 0f
-          currentlyInSafe = false
-          s.wasInSafeZone = false
-          s.safeZoneLockoutTimer = RiftCalibrationState.safeZoneReentryLockoutTime
-          s.phaseShieldTimer = RiftCalibrationState.exitPhaseShieldSec
-          shockwaves.add(ShockwaveEntity(s.x, s.y, 14f, 220f, Color.parseColor("#38BDF8")))
-          spawnPooledFct(
-            text = "SAFE ZONE EVICTION WARP",
-            x = s.x,
-            y = s.y - 26f,
-            color = Color.parseColor("#38BDF8"),
-            maxLife = 1.25f,
-          )
-          if (s.isLocalPlayer) {
-            sfx.playPrize()
-            onPrizeToast("SAFE ZONE IDLE LIMIT EXCEEDED — TELEPORTED TO OPEN SECTOR")
+        } else {
+          s.safeZoneStayTimer += rawDt
+          if (s.safeZoneStayTimer >= RiftCalibrationState.safeZoneIdleLimitSec) {
+            val dest = findRandomOpenPositionOutsideSafeZone()
+            s.x = dest.first
+            s.y = dest.second
+            s.vx = 0f
+            s.vy = 0f
+            s.safeZoneStayTimer = 0f
+            currentlyInSafe = false
+            s.wasInSafeZone = false
+            s.safeZoneLockoutTimer = RiftCalibrationState.safeZoneReentryLockoutTime
+            s.phaseShieldTimer = RiftCalibrationState.exitPhaseShieldSec
+            shockwaves.add(ShockwaveEntity(s.x, s.y, 14f, 220f, Color.parseColor("#38BDF8")))
+            spawnPooledFct(
+              text = "SAFE ZONE EVICTION WARP",
+              x = s.x,
+              y = s.y - 26f,
+              color = Color.parseColor("#38BDF8"),
+              maxLife = 1.25f,
+            )
+            if (s.isLocalPlayer) {
+              sfx.playPrize()
+              onPrizeToast("SAFE ZONE IDLE LIMIT EXCEEDED — TELEPORTED TO OPEN SECTOR")
+            }
           }
         }
       } else {
@@ -9104,6 +9623,7 @@ class RiftGameEngine(
               isEmp = false,
               attackerShipLabel = b.ownerShipLabel,
               weaponLabel = b.weaponLabel,
+              stationTriggeredByShipId = b.triggeredByShipId,
             )
             bullets.removeAt(i)
             break
@@ -10415,7 +10935,7 @@ class RiftGameEngine(
       }
     }
 
-    // 1b. Live Unstable Rift Convergence: when any two non-partnered Rifts expand/overlap, merge into a 10.0s Unstable Rift!
+    // 1b. Live Unstable Rift Convergence: when ANY two active Playfield Rifts (including Paired Phase Rifts) overlap, merge into a calm-spinning 10.0s Unstable Rift!
     var mergedPairFound = true
     while (mergedPairFound && anomalies.size >= 2) {
       mergedPairFound = false
@@ -10423,8 +10943,6 @@ class RiftGameEngine(
         val a = anomalies[i]
         for (j in i + 1 until anomalies.size) {
           val b = anomalies[j]
-          if (a.partnerId.isNotEmpty() && a.partnerId == b.id) continue
-          if (b.partnerId.isNotEmpty() && b.partnerId == a.id) continue
           if (a.isUnstableMergedRift && b.isUnstableMergedRift) continue
           val overlapThreshold = (a.physicalRadius + b.physicalRadius) * 0.88f
           if (hypot(a.x - b.x, a.y - b.y) <= overlapThreshold) {
@@ -10446,15 +10964,16 @@ class RiftGameEngine(
                 rem.partnerId = ""
               }
             }
+            relocateOverlappingCrates()
             shockwaves.add(ShockwaveEntity(mx, my, 28f, mergedRadius * 1.85f, Color.parseColor("#FACC15")))
             shockwaves.add(ShockwaveEntity(mx, my, 18f, mergedRadius * 1.35f, Color.parseColor("#EC4899")))
             shockwaves.add(ShockwaveEntity(mx, my, 12f, mergedRadius * 0.95f, Color.parseColor("#00F5D4")))
             if (hasJoinedMatch && !isInLobbyStaging) {
-              highBountyShutdownBanner = "UNSTABLE RIFT CONVERGED • 10.0s COLLAPSE!"
-              highBountyShutdownTimer = 4.2f
+              highBountyShutdownBanner = "UNSTABLE RIFT CONVERGENCE // RETURN TO SAFE ZONE"
+              highBountyShutdownTimer = 5.0f
               sfx.playWarp()
               addTrauma(0.35f)
-              onPrizeToast("UNSTABLE RIFT CONVERGED! CLEAR THE BLAST RADIUS BEFORE 10.0s DETONATION!")
+              onPrizeToast("UNSTABLE RIFT CONVERGENCE // RETURN TO SAFE ZONE")
             }
             mergedPairFound = true
             break@outer
@@ -10463,7 +10982,7 @@ class RiftGameEngine(
       }
     }
 
-    // 2. Step anomaly life, rotation, physics fields & Unstable Rift Collapse
+    // 2. Step anomaly life, rotation, physics fields & Unstable Rift Convergence Detonation
     val expiredPairsToRespawn = mutableListOf<AnomalyType>()
     val expiredSinglesToRespawn = mutableListOf<AnomalyType>()
     var unstableDetonatedThisStep = false
@@ -10473,11 +10992,12 @@ class RiftGameEngine(
       anom.life -= rawDt
 
       if (anom.isUnstableMergedRift) {
-        anom.spinAngle = (anom.spinAngle + 4.6f * dt) % (PI.toFloat() * 2f)
+        // Calm, ominous spacetime-tear rotation speed
+        anom.spinAngle = (anom.spinAngle + 0.55f * dt) % (PI.toFloat() * 2f)
         anom.physicalRadius = (anom.physicalRadius + 6f * rawDt).coerceAtMost(420f)
-        if (Random.nextFloat() < 0.65f && particles.size < 130) {
+        if (Random.nextFloat() < 0.55f && particles.size < 130) {
           val pAngle = Random.nextFloat() * (PI.toFloat() * 2f)
-          val pDist = anom.physicalRadius * (0.25f + Random.nextFloat() * 0.95f)
+          val pDist = anom.physicalRadius * (0.25f + Random.nextFloat() * 0.92f)
           val pCol =
             when (Random.nextInt(4)) {
               0 -> Color.parseColor("#00F5D4")
@@ -10489,52 +11009,50 @@ class RiftGameEngine(
             ParticleEntity(
               x = anom.x + cos(pAngle) * pDist,
               y = anom.y + sin(pAngle) * pDist,
-              vx = -sin(pAngle) * 115f,
-              vy = cos(pAngle) * 115f,
-              life = 0.36f,
-              maxLife = 0.36f,
-              size = 4.2f,
+              vx = -sin(pAngle) * 62f,
+              vy = cos(pAngle) * 62f,
+              life = 0.42f,
+              maxLife = 0.42f,
+              size = 4.0f,
               color = pCol,
             )
           )
         }
 
-        // 10.0s Convergence Collapse Detonation: 75% Max Flux shockwave + shatters nearby Crystal Asteroids!
+        // 0.0s Convergence Detonation: insta-kill ships outside the Safe Zone (-25 Live Resonance, floored at 0) + shatter nearby Crystal Asteroids!
         if (anom.life <= 0f) {
           val blastR = anom.physicalRadius * 2.15f
-          shockwaves.add(ShockwaveEntity(anom.x, anom.y, 36f, blastR, Color.parseColor("#FACC15")))
-          shockwaves.add(ShockwaveEntity(anom.x, anom.y, 24f, blastR * 0.78f, Color.parseColor("#EC4899")))
-          shockwaves.add(ShockwaveEntity(anom.x, anom.y, 16f, blastR * 0.52f, Color.parseColor("#00F5D4")))
+          shockwaves.add(ShockwaveEntity(anom.x, anom.y, 42f, max(blastR, arenaRadius * 1.15f), Color.parseColor("#FACC15")))
+          shockwaves.add(ShockwaveEntity(anom.x, anom.y, 26f, blastR, Color.parseColor("#EC4899")))
+          shockwaves.add(ShockwaveEntity(anom.x, anom.y, 16f, blastR * 0.62f, Color.parseColor("#00F5D4")))
           spawnExplosion(anom.x, anom.y, Color.parseColor("#FACC15"))
           spawnExplosion(anom.x + 48f, anom.y - 36f, Color.parseColor("#EC4899"))
           spawnExplosion(anom.x - 48f, anom.y + 36f, Color.parseColor("#00F5D4"))
 
-          for (s in ships) {
+          val livingTargetsSnapshot = ships.toList()
+          for (s in livingTargetsSnapshot) {
             if ((isInLobbyStaging && s.isLocalPlayer) || s.respawnTimer > 0f || isInsideSafeZone(s.x, s.y)) continue
-            val dx = s.x - anom.x
-            val dy = s.y - anom.y
-            val dist = hypot(dx, dy)
-            if (dist <= blastR + s.radius) {
-              val dSafe = dist.coerceAtLeast(1f)
-              val nx = dx / dSafe
-              val ny = dy / dSafe
-              s.vx += nx * 1150f
-              s.vy += ny * 1150f
-              s.rocketBoostTimer = max(s.rocketBoostTimer, 0.40f)
-              val collapseDmg = s.maxFlux * 0.75f
-              applyProjectileDamage(
-                target = s,
-                attackerId = "unstable_rift",
-                attackerIsHuman = false,
-                rawDamage = collapseDmg,
-                impactAngle = atan2(anom.y - s.y, anom.x - s.x),
-                isHeavyImpact = true,
-                isEmp = false,
-                attackerShipLabel = "Unstable Rift",
-                weaponLabel = "Unstable Rift Collapse",
-              )
-            }
+            s.phaseDashTimer = 0f
+            s.phaseShieldTimer = 0f
+            val instaKillDamage = s.flux + s.maxFlux + 99999f
+            applyProjectileDamage(
+              target = s,
+              attackerId = "unstable_rift",
+              attackerIsHuman = false,
+              rawDamage = instaKillDamage,
+              impactAngle = atan2(anom.y - s.y, anom.x - s.x),
+              isHeavyImpact = true,
+              isEmp = false,
+              attackerShipLabel = "Unstable Rift",
+              weaponLabel = "Unstable Rift Convergence",
+              forceUnstableRiftInstaKill = true,
+            )
           }
+
+          // Remove the detonated Unstable Rift first so dropped asteroid crates resolve clear positions cleanly
+          val detX = anom.x
+          val detY = anom.y
+          anomalies.removeAt(aIdx)
 
           // Shatter all destructible Crystal Asteroids inside blast radius
           var shatteredAnyRock = false
@@ -10543,7 +11061,7 @@ class RiftGameEngine(
             if (w.style != SpaceObstacleStyle.CRYSTAL_ASTEROID) continue
             val wCx = w.x + w.w * 0.5f
             val wCy = w.y + w.h * 0.5f
-            if (hypot(wCx - anom.x, wCy - anom.y) <= blastR + 120f) {
+            if (hypot(wCx - detX, wCy - detY) <= blastR + 120f) {
               pendingAsteroidRespawns.add(
                 PendingAsteroidRespawn(
                   x = w.x,
@@ -10555,10 +11073,11 @@ class RiftGameEngine(
                 )
               )
               walls.removeAt(wIdx)
+              val clearDrop = resolveClearCrateDropPosition(wCx, wCy)
               greens.add(
                 GreenCrate(
-                  x = wCx,
-                  y = wCy,
+                  x = clearDrop.first,
+                  y = clearDrop.second,
                   spinPhase = Random.nextFloat() * (PI.toFloat() * 2f),
                   buffType = rollRandomCrateBuffType(),
                 )
@@ -10574,14 +11093,13 @@ class RiftGameEngine(
             sfx.playExplosion()
             addTrauma(0.65f)
             spawnPooledFct(
-              text = "UNSTABLE RIFT COLLAPSE (-75% MAX FLUX)",
-              x = anom.x,
-              y = anom.y - 36f,
+              text = "UNSTABLE RIFT CONVERGENCE // SAFE ZONE ONLY",
+              x = detX,
+              y = detY - 36f,
               color = Color.parseColor("#FACC15"),
-              maxLife = 1.45f,
+              maxLife = 1.55f,
             )
           }
-          anomalies.removeAt(aIdx)
           unstableDetonatedThisStep = true
           continue
         }
@@ -11127,10 +11645,11 @@ class RiftGameEngine(
                     )
                   )
                   walls.removeAt(wIdx)
+                  val clearDrop = resolveClearCrateDropPosition(wCx, wCy)
                   greens.add(
                     GreenCrate(
-                      x = wCx,
-                      y = wCy,
+                      x = clearDrop.first,
+                      y = clearDrop.second,
                       spinPhase = Random.nextFloat() * (PI.toFloat() * 2f),
                       buffType = rollRandomCrateBuffType(),
                     )
@@ -11141,6 +11660,7 @@ class RiftGameEngine(
                     val novaSpeed = 820f * customSpdMult
                     val novaDamage = 165f * customDmgMult
                     val exitR = halfDiag + 12f
+                    val overloadTriggerId = w.lastAttackerShipId
                     for (k in 0 until 16) {
                       val a = (PI.toFloat() * 2f * k) / 16f
                       val sx = wCx + cos(a) * exitR
@@ -11166,6 +11686,7 @@ class RiftGameEngine(
                           isHeavyBurst = true,
                           ownerShipLabel = "Orbital Station",
                           weaponLabel = "Station Overload Nova",
+                          triggeredByShipId = overloadTriggerId,
                         )
                       )
                     }

@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 78
+const val CURRENT_RIFT_BUILD_VERSION = 80
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,12 +62,42 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 80,
+      versionTag = "v1.0.80 // BUILD #80",
+      releaseDate = "Nov 19, 2026",
+      headline = "Spacetime-Tear Playfield & Unstable Rifts, Any-Rift Insta-Kill Convergence, Supply Pod Hazard Clearance, Station Counter-Attack Attribution, Disruptor Needler & Full Zero-Flash Purge",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Cohesive Spacetime-Tear Rifts & Zero Solid-White Hit Sprites (RiftSpriteBaker, CodexModal): Upgraded all Playfield Rifts and Unstable Merged Rifts into volatile spacetime tears featuring dark abyssal storm interiors, multi-layered plasma storm turbulence matching the outer storm boundary, jagged angular fracture rims, branching rim lightning arcs, calm Unstable Rift spin speed, and re-baked riftAnomalyIconBitmaps—while removing flashShipBitmaps, customShip9FlashBitmap, and bakeSolidWhiteFlashBitmap so ships never flash solid white.",
+          "Any-Rift Convergence Into 10.0s Insta-Kill Unstable Rift + Resonance Loss (RiftGameEngine, ShipSpecs, CodexModal): Enabled ANY two overlapping active Playfield Rifts (including Paired Phase Rifts) to fuse into a calm-spinning 10.0s Unstable Rift broadcasting 'UNSTABLE RIFT CONVERGENCE // RETURN TO SAFE ZONE'; at 0.0s detonation, all ships outside the Safe Zone are insta-killed and lose -25 Live Resonance (floored at 0).",
+          "Supply Pod Hazard Clearance & Station Counter-Attack Trigger Credit/Penalty (RiftGameEngine): Guaranteed Supply Crates never spawn overlapping obstacles, placed Stasis Barriers, or active Playfield Rifts; tracked triggeredByShipId on all station retaliatory, cascade, and overload defense bolts—awarding 10% of normal kill Bounty & Live Resonance when a station counter-attack you triggered eliminates an enemy, and applying a Bounty & Live Resonance penalty if you die to a station attack triggered by your own fire.",
+          "Disruptor Needler Naming & Unstable Rift Codex Sync (ShipSpecs, CodexModal): Standardized Disruptor's primary weapon title to 'Needler' across ship specs and custom Frame hardpoints, and synchronized all Unstable Rift codex copy with zero legacy blast terminology.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 79,
+      versionTag = "v1.0.79 // BUILD #79",
+      releaseDate = "Nov 19, 2026",
+      headline = "In-Arena First-Time Sworn & Drifter Practice Rift Tutorial With Manual Skip/Next, Jumping Golden Rift Outline Highlighter & Stationary Top-Left Add Bot",
+      badgeLabel = "PRACTICE BRIEFING",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Direct-to-Practice-Rift Entry for Every [RFT] Drifter & First-Time Sworn Pilot (MainActivity, LocalPilotPrefs, RiftGameEngine): Bypassed NEXUS on entry for every [RFT] Drifter session and first-time Sworn Pilot commission, zoning directly into a zero-bot, zero-remote solo Practice Rift with zero career/Resonance/Bounty/Directive mutations and zero Safe-Zone eviction or Anti-AFK Flux drain.",
+          "Manual-Only 8-Step In-Arena Practice Rift Briefing (RiftGameEngine, RiftHudOverlay): Retired the legacy practice_flight_checklist strip and added a crisp #060D1A Sci-Fi Tablet tutorial panel featuring strictly manual [SKIP] and [NEXT] controls walking through Left Stick Drift & Boost, Right Stick & Shared Flux Ring, Supply Pod Buff Crates, Destructible Obstacles & Stations, Active Playfield Rifts, Center Safe-Zone Harbor, Free Flight Practice, and AI Combat Sparring / NEXUS Exit.",
+          "Jumping Golden Rift-Styled Target Outline & Offscreen Directional Pointer (RiftArenaView, RiftHudOverlay): Added a rotating multi-arc Golden Rift outline (#FFD700 / #FACC15) with harmonic lock-in pulse and corner chevrons that jumps cleanly across Left Stick, Right Stick + Shared Flux Ring, nearest Supply Pod, nearest Obstacle, nearest Playfield Rift, Safe-Zone Harbor, and the top-left [+ ADD BOT] button—paired with a golden cockpit edge pointer whenever a world target is offscreen.",
+          "Stationary Non-Jumping Top-Left [+ ADD BOT] Spawner (RiftHudOverlay, RiftGameEngine): Added a fixed top-left [+ ADD BOT] button inside Practice Rift that deploys live sparring AI bots on demand without mutating career stats or shifting layout coordinates.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 78,
       versionTag = "v1.0.78 // BUILD #78",
       releaseDate = "Nov 19, 2026",
       headline = "3 New & Stacked Buff Crates (Tractor Beam, Proximity-Lock Infinite Missile, Continuous Lance Beam), Mode-Specific AI Bot Brains, Deathmatch-Only Spectating & 1v1 Escalation With 10s Ready-Up",
-      badgeLabel = "LATEST RELEASE",
-      accentColorHex = "#00F5D4",
+      badgeLabel = "BUFFS & 1V1 DUEL",
+      accentColorHex = "#38BDF8",
       highlights =
         listOf(
           "Smooth Beveled Buff Pods & Stacked Crate Scaling (RiftSpriteBaker, RiftArenaView, RiftGameEngine, ShipSpecs): Smoothed Supply Pod housings and buff badges with rounded bevels, calm radial powerup glows, and non-spiky iconography; stacking N Barrier crates deploys N distinct wall segments, N Nova crates unleash N staggered 360-degree Nova waves, and additional Lance stacks scale beam width and range.",

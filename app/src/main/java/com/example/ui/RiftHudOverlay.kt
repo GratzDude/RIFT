@@ -83,6 +83,90 @@ private fun Modifier.wysiwygUnlockOutline(enabled: Boolean, isCircle: Boolean = 
  }
 }
 
+private fun Modifier.goldenRiftTutorialHighlight(
+ active: Boolean,
+ phaseRad: Float,
+ isCircle: Boolean = false,
+ cornerRadius: Dp = 10.dp,
+): Modifier {
+ if (!active) return this
+ return this.drawWithContent {
+  drawContent()
+  val pulse = 0.5f + 0.5f * sin(phaseRad * 2.2f)
+  val goldOuter = Color(0xFFFFD700)
+  val goldInner = Color(0xFFFEF08A)
+  val goldBracket = Color(0xFFFACC15)
+  val pad = (4.5f + 2.0f * pulse).dp.toPx()
+  val strokeMain = 2.4.dp.toPx()
+  val strokeSub = 1.4.dp.toPx()
+  if (isCircle) {
+   val cx = size.width * 0.5f
+   val cy = size.height * 0.5f
+   val r = size.minDimension * 0.5f + pad
+   drawCircle(goldBracket.copy(alpha = 0.18f), r + 3.dp.toPx(), Offset(cx, cy))
+   val spinDeg = (phaseRad * 57.2958f) % 360f
+   val arcTopLeft = Offset(cx - r, cy - r)
+   val arcSize = Size(r * 2f, r * 2f)
+   for (seg in 0 until 6) {
+    drawArc(
+     color = goldOuter,
+     startAngle = spinDeg + seg * 60f,
+     sweepAngle = 38f,
+     useCenter = false,
+     topLeft = arcTopLeft,
+     size = arcSize,
+     style = Stroke(width = strokeMain, cap = StrokeCap.Round),
+    )
+   }
+   val innerR = r - 3.2.dp.toPx()
+   val innerTopLeft = Offset(cx - innerR, cy - innerR)
+   val innerSize = Size(innerR * 2f, innerR * 2f)
+   for (seg in 0 until 4) {
+    drawArc(
+     color = goldInner.copy(alpha = 0.88f),
+     startAngle = -spinDeg * 0.8f + seg * 90f,
+     sweepAngle = 48f,
+     useCenter = false,
+     topLeft = innerTopLeft,
+     size = innerSize,
+     style = Stroke(width = strokeSub, cap = StrokeCap.Round),
+    )
+   }
+  } else {
+   val cr = (cornerRadius + 3.dp).toPx()
+   val topLeft = Offset(-pad, -pad)
+   val boxSize = Size(size.width + pad * 2f, size.height + pad * 2f)
+   drawRoundRect(
+    color = goldBracket.copy(alpha = 0.20f),
+    topLeft = Offset(-pad - 2.dp.toPx(), -pad - 2.dp.toPx()),
+    size = Size(boxSize.width + 4.dp.toPx(), boxSize.height + 4.dp.toPx()),
+    cornerRadius = CornerRadius(cr + 2.dp.toPx(), cr + 2.dp.toPx()),
+   )
+   val dash = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 5.dp.toPx()), phaseRad * 18f)
+   drawRoundRect(
+    color = goldOuter,
+    topLeft = topLeft,
+    size = boxSize,
+    cornerRadius = CornerRadius(cr, cr),
+    style = Stroke(width = strokeMain, pathEffect = dash),
+   )
+   val arm = 8.dp.toPx()
+   val x0 = topLeft.x
+   val y0 = topLeft.y
+   val x1 = topLeft.x + boxSize.width
+   val y1 = topLeft.y + boxSize.height
+   drawLine(goldInner, Offset(x0, y0), Offset(x0 + arm, y0), strokeMain)
+   drawLine(goldInner, Offset(x0, y0), Offset(x0, y0 + arm), strokeMain)
+   drawLine(goldInner, Offset(x1 - arm, y0), Offset(x1, y0), strokeMain)
+   drawLine(goldInner, Offset(x1, y0), Offset(x1, y0 + arm), strokeMain)
+   drawLine(goldInner, Offset(x0, y1 - arm), Offset(x0, y1), strokeMain)
+   drawLine(goldInner, Offset(x0, y1), Offset(x0 + arm, y1), strokeMain)
+   drawLine(goldInner, Offset(x1 - arm, y1), Offset(x1, y1), strokeMain)
+   drawLine(goldInner, Offset(x1, y1 - arm), Offset(x1, y1), strokeMain)
+  }
+ }
+}
+
 private const val MINIMAP_FLUX_PLASMA_AGSL =
  """
  uniform float2 uRes;
@@ -263,29 +347,61 @@ fun RiftHudOverlay(
  ) {
   val topBarRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_TOP_BAR) }
   val topBarEffScale = (RiftCalibrationState.topBarScale * topBarRec.pixelScale).coerceIn(0.6f, 1.8f)
-  var practiceChecklistDismissed by remember(engine.isEphemeralPracticeRift) { mutableStateOf(false) }
-  var practiceDidBoost by remember(engine.isEphemeralPracticeRift) { mutableStateOf(false) }
-  var practiceDidGrowRift by remember(engine.isEphemeralPracticeRift) { mutableStateOf(false) }
-  var practiceDidVisitSafe by remember(engine.isEphemeralPracticeRift) { mutableStateOf(false) }
+  val activeTutorialStep = engine.currentPracticeTutorialStep()
+  val showPracticeTutorialPanel =
+   engine.isEphemeralPracticeRift && !uiUnlocked && activeTutorialStep != null
+  val tutorialPhaseRad =
+   ((System.currentTimeMillis() % 6283L) / 1000f) + (tickRead * 0.0001f)
 
-  if (engine.isEphemeralPracticeRift) {
-   if (player.afterburning || (engine.leftStickActive && engine.leftStickMag > 0.80f)) {
-    practiceDidBoost = true
-   }
-   if (engine.anomalies.any { it.type == com.example.engine.AnomalyType.GRAVITY_RIFT && it.absorbedWeaponCount > 0 }) {
-    practiceDidGrowRift = true
-   }
-   if (player.inSafeZone) {
-    practiceDidVisitSafe = true
+  // Stationary, non-jumping Top-Left [+ ADD BOT] button in Practice Rift
+  if (engine.isEphemeralPracticeRift && !uiUnlocked) {
+   val botCount = engine.activePracticeBotCount()
+   val highlightAddBot = activeTutorialStep == PracticeTutorialStep.ADD_BOT_AND_NEXUS
+   Box(
+    modifier =
+     Modifier.align(Alignment.TopStart)
+      .padding(start = 12.dp, top = 8.dp)
+      .zIndex(16f)
+      .goldenRiftTutorialHighlight(
+       active = highlightAddBot,
+       phaseRad = tutorialPhaseRad,
+       cornerRadius = 10.dp,
+      )
+      .heightIn(min = 38.dp)
+      .clip(RoundedCornerShape(10.dp))
+      .background(Color(0xEE060D1A))
+      .border(
+       width = 1.2.dp,
+       color = if (highlightAddBot) Color(0xFFFFD700) else Color(0xFF00F5D4),
+       shape = RoundedCornerShape(10.dp),
+      )
+      .clickable { engine.spawnPracticeBot() }
+      .padding(horizontal = 12.dp, vertical = 7.dp)
+      .testTag("practice_add_bot_btn"),
+    contentAlignment = Alignment.Center,
+   ) {
+    Row(
+     verticalAlignment = Alignment.CenterVertically,
+     horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+     Text(
+      text = if (botCount > 0) "+ ADD BOT ($botCount)" else "+ ADD BOT",
+      color = if (highlightAddBot) Color(0xFFFEF08A) else Color(0xFF00F5D4),
+      fontSize = (9.2f * textScale).sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+      style = WingTelemetryTextStyle,
+     )
+    }
    }
   }
-  val showPracticeChecklist = engine.isEphemeralPracticeRift && !uiUnlocked && !practiceChecklistDismissed
 
   if (engine.isEphemeralPracticeRift && !uiUnlocked) {
+   val highlightExitBtn = activeTutorialStep == PracticeTutorialStep.ADD_BOT_AND_NEXUS
    Column(
-    modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp).zIndex(14f),
+    modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp).zIndex(15f),
     horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(4.dp),
+    verticalArrangement = Arrangement.spacedBy(6.dp),
    ) {
     Row(
      modifier =
@@ -337,9 +453,18 @@ fun RiftHudOverlay(
      Box(
       modifier =
        Modifier.padding(start = 3.dp)
+        .goldenRiftTutorialHighlight(
+         active = highlightExitBtn,
+         phaseRad = tutorialPhaseRad,
+         cornerRadius = 6.dp,
+        )
         .clip(RoundedCornerShape(6.dp))
         .background(Color(0xFF0D253B))
-        .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+        .border(
+         1.dp,
+         if (highlightExitBtn) Color(0xFFFFD700) else Color(0xFF38BDF8),
+         RoundedCornerShape(6.dp),
+        )
         .clickable { onOpenNexus() }
         .padding(horizontal = 8.dp, vertical = 3.dp)
         .testTag("practice_rift_exit_btn"),
@@ -347,7 +472,7 @@ fun RiftHudOverlay(
      ) {
       Text(
        text = "[EXIT TO NEXUS]",
-       color = Color(0xFF38BDF8),
+       color = if (highlightExitBtn) Color(0xFFFEF08A) else Color(0xFF38BDF8),
        fontSize = (8.0f * textScale).sp,
        fontWeight = FontWeight.Black,
        fontFamily = FontFamily.Monospace,
@@ -355,62 +480,147 @@ fun RiftHudOverlay(
      }
     }
 
-    if (showPracticeChecklist) {
-     Row(
+    if (activeTutorialStep != null) {
+     val totalSteps = PracticeTutorialStep.entries.size
+     val isFinalStep = activeTutorialStep.stepNumber >= totalSteps
+     Column(
       modifier =
-       Modifier.clip(RoundedCornerShape(8.dp))
-        .background(Color(0xD9060D1A))
-        .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.55f), RoundedCornerShape(8.dp))
-        .padding(horizontal = 8.dp, vertical = 3.dp)
-        .testTag("practice_flight_checklist"),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
+       Modifier.widthIn(min = 290.dp, max = 420.dp)
+        .clip(RoundedCornerShape(12.dp))
+        .background(Color(0xF0060D1A))
+        .border(1.3.dp, Color(0xFFFACC15).copy(alpha = 0.88f), RoundedCornerShape(12.dp))
+        .padding(horizontal = 12.dp, vertical = 9.dp)
+        .testTag("practice_tutorial_panel"),
+      verticalArrangement = Arrangement.spacedBy(5.dp),
      ) {
-      val steps =
-       listOf(
-        practiceDidBoost to "Boost >80%",
-        practiceDidGrowRift to "Grow Gravity Rift",
-        practiceDidVisitSafe to "Visit Safe Station",
+      Row(
+       modifier = Modifier.fillMaxWidth(),
+       verticalAlignment = Alignment.CenterVertically,
+       horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+       Text(
+        text = "FLIGHT BRIEFING // STEP ${activeTutorialStep.stepNumber}/$totalSteps",
+        color = Color(0xFF00F5D4),
+        fontSize = (8.2f * textScale).sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        style = WingTelemetryTextStyle,
        )
-      steps.forEachIndexed { idx, (done, label) ->
-       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(
-         modifier =
-          Modifier.size(10.dp)
-           .clip(RoundedCornerShape(2.5.dp))
-           .background(if (done) Color(0xFF00F5D4) else Color(0xFF0F172A))
-           .border(1.dp, if (done) Color(0xFF00F5D4) else Color(0xFF64748B), RoundedCornerShape(2.5.dp)),
-        )
-        Text(
-         text = label,
-         color = if (done) Color(0xFF00F5D4) else Color(0xFFCBD5E1),
-         fontSize = (7.6f * textScale).sp,
-         fontWeight = FontWeight.Bold,
-         fontFamily = FontFamily.Monospace,
-        )
-        if (idx < steps.lastIndex) {
-         Text(
-          text = "•",
-          color = Color(0xFF475569),
-          fontSize = (7.6f * textScale).sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
+       Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+       ) {
+        for (idx in 0 until totalSteps) {
+         val reached = idx <= engine.practiceTutorialStepIndex
+         val isCur = idx == engine.practiceTutorialStepIndex
+         Box(
+          modifier =
+           Modifier.width(if (isCur) 13.dp else 6.dp)
+            .height(4.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(
+             when {
+              isCur -> Color(0xFFFFD700)
+              reached -> Color(0xFF00F5D4)
+              else -> Color(0xFF1E293B)
+             }
+            ),
          )
         }
        }
       }
+
       Text(
-       text = "[X]",
-       color = Color(0xFF94A3B8),
-       fontSize = (7.5f * textScale).sp,
+       text = activeTutorialStep.title,
+       color = Color(0xFFFFD700),
+       fontSize = (10.6f * textScale).sp,
        fontWeight = FontWeight.Black,
        fontFamily = FontFamily.Monospace,
-       modifier =
-        Modifier.clip(RoundedCornerShape(4.dp))
-         .clickable { practiceChecklistDismissed = true }
-         .padding(horizontal = 4.dp, vertical = 1.dp)
-         .testTag("practice_checklist_dismiss_btn"),
+       style = WingTelemetryTextStyle,
       )
+
+      Text(
+       text = activeTutorialStep.body,
+       color = Color(0xFFE2E8F0),
+       fontSize = (9.2f * textScale).sp,
+       lineHeight = (12.4f * textScale).sp,
+       fontWeight = FontWeight.Medium,
+      )
+
+      Row(
+       modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+       verticalAlignment = Alignment.CenterVertically,
+       horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+       Box(
+        modifier =
+         Modifier.heightIn(min = 34.dp)
+          .clip(RoundedCornerShape(8.dp))
+          .background(Color(0xFF0F172A))
+          .border(1.dp, Color(0xFF64748B), RoundedCornerShape(8.dp))
+          .clickable { engine.skipPracticeTutorial() }
+          .padding(horizontal = 12.dp, vertical = 6.dp)
+          .testTag("practice_tutorial_skip_btn"),
+        contentAlignment = Alignment.Center,
+       ) {
+        Text(
+         text = "SKIP",
+         color = Color(0xFFCBD5E1),
+         fontSize = (8.8f * textScale).sp,
+         fontWeight = FontWeight.Black,
+         fontFamily = FontFamily.Monospace,
+         style = WingTelemetryTextStyle,
+        )
+       }
+
+       Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+       ) {
+        if (isFinalStep) {
+         Box(
+          modifier =
+           Modifier.heightIn(min = 34.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF0D253B))
+            .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+            .clickable { onOpenNexus() }
+            .padding(horizontal = 11.dp, vertical = 6.dp)
+            .testTag("practice_tutorial_enter_nexus_btn"),
+          contentAlignment = Alignment.Center,
+         ) {
+          Text(
+           text = "ENTER NEXUS",
+           color = Color(0xFF00F5D4),
+           fontSize = (8.8f * textScale).sp,
+           fontWeight = FontWeight.Black,
+           fontFamily = FontFamily.Monospace,
+           style = WingTelemetryTextStyle,
+          )
+         }
+        }
+        Box(
+         modifier =
+          Modifier.heightIn(min = 34.dp)
+           .clip(RoundedCornerShape(8.dp))
+           .background(Color(0xFF422006))
+           .border(1.2.dp, Color(0xFFFFD700), RoundedCornerShape(8.dp))
+           .clickable { engine.advancePracticeTutorialStep() }
+           .padding(horizontal = 14.dp, vertical = 6.dp)
+           .testTag("practice_tutorial_next_btn"),
+         contentAlignment = Alignment.Center,
+        ) {
+         Text(
+          text = if (isFinalStep) "KEEP FLYING" else "NEXT >",
+          color = Color(0xFFFEF08A),
+          fontSize = (8.8f * textScale).sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          style = WingTelemetryTextStyle,
+         )
+        }
+       }
+      }
      }
     }
    }
@@ -561,7 +771,7 @@ fun RiftHudOverlay(
 
   if (levelUpBannerLevel > 1) {
    Box(
-    modifier = Modifier.align(Alignment.TopCenter).padding(top = if (showPracticeChecklist) 72.dp else 48.dp).zIndex(22f).clip(RoundedCornerShape(10.dp))
+    modifier = Modifier.align(Alignment.TopCenter).padding(top = if (showPracticeTutorialPanel) 172.dp else 48.dp).zIndex(22f).clip(RoundedCornerShape(10.dp))
      .background(Brush.horizontalGradient(listOf(Color(0xEE081B33), Color(0xEE1A2B12), Color(0xEE081B33))))
      .border(1.3.dp, Color(0xFFFFD700), RoundedCornerShape(10.dp))
      .clickable { onOpenProgression() }.padding(horizontal = (12f * textScale).dp, vertical = (4.5f * textScale).dp)
@@ -678,9 +888,9 @@ fun RiftHudOverlay(
     modifier = Modifier.align(Alignment.TopCenter).padding(
      top =
       when {
-       levelUpBannerLevel > 1 && showPracticeChecklist -> 100.dp
+       levelUpBannerLevel > 1 && showPracticeTutorialPanel -> 200.dp
        levelUpBannerLevel > 1 -> 76.dp
-       showPracticeChecklist -> 68.dp
+       showPracticeTutorialPanel -> 170.dp
        else -> 44.dp
       }
     )
@@ -1380,6 +1590,10 @@ private fun CircularRadarMinimap(
   } else null
  }
 
+ val highlightSharedFluxRing =
+  engine.currentPracticeTutorialStep() == PracticeTutorialStep.FIRING_AND_SHARED_FLUX && !uiUnlocked
+ val fluxHighlightPhaseRad = ((System.currentTimeMillis() % 6283L) / 1000f)
+
  Box(
   modifier = Modifier.zIndex(if (isExpanded || expandScale > 1.02f) 35f else 2f).size(132.dp)
    .onGloballyPositioned { coords ->
@@ -1390,6 +1604,11 @@ private fun CircularRadarMinimap(
     scaleX = expandScale; scaleY = expandScale
     transformOrigin = TransformOrigin(intelligentPivotX, intelligentPivotY)
    }
+   .goldenRiftTutorialHighlight(
+    active = highlightSharedFluxRing,
+    phaseRad = fluxHighlightPhaseRad,
+    isCircle = true,
+   )
    .wysiwygUnlockOutline(enabled = uiUnlocked, isCircle = true)
    .then(
     if (!uiUnlocked) {

@@ -227,6 +227,7 @@ fun AppNavigation(
 
   val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
   var isGuestMode by remember { mutableStateOf(localPrefs.isGuestBypassEnabled()) }
+  var drifterSessionEpoch by remember { mutableIntStateOf(0) }
   var showPreAuthChangelog by remember { mutableStateOf(false) }
   val user = currentUser
 
@@ -239,6 +240,7 @@ fun AppNavigation(
         onPlayAsGuest = {
           localPrefs.startFreshDrifterSession()
           localPrefs.setBootToNexusHub(true)
+          drifterSessionEpoch++
           isGuestMode = true
         },
         onOpenChangelog = { showPreAuthChangelog = true },
@@ -262,7 +264,7 @@ fun AppNavigation(
       val initialCallsign =
         if (user != null) localPrefs.getCallsign(user.uid) else localPrefs.getCallsign()
 
-      key(uid) {
+      key("$uid-${user != null}-$drifterSessionEpoch") {
         RiftArenaScreen(
           currentUserId = uid,
           initialCallsign = initialCallsign,
@@ -347,16 +349,48 @@ fun RiftArenaScreen(
   var activeMusicSummary by remember { mutableStateOf(sfx.currentMusicRecipe.customPromptSummary) }
   var musicForgePrompt by remember { mutableStateOf(localPrefs.getMusicForgePrompt()) }
 
+  val initialStartInPracticeRift = remember(currentUserId, isGoogleAuthenticated) {
+    if (!isGoogleAuthenticated || localPrefs.isGuestBypassEnabled()) {
+      true
+    } else {
+      val hasLocalCareerHistory =
+        localPrefs.getAllTimeKills() > 0L ||
+          localPrefs.getPvpKills() > 0L ||
+          localPrefs.getConvergencesWon() > 0L ||
+          localPrefs.getPeakResonance(currentUserId) > 0
+      if (hasLocalCareerHistory) {
+        localPrefs.setCompletedSwornPracticeTutorial(true, currentUserId)
+        false
+      } else if (!localPrefs.hasCompletedSwornPracticeTutorial(currentUserId)) {
+        localPrefs.setCompletedSwornPracticeTutorial(true, currentUserId)
+        true
+      } else {
+        false
+      }
+    }
+  }
+  var autoStartedSwornPracticePendingCloudCheck by remember(currentUserId, isGoogleAuthenticated) {
+    mutableStateOf(
+      isGoogleAuthenticated && !localPrefs.isGuestBypassEnabled() && initialStartInPracticeRift
+    )
+  }
+
   var currentFps by remember { mutableIntStateOf(60) }
   var frameTick by remember { mutableIntStateOf(0) }
   var toastMessage by remember {
-    mutableStateOf<String?>("NEXUS CORE ONLINE // SELECT RIFT TO DEPLOY")
+    mutableStateOf<String?>(
+      if (initialStartInPracticeRift) {
+        "PRACTICE RIFT INITIALIZED // SOLO FLIGHT BRIEFING"
+      } else {
+        "NEXUS CORE ONLINE // SELECT RIFT TO DEPLOY"
+      }
+    )
   }
   var toastVersion by remember { mutableIntStateOf(0) }
   var unreadCommsCount by remember { mutableIntStateOf(0) }
 
   var bootToNexusHub by remember { mutableStateOf(true) }
-  var isNexusShellOpen by remember { mutableStateOf(true) }
+  var isNexusShellOpen by remember { mutableStateOf(!initialStartInPracticeRift) }
   var activeNexusNode by remember { mutableStateOf(NexusCoreNode.ORBITAL_HUB) }
   var syndicateSubDeck by remember { mutableStateOf(SyndicateCitadelSubDeck.SYNDICATES_WARS) }
   var archiveSubDeck by remember { mutableStateOf(ArchiveCodexSubDeck.PILOT_DOSSIER) }
@@ -501,7 +535,11 @@ fun RiftArenaScreen(
       switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
       syncEquippedCosmeticsToEngine(this)
       localPlayer.bounty = getLocalStartingBounty()
-      leaveActiveMatchToNexusOrbit()
+      if (initialStartInPracticeRift) {
+        enterEphemeralPracticeRift(startTutorial = true)
+      } else {
+        leaveActiveMatchToNexusOrbit()
+      }
     }
   }
 
@@ -734,6 +772,28 @@ fun RiftArenaScreen(
 
     val cloudDossier = (dossierState as? UiState.Success)?.data
     if (cloudDossier != null) {
+      val cloudHasPriorCareer =
+        cloudDossier.allTimeKills > 0L ||
+          cloudDossier.pvpKills > 0L ||
+          cloudDossier.convergencesWon > 0L
+      if (
+        cloudHasPriorCareer &&
+          isGoogleAuthenticated &&
+          !localPrefs.isGuestBypassEnabled() &&
+          currentUserId.isNotBlank()
+      ) {
+        localPrefs.setCompletedSwornPracticeTutorial(true, currentUserId)
+        if (
+          autoStartedSwornPracticePendingCloudCheck &&
+            engine.isEphemeralPracticeRift &&
+            engine.practiceTutorialStepIndex == 0
+        ) {
+          autoStartedSwornPracticePendingCloudCheck = false
+          openNexusNode(NexusCoreNode.ORBITAL_HUB)
+        }
+      } else {
+        autoStartedSwornPracticePendingCloudCheck = false
+      }
       val mergedAllTimeKills = maxOf(engine.allTimeKills, cloudDossier.allTimeKills)
       val mergedAllTimeDeaths = maxOf(engine.allTimeDeaths, cloudDossier.allTimeDeaths)
       val mergedAllTimeBountyPeak = maxOf(engine.allTimeBountyPeak, cloudDossier.allTimeBountyPeak)
@@ -2866,9 +2926,9 @@ fun RiftArenaScreen(
                 pendingStagedLaunch = null
                 engine.switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
                 syncEquippedCosmeticsToEngine(engine)
-                engine.enterEphemeralPracticeRift()
+                engine.enterEphemeralPracticeRift(startTutorial = true)
                 isNexusShellOpen = false
-                toastMessage = "PRACTICE RIFT INITIALIZED // SOLO FLIGHT SANDBOX"
+                toastMessage = "PRACTICE RIFT INITIALIZED // SOLO FLIGHT BRIEFING"
                 toastVersion++
                 frameTick++
               },

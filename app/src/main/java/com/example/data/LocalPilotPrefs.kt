@@ -1859,6 +1859,8 @@ class LocalPilotPrefs(context: Context) {
       .putBoolean(uidKey(KEY_SLOT_E_UNLOCKED, uid), false)
       .putString(KEY_ACTIVE_CUSTOM_SLOT_ID, "Frame A")
       .putString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), "Frame A")
+      .putBoolean(KEY_SWORN_PRACTICE_TUTORIAL_DONE, false)
+      .putBoolean(uidKey(KEY_SWORN_PRACTICE_TUTORIAL_DONE, uid), false)
 
     if (!preservedCallsign.isNullOrBlank() && preservedCallsign != "COMMANDER") {
       editor.putString(KEY_CALLSIGN, preservedCallsign)
@@ -1977,6 +1979,34 @@ class LocalPilotPrefs(context: Context) {
     userSettingsPrefs.edit().putString("favorite_overwatch_rift_key", key.trim()).apply()
   }
 
+  fun hasCompletedSwornPracticeTutorial(uid: String? = null): Boolean {
+    if (isGuestBypassEnabled()) return false
+    val key = uidKey(KEY_SWORN_PRACTICE_TUTORIAL_DONE, uid)
+    return prefs.getBoolean(key, false)
+  }
+
+  fun setCompletedSwornPracticeTutorial(completed: Boolean, uid: String? = null) {
+    if (isGuestBypassEnabled()) return
+    val editor = prefs.edit().putBoolean(KEY_SWORN_PRACTICE_TUTORIAL_DONE, completed)
+    if (!uid.isNullOrBlank()) {
+      editor.putBoolean(uidKey(KEY_SWORN_PRACTICE_TUTORIAL_DONE, uid), completed)
+    }
+    editor.apply()
+  }
+
+  /**
+   * Returns true whenever entry should bypass NEXUS and deploy directly into the solo Practice Rift:
+   * - Every [RFT] Drifter session (!isGoogleAuthenticated || isGuestBypassEnabled())
+   * - First-time Sworn Pilots (!hasCompletedSwornPracticeTutorial(uid))
+   */
+  fun shouldAutoEnterPracticeRiftOnEntry(
+    isGoogleAuthenticated: Boolean,
+    uid: String? = null,
+  ): Boolean {
+    if (!isGoogleAuthenticated || isGuestBypassEnabled()) return true
+    return !hasCompletedSwornPracticeTutorial(uid)
+  }
+
   companion object {
     val DRIFTER_NAMES: List<String> =
       listOf(
@@ -2074,6 +2104,7 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX = "daily_directive_salt_"
     private const val KEY_DAILY_DIRECTIVE_REROLL_USED = "daily_directive_reroll_used"
     private const val KEY_DAILY_SWEEP_CLAIMED = "daily_directive_sweep_claimed"
+    private const val KEY_SWORN_PRACTICE_TUTORIAL_DONE = "sworn_practice_tutorial_done_v79"
 
     const val FIFTEEN_DAYS_MS = 15L * 24L * 3600L * 1000L
 

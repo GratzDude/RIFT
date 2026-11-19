@@ -351,7 +351,7 @@ fun CodexModal(
                 modifier = Modifier.weight(1f),
                 title = "MAX GRAVITY & UNSTABLE RIFT",
                 body =
-                  "0.92x swept weapon absorption swells Gravity Rifts up to 440px; at >= 260px they drag & implode Asteroids/Stations (950/s crush + 360° Nova). Touching Rifts fuse into a 10.0s Unstable Rift (75% Max Flux blast).",
+                  "0.92x swept weapon absorption swells Gravity Rifts up to 440px; at >= 260px they drag & implode Asteroids/Stations (950/s crush + 360° Nova). Any 2 overlapping Rifts (incl. Phase Rifts) fuse into a calm 10.0s Unstable Rift that insta-kills outside Safe Zone (-25 RES).",
                 bgColor = Color(0xFF0A2229),
                 borderColor = Color(0xFF2DD4BF),
                 bodyColor = Color(0xFFCCFBF1),
@@ -1194,7 +1194,7 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
               cx,
               cy,
               minDim * 0.39f,
-              spinAngle * 2.1f,
+              spinAngle * 0.45f,
               pulsePhase,
             )
           else -> {

@@ -2748,6 +2748,11 @@ class RiftArenaView(
       )
     }
 
+    // 11a-2. Practice Rift World-Space Golden Rift Target Outline Highlighter
+    if (engine.isEphemeralPracticeRift && engine.practiceTutorialActive && !isHubOverwatchMode) {
+      drawPracticeTutorialWorldHighlight(canvas, worldScale, tSec)
+    }
+
     canvas.restore()
     if (clippedToOverwatchCircle) {
       canvas.restore()
@@ -2760,6 +2765,11 @@ class RiftArenaView(
 
       // 12. Screen-Space Multi-Touch Controls (Always-Visible Left Stick + Strict Dynamic Right Combat Arc)
       drawTouchControlsOverlay(canvas, p)
+
+      // 12b. Practice Rift Screen-Space Golden Rift Control Outline & Offscreen Target Pointer
+      if (engine.isEphemeralPracticeRift && engine.practiceTutorialActive && !RiftCalibrationState.isUiUnlockedForDragging) {
+        drawPracticeTutorialScreenHighlight(canvas, vw, vh, p, effectiveCamX, effectiveCamY, worldScale, tSec)
+      }
 
       // 13. Stationary Death Camera 3-Second Respawn Countdown Overlay
       if (p.respawnTimer > 0f) {
@@ -5377,6 +5387,219 @@ class RiftArenaView(
       return true
     }
     return super.onKeyUp(keyCode, event)
+  }
+
+  private fun drawGoldenRiftOutlineCircle(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    baseRadius: Float,
+    strokeScale: Float,
+    tSec: Float,
+    jumpFrac: Float,
+  ) {
+    val pulse = 0.5f + 0.5f * sin(tSec * 5.2f)
+    val r = baseRadius * (1.0f + 0.24f * jumpFrac + 0.035f * pulse)
+
+    // Soft solar-gold outer Rift aura
+    anomalyFillPaint.color = Color.argb((32 + (36 * jumpFrac).toInt()).coerceIn(16, 84), 250, 204, 21)
+    canvas.drawCircle(cx, cy, r * 1.12f, anomalyFillPaint)
+
+    // Outer rotating 6-segment Golden Rift vortex ribbon (#FFD700)
+    val spinDeg = (tSec * 58f) % 360f
+    anomalyRingPaint.strokeWidth = 3.4f * strokeScale
+    anomalyRingPaint.color = Color.argb(242, 255, 215, 0)
+    arcRect.set(cx - r, cy - r, cx + r, cy + r)
+    for (seg in 0 until 6) {
+      canvas.drawArc(arcRect, spinDeg + seg * 60f, 38f, false, anomalyRingPaint)
+    }
+
+    // Counter-rotating inner harmonic gold-cream ring (#FEF08A)
+    val innerR = r * 0.90f
+    val counterDeg = (-tSec * 42f) % 360f
+    anomalyRingPaint.strokeWidth = 2.0f * strokeScale
+    anomalyRingPaint.color = Color.argb(215, 254, 240, 138)
+    arcRect.set(cx - innerR, cy - innerR, cx + innerR, cy + innerR)
+    for (seg in 0 until 4) {
+      canvas.drawArc(arcRect, counterDeg + seg * 90f, 52f, false, anomalyRingPaint)
+    }
+
+    // 4 Golden Rift harmonic diamond nodes along the outer ring
+    val nodeSize = (4.8f * strokeScale).coerceAtLeast(2.4f)
+    for (nIdx in 0 until 4) {
+      val rad = (spinDeg + nIdx * 90f) * (PI.toFloat() / 180f)
+      val nx = cx + cos(rad) * r
+      val ny = cy + sin(rad) * r
+      anomalyCorePaint.color = Color.parseColor("#FFD700")
+      canvas.drawCircle(nx, ny, nodeSize, anomalyCorePaint)
+      anomalyCorePaint.color = Color.WHITE
+      canvas.drawCircle(nx, ny, nodeSize * 0.46f, anomalyCorePaint)
+    }
+
+    // 4 Tactical Golden Rift lock brackets framing the circular outline
+    val bracketR = r * 1.07f
+    val arm = (r * 0.22f).coerceIn(10f * strokeScale, 34f * strokeScale)
+    anomalyRingPaint.strokeWidth = 2.6f * strokeScale
+    anomalyRingPaint.color = Color.parseColor("#FACC15")
+    val x0 = cx - bracketR
+    val y0 = cy - bracketR
+    val x1 = cx + bracketR
+    val y1 = cy + bracketR
+    canvas.drawLine(x0, y0, x0 + arm, y0, anomalyRingPaint)
+    canvas.drawLine(x0, y0, x0, y0 + arm, anomalyRingPaint)
+    canvas.drawLine(x1 - arm, y0, x1, y0, anomalyRingPaint)
+    canvas.drawLine(x1, y0, x1, y0 + arm, anomalyRingPaint)
+    canvas.drawLine(x0, y1 - arm, x0, y1, anomalyRingPaint)
+    canvas.drawLine(x0, y1, x0 + arm, y1, anomalyRingPaint)
+    canvas.drawLine(x1 - arm, y1, x1, y1, anomalyRingPaint)
+    canvas.drawLine(x1, y1 - arm, x1, y1, anomalyRingPaint)
+  }
+
+  private fun drawPracticeTutorialWorldHighlight(
+    canvas: Canvas,
+    worldScale: Float,
+    tSec: Float,
+  ) {
+    val target = engine.resolvePracticeTutorialWorldTarget() ?: return
+    val safeScale = worldScale.coerceAtLeast(0.18f)
+    val invScale = 1f / safeScale
+    val jumpFrac = (engine.practiceTutorialStepJumpFlashSec / 0.42f).coerceIn(0f, 1f)
+
+    drawGoldenRiftOutlineCircle(
+      canvas = canvas,
+      cx = target.x,
+      cy = target.y,
+      baseRadius = target.radius,
+      strokeScale = invScale * dpDensity * 0.92f,
+      tSec = tSec,
+      jumpFrac = jumpFrac,
+    )
+
+    drawWorldOverheadBanner(
+      canvas = canvas,
+      text = "TARGET // ${target.tagLabel}",
+      worldX = target.x,
+      worldY = target.y - target.radius * 1.12f - (14f * invScale),
+      fillColor = Color.parseColor("#FFD700"),
+      worldScale = worldScale,
+      sizeMultiplier = 1.14f,
+      alpha = 245,
+    )
+  }
+
+  private fun drawPracticeTutorialScreenHighlight(
+    canvas: Canvas,
+    vw: Float,
+    vh: Float,
+    p: ShipEntity,
+    effectiveCamX: Float,
+    effectiveCamY: Float,
+    worldScale: Float,
+    tSec: Float,
+  ) {
+    val step = engine.currentPracticeTutorialStep() ?: return
+    val jumpFrac = (engine.practiceTutorialStepJumpFlashSec / 0.42f).coerceIn(0f, 1f)
+
+    when (step) {
+      PracticeTutorialStep.MOVEMENT_AND_BOOST -> {
+        val lx = if (leftPointerId != MotionEvent.INVALID_POINTER_ID) leftOriginX else effLeftBaseX()
+        val ly = if (leftPointerId != MotionEvent.INVALID_POINTER_ID) leftOriginY else effLeftBaseY()
+        val lr = effLeftRadius() + 12f * dpDensity
+        drawGoldenRiftOutlineCircle(
+          canvas = canvas,
+          cx = lx,
+          cy = ly,
+          baseRadius = lr,
+          strokeScale = dpDensity * 0.90f,
+          tSec = tSec,
+          jumpFrac = jumpFrac,
+        )
+      }
+      PracticeTutorialStep.FIRING_AND_SHARED_FLUX -> {
+        val fx = effFireBtnX()
+        val fy = effFireBtnY()
+        val fr = effFireRadius() + 12f * dpDensity
+        drawGoldenRiftOutlineCircle(
+          canvas = canvas,
+          cx = fx,
+          cy = fy,
+          baseRadius = fr,
+          strokeScale = dpDensity * 0.90f,
+          tSec = tSec,
+          jumpFrac = jumpFrac,
+        )
+        if (p.spec.hasBomb) {
+          drawGoldenRiftOutlineCircle(
+            canvas = canvas,
+            cx = effBombBtnX(),
+            cy = effBombBtnY(),
+            baseRadius = effBombRadius() + 8f * dpDensity,
+            strokeScale = dpDensity * 0.72f,
+            tSec = tSec,
+            jumpFrac = jumpFrac,
+          )
+        }
+      }
+      PracticeTutorialStep.BUFF_CRATE,
+      PracticeTutorialStep.OBSTACLE,
+      PracticeTutorialStep.PLAYFIELD_RIFT,
+      PracticeTutorialStep.SAFE_ZONE -> {
+        val target = engine.resolvePracticeTutorialWorldTarget() ?: return
+        val sx = (target.x - effectiveCamX) * worldScale + vw * 0.5f
+        val sy = (target.y - effectiveCamY) * worldScale + vh * 0.5f
+        val marginX = 96f * dpDensity
+        val marginTop = 148f * dpDensity
+        val marginBot = 112f * dpDensity
+        val isOffscreen =
+          sx < marginX || sx > vw - marginX || sy < marginTop || sy > vh - marginBot
+        if (isOffscreen) {
+          val cx = vw * 0.5f
+          val cy = vh * 0.5f
+          val ang = atan2(sy - cy, sx - cx)
+          val rx = (vw * 0.5f - marginX).coerceAtLeast(100f)
+          val ry = (vh * 0.5f - max(marginTop, marginBot)).coerceAtLeast(70f)
+          val px = (cx + cos(ang) * rx).coerceIn(marginX, vw - marginX)
+          val py = (cy + sin(ang) * ry).coerceIn(marginTop, vh - marginBot)
+          val pulse = 0.5f + 0.5f * sin(tSec * 6.0f)
+
+          hudCircleFillPaint.color = Color.argb(215, 6, 13, 26)
+          canvas.drawCircle(px, py, 20f * dpDensity, hudCircleFillPaint)
+          hudCircleStrokePaint.strokeWidth = 2.4f * dpDensity
+          hudCircleStrokePaint.color =
+            Color.argb((210 + (45 * pulse).toInt()).coerceIn(0, 255), 255, 215, 0)
+          canvas.drawCircle(px, py, 20f * dpDensity, hudCircleStrokePaint)
+
+          val tipDist = 29f * dpDensity
+          val tipX = px + cos(ang) * tipDist
+          val tipY = py + sin(ang) * tipDist
+          val wingLeftX = px + cos(ang + 0.42f) * (19f * dpDensity)
+          val wingLeftY = py + sin(ang + 0.42f) * (19f * dpDensity)
+          val wingRightX = px + cos(ang - 0.42f) * (19f * dpDensity)
+          val wingRightY = py + sin(ang - 0.42f) * (19f * dpDensity)
+          plumePath.reset()
+          plumePath.moveTo(tipX, tipY)
+          plumePath.lineTo(wingLeftX, wingLeftY)
+          plumePath.lineTo(wingRightX, wingRightY)
+          plumePath.close()
+          hudCircleFillPaint.color = Color.parseColor("#FFD700")
+          canvas.drawPath(plumePath, hudCircleFillPaint)
+
+          val distMeters = (hypot(target.x - p.x, target.y - p.y) / 10f).roundToInt()
+          hudLabelPaint.textSize = 8.4f * dpDensity
+          hudLabelPaint.color = Color.parseColor("#FEF08A")
+          canvas.drawText("${distMeters}m", px, py + 3.0f * dpDensity, hudLabelPaint)
+          hudLabelPaint.textSize = 7.8f * dpDensity
+          hudLabelPaint.color = Color.parseColor("#FFD700")
+          canvas.drawText(
+            target.tagLabel,
+            px,
+            py + (if (sin(ang) > 0f) -26f else 32f) * dpDensity,
+            hudLabelPaint,
+          )
+        }
+      }
+      else -> Unit
+    }
   }
 }
 

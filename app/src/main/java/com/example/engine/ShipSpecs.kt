@@ -1066,7 +1066,7 @@ data class CustomShipLoadoutSlot(
         ),
         PrimaryWeaponOption(
           "ION_NEEDLER",
-          "Twin Ion Needlers",
+          "Needler",
           "NEEDLER",
           10,
           "Rapid twin-stream ion bolts (18 Flux • 2x82 DMG • 0 Bounces)",
@@ -1805,7 +1805,7 @@ object RiftCodex {
     val (pTitle, pShort, pCost, pCd, pDmg, pSpeed, pStreams, pSpread, pBounce, isParallel) =
       when (slot.primaryArchetype) {
         "ION_NEEDLER" ->
-          PrimaryTuple("Twin Ion Needlers", "NEEDLER", 18f, 0.13f, 82f, 950f, 2, 0.04f, 0, false)
+          PrimaryTuple("Needler", "NEEDLER", 18f, 0.13f, 82f, 950f, 2, 0.04f, 0, false)
         "TWIN_SCATTER" ->
           PrimaryTuple("Twin Scatter Cannons", "SCATTER", 20f, 0.14f, 88f, 900f, 2, 0.065f, 0, false)
         "ANGLED_PULSE" ->
@@ -1947,11 +1947,11 @@ object RiftCodex {
       RiftAnomalyCodexEntry(
         id = "unstable_rift",
         title = "UNSTABLE RIFT",
-        classification = "CONVERGENCE COLLAPSE",
-        specBadge = "10.0s • 75% MAX FLUX",
+        classification = "SPACETIME CONVERGENCE",
+        specBadge = "10.0s • INSTA-KILL OUTSIDE SAFE ZONE",
         accentHex = "#FACC15",
-        effectSummary = "Formed when two non-paired Playfield Rifts touch or expand into each other, fusing into a volatile 10.0s convergence timer singularity that unleashes a 75% Max Flux collapse shockwave and shatters nearby Crystal Asteroids.",
-        tacticalNote = "Burn Afterburners or Phase Dash outside its 2.15x blast ring before the 10.0s convergence timer reaches zero!",
+        effectSummary = "Formed when ANY two overlapping active Playfield Rifts (including Paired Phase Rifts) touch or expand into contact, fusing into a calm-spinning 10.0s spacetime tear ('UNSTABLE RIFT CONVERGENCE // RETURN TO SAFE ZONE'). At 0.0s it insta-kills all ships outside the Safe Zone (-25 Live Resonance, floored at 0) and shatters nearby Crystal Asteroids.",
+        tacticalNote = "Burn Afterburners or Phase Dash into the central Safe-Zone Harbor before the 10.0s convergence countdown reaches 0.0s!",
       ),
     )
 
@@ -2211,8 +2211,8 @@ object RiftCodex {
         role = "Stealth & EMP",
         tacticalLore = "Cloaks invisibly (36 Flux/s, 20 Flux entry, 50% cloaked AB drain, 4.5s CD) and unleashes a 0-Flux 360° EMP burst on decloak (-25% Max Flux capped at 850 + 2.0s recharge freeze).",
         silhouetteDesc = "Wide stingray hydrofoil with gold-plated arc emitters and a pulsing V-cyan capacitor.",
-        weaponSummary = "PRI: NEEDLER (18 Flux) • CLS: Cloak (36/s • 4.5s CD) + 0-Flux Decloak EMP (25% Cap 850 • 2.0s Freeze)",
-        primaryTitle = "Twin Ion Needlers",
+        weaponSummary = "PRI: Needler (18 Flux) • CLS: Cloak (36/s • 4.5s CD) + 0-Flux Decloak EMP (25% Cap 850 • 2.0s Freeze)",
+        primaryTitle = "Needler",
         secondaryTitle = "Tactical Cloak (36 Flux/s • 4.5s CD) + 0-Flux Decloak EMP (25% Cap 850 • 2.0s)",
         primaryShortLabel = "NEEDLER",
         secondaryShortLabel = "CLOAK",
