@@ -41,6 +41,8 @@ data class WallRect(
   val maxHp: Float = 2400f,
   var stationHitCounter: Int = 0,
   var hitFlashTimer: Float = 0f,
+  var lastHitAngle: Float = 0f,
+  var lastAttackerShipId: String = "",
 ) {
   val type: SpaceObstacleType
     get() = style
@@ -2179,8 +2181,11 @@ class RiftGameEngine(
     return false
   }
 
+  private fun isStationDefenseOwner(ownerId: String): Boolean =
+    ownerId == "station_defense" || ownerId == "station_retaliation" || ownerId == "station_cascade"
+
   fun isBulletAlliedWithShip(b: BulletEntity, s: ShipEntity): Boolean {
-    if (b.ownerId == "station_defense") return false
+    if (isStationDefenseOwner(b.ownerId)) return false
     if (b.ownerId == s.id) return true
     if (isTeamBasedRankedMode()) return b.freq == s.freq
     val allowFfaArmadas = currentCustomGame?.allowArmadasInFfa ?: true
@@ -4693,18 +4698,206 @@ class RiftGameEngine(
   }
 
   /**
+   * Fires a targeted `5`-bolt retaliatory defense salvo (`NOVA_BOLT` / `isHeavyBurst`) from `station`,
+   * chains up to `2` neighboring stations within `1,400px` for `3`-bolt cascading defense bursts,
+   * and unleashes a `16`-bolt `360°` Overload Defense Nova every `10` hits!
+   */
+  fun triggerStationAttackResponse(station: WallRect, attacker: ShipEntity?, impactAngle: Float) {
+    station.lastHitAngle = impactAngle
+    station.hitFlashTimer = 0.22f
+    station.lastAttackerShipId = attacker?.id ?: ""
+    station.stationHitCounter++
+
+    val stCx = station.x + station.w * 0.5f
+    val stCy = station.y + station.h * 0.5f
+    val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
+    val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
+
+    fun isEligibleTarget(cand: ShipEntity): Boolean =
+      cand.respawnTimer <= 0f &&
+        !isInsideSafeZone(cand.x, cand.y) &&
+        !(isInLobbyStaging && cand.isLocalPlayer)
+
+    val target: ShipEntity? =
+      when {
+        attacker != null &&
+          isEligibleTarget(attacker) &&
+          (!attacker.isLocalPlayer ||
+            isHubOverwatchActive ||
+            hypot(attacker.x - stCx, attacker.y - stCy) <= 1250f) -> attacker
+        else ->
+          ships
+            .filter { isEligibleTarget(it) && hypot(it.x - stCx, it.y - stCy) <= 1250f }
+            .minByOrNull { hypot(it.x - stCx, it.y - stCy) }
+      }
+
+    if (target != null) {
+      val baseAim = atan2(target.y - stCy, target.x - stCx)
+      val salvoSpeed = 780f * customSpdMult
+      val salvoDamage = 72f * customDmgMult
+      val exitR = hypot(station.w * 0.5f, station.h * 0.5f) + 10f
+      val salvoSpreads = floatArrayOf(-0.12f, -0.06f, 0f, 0.06f, 0.12f)
+      for (spread in salvoSpreads) {
+        val a = baseAim + spread
+        val sx = stCx + cos(a) * exitR
+        val sy = stCy + sin(a) * exitR
+        if (isInsideSafeZone(sx, sy)) continue
+        bullets.add(
+          BulletEntity(
+            ownerId = "station_retaliation",
+            ownerShipId = 0,
+            ownerCallsign = "STATION DEFENSE",
+            ownerSyndicateTag = "SECTOR",
+            ownerArmadaName = "",
+            ownerIsHuman = false,
+            freq = -999,
+            x = sx,
+            y = sy,
+            vx = cos(a) * salvoSpeed,
+            vy = sin(a) * salvoSpeed,
+            damage = salvoDamage,
+            bouncesLeft = 0,
+            life = 1.72f,
+            color = Color.parseColor("#FACC15"),
+            isHeavyBurst = true,
+            ownerShipLabel = "Orbital Station",
+            weaponLabel = "NOVA_BOLT",
+          )
+        )
+      }
+
+      // Station-to-Station Chain Response: up to 2 neighboring stations within 1,400px fire a 3-bolt cascading burst
+      val neighborStations =
+        walls
+          .filter { neighbor ->
+            neighbor !== station &&
+              (neighbor.style == SpaceObstacleStyle.ORBITAL_STATION ||
+                neighbor.style == SpaceObstacleStyle.ASTEROID_STATION) &&
+              hypot(
+                (neighbor.x + neighbor.w * 0.5f) - stCx,
+                (neighbor.y + neighbor.h * 0.5f) - stCy,
+              ) <= 1400f
+          }
+          .sortedBy { neighbor ->
+            hypot(
+              (neighbor.x + neighbor.w * 0.5f) - stCx,
+              (neighbor.y + neighbor.h * 0.5f) - stCy,
+            )
+          }
+          .take(2)
+
+      val cascadeSpreads = floatArrayOf(-0.09f, 0f, 0.09f)
+      val cascadeSpeed = 740f * customSpdMult
+      val cascadeDamage = 58f * customDmgMult
+      for (neighbor in neighborStations) {
+        val nCx = neighbor.x + neighbor.w * 0.5f
+        val nCy = neighbor.y + neighbor.h * 0.5f
+        neighbor.lastHitAngle = impactAngle
+        neighbor.hitFlashTimer = max(neighbor.hitFlashTimer, 0.16f)
+        val nAim = atan2(target.y - nCy, target.x - nCx)
+        val nExitR = hypot(neighbor.w * 0.5f, neighbor.h * 0.5f) + 10f
+        for (cSpread in cascadeSpreads) {
+          val ca = nAim + cSpread
+          val csx = nCx + cos(ca) * nExitR
+          val csy = nCy + sin(ca) * nExitR
+          if (isInsideSafeZone(csx, csy)) continue
+          bullets.add(
+            BulletEntity(
+              ownerId = "station_cascade",
+              ownerShipId = 0,
+              ownerCallsign = "STATION LINK",
+              ownerSyndicateTag = "SECTOR",
+              ownerArmadaName = "",
+              ownerIsHuman = false,
+              freq = -999,
+              x = csx,
+              y = csy,
+              vx = cos(ca) * cascadeSpeed,
+              vy = sin(ca) * cascadeSpeed,
+              damage = cascadeDamage,
+              bouncesLeft = 0,
+              life = 1.65f,
+              color = Color.parseColor("#38BDF8"),
+              isHeavyBurst = true,
+              ownerShipLabel = "Orbital Station",
+              weaponLabel = "NOVA_BOLT",
+            )
+          )
+        }
+      }
+    }
+
+    if (station.stationHitCounter >= 10) {
+      station.stationHitCounter = 0
+      val novaSpeed = 820f * customSpdMult
+      val novaDamage = 165f * customDmgMult
+      val exitR = hypot(station.w * 0.5f, station.h * 0.5f) + 10f
+      for (k in 0 until 16) {
+        val a = (PI.toFloat() * 2f * k) / 16f
+        val sx = stCx + cos(a) * exitR
+        val sy = stCy + sin(a) * exitR
+        if (isInsideSafeZone(sx, sy)) continue
+        bullets.add(
+          BulletEntity(
+            ownerId = "station_defense",
+            ownerShipId = 0,
+            ownerCallsign = "STATION DEFENSE",
+            ownerSyndicateTag = "SECTOR",
+            ownerArmadaName = "",
+            ownerIsHuman = false,
+            freq = -999,
+            x = sx,
+            y = sy,
+            vx = cos(a) * novaSpeed,
+            vy = sin(a) * novaSpeed,
+            damage = novaDamage,
+            bouncesLeft = 1,
+            life = 1.85f,
+            color = Color.parseColor("#FACC15"),
+            isHeavyBurst = true,
+            ownerShipLabel = "Orbital Station",
+            weaponLabel = "Station Defense Nova",
+          )
+        )
+      }
+      shockwaves.add(ShockwaveEntity(stCx, stCy, 24f, 260f, Color.parseColor("#FACC15")))
+      shockwaves.add(ShockwaveEntity(stCx, stCy, 14f, 180f, Color.parseColor("#EF4444")))
+      if (hypot(stCx - localPlayer.x, stCy - localPlayer.y) < 1400f) {
+        sfx.playLaser()
+        addTrauma(0.24f)
+      }
+      spawnPooledFct(
+        text = "STATION DEFENSE NOVA!",
+        x = stCx,
+        y = stCy - 34f,
+        color = Color.parseColor("#FACC15"),
+        maxLife = 1.2f,
+      )
+    }
+  }
+
+  /**
    * Applies projectile impact telemetry to arena obstacles:
    * - `CRYSTAL_ASTEROID` (`2,400 HP`): shatters at `0 HP`, drops a guaranteed `GreenCrate`, and respawns after `20.0s`.
-   * - `ORBITAL_STATION` / `ASTEROID_STATION`: increments `stationHitCounter`; every `10` hits fires a 16-bolt `360°` Station Defense Nova!
+   * - `ORBITAL_STATION` / `ASTEROID_STATION`: triggers directional hit ripple, retaliatory 5-bolt salvo, neighbor cascade, and 10-hit `360°` Overload Defense Nova!
    */
-  private fun onObstacleProjectileHit(wallIndex: Int, damage: Float, hitX: Float, hitY: Float) {
+  private fun onObstacleProjectileHit(
+    wallIndex: Int,
+    damage: Float,
+    hitX: Float,
+    hitY: Float,
+    attackerId: String = "",
+    isStationProjectile: Boolean = false,
+  ) {
     if (wallIndex !in walls.indices) return
     val w = walls[wallIndex]
-    w.hitFlashTimer = 0.16f
     val cx = w.x + w.w * 0.5f
     val cy = w.y + w.h * 0.5f
+    val impactAngle = atan2(hitY - cy, hitX - cx)
+    w.lastHitAngle = impactAngle
 
     if (w.style == SpaceObstacleStyle.CRYSTAL_ASTEROID) {
+      w.hitFlashTimer = 0.22f
       w.hp -= damage.coerceAtLeast(1f)
       if (w.hp <= 0f) {
         pendingAsteroidRespawns.add(
@@ -4746,54 +4939,40 @@ class RiftGameEngine(
       w.style == SpaceObstacleStyle.ORBITAL_STATION ||
         w.style == SpaceObstacleStyle.ASTEROID_STATION
     ) {
-      w.stationHitCounter++
-      if (w.stationHitCounter >= 10) {
-        w.stationHitCounter = 0
-        val customSpdMult = currentCustomGame?.speedMult ?: 1.0f
-        val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
-        val novaSpeed = 820f * customSpdMult
-        val novaDamage = 165f * customDmgMult
-        val exitR = hypot(w.w * 0.5f, w.h * 0.5f) + 10f
-        for (k in 0 until 16) {
-          val a = (PI.toFloat() * 2f * k) / 16f
-          val sx = cx + cos(a) * exitR
-          val sy = cy + sin(a) * exitR
-          if (isInsideSafeZone(sx, sy)) continue
-          bullets.add(
-            BulletEntity(
-              ownerId = "station_defense",
-              ownerShipId = 0,
-              ownerCallsign = "STATION DEFENSE",
-              ownerSyndicateTag = "SECTOR",
-              ownerArmadaName = "",
-              ownerIsHuman = false,
-              freq = -999,
-              x = sx,
-              y = sy,
-              vx = cos(a) * novaSpeed,
-              vy = sin(a) * novaSpeed,
-              damage = novaDamage,
-              bouncesLeft = 1,
-              life = 1.85f,
-              color = Color.parseColor("#FACC15"),
-              isHeavyBurst = true,
-              ownerShipLabel = "Orbital Station",
-              weaponLabel = "Station Defense Nova",
-            )
-          )
-        }
-        shockwaves.add(ShockwaveEntity(cx, cy, 24f, 260f, Color.parseColor("#FACC15")))
-        shockwaves.add(ShockwaveEntity(cx, cy, 14f, 180f, Color.parseColor("#EF4444")))
-        if (hypot(cx - localPlayer.x, cy - localPlayer.y) < 1400f) {
-          sfx.playLaser()
-          addTrauma(0.24f)
-        }
-        spawnPooledFct(
-          text = "STATION DEFENSE NOVA!",
-          x = cx,
-          y = cy - 34f,
-          color = Color.parseColor("#FACC15"),
-          maxLife = 1.2f,
+      if (isStationProjectile) {
+        w.hitFlashTimer = max(w.hitFlashTimer, 0.14f)
+      } else {
+        val attacker = if (attackerId.isNotEmpty()) ships.firstOrNull { it.id == attackerId } else null
+        triggerStationAttackResponse(w, attacker, impactAngle)
+      }
+    } else {
+      w.hitFlashTimer = 0.22f
+    }
+  }
+
+  private fun applyExplosionToObstacles(
+    blastX: Float,
+    blastY: Float,
+    blastRadius: Float,
+    baseDamage: Float,
+    attackerId: String,
+  ) {
+    if (blastRadius <= 0f || walls.isEmpty()) return
+    for (wIdx in walls.indices.reversed()) {
+      val w = walls[wIdx]
+      if (w.style == SpaceObstacleStyle.PERMANENT_BARRIER) continue
+      val nearX = blastX.coerceIn(w.x, w.x + w.w)
+      val nearY = blastY.coerceIn(w.y, w.y + w.h)
+      val dist = hypot(blastX - nearX, blastY - nearY)
+      if (dist <= blastRadius) {
+        val falloff = (1f - (dist / blastRadius.coerceAtLeast(1f)) * 0.45f).coerceIn(0.45f, 1f)
+        onObstacleProjectileHit(
+          wallIndex = wIdx,
+          damage = baseDamage * falloff,
+          hitX = nearX,
+          hitY = nearY,
+          attackerId = attackerId,
+          isStationProjectile = false,
         )
       }
     }
@@ -4806,7 +4985,14 @@ class RiftGameEngine(
       return
     }
     if (hit.wallIndex >= 0) {
-      onObstacleProjectileHit(hit.wallIndex, bullet.damage, hit.hitX, hit.hitY)
+      onObstacleProjectileHit(
+        wallIndex = hit.wallIndex,
+        damage = bullet.damage,
+        hitX = hit.hitX,
+        hitY = hit.hitY,
+        attackerId = bullet.ownerId,
+        isStationProjectile = isStationDefenseOwner(bullet.ownerId),
+      )
     }
     if (bullet.bouncesLeft > 0) {
       bullet.bouncesLeft--
@@ -4845,7 +5031,13 @@ class RiftGameEngine(
       return
     }
     if (hit.wallIndex >= 0) {
-      onObstacleProjectileHit(hit.wallIndex, bomb.damage, hit.hitX, hit.hitY)
+      onObstacleProjectileHit(
+        wallIndex = hit.wallIndex,
+        damage = bomb.damage,
+        hitX = hit.hitX,
+        hitY = hit.hitY,
+        attackerId = bomb.ownerId,
+      )
     }
     if (bomb.bouncesLeft > 0) {
       bomb.bouncesLeft--
@@ -7834,7 +8026,14 @@ class RiftGameEngine(
       if (bulletWallHit != null) {
         hitWall = true
         if (bulletWallHit.wallIndex >= 0) {
-          onObstacleProjectileHit(bulletWallHit.wallIndex, b.damage, bulletWallHit.hitX, bulletWallHit.hitY)
+          onObstacleProjectileHit(
+            wallIndex = bulletWallHit.wallIndex,
+            damage = b.damage,
+            hitX = bulletWallHit.hitX,
+            hitY = bulletWallHit.hitY,
+            attackerId = b.ownerId,
+            isStationProjectile = isStationDefenseOwner(b.ownerId),
+          )
         }
         if (b.bouncesLeft > 0) {
           b.bouncesLeft--
@@ -8055,6 +8254,13 @@ class RiftGameEngine(
             }
           }
         }
+        applyExplosionToObstacles(
+          blastX = b.x,
+          blastY = b.y,
+          blastRadius = expRadius,
+          baseDamage = expDmg,
+          attackerId = b.ownerId,
+        )
         if ((isMissile || isCustomOrb) && hypot(b.x - localPlayer.x, b.y - localPlayer.y) < 1100f) {
           sfx.playExplosion()
         }
@@ -8232,7 +8438,13 @@ class RiftGameEngine(
         if (bombWallHit != null) {
           hitWall = true
           if (bombWallHit.wallIndex >= 0) {
-            onObstacleProjectileHit(bombWallHit.wallIndex, b.damage, bombWallHit.hitX, bombWallHit.hitY)
+            onObstacleProjectileHit(
+              wallIndex = bombWallHit.wallIndex,
+              damage = b.damage,
+              hitX = bombWallHit.hitX,
+              hitY = bombWallHit.hitY,
+              attackerId = b.ownerId,
+            )
           }
           if (b.bouncesLeft > 0) {
             b.bouncesLeft--
@@ -8457,6 +8669,13 @@ class RiftGameEngine(
                 }
               }
             }
+            applyExplosionToObstacles(
+              blastX = b.x,
+              blastY = b.y,
+              blastRadius = blastRadius,
+              baseDamage = b.damage * 0.75f,
+              attackerId = b.ownerId,
+            )
             if (b.type == "CUSTOM_ORB") {
               shockwaves.add(ShockwaveEntity(b.x, b.y, 16f, blastRadius, if (b.customColor != 0) b.customColor else Color.parseColor("#22D3EE")))
             }
@@ -8561,7 +8780,13 @@ class RiftGameEngine(
       val droneWallHit = segmentFirstWallHit(dr.x, dr.y, dnx, dny, pad = 6f)
       if (droneWallHit != null) {
         if (droneWallHit.wallIndex >= 0) {
-          onObstacleProjectileHit(droneWallHit.wallIndex, dr.damage * 0.35f, droneWallHit.hitX, droneWallHit.hitY)
+          onObstacleProjectileHit(
+            wallIndex = droneWallHit.wallIndex,
+            damage = dr.damage * 0.35f,
+            hitX = droneWallHit.hitX,
+            hitY = droneWallHit.hitY,
+            attackerId = dr.ownerId,
+          )
         }
         dr.x = droneWallHit.hitX + droneWallHit.normalX * 4f
         dr.y = droneWallHit.hitY + droneWallHit.normalY * 4f
@@ -9737,7 +9962,7 @@ class RiftGameEngine(
           // Swept-segment bullet absorption across 0.92x visible physicalRadius (+18px per bullet up to 440px + violet accretion pulse)
           for (bIdx in bullets.indices.reversed()) {
             val b = bullets[bIdx]
-            if (b.ownerId == "station_defense") continue
+            if (isStationDefenseOwner(b.ownerId)) continue
             val prevX = b.x - b.vx * dt
             val prevY = b.y - b.vy * dt
             val sweptDist = sweptDistToRift(prevX, prevY, b.x, b.y)
@@ -9838,7 +10063,8 @@ class RiftGameEngine(
                 // Tidal crush inside 0.95x physicalRadius (plus obstacle rim overlap)
                 if (dist <= anom.physicalRadius * 0.95f + halfDiag * 0.35f) {
                   w.hp -= 950f * dt
-                  w.hitFlashTimer = max(w.hitFlashTimer, 0.08f)
+                  w.lastHitAngle = atan2(anom.y - wCy, anom.x - wCx)
+                  w.hitFlashTimer = max(w.hitFlashTimer, 0.12f)
                 }
 
                 if (w.hp <= 0f || dist <= anom.physicalRadius * 0.42f) {

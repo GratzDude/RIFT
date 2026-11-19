@@ -71,6 +71,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.data.FriendPilotEntry
+import com.example.data.LivePilotState
 import com.example.data.LocalPilotPrefs
 import com.example.data.PilotAchievement
 import com.example.data.RiftBillingManager
@@ -858,9 +859,56 @@ fun RiftArenaScreen(
     }
   }
 
-  LaunchedEffect(sectorPilotsState) {
-    val remoteList = (sectorPilotsState as? UiState.Success)?.data ?: return@LaunchedEffect
-    engine.updateRemotePilots(remoteList, currentUserId)
+  val mergedLivePilots =
+    remember(sectorPilotsState, allOnlineHumansState, blockedPilotUids) {
+      val byUid = linkedMapOf<String, LivePilotState>()
+      val sectorList = (sectorPilotsState as? UiState.Success)?.data.orEmpty()
+      for (pilot in sectorList + allOnlineHumansState) {
+        val pUid = pilot.userId.ifEmpty { pilot.id }
+        if (pUid.isBlank() || pUid in blockedPilotUids) continue
+        val prev = byUid[pUid]
+        val prevMs = prev?.updatedAt?.toDate()?.time ?: 0L
+        val curMs = pilot.updatedAt?.toDate()?.time ?: 0L
+        if (prev == null || curMs >= prevMs) {
+          byUid[pUid] = pilot
+        }
+      }
+      byUid.values.toList()
+    }
+
+  fun pushLivePilotHeartbeatNow() {
+    if (!isGoogleAuthenticated) return
+    val p = engine.localPlayer
+    val safeCallsign =
+      p.callsign.trim().ifBlank { callsign.trim() }.ifBlank { "PILOT" }.take(24).let {
+        if (it.length < 2) "PILOT" else it
+      }
+    viewModel.syncNativeLiveState(
+      sectorId = engine.activeMatchSectorTag(),
+      callsign = safeCallsign,
+      syndicateTag = p.syndicateTag.take(12),
+      armadaName = p.armadaName.take(12),
+      shipId = p.shipId.coerceIn(1, 10),
+      freq = p.freq.coerceIn(0, 99),
+      x = p.x.coerceIn(-99000f, 99000f),
+      y = p.y.coerceIn(-99000f, 99000f),
+      vx = p.vx.coerceIn(-4900f, 4900f),
+      vy = p.vy.coerceIn(-4900f, 4900f),
+      angle = p.angle.coerceIn(-99f, 99f),
+      weaponAngle = p.weaponAngle.coerceIn(-99f, 99f),
+      isFiringPrimary =
+        engine.hasJoinedMatch && engine.fireStickActive && !engine.isCancelActive && p.canFire,
+      isAfterburning = engine.hasJoinedMatch && p.afterburning,
+      isCloaked = engine.hasJoinedMatch && p.isCloaked,
+      flux = p.flux.coerceIn(0f, 10000f),
+      maxFlux = p.maxFlux.coerceIn(100f, 10000f),
+      bounty = p.bounty.coerceAtLeast(0),
+      liveResonance = engine.liveResonance.coerceIn(0, 1000000),
+    )
+  }
+
+  LaunchedEffect(mergedLivePilots) {
+    engine.updateRemotePilots(mergedLivePilots, currentUserId)
   }
 
   LaunchedEffect(cloudSyndicatesState) {
@@ -888,31 +936,12 @@ fun RiftArenaScreen(
 
   LaunchedEffect(currentUserId, isGoogleAuthenticated) {
     if (!isGoogleAuthenticated) return@LaunchedEffect
+    pushLivePilotHeartbeatNow()
     while (true) {
-      delay(350L)
-      if (!engine.hasJoinedMatch) continue
-      val p = engine.localPlayer
-      viewModel.syncNativeLiveState(
-        sectorId = engine.activeMatchSectorTag(),
-        callsign = p.callsign,
-        syndicateTag = p.syndicateTag,
-        armadaName = p.armadaName,
-        shipId = p.shipId,
-        freq = p.freq,
-        x = p.x,
-        y = p.y,
-        vx = p.vx,
-        vy = p.vy,
-        angle = p.angle,
-        weaponAngle = p.weaponAngle,
-        isFiringPrimary = engine.fireStickActive && !engine.isCancelActive && p.canFire,
-        isAfterburning = p.afterburning,
-        isCloaked = p.isCloaked,
-        flux = p.flux,
-        maxFlux = p.maxFlux,
-        bounty = p.bounty,
-        liveResonance = engine.liveResonance,
-      )
+      val intervalMs =
+        if (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift) 350L else 4000L
+      delay(intervalMs)
+      pushLivePilotHeartbeatNow()
     }
   }
 
@@ -1019,12 +1048,8 @@ fun RiftArenaScreen(
       !isLiveHudDragPillOpen
 
   val overwatchInstances =
-    remember(allOnlineHumansState, blockedPilotUids, frameTick) {
-      val cleanHumans =
-        allOnlineHumansState.filter { p ->
-          val pUid = p.userId.ifEmpty { p.id }
-          pUid.isNotBlank() && pUid !in blockedPilotUids
-        }
+    remember(mergedLivePilots, frameTick) {
+      val cleanHumans = mergedLivePilots
       fun humanStatsForSector(sectorTag: String, fallbackSimResonance: Int): Pair<Int, Int> {
         val matching = cleanHumans.filter { it.sectorId.equals(sectorTag, ignoreCase = true) }
         if (matching.isEmpty()) return Pair(0, fallbackSimResonance)
@@ -1178,10 +1203,7 @@ fun RiftArenaScreen(
         customConfig = effectiveOverwatchInstance.customConfig,
         seedSalt = effectiveOverwatchInstance.seedSalt,
       )
-      val remoteList = (sectorPilotsState as? UiState.Success)?.data
-      if (remoteList != null) {
-        engine.updateRemotePilots(remoteList, currentUserId)
-      }
+      engine.updateRemotePilots(mergedLivePilots, currentUserId)
     } else if (!isHubOverwatchVisible) {
       engine.isHubOverwatchActive = false
       overwatchZoomUi = 1.0f
@@ -1424,13 +1446,7 @@ fun RiftArenaScreen(
                 }
               }
 
-            val onlineHumanPilotsList =
-              remember(allOnlineHumansState, blockedPilotUids) {
-                allOnlineHumansState.filter { p ->
-                  val pUid = p.userId.ifEmpty { p.id }
-                  pUid.isNotBlank() && pUid !in blockedPilotUids
-                }
-              }
+            val onlineHumanPilotsList = mergedLivePilots
 
             val highestBountySummary =
               remember(
@@ -2034,6 +2050,7 @@ fun RiftArenaScreen(
                             syncEquippedCosmeticsToEngine(engine)
                             engine.onStatsUpdated()
                             if (engine.hasJoinedMatch) {
+                              pushLivePilotHeartbeatNow()
                               pendingStagedLaunch = null
                               isNexusShellOpen = false
                             }
@@ -2877,6 +2894,7 @@ fun RiftArenaScreen(
               onLeaveMatch = {
                 pendingStagedLaunch = null
                 engine.leaveActiveMatchToNexusOrbit()
+                pushLivePilotHeartbeatNow()
                 toastMessage = "LEFT MATCH // ORBITING NEXUS SECTOR"
                 toastVersion++
                 frameTick++
@@ -3370,6 +3388,7 @@ fun RiftArenaScreen(
                     engine.deployToRankedMode(inst.rankedMode, targetBracket)
                     syncEquippedCosmeticsToEngine(engine)
                     engine.onStatsUpdated()
+                    pushLivePilotHeartbeatNow()
                     isNexusShellOpen = false
                     sfx.playPrize()
                     toastMessage = "ZONED INTO ${inst.modeTitle} // ${inst.riftLabel}"
@@ -3413,6 +3432,7 @@ fun RiftArenaScreen(
                   }
                   syncEquippedCosmeticsToEngine(engine)
                   engine.onStatsUpdated()
+                  pushLivePilotHeartbeatNow()
                   isNexusShellOpen = false
                   sfx.playPrize()
                   toastMessage = "ZONED INTO ${inst.modeTitle} // ${inst.riftLabel}"

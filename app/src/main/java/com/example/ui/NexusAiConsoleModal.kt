@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -94,6 +95,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -1921,6 +1923,7 @@ private fun SciFiTabletModuleCard(
         blurRadius = 6f,
       )
     }
+  val phaseSeedRad = remember(title) { ((abs(title.hashCode()) % 360) * (PI / 180.0)).toFloat() }
 
   Box(
     modifier =
@@ -1928,7 +1931,7 @@ private fun SciFiTabletModuleCard(
         .minimumInteractiveComponentSize()
         .clip(RoundedCornerShape(9.dp))
         .background(
-          Brush.linearGradient(
+          Brush.verticalGradient(
             colors =
               if (isFocused) {
                 listOf(Color(0xF50B1C36), Color(0xF0060D1A))
@@ -1952,12 +1955,12 @@ private fun SciFiTabletModuleCard(
         .clickable { onClick() }
         .testTag(testTag),
   ) {
-    // Chamfered Tactical Corner Brackets + Inner Digitizing Aperture Coupling Bar
+    // Chamfered Tactical Corner Brackets + Inner Digitizing Aperture Coupling Bar + Instrument Divider
     Canvas(modifier = Modifier.fillMaxSize()) {
       val w = size.width
       val h = size.height
       if (w <= 4f || h <= 4f) return@Canvas
-      val brk = 10.dp.toPx().coerceAtMost(min(w, h) * 0.26f)
+      val brk = 10.dp.toPx().coerceAtMost(min(w, h) * 0.24f)
       val sw = 1.6.dp.toPx()
       val bracketCol = if (isFocused) Color.White else accent
       val goldCorner = Color(0xFFFACC15).copy(alpha = 0.82f)
@@ -1969,71 +1972,101 @@ private fun SciFiTabletModuleCard(
       drawLine(goldCorner, Offset(w - 2f, h - 2f - brk), Offset(w - 2f, h - 2f), strokeWidth = sw)
       drawLine(goldCorner, Offset(w - 2f - brk, h - 2f), Offset(w - 2f, h - 2f), strokeWidth = sw)
 
+      // Subtle mid-deck instrument horizon line separating Top Graphic Bay from Bottom Full-Width Readout
+      val midY = h * 0.51f
+      drawLine(
+        brush =
+          Brush.horizontalGradient(
+            listOf(
+              Color.Transparent,
+              accent.copy(alpha = 0.28f),
+              secondaryAccent.copy(alpha = 0.24f),
+              Color.Transparent,
+            )
+          ),
+        start = Offset(w * 0.08f, midY),
+        end = Offset(w * 0.92f, midY),
+        strokeWidth = 1.dp.toPx(),
+      )
+
       // Inner Overwatch-facing digital telemetry rail
       val innerX = if (isRightColumn) 1.6f else (w - 1.6f)
       drawLine(
         brush = Brush.verticalGradient(listOf(Color.Transparent, accent, Color.Transparent)),
-        start = Offset(innerX, h * 0.16f),
-        end = Offset(innerX, h * 0.84f),
+        start = Offset(innerX, h * 0.14f),
+        end = Offset(innerX, h * 0.86f),
         strokeWidth = 2.4.dp.toPx(),
         cap = StrokeCap.Round,
       )
     }
 
-    Row(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
-      horizontalArrangement = Arrangement.spacedBy(10.dp),
-      verticalAlignment = Alignment.CenterVertically,
+    Column(
+      modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.SpaceBetween,
     ) {
-      if (!isRightColumn) {
+      // TOP SLOT (~50% card height): Slow-Moving Animated Instrument Readout framing the Metallic Emblem + Status Pill
+      Box(
+        modifier =
+          Modifier.weight(0.51f)
+            .fillMaxWidth()
+            .heightIn(min = 38.dp, max = 62.dp),
+        contentAlignment = Alignment.Center,
+      ) {
         HubMetallicEmblemPedestal(
           emblemBitmap = emblemBitmap,
           contentDescription = title,
           accent = accent,
           secondaryAccent = secondaryAccent,
+          phaseSeedRad = phaseSeedRad,
         )
-      }
 
-      Column(
-        modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Text(
-            text = title,
-            color = Color.White,
-            fontSize = 13.0.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = TextStyle(shadow = titleGlow),
-            modifier = Modifier.weight(1f, fill = false),
-          )
-          if (badgeText != null) {
-            Spacer(modifier = Modifier.width(4.dp))
-            Box(
-              modifier =
-                Modifier.clip(RoundedCornerShape(4.dp))
-                  .background(secondaryAccent.copy(alpha = 0.20f))
-                  .border(0.9.dp, secondaryAccent.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
-                  .padding(horizontal = 5.dp, vertical = 1.5.dp),
-            ) {
-              Text(
-                text = badgeText,
-                color = secondaryAccent,
-                fontSize = 8.4.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-              )
-            }
+        if (badgeText != null) {
+          Box(
+            modifier =
+              Modifier.align(if (isRightColumn) Alignment.TopStart else Alignment.TopEnd)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0xD9071326))
+                .border(0.9.dp, secondaryAccent.copy(alpha = 0.82f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 4.5.dp, vertical = 1.dp),
+          ) {
+            Text(
+              text = badgeText,
+              color = secondaryAccent,
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              softWrap = false,
+              style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            )
           }
         }
+      }
+
+      // BOTTOM SLOT (~50% card height): Full-Width Unclipped 2–3 Word Bold Title + Live Primary Stat + Secondary Detail
+      Column(
+        modifier = Modifier.weight(0.49f).fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceEvenly,
+      ) {
+        Text(
+          text = title,
+          color = Color.White,
+          fontSize = 12.2.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          softWrap = false,
+          overflow = TextOverflow.Ellipsis,
+          textAlign = TextAlign.Center,
+          style =
+            TextStyle(
+              shadow = titleGlow,
+              platformStyle = PlatformTextStyle(includeFontPadding = false),
+            ),
+          modifier = Modifier.fillMaxWidth(),
+        )
 
         Text(
           text = primaryStat,
@@ -2042,7 +2075,11 @@ private fun SciFiTabletModuleCard(
           fontWeight = FontWeight.ExtraBold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
           overflow = TextOverflow.Ellipsis,
+          textAlign = TextAlign.Center,
+          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          modifier = Modifier.fillMaxWidth(),
         )
 
         Text(
@@ -2052,16 +2089,11 @@ private fun SciFiTabletModuleCard(
           fontWeight = FontWeight.SemiBold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
           overflow = TextOverflow.Ellipsis,
-        )
-      }
-
-      if (isRightColumn) {
-        HubMetallicEmblemPedestal(
-          emblemBitmap = emblemBitmap,
-          contentDescription = title,
-          accent = accent,
-          secondaryAccent = secondaryAccent,
+          textAlign = TextAlign.Center,
+          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          modifier = Modifier.fillMaxWidth(),
         )
       }
     }
@@ -2074,37 +2106,113 @@ private fun HubMetallicEmblemPedestal(
   contentDescription: String,
   accent: Color,
   secondaryAccent: Color,
+  phaseSeedRad: Float,
 ) {
+  val headless = remember { isHeadlessGlEnvironment() }
+  val instrumentPhaseRad =
+    if (headless) {
+      0.55f + phaseSeedRad
+    } else {
+      val transition = rememberInfiniteTransition(label = "hub_module_instrument")
+      val animPhase by
+        transition.animateFloat(
+          initialValue = 0f,
+          targetValue = (2.0 * PI).toFloat(),
+          animationSpec =
+            infiniteRepeatable(
+              animation = tween(durationMillis = 16000, easing = LinearEasing),
+              repeatMode = RepeatMode.Restart,
+            ),
+          label = "hub_instrument_sweep",
+        )
+      animPhase + phaseSeedRad
+    }
+
   Box(
-    modifier =
-      Modifier.fillMaxHeight(0.90f)
-        .aspectRatio(1f)
-        .drawBehind {
-          val r = size.minDimension * 0.52f
-          if (r > 2f) {
-            drawCircle(
-              brush =
-                Brush.radialGradient(
-                  colors =
-                    listOf(
-                      accent.copy(alpha = 0.28f),
-                      secondaryAccent.copy(alpha = 0.12f),
-                      Color.Transparent,
-                    ),
-                  center = center,
-                  radius = r,
-                ),
-              radius = r,
-              center = center,
-            )
-          }
-        },
+    modifier = Modifier.fillMaxHeight().aspectRatio(1f),
     contentAlignment = Alignment.Center,
   ) {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+      val minDim = size.minDimension
+      if (minDim <= 6f) return@Canvas
+      val cx = center.x
+      val cy = center.y
+      val outerR = minDim * 0.48f
+      val pulse = 0.88f + 0.12f * sin(instrumentPhaseRad * 2f)
+
+      // 1. Subtle radial instrument glow
+      drawCircle(
+        brush =
+          Brush.radialGradient(
+            colors =
+              listOf(
+                accent.copy(alpha = 0.24f * pulse),
+                secondaryAccent.copy(alpha = 0.10f * pulse),
+                Color.Transparent,
+              ),
+            center = center,
+            radius = outerR * 1.05f,
+          ),
+        radius = outerR * 1.05f,
+        center = center,
+      )
+
+      // 2. Calibrated 24-tick instrument dial ring
+      val tickInnerMajor = outerR * 0.87f
+      val tickInnerMinor = outerR * 0.92f
+      for (idx in 0 until 24) {
+        val ang = idx * ((2.0 * PI) / 24.0).toFloat() + instrumentPhaseRad * 0.25f
+        val isMajor = idx % 6 == 0
+        val r0 = if (isMajor) tickInnerMajor else tickInnerMinor
+        drawLine(
+          color =
+            if (isMajor) accent.copy(alpha = 0.62f)
+            else secondaryAccent.copy(alpha = 0.28f),
+          start = Offset(cx + cos(ang) * r0, cy + sin(ang) * r0),
+          end = Offset(cx + cos(ang) * outerR, cy + sin(ang) * outerR),
+          strokeWidth = if (isMajor) 1.3.dp.toPx() else 0.8.dp.toPx(),
+          cap = StrokeCap.Round,
+        )
+      }
+
+      // 3. Slow-moving orbital sweep arc + counter-rotating secondary harmonic arc
+      val sweepDeg = (instrumentPhaseRad * (180f / PI.toFloat())) % 360f
+      val arcSize = Size(outerR * 2f, outerR * 2f)
+      val arcTopLeft = Offset(cx - outerR, cy - outerR)
+      drawArc(
+        color = accent.copy(alpha = 0.78f),
+        startAngle = sweepDeg,
+        sweepAngle = 56f,
+        useCenter = false,
+        topLeft = arcTopLeft,
+        size = arcSize,
+        style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round),
+      )
+      val innerReticleR = outerR * 0.81f
+      drawArc(
+        color = secondaryAccent.copy(alpha = 0.56f),
+        startAngle = (-sweepDeg * 0.75f) + 140f,
+        sweepAngle = 42f,
+        useCenter = false,
+        topLeft = Offset(cx - innerReticleR, cy - innerReticleR),
+        size = Size(innerReticleR * 2f, innerReticleR * 2f),
+        style = Stroke(width = 1.1.dp.toPx(), cap = StrokeCap.Round),
+      )
+
+      // Leading orbital telemetry pip
+      val leadRad = (sweepDeg + 56f) * (PI.toFloat() / 180f)
+      drawCircle(
+        color = Color.White.copy(alpha = 0.90f),
+        radius = 1.8.dp.toPx(),
+        center = Offset(cx + cos(leadRad) * outerR, cy + sin(leadRad) * outerR),
+      )
+    }
+
+    // Slightly inset metallic emblem so the animated instrument reticle & tick ring read cleanly around it
     Image(
       bitmap = emblemBitmap,
       contentDescription = contentDescription,
-      modifier = Modifier.fillMaxSize(),
+      modifier = Modifier.fillMaxSize(0.76f),
       contentScale = ContentScale.Fit,
     )
   }

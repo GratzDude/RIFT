@@ -561,14 +561,6 @@ class RiftArenaView(
         )
     }
   private val obstacleSpritePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-  private val obstacleHitFlashPaint =
-    Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-      colorFilter =
-        android.graphics.PorterDuffColorFilter(
-          Color.argb(190, 224, 242, 254),
-          android.graphics.PorterDuff.Mode.SRC_ATOP,
-        )
-    }
   private val nebulaPrimaryPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
   private val nebulaSecondaryPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
   private var cachedNebulaTintKey: Int = Int.MIN_VALUE
@@ -1559,16 +1551,17 @@ class RiftArenaView(
       val perpX = -dirY
       val perpY = dirX
 
-      if (b.ownerId == "station_defense") {
-        val len = 30f * projScale
+      if (b.ownerId.startsWith("station_")) {
+        val isCascade = b.ownerId == "station_cascade"
+        val len = (if (isCascade) 27f else 31f) * projScale
         val tailX = b.x - dirX * len
         val tailY = b.y - dirY * len
-        bulletPaint.color = Color.parseColor("#FACC15")
-        bulletPaint.strokeWidth = 6.2f * projScale
+        bulletPaint.color = if (isCascade) Color.parseColor("#38BDF8") else Color.parseColor("#FACC15")
+        bulletPaint.strokeWidth = (if (isCascade) 5.6f else 6.4f) * projScale
         bulletCorePaint.strokeWidth = 2.6f * projScale
         canvas.drawLine(b.x, b.y, tailX, tailY, bulletPaint)
         canvas.drawLine(b.x, b.y, tailX, tailY, bulletCorePaint)
-        bombPaint.color = Color.parseColor("#EF4444")
+        bombPaint.color = if (isCascade) Color.parseColor("#FACC15") else Color.parseColor("#EF4444")
         canvas.drawCircle(b.x, b.y, 4.8f * projScale, bombPaint)
         continue
       }
@@ -3709,11 +3702,82 @@ class RiftArenaView(
     canvas.drawBitmap(bmp, shipMatrix, obstacleSpritePaint)
     obstacleSpritePaint.alpha = 255
 
-    // 3. Brief White/Cyan Specular Hit-Flash Overlay when w.hitFlashTimer > 0f
+    // 3. Ship-Style Expanding Directional Impact Ripple Arcs + Radial Armor Sparks at w.lastHitAngle (Zero White-Washing)
     if (w.hitFlashTimer > 0f) {
-      val flashAlpha = ((w.hitFlashTimer / 0.14f).coerceIn(0.25f, 1.0f) * 210f).roundToInt().coerceIn(50, 220)
-      obstacleHitFlashPaint.alpha = flashAlpha
-      canvas.drawBitmap(bmp, shipMatrix, obstacleHitFlashPaint)
+      val t = (w.hitFlashTimer / 0.22f).coerceIn(0f, 1f)
+      val progress = 1f - t
+      val degCenter = w.lastHitAngle * (180f / PI.toFloat())
+      val isStationObs =
+        w.style == SpaceObstacleStyle.ORBITAL_STATION || w.style == SpaceObstacleStyle.ASTEROID_STATION
+      val outerRippleRgb =
+        when {
+          isStationObs && w.stationHitCounter >= 8 -> Color.rgb(239, 68, 68)
+          isStationObs -> Color.rgb(56, 189, 248)
+          w.style == SpaceObstacleStyle.CRYSTAL_ASTEROID -> Color.rgb(192, 132, 252)
+          else -> Color.rgb(56, 189, 248)
+        }
+      val innerRippleRgb =
+        when {
+          isStationObs -> Color.rgb(250, 204, 21)
+          w.style == SpaceObstacleStyle.CRYSTAL_ASTEROID -> Color.rgb(0, 245, 212)
+          else -> Color.rgb(224, 242, 254)
+        }
+
+      // Outer expanding shield/hull deflection arc
+      val outerR = visR * (0.94f + 0.18f * progress)
+      val outerSweep = 56f + 28f * progress
+      val outerAlpha = (t * 245f).roundToInt().coerceIn(0, 255)
+      arcRect.set(wCx - outerR, wCy - outerR, wCx + outerR, wCy + outerR)
+      shieldRipplePaint.strokeWidth = 3.6f * (0.55f + 0.45f * t)
+      shieldRipplePaint.color =
+        Color.argb(
+          outerAlpha,
+          Color.red(outerRippleRgb),
+          Color.green(outerRippleRgb),
+          Color.blue(outerRippleRgb),
+        )
+      canvas.drawArc(arcRect, degCenter - outerSweep * 0.5f, outerSweep, false, shieldRipplePaint)
+
+      // Inner harmonic reaction arc hugging the impact rim
+      val innerR = visR * (0.85f + 0.09f * progress)
+      val innerSweep = 38f + 16f * progress
+      val innerAlpha = (t * t * 225f).roundToInt().coerceIn(0, 255)
+      arcRect.set(wCx - innerR, wCy - innerR, wCx + innerR, wCy + innerR)
+      shieldRipplePaint.strokeWidth = 2.2f
+      shieldRipplePaint.color =
+        Color.argb(
+          innerAlpha,
+          Color.red(innerRippleRgb),
+          Color.green(innerRippleRgb),
+          Color.blue(innerRippleRgb),
+        )
+      canvas.drawArc(arcRect, degCenter - innerSweep * 0.5f, innerSweep, false, shieldRipplePaint)
+
+      // Short radial armor sparks bursting outward along the impact normal
+      val sparkAlpha = (t * 235f).roundToInt().coerceIn(0, 255)
+      if (sparkAlpha > 16) {
+        shieldRipplePaint.strokeWidth = 1.9f
+        shieldRipplePaint.color =
+          Color.argb(
+            sparkAlpha,
+            Color.red(innerRippleRgb),
+            Color.green(innerRippleRgb),
+            Color.blue(innerRippleRgb),
+          )
+        for (sIdx in -2..2) {
+          val sAng = w.lastHitAngle + sIdx * 0.17f
+          val startR = visR * (0.88f + 0.14f * progress)
+          val endR = startR + visR * (0.14f * t + 0.06f)
+          canvas.drawLine(
+            wCx + cos(sAng) * startR,
+            wCy + sin(sAng) * startR,
+            wCx + cos(sAng) * endR,
+            wCy + sin(sAng) * endR,
+            shieldRipplePaint,
+          )
+        }
+      }
+      shieldRipplePaint.strokeWidth = 3.2f
     }
 
     // 4. 10-Segment Station Defense Nova Charge Ring (ORBITAL_STATION & ASTEROID_STATION)

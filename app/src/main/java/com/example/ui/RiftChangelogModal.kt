@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 75
+const val CURRENT_RIFT_BUILD_VERSION = 76
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 76,
+      versionTag = "v1.0.76 // BUILD #76",
+      releaseDate = "Nov 18, 2026",
+      headline = "Live Online Player Visibility, Ship-Style Directional Obstacle Hit Ripples + Retaliatory & Cascading Station Counter-Attacks, and Vertical Animated Instrument Hub Cards",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Live Online Player Visibility & Instant Match Heartbeat Sync (MainActivity): Unified sectorPilotsState and allOnlineHumansState into a deduplicated live pilot stream fed into RiftGameEngine.updateRemotePilots across active matches and Hub Overwatch, paired with immediate syncNativeLiveState heartbeats upon Ranked deployment, Custom Rift join/create, NEXUS_LOBBY presence, and match exit.",
+          "Retaliatory & Cascading Station Defense Counter-Attacks (RiftGameEngine): Added lastHitAngle and lastAttackerShipId on WallRect plus triggerStationAttackResponse(...) — firing a targeted 5-bolt retaliatory NOVA_BOLT defense salvo (-0.12..+0.12 rad spread, speedMult/damageMult scaled) on primary bullet, bomb/explosion AoE, Seeker Torpedo, and Swarm Drone impacts, chaining up to 2 neighboring stations within 1,400px for 3-bolt cascading defense bursts, and unleashing the 16-bolt 360° Overload Defense Nova every 10 hits.",
+          "Ship-Style Directional Impact Ripples on Obstacles (RiftArenaView): Removed obstacleHitFlashPaint white-washing completely in drawSpaceObstacle3D and replaced it with expanding directional impact ripple arcs and radial armor sparks centered on the impact rim at lastHitAngle.",
+          "Vertical Animated Instrument Readout Hub Cards (NexusAiConsoleModal): Restyled SciFiTabletModuleCard into a vertical stack featuring a top ~50% slow-moving animated instrument Canvas (16s orbital sweep arc, calibrated 24-tick ring, and subtle reticle pulse) framing the inset metallic RiftSpriteBaker emblem above full-width unclipped 2–3 word bold titles, status pills, and live pilot telemetry.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 75,
       versionTag = "v1.0.75 // BUILD #75",
       releaseDate = "Nov 18, 2026",
       headline = "RiftSpriteBaker Static Initialization Order Fix (AuthScreen & Startup Crash Resolution)",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "BAKER INIT FIX",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
