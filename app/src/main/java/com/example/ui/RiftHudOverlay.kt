@@ -1750,7 +1750,7 @@ private fun CircularRadarMinimap(
       continue
      }
 
-     if (s.bounty >= RiftGameEngine.HVT_BOUNTY_THRESHOLD) {
+     if (!engine.isFluxCoreRulesActive() && s.bounty >= RiftGameEngine.HVT_BOUNTY_THRESHOLD) {
       val pingR = 3.2f + pulsePhase * 6.5f
       drawCircle(Color(0xFFFFD700).copy(alpha = (1f - pulsePhase).coerceIn(0.20f, 0.90f)), pingR, pt, style = Stroke(1.3f))
      }

@@ -2451,17 +2451,32 @@ class RiftArenaView(
         val pulse = 0.5f + 0.5f * sin(engine.fluxCoreOrb.pulsePhase * 1.6f)
         val tier = engine.fluxCoreOrb.overchargeTier.coerceIn(1, 10)
         val ringR = (54f + 8f * pulse) * RiftCalibrationState.shipScale
+        anomalyFillPaint.color = Color.argb((42 + (34 * pulse).toInt()).coerceIn(0, 140), 250, 204, 21)
+        canvas.drawCircle(s.x, s.y, ringR + 12f, anomalyFillPaint)
         bombRingPaint.strokeWidth = 3.8f
         bombRingPaint.color = Color.argb(235, 250, 204, 21)
         canvas.drawCircle(s.x, s.y, ringR, bombRingPaint)
         bombRingPaint.strokeWidth = 2.2f
         bombRingPaint.color = Color.argb(200, 34, 211, 238)
         canvas.drawCircle(s.x, s.y, ringR + 7f, bombRingPaint)
+
+        val orbitAngle = engine.fluxCoreOrb.pulsePhase * 0.92f - PI.toFloat() * 0.5f
+        val carriedOrbX = s.x + cos(orbitAngle) * ringR
+        val carriedOrbY = s.y + sin(orbitAngle) * ringR
+        val carriedOrbR = (16f + 2.2f * pulse) * RiftCalibrationState.shipScale.coerceIn(0.75f, 1.35f)
+        drawFluxCoreOrbCoreAndHalo(
+          canvas = canvas,
+          cx = carriedOrbX,
+          cy = carriedOrbY,
+          r = carriedOrbR,
+          pulsePhase = engine.fluxCoreOrb.pulsePhase,
+        )
+
         drawWorldOverheadBanner(
           canvas = canvas,
           text = "FLUX CORE TIER $tier/10",
           worldX = s.x,
-          worldY = s.y - ringR - 16f,
+          worldY = s.y - ringR - 22f,
           fillColor = Color.parseColor("#FACC15"),
           worldScale = worldScale,
           sizeMultiplier = 1.18f,
@@ -3168,6 +3183,53 @@ class RiftArenaView(
     )
   }
 
+  private fun drawFluxCoreOrbCoreAndHalo(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    r: Float,
+    pulsePhase: Float,
+  ) {
+    val coreRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.FLUX_CORE_ORB)
+    val pulse = 0.5f + 0.5f * sin(pulsePhase)
+    val glowMult = coreRec.glowIntensity.coerceIn(0.2f, 1.8f)
+    val borderMult = coreRec.borderWeight.coerceIn(0.5f, 2.2f)
+    val auraBaseCol =
+      if (coreRec.isFactoryDefault) Color.rgb(250, 204, 21) else coreRec.glowColorInt
+    val trimCol =
+      if (coreRec.isFactoryDefault) Color.parseColor("#FACC15") else coreRec.trimColorInt
+
+    val haloAlpha = ((75f + 50f * pulse) * glowMult).roundToInt().coerceIn(0, 235)
+    anomalyFillPaint.color =
+      Color.argb(
+        haloAlpha,
+        Color.red(auraBaseCol),
+        Color.green(auraBaseCol),
+        Color.blue(auraBaseCol),
+      )
+    canvas.drawCircle(cx, cy, r * 1.56f, anomalyFillPaint)
+
+    anomalyRingPaint.strokeWidth = (r * 0.105f * borderMult).coerceAtLeast(1.6f)
+    anomalyRingPaint.color = Color.parseColor("#22D3EE")
+    canvas.drawCircle(cx, cy, r * 1.04f, anomalyRingPaint)
+
+    anomalyRingPaint.strokeWidth = (r * 0.078f * borderMult).coerceAtLeast(1.3f)
+    anomalyRingPaint.color = trimCol
+    canvas.drawCircle(cx, cy, r * 0.91f, anomalyRingPaint)
+
+    canvas.save()
+    canvas.translate(cx, cy)
+    canvas.rotate((pulsePhase * 22f) % 360f)
+    RiftSpriteBaker.drawFluxPrismIcon(
+      c = canvas,
+      cx = 0f,
+      cy = 0f,
+      r = r * 0.80f,
+      alpha = 255,
+    )
+    canvas.restore()
+  }
+
   private fun drawFreeFluxCoreOrb(
     canvas: Canvas,
     viewLeft: Float,
@@ -3181,8 +3243,9 @@ class RiftArenaView(
     ) {
       return
     }
+    val coreRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.FLUX_CORE_ORB)
     val pulse = 0.5f + 0.5f * sin(orb.pulsePhase)
-    val r = 38f + 6f * pulse
+    val r = (38f + 6f * pulse) * coreRec.pixelScale.coerceIn(0.65f, 1.45f)
 
     if (orb.ejectDecelTimerSec > 0f && hypot(orb.vx, orb.vy) > 25f) {
       val tailX = orb.x - orb.vx * 0.085f
@@ -3194,19 +3257,13 @@ class RiftArenaView(
       canvas.drawLine(orb.x, orb.y, tailX, tailY, bulletCorePaint)
     }
 
-    anomalyFillPaint.color = Color.argb((75 + (50 * pulse).toInt()).coerceIn(0, 255), 250, 204, 21)
-    canvas.drawCircle(orb.x, orb.y, r * 1.55f, anomalyFillPaint)
-
-    anomalyRingPaint.strokeWidth = 4.2f
-    anomalyRingPaint.color = Color.parseColor("#22D3EE")
-    canvas.drawCircle(orb.x, orb.y, r, anomalyRingPaint)
-
-    anomalyRingPaint.strokeWidth = 3.2f
-    anomalyRingPaint.color = Color.parseColor("#FACC15")
-    canvas.drawCircle(orb.x, orb.y, r * 0.68f, anomalyRingPaint)
-
-    anomalyCorePaint.color = Color.WHITE
-    canvas.drawCircle(orb.x, orb.y, r * 0.34f, anomalyCorePaint)
+    drawFluxCoreOrbCoreAndHalo(
+      canvas = canvas,
+      cx = orb.x,
+      cy = orb.y,
+      r = r,
+      pulsePhase = orb.pulsePhase,
+    )
 
     val statusLbl =
       if (orb.ejectDecelTimerSec > 0f) {

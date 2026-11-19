@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 84
+const val CURRENT_RIFT_BUILD_VERSION = 86
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,36 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 86,
+      versionTag = "v1.0.86 // BUILD #86",
+      releaseDate = "Nov 19, 2026",
+      headline = "Flux Core Minimap Yellow-Dot Clarity — Suppress HVT Yellow/Gold Minimap Rings During Flux Core",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Flux Core Minimap Yellow-Dot Clarity (RiftHudOverlay): Suppressed HVT yellow/gold minimap pulse rings on ships inside CircularRadarMinimap whenever engine.isFluxCoreRulesActive() is true so the Flux Core orb / carrier remains the sole yellow/gold indicator on the minimap, while preserving HVT minimap indicators intact across all non-Flux-Core modes.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 85,
+      versionTag = "v1.0.85 // BUILD #85",
+      releaseDate = "Nov 19, 2026",
+      headline = "Canonical 3D Swirling Plasma Toroid Flux Icon Inside the Flux Core Orb, Carrier Containment Ring & 1:1 Star Forge Previews",
+      badgeLabel = "FLUX CORE ICON",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Canonical Flux Icon Inside the Live Flux Core Orb & Carrier Containment Indicator (RiftArenaView): Replaced the plain circle core inside drawFreeFluxCoreOrb with the canonical 3D Swirling Plasma Toroid / Tri-Arc Vortex Coil Flux icon (RiftSpriteBaker.drawFluxPrismIcon) centered and rotating cleanly inside the Flux Core's cyan capture ring, golden containment collar, pulsing containment aura, and FLUX CORE callout, and added an orbiting canonical Flux Core orb on the Flux Core carrier ship's containment ring.",
+          "1:1 Star Forge Playfield & Element Inspector Parity for Flux Core (NexusForgeModal): Updated both the 1:1 Star Forge playfield Flux Core specimen and the Element Reforge Inspector preview (ForgeElementTarget.FLUX_CORE_ORB) via drawFluxCoreOrbSpecimen to render the exact same canonical 3D Swirling Plasma Toroid Flux icon, capture ring, containment collar, and pulsing aura 1:1 with live playfield rendering.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 84,
       versionTag = "v1.0.84 // BUILD #84",
       releaseDate = "Nov 19, 2026",
       headline = "Clean Single-Action Exit From 1:1 Star Forge to NEXUS Hub & Center Shifting Multicolored Dyson Sun Emitting Holographic 'STAR FORGE' Graphic Letters",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "DYSON SUN & HUB",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

@@ -2623,11 +2623,14 @@ private fun DevPlayfieldAndHudStudioBay(
           val coreRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.FLUX_CORE_ORB)
           val coreCx = w2sX(4000f)
           val coreCy = w2sY(4560f)
-          val coreR = (38f * coreRec.pixelScale * worldScale).coerceAtLeast(12f)
-          drawCircle(Color(coreRec.glowColorInt).copy(alpha = 0.34f), coreR * 1.65f, Offset(coreCx, coreCy))
-          drawCircle(Color(coreRec.primaryColorInt), coreR, Offset(coreCx, coreCy))
-          drawCircle(Color(coreRec.trimColorInt), coreR, Offset(coreCx, coreCy), style = Stroke(2.4.dp.toPx() * coreRec.borderWeight))
-          drawCircle(Color.White, coreR * 0.38f, Offset(coreCx, coreCy))
+          val corePulse = 0.5f + 0.5f * sin(timeSec * 3.0f)
+          val coreR = ((38f + 6f * corePulse) * coreRec.pixelScale.coerceIn(0.65f, 1.45f) * worldScale).coerceAtLeast(12f)
+          drawFluxCoreOrbSpecimen(
+            center = Offset(coreCx, coreCy),
+            radiusPx = coreR,
+            timeSec = timeSec,
+            recipe = coreRec,
+          )
           hitEntriesState += StageHitEntry(ForgeElementTarget.FLUX_CORE_ORB, coreCx, coreCy, max(coreR * 1.6f, 28.dp.toPx()))
 
           val brigRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.STASIS_BRIG_JAIL)
@@ -4361,6 +4364,15 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
         nc.drawBitmap(buffBmp, null, android.graphics.RectF(cx - iconR, cy - iconR, cx + iconR, cy + iconR), null)
       }
     }
+    ForgeElementTarget.FLUX_CORE_ORB -> {
+      val corePulse = 0.5f + 0.5f * sin(timeSec * 3.0f)
+      drawFluxCoreOrbSpecimen(
+        center = Offset(cx, cy),
+        radiusPx = (span * (0.74f + 0.06f * corePulse)).coerceAtLeast(16f),
+        timeSec = timeSec,
+        recipe = recipe,
+      )
+    }
     else -> {
       val fill = Color(recipe.primaryColorInt).copy(alpha = recipe.surfaceOpacity.coerceIn(0.2f, 0.98f))
       val trim = Color(recipe.trimColorInt)
@@ -4368,7 +4380,6 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
       val isRound =
         target in
           setOf(
-            ForgeElementTarget.FLUX_CORE_ORB,
             ForgeElementTarget.STASIS_BRIG_JAIL,
             ForgeElementTarget.PROJECTILE_PROXIMITY_MINE,
             ForgeElementTarget.HUD_NEXUS_BUTTON,
@@ -4514,6 +4525,59 @@ private fun CompactForgeSliderRow(
       colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent, inactiveTrackColor = Color(0xFF132642)),
       modifier = Modifier.fillMaxWidth().height(20.dp),
     )
+  }
+}
+
+private fun DrawScope.drawFluxCoreOrbSpecimen(
+  center: Offset,
+  radiusPx: Float,
+  timeSec: Float,
+  recipe: VisualElementRecipe,
+) {
+  val r = radiusPx.coerceAtLeast(12f)
+  val pulsePhase = timeSec * 3.0f
+  val pulse = 0.5f + 0.5f * sin(pulsePhase)
+  val glowMult = recipe.glowIntensity.coerceIn(0.2f, 1.8f)
+  val borderMult = recipe.borderWeight.coerceIn(0.5f, 2.2f)
+  val auraCol = if (recipe.isFactoryDefault) Color(0xFFFACC15) else Color(recipe.glowColorInt)
+  val trimCol = if (recipe.isFactoryDefault) Color(0xFFFACC15) else Color(recipe.trimColorInt)
+  val haloAlpha = (((75f + 50f * pulse) * glowMult) / 255f).coerceIn(0f, 0.92f)
+
+  // 1. Pulsing outer containment aura / halo
+  drawCircle(
+    color = auraCol.copy(alpha = haloAlpha),
+    radius = r * 1.56f,
+    center = center,
+  )
+
+  // 2. Outer cyan capture ring & inner golden/trim containment collar
+  drawCircle(
+    color = Color(0xFF22D3EE),
+    radius = r * 1.04f,
+    center = center,
+    style = Stroke(width = (r * 0.105f * borderMult).coerceAtLeast(1.6f)),
+  )
+  drawCircle(
+    color = trimCol,
+    radius = r * 0.91f,
+    center = center,
+    style = Stroke(width = (r * 0.078f * borderMult).coerceAtLeast(1.3f)),
+  )
+
+  // 3. Canonical 3D Swirling Plasma Toroid / Tri-Arc Vortex Coil Flux icon centered inside
+  drawIntoCanvas { c ->
+    val nc = c.nativeCanvas
+    nc.save()
+    nc.translate(center.x, center.y)
+    nc.rotate((pulsePhase * 22f) % 360f)
+    RiftSpriteBaker.drawFluxPrismIcon(
+      c = nc,
+      cx = 0f,
+      cy = 0f,
+      r = r * 0.80f,
+      alpha = 255,
+    )
+    nc.restore()
   }
 }
 
