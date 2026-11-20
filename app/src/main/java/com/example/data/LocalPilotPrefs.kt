@@ -116,6 +116,18 @@ class LocalPilotPrefs(context: Context) {
     return "#RFT-$sb"
   }
 
+  /**
+   * Clears unscoped callsign and initial-choice markers when switching accounts or signing out so
+   * another Google account on the same tablet never inherits a previous pilot's callsign.
+   */
+  fun clearUnscopedCallsignOnAccountSwitch() {
+    prefs
+      .edit()
+      .remove(KEY_CALLSIGN)
+      .remove(KEY_INITIAL_CALLSIGN_CHOSEN)
+      .apply()
+  }
+
   fun getCallsign(uid: String? = null): String {
     if (isGuestBypassEnabled() || isDrifterOrEphemeralUid(uid)) {
       val drifterName =
@@ -128,27 +140,18 @@ class LocalPilotPrefs(context: Context) {
         ed.apply()
       }
     }
-    val perUid = if (!uid.isNullOrBlank()) prefs.getString(uidKey(KEY_CALLSIGN, uid), null) else null
-    val global = if (canUseLegacyUnscopedFallback(uid)) prefs.getString(KEY_CALLSIGN, null) else null
     fun isChosenSwornName(s: String?): Boolean {
       if (s.isNullOrBlank()) return false
       val u = s.trim().uppercase(Locale.US)
       return u != "COMMANDER" && !u.startsWith("RFT-") && !u.startsWith("#RFT")
     }
-    val chosenPerUid = perUid?.takeIf { isChosenSwornName(it) }
-    val chosenGlobal = global?.takeIf { isChosenSwornName(it) }
-    val resolved = chosenPerUid ?: chosenGlobal
-    if (resolved != null) {
-      if (!uid.isNullOrBlank() && chosenPerUid != resolved) {
-        val editor = prefs.edit().putString(uidKey(KEY_CALLSIGN, uid), resolved)
-        if (canUseLegacyUnscopedFallback(uid)) {
-          editor.putString(KEY_CALLSIGN, resolved)
-        }
-        editor.apply()
-      }
-      return resolved
+    // Signed-in Sworn Pilot: strictly read uid-scoped callsign only (zero unscoped fallback or copy)
+    if (!uid.isNullOrBlank()) {
+      val perUid = prefs.getString(uidKey(KEY_CALLSIGN, uid), null)
+      return perUid?.takeIf { isChosenSwornName(it) } ?: "COMMANDER"
     }
-    return "COMMANDER"
+    val global = prefs.getString(KEY_CALLSIGN, null)
+    return global?.takeIf { isChosenSwornName(it) } ?: "COMMANDER"
   }
 
   fun setCallsign(rawCallsign: String, uid: String? = null): String {
@@ -167,26 +170,32 @@ class LocalPilotPrefs(context: Context) {
     val editor = prefs.edit()
     if (isGuestBypassEnabled() || isDrifterOrEphemeralUid(uid)) {
       editor.putString(KEY_DRIFTER_CALLSIGN, cleaned)
-    } else if (canUseLegacyUnscopedFallback(uid)) {
-      editor.putString(KEY_CALLSIGN, cleaned)
-    }
-    if (!uid.isNullOrBlank()) {
+      if (!uid.isNullOrBlank()) {
+        editor.putString(uidKey(KEY_CALLSIGN, uid), cleaned)
+      }
+    } else if (!uid.isNullOrBlank()) {
       editor.putString(uidKey(KEY_CALLSIGN, uid), cleaned)
+      editor.remove(KEY_CALLSIGN)
+    } else {
+      editor.putString(KEY_CALLSIGN, cleaned)
     }
     editor.apply()
     return cleaned
   }
 
   fun getCallsignChangeCount(uid: String? = null): Int =
-    prefs.getInt(
-      uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid),
-      if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_CALLSIGN_CHANGE_COUNT, 0) else 0,
-    )
+    if (!uid.isNullOrBlank()) {
+      prefs.getInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), 0)
+    } else {
+      prefs.getInt(KEY_CALLSIGN_CHANGE_COUNT, 0)
+    }
 
   fun incrementCallsignChangeCount(uid: String? = null) {
     val next = getCallsignChangeCount(uid) + 1
-    val ed = prefs.edit().putInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), next)
-    if (canUseLegacyUnscopedFallback(uid)) {
+    val ed = prefs.edit()
+    if (!uid.isNullOrBlank()) {
+      ed.putInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), next)
+    } else {
       ed.putInt(KEY_CALLSIGN_CHANGE_COUNT, next)
     }
     ed.apply()
@@ -195,10 +204,11 @@ class LocalPilotPrefs(context: Context) {
   fun hasChosenInitialCallsign(uid: String? = null): Boolean {
     if (isGuestBypassEnabled() || isDrifterOrEphemeralUid(uid)) return false
     val explicitChosen =
-      prefs.getBoolean(
-        uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid),
-        if (canUseLegacyUnscopedFallback(uid)) prefs.getBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, false) else false,
-      )
+      if (!uid.isNullOrBlank()) {
+        prefs.getBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), false)
+      } else {
+        prefs.getBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, false)
+      }
     if (explicitChosen) return true
     val existing = getCallsign(uid)
     val upper = existing.trim().uppercase(Locale.US)
@@ -210,9 +220,12 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun setHasChosenInitialCallsign(chosen: Boolean, uid: String? = null) {
-    val editor = prefs.edit().putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, chosen)
+    val editor = prefs.edit()
     if (!uid.isNullOrBlank()) {
       editor.putBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), chosen)
+      editor.remove(KEY_INITIAL_CALLSIGN_CHOSEN)
+    } else {
+      editor.putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, chosen)
     }
     editor.apply()
   }

@@ -408,7 +408,7 @@ fun SyndicatesModal(
         tag = "syndicate_tab_roster",
       )
       SyndicateTabButton(
-        label = if (isCompactPhone) "3. LEADERS & MEDALS" else "3. HIGH-RES TARGETS & MEDALS",
+        label = if (isCompactPhone) "3. LEADERS & MEDALS" else "3. RESONANCE TARGETS & MEDALS",
         selected = activeTab == 2,
         onClick = { activeTab = 2 },
         tag = "syndicate_tab_bounties",
@@ -518,7 +518,7 @@ fun SyndicatesModal(
             onOpenCharterTab = { activeTab = 3 },
           )
         2 ->
-          BountyCalloutsAndAchievementsPane(
+          ResonanceTargetsAndAchievementsPane(
             activeShipsInSector = activeShipsInSector,
             achievements = achievements,
           )
@@ -1207,11 +1207,11 @@ private fun MySyndicateRosterPane(
 }
 
 @Composable
-private fun BountyCalloutsAndAchievementsPane(
+private fun ResonanceTargetsAndAchievementsPane(
   activeShipsInSector: List<ShipEntity>,
   achievements: List<PilotAchievement>,
 ) {
-  val hvts =
+  val highResTargets =
     remember(activeShipsInSector) {
       activeShipsInSector
         .filter { it.bounty >= RiftGameEngine.HVT_BOUNTY_THRESHOLD }
@@ -1244,7 +1244,7 @@ private fun BountyCalloutsAndAchievementsPane(
         overflow = TextOverflow.Ellipsis,
       )
       Spacer(modifier = Modifier.height(6.dp))
-      if (hvts.isEmpty()) {
+      if (highResTargets.isEmpty()) {
         Box(
           modifier =
             Modifier.weight(1f)
@@ -1265,7 +1265,7 @@ private fun BountyCalloutsAndAchievementsPane(
         }
       } else {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-          items(hvts, key = { it.id }) { hvt ->
+          items(highResTargets, key = { it.id }) { targetShip ->
             Row(
               modifier =
                 Modifier.fillMaxWidth()
@@ -1279,17 +1279,18 @@ private fun BountyCalloutsAndAchievementsPane(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
               ) {
-                ShipSpritePreview(shipId = hvt.shipId, sizeDp = 28)
+                ShipSpritePreview(shipId = targetShip.shipId, sizeDp = 28)
                 Column {
-                  val armTag = if (hvt.armadaName.isNotEmpty()) "[${hvt.armadaName}]" else "[SOLO]"
-                  val cleanHvtSyn =
-                    hvt.syndicateTag.trim().uppercase(Locale.US).let { raw ->
+                  val armTag =
+                    if (targetShip.armadaName.isNotEmpty()) "[${targetShip.armadaName}]" else "[SOLO]"
+                  val cleanTargetSyn =
+                    targetShip.syndicateTag.trim().uppercase(Locale.US).let { raw ->
                       if (raw in NON_SYNDICATE_TAGS) ""
                       else raw.take(3).let { if (it in NON_SYNDICATE_TAGS) "" else it }
                     }
-                  val synPrefix = if (cleanHvtSyn.isNotEmpty()) "[$cleanHvtSyn] " else ""
+                  val synPrefix = if (cleanTargetSyn.isNotEmpty()) "[$cleanTargetSyn] " else ""
                   Text(
-                    text = "RIFT LEADER // $armTag $synPrefix${hvt.callsign}",
+                    text = "RIFT LEADER // $armTag $synPrefix${targetShip.callsign}",
                     color = CitadelGold,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -1297,7 +1298,7 @@ private fun BountyCalloutsAndAchievementsPane(
                   )
                   Text(
                     text =
-                      "HULL: ${hvt.spec.name.uppercase(Locale.US)} • SECTOR (${(hvt.x / 500f).toInt()},${(hvt.y / 500f).toInt()})",
+                      "HULL: ${targetShip.spec.name.uppercase(Locale.US)} • SECTOR (${(targetShip.x / 500f).toInt()},${(targetShip.y / 500f).toInt()})",
                     color = Color(0xFF94A3B8),
                     fontSize = 10.sp,
                     fontFamily = Mono,
@@ -1305,7 +1306,7 @@ private fun BountyCalloutsAndAchievementsPane(
                 }
               }
               Text(
-                text = "${hvt.bounty} RES",
+                text = "${targetShip.bounty} RES",
                 color = Color(0xFFFF3B4E),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,

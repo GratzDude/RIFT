@@ -301,7 +301,7 @@ class NexusAiViewModel : ViewModel() {
         "megafat",
       )
     if (nonRiftKeywords.any { lower.contains(it) } && riftContextKeywords.none { lower.contains(it) }) {
-      return "NEXUS CORE TELEMETRY BOUNDARY // Query falls outside NEXUS sector parameters. Ask about NEXUS ships, weapons, Flux math, Playfield Rifts, 440px Gravity Rift Tidal Implosion, Unstable Rift convergence, 5x Nexus Station, Hub Overwatch, Swarm Drones, Destructible Asteroids, Rift Conduit Resonance, Ranked Modes, or Sworn Pilot Leaderboards."
+      return "RIFT AI TELEMETRY BOUNDARY // Query falls outside RIFT sector parameters. Ask about RIFT ships, weapons, Flux math, Playfield Rifts, 440px Gravity Rift Tidal Implosion, Unstable Rift convergence, 5x Rift Station, Hub Overwatch, Swarm Drones, Destructible Asteroids, Rift Conduit Resonance, Ranked Modes, or Sworn Pilot Leaderboards."
     }
 
     // 2. NEXUS Sci-Fi Command Tablet Hub & Pinch-to-Zoom Live Overwatch Queries
@@ -313,7 +313,7 @@ class NexusAiViewModel : ViewModel() {
         (lower.contains("hub") && !lower.contains("safe"))
     ) {
       return buildString {
-        appendLine("RIFT HUB COMMAND TABLET & LIVE OVERWATCH TELEMETRY // (BUILD #92)")
+        appendLine("RIFT HUB COMMAND TABLET & LIVE OVERWATCH TELEMETRY // (BUILD #93)")
         appendLine(
           "- Unified #060D1A Command Tablet: Frames 6 large 192x192 5-stop metallic station-styled module cards — Left Wing: SHIPS & BUILDS (Hangar Deck & 100-Pt parity), RANKS & QUESTS (Rift Conduit & Daily Directives), SKINS & AUDIO (1:1 Star Core Star Forge & track BPM); Right Wing: CHAT & RIFT AI (Subspace Comms & #nexus-ai), SYNDICATE / STRIKE WING (Syndicate Citadel & [TAG]/Strike Wing), PILOT DOSSIER (Career Telemetry & Ladders; Field Manual Codex in Helm Systems)."
         )
@@ -687,14 +687,14 @@ class NexusAiViewModel : ViewModel() {
         lower.contains("spectat")
     ) {
       return buildString {
-        appendLine("NEXUS SECTOR MODES // 6 RANKED MODES + CLONEABLE CUSTOM RIFTS")
-        appendLine("1) SECTOR CONVERGENCE (FFA): 20-pilot open arena (60m cycle) with 5x (180px) Nexus Station Safe Harbor ON. #1 Resonance with >50% presence wins +100 Shards.")
+        appendLine("RIFT SECTOR MODES // 6 RANKED MODES + CLONEABLE CUSTOM RIFTS")
+        appendLine("1) SECTOR CONVERGENCE (FFA): 20-pilot open arena (60m cycle) with 5x (180px) Rift Station Safe Harbor ON. #1 Resonance with >50% presence wins +100 Shards.")
         appendLine("2) RIFT SKIRMISH (Team Deathmatch): 2v2-5v5 Best-of-3 rounds. Safe Zone OFF, Ship Lock ON. Eliminated pilots use the Living-Teammate Spectator Box (prev/next pills or Gamepad LB/RB). +75 Shards.")
-        appendLine("3) FLUX CORE: Hold the center Flux Core for Resonance & up to Tier 10 Overcharge (+50% DMG/Recharge, +40% Speed, 2x pulsing Gold radar beacon). 5x Nexus Station Safe Harbor ON (entering ejects the Core at 1,650 px/s).")
+        appendLine("3) FLUX CORE: Hold the center Flux Core for Resonance & up to Tier 10 Overcharge (+50% DMG/Recharge, +40% Speed, 2x pulsing Gold radar beacon). 5x Rift Station Safe Harbor ON (entering ejects the Core at 1,650 px/s).")
         appendLine("4) STASIS BREACH (10v10 Circular Stasis Jail): Safe Zone OFF. Eliminated enemies warp into your team's circular Stasis Jail; prisoners deal 100% weapon damage to the 8,000 Flux Stasis Core to detonate a breakout shockwave. +100 Shards.")
         appendLine("5) RIFT CONTROL (Tug-of-War): Contest Rift Alpha & Rift Omega with NO Safe Zone anywhere on the map and a Graphical Dual-Rift Tug-of-War Top HUD Bar. +85 Shards.")
         appendLine("6) SYNDICATE WARS: Ranked Syndicate-vs-Syndicate ladder for 100% same-Syndicate Strike Wings. Safe Zone OFF, Ship Lock ON. Awards +75/+100 Shards & War Trophies.")
-        append("- OVERWATCH, RIFT IN & <=15S MATCHMAKING: Deploy in 1 tap via [RIFT IN // RIFT #XX] on the NEXUS Tablet Overwatch aperture, or open [ALL MODES] -> Hangar Hull Lock-In -> Enter Rift (Resonance team matchmaking caps queue wait at 15.0s max, or cancels cleanly with 'No other available teams').")
+        append("- OVERWATCH, RIFT IN & <=15S MATCHMAKING: Deploy in 1 tap via [RIFT IN // RIFT #XX] on the RIFT Tablet Overwatch aperture, or open [ALL MODES] -> Hangar Hull Lock-In -> Enter Rift (Resonance team matchmaking tracks live lobby pilots, pairs balanced Resonance wings first, and caps queue wait at 15.0s max, or cancels cleanly with 'No other available teams').")
       }
     }
 
@@ -729,7 +729,7 @@ class NexusAiViewModel : ViewModel() {
         ?: engine?.activeRankedMode?.title
         ?: "Sector Convergence"
     return buildString {
-      appendLine("NEXUS TACTICAL TELEMETRY // SCI-FI COMMAND TABLET CORE READY (BUILD #83)")
+      appendLine("RIFT TACTICAL TELEMETRY // SCI-FI COMMAND TABLET CORE READY (BUILD #93)")
       if (engine != null) {
         val p = engine.localPlayer
         val shipSpec = p.spec

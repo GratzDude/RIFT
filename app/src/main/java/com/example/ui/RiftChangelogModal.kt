@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 92
+const val CURRENT_RIFT_BUILD_VERSION = 93
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 93,
+      versionTag = "v1.0.93 // BUILD #93",
+      releaseDate = "Nov 20, 2026",
+      headline = "Per-Account Callsign Isolation, Cross-Device Cloud Callsign Carry-Over, Live Matchmaking Queue ViewModel & Plain-English Resonance Targets",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Strict Per-Account Callsign Isolation Across Shared Devices: Signed-in Sworn Pilot accounts now read and write callsigns and initial callsign flags strictly under per-UID keys without inheriting unscoped callsigns from previous accounts, and switching accounts or signing out automatically clears unscoped callsign state.",
+          "Automatic Multi-Device Cloud Callsign Carry-Over: Signing into a Google account on another phone or tablet automatically syncs that pilot's saved cloud dossier callsign onto the device and active starfighter unless the pilot explicitly renamed their callsign during the current session.",
+          "Live Matchmaking Queue ViewModel & Lobby Pilot Roster: Added a dedicated MatchmakingQueueViewModel managing ranked queue status transitions (Balanced +/- 250 RES window -> Open Resonance Bracket -> Match Locked / Cancelled / Timed Out), Strike Wing Resonance averages, live lobby pilot chips, and the 15.0-second ceiling.",
+          "Switch Account Reset & Plain-English Resonance Target Wording: Wired Switch Account in Rift Hub and Helm Systems to cleanly cancel active queues, scrub unscoped session callsign keys, and return to the Auth Command Tablet, while standardizing Subspace Comms, Rift AI, and Syndicate Citadel on plain-English Resonance target phrasing.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 92,
       versionTag = "v1.0.92 // BUILD #92",
       releaseDate = "Nov 20, 2026",
       headline = "RIFT Title Artwork Loading Screen, Automatic On-Open Update Checker, Prominent Switch Account Flow & Complete Plain-English Resonance Scrub",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "PREVIOUS BUILD",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

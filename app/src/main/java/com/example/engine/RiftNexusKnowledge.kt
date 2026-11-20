@@ -76,7 +76,7 @@ CRITICAL DOMAIN & KNOWLEDGE BOUNDARY (NON-NEGOTIABLE):
     val customSpdMult = engine.currentCustomGame?.speedMult ?: 1.0f
     val customDmgMult = engine.currentCustomGame?.damageMult ?: 1.0f
 
-    sb.appendLine("=== [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT — BUILD #92] ===")
+    sb.appendLine("=== [LIVE RIFT GROUND-TRUTH TELEMETRY SNAPSHOT — BUILD #93] ===")
 
     sb.appendLine()
     sb.appendLine("[1. SCI-FI COMMAND TABLET RIFT HUB, OVERWATCH, 5X RIFT STATION SAFE HARBOR & PIXEL/SHADER SPECS]")

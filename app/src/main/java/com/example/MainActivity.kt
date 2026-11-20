@@ -15,6 +15,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -50,6 +51,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -126,6 +128,8 @@ import com.example.ui.CURRENT_RIFT_BUILD_VERSION
 import com.example.ui.CodexModal
 import com.example.ui.DossierModal
 import com.example.ui.HangarModal
+import com.example.ui.MatchmakingQueueStatus
+import com.example.ui.MatchmakingQueueViewModel
 import com.example.ui.NexusAiConsoleModal
 import com.example.ui.NexusAiViewModel
 import com.example.ui.NexusCoreNode
@@ -175,16 +179,6 @@ private sealed interface StagedRiftLaunch {
 
   data class ExistingCustom(val instanceId: String) : StagedRiftLaunch
 }
-
-private data class MatchmakingQueueRequest(
-  val modeTitle: String,
-  val riftLabel: String,
-  val targetSectorKey: String,
-  val rankedMode: RankedGameMode,
-  val requiresOpponentTeam: Boolean,
-  val teamAvgResonance: Int,
-  val onExecuteLaunch: () -> Unit,
-)
 
 private data class SuspendedActiveMatchSnapshot(
   val sectorTag: String,
@@ -853,12 +847,14 @@ fun AppNavigation(
   }
 
   val handleSwitchAccount: () -> Unit = {
+    localPrefs.clearUnscopedCallsignOnAccountSwitch()
     localPrefs.setGuestBypassEnabled(false)
     isGuestMode = false
     signOut(
       credentialManager = navCredentialManager,
       scope = navScope,
       onSignOutComplete = {
+        localPrefs.clearUnscopedCallsignOnAccountSwitch()
         localPrefs.setGuestBypassEnabled(false)
         isGuestMode = false
       },
@@ -883,7 +879,7 @@ fun AppNavigation(
       val equippedTrim = localPrefs.getEquippedCosmeticId("HULL_TRIM", prewarmUid).coerceIn(0, 3)
       val activeSlotId = localPrefs.getActiveCustomSlotId(prewarmUid)
       val loadedSlot = localPrefs.getCustomShipSlot(activeSlotId, prewarmUid)
-      val savedTag = localPrefs.getSyndicateTag()
+      val savedTag = localPrefs.getSyndicateTag(prewarmUid)
       RiftSpriteBaker.activeHullTrimStyle = equippedTrim
       RiftCodex.updateActiveCustomShipSlot(loadedSlot)
       RiftSpriteBaker.prewarmStartupAssets(
@@ -1024,6 +1020,9 @@ fun RiftArenaScreen(
   val nexusStreamState by nexusViewModel.streamState.collectAsStateWithLifecycle()
   val isNexusStreaming =
     nexusStreamState is NexusStreamState.Loading || nexusStreamState is NexusStreamState.Streaming
+  val matchmakingQueueViewModel: MatchmakingQueueViewModel =
+    viewModel(key = "matchmaking_${currentUserId}_$isGoogleAuthenticated")
+  val matchmakingQueueState by matchmakingQueueViewModel.uiState.collectAsStateWithLifecycle()
   val isDeviceOnline by
     remember(context) { com.example.data.NetworkConnectivityMonitor.observeOnlineState(context) }
       .collectAsStateWithLifecycle(
@@ -1108,9 +1107,6 @@ fun RiftArenaScreen(
   var isForgeFullScreenStage by remember { mutableStateOf(false) }
   var showFullChangelogModal by remember { mutableStateOf(false) }
   var pendingStagedLaunch by remember { mutableStateOf<StagedRiftLaunch?>(null) }
-  var activeMatchmakingQueue by remember { mutableStateOf<MatchmakingQueueRequest?>(null) }
-  var matchmakingElapsedSec by remember { mutableFloatStateOf(0f) }
-  var matchmakingNoTeamsNotice by remember { mutableStateOf<String?>(null) }
   var suspendedActiveMatch by remember { mutableStateOf<SuspendedActiveMatchSnapshot?>(null) }
   var favoriteOverwatchKey by remember {
     mutableStateOf(localPrefs.getFavoriteOverwatchRiftKey())
@@ -1122,6 +1118,9 @@ fun RiftArenaScreen(
       if (isGoogleAuthenticated) localPrefs.getCallsign(currentUserId) else localPrefs.getCallsign()
     )
   }
+  var renamedCallsignInCurrentSession by remember(currentUserId, isGoogleAuthenticated) {
+    mutableStateOf(false)
+  }
   var needsInitialSwornCallsign by remember(currentUserId, isGoogleAuthenticated) {
     mutableStateOf(false)
   }
@@ -1129,10 +1128,16 @@ fun RiftArenaScreen(
     mutableStateOf(if (callsign.equals("COMMANDER", ignoreCase = true)) "" else callsign)
   }
   var syndicateTag by remember(currentUserId, isGoogleAuthenticated) {
-    mutableStateOf(localPrefs.getSyndicateTag())
+    mutableStateOf(
+      if (isGoogleAuthenticated) localPrefs.getSyndicateTag(currentUserId)
+      else localPrefs.getSyndicateTag()
+    )
   }
   var syndicateName by remember(currentUserId, isGoogleAuthenticated) {
-    mutableStateOf(localPrefs.getSyndicateName())
+    mutableStateOf(
+      if (isGoogleAuthenticated) localPrefs.getSyndicateName(currentUserId)
+      else localPrefs.getSyndicateName()
+    )
   }
   var selectedShipId by remember {
     mutableIntStateOf(localPrefs.getPreferredShipId().coerceIn(1, 10))
@@ -1517,8 +1522,8 @@ fun RiftArenaScreen(
     }
 
     if (isGoogleAuthenticated && !localPrefs.isGuestBypassEnabled()) {
-      val scrubbedTag = localPrefs.getSyndicateTag()
-      val scrubbedName = localPrefs.getSyndicateName()
+      val scrubbedTag = localPrefs.getSyndicateTag(currentUserId)
+      val scrubbedName = localPrefs.getSyndicateName(currentUserId)
       if (syndicateTag != scrubbedTag || engine.localPlayer.syndicateTag != scrubbedTag) {
         syndicateTag = scrubbedTag
         syndicateName = scrubbedName
@@ -1538,7 +1543,10 @@ fun RiftArenaScreen(
     }
 
     val cloudDossier = (dossierState as? UiState.Success)?.data
-    if (cloudDossier != null) {
+    val dossierBelongsToCurrentPilot =
+      cloudDossier != null &&
+        (cloudDossier.userId.isBlank() || cloudDossier.userId == currentUserId)
+    if (cloudDossier != null && dossierBelongsToCurrentPilot) {
       val cloudHasPriorCareer =
         cloudDossier.allTimeKills > 0L ||
           cloudDossier.pvpKills > 0L ||
@@ -1616,10 +1624,10 @@ fun RiftArenaScreen(
       }
 
       if (isGoogleAuthenticated && !localPrefs.isGuestBypassEnabled() && currentUserId.isNotBlank()) {
-        val cleanedLocalSyn = localPrefs.getSyndicateTag()
+        val cleanedLocalSyn = localPrefs.getSyndicateTag(currentUserId)
         if (syndicateTag != cleanedLocalSyn) {
           syndicateTag = cleanedLocalSyn
-          syndicateName = localPrefs.getSyndicateName()
+          syndicateName = localPrefs.getSyndicateName(currentUserId)
           engine.localPlayer.syndicateTag = syndicateTag
           engine.syncLocalArmadaSelfSlot()
         }
@@ -1641,9 +1649,10 @@ fun RiftArenaScreen(
             tag = cloudSynTag,
             name = resolvedSynName,
             apply15DayLock = false,
+            uid = currentUserId,
           )
-          syndicateTag = localPrefs.getSyndicateTag()
-          syndicateName = localPrefs.getSyndicateName()
+          syndicateTag = localPrefs.getSyndicateTag(currentUserId)
+          syndicateName = localPrefs.getSyndicateName(currentUserId)
           engine.localPlayer.syndicateTag = syndicateTag
           engine.syncLocalArmadaSelfSlot()
           syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
@@ -1656,12 +1665,32 @@ fun RiftArenaScreen(
         if (cloudHasChosenName) {
           localPrefs.setHasChosenInitialCallsign(true, currentUserId)
           needsInitialSwornCallsign = false
-          if (!localHasChosenName) {
+          if (!renamedCallsignInCurrentSession) {
             val adopted = localPrefs.setCallsign(cloudCallsign, currentUserId)
-            callsign = adopted
-            initialSwornCallsignDraft = adopted
-            engine.localPlayer.callsign = adopted
-            engine.syncLocalArmadaSelfSlot()
+            if (callsign != adopted || engine.localPlayer.callsign != adopted) {
+              callsign = adopted
+              initialSwornCallsignDraft = adopted
+              engine.localPlayer.callsign = adopted
+              engine.syncLocalArmadaSelfSlot()
+              if (isDeviceOnline) {
+                viewModel.syncNativePilotStats(
+                  callsign = adopted,
+                  shipId = engine.localPlayer.shipId,
+                  foundry = engine.localPlayer.spec.role,
+                  mode = engine.mode,
+                  pvpKills = engine.pvpKills,
+                  pvpDeaths = engine.pvpDeaths,
+                  pvpBountyPeak = engine.pvpBountyPeak,
+                  allTimeKills = engine.allTimeKills,
+                  allTimeDeaths = engine.allTimeDeaths,
+                  allTimeBountyPeak = engine.allTimeBountyPeak,
+                  convergencesWon = engine.convergencesWon,
+                  syndicateTag = engine.localPlayer.syndicateTag,
+                  armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
+                  armadaTierSize = engine.getCurrentArmadaSize(),
+                )
+              }
+            }
           }
         } else if (localHasChosenName && cloudCallsign != callsign) {
           val saved = localPrefs.setCallsign(callsign, currentUserId)
@@ -1723,7 +1752,8 @@ fun RiftArenaScreen(
   fun pushLivePilotHeartbeatNow() {
     if (!isGoogleAuthenticated || !isDeviceOnline) return
     val suspended = suspendedActiveMatch
-    val queueTargetSector = activeMatchmakingQueue?.targetSectorKey
+    val queueTargetSector =
+      matchmakingQueueState.targetSectorKey.takeIf { matchmakingQueueState.isQueueActive }
     val p = suspended?.localPlayerSnapshot ?: engine.localPlayer
     val activeLiveMatch =
       suspended != null || (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift)
@@ -1787,46 +1817,27 @@ fun RiftArenaScreen(
     }
   }
 
-  fun findEligibleRemoteOpponentsForSector(
-    targetSectorKey: String,
-    rankedMode: RankedGameMode,
-  ): List<LivePilotState> {
-    if (!isDeviceOnline) return emptyList()
-    val localWing = engine.activeArmadaName.trim()
-    val localSyn = RiftGameEngine.cleanTag(syndicateTag)
-    return mergedLivePilots.filter { st ->
-      val rUid = st.userId.ifEmpty { st.id }
-      if (rUid.isBlank() || rUid == currentUserId) return@filter false
-      if (!st.sectorId.equals(targetSectorKey, ignoreCase = true)) return@filter false
-      if (localWing.isNotBlank() && st.armadaName.trim().equals(localWing, ignoreCase = true)) {
-        return@filter false
-      }
-      if (
-        rankedMode == RankedGameMode.SYNDICATE_WARS &&
-          localSyn.isNotBlank() &&
-          RiftGameEngine.cleanTag(st.syndicateTag) == localSyn
-      ) {
-        return@filter false
-      }
-      true
-    }
-  }
-
-  fun computeLocalTeamAvgResonance(): Int {
-    val localWing = engine.activeArmadaName.trim()
-    if (localWing.isBlank() || !isDeviceOnline) return engine.liveResonance
-    val wingResList = mutableListOf(engine.liveResonance)
-    mergedLivePilots.forEach { st ->
-      val rUid = st.userId.ifEmpty { st.id }
-      if (
-        rUid.isNotBlank() &&
-          rUid != currentUserId &&
-          st.armadaName.trim().equals(localWing, ignoreCase = true)
-      ) {
-        wingResList.add(st.liveResonance.toInt().coerceAtLeast(0))
-      }
-    }
-    return (wingResList.sum() / wingResList.size.coerceAtLeast(1)).coerceAtLeast(0)
+  LaunchedEffect(
+    currentUserId,
+    callsign,
+    syndicateTag,
+    engine.activeArmadaName,
+    selectedShipId,
+    engine.liveResonance,
+    isDeviceOnline,
+    mergedLivePilots,
+    matchmakingQueueState.isQueueActive,
+  ) {
+    matchmakingQueueViewModel.updateLobbySnapshot(
+      currentUserId = currentUserId,
+      localCallsign = callsign,
+      localSyndicateTag = syndicateTag,
+      localArmadaName = engine.activeArmadaName,
+      localShipId = selectedShipId,
+      localLiveResonance = engine.liveResonance,
+      isDeviceOnline = isDeviceOnline,
+      mergedLivePilots = mergedLivePilots,
+    )
   }
 
   fun enqueueOrExecuteResonanceMatchmaking(
@@ -1837,98 +1848,33 @@ fun RiftArenaScreen(
     isCustomInstance: Boolean,
     onExecuteLaunch: () -> Unit,
   ) {
-    matchmakingNoTeamsNotice = null
-    val isTeamRankedMode =
-      !isCustomInstance &&
-        rankedMode in
-          setOf(
-            RankedGameMode.SYNDICATE_WARS,
-            RankedGameMode.RIFT_SKIRMISH,
-            RankedGameMode.RIFT_CONTROL,
-            RankedGameMode.FLUX_CORE,
-            RankedGameMode.STASIS_BREACH,
-          )
-    val requiresOpponentTeam =
-      !isCustomInstance &&
-        (rankedMode == RankedGameMode.SYNDICATE_WARS ||
-          (!RiftCalibrationState.botsEnabled && isTeamRankedMode))
-
-    if (!isTeamRankedMode || (!isDeviceOnline && !requiresOpponentTeam)) {
-      activeMatchmakingQueue = null
-      onExecuteLaunch()
-      return
-    }
-
-    val teamAvgRes = computeLocalTeamAvgResonance()
-    val remoteOpponents = findEligibleRemoteOpponentsForSector(targetSectorKey, rankedMode)
-    val hasBalancedMatchNow =
-      remoteOpponents.any { abs(it.liveResonance.toInt() - teamAvgRes) <= 250 }
-
-    if (hasBalancedMatchNow) {
-      activeMatchmakingQueue = null
-      onExecuteLaunch()
-      return
-    }
-
-    if (!isDeviceOnline && requiresOpponentTeam) {
-      activeMatchmakingQueue = null
-      matchmakingNoTeamsNotice = "No other available teams"
-      toastMessage = "No other available teams"
-      toastVersion++
-      return
-    }
-
-    matchmakingElapsedSec = 0f
-    activeMatchmakingQueue =
-      MatchmakingQueueRequest(
-        modeTitle = modeTitle,
-        riftLabel = riftLabel,
-        targetSectorKey = targetSectorKey,
-        rankedMode = rankedMode,
-        requiresOpponentTeam = requiresOpponentTeam,
-        teamAvgResonance = teamAvgRes,
-        onExecuteLaunch = onExecuteLaunch,
-      )
-  }
-
-  LaunchedEffect(activeMatchmakingQueue) {
-    val req = activeMatchmakingQueue ?: return@LaunchedEffect
-    var elapsed = 0f
-    while (activeMatchmakingQueue === req && elapsed < 15.0f) {
-      delay(100L)
-      elapsed = (elapsed + 0.1f).coerceAtMost(15.0f)
-      matchmakingElapsedSec = elapsed
-      val opponents = findEligibleRemoteOpponentsForSector(req.targetSectorKey, req.rankedMode)
-      if (elapsed < 7.5f) {
-        if (opponents.any { abs(it.liveResonance.toInt() - req.teamAvgResonance) <= 250 }) {
-          activeMatchmakingQueue = null
-          req.onExecuteLaunch()
-          return@LaunchedEffect
-        }
-      } else {
-        // After 7.5s, accept mismatched Resonance teams rather than waiting past 15s
-        if (opponents.isNotEmpty()) {
-          activeMatchmakingQueue = null
-          req.onExecuteLaunch()
-          return@LaunchedEffect
-        }
-      }
-    }
-    if (activeMatchmakingQueue === req) {
-      val opponents = findEligibleRemoteOpponentsForSector(req.targetSectorKey, req.rankedMode)
-      activeMatchmakingQueue = null
-      if (opponents.isNotEmpty() || !req.requiresOpponentTeam) {
-        req.onExecuteLaunch()
-      } else {
-        matchmakingNoTeamsNotice = "No other available teams"
-        toastMessage = "No other available teams"
+    matchmakingQueueViewModel.updateLobbySnapshot(
+      currentUserId = currentUserId,
+      localCallsign = callsign,
+      localSyndicateTag = syndicateTag,
+      localArmadaName = engine.activeArmadaName,
+      localShipId = selectedShipId,
+      localLiveResonance = engine.liveResonance,
+      isDeviceOnline = isDeviceOnline,
+      mergedLivePilots = mergedLivePilots,
+    )
+    matchmakingQueueViewModel.enqueueOrExecute(
+      modeTitle = modeTitle,
+      riftLabel = riftLabel,
+      targetSectorKey = targetSectorKey,
+      rankedMode = rankedMode,
+      isCustomInstance = isCustomInstance,
+      onNoTeamsNotice = { msg ->
+        toastMessage = msg
         toastVersion++
-      }
-    }
+      },
+      onExecuteLaunch = onExecuteLaunch,
+    )
   }
 
   LaunchedEffect(
-    activeMatchmakingQueue?.targetSectorKey,
+    matchmakingQueueState.isQueueActive,
+    matchmakingQueueState.targetSectorKey,
     engine.hasJoinedMatch,
     engine.activeMatchSectorTag(),
   ) {
@@ -1987,7 +1933,7 @@ fun RiftArenaScreen(
     pushLivePilotHeartbeatNow()
     while (true) {
       val inActiveCombatOrQueue =
-        activeMatchmakingQueue != null ||
+        matchmakingQueueState.isQueueActive ||
           suspendedActiveMatch != null ||
           (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift)
       val intervalMs = if (inActiveCombatOrQueue) 95L else 1200L
@@ -2513,8 +2459,8 @@ fun RiftArenaScreen(
         showFullChangelogModal ||
         isLiveHudDragPillOpen ||
         needsInitialSwornCallsign ||
-        activeMatchmakingQueue != null ||
-        matchmakingNoTeamsNotice != null
+        matchmakingQueueState.isQueueActive ||
+        matchmakingQueueState.noticeMessage != null
 
     if (hasAnyModalVisible) {
       DeviceAwareModalAutoScaler(
@@ -3095,6 +3041,7 @@ fun RiftArenaScreen(
                           },
                           onDeployPilot = { newCallsign, newShipId, _, asGuest ->
                             if (asGuest) localPrefs.setGuestBypassEnabled(true)
+                            val previousCallsign = callsign
                             val cleanCallsign =
                               if (isGoogleAuthenticated) localPrefs.setCallsign(newCallsign, currentUserId)
                               else localPrefs.setCallsign(newCallsign)
@@ -3104,14 +3051,21 @@ fun RiftArenaScreen(
                                 cleanCallsign != "COMMANDER" &&
                                 !cleanCallsign.startsWith("RFT-")
                             ) {
+                              if (!cleanCallsign.equals(previousCallsign, ignoreCase = true)) {
+                                renamedCallsignInCurrentSession = true
+                              }
                               localPrefs.setHasChosenInitialCallsign(true, currentUserId)
                               needsInitialSwornCallsign = false
                             }
                             val clampedShipId = newShipId.coerceIn(1, 10)
                             callsign = cleanCallsign
                             selectedShipId = clampedShipId
-                            syndicateTag = localPrefs.getSyndicateTag()
-                            syndicateName = localPrefs.getSyndicateName()
+                            syndicateTag =
+                              if (isGoogleAuthenticated) localPrefs.getSyndicateTag(currentUserId)
+                              else localPrefs.getSyndicateTag()
+                            syndicateName =
+                              if (isGoogleAuthenticated) localPrefs.getSyndicateName(currentUserId)
+                              else localPrefs.getSyndicateName()
                             localPrefs.setPreferredShipId(clampedShipId)
                             engine.localPlayer.callsign = cleanCallsign
                             engine.localPlayer.syndicateTag = syndicateTag
@@ -3828,6 +3782,7 @@ fun RiftArenaScreen(
                             onCallsignChanged = { updatedCallsign ->
                               val saved =
                                 if (isGoogleAuthenticated) {
+                                  renamedCallsignInCurrentSession = true
                                   localPrefs.setHasChosenInitialCallsign(true, currentUserId)
                                   localPrefs.setCallsign(updatedCallsign, currentUserId)
                                 } else {
@@ -3896,8 +3851,10 @@ fun RiftArenaScreen(
                           onRequestSignOut = {
                             pendingStagedLaunch = null
                             suspendedActiveMatch = null
+                            matchmakingQueueViewModel.resetForAccountSwitch()
                             engine.leaveActiveMatchToNexusOrbit()
                             isNexusShellOpen = false
+                            localPrefs.clearUnscopedCallsignOnAccountSwitch()
                             localPrefs.setGuestBypassEnabled(false)
                             onSwitchAccount()
                             signOut(credentialManager = credentialManager, scope = scope)
@@ -3905,8 +3862,10 @@ fun RiftArenaScreen(
                           onSwitchAccount = {
                             pendingStagedLaunch = null
                             suspendedActiveMatch = null
+                            matchmakingQueueViewModel.resetForAccountSwitch()
                             engine.leaveActiveMatchToNexusOrbit()
                             isNexusShellOpen = false
+                            localPrefs.clearUnscopedCallsignOnAccountSwitch()
                             localPrefs.setGuestBypassEnabled(false)
                             onSwitchAccount()
                             if (isGoogleAuthenticated) {
@@ -4725,8 +4684,10 @@ fun RiftArenaScreen(
               onSwitchAccount = {
                 pendingStagedLaunch = null
                 suspendedActiveMatch = null
+                matchmakingQueueViewModel.resetForAccountSwitch()
                 engine.leaveActiveMatchToNexusOrbit()
                 isNexusShellOpen = false
+                localPrefs.clearUnscopedCallsignOnAccountSwitch()
                 localPrefs.setGuestBypassEnabled(false)
                 onSwitchAccount()
                 if (isGoogleAuthenticated) {
@@ -4846,6 +4807,7 @@ fun RiftArenaScreen(
                   }
                   Button(
                     onClick = {
+                      renamedCallsignInCurrentSession = true
                       val saved = localPrefs.setCallsign(initialSwornCallsignDraft, currentUserId)
                       localPrefs.setHasChosenInitialCallsign(true, currentUserId)
                       callsign = saved
@@ -4880,8 +4842,7 @@ fun RiftArenaScreen(
             }
           }
 
-          val queueReq = activeMatchmakingQueue
-          if (queueReq != null) {
+          if (matchmakingQueueState.isQueueActive) {
             Box(
               modifier =
                 Modifier.fillMaxSize()
@@ -4892,48 +4853,140 @@ fun RiftArenaScreen(
                   .testTag("resonance_matchmaking_modal"),
               contentAlignment = Alignment.Center,
             ) {
-              val remainingSec = (15.0f - matchmakingElapsedSec).coerceIn(0f, 15f)
-              val toleranceLabel =
-                if (matchmakingElapsedSec < 7.5f) {
-                  "BALANCED WINDOW (+/- 250 RES)"
-                } else {
-                  "OPEN BRACKET (ACCEPTING ANY AVAILABLE TEAM)"
-                }
+              val isExpanding =
+                matchmakingQueueState.status == MatchmakingQueueStatus.EXPANDING_BRACKET
+              val statusAccent = if (isExpanding) Color(0xFF38BDF8) else Color(0xFFFFD166)
               Surface(
                 modifier =
-                  Modifier.widthIn(max = 460.dp)
+                  Modifier.widthIn(max = 500.dp)
                     .fillMaxWidth()
-                    .border(1.5.dp, Color(0xFFFFD166), RoundedCornerShape(16.dp)),
+                    .border(1.5.dp, statusAccent, RoundedCornerShape(16.dp)),
                 color = Color(0xF5060D1A),
                 shape = RoundedCornerShape(16.dp),
               ) {
                 Column(
                   modifier = Modifier.padding(18.dp),
-                  verticalArrangement = Arrangement.spacedBy(10.dp),
+                  verticalArrangement = Arrangement.spacedBy(9.dp),
                   horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                   Text(
-                    text = "RESONANCE MATCHMAKING // ${queueReq.modeTitle}",
+                    text = "RESONANCE MATCHMAKING // ${matchmakingQueueState.modeTitle}",
                     color = Color(0xFFFFD166),
                     fontSize = 13.5.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                   )
+                  Box(
+                    modifier =
+                      Modifier.clip(RoundedCornerShape(8.dp))
+                        .background(statusAccent.copy(alpha = 0.14f))
+                        .border(1.dp, statusAccent.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .testTag("matchmaking_status_badge"),
+                  ) {
+                    Text(
+                      text = matchmakingQueueState.statusTransitionLabel,
+                      color = statusAccent,
+                      fontSize = 10.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                    )
+                  }
                   Text(
                     text =
-                      "${queueReq.riftLabel} • TEAM AVG ${queueReq.teamAvgResonance} RES • $toleranceLabel",
+                      "${matchmakingQueueState.riftLabel} • TEAM AVG ${matchmakingQueueState.teamAvgResonance} RES",
                     color = Color(0xFFE2E8F0),
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                   )
+                  Column(
+                    modifier =
+                      Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF040A14))
+                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                        .padding(10.dp)
+                        .testTag("matchmaking_lobby_roster"),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                      Text(
+                        text = "PILOTS IN LOBBY: ${matchmakingQueueState.lobbyPilots.size}",
+                        color = Color(0xFF34D399),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                      )
+                      Text(
+                        text = "OPPONENTS READY: ${matchmakingQueueState.eligibleOpponentCount}",
+                        color = Color(0xFF38BDF8),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                      )
+                    }
+                    Row(
+                      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                      horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                      matchmakingQueueState.lobbyPilots.forEach { pilot ->
+                        val chipBorder =
+                          when {
+                            pilot.isLocalPilot -> Color(0xFF00F5D4)
+                            pilot.isWingmate -> Color(0xFF34D399)
+                            else -> Color(0xFFFFD166)
+                          }
+                        val synPrefix =
+                          if (pilot.syndicateTag.isNotBlank()) "[${pilot.syndicateTag}] " else ""
+                        Box(
+                          modifier =
+                            Modifier.clip(RoundedCornerShape(6.dp))
+                              .background(Color(0xFF091426))
+                              .border(1.dp, chipBorder.copy(alpha = 0.75f), RoundedCornerShape(6.dp))
+                              .padding(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                          Text(
+                            text = "$synPrefix${pilot.callsign} • ${pilot.resonance} RES",
+                            color = Color.White,
+                            fontSize = 8.8.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                          )
+                        }
+                      }
+                    }
+                  }
+                  Box(
+                    modifier =
+                      Modifier.fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color(0xFF1E293B)),
+                  ) {
+                    Box(
+                      modifier =
+                        Modifier.fillMaxHeight()
+                          .fillMaxWidth(matchmakingQueueState.progressFraction)
+                          .background(
+                            Brush.horizontalGradient(
+                              listOf(Color(0xFF00F5D4), statusAccent)
+                            )
+                          ),
+                    )
+                  }
                   Text(
                     text =
                       String.format(
                         Locale.US,
-                        "QUEUE TIME: %.1fs / 15.0s MAX (%.1fs REMAINING)",
-                        matchmakingElapsedSec,
-                        remainingSec,
+                        "QUEUE TIME: %.1fs / %.1fs MAX (%.1fs REMAINING)",
+                        matchmakingQueueState.elapsedSec,
+                        matchmakingQueueState.maxDurationSec,
+                        matchmakingQueueState.remainingSec,
                       ),
                     color = Color(0xFF00F5D4),
                     fontSize = 11.5.sp,
@@ -4944,13 +4997,9 @@ fun RiftArenaScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                   ) {
-                    if (!queueReq.requiresOpponentTeam) {
+                    if (!matchmakingQueueState.requiresOpponentTeam) {
                       Button(
-                        onClick = {
-                          val action = queueReq.onExecuteLaunch
-                          activeMatchmakingQueue = null
-                          action()
-                        },
+                        onClick = { matchmakingQueueViewModel.deployNow() },
                         colors =
                           ButtonDefaults.buttonColors(
                             containerColor = Color(0xFF0E7490),
@@ -4973,7 +5022,7 @@ fun RiftArenaScreen(
                     }
                     Button(
                       onClick = {
-                        activeMatchmakingQueue = null
+                        matchmakingQueueViewModel.cancelQueue()
                         sfx.playMutedClick()
                       },
                       colors =
@@ -5001,14 +5050,14 @@ fun RiftArenaScreen(
             }
           }
 
-          val noTeamsMsg = matchmakingNoTeamsNotice
-          if (noTeamsMsg != null && activeMatchmakingQueue == null) {
+          val noTeamsMsg = matchmakingQueueState.noticeMessage
+          if (noTeamsMsg != null && !matchmakingQueueState.isQueueActive) {
             Box(
               modifier =
                 Modifier.fillMaxSize()
                   .zIndex(46f)
                   .background(Color(0xB802050B))
-                  .clickable { matchmakingNoTeamsNotice = null }
+                  .clickable { matchmakingQueueViewModel.dismissNotice() }
                   .padding(20.dp)
                   .testTag("matchmaking_no_teams_banner"),
               contentAlignment = Alignment.Center,
@@ -5034,7 +5083,7 @@ fun RiftArenaScreen(
                     fontFamily = FontFamily.Monospace,
                   )
                   Button(
-                    onClick = { matchmakingNoTeamsNotice = null },
+                    onClick = { matchmakingQueueViewModel.dismissNotice() },
                     colors =
                       ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF1E293B),

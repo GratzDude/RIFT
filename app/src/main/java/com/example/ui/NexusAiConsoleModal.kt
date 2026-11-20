@@ -148,7 +148,7 @@ private val NEXUS_STARTER_CHIPS =
     "How many pixels are Suppressor's lasers?",
     "Who holds the highest Peak Resonance record?",
     "Theorycraft a 100-pt Rift Frame sniper build",
-    "Analyze my Peak Resonance Run & Executioner",
+    "Analyze my Peak Resonance Run & Top-Resonance Takedowns",
     "Compare Eclipse Stasis vs Disruptor EMP",
     "Explain Flux Core, Stasis Breach & Rift Control",
   )
@@ -4315,7 +4315,7 @@ private fun SubspaceCommsDiscordDeck(
 
           if (isStrikeWingCh || isSyndicateCh) {
             Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              TacticalQuickPingChip("FOCUS RIFT LEADER", Color(0xFFFB7185), "nexus_quick_ping_attack_hvt") {
+              TacticalQuickPingChip("FOCUS RESONANCE LEADER", Color(0xFFFB7185), "nexus_quick_ping_attack_hvt") {
                 onSendToChannel(selectedChannelKey, "[TACTICAL PING] CONVERGE ON HIGH-RESONANCE TARGET NOW!")
               }
               TacticalQuickPingChip("FORM ON ME", Color(0xFF38BDF8), "nexus_quick_ping_form_on_me") {
@@ -4900,9 +4900,9 @@ private fun NexusWelcomeTelemetryCard() {
         .padding(10.dp),
     verticalArrangement = Arrangement.spacedBy(4.dp),
   ) {
-    Text("NEXUS TELEMETRY LINK ESTABLISHED", color = Color(0xFF00F5D4), fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+    Text("RIFT AI TELEMETRY LINK ESTABLISHED", color = Color(0xFF00F5D4), fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
     Text(
-      "Ask NEXUS AI anything — exact weapon dimensions, Newtonian drift & bounce raycasts, 100-point Rift Frame theorycrafting, Eclipse Stasis vs Disruptor EMP, Paired Phase Rifts, or Peak Resonance records.",
+      "Ask RIFT AI anything — exact weapon dimensions, Newtonian drift & bounce raycasts, 100-point Rift Frame theorycrafting, Eclipse Stasis vs Disruptor EMP, Paired Phase Rifts, or Peak Resonance records.",
       color = Color(0xFFE2E8F0),
       fontSize = 10.sp,
       lineHeight = 14.5.sp,
