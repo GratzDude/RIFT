@@ -283,7 +283,7 @@ fun RiftShardsStoreModal(
         }
         ConduitMetricInline("LIVE RESONANCE", "$effectiveLiveRes", ConduitNexusTeal)
         ConduitMetricInline("PEAK RESONANCE", "$effectivePeakRes", Color(0xFFC084FC))
-        ConduitMetricInline("START BOUNTY", "$effectiveStartBounty BTY", ConduitSolarGold)
+        ConduitMetricInline("START RESONANCE", "$effectiveStartBounty RES", ConduitSolarGold)
         if (!isCompactPhone) {
           Column(modifier = Modifier.width(138.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
@@ -634,7 +634,7 @@ fun RiftShardsStoreModal(
 
           4 -> {
             ConduitCosmeticListDeck(
-              title = "HVT CROWN HALOS // #1 SECTOR BOUNTY LEADER RINGS",
+              title = "HVT CROWN HALOS // #1 SECTOR RESONANCE LEADER RINGS",
               categoryKey = "HVT_HALO",
               items = RiftProgressionCatalog.hvtHalos,
               previewedId = previewCosmeticId,
@@ -1302,7 +1302,7 @@ private fun ConduitHoloPreviewStage(
     ) {
       Column {
         Text(
-          text = "STARTING BOUNTY: $startingBounty BTY (SCALES 100->500)",
+          text = "STARTING RESONANCE: $startingBounty RES (SCALES 100->500)",
           color = ConduitSolarGold,
           fontSize = 9.5.sp,
           fontWeight = FontWeight.ExtraBold,
@@ -1652,7 +1652,7 @@ private fun DailyDirectivesDeck(
           ) {
             ResonanceCrestIcon(sizeDp = 14.dp)
             Text(
-              text = "LIVE RESONANCE RANK TIERS & STARTING BOUNTY SCALING",
+              text = "LIVE RESONANCE RANK TIERS & STARTING RESONANCE SCALING",
               color = ConduitElectricCyan,
               fontSize = 9.8.sp,
               fontWeight = FontWeight.ExtraBold,
@@ -1683,7 +1683,7 @@ private fun DailyDirectivesDeck(
                   fontFamily = FontFamily.Monospace,
                 )
                 Text(
-                  text = "${tier.minResonance}+ RES • ${tier.startingBounty} BTY",
+                  text = "${tier.minResonance}+ RES • ${tier.startingBounty} START RES",
                   color = Color.White,
                   fontSize = 9.5.sp,
                   fontWeight = FontWeight.Bold,

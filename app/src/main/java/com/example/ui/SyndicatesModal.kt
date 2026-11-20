@@ -99,7 +99,7 @@ private val CitadelTeal = Color(0xFF00F5D4)
 private val CitadelGold = Color(0xFFFACC15)
 
 private val NON_SYNDICATE_TAGS =
-  setOf("", "RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED", "BOT")
+  LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS + RiftGameEngine.LEGACY_FOUNDRY_TAGS
 
 @Composable
 private fun SyndicateCrestBadge(
@@ -700,8 +700,15 @@ private fun DirectoryAndJoinPane(
       for (item in directoryList) {
         val clean = localPrefs.sanitizeSyndicateTag(item.tag)
         val normalized = item.copy(tag = clean)
-        if (clean.isNotEmpty() && normalized.isRealPlayerFoundedSyndicate()) {
-          byTag[clean] = normalized
+        if (clean.isNotEmpty() && localPrefs.isHumanFoundedSyndicateRecord(normalized)) {
+          val existing = byTag[clean]
+          if (
+            existing == null ||
+              normalized.memberCount > existing.memberCount ||
+              normalized.combinedBounty > existing.combinedBounty
+          ) {
+            byTag[clean] = normalized
+          }
         }
       }
       val mapped = byTag.values.map { syn -> syn to localPrefs.getSyndicateWarRecord(syn.tag) }
@@ -781,7 +788,7 @@ private fun DirectoryAndJoinPane(
         Text(
           text =
             if (rankingMode == 0) "RANKED BY SYNDICATE WAR TROPHIES"
-            else "RANKED BY COMBINED MEMBER BOUNTY & ROSTER SIZE",
+            else "RANKED BY COMBINED MEMBER RESONANCE & ROSTER SIZE",
           color = Color(0xFF94A3B8),
           fontSize = 9.6.sp,
           fontWeight = FontWeight.Bold,
@@ -905,7 +912,7 @@ private fun DirectoryAndJoinPane(
                   horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                   Text(
-                    text = "${syn.memberCount} PILOTS • ${syn.combinedBounty} TOTAL BOUNTY",
+                    text = "${syn.memberCount} PILOTS • ${syn.combinedBounty} TOTAL RESONANCE",
                     color = CitadelCyan,
                     fontSize = if (isCompactPhone) 9.8.sp else 10.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -1186,7 +1193,7 @@ private fun MySyndicateRosterPane(
               fontFamily = Mono,
             )
             Text(
-              text = "BOUNTY: ${member.bountyContribution}",
+              text = "RESONANCE: ${member.bountyContribution}",
               color = CitadelGold,
               fontSize = 12.sp,
               fontWeight = FontWeight.Bold,
@@ -1220,7 +1227,7 @@ private fun BountyCalloutsAndAchievementsPane(
           .padding(10.dp)
     ) {
       Text(
-        text = "HVT // SECTOR HIGH-VALUE TARGETS (BOUNTY >= 250)",
+        text = "HVT // SECTOR HIGH-VALUE TARGETS (RESONANCE >= 250)",
         color = CitadelGold,
         fontSize = 12.5.sp,
         fontWeight = FontWeight.Black,
@@ -1229,7 +1236,7 @@ private fun BountyCalloutsAndAchievementsPane(
         overflow = TextOverflow.Ellipsis,
       )
       Text(
-        text = "ELIMINATE HVTS FOR BOUNTY SHUTDOWN PAYOUTS & GOLD RADAR PINGS.",
+        text = "ELIMINATE HVTS FOR RESONANCE SHUTDOWN PAYOUTS & GOLD RADAR PINGS.",
         color = Color(0xFF94A3B8),
         fontSize = 10.sp,
         fontFamily = Sans,
@@ -1248,7 +1255,7 @@ private fun BountyCalloutsAndAchievementsPane(
           contentAlignment = Alignment.Center,
         ) {
           Text(
-            text = "NO SWORN PILOTS ABOVE 250 BOUNTY IN ACTIVE SECTOR.",
+            text = "NO SWORN PILOTS ABOVE 250 RESONANCE IN ACTIVE SECTOR.",
             color = Color(0xFF94A3B8),
             fontSize = 10.2.sp,
             fontWeight = FontWeight.Bold,
@@ -1275,8 +1282,14 @@ private fun BountyCalloutsAndAchievementsPane(
                 ShipSpritePreview(shipId = hvt.shipId, sizeDp = 28)
                 Column {
                   val armTag = if (hvt.armadaName.isNotEmpty()) "[${hvt.armadaName}]" else "[SOLO]"
+                  val cleanHvtSyn =
+                    hvt.syndicateTag.trim().uppercase(Locale.US).let { raw ->
+                      if (raw in NON_SYNDICATE_TAGS) ""
+                      else raw.take(3).let { if (it in NON_SYNDICATE_TAGS) "" else it }
+                    }
+                  val synPrefix = if (cleanHvtSyn.isNotEmpty()) "[$cleanHvtSyn] " else ""
                   Text(
-                    text = "HVT // $armTag [${hvt.syndicateTag}] ${hvt.callsign}",
+                    text = "HVT // $armTag $synPrefix${hvt.callsign}",
                     color = CitadelGold,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -1292,7 +1305,7 @@ private fun BountyCalloutsAndAchievementsPane(
                 }
               }
               Text(
-                text = "${hvt.bounty} BTY",
+                text = "${hvt.bounty} RES",
                 color = Color(0xFFFF3B4E),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
@@ -1379,9 +1392,9 @@ private fun CreateSyndicatePane(
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val isCooldownLocked = remainingLockDays > 0 || isDrifter
 
-  var tagInput by remember { mutableStateOf("NVX") }
-  var nameInput by remember { mutableStateOf("NOVA VANGUARD") }
-  var mottoInput by remember { mutableStateOf("Strike from the event horizon.") }
+  var tagInput by remember { mutableStateOf("") }
+  var nameInput by remember { mutableStateOf("") }
+  var mottoInput by remember { mutableStateOf("") }
   var anyFieldFocused by remember { mutableStateOf(false) }
 
   val focusManager = LocalFocusManager.current
@@ -1547,7 +1560,7 @@ private fun CreateSyndicatePane(
             SyndicateInputBox(
               value = tagInput,
               onValueChange = { if (!isCooldownLocked) tagInput = localPrefs.sanitizeSyndicateTag(it) },
-              placeholder = "e.g. NVX, A7",
+              placeholder = "e.g. VEX, A7",
               borderColor = CitadelGold,
               textColor = CitadelGold,
               height = inputBoxHeight,

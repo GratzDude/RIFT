@@ -71,6 +71,13 @@ class RiftViewModel(
   private val _activeSectorId = MutableStateFlow("NEXUS_LOBBY")
   val activeSectorId: StateFlow<String> = _activeSectorId.asStateFlow()
 
+  fun setActiveSector(sectorId: String) {
+    val cleanSector = repository.sanitizeSectorMode(sectorId.ifBlank { "NEXUS_LOBBY" })
+    if (_activeSectorId.value != cleanSector) {
+      _activeSectorId.value = cleanSector
+    }
+  }
+
   val cloudSyncHealth: StateFlow<CloudSyncHealth> = repository.cloudSyncHealth
 
   private val cloudReadyFlow: StateFlow<Boolean> =
@@ -163,7 +170,7 @@ class RiftViewModel(
       }
       .stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        started = SharingStarted.Eagerly,
         initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(emptyList()),
       )
 
@@ -211,7 +218,7 @@ class RiftViewModel(
       }
       .stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        started = SharingStarted.Eagerly,
         initialValue = emptyList(),
       )
 
@@ -238,7 +245,7 @@ class RiftViewModel(
       }
       .stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        started = SharingStarted.Eagerly,
         initialValue = null,
       )
 
@@ -260,7 +267,7 @@ class RiftViewModel(
       }
       .stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        started = SharingStarted.Eagerly,
         initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(emptyList()),
       )
 
@@ -282,7 +289,7 @@ class RiftViewModel(
       }
       .stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        started = SharingStarted.Eagerly,
         initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(emptyList()),
       )
 
@@ -330,6 +337,8 @@ class RiftViewModel(
             PilotDossier(
               userId = resolvedUid,
               callsign = initialCallsign,
+              syndicateTag = "",
+              syndicateName = "Unaffiliated",
               preferredShipId = 1L,
               preferredFoundry = "Independent",
               preferredMode = "SECTOR_CONVERGENCE",
@@ -369,7 +378,7 @@ class RiftViewModel(
 
   fun observeSyndicateMeta(tag: String): Flow<CloudSyndicateMeta?> {
     val cleanTag = tag.trim().uppercase(Locale.US)
-    if (!isCloudSessionReady() || cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) {
+    if (!isCloudSessionReady() || cleanTag.isEmpty() || cleanTag in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) {
       return flowOf(null)
     }
     return repository
@@ -389,7 +398,7 @@ class RiftViewModel(
     invitedGuests: Set<String>,
   ) {
     val cleanTag = tag.trim().uppercase(Locale.US)
-    if (!isCloudSessionReady() || cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) {
+    if (!isCloudSessionReady() || cleanTag.isEmpty() || cleanTag in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) {
       return
     }
     viewModelScope.launch {
@@ -652,6 +661,8 @@ class RiftViewModel(
           PilotDossier(
             userId = currentUserId,
             callsign = callsign,
+            syndicateTag = "",
+            syndicateName = "Unaffiliated",
             preferredShipId = shipId,
             preferredFoundry = foundry,
             preferredMode = mode,
@@ -669,6 +680,7 @@ class RiftViewModel(
             userId = currentUserId,
             callsign = callsign,
             shipId = shipId,
+            syndicateTag = "",
             foundry = foundry,
             pvpKills = pvpKills,
             pvpDeaths = pvpDeaths,
@@ -901,13 +913,12 @@ class RiftViewModel(
 
     val pilotsList = (sectorPilotsState.value as? UiState.Success)?.data ?: emptyList()
     val pilotsArray = JSONArray()
-    val nowMs = System.currentTimeMillis()
     pilotsList.forEach { p ->
-      val updatedMs = p.updatedAt?.toDate()?.time ?: nowMs
-      if (p.userId != currentUserId && kotlin.math.abs(nowMs - updatedMs) <= 60_000L) {
+      val pUid = p.userId.ifEmpty { p.id }.trim()
+      if (pUid.isNotEmpty() && pUid != currentUserId) {
         pilotsArray.put(
           JSONObject().apply {
-            put("userId", p.userId.ifEmpty { p.id })
+            put("userId", pUid)
             put("sectorId", p.sectorId)
             put("callsign", p.callsign)
             put("shipId", p.shipId)
@@ -920,6 +931,7 @@ class RiftViewModel(
             put("energy", p.energy)
             put("maxEnergy", p.maxEnergy)
             put("bounty", p.bounty)
+            put("liveResonance", p.liveResonance)
             put("lastPingType", p.lastPingType)
             put("lastPingX", p.lastPingX)
             put("lastPingY", p.lastPingY)

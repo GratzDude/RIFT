@@ -35,7 +35,7 @@ class LocalPilotPrefs(context: Context) {
       editor.putString(KEY_SYNDICATE_NAME, "Rift Drifters")
     } else {
       val rawTag = (prefs.getString(KEY_SYNDICATE_TAG, "") ?: "").trim().uppercase(Locale.US)
-      if (rawTag in setOf("RFT", "GUEST", "FREE", "UNAFFILIATED", "NONE", "SOLO")) {
+      if (rawTag in NON_PLAYER_SYNDICATE_TAGS) {
         editor.putString(KEY_SYNDICATE_TAG, "")
         editor.putString(KEY_SYNDICATE_NAME, "Unaffiliated")
       }
@@ -227,35 +227,69 @@ class LocalPilotPrefs(context: Context) {
     return Triple(true, saved, nextShards)
   }
 
-  fun sanitizeSyndicateTag(raw: String): String =
-    raw
-      .trim()
-      .uppercase(Locale.US)
-      .replace(Regex("[\\s\\[\\]\\p{Cntrl}]"), "")
-      .take(3)
+  fun sanitizeSyndicateTag(raw: String): String {
+    val cleanedFull =
+      raw
+        .trim()
+        .uppercase(Locale.US)
+        .replace(Regex("[^A-Z0-9_\\-]"), "")
+    if (cleanedFull.isEmpty() || cleanedFull in NON_PLAYER_SYNDICATE_TAGS) {
+      return ""
+    }
+    val trimmed = cleanedFull.take(3)
+    return if (trimmed in NON_PLAYER_SYNDICATE_TAGS) "" else trimmed
+  }
+
+  fun isGhostSyndicateName(rawName: String): Boolean {
+    val clean = rawName.trim()
+    if (clean.isEmpty()) return true
+    return clean.equals("Rift Drifters", ignoreCase = true) ||
+      clean.equals("Guest Tracking Framework", ignoreCase = true) ||
+      clean.equals("GUE Syndicate", ignoreCase = true) ||
+      clean.equals("GUES Syndicate", ignoreCase = true) ||
+      clean.equals("NOV Syndicate", ignoreCase = true) ||
+      clean.equals("NOVA VANGUARD", ignoreCase = true) ||
+      clean.contains("Kestrel", ignoreCase = true) ||
+      clean.contains("Aurelia", ignoreCase = true) ||
+      clean.contains("Vortex", ignoreCase = true) ||
+      clean.contains("Rustweld", ignoreCase = true)
+  }
+
+  fun isHumanFoundedSyndicateRecord(syn: SyndicateInfo): Boolean {
+    if (!syn.isCustom) return false
+    if (!syn.isRealPlayerFoundedSyndicate()) return false
+    val cleanTag = sanitizeSyndicateTag(syn.tag)
+    if (cleanTag.length !in 1..3 || cleanTag in NON_PLAYER_SYNDICATE_TAGS) return false
+    val cleanOwner = syn.ownerId.trim()
+    if (
+      cleanOwner.isEmpty() ||
+        cleanOwner.startsWith("dev_", ignoreCase = true) ||
+        cleanOwner.startsWith("drifter_", ignoreCase = true) ||
+        cleanOwner.startsWith("guest_", ignoreCase = true) ||
+        cleanOwner.startsWith("bot_", ignoreCase = true)
+    ) {
+      return false
+    }
+    if (isGhostSyndicateName(syn.name)) return false
+    return true
+  }
 
   fun getSyndicateTag(): String {
     if (isGuestBypassEnabled()) return "RFT"
     val raw = (prefs.getString(KEY_SYNDICATE_TAG, "") ?: "").trim().uppercase(Locale.US)
-    if (
-      raw in
-        setOf(
-          "RFT",
-          "GUEST",
-          "FREE",
-          "BOT",
-          "UNAFFILIATED",
-          "NONE",
-          "SOLO",
-          "KSTL",
-          "AURL",
-          "VRTX",
-          "RUST",
-        )
-    ) {
+    val rawName = (prefs.getString(KEY_SYNDICATE_NAME, "") ?: "").trim()
+    val clean = sanitizeSyndicateTag(raw)
+    if (clean.isEmpty() || raw in NON_PLAYER_SYNDICATE_TAGS || isGhostSyndicateName(rawName)) {
+      if (raw.isNotEmpty() || (rawName.isNotEmpty() && !rawName.equals("Unaffiliated", ignoreCase = true))) {
+        prefs
+          .edit()
+          .putString(KEY_SYNDICATE_TAG, "")
+          .putString(KEY_SYNDICATE_NAME, "Unaffiliated")
+          .apply()
+      }
       return ""
     }
-    return sanitizeSyndicateTag(raw)
+    return clean
   }
 
   fun getSyndicateName(): String {
@@ -263,15 +297,12 @@ class LocalPilotPrefs(context: Context) {
     val tag = getSyndicateTag()
     if (tag.isBlank()) return "Unaffiliated"
     val raw = (prefs.getString(KEY_SYNDICATE_NAME, "Unaffiliated") ?: "Unaffiliated").trim()
-    return if (
-      raw.isEmpty() ||
-        raw.equals("Rift Drifters", ignoreCase = true) ||
-        raw.equals("Guest Tracking Framework", ignoreCase = true) ||
-        raw.contains("Kestrel", ignoreCase = true) ||
-        raw.contains("Aurelia", ignoreCase = true) ||
-        raw.contains("Vortex", ignoreCase = true) ||
-        raw.contains("Rustweld", ignoreCase = true)
-    ) {
+    return if (isGhostSyndicateName(raw)) {
+      prefs
+        .edit()
+        .putString(KEY_SYNDICATE_TAG, "")
+        .putString(KEY_SYNDICATE_NAME, "Unaffiliated")
+        .apply()
       "Unaffiliated"
     } else {
       raw
@@ -306,12 +337,15 @@ class LocalPilotPrefs(context: Context) {
     role: String = "Pilot",
   ): Boolean {
     if (isGuestBypassEnabled()) return false
+    val cleanTag = sanitizeSyndicateTag(tag)
+    if (cleanTag.isEmpty() || isGhostSyndicateName(name)) {
+      return false
+    }
     if (apply15DayLock && getRemainingSyndicateLockDays() > 0) {
       return false
     }
     val now = System.currentTimeMillis()
-    val cleanTag = sanitizeSyndicateTag(tag)
-    val cleanName = name.trim().take(28).ifEmpty { if (cleanTag.isEmpty()) "Unaffiliated" else "$cleanTag Syndicate" }
+    val cleanName = name.trim().take(28).ifEmpty { "$cleanTag Syndicate" }
     val lockUntil =
       if (apply15DayLock) {
         now + FIFTEEN_DAYS_MS
@@ -325,7 +359,7 @@ class LocalPilotPrefs(context: Context) {
       .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
       .apply()
     appendSyndicateServiceTransition(
-      newTag = cleanTag.ifEmpty { "UNAFFILIATED" },
+      newTag = cleanTag,
       newName = cleanName,
       newRole = role,
       nowMs = now,
@@ -382,7 +416,7 @@ class LocalPilotPrefs(context: Context) {
   ): List<SyndicateMemberEntry> {
     if (isGuestBypassEnabled()) return emptyList()
     val tag = getSyndicateTag()
-    if (tag.uppercase(Locale.US) in setOf("", "RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED", "BOT")) {
+    if (tag.uppercase(Locale.US) in NON_PLAYER_SYNDICATE_TAGS) {
       return emptyList()
     }
     val localEntry =
@@ -1329,44 +1363,70 @@ class LocalPilotPrefs(context: Context) {
 
   fun getAllSyndicates(): List<SyndicateInfo> {
     val customRaw = prefs.getString(KEY_CUSTOM_SYNDICATES_JSON, "[]") ?: "[]"
-    val customList = mutableListOf<SyndicateInfo>()
+    val dedupedByTag = linkedMapOf<String, SyndicateInfo>()
     var purgedStaleEntries = false
     try {
       val arr = JSONArray(customRaw)
       for (i in 0 until arr.length()) {
         val obj = arr.getJSONObject(i)
-        val parsedTag = obj.optString("tag", "").trim().uppercase(Locale.US)
+        val parsedTag = sanitizeSyndicateTag(obj.optString("tag", ""))
         val parsedOwner = obj.optString("ownerId", "").trim()
         val syn =
           SyndicateInfo(
             id = obj.optString("id", "syn_custom_$i"),
             ownerId = parsedOwner,
             tag = parsedTag,
-            name = obj.optString("name", "$parsedTag Syndicate"),
+            name = obj.optString("name", "$parsedTag Syndicate").trim(),
             foundryOrigin = obj.optString("foundryOrigin", "Player Founded Syndicate"),
             motto = obj.optString("motto", "Forged in the Convergence"),
             memberCount = obj.optInt("memberCount", 1).coerceAtLeast(1),
             combinedBounty = obj.optLong("combinedBounty", 100L).coerceAtLeast(100L),
-            isCustom = obj.optBoolean("isCustom", true),
+            isCustom = obj.optBoolean("isCustom", false),
           )
-        if (syn.isRealPlayerFoundedSyndicate()) {
-          customList.add(syn)
+        if (isHumanFoundedSyndicateRecord(syn)) {
+          val existing = dedupedByTag[parsedTag]
+          if (existing == null) {
+            dedupedByTag[parsedTag] = syn
+          } else {
+            purgedStaleEntries = true
+            dedupedByTag[parsedTag] =
+              existing.copy(
+                memberCount = kotlin.math.max(existing.memberCount, syn.memberCount),
+                combinedBounty = kotlin.math.max(existing.combinedBounty, syn.combinedBounty),
+              )
+          }
         } else {
           purgedStaleEntries = true
         }
       }
     } catch (_: Exception) {}
 
+    val cleanedList = dedupedByTag.values.toList()
     if (purgedStaleEntries) {
-      persistSyndicatesJson(customList)
+      persistSyndicatesJson(cleanedList)
     }
-    return customList
+    return cleanedList
   }
 
   private fun persistSyndicatesJson(list: Collection<SyndicateInfo>) {
-    val arr = JSONArray()
+    val dedupedByTag = linkedMapOf<String, SyndicateInfo>()
     for (syn in list) {
-      if (!syn.isRealPlayerFoundedSyndicate()) continue
+      val cleanTag = sanitizeSyndicateTag(syn.tag)
+      val normalized = syn.copy(tag = cleanTag)
+      if (!isHumanFoundedSyndicateRecord(normalized)) continue
+      val existing = dedupedByTag[cleanTag]
+      dedupedByTag[cleanTag] =
+        if (existing != null) {
+          normalized.copy(
+            memberCount = kotlin.math.max(existing.memberCount, normalized.memberCount),
+            combinedBounty = kotlin.math.max(existing.combinedBounty, normalized.combinedBounty),
+          )
+        } else {
+          normalized
+        }
+    }
+    val arr = JSONArray()
+    for (syn in dedupedByTag.values) {
       arr.put(
         JSONObject().apply {
           put("id", syn.id)
@@ -1389,7 +1449,7 @@ class LocalPilotPrefs(context: Context) {
   fun mergeCloudSyndicates(cloudSyndicates: List<SyndicateInfo>) {
     val mergedByTag = linkedMapOf<String, SyndicateInfo>()
     for (local in getAllSyndicates()) {
-      if (local.isRealPlayerFoundedSyndicate()) {
+      if (isHumanFoundedSyndicateRecord(local)) {
         mergedByTag[local.tag.uppercase(Locale.US)] = local
       }
     }
@@ -1401,7 +1461,7 @@ class LocalPilotPrefs(context: Context) {
           tag = cleanTag,
           isCustom = cloud.isCustom,
         )
-      if (cleanTag.length in 1..3 && normalized.isRealPlayerFoundedSyndicate()) {
+      if (isHumanFoundedSyndicateRecord(normalized)) {
         val existing = mergedByTag[cleanTag]
         mergedByTag[cleanTag] =
           if (existing != null) {
@@ -1428,7 +1488,9 @@ class LocalPilotPrefs(context: Context) {
       isGuestBypassEnabled() ||
         cleanOwner.isEmpty() ||
         cleanOwner.startsWith("dev_") ||
-        cleanOwner.startsWith("drifter_")
+        cleanOwner.startsWith("drifter_") ||
+        cleanOwner.startsWith("guest_") ||
+        cleanOwner.startsWith("bot_")
     ) {
       return Result.failure(
         IllegalStateException("Only Google-authenticated Sworn Pilots can found Syndicates.")
@@ -1444,19 +1506,23 @@ class LocalPilotPrefs(context: Context) {
       )
     }
 
+    val rawCleanedTag = tag.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "")
+    if (rawCleanedTag in NON_PLAYER_SYNDICATE_TAGS) {
+      return Result.failure(IllegalArgumentException("[$rawCleanedTag] is a reserved system tag."))
+    }
     val cleanTag = sanitizeSyndicateTag(tag)
     if (cleanTag.length !in 1..3) {
       return Result.failure(IllegalArgumentException("Syndicate Tag must be 1 to 3 characters."))
     }
-    if (cleanTag in setOf("RFT", "BOT", "SOLO", "FREE", "GUEST")) {
+    if (cleanTag in NON_PLAYER_SYNDICATE_TAGS) {
       return Result.failure(IllegalArgumentException("[$cleanTag] is a reserved system tag."))
     }
     if (UgcModeration.containsProfanity(cleanTag)) {
       return Result.failure(IllegalArgumentException("Syndicate Tag contains prohibited language."))
     }
     val cleanName = name.trim().replace(Regex("[^a-zA-Z0-9 _\\-]"), "").take(26)
-    if (cleanName.length < 3) {
-      return Result.failure(IllegalArgumentException("Syndicate Name must be at least 3 characters."))
+    if (cleanName.length < 3 || isGhostSyndicateName(cleanName)) {
+      return Result.failure(IllegalArgumentException("Syndicate Name must be a unique 3+ character name."))
     }
     if (UgcModeration.containsProfanity(cleanName)) {
       return Result.failure(IllegalArgumentException("Syndicate Name contains prohibited language."))
@@ -1490,20 +1556,20 @@ class LocalPilotPrefs(context: Context) {
 
   fun getSyndicateCrestJson(tag: String = getSyndicateTag()): String? {
     val cleanTag = sanitizeSyndicateTag(tag)
-    if (cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) return null
+    if (cleanTag.isEmpty() || cleanTag in NON_PLAYER_SYNDICATE_TAGS) return null
     return prefs.getString("${KEY_SYNDICATE_CREST_PREFIX}$cleanTag", null)?.takeIf { it.isNotBlank() }
   }
 
   fun setSyndicateCrestJson(tag: String, crestJson: String) {
     val cleanTag = sanitizeSyndicateTag(tag)
-    if (cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) return
+    if (cleanTag.isEmpty() || cleanTag in NON_PLAYER_SYNDICATE_TAGS) return
     if (crestJson.isBlank()) return
     prefs.edit().putString("${KEY_SYNDICATE_CREST_PREFIX}$cleanTag", crestJson.trim()).apply()
   }
 
   fun mergeCloudSyndicateMeta(meta: CloudSyndicateMeta) {
     val cleanTag = sanitizeSyndicateTag(meta.tag)
-    if (cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) return
+    if (cleanTag.isEmpty() || cleanTag in NON_PLAYER_SYNDICATE_TAGS) return
     if (meta.customChannels.isNotEmpty()) {
       setSyndicateCustomChannels(cleanTag, meta.customChannels)
     }
@@ -1589,13 +1655,27 @@ class LocalPilotPrefs(context: Context) {
     val raw =
       prefs.getString(uidKey(KEY_SYNDICATE_HISTORY_JSON, uid), prefs.getString(KEY_SYNDICATE_HISTORY_JSON, null))
     val parsed = mutableListOf<SyndicateServiceEntry>()
+    var mutated = false
     if (!raw.isNullOrBlank()) {
       try {
         val arr = JSONArray(raw)
         for (i in 0 until arr.length()) {
-          parsed.add(SyndicateServiceEntry.fromJson(arr.getJSONObject(i)))
+          val entry = SyndicateServiceEntry.fromJson(arr.getJSONObject(i))
+          val cleanTag = sanitizeSyndicateTag(entry.syndicateTag)
+          val cleanName = if (cleanTag.isEmpty() || isGhostSyndicateName(entry.syndicateName)) "Unaffiliated" else entry.syndicateName
+          val normalized =
+            if (cleanTag != entry.syndicateTag || cleanName != entry.syndicateName) {
+              mutated = true
+              entry.copy(syndicateTag = cleanTag, syndicateName = cleanName)
+            } else {
+              entry
+            }
+          parsed.add(normalized)
         }
       } catch (_: Exception) {}
+    }
+    if (mutated && parsed.isNotEmpty()) {
+      saveSyndicateServiceHistory(parsed, uid)
     }
     if (parsed.isEmpty()) {
       val currentTag = getSyndicateTag()
@@ -1832,9 +1912,9 @@ class LocalPilotPrefs(context: Context) {
     targetSyndicateTag: String,
   ): Boolean {
     if (isGuestBypassEnabled()) return false
-    val targetClean = targetSyndicateTag.trim().uppercase(Locale.US)
-    if (targetClean in setOf("", "SOLO", "GUEST", "FREE", "RFT", "BOT", "UNAFFILIATED")) return false
-    val pilotClean = pilotSyndicateTag.trim().uppercase(Locale.US)
+    val targetClean = sanitizeSyndicateTag(targetSyndicateTag)
+    if (targetClean.isEmpty() || targetClean in NON_PLAYER_SYNDICATE_TAGS) return false
+    val pilotClean = sanitizeSyndicateTag(pilotSyndicateTag)
     if (pilotClean == targetClean) return true
     return getSyndicateInvitedGuests(targetClean).any {
       it.equals(pilotCallsign.trim(), ignoreCase = true)
@@ -2141,6 +2221,26 @@ class LocalPilotPrefs(context: Context) {
   }
 
   companion object {
+    val NON_PLAYER_SYNDICATE_TAGS: Set<String> =
+      setOf(
+        "",
+        "GUEST",
+        "GUE",
+        "GUES",
+        "NOV",
+        "NOVA",
+        "RFT",
+        "BOT",
+        "SOLO",
+        "FREE",
+        "NONE",
+        "UNAFFILIATED",
+        "KSTL",
+        "AURL",
+        "VRTX",
+        "RUST",
+      )
+
     val DRIFTER_NAMES: List<String> =
       listOf(
         "VORTEX",

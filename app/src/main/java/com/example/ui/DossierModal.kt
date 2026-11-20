@@ -605,7 +605,7 @@ fun DossierModal(
           horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           Text(
-            text = "START BOUNTY: $effectiveStartBounty BTY",
+            text = "START RESONANCE: $effectiveStartBounty RES",
             color = DossierGold,
             fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -614,7 +614,7 @@ fun DossierModal(
           if (!isCompactPhone) {
             Text(
               text =
-                if (effectiveLiveRes >= 1500) "APEX TIER (500 MAX BTY)"
+                if (effectiveLiveRes >= 1500) "APEX TIER (500 MAX START RES)"
                 else "NEXT TIER AT $nextTierThreshold",
               color = DossierTeal,
               fontSize = 9.8.sp,
@@ -659,7 +659,7 @@ fun DossierModal(
           dossierSection = 0
         }
         DossierSectionButton(
-          label = if (isCompactPhone) "PEAK BOUNTY RUN" else "PEAK BOUNTY & EXECUTIONER",
+          label = if (isCompactPhone) "PEAK RESONANCE RUN" else "PEAK RESONANCE & EXECUTIONER",
           selected = dossierSection == 1,
           accentColor = DossierGold,
           testTag = "dossier_tab_peak_snapshot",
@@ -706,8 +706,8 @@ fun DossierModal(
           )
           DossierStatBox(
             Modifier.weight(1f).clickable { dossierSection = 1 },
-            if (isCompactPhone) "PEAK BOUNTY >" else "PEAK BOUNTY (TAP FOR RUN)",
-            "$allTimeBountyPeak BTY",
+            if (isCompactPhone) "PEAK RESONANCE >" else "PEAK RESONANCE (TAP FOR RUN)",
+            "$allTimeBountyPeak RES",
             DossierGold,
             isCompactPhone,
           )
@@ -721,7 +721,14 @@ fun DossierModal(
           DossierStatBox(
             Modifier.weight(1f).clickable { dossierSection = 2 },
             "SYNDICATE TENURE",
-            "[$syndicateTag] >",
+            if (
+              syndicateTag.isNotBlank() &&
+                syndicateTag.uppercase(Locale.US) !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS
+            ) {
+              "[$syndicateTag] >"
+            } else {
+              "SOLO >"
+            },
             Color(0xFF34D399),
             isCompactPhone,
           )
@@ -735,7 +742,7 @@ fun DossierModal(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            DossierTabChip("RESONANCE / BOUNTY", sortMode == 0) { sortMode = 0 }
+            DossierTabChip("RESONANCE", sortMode == 0) { sortMode = 0 }
             DossierTabChip("PVP KILLS", sortMode == 1) { sortMode = 1 }
             DossierTabChip("CONVERGENCES WON", sortMode == 2) { sortMode = 2 }
           }
@@ -867,7 +874,7 @@ fun DossierModal(
                     fontFamily = FontFamily.Monospace,
                   )
                   Text(
-                    text = "BOUNTY: $bounty",
+                    text = "PEAK RES: $bounty",
                     color = DossierGold,
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -917,8 +924,8 @@ private fun PeakBountyAndExecutionerSection(
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
     val headerLabel =
-      if (isPvpOnlyMode) "HALL OF FAME // HIGHEST BOUNTY RUN SNAPSHOT (PVP ONLY)"
-      else "HALL OF FAME // HIGHEST BOUNTY RUN SNAPSHOT (ALL-TIME)"
+      if (isPvpOnlyMode) "HALL OF FAME // HIGHEST RESONANCE RUN SNAPSHOT (PVP ONLY)"
+      else "HALL OF FAME // HIGHEST RESONANCE RUN SNAPSHOT (ALL-TIME)"
     if (snapshot == null) {
       Box(
         modifier =
@@ -931,9 +938,9 @@ private fun PeakBountyAndExecutionerSection(
         Text(
           text =
             if (isPvpOnlyMode)
-              "NO PVP PEAK BOUNTY SNAPSHOT RECORDED YET — ENGAGE HOSTILE HUMAN PILOTS IN RANKED CONVERGENCE TO RECORD YOUR BEST PVP LIFE."
+              "NO PVP PEAK RESONANCE SNAPSHOT RECORDED YET — ENGAGE HOSTILE HUMAN PILOTS IN RANKED CONVERGENCE TO RECORD YOUR BEST PVP LIFE."
             else
-              "NO PEAK BOUNTY RUN SNAPSHOT RECORDED YET — DEPLOY INTO THE SECTOR TO RECORD YOUR FIRST LIFE TELEMETRY.",
+              "NO PEAK RESONANCE RUN SNAPSHOT RECORDED YET — DEPLOY INTO THE SECTOR TO RECORD YOUR FIRST LIFE TELEMETRY.",
           color = Color(0xFFCBD5E1),
           fontSize = 11.5.sp,
           fontWeight = FontWeight.Bold,
@@ -980,7 +987,7 @@ private fun PeakBountyAndExecutionerSection(
           ) {
             ResonanceCrestIcon(sizeDp = 15.dp)
             Text(
-              text = "${snapshot.bountyReached} BOUNTY",
+              text = "${snapshot.bountyReached} RESONANCE",
               color = DossierGold,
               fontSize = 13.5.sp,
               fontWeight = FontWeight.ExtraBold,
@@ -1079,8 +1086,8 @@ private fun PeakBountyAndExecutionerSection(
                   )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                  MetricRightColumn("KILLER BOUNTY AT KILL", "${exec.killerBountyAtKill} BTY", DossierGold)
-                  MetricRightColumn("BOUNTY EARNED FROM YOU", "+${exec.bountyEarnedFromYou} BTY", Color(0xFFFF3B4E))
+                  MetricRightColumn("KILLER RESONANCE AT KILL", "${exec.killerBountyAtKill} RES", DossierGold)
+                  MetricRightColumn("RESONANCE EARNED FROM YOU", "+${exec.bountyEarnedFromYou} RES", Color(0xFFFF3B4E))
                 }
               }
             }
@@ -1113,7 +1120,7 @@ private fun PeakBountyAndExecutionerSection(
           FluxEmblem(sizeDp = 13.dp)
           Text(
             text =
-              "BOUNTY: ${currentLifeSnapshot.bountyReached} • SURVIVED: ${currentLifeSnapshot.formattedDuration()} • KILLS: ${currentLifeSnapshot.pvpKills + currentLifeSnapshot.botKills} • DMG: ${currentLifeSnapshot.damageDealt.toInt()} • ACC: ${currentLifeSnapshot.accuracyPercent()}%",
+              "RESONANCE: ${currentLifeSnapshot.bountyReached} • SURVIVED: ${currentLifeSnapshot.formattedDuration()} • KILLS: ${currentLifeSnapshot.pvpKills + currentLifeSnapshot.botKills} • DMG: ${currentLifeSnapshot.damageDealt.toInt()} • ACC: ${currentLifeSnapshot.accuracyPercent()}%",
             color = Color.White,
             fontSize = 10.2.sp,
             fontWeight = FontWeight.Bold,
@@ -1137,8 +1144,8 @@ private fun SyndicateServiceRecordSection(
   val nowMs = System.currentTimeMillis()
   val ordered = remember(entries) { entries.reversed() }
 
-  val cleanActiveTag = remember(activeSyndicateTag) {
-    activeSyndicateTag.trim().uppercase(Locale.US).ifEmpty { "GUEST" }
+  val cleanActiveTag = remember(activeSyndicateTag, localPrefs) {
+    localPrefs.sanitizeSyndicateTag(activeSyndicateTag).ifEmpty { "SOLO" }
   }
   val myWarRecord = remember(cleanActiveTag, entries) { localPrefs.getSyndicateWarRecord(cleanActiveTag) }
 
@@ -1146,7 +1153,9 @@ private fun SyndicateServiceRecordSection(
     remember(cleanActiveTag, entries) {
       val byTag = linkedMapOf<String, SyndicateInfo>()
       for (custom in localPrefs.getAllSyndicates()) {
-        if (custom.isRealPlayerFoundedSyndicate()) byTag[custom.tag.uppercase(Locale.US)] = custom
+        if (localPrefs.isHumanFoundedSyndicateRecord(custom)) {
+          byTag[custom.tag.uppercase(Locale.US)] = custom
+        }
       }
       val allPairs = byTag.values.map { syn -> syn to localPrefs.getSyndicateWarRecord(syn.tag) }
       val warSorted =
@@ -1256,7 +1265,7 @@ private fun SyndicateServiceRecordSection(
           verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
           Text(
-            text = "COLLECTIVE MEMBER BOUNTY (TOP 4)",
+            text = "COLLECTIVE MEMBER RESONANCE (TOP 4)",
             color = DossierTeal,
             fontSize = 9.8.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -1280,7 +1289,7 @@ private fun SyndicateServiceRecordSection(
                   fontFamily = FontFamily.Monospace,
                 )
                 Text(
-                  text = "${syn.combinedBounty} BTY (${syn.memberCount}P)",
+                  text = "${syn.combinedBounty} RES (${syn.memberCount}P)",
                   color = DossierCyan,
                   fontSize = 9.8.sp,
                   fontWeight = FontWeight.Bold,
@@ -1380,7 +1389,7 @@ private fun SyndicateServiceRecordSection(
           ) {
             MetricRightColumn("TENURE", item.formatTenure(nowMs), DossierCyan)
             MetricRightColumn("BANNER KILLS", "${item.totalKills}", DossierTeal)
-            MetricRightColumn("PEAK BOUNTY", "${item.peakBountyAchieved}", DossierGold)
+            MetricRightColumn("PEAK RESONANCE", "${item.peakBountyAchieved}", DossierGold)
             MetricRightColumn("PUBLIC WINS", "${item.publicGameWins}", Color(0xFF00E676))
           }
         }

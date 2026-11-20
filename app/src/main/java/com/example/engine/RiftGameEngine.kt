@@ -100,7 +100,7 @@ enum class RankedGameMode(
   SECTOR_CONVERGENCE(
     "SECTOR_CONVERGENCE",
     "Sector Convergence",
-    "Free-For-All • 1-5 Armada Bounty",
+    "Free-For-All • 1-5 Strike Wing Resonance",
     "20 PILOTS • 60M",
   ),
   RIFT_SKIRMISH(
@@ -112,7 +112,7 @@ enum class RankedGameMode(
   FLUX_CORE(
     "FLUX_CORE",
     "Flux Core",
-    "Hold the Core for +15 Bounty/s & Overcharge",
+    "Hold the Core for +15 RES/s & Overcharge",
     "20 PILOTS • BALL",
   ),
   STASIS_BREACH(
@@ -286,6 +286,18 @@ data class ShipEntity(
   var deathLingerTimer: Float = 0f,
   var prevHeadingForBank: Float = angle,
   var pendingRespawnBountyPenalty: Int = 0,
+  var netTargetX: Float = x,
+  var netTargetY: Float = y,
+  var netTargetVx: Float = vx,
+  var netTargetVy: Float = vy,
+  var netTargetAngle: Float = angle,
+  var netTargetWeaponAngle: Float = weaponAngle,
+  var netPacketAgeSec: Float = 0f,
+  var netWasRespawning: Boolean = false,
+  var netLocalKillGraceSec: Float = 0f,
+  var netRespawnHoldSec: Float = 0f,
+  var lastNetUpdateElapsedMs: Long = 0L,
+  var hasNetTarget: Boolean = false,
 ) {
   var empDisableTimer: Float
     get() = empTimer
@@ -641,13 +653,16 @@ class RiftGameEngine(
         "COBALT FANG",
         "SOLAR FLARE",
       )
-    val LEGACY_FOUNDRY_TAGS = setOf("KSTL", "AURL", "VRTX", "RUST")
+    val LEGACY_FOUNDRY_TAGS =
+      setOf("KSTL", "AURL", "VRTX", "RUST", "GUE", "GUES", "NOV", "NOVA")
 
     fun cleanTag(rawTag: String): String {
-      val t = rawTag.trim().removeSurrounding("[", "]").trim()
+      val t = rawTag.trim().removeSurrounding("[", "]").trim().uppercase()
       return when {
-        t.isEmpty() || t in LEGACY_FOUNDRY_TAGS -> "GUEST"
-        else -> t
+        t.isEmpty() ||
+          t in LEGACY_FOUNDRY_TAGS ||
+          t in com.example.data.LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS -> "GUEST"
+        else -> t.take(3)
       }
     }
   }
@@ -833,8 +848,26 @@ class RiftGameEngine(
   var currentAuthenticatedUid: String = ""
   var activeSectorInstanceOverride: String? = null
   var localSecondaryFireSeq: Long = 0L
+  var localLifecycleSyncSeq: Long = 0L
+  var onLocalLifecycleSyncNeeded: () -> Unit = {}
   var onOutboundCombatEvent: (com.example.data.SectorCombatEvent) -> Unit = {}
   private val processedCombatEventIds = LinkedHashSet<String>()
+
+  private fun notifyLocalLifecycleSync() {
+    localLifecycleSyncSeq++
+    if (!isEphemeralPracticeRift) {
+      onLocalLifecycleSyncNeeded()
+    }
+  }
+
+  fun reattachRemotePilotsToRoster() {
+    if ((!hasJoinedMatch && !isHubOverwatchActive) || isEphemeralPracticeRift) return
+    for (rp in remotePilots.values) {
+      if (rp.id != localPlayer.id && ships.none { it.id == rp.id }) {
+        replaceBotWithHuman(rp)
+      }
+    }
+  }
 
   // Control states updated by touch subsystem
   var leftStickActive: Boolean = false
@@ -1402,6 +1435,7 @@ class RiftGameEngine(
     resetCurrentLifeStats()
     if (!isEphemeralPracticeRift) {
       onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
+      notifyLocalLifecycleSync()
     }
   }
 
@@ -1809,16 +1843,16 @@ class RiftGameEngine(
         onPrizeToast(bannerMsg)
       } else {
         val bannerMsg =
-          "SECTOR CONVERGENCE: #1 BOUNTY ACHIEVED, BUT PRESENCE ($presencePct%) <= 50% — NEW FFA MAP GENERATED!"
+          "SECTOR CONVERGENCE: #1 RESONANCE ACHIEVED, BUT PRESENCE ($presencePct%) <= 50% — NEW FFA MAP GENERATED!"
         highBountyShutdownBanner = bannerMsg
         highBountyShutdownTimer = 4.5f
         onPrizeToast(bannerMsg)
       }
     } else {
       val winnerName = topShip?.callsign ?: "SECTOR ACE"
-      val winnerBty = topShip?.bounty ?: 100
+      val winnerRes = topShip?.liveResonanceRating?.takeIf { it > 0 } ?: (topShip?.bounty ?: 100)
       val bannerMsg =
-        "SECTOR CONVERGENCE: WINNER $winnerName ($winnerBty BTY) — PROCEDURAL NEW FFA MAP ONLINE!"
+        "SECTOR CONVERGENCE: WINNER $winnerName ($winnerRes RES) — PROCEDURAL NEW FFA MAP ONLINE!"
       highBountyShutdownBanner = bannerMsg
       highBountyShutdownTimer = 4.5f
       onPrizeToast(bannerMsg)
@@ -1873,7 +1907,7 @@ class RiftGameEngine(
         s.canFire = false
         s.weaponState = "DISARMED"
         s.phaseShieldTimer = RiftCalibrationState.exitPhaseShieldSec
-      } else {
+      } else if (!s.isHuman) {
         val sp = getOuterGateSpawnPosition(s.freq)
         s.x = sp.first
         s.y = sp.second
@@ -1881,6 +1915,7 @@ class RiftGameEngine(
         s.wasInSafeZone = false
       }
     }
+    reattachRemotePilotsToRoster()
     resetCurrentLifeStats()
     onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
     sfx.playWarp()
@@ -1891,6 +1926,7 @@ class RiftGameEngine(
       color = Color.parseColor("#00F0FF"),
       maxLife = 1.6f,
     )
+    notifyLocalLifecycleSync()
     onStatsUpdated()
   }
 
@@ -2461,6 +2497,8 @@ class RiftGameEngine(
     updateDynamicArenaGeometryForShipCount(20, regenerateObstacles = true)
     sfx.playMutedClick()
     onPrizeToast("RETURNED TO NEXUS ORBIT")
+    localLifecycleSyncSeq++
+    onLocalLifecycleSyncNeeded()
     onStatsUpdated()
   }
 
@@ -2498,7 +2536,8 @@ class RiftGameEngine(
     val myTag = localPlayer.syndicateTag.trim().uppercase()
     if (
       myTag.isEmpty() ||
-        myTag in setOf("SOLO", "FREE", "GUEST", "BOT", "UNAFFILIATED", "RFT")
+        myTag in com.example.data.LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS ||
+        myTag in LEGACY_FOUNDRY_TAGS
     ) {
       return false to "Join or found a Syndicate first to queue for Ranked Syndicate Wars."
     }
@@ -2667,6 +2706,13 @@ class RiftGameEngine(
    * Friendly Fire Rule:
    * Strictly disabled between active Armada mates, same-Syndicate mates, and same-Team mates in Team Modes!
    */
+  private fun isRealPlayerSyndicateAllianceTag(rawTag: String): Boolean {
+    val t = rawTag.trim().uppercase()
+    return t.length in 1..3 &&
+      t !in com.example.data.LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS &&
+      t !in LEGACY_FOUNDRY_TAGS
+  }
+
   fun areAllied(a: ShipEntity, b: ShipEntity): Boolean {
     if (a.id == b.id) return true
     if (isTeamBasedRankedMode()) return a.freq == b.freq
@@ -2674,13 +2720,8 @@ class RiftGameEngine(
     if (!allowFfaArmadas) return false
     if (a.armadaName.isNotEmpty() && a.armadaName == b.armadaName) return true
     if (
-      a.syndicateTag.isNotEmpty() &&
-        a.syndicateTag != "FREE" &&
-        a.syndicateTag != "GUEST" &&
-        a.syndicateTag != "BOT" &&
-        a.syndicateTag != "UNAFFILIATED" &&
-        a.syndicateTag != "RFT" &&
-        a.syndicateTag == b.syndicateTag
+      isRealPlayerSyndicateAllianceTag(a.syndicateTag) &&
+        a.syndicateTag.trim().equals(b.syndicateTag.trim(), ignoreCase = true)
     ) {
       return true
     }
@@ -2698,13 +2739,8 @@ class RiftGameEngine(
     if (!allowFfaArmadas) return false
     if (b.ownerArmadaName.isNotEmpty() && b.ownerArmadaName == s.armadaName) return true
     if (
-      b.ownerSyndicateTag.isNotEmpty() &&
-        b.ownerSyndicateTag != "FREE" &&
-        b.ownerSyndicateTag != "GUEST" &&
-        b.ownerSyndicateTag != "BOT" &&
-        b.ownerSyndicateTag != "UNAFFILIATED" &&
-        b.ownerSyndicateTag != "RFT" &&
-        b.ownerSyndicateTag == s.syndicateTag
+      isRealPlayerSyndicateAllianceTag(b.ownerSyndicateTag) &&
+        b.ownerSyndicateTag.trim().equals(s.syndicateTag.trim(), ignoreCase = true)
     ) {
       return true
     }
@@ -2718,13 +2754,8 @@ class RiftGameEngine(
     if (!allowFfaArmadas) return false
     if (bm.ownerArmadaName.isNotEmpty() && bm.ownerArmadaName == s.armadaName) return true
     if (
-      bm.ownerSyndicateTag.isNotEmpty() &&
-        bm.ownerSyndicateTag != "FREE" &&
-        bm.ownerSyndicateTag != "GUEST" &&
-        bm.ownerSyndicateTag != "BOT" &&
-        bm.ownerSyndicateTag != "UNAFFILIATED" &&
-        bm.ownerSyndicateTag != "RFT" &&
-        bm.ownerSyndicateTag == s.syndicateTag
+      isRealPlayerSyndicateAllianceTag(bm.ownerSyndicateTag) &&
+        bm.ownerSyndicateTag.trim().equals(s.syndicateTag.trim(), ignoreCase = true)
     ) {
       return true
     }
@@ -2738,13 +2769,8 @@ class RiftGameEngine(
     if (!allowFfaArmadas) return false
     if (dr.ownerArmadaName.isNotEmpty() && dr.ownerArmadaName == s.armadaName) return true
     if (
-      dr.ownerSyndicateTag.isNotEmpty() &&
-        dr.ownerSyndicateTag != "FREE" &&
-        dr.ownerSyndicateTag != "GUEST" &&
-        dr.ownerSyndicateTag != "BOT" &&
-        dr.ownerSyndicateTag != "UNAFFILIATED" &&
-        dr.ownerSyndicateTag != "RFT" &&
-        dr.ownerSyndicateTag == s.syndicateTag
+      isRealPlayerSyndicateAllianceTag(dr.ownerSyndicateTag) &&
+        dr.ownerSyndicateTag.trim().equals(s.syndicateTag.trim(), ignoreCase = true)
     ) {
       return true
     }
@@ -3328,9 +3354,7 @@ class RiftGameEngine(
       for ((rUid, rp) in remotePilots) {
         if (rp.id == localPlayer.id || rUid == localKey) continue
         val rCleanSyn =
-          rp.syndicateTag.trim().uppercase().takeIf {
-            it.isNotEmpty() && it !in setOf("GUEST", "SOLO", "FREE", "BOT", "UNAFFILIATED", "RFT")
-          } ?: ""
+          rp.syndicateTag.trim().uppercase().takeIf { isRealPlayerSyndicateAllianceTag(it) } ?: ""
         val rGrp =
           when {
             rp.armadaName.isNotBlank() -> "ARM_${rp.armadaName.trim().uppercase()}"
@@ -3409,7 +3433,9 @@ class RiftGameEngine(
     if (resolvedMode == RankedGameMode.SYNDICATE_WARS) {
       val opposingHumanTag =
         remotePilots.values
-          .firstOrNull { it.freq != localPlayer.freq && it.syndicateTag.isNotBlank() && it.syndicateTag != "GUEST" }
+          .firstOrNull {
+            it.freq != localPlayer.freq && isRealPlayerSyndicateAllianceTag(it.syndicateTag)
+          }
           ?.syndicateTag
       if (!opposingHumanTag.isNullOrBlank()) {
         rivalSyndicateWarTag = opposingHumanTag
@@ -3549,7 +3575,7 @@ class RiftGameEngine(
     )
     if (victimBounty > 1000 && triggerAnnouncement) {
       highBountyShutdownBanner =
-        "HIGH BOUNTY SHUTDOWN: $killerName ELIMINATED $victimName ($victimBounty BOUNTY)"
+        "HIGH RESONANCE SHUTDOWN: $killerName ELIMINATED $victimName ($victimBounty RES)"
       highBountyShutdownTimer = 4.2f
     }
     while (killFeed.size > 8) {
@@ -3582,7 +3608,7 @@ class RiftGameEngine(
 
     currentAuthenticatedUid = currentUid
     val activeMatchRemoteUids = mutableSetOf<String>()
-    var rosterChanged = false
+    var needsInitialRosterBuild = ships.isEmpty()
 
     for (st in states) {
       val uid = st.userId.ifEmpty { st.id }
@@ -3593,23 +3619,67 @@ class RiftGameEngine(
       val remoteEntityId = "remote_$uid"
       val existing = remotePilots[uid]
       val spec = RiftCodex.getShipById(st.shipId.toInt())
-      val targetX = st.x.toFloat()
-      val targetY = st.y.toFloat()
+      val cleanRemoteSyn =
+        st.syndicateTag.trim().uppercase().let { raw ->
+          if (
+            raw in com.example.data.LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS ||
+              raw in LEGACY_FOUNDRY_TAGS
+          ) {
+            ""
+          } else {
+            raw.replace(Regex("[^A-Z0-9]"), "").take(3).let { t ->
+              if (
+                t in com.example.data.LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS ||
+                  t in LEGACY_FOUNDRY_TAGS
+              ) {
+                ""
+              } else {
+                t
+              }
+            }
+          }
+        }
+      val nowElapsedMs = android.os.SystemClock.elapsedRealtime()
+      val rawTargetX = st.x.toFloat()
+      val rawTargetY = st.y.toFloat()
+      val maxAllowedR = (arenaRadius - 36f).coerceAtLeast(120f)
+      val rawDx = rawTargetX - arenaCenterX
+      val rawDy = rawTargetY - arenaCenterY
+      val rawDistFromCenter = hypot(rawDx, rawDy)
+      val targetX =
+        if (rawDistFromCenter > maxAllowedR && rawDistFromCenter > 0.001f) {
+          arenaCenterX + (rawDx / rawDistFromCenter) * maxAllowedR
+        } else {
+          rawTargetX
+        }
+      val targetY =
+        if (rawDistFromCenter > maxAllowedR && rawDistFromCenter > 0.001f) {
+          arenaCenterY + (rawDy / rawDistFromCenter) * maxAllowedR
+        } else {
+          rawTargetY
+        }
       val targetVx = st.vx.toFloat()
       val targetVy = st.vy.toFloat()
       val targetAngle = st.angle.toFloat()
       val targetWeaponAngle = st.weaponAngle.toFloat()
 
       if (existing == null) {
+        val assignedFreq =
+          if (isTeamBasedRankedMode()) {
+            st.freq.toInt().coerceIn(0, 1)
+          } else {
+            (1..99).firstOrNull { f -> ships.none { it.freq == f } }
+              ?: (((uid.hashCode() and 0x7FFFFFFF) % 80) + 11)
+          }
         val created =
           ShipEntity(
             id = remoteEntityId,
             callsign = st.callsign,
-            syndicateTag = st.syndicateTag,
+            syndicateTag = cleanRemoteSyn,
             armadaName = st.armadaName,
             shipId = spec.id,
             spec = spec,
-            freq = if (isTeamBasedRankedMode()) st.freq.toInt().coerceIn(0, 1) else (remotePilots.size + 1),
+            freq = assignedFreq,
             isHuman = true,
             isLocalPlayer = false,
             x = targetX,
@@ -3629,39 +3699,55 @@ class RiftGameEngine(
             respawnTimer = if (st.isRespawning) 2.5f else 0f,
             isInStasisBrig = st.isInStasisBrig,
             lastRemoteSecondarySeq = st.secondarySeq,
+            netTargetX = targetX,
+            netTargetY = targetY,
+            netTargetVx = targetVx,
+            netTargetVy = targetVy,
+            netTargetAngle = targetAngle,
+            netTargetWeaponAngle = targetWeaponAngle,
+            netPacketAgeSec = 0f,
+            netWasRespawning = st.isRespawning,
+            netLocalKillGraceSec = 0f,
+            netRespawnHoldSec = 0f,
+            lastNetUpdateElapsedMs = nowElapsedMs,
+            hasNetTarget = true,
           )
         remotePilots[uid] = created
         currentLifeHadPvp = true
-        rosterChanged = true
+        if (!needsInitialRosterBuild) {
+          replaceBotWithHuman(created)
+        }
+        if (
+          activeRankedMode == RankedGameMode.SYNDICATE_WARS &&
+            created.freq != localPlayer.freq &&
+            isRealPlayerSyndicateAllianceTag(cleanRemoteSyn)
+        ) {
+          rivalSyndicateWarTag = cleanRemoteSyn
+        }
         if (!st.isRespawning && st.isFiringPrimary && created.gunTimer <= 0f) {
           firePrimaryWeapon(created)
         }
       } else {
         currentLifeHadPvp = true
+        existing.lastNetUpdateElapsedMs = nowElapsedMs
         existing.callsign = st.callsign
-        existing.syndicateTag = st.syndicateTag
+        existing.syndicateTag = cleanRemoteSyn
         existing.armadaName = st.armadaName
+        if (isTeamBasedRankedMode()) {
+          existing.freq = st.freq.toInt().coerceIn(0, 1)
+        }
         if (existing.shipId != spec.id) {
           existing.shipId = spec.id
           existing.spec = spec
         }
-        val leadX = targetX + targetVx * 0.045f
-        val leadY = targetY + targetVy * 0.045f
-        val posDelta = hypot(leadX - existing.x, leadY - existing.y)
-        if (posDelta < 320f) {
-          existing.x += (leadX - existing.x) * 0.52f
-          existing.y += (leadY - existing.y) * 0.52f
-        } else {
-          existing.x = targetX
-          existing.y = targetY
-        }
-        existing.vx = targetVx
-        existing.vy = targetVy
-        val remoteSp = hypot(existing.vx, existing.vy)
-        existing.angle = if (remoteSp > 2f) atan2(existing.vy, existing.vx) else targetAngle
-        existing.weaponAngle = targetWeaponAngle
+        existing.netTargetX = targetX
+        existing.netTargetY = targetY
+        existing.netTargetVx = targetVx
+        existing.netTargetVy = targetVy
+        existing.netTargetAngle = targetAngle
+        existing.netTargetWeaponAngle = targetWeaponAngle
+        existing.netPacketAgeSec = 0f
         existing.independentAimActive = true
-        existing.flux = st.energy.toFloat()
         existing.maxFlux = st.maxEnergy.toFloat().coerceAtLeast(100f)
         existing.bounty = st.bounty.toInt()
         existing.liveResonanceRating = st.liveResonance.toInt().coerceAtLeast(0)
@@ -3669,16 +3755,81 @@ class RiftGameEngine(
         existing.isCloaked = st.isCloaked
         existing.remoteFiringPrimary = st.isFiringPrimary
         existing.isInStasisBrig = st.isInStasisBrig
+
+        val staleWhileLocallyKilled =
+          !st.isRespawning && existing.netLocalKillGraceSec > 0f && !existing.netWasRespawning
+        if (!staleWhileLocallyKilled) {
+          existing.flux = st.energy.toFloat()
+        }
+        val justEnteredRespawn =
+          st.isRespawning && !existing.netWasRespawning && existing.respawnTimer <= 0f
+        val justFinishedRespawn =
+          !st.isRespawning && existing.netWasRespawning && !staleWhileLocallyKilled
+
         if (st.isRespawning) {
-          existing.respawnTimer = max(existing.respawnTimer, 0.45f)
-        } else if (existing.respawnTimer > 0f && !isSkirmishRulesActive()) {
-          existing.respawnTimer = 0f
+          existing.netWasRespawning = true
+          existing.netLocalKillGraceSec = 0f
+          if (justEnteredRespawn) {
+            existing.deathX = existing.x
+            existing.deathY = existing.y
+            existing.respawnTimer = max(1.35f, RiftCalibrationState.respawnDelaySec)
+            existing.netRespawnHoldSec = 0f
+            shockwaves.add(
+              ShockwaveEntity(existing.x, existing.y, 18f, 185f, Color.parseColor("#F43F5E"))
+            )
+            if (hypot(existing.x - localPlayer.x, existing.y - localPlayer.y) < 1100f) {
+              sfx.playExplosion()
+            }
+          } else {
+            existing.respawnTimer = max(existing.respawnTimer, 0.35f)
+          }
+        } else if (!staleWhileLocallyKilled) {
+          existing.netWasRespawning = false
+          existing.netRespawnHoldSec = 0f
+          if (
+            existing.respawnTimer > 0f &&
+              (!isSkirmishRulesActive() || skirmishReadyCountdownSec > 0f || justFinishedRespawn)
+          ) {
+            existing.respawnTimer = 0f
+            existing.deathLingerTimer = 0f
+            existing.warpInAnimTimer = 0.65f
+          }
         }
 
-        if (!st.isRespawning && st.isFiringPrimary && existing.gunTimer <= 0f) {
+        val jumpDist = hypot(targetX - existing.x, targetY - existing.y)
+        val shouldSnapImmediately =
+          !existing.hasNetTarget ||
+            justFinishedRespawn ||
+            st.isRespawning ||
+            jumpDist > 550f
+        existing.hasNetTarget = true
+        if (shouldSnapImmediately && !staleWhileLocallyKilled) {
+          existing.x = targetX
+          existing.y = targetY
+          existing.vx = targetVx
+          existing.vy = targetVy
+          existing.angle = targetAngle
+          existing.weaponAngle = targetWeaponAngle
+          existing.prevHeadingForBank = targetAngle
+        }
+
+        if (!needsInitialRosterBuild && ships.none { it.id == existing.id }) {
+          replaceBotWithHuman(existing)
+        }
+
+        if (
+          !st.isRespawning &&
+            !staleWhileLocallyKilled &&
+            st.isFiringPrimary &&
+            existing.gunTimer <= 0f
+        ) {
           firePrimaryWeapon(existing)
         }
-        if (!st.isRespawning && st.secondarySeq > existing.lastRemoteSecondarySeq) {
+        if (
+          !st.isRespawning &&
+            !staleWhileLocallyKilled &&
+            st.secondarySeq > existing.lastRemoteSecondarySeq
+        ) {
           existing.lastRemoteSecondarySeq = st.secondarySeq
           existing.flux = max(existing.flux, existing.spec.bombCost + 25f)
           existing.bombTimer = 0f
@@ -3687,15 +3838,71 @@ class RiftGameEngine(
       }
     }
 
-    val staleUids = remotePilots.keys.filter { it !in activeMatchRemoteUids }
+    val nowCleanupMs = android.os.SystemClock.elapsedRealtime()
+    val staleUids =
+      remotePilots.entries
+        .filter { (uid, ship) ->
+          if (uid in activeMatchRemoteUids) {
+            false
+          } else {
+            val reportedSector = onlineRemoteSectorByUid[uid]
+            if (reportedSector != null && !matchesCurrentInstanceSector(reportedSector)) {
+              true
+            } else {
+              nowCleanupMs - ship.lastNetUpdateElapsedMs > 4_500L
+            }
+          }
+        }
+        .map { it.key }
     if (staleUids.isNotEmpty()) {
+      val botsAllowed = currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled
+      val cap =
+        when (activeRankedMode) {
+          RankedGameMode.RIFT_SKIRMISH -> (activeTeamSizeBracket.coerceIn(2, 5) * 2)
+          RankedGameMode.RIFT_CONTROL, RankedGameMode.SYNDICATE_WARS ->
+            (activeTeamSizeBracket.coerceIn(3, 10) * 2)
+          else -> 20
+        }
       for (stale in staleUids) {
-        remotePilots.remove(stale)
+        val removedRemote = remotePilots.remove(stale)
+        ships.removeAll { it.id == "remote_$stale" }
+        if (!needsInitialRosterBuild && botsAllowed && ships.size < cap) {
+          val backfillIdx = ships.size + (stale.hashCode() and 0x7FFF)
+          val botShipId = ((backfillIdx * 5 + 1) % 9) + 1
+          val botSpec = RiftCodex.getShipById(botShipId)
+          val botFreq =
+            if (isTeamBasedRankedMode()) {
+              removedRemote?.freq?.coerceIn(0, 1) ?: 1
+            } else {
+              (1..99).firstOrNull { f -> ships.none { it.freq == f } } ?: (ships.size + 1)
+            }
+          val spawnPos =
+            if (isTeamBasedRankedMode()) getSkirmishGateSpawnPosition(botFreq)
+            else getOuterGateSpawnPosition(1)
+          ships.add(
+            ShipEntity(
+              id = "bot_backfill_${System.nanoTime()}",
+              callsign = BOT_CALLSIGNS[backfillIdx % BOT_CALLSIGNS.size],
+              syndicateTag = "BOT",
+              armadaName = "",
+              shipId = botShipId,
+              spec = botSpec,
+              freq = botFreq,
+              isHuman = false,
+              isLocalPlayer = false,
+              x = spawnPos.first,
+              y = spawnPos.second,
+              angle = if (botFreq == 1) PI.toFloat() else 0f,
+              weaponAngle = if (botFreq == 1) PI.toFloat() else 0f,
+              bounty = 100,
+              warpInAnimTimer = 0.65f,
+            )
+          )
+        }
       }
-      rosterChanged = true
     }
 
-    if (rosterChanged && (hasJoinedMatch || isHubOverwatchActive)) {
+    if (needsInitialRosterBuild && (hasJoinedMatch || isHubOverwatchActive)) {
       rebuildRosterForMode(mode)
     }
   }
@@ -3755,7 +3962,12 @@ class RiftGameEngine(
     if (state == null || !hasJoinedMatch || isEphemeralPracticeRift) return
     if (state.hostUid.isBlank() || state.hostUid == currentUid) return
     if (isLocalObjectiveHost(currentUid)) return
-    if (!state.sectorId.equals(activeMatchSectorTag(), ignoreCase = true)) return
+    if (
+      !state.sectorId.equals(activeMatchSectorTag(), ignoreCase = true) &&
+        !matchesCurrentInstanceSector(state.sectorId)
+    ) {
+      return
+    }
 
     if (isRiftControlRulesActive()) {
       riftControlWestScore = state.rcWestScore.toFloat().coerceIn(0f, 1000f)
@@ -3810,7 +4022,12 @@ class RiftGameEngine(
         val first = processedCombatEventIds.firstOrNull()
         if (first != null) processedCombatEventIds.remove(first)
       }
-      if (!ev.sectorId.equals(activeMatchSectorTag(), ignoreCase = true)) continue
+      if (
+        !ev.sectorId.equals(activeMatchSectorTag(), ignoreCase = true) &&
+          !matchesCurrentInstanceSector(ev.sectorId)
+      ) {
+        continue
+      }
       if (ev.senderUid == currentUid) continue
       if (ev.eventType == "ELIMINATED" && ev.targetUid == currentUid && localPlayer.respawnTimer <= 0f) {
         val remoteAttacker = remotePilots[ev.senderUid]
@@ -7006,6 +7223,10 @@ class RiftGameEngine(
       target.deathY = target.y
       target.respawnTimer = max(1.35f, RiftCalibrationState.respawnDelaySec)
       target.deaths++
+      if (target.isHuman && !target.isLocalPlayer) {
+        target.netLocalKillGraceSec = 0.85f
+        target.netRespawnHoldSec = 0f
+      }
       target.isCloaked = false
       target.sniperOverchargeReady = false
       target.rocketBoostTimer = 0f
@@ -7082,7 +7303,7 @@ class RiftGameEngine(
           )
         isSelfStationTriggerDeath ->
           spawnPooledFct(
-            text = "-${selfStationBountyPenalty} BTY // STATION BACKFIRE",
+            text = "-${selfStationBountyPenalty} RES // STATION BACKFIRE",
             x = target.x,
             y = target.y - 26f,
             color = Color.parseColor("#EF4444"),
@@ -7090,7 +7311,7 @@ class RiftGameEngine(
           )
         isEnemyStationTriggerKill && stationAssistBounty > 0 ->
           spawnPooledFct(
-            text = "+$stationAssistBounty BTY (10% STATION)",
+            text = "+$stationAssistBounty RES (10% STATION)",
             x = target.x,
             y = target.y - 26f,
             color = Color.parseColor("#38BDF8"),
@@ -7098,7 +7319,7 @@ class RiftGameEngine(
           )
         else ->
           spawnPooledFct(
-            text = if (wasHvt) "+$bountyAward HVT!" else "+$bountyAward BTY",
+            text = if (wasHvt) "+$bountyAward HVT!" else "+$bountyAward RES",
             x = target.x,
             y = target.y - 26f,
             color = if (wasHvt) Color.parseColor("#F59E0B") else Color.parseColor("#10B981"),
@@ -7161,7 +7382,7 @@ class RiftGameEngine(
           notifyChange = false,
         )
         onPrizeToast(
-          "STATION TRIGGER KILL CREDIT (10%) // +$stationAssistBounty BOUNTY & +$stationResCredit RES"
+          "STATION TRIGGER KILL CREDIT (10%) // +$stationAssistBounty RES (+$stationResCredit LIVE RES)"
         )
         onStatsUpdated()
       }
@@ -7220,7 +7441,7 @@ class RiftGameEngine(
               liveResonance = (liveResonance - 15).coerceAtLeast(0)
             }
             onPrizeToast(
-              "SELF-TRIGGERED STATION DEATH // -${selfStationBountyPenalty} BOUNTY & -15 LIVE RESONANCE"
+              "SELF-TRIGGERED STATION DEATH // -${selfStationBountyPenalty} RES & -15 LIVE RESONANCE"
             )
           }
           else -> {
@@ -7270,6 +7491,7 @@ class RiftGameEngine(
               )
           )
         onLifeRunEnded(finalizedSnapshot, currentLifeHadPvp || attackerIsHuman)
+        notifyLocalLifecycleSync()
         onStatsUpdated()
       } else if (isEphemeralPracticeRift) {
         onStatsUpdated()
@@ -7385,6 +7607,7 @@ class RiftGameEngine(
     skirmish1v1AlertTimer = 0f
     spectatingTargetShipId = ""
 
+    reattachRemotePilotsToRoster()
     // Stage & heal all ships at their West/East Horizon Warp Gates for the 10-second Ready-Up countdown
     for (s in ships) {
       clearShipToggleBuffs(s, clearSlotIfActive = true)
@@ -7398,9 +7621,20 @@ class RiftGameEngine(
       val sp = getSkirmishGateSpawnPosition(s.freq)
       s.x = sp.first
       s.y = sp.second
+      if (s.isHuman && !s.isLocalPlayer) {
+        s.netTargetX = s.x
+        s.netTargetY = s.y
+        s.netTargetVx = 0f
+        s.netTargetVy = 0f
+        s.netPacketAgeSec = 0f
+        s.netWasRespawning = false
+        s.netLocalKillGraceSec = 0f
+        s.netRespawnHoldSec = 0f
+      }
       s.phaseShieldTimer = 3.0f
       s.isCloaked = false
     }
+    notifyLocalLifecycleSync()
     bullets.clear()
     bombs.clear()
     swarmDrones.clear()
@@ -7517,6 +7751,7 @@ class RiftGameEngine(
     stasisWestCaptures = 0
     stasisEastCaptures = 0
     localStasisCaptures = 0
+    reattachRemotePilotsToRoster()
     for (s in ships) {
       s.isInStasisBrig = false
       s.deathLingerTimer = 0f
@@ -7534,9 +7769,20 @@ class RiftGameEngine(
         val sp = getSkirmishGateSpawnPosition(s.freq)
         s.x = sp.first
         s.y = sp.second
+        if (s.isHuman && !s.isLocalPlayer) {
+          s.netTargetX = s.x
+          s.netTargetY = s.y
+          s.netTargetVx = 0f
+          s.netTargetVy = 0f
+          s.netPacketAgeSec = 0f
+          s.netWasRespawning = false
+          s.netLocalKillGraceSec = 0f
+          s.netRespawnHoldSec = 0f
+        }
         s.phaseShieldTimer = 3.0f
       }
     }
+    notifyLocalLifecycleSync()
     swarmDrones.clear()
     brickWalls.clear()
     shipDebrisChunks.clear()
@@ -7759,6 +8005,7 @@ class RiftGameEngine(
             )
         )
       onLifeRunEnded(finalized, currentLifeHadPvp)
+      notifyLocalLifecycleSync()
       onStatsUpdated()
       onPrizeToast("SHIP DESTROYED — IDLE FLUX DRAIN DEPLETED")
     }
@@ -7839,6 +8086,7 @@ class RiftGameEngine(
             )
         )
       onLifeRunEnded(finalized, currentLifeHadPvp)
+      notifyLocalLifecycleSync()
       onStatsUpdated()
       onPrizeToast("SHIP DESTROYED — PLASMA RIFT SHEAR OVERLOAD")
     }
@@ -9521,6 +9769,9 @@ class RiftGameEngine(
       if (s.hullImpactJoltTimer > 0f) {
         s.hullImpactJoltTimer = max(0f, s.hullImpactJoltTimer - rawDt)
       }
+      if (s.netLocalKillGraceSec > 0f) {
+        s.netLocalKillGraceSec = max(0f, s.netLocalKillGraceSec - rawDt)
+      }
       if (s.respawnTimer > 0f) {
         if (s.deathLingerTimer > 0f) {
           s.deathLingerTimer = max(0f, s.deathLingerTimer - rawDt)
@@ -9535,6 +9786,16 @@ class RiftGameEngine(
         if (isSkirmishRulesActive()) {
           continue
         }
+        if (s.isHuman && !s.isLocalPlayer && (s.netWasRespawning || s.netLocalKillGraceSec > 0f)) {
+          s.netRespawnHoldSec += rawDt
+          if (s.netRespawnHoldSec < 5.5f) {
+            s.respawnTimer = max(0.20f, s.respawnTimer - rawDt)
+            continue
+          }
+          s.netWasRespawning = false
+          s.netLocalKillGraceSec = 0f
+          s.netRespawnHoldSec = 0f
+        }
         s.respawnTimer -= rawDt
         if (s.respawnTimer <= 0f) {
           s.respawnTimer = 0f
@@ -9548,6 +9809,7 @@ class RiftGameEngine(
               isTeamBasedRankedMode() || !hasActiveSafeZone() -> getSkirmishGateSpawnPosition(s.freq)
               s.isLocalPlayer && isEphemeralPracticeRift -> getPracticeRiftOpenSpawnPosition()
               s.isLocalPlayer -> getSafeZoneSpawnPosition()
+              s.isHuman && s.hasNetTarget -> s.netTargetX to s.netTargetY
               else -> getOuterGateSpawnPosition(s.freq)
             }
           s.x = pos.first
@@ -9595,14 +9857,6 @@ class RiftGameEngine(
           s.visualBankRoll = 0f
           s.barrelRollTimer = 0f
           s.prevHeadingForBank = s.angle
-          if (s.isLocalPlayer) {
-            spectatingTargetShipId = ""
-            buffVersion++
-            resetCurrentLifeStats()
-            if (!isEphemeralPracticeRift) {
-              onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
-            }
-          }
           val inSafe = isInsideSafeZone(s.x, s.y)
           s.wasInSafeZone = inSafe
           s.inSafeZone = inSafe
@@ -9614,6 +9868,15 @@ class RiftGameEngine(
           s.safeZoneLockoutTimer = 0f
           s.playfieldIdleTimer = 0f
           s.isIdleDraining = false
+          if (s.isLocalPlayer) {
+            spectatingTargetShipId = ""
+            buffVersion++
+            resetCurrentLifeStats()
+            if (!isEphemeralPracticeRift) {
+              onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
+              notifyLocalLifecycleSync()
+            }
+          }
         }
         continue
       }
@@ -9711,7 +9974,7 @@ class RiftGameEngine(
         }
         s.playfieldIdleTimer = 0f
         s.isIdleDraining = false
-        if (isEphemeralPracticeRift) {
+        if (isEphemeralPracticeRift || (s.isHuman && !s.isLocalPlayer)) {
           s.safeZoneStayTimer = 0f
         } else {
           s.safeZoneStayTimer += rawDt
@@ -9735,6 +9998,7 @@ class RiftGameEngine(
               maxLife = 1.25f,
             )
             if (s.isLocalPlayer) {
+              notifyLocalLifecycleSync()
               sfx.playPrize()
               onPrizeToast("SAFE ZONE IDLE LIMIT EXCEEDED — TELEPORTED TO OPEN SECTOR")
             }
@@ -9745,8 +10009,8 @@ class RiftGameEngine(
         if (s.safeZoneLockoutTimer > 0f) {
           s.safeZoneLockoutTimer = max(0f, s.safeZoneLockoutTimer - rawDt)
         }
-        // Open-Space Anti-AFK Flux Drain runs ONLY in modes with an active Safe Zone (SECTOR_CONVERGENCE & FLUX_CORE) and NEVER in Practice Rift
-        if (!hasActiveSafeZone() || isEphemeralPracticeRift) {
+        // Open-Space Anti-AFK Flux Drain runs ONLY in modes with an active Safe Zone (SECTOR_CONVERGENCE & FLUX_CORE), NEVER in Practice Rift, and authoritatively per-client for humans
+        if (!hasActiveSafeZone() || isEphemeralPracticeRift || (s.isHuman && !s.isLocalPlayer)) {
           s.playfieldIdleTimer = 0f
           s.isIdleDraining = false
         } else {
@@ -9822,6 +10086,14 @@ class RiftGameEngine(
         } else {
           baseMaxSp
         }
+      val isRemoteHumanShip = s.isHuman && !s.isLocalPlayer
+      if (isRemoteHumanShip && s.hasNetTarget) {
+        s.netPacketAgeSec = (s.netPacketAgeSec + dt).coerceAtMost(0.28f)
+        val velBlend = (1f - kotlin.math.exp(-16f * dt)).coerceIn(0f, 1f)
+        s.vx += (s.netTargetVx - s.vx) * velBlend
+        s.vy += (s.netTargetVy - s.vy) * velBlend
+      }
+
       val curSp = hypot(s.vx, s.vy)
       if (curSp > maxSp) {
         s.vx = (s.vx / curSp) * maxSp
@@ -9832,6 +10104,32 @@ class RiftGameEngine(
       val prevShipY = s.y
       s.x += s.vx * dt
       s.y += s.vy * dt
+
+      if (isRemoteHumanShip && s.hasNetTarget) {
+        val maxRemoteRadial = (arenaRadius - s.radius).coerceAtLeast(120f)
+        var predX = s.netTargetX + s.netTargetVx * s.netPacketAgeSec
+        var predY = s.netTargetY + s.netTargetVy * s.netPacketAgeSec
+        val predDx = predX - arenaCenterX
+        val predDy = predY - arenaCenterY
+        val predRadial = hypot(predDx, predDy)
+        if (predRadial > maxRemoteRadial && predRadial > 0.001f) {
+          predX = arenaCenterX + (predDx / predRadial) * maxRemoteRadial
+          predY = arenaCenterY + (predDy / predRadial) * maxRemoteRadial
+        }
+        val errX = predX - s.x
+        val errY = predY - s.y
+        val errDist = hypot(errX, errY)
+        if (errDist > 550f) {
+          s.x = predX
+          s.y = predY
+          s.vx = s.netTargetVx
+          s.vy = s.netTargetVy
+        } else {
+          val posBlend = (1f - kotlin.math.exp(-11.5f * dt)).coerceIn(0f, 1f)
+          s.x += errX * posBlend
+          s.y += errY * posBlend
+        }
+      }
 
       // Mode 4 (STASIS_BREACH): Two-Way Circular Stasis Bubble Jails at West (1400, 4000) and East (6600, 4000)
       if (isStasisBreachRulesActive()) {
@@ -9972,8 +10270,27 @@ class RiftGameEngine(
 
       resolveShipWallBounce(s)
 
+      if (isRemoteHumanShip) {
+        val clampR = (arenaRadius - s.radius).coerceAtLeast(120f)
+        val cdx = s.x - arenaCenterX
+        val cdy = s.y - arenaCenterY
+        val cdist = hypot(cdx, cdy)
+        if (cdist > clampR && cdist > 0.001f) {
+          s.x = arenaCenterX + (cdx / cdist) * clampR
+          s.y = arenaCenterY + (cdy / cdist) * clampR
+        }
+      }
+
       val postBounceSpeed = hypot(s.vx, s.vy)
-      if (postBounceSpeed > 2f) {
+      if (isRemoteHumanShip && s.hasNetTarget) {
+        val rotBlend = (1f - kotlin.math.exp(-16f * dt)).coerceIn(0f, 1f)
+        val desiredHeading = if (postBounceSpeed > 18f) atan2(s.vy, s.vx) else s.netTargetAngle
+        val headingDiff = atan2(sin(desiredHeading - s.angle), cos(desiredHeading - s.angle))
+        s.angle += headingDiff * rotBlend
+        val aimDiff =
+          atan2(sin(s.netTargetWeaponAngle - s.weaponAngle), cos(s.netTargetWeaponAngle - s.weaponAngle))
+        s.weaponAngle += aimDiff * rotBlend
+      } else if (postBounceSpeed > 2f) {
         s.angle = atan2(s.vy, s.vx)
       } else if (s.isLocalPlayer && leftStickActive && leftStickMag > 0.08f) {
         s.angle = leftStickAngle
@@ -10130,8 +10447,8 @@ class RiftGameEngine(
                   "SPECIAL BUFF: CHAKRAM (+2 CHARGES • ${s.specialWeaponCharges} TOTAL • 8-SLICE BOUNCING SAW DISC)"
                 }
                 gr.buffType == 6 -> {
-                  spawnPooledFct("FULL FLUX +$pickupBty BTY", s.x, s.y - 24f, Color.parseColor("#10B981"))
-                  "INSTANT BUFF: 100% FULL FLUX CHARGE +$pickupBty BOUNTY"
+                  spawnPooledFct("FULL FLUX +$pickupBty RES", s.x, s.y - 24f, Color.parseColor("#10B981"))
+                  "INSTANT BUFF: 100% FULL FLUX CHARGE +$pickupBty RESONANCE"
                 }
                 gr.buffType == 7 -> {
                   spawnPooledFct("REPEL +1 (${s.repels})", s.x, s.y - 24f, Color.parseColor("#00F5D4"))
@@ -11552,6 +11869,7 @@ class RiftGameEngine(
       shipDebrisChunks.clear()
       bakeStaticRadarBitmap()
       resetRiftControlZones()
+      reattachRemotePilotsToRoster()
       for (s in ships) {
         s.deathLingerTimer = 0f
         s.warpInAnimTimer = 0.65f
@@ -11568,9 +11886,20 @@ class RiftGameEngine(
           val sp = getSkirmishGateSpawnPosition(s.freq)
           s.x = sp.first
           s.y = sp.second
+          if (s.isHuman && !s.isLocalPlayer) {
+            s.netTargetX = s.x
+            s.netTargetY = s.y
+            s.netTargetVx = 0f
+            s.netTargetVy = 0f
+            s.netPacketAgeSec = 0f
+            s.netWasRespawning = false
+            s.netLocalKillGraceSec = 0f
+            s.netRespawnHoldSec = 0f
+          }
           s.phaseShieldTimer = 3.0f
         }
       }
+      notifyLocalLifecycleSync()
     }
   }
 
@@ -11733,7 +12062,7 @@ class RiftGameEngine(
               shockwaves.add(ShockwaveEntity(s.x, s.y, 20f, 260f, Color.parseColor("#FACC15")))
               if (s.isLocalPlayer) {
                 sfx.playPrize()
-                onPrizeToast("FLUX CORE ACQUIRED! +15 BOUNTY/S & OVERCHARGE TIER SCALING ACTIVE!")
+                onPrizeToast("FLUX CORE ACQUIRED! +15 RES/S & OVERCHARGE TIER SCALING ACTIVE!")
               } else if (!isHubOverwatchActive || hasJoinedMatch) {
                 onPrizeToast("${s.callsign} CLAIMED THE FLUX CORE!")
               }

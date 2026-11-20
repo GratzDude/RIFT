@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 87
+const val CURRENT_RIFT_BUILD_VERSION = 89
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,41 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 89,
+      versionTag = "v1.0.89 // BUILD #89",
+      releaseDate = "Nov 20, 2026",
+      headline = "Smooth Per-Frame Remote Ship Dead-Reckoning, 110ms Active Combat Heartbeats & Post-Death Instance Sync Stability",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Smooth Per-Frame Remote Ship Dead-Reckoning & Damped Interpolation: Replaced snapshot step-snapping on remote human ships with continuous per-frame velocity dead-reckoning (x += vx * dt, y += vy * dt) paired with frame-rate-independent damped position, velocity, heading, and turret-aim blending toward extrapolated network targets, snapping immediately only on large jumps (> 550px), sector entry, or respawn while clamping inside arenaRadius.",
+          "110ms Active-Combat Heartbeats & Zero-Latency Lifecycle Broadcasts: Tightened active combat and matchmaking queue heartbeat cadence to 110ms (1,200ms in hub orbit) and wired instant out-of-band heartbeats on local ship elimination, respawn completion, match deployment, and round transitions.",
+          "Post-Death & Round-Transition Rift Instance Sync Stability: Locked activeSectorInstanceOverride, currentCustomGame, activeRankedMode, and activeMatchSectorTag() across ship eliminations, respawns, Hangar hull swaps, and round resets while holding remote human respawns for authoritative spawn coordinates and safeguarding active sector pilots against stale lobby snapshot overwrites.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 88,
+      versionTag = "v1.0.88 // BUILD #88",
+      releaseDate = "Nov 19, 2026",
+      headline = "Real-Time Multi-Device Presence & PvP Roster Sync Fix, Purge [GUE]/[NOV] Ghost Syndicates & Full Resonance Copy Scrub",
+      badgeLabel = "PREVIOUS BUILD",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Monotonic Multi-Device Presence & Combat Event Sync: Switched remote pilot freshness and combat event stream tracking in RiftRepository to monotonic SystemClock.elapsedRealtime() so cross-device clock skew and server timestamp resolution never drop active pilots after 45s or across app restarts.",
+          "Instant Sector Alignment & Global Subspace Comms: Deploying into a match, leaving a match, restoring a suspended match, or opening Subspace Comms immediately aligns viewModel.setActiveSector(...) and fires pushLivePilotHeartbeatNow() so connected devices share canonical sector IDs, live combat events, and Subspace Comms.",
+          "Zero-Wipe In-Place PvP Roster Updates: Remote pilots joining or updating in an active match now spawn and update cleanly in-place via replaceBotWithHuman without calling rebuildRosterForMode or resetting arena obstacles, timers, or local ship state.",
+          "Human-Founded Syndicates Only (Purged [GUE] & [NOV] Ghosts): Added GUE, GUES, GUEST, NOV, and NOVA to reserved Syndicate tag filters, stopped truncating default GUEST tags into [GUE]/[GUES], removed preset NOVA VANGUARD defaults, and purged non-human Syndicate entries across local storage and cloud directory streams deduplicated by uppercase 1-3 char tag.",
+          "100% Resonance Terminology Scrub: Replaced all remaining user-facing Bounty and BTY copy across Pilot Dossier, Syndicate Citadel, Rift Conduit, NEXUS AI Knowledge, Achievement descriptions, and 2.5D combat Kill Feed / FCT callouts with Resonance (RES).",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 87,
       versionTag = "v1.0.87 // BUILD #87",
       releaseDate = "Nov 19, 2026",
       headline = "Multi-Device Live Online Sync, 5 Combat & Ranked Mode Fixes, Animated Minimap Flux Symbol, Chakram Disc & All Crate Buffs on Rift Frame",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "PREVIOUS BUILD",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

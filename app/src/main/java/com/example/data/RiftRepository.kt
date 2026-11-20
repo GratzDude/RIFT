@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.os.SystemClock
 import com.example.R
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -15,6 +16,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.MemoryCacheSettings
+import com.google.firebase.firestore.QuerySnapshot
 import com.google.firebase.firestore.snapshots
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -94,7 +96,8 @@ object NetworkConnectivityMonitor {
 typealias LiveCalibrationBroadcast = RiftRepository.LiveCalibrationBroadcast
 
 class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
-  private val localSeenMsByUid = ConcurrentHashMap<String, Long>()
+  private val remoteSeenElapsedMsByUid = ConcurrentHashMap<String, Long>()
+  private val remoteLastServerMsByUid = ConcurrentHashMap<String, Long>()
   private val knownExistingPilotDocUids = ConcurrentHashMap.newKeySet<String>()
   private val _cloudSyncHealth = MutableStateFlow(CloudSyncHealth())
   val cloudSyncHealth: StateFlow<CloudSyncHealth> = _cloudSyncHealth.asStateFlow()
@@ -192,7 +195,32 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   }
 
   private fun sanitizeSyndicateTag(raw: String): String {
-    return raw.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(4)
+    val cleanedFull =
+      raw
+        .trim()
+        .uppercase(Locale.US)
+        .replace(Regex("[^A-Z0-9_\\-]"), "")
+    if (cleanedFull.isEmpty() || cleanedFull in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) {
+      return ""
+    }
+    val trimmed = cleanedFull.take(3)
+    return if (trimmed in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) "" else trimmed
+  }
+
+  private fun isReservedOrGhostSyndicateName(rawName: String): Boolean {
+    val clean = rawName.trim()
+    if (clean.isEmpty()) return true
+    return clean.equals("Rift Drifters", ignoreCase = true) ||
+      clean.equals("Guest Tracking Framework", ignoreCase = true) ||
+      clean.equals("GUE Syndicate", ignoreCase = true) ||
+      clean.equals("GUES Syndicate", ignoreCase = true) ||
+      clean.equals("NOV Syndicate", ignoreCase = true) ||
+      clean.equals("NOVA VANGUARD", ignoreCase = true) ||
+      clean.contains("Guest", ignoreCase = true) ||
+      clean.contains("Kestrel", ignoreCase = true) ||
+      clean.contains("Aurelia", ignoreCase = true) ||
+      clean.contains("Vortex", ignoreCase = true) ||
+      clean.contains("Rustweld", ignoreCase = true)
   }
 
   private fun sanitizeArmadaTag(raw: String): String {
@@ -302,7 +330,11 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val docRef = db.collection("users").document(uid)
     val safeCallsign = sanitizeCallsign(dossier.callsign)
     val safeSynTag = sanitizeSyndicateTag(dossier.syndicateTag)
-    val safeSynName = dossier.syndicateName.trim().take(48)
+    val safeSynName =
+      dossier.syndicateName
+        .trim()
+        .take(48)
+        .let { if (safeSynTag.isEmpty() || isReservedOrGhostSyndicateName(it)) "Unaffiliated" else it }
     val safeShipId = dossier.preferredShipId.coerceIn(1L, 10L)
     val safeFoundry = sanitizeFoundry(dossier.preferredFoundry)
     val safeMode = sanitizeMode(dossier.preferredMode)
@@ -339,12 +371,21 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           } else {
             safeCallsign
           }
-        val mergedSynTag =
-          if (safeSynTag.isNotEmpty() && safeSynTag !in setOf("GUEST", "RFT", "BOT")) safeSynTag
-          else existingObj?.syndicateTag?.let { sanitizeSyndicateTag(it) }.orEmpty()
+        val existingCleanTag = existingObj?.syndicateTag?.let { sanitizeSyndicateTag(it) }.orEmpty()
+        val mergedSynTag = if (safeSynTag.isNotEmpty()) safeSynTag else existingCleanTag
+        val existingCleanName =
+          existingObj
+            ?.syndicateName
+            ?.take(48)
+            ?.takeIf { !isReservedOrGhostSyndicateName(it) }
+            .orEmpty()
         val mergedSynName =
-          if (safeSynName.isNotEmpty() && !safeSynName.contains("Guest", ignoreCase = true)) safeSynName
-          else existingObj?.syndicateName?.take(48).orEmpty()
+          when {
+            mergedSynTag.isEmpty() -> "Unaffiliated"
+            safeSynTag.isNotEmpty() && !isReservedOrGhostSyndicateName(safeSynName) -> safeSynName
+            existingCleanName.isNotEmpty() -> existingCleanName
+            else -> "$mergedSynTag Syndicate"
+          }
         val updatePayload =
           mapOf(
             "callsign" to mergedCallsign,
@@ -467,13 +508,16 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           )
           .filter { entry ->
             val cleanUid = entry.userId.ifBlank { entry.id }.trim()
-            val cleanTag = entry.syndicateTag.trim().uppercase(Locale.US)
+            val rawUpperTag = entry.syndicateTag.trim().uppercase(Locale.US)
             cleanUid.isNotEmpty() &&
               !cleanUid.startsWith("dev_") &&
               !cleanUid.startsWith("drifter_") &&
-              cleanTag != "BOT" &&
-              cleanTag != "RFT" &&
+              rawUpperTag != "BOT" &&
+              rawUpperTag != "RFT" &&
               !entry.callsign.contains("[BOT]", ignoreCase = true)
+          }
+          .map { entry ->
+            entry.copy(syndicateTag = sanitizeSyndicateTag(entry.syndicateTag))
           }
       }
       .catch { error ->
@@ -578,7 +622,8 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       } else {
         initializeOrRepairPilotDoc()
       }
-      localSeenMsByUid[uid] = System.currentTimeMillis()
+      val nowElapsed = SystemClock.elapsedRealtime()
+      remoteSeenElapsedMsByUid[uid] = nowElapsed
       markHeartbeatSuccess()
     } catch (e: CancellationException) {
       throw e
@@ -591,19 +636,69 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     }
   }
 
+  private fun recordPilotSnapshotActivity(
+    snapshot: QuerySnapshot,
+    nowWallMs: Long,
+    nowElapsedMs: Long,
+    initialSkewWindowMs: Long = 15L * 60_000L,
+  ) {
+    for (change in snapshot.documentChanges) {
+      val docId =
+        (change.document.getString("userId")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: change.document.id.trim())
+      if (docId.isEmpty()) continue
+      val serverMs = change.document.getTimestamp("updatedAt")?.toDate()?.time
+      when (change.type) {
+        DocumentChange.Type.ADDED -> {
+          val previousElapsed = remoteSeenElapsedMsByUid[docId]
+          val withinSkewSafeBootWindow =
+            serverMs == null || kotlin.math.abs(nowWallMs - serverMs) <= initialSkewWindowMs
+          if (previousElapsed != null || withinSkewSafeBootWindow) {
+            remoteSeenElapsedMsByUid[docId] = nowElapsedMs
+            if (serverMs != null) {
+              remoteLastServerMsByUid[docId] = serverMs
+            }
+          }
+        }
+        DocumentChange.Type.MODIFIED -> {
+          remoteSeenElapsedMsByUid[docId] = nowElapsedMs
+          if (serverMs != null) {
+            remoteLastServerMsByUid[docId] = serverMs
+          }
+        }
+        DocumentChange.Type.REMOVED -> {
+          // Keep monotonic seen timestamp across sector query transitions unless truly expired
+        }
+      }
+    }
+    for (doc in snapshot.documents) {
+      val docId =
+        (doc.getString("userId")?.trim()?.takeIf { it.isNotEmpty() } ?: doc.id.trim())
+      if (docId.isEmpty()) continue
+      val serverMs = doc.getTimestamp("updatedAt")?.toDate()?.time
+      if (serverMs != null) {
+        val prevServerMs = remoteLastServerMsByUid[docId]
+        if (prevServerMs != null && serverMs != prevServerMs) {
+          remoteLastServerMsByUid[docId] = serverMs
+          remoteSeenElapsedMsByUid[docId] = nowElapsedMs
+        } else if (prevServerMs == null && kotlin.math.abs(nowWallMs - serverMs) <= initialSkewWindowMs) {
+          remoteLastServerMsByUid[docId] = serverMs
+          remoteSeenElapsedMsByUid.putIfAbsent(docId, nowElapsedMs)
+        }
+      } else {
+        remoteSeenElapsedMsByUid[docId] = nowElapsedMs
+      }
+    }
+  }
+
   private fun isPilotFreshEnough(
     uid: String,
-    updatedAtMs: Long?,
-    nowMs: Long,
-    initialWindowMs: Long = 90_000L,
+    nowElapsedMs: Long,
+    activeElapsedTtlMs: Long = 120_000L,
   ): Boolean {
-    val lastSeenLocal = if (uid.isNotEmpty()) localSeenMsByUid[uid] else null
-    if (lastSeenLocal != null) {
-      return (nowMs - lastSeenLocal) <= 45_000L
-    }
-    if (updatedAtMs == null) return true
-    val skewSafeDelta = kotlin.math.abs(nowMs - updatedAtMs)
-    return skewSafeDelta <= initialWindowMs
+    if (uid.isEmpty()) return false
+    val seenElapsed = remoteSeenElapsedMsByUid[uid] ?: return false
+    return (nowElapsedMs - seenElapsed) <= activeElapsedTtlMs
   }
 
   fun observeSectorPilots(sectorId: String): Flow<List<LivePilotState>> {
@@ -615,25 +710,9 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .snapshots()
       .map { snapshot ->
         markSnapshotSuccess()
-        val nowMs = System.currentTimeMillis()
-        for (change in snapshot.documentChanges) {
-          val docId = change.document.id.trim()
-          if (docId.isEmpty()) continue
-          when (change.type) {
-            DocumentChange.Type.ADDED -> {
-              val serverMs = change.document.getTimestamp("updatedAt")?.toDate()?.time
-              if (serverMs == null || kotlin.math.abs(nowMs - serverMs) <= 90_000L) {
-                localSeenMsByUid[docId] = nowMs
-              }
-            }
-            DocumentChange.Type.MODIFIED -> {
-              localSeenMsByUid[docId] = nowMs
-            }
-            DocumentChange.Type.REMOVED -> {
-              localSeenMsByUid.remove(docId)
-            }
-          }
-        }
+        val nowWallMs = System.currentTimeMillis()
+        val nowElapsedMs = SystemClock.elapsedRealtime()
+        recordPilotSnapshotActivity(snapshot, nowWallMs, nowElapsedMs)
         snapshot
           .toObjects(
             LivePilotState::class.java,
@@ -641,8 +720,16 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           )
           .filter { state ->
             val cleanUid = state.userId.ifBlank { state.id }.trim()
-            val updatedAtMs = state.updatedAt?.toDate()?.time
-            isPilotFreshEnough(cleanUid, updatedAtMs, nowMs, initialWindowMs = 90_000L)
+            val rawUpperTag = state.syndicateTag.trim().uppercase(Locale.US)
+            cleanUid.isNotEmpty() &&
+              !cleanUid.startsWith("dev_", ignoreCase = true) &&
+              !cleanUid.startsWith("bot_", ignoreCase = true) &&
+              rawUpperTag != "BOT" &&
+              !state.callsign.contains("[BOT]", ignoreCase = true) &&
+              isPilotFreshEnough(cleanUid, nowElapsedMs)
+          }
+          .map { state ->
+            state.copy(syndicateTag = sanitizeSyndicateTag(state.syndicateTag))
           }
           .sortedWith(
             compareByDescending<LivePilotState> { it.liveResonance }
@@ -671,25 +758,9 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .snapshots()
       .map { snapshot ->
         markSnapshotSuccess()
-        val nowMs = System.currentTimeMillis()
-        for (change in snapshot.documentChanges) {
-          val docId = change.document.id.trim()
-          if (docId.isEmpty()) continue
-          when (change.type) {
-            DocumentChange.Type.ADDED -> {
-              val serverMs = change.document.getTimestamp("updatedAt")?.toDate()?.time
-              if (serverMs == null || kotlin.math.abs(nowMs - serverMs) <= 90_000L) {
-                localSeenMsByUid[docId] = nowMs
-              }
-            }
-            DocumentChange.Type.MODIFIED -> {
-              localSeenMsByUid[docId] = nowMs
-            }
-            DocumentChange.Type.REMOVED -> {
-              localSeenMsByUid.remove(docId)
-            }
-          }
-        }
+        val nowWallMs = System.currentTimeMillis()
+        val nowElapsedMs = SystemClock.elapsedRealtime()
+        recordPilotSnapshotActivity(snapshot, nowWallMs, nowElapsedMs)
         snapshot
           .toObjects(
             LivePilotState::class.java,
@@ -697,14 +768,16 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           )
           .filter { state ->
             val cleanUid = state.userId.ifBlank { state.id }.trim()
-            val cleanTag = state.syndicateTag.trim().uppercase(Locale.US)
-            val updatedAtMs = state.updatedAt?.toDate()?.time
+            val rawUpperTag = state.syndicateTag.trim().uppercase(Locale.US)
             cleanUid.isNotEmpty() &&
               !cleanUid.startsWith("dev_", ignoreCase = true) &&
               !cleanUid.startsWith("bot_", ignoreCase = true) &&
-              cleanTag != "BOT" &&
+              rawUpperTag != "BOT" &&
               !state.callsign.contains("[BOT]", ignoreCase = true) &&
-              isPilotFreshEnough(cleanUid, updatedAtMs, nowMs, initialWindowMs = 90_000L)
+              isPilotFreshEnough(cleanUid, nowElapsedMs)
+          }
+          .map { state ->
+            state.copy(syndicateTag = sanitizeSyndicateTag(state.syndicateTag))
           }
           .sortedWith(
             compareByDescending<LivePilotState> { it.liveResonance }
@@ -767,23 +840,39 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   fun observeSectorCombatEvents(sectorId: String): Flow<List<SectorCombatEvent>> {
     val path = "sector_combat_events"
     val safeSector = sanitizeMode(sectorId)
-    val subscribedLocalMs = System.currentTimeMillis()
-    val seenFreshEventIds = ConcurrentHashMap.newKeySet<String>()
+    val seenFreshEventElapsedById = ConcurrentHashMap<String, Long>()
+    val ignoredInitialHistoricalIds = ConcurrentHashMap.newKeySet<String>()
+    var initialBatchProcessed = false
     return db.collection(path)
       .whereEqualTo("sectorId", safeSector)
       .snapshots()
       .map { snapshot ->
         markSnapshotSuccess()
-        val nowMs = System.currentTimeMillis()
-        for (change in snapshot.documentChanges) {
-          val id = change.document.id
-          if (change.type == DocumentChange.Type.ADDED) {
-            val serverMs = change.document.getTimestamp("createdAt")?.toDate()?.time
-            val clientMs = change.document.getLong("createdAtMs") ?: nowMs
-            val freshByServer = serverMs == null || (nowMs - serverMs) <= 10_000L
-            val freshBySession = clientMs >= (subscribedLocalMs - 6_000L) || kotlin.math.abs(nowMs - clientMs) <= 10_000L
-            if (freshByServer && freshBySession) {
-              seenFreshEventIds.add(id)
+        val nowWallMs = System.currentTimeMillis()
+        val nowElapsedMs = SystemClock.elapsedRealtime()
+        if (!initialBatchProcessed) {
+          initialBatchProcessed = true
+          for (doc in snapshot.documents) {
+            val id = doc.id
+            val serverMs = doc.getTimestamp("createdAt")?.toDate()?.time
+            val clientMs = doc.getLong("createdAtMs") ?: nowWallMs
+            val isJustEmitted =
+              serverMs == null ||
+                kotlin.math.abs(nowWallMs - serverMs) <= 8_000L ||
+                kotlin.math.abs(nowWallMs - clientMs) <= 8_000L
+            if (isJustEmitted) {
+              seenFreshEventElapsedById[id] = nowElapsedMs
+            } else {
+              ignoredInitialHistoricalIds.add(id)
+            }
+          }
+        } else {
+          for (change in snapshot.documentChanges) {
+            val id = change.document.id
+            if (change.type == DocumentChange.Type.ADDED && id !in ignoredInitialHistoricalIds) {
+              seenFreshEventElapsedById[id] = nowElapsedMs
+            } else if (change.type == DocumentChange.Type.REMOVED) {
+              seenFreshEventElapsedById.remove(id)
             }
           }
         }
@@ -792,8 +881,11 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
             SectorCombatEvent::class.java,
             DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
           )
-          .filter { evt -> evt.id in seenFreshEventIds }
-          .sortedBy { it.createdAt?.toDate()?.time ?: it.createdAtMs }
+          .filter { evt ->
+            val seenElapsed = seenFreshEventElapsedById[evt.id]
+            seenElapsed != null && (nowElapsedMs - seenElapsed) <= 30_000L
+          }
+          .sortedBy { seenFreshEventElapsedById[it.id] ?: 0L }
           .takeLast(48)
       }
       .catch { error ->
@@ -925,10 +1017,11 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       if (liveMatch != null) {
         val uid = liveMatch.userId.ifBlank { liveMatch.id }.trim()
         val updatedMs = liveMatch.updatedAt?.toDate()?.time
+        val nowElapsed = SystemClock.elapsedRealtime()
         val isOnlineNow =
-          (localSeenMsByUid[uid]?.let { (nowMs - it) <= 45_000L } == true) ||
+          isPilotFreshEnough(uid, nowElapsed) ||
             updatedMs == null ||
-            kotlin.math.abs(nowMs - updatedMs) <= 45_000L
+            kotlin.math.abs(nowMs - updatedMs) <= 120_000L
         val sectorTitle =
           when {
             liveMatch.sectorId == "SECTOR_CONVERGENCE" || liveMatch.sectorId == "FFA" -> "Sector Convergence"
@@ -951,7 +1044,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           isOnline = isOnlineNow,
           currentArmadaName = sanitizeArmadaTag(liveMatch.armadaName),
           currentArmadaCount = if (liveMatch.armadaName.isNotBlank()) 2 else 1,
-          bounty = liveMatch.bounty.toInt().coerceAtLeast(100),
+          bounty = liveMatch.liveResonance.toInt().coerceAtLeast(liveMatch.bounty.toInt().coerceAtLeast(100)),
         )
       }
     } catch (e: CancellationException) {
@@ -1010,12 +1103,35 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .snapshots()
       .map { snapshot ->
         markSnapshotSuccess()
+        val dedupedByTag = linkedMapOf<String, SyndicateInfo>()
         snapshot
           .toObjects(
             SyndicateInfo::class.java,
             DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
           )
-          .filter { it.isRealPlayerFoundedSyndicate() }
+          .forEach { syn ->
+            val cleanTag = sanitizeSyndicateTag(syn.tag)
+            val normalized = syn.copy(tag = cleanTag)
+            if (
+              cleanTag.length in 1..3 &&
+                cleanTag !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS &&
+                normalized.isCustom &&
+                normalized.isRealPlayerFoundedSyndicate() &&
+                !isReservedOrGhostSyndicateName(normalized.name)
+            ) {
+              val existing = dedupedByTag[cleanTag]
+              dedupedByTag[cleanTag] =
+                if (existing != null) {
+                  normalized.copy(
+                    memberCount = kotlin.math.max(existing.memberCount, normalized.memberCount),
+                    combinedBounty = kotlin.math.max(existing.combinedBounty, normalized.combinedBounty),
+                  )
+                } else {
+                  normalized
+                }
+            }
+          }
+        dedupedByTag.values.toList()
       }
       .catch { error ->
         val firestoreError =
@@ -1035,8 +1151,15 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   suspend fun saveCloudSyndicate(syndicate: SyndicateInfo): Result<Unit> = runCatching {
     val uid = requireUserId()
     val cleanTag = sanitizeSyndicateTag(syndicate.tag)
+    if (cleanTag.length !in 1..3 || cleanTag in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) {
+      throw IllegalArgumentException("Syndicate tag must be a valid 1 to 3 character human Syndicate tag.")
+    }
+    val cleanName = syndicate.name.trim().take(36).ifEmpty { "$cleanTag Syndicate" }
+    if (isReservedOrGhostSyndicateName(cleanName)) {
+      throw IllegalArgumentException("Syndicate name is reserved.")
+    }
     if (cleanTag.length < 2) {
-      throw IllegalArgumentException("Syndicate tag must be at least 2 characters.")
+      return@runCatching
     }
     val docRef = db.collection("syndicates").document(cleanTag)
     try {
@@ -1046,7 +1169,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           mapOf(
             "ownerId" to uid,
             "tag" to cleanTag,
-            "name" to syndicate.name.trim().take(36).ifEmpty { "$cleanTag Syndicate" },
+            "name" to cleanName,
             "foundryOrigin" to sanitizeFoundry(syndicate.foundryOrigin),
             "motto" to syndicate.motto.trim().take(64).ifEmpty { "Independent Rift Syndicate" },
             "memberCount" to syndicate.memberCount.coerceAtLeast(1),
@@ -1059,7 +1182,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       } else {
         val updatePayload =
           mapOf(
-            "name" to syndicate.name.trim().take(36).ifEmpty { "$cleanTag Syndicate" },
+            "name" to cleanName,
             "foundryOrigin" to sanitizeFoundry(syndicate.foundryOrigin),
             "motto" to syndicate.motto.trim().take(64).ifEmpty { "Independent Rift Syndicate" },
             "memberCount" to syndicate.memberCount.coerceAtLeast(1),
@@ -1083,8 +1206,8 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   suspend fun saveCloudSyndicateMeta(meta: CloudSyndicateMeta): Boolean {
     if (!isAuthenticatedNonGuest()) return false
     val fs = firestore ?: return false
-    val cleanTag = sanitizeSyndicateTag(meta.tag).take(4)
-    if (cleanTag.isEmpty() || cleanTag in setOf("RFT", "BOT", "SOLO", "GUEST", "FREE")) return false
+    val cleanTag = sanitizeSyndicateTag(meta.tag)
+    if (cleanTag.isEmpty() || cleanTag in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) return false
     val uid = auth.currentUser?.uid?.trim().orEmpty()
     val payload =
       mapOf(
@@ -1109,9 +1232,9 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   }
 
   fun observeCloudSyndicateMeta(tag: String): Flow<CloudSyndicateMeta?> = callbackFlow {
-    val cleanTag = sanitizeSyndicateTag(tag).take(4)
+    val cleanTag = sanitizeSyndicateTag(tag)
     val fs = firestore
-    if (fs == null || cleanTag.isEmpty() || cleanTag in setOf("RFT", "BOT", "SOLO", "GUEST", "FREE")) {
+    if (fs == null || cleanTag.isEmpty() || cleanTag in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) {
       trySend(null)
       close()
       return@callbackFlow
@@ -1169,6 +1292,9 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
             SyndicateChatMessage::class.java,
             DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
           )
+          .map { msg ->
+            msg.copy(senderSyndicateTag = sanitizeSyndicateTag(msg.senderSyndicateTag))
+          }
           .sortedBy { it.createdAt?.toDate()?.time ?: it.createdAtMs }
           .takeLast(160)
       }

@@ -431,6 +431,7 @@ private fun restoreActiveMatchSnapshot(
   engine.interdictorBubbles.addAll(snap.interdictorBubblesSnapshot.map { it.copy() })
   engine.killFeed.clear()
   engine.killFeed.addAll(snap.killFeedSnapshot.map { it.copy() })
+  engine.reattachRemotePilotsToRoster()
 }
 
 internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
@@ -913,6 +914,7 @@ fun RiftArenaScreen(
         selectedMode = snap.selectedModeId
         syncEquippedCosmeticsToEngine(engine)
         suspendedActiveMatch = null
+        viewModel.setActiveSector(engine.activeMatchSectorTag())
         frameTick++
       }
     }
@@ -936,6 +938,7 @@ fun RiftArenaScreen(
     }
     if (resolvedNode == NexusCoreNode.SUBSPACE_COMMS) {
       unreadCommsCount = 0
+      viewModel.setActiveSector(engine.activeMatchSectorTag())
     }
     if (resolvedNode == NexusCoreNode.STAR_FORGE) {
       isForgeFullScreenStage = (forgeInitialTab == NexusForgeTab.DEV_STUDIO_STAGE)
@@ -1258,15 +1261,26 @@ fun RiftArenaScreen(
       }
 
       if (isGoogleAuthenticated && !localPrefs.isGuestBypassEnabled() && currentUserId.isNotBlank()) {
-        val cloudSynTag = cloudDossier.syndicateTag.trim().uppercase(Locale.US)
+        val cleanedLocalSyn = localPrefs.getSyndicateTag()
+        if (syndicateTag != cleanedLocalSyn) {
+          syndicateTag = cleanedLocalSyn
+          syndicateName = localPrefs.getSyndicateName()
+          engine.localPlayer.syndicateTag = syndicateTag
+          engine.syncLocalArmadaSelfSlot()
+        }
+        val cloudSynTag = localPrefs.sanitizeSyndicateTag(cloudDossier.syndicateTag)
         val nonPlayerTags =
-          setOf("", "RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED", "NONE", "BOT") +
-            RiftGameEngine.LEGACY_FOUNDRY_TAGS
-        if (cloudSynTag.length in 1..4 && cloudSynTag !in nonPlayerTags && syndicateTag.isBlank()) {
+          LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS + RiftGameEngine.LEGACY_FOUNDRY_TAGS
+        if (
+          cloudSynTag.length in 1..3 &&
+            cloudSynTag !in nonPlayerTags &&
+            !localPrefs.isGhostSyndicateName(cloudDossier.syndicateName) &&
+            syndicateTag.isBlank()
+        ) {
           val resolvedSynName =
             cloudDossier.syndicateName
               .trim()
-              .takeIf { it.isNotBlank() && !it.contains("Guest", ignoreCase = true) }
+              .takeIf { it.isNotBlank() && !localPrefs.isGhostSyndicateName(it) }
               ?: "$cloudSynTag Syndicate"
           localPrefs.joinOfficialSyndicate(
             tag = cloudSynTag,
@@ -1334,14 +1348,18 @@ fun RiftArenaScreen(
     remember(sectorPilotsState, allOnlineHumansState, blockedPilotUids) {
       val byUid = linkedMapOf<String, LivePilotState>()
       val sectorList = (sectorPilotsState as? UiState.Success)?.data.orEmpty()
-      for (pilot in sectorList + allOnlineHumansState) {
+      for (pilot in allOnlineHumansState + sectorList) {
         val pUid = pilot.userId.ifEmpty { pilot.id }
         if (pUid.isBlank() || pUid in blockedPilotUids) continue
         val prev = byUid[pUid]
-        val prevMs = prev?.updatedAt?.toDate()?.time ?: 0L
-        val curMs = pilot.updatedAt?.toDate()?.time ?: 0L
-        if (prev == null || curMs >= prevMs) {
+        if (prev == null) {
           byUid[pUid] = pilot
+        } else {
+          val prevMs = prev.updatedAt?.toDate()?.time ?: Long.MAX_VALUE
+          val curMs = pilot.updatedAt?.toDate()?.time ?: Long.MAX_VALUE
+          if (curMs >= prevMs) {
+            byUid[pUid] = pilot
+          }
         }
       }
       byUid.values.toList()
@@ -1364,10 +1382,12 @@ fun RiftArenaScreen(
         suspended != null -> suspended.sectorTag
         else -> engine.activeMatchSectorTag()
       }
+    viewModel.setActiveSector(broadcastSector)
+    val cleanLiveSynTag = localPrefs.sanitizeSyndicateTag(p.syndicateTag)
     viewModel.syncNativeLiveState(
       sectorId = broadcastSector,
       callsign = safeCallsign,
-      syndicateTag = p.syndicateTag.take(12),
+      syndicateTag = cleanLiveSynTag,
       armadaName = p.armadaName.take(12),
       shipId = p.shipId.coerceIn(1, 10),
       freq = p.freq.coerceIn(0, 99),
@@ -1396,6 +1416,20 @@ fun RiftArenaScreen(
       bounty = p.bounty.coerceAtLeast(0),
       liveResonance = engine.liveResonance.coerceIn(0, 1000000),
     )
+  }
+
+  DisposableEffect(engine, currentUserId, isGoogleAuthenticated, isDeviceOnline) {
+    var lastLifecyclePushElapsedMs = 0L
+    engine.onLocalLifecycleSyncNeeded = {
+      val nowElapsed = android.os.SystemClock.elapsedRealtime()
+      if (nowElapsed - lastLifecyclePushElapsedMs >= 25L) {
+        lastLifecyclePushElapsedMs = nowElapsed
+        pushLivePilotHeartbeatNow()
+      }
+    }
+    onDispose {
+      engine.onLocalLifecycleSyncNeeded = {}
+    }
   }
 
   fun findEligibleRemoteOpponentsForSector(
@@ -1538,13 +1572,23 @@ fun RiftArenaScreen(
     }
   }
 
-  LaunchedEffect(activeMatchmakingQueue?.targetSectorKey) {
+  LaunchedEffect(
+    activeMatchmakingQueue?.targetSectorKey,
+    engine.hasJoinedMatch,
+    engine.activeMatchSectorTag(),
+  ) {
     if (isGoogleAuthenticated && isDeviceOnline) {
       pushLivePilotHeartbeatNow()
     }
   }
 
-  LaunchedEffect(mergedLivePilots, suspendedActiveMatch == null, engine.isEphemeralPracticeRift) {
+  LaunchedEffect(
+    mergedLivePilots,
+    suspendedActiveMatch == null,
+    engine.isEphemeralPracticeRift,
+    engine.hasJoinedMatch,
+    engine.activeMatchSectorTag(),
+  ) {
     engine.updateRemotePilots(mergedLivePilots, currentUserId)
   }
 
@@ -1591,7 +1635,7 @@ fun RiftArenaScreen(
         activeMatchmakingQueue != null ||
           suspendedActiveMatch != null ||
           (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift)
-      val intervalMs = if (inActiveCombatOrQueue) 220L else 1200L
+      val intervalMs = if (inActiveCombatOrQueue) 110L else 1200L
       delay(intervalMs)
       pushLivePilotHeartbeatNow()
     }
@@ -1722,7 +1766,16 @@ fun RiftArenaScreen(
     remember(mergedLivePilots, frameTick) {
       val cleanHumans = mergedLivePilots
       fun humanStatsForSector(sectorTag: String, fallbackSimResonance: Int): Pair<Int, Int> {
-        val matching = cleanHumans.filter { it.sectorId.equals(sectorTag, ignoreCase = true) }
+        val matching =
+          cleanHumans.filter { p ->
+            val pSec = p.sectorId.trim()
+            if (sectorTag.equals("SECTOR_CONVERGENCE", ignoreCase = true)) {
+              pSec.equals("SECTOR_CONVERGENCE", ignoreCase = true) ||
+                pSec.equals("FFA", ignoreCase = true)
+            } else {
+              pSec.equals(sectorTag, ignoreCase = true)
+            }
+          }
         if (matching.isEmpty()) return Pair(0, fallbackSimResonance)
         val combinedRes =
           matching.sumOf { p ->
@@ -2747,53 +2800,57 @@ fun RiftArenaScreen(
                                     engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
                                   selectedMode = activeModeId
                                   localPrefs.setPreferredMode(activeModeId)
-                                  if (!engine.hasJoinedMatch) {
-                                    engine.deployToRankedMode(
-                                      engine.activeRankedMode,
-                                      engine.activeTeamSizeBracket,
-                                    )
+                                    if (!engine.hasJoinedMatch) {
+                                      engine.deployToRankedMode(
+                                        engine.activeRankedMode,
+                                        engine.activeTeamSizeBracket,
+                                        sectorInstanceOverride = engine.activeSectorInstanceOverride,
+                                      )
+                                    }
                                   }
+                                }
+
+                                syncEquippedCosmeticsToEngine(engine)
+                                engine.onStatsUpdated()
+                                if (engine.hasJoinedMatch) {
+                                  viewModel.setActiveSector(engine.activeMatchSectorTag())
+                                  engine.updateRemotePilots(mergedLivePilots, currentUserId)
+                                  pushLivePilotHeartbeatNow()
+                                  pendingStagedLaunch = null
+                                  isNexusShellOpen = false
                                 }
                               }
 
-                              syncEquippedCosmeticsToEngine(engine)
-                              engine.onStatsUpdated()
-                              if (engine.hasJoinedMatch) {
-                                pushLivePilotHeartbeatNow()
-                                pendingStagedLaunch = null
-                                isNexusShellOpen = false
-                              }
-                            }
-
-                            when (staged) {
-                              is StagedRiftLaunch.Ranked -> {
-                                enqueueOrExecuteResonanceMatchmaking(
-                                  modeTitle = staged.mode.title.uppercase(Locale.US),
-                                  riftLabel = "${staged.teamSizeBracket}V${staged.teamSizeBracket}",
-                                  targetSectorKey = staged.sectorInstanceOverride ?: staged.mode.id,
-                                  rankedMode = staged.mode,
-                                  isCustomInstance = false,
-                                  onExecuteLaunch = finalizeHangarLaunch,
-                                )
-                              }
-                              is StagedRiftLaunch.NewCustom,
-                              is StagedRiftLaunch.ExistingCustom -> {
-                                finalizeHangarLaunch()
-                              }
-                              null -> {
-                                if (!engine.hasJoinedMatch && engine.currentCustomGame == null) {
+                              when (staged) {
+                                is StagedRiftLaunch.Ranked -> {
                                   enqueueOrExecuteResonanceMatchmaking(
-                                    modeTitle = engine.activeRankedMode.title.uppercase(Locale.US),
-                                    riftLabel = engine.activeRankedMode.teamFormatBadge,
-                                    targetSectorKey = engine.activeRankedMode.id,
-                                    rankedMode = engine.activeRankedMode,
+                                    modeTitle = staged.mode.title.uppercase(Locale.US),
+                                    riftLabel = "${staged.teamSizeBracket}V${staged.teamSizeBracket}",
+                                    targetSectorKey = staged.sectorInstanceOverride ?: staged.mode.id,
+                                    rankedMode = staged.mode,
                                     isCustomInstance = false,
                                     onExecuteLaunch = finalizeHangarLaunch,
                                   )
-                                } else {
+                                }
+                                is StagedRiftLaunch.NewCustom,
+                                is StagedRiftLaunch.ExistingCustom -> {
                                   finalizeHangarLaunch()
                                 }
-                              }
+                                null -> {
+                                  if (!engine.hasJoinedMatch && engine.currentCustomGame == null) {
+                                    enqueueOrExecuteResonanceMatchmaking(
+                                      modeTitle = engine.activeRankedMode.title.uppercase(Locale.US),
+                                      riftLabel = engine.activeRankedMode.teamFormatBadge,
+                                      targetSectorKey =
+                                        engine.activeSectorInstanceOverride ?: engine.activeRankedMode.id,
+                                      rankedMode = engine.activeRankedMode,
+                                      isCustomInstance = false,
+                                      onExecuteLaunch = finalizeHangarLaunch,
+                                    )
+                                  } else {
+                                    finalizeHangarLaunch()
+                                  }
+                                }
                             }
                           },
                           onCloseModal = closeEmbeddedModal,
@@ -3175,7 +3232,7 @@ fun RiftArenaScreen(
                                 PilotAchievement(
                                   id = "apex_hunter",
                                   title = "APEX HUNTER",
-                                  description = "Eliminate a Sector High-Value Target (Bounty >= 250).",
+                                  description = "Eliminate a Sector High-Value Target (Resonance >= 250).",
                                   unlocked =
                                     engine.hvtEliminations >= 1L || engine.allTimeBountyPeak >= 250L,
                                   progressText = "${engine.hvtEliminations} HVT KILLS",
@@ -3191,9 +3248,9 @@ fun RiftArenaScreen(
                                 PilotAchievement(
                                   id = "first_convergence",
                                   title = "FIRST CONVERGENCE",
-                                  description = "Reach 250+ Bounty and become a High-Value Target.",
+                                  description = "Reach 250+ Resonance and become a High-Value Target.",
                                   unlocked = engine.allTimeBountyPeak >= 250L,
-                                  progressText = "${engine.allTimeBountyPeak} / 250 BTY",
+                                  progressText = "${engine.allTimeBountyPeak} / 250 RES",
                                 ),
                                 PilotAchievement(
                                   id = "flux_overlord",
@@ -3208,12 +3265,16 @@ fun RiftArenaScreen(
                                   description = "Charter or pledge allegiance to an active Syndicate.",
                                   unlocked =
                                     syndicateTag.isNotEmpty() &&
-                                      syndicateTag != "GUEST" &&
-                                      syndicateTag != "FREE" &&
-                                      syndicateTag != "RFT",
+                                      syndicateTag !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS,
                                   progressText =
-                                    if (syndicateTag.isNotBlank()) "[$syndicateTag] ACTIVE"
-                                    else "UNAFFILIATED",
+                                    if (
+                                      syndicateTag.isNotBlank() &&
+                                        syndicateTag !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS
+                                    ) {
+                                      "[$syndicateTag] ACTIVE"
+                                    } else {
+                                      "UNAFFILIATED"
+                                    },
                                 ),
                               )
                             }
@@ -3266,7 +3327,7 @@ fun RiftArenaScreen(
                                   tag = rawTag,
                                   name = rawName,
                                   motto = rawMotto,
-                                  ownerUid = if (isGoogleAuthenticated) currentUserId else "",
+                                  ownerUid = currentUserId.ifBlank { "local_founder" },
                                 )
                               res
                                 .onSuccess { created ->
@@ -3275,7 +3336,9 @@ fun RiftArenaScreen(
                                   syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
                                   engine.localPlayer.syndicateTag = syndicateTag
                                   engine.syncLocalArmadaSelfSlot()
-                                  viewModel.createCloudSyndicate(created)
+                                  if (isGoogleAuthenticated) {
+                                    viewModel.createCloudSyndicate(created)
+                                  }
                                   syndicateChannelsRefreshKey++
                                   syndicateStatusBanner =
                                     "CHARTERED [${created.tag}] ${created.name}! LOCKED FOR 15d 00h."
@@ -3683,6 +3746,7 @@ fun RiftArenaScreen(
                 pendingStagedLaunch = null
                 suspendedActiveMatch = null
                 engine.leaveActiveMatchToNexusOrbit()
+                viewModel.setActiveSector(engine.activeMatchSectorTag())
                 pushLivePilotHeartbeatNow()
                 toastMessage = "LEFT MATCH // ORBITING NEXUS SECTOR"
                 toastVersion++
@@ -3810,25 +3874,21 @@ fun RiftArenaScreen(
               lobbyMessages = chatMessages,
               onSendChannelMessage = { channelKey, messageText ->
                 val safeText = UgcModeration.sanitizeUgcText(messageText)
-                val localMsg =
-                  SyndicateChatMessage(
-                    id = "msg_${System.currentTimeMillis()}",
-                    senderUid = currentUserId,
+                val cleanSyn = localPrefs.sanitizeSyndicateTag(syndicateTag)
+                val posted =
+                  viewModel.postStructuredChannelMessage(
                     senderCallsign = callsign,
-                    senderSyndicateTag = syndicateTag,
-                    timestampLabel = channelKey.uppercase(Locale.US),
+                    senderSyndicateTag = cleanSyn,
+                    channelKey = channelKey,
                     messageText = safeText,
                   )
-                chatMessages.add(localMsg)
-                viewModel.postStructuredChannelMessage(
-                  senderCallsign = callsign,
-                  senderSyndicateTag = syndicateTag,
-                  channelKey = channelKey,
-                  messageText = safeText,
-                )
+                if (chatMessages.none { it.id == posted.id }) {
+                  chatMessages.add(posted)
+                }
               },
               onSubmitBugReport = { category, description ->
                 val safeDesc = UgcModeration.sanitizeUgcText(description)
+                val cleanSyn = localPrefs.sanitizeSyndicateTag(syndicateTag)
                 localPrefs.reportPilot(
                   uid = "BUG_${category.take(10)}",
                   callsign = category,
@@ -3836,7 +3896,7 @@ fun RiftArenaScreen(
                 )
                 viewModel.submitCloudBugReport(
                   reporterCallsign = callsign,
-                  syndicateTag = syndicateTag,
+                  syndicateTag = cleanSyn,
                   category = category,
                   description = safeDesc,
                   buildVersion = CURRENT_RIFT_BUILD_VERSION,
@@ -3849,7 +3909,7 @@ fun RiftArenaScreen(
                     id = "bug_${System.currentTimeMillis()}",
                     senderUid = currentUserId,
                     senderCallsign = callsign,
-                    senderSyndicateTag = syndicateTag,
+                    senderSyndicateTag = cleanSyn,
                     timestampLabel = "#BUG-REPORTS",
                     messageText = "[$category] $safeDesc",
                     armadaObjective = "BUG|$category|v1.0.$CURRENT_RIFT_BUILD_VERSION",
@@ -3868,26 +3928,19 @@ fun RiftArenaScreen(
                   "[$frameTitle] ${activeCustomSlot.totalAllocatedPoints()}-PT RIFT FRAME // " +
                     "${activeCustomSlot.primaryArchetype} + ${activeCustomSlot.secondaryType} " +
                     "(SPD ${activeCustomSlot.speedPts} / THR ${activeCustomSlot.thrustPts} / TRN ${activeCustomSlot.turnPts} / FLX ${activeCustomSlot.maxFluxPts} / RCH ${activeCustomSlot.rechargePts})"
+                val cleanSyn = localPrefs.sanitizeSyndicateTag(syndicateTag)
                 val buildCard =
-                  SyndicateChatMessage(
-                    id = "build_${System.currentTimeMillis()}",
-                    senderUid = currentUserId,
+                  viewModel.postStructuredChannelMessage(
                     senderCallsign = callsign,
-                    senderSyndicateTag = syndicateTag,
-                    timestampLabel = "#SHIPWRIGHT-META",
+                    senderSyndicateTag = cleanSyn,
+                    channelKey = "#shipwright-meta",
                     messageText = summary,
                     armadaName = frameTitle.take(12),
                     armadaObjective = compactRecipe.take(120),
                   )
-                chatMessages.add(buildCard)
-                viewModel.postStructuredChannelMessage(
-                  senderCallsign = callsign,
-                  senderSyndicateTag = syndicateTag,
-                  channelKey = "#shipwright-meta",
-                  messageText = summary,
-                  armadaName = frameTitle.take(12),
-                  armadaObjective = compactRecipe.take(120),
-                )
+                if (chatMessages.none { it.id == buildCard.id }) {
+                  chatMessages.add(buildCard)
+                }
                 toastMessage = "SHARED RIFT FRAME [$frameTitle] TO #SHIPWRIGHT-META"
                 toastVersion++
               },
@@ -3956,13 +4009,12 @@ fun RiftArenaScreen(
                 val slotsNow = engine.getCurrentArmadaSize()
                 val text =
                   "STRIKE WING [$wingTag] RECRUITING PILOTS // ${engine.activeRankedMode.title.uppercase(Locale.US)}"
+                val cleanSyn = localPrefs.sanitizeSyndicateTag(syndicateTag)
                 val inviteMsg =
-                  SyndicateChatMessage(
-                    id = "wing_${System.currentTimeMillis()}",
-                    senderUid = currentUserId,
+                  viewModel.postStructuredChannelMessage(
                     senderCallsign = callsign,
-                    senderSyndicateTag = syndicateTag,
-                    timestampLabel = "#STRIKE-LFG",
+                    senderSyndicateTag = cleanSyn,
+                    channelKey = "#strike-lfg",
                     messageText = text,
                     isArmadaRecruitBanner = true,
                     armadaName = wingTag.take(12),
@@ -3970,18 +4022,9 @@ fun RiftArenaScreen(
                     armadaMaxSize = 5,
                     armadaObjective = engine.activeRankedMode.title,
                   )
-                chatMessages.add(inviteMsg)
-                viewModel.postStructuredChannelMessage(
-                  senderCallsign = callsign,
-                  senderSyndicateTag = syndicateTag,
-                  channelKey = "#strike-lfg",
-                  messageText = text,
-                  isArmadaRecruitBanner = true,
-                  armadaName = wingTag.take(12),
-                  armadaCurrentSize = slotsNow.coerceIn(1, 5),
-                  armadaMaxSize = 5,
-                  armadaObjective = engine.activeRankedMode.title,
-                )
+                if (chatMessages.none { it.id == inviteMsg.id }) {
+                  chatMessages.add(inviteMsg)
+                }
                 toastMessage = "POSTED STRIKE WING [$wingTag] INVITE TO #STRIKE-LFG"
                 toastVersion++
               },
@@ -3989,26 +4032,19 @@ fun RiftArenaScreen(
                 val cleanCode = roomCode.trim().uppercase(Locale.US).take(6)
                 val text = "PRIVATE RIFT [$cleanCode] OPEN // $modeTitle"
                 val obj = "ROOM|$cleanCode|$modeTitle".take(120)
+                val cleanSyn = localPrefs.sanitizeSyndicateTag(syndicateTag)
                 val roomMsg =
-                  SyndicateChatMessage(
-                    id = "room_${System.currentTimeMillis()}",
-                    senderUid = currentUserId,
+                  viewModel.postStructuredChannelMessage(
                     senderCallsign = callsign,
-                    senderSyndicateTag = syndicateTag,
-                    timestampLabel = "#STRIKE-LFG",
+                    senderSyndicateTag = cleanSyn,
+                    channelKey = "#strike-lfg",
                     messageText = text,
                     armadaName = cleanCode,
                     armadaObjective = obj,
                   )
-                chatMessages.add(roomMsg)
-                viewModel.postStructuredChannelMessage(
-                  senderCallsign = callsign,
-                  senderSyndicateTag = syndicateTag,
-                  channelKey = "#strike-lfg",
-                  messageText = text,
-                  armadaName = cleanCode,
-                  armadaObjective = obj,
-                )
+                if (chatMessages.none { it.id == roomMsg.id }) {
+                  chatMessages.add(roomMsg)
+                }
                 toastMessage = "SHARED PRIVATE RIFT [$cleanCode] TO #STRIKE-LFG"
                 toastVersion++
               },
@@ -4209,6 +4245,8 @@ fun RiftArenaScreen(
                         engine.deployToRankedMode(inst.rankedMode, targetBracket)
                         syncEquippedCosmeticsToEngine(engine)
                         engine.onStatsUpdated()
+                        viewModel.setActiveSector(engine.activeMatchSectorTag())
+                        engine.updateRemotePilots(mergedLivePilots, currentUserId)
                         pushLivePilotHeartbeatNow()
                         isNexusShellOpen = false
                         sfx.playPrize()
@@ -4270,6 +4308,8 @@ fun RiftArenaScreen(
                     }
                     syncEquippedCosmeticsToEngine(engine)
                     engine.onStatsUpdated()
+                    viewModel.setActiveSector(engine.activeMatchSectorTag())
+                    engine.updateRemotePilots(mergedLivePilots, currentUserId)
                     pushLivePilotHeartbeatNow()
                     isNexusShellOpen = false
                     sfx.playPrize()
