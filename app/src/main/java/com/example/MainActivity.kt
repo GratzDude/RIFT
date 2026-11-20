@@ -6,9 +6,12 @@ import android.view.KeyEvent
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,14 +19,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
@@ -47,13 +55,16 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -79,8 +90,10 @@ import com.example.data.FriendPilotEntry
 import com.example.data.LivePilotState
 import com.example.data.LocalPilotPrefs
 import com.example.data.PilotAchievement
+import com.example.data.RiftAvailableUpdate
 import com.example.data.RiftBillingManager
 import com.example.data.RiftRepository
+import com.example.data.RiftUpdateManager
 import com.example.data.SyndicateChatMessage
 import com.example.data.UgcModeration
 import com.example.engine.BrickWallEntity
@@ -133,6 +146,9 @@ import com.example.ui.UiState
 import com.example.ui.onGoogleSignInClicked
 import com.example.ui.signOut
 import com.example.ui.theme.MyApplicationTheme
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.install.InstallStateUpdatedListener
+import com.google.android.play.core.install.model.InstallStatus
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -144,6 +160,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -536,10 +553,216 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+fun RiftTitleLoadingScreen(
+  progress: Float,
+  statusLabel: String,
+) {
+  val clampedProgress = progress.coerceIn(0.05f, 1.0f)
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .background(Color(0xFF060D1A))
+        .testTag("rift_startup_loading_screen"),
+    contentAlignment = Alignment.Center,
+  ) {
+    // Full-bleed atmospheric backdrop fill so ultrawide phones & 4:3 tablets never show harsh letterbox bars
+    Image(
+      painter = painterResource(id = R.drawable.rift_title_loading),
+      contentDescription = null,
+      contentScale = ContentScale.Crop,
+      alpha = 0.36f,
+      modifier = Modifier.fillMaxSize(),
+    )
+    Box(
+      modifier =
+        Modifier.fillMaxSize()
+          .background(
+            Brush.radialGradient(
+              colors = listOf(Color(0x22060D1A), Color(0x99040914), Color(0xE602050B)),
+            )
+          )
+    )
+    // Full uncropped RIFT key art centered cleanly across any aspect ratio
+    Image(
+      painter = painterResource(id = R.drawable.rift_title_loading),
+      contentDescription = "RIFT Loading Artwork",
+      contentScale = ContentScale.Fit,
+      modifier = Modifier.fillMaxSize(),
+    )
+
+    // Clean plain-English bottom loading status & progress bar
+    Column(
+      modifier =
+        Modifier.align(Alignment.BottomCenter)
+          .windowInsetsPadding(WindowInsets.safeDrawing)
+          .padding(horizontal = 20.dp, vertical = 14.dp)
+          .widthIn(max = 460.dp)
+          .fillMaxWidth()
+          .clip(RoundedCornerShape(10.dp))
+          .background(Color(0xDB060D1A))
+          .border(
+            1.dp,
+            Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFD946EF), Color(0xFF38BDF8))),
+            RoundedCornerShape(10.dp),
+          )
+          .padding(horizontal = 14.dp, vertical = 8.dp),
+      verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          text = statusLabel,
+          color = Color(0xFFF8FAFC),
+          fontSize = 10.5.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+        Text(
+          text = "v${BuildConfig.VERSION_NAME}",
+          color = Color(0xFF00F5D4),
+          fontSize = 10.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+      }
+      Box(
+        modifier =
+          Modifier.fillMaxWidth()
+            .height(5.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(Color(0xFF0F1E36))
+      ) {
+        Box(
+          modifier =
+            Modifier.fillMaxHeight()
+              .fillMaxWidth(clampedProgress)
+              .clip(RoundedCornerShape(3.dp))
+              .background(
+                Brush.horizontalGradient(
+                  listOf(Color(0xFF00F5D4), Color(0xFF38BDF8), Color(0xFFE879F9))
+                )
+              )
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun RiftUpdateAvailableBanner(
+  update: RiftAvailableUpdate,
+  onApplyOrDownload: () -> Unit,
+  onDismiss: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Surface(
+    modifier =
+      modifier
+        .windowInsetsPadding(WindowInsets.safeDrawing)
+        .padding(horizontal = 12.dp, vertical = 6.dp)
+        .widthIn(max = 640.dp)
+        .fillMaxWidth()
+        .border(
+          1.2.dp,
+          Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFACC15))),
+          RoundedCornerShape(10.dp),
+        )
+        .testTag("rift_update_available_banner"),
+    color = Color(0xF2060D1A),
+    shape = RoundedCornerShape(10.dp),
+    tonalElevation = 8.dp,
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Column(
+        modifier = Modifier.weight(1f).padding(end = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        Text(
+          text = "NEW RIFT UPDATE AVAILABLE // ${update.versionLabel.uppercase(Locale.US)}",
+          color = Color(0xFF00F5D4),
+          fontSize = 10.5.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+        Text(
+          text = update.headline,
+          color = Color(0xFFE2E8F0),
+          fontSize = 9.5.sp,
+          fontWeight = FontWeight.SemiBold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+      }
+      Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Button(
+          onClick = onApplyOrDownload,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = Color(0xFF00F5D4),
+              contentColor = Color(0xFF030A14),
+            ),
+          shape = RoundedCornerShape(7.dp),
+          contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+          modifier = Modifier.height(34.dp).testTag("rift_update_banner_action_btn"),
+        ) {
+          Text(
+            text =
+              when {
+                update.isPlayUpdateDownloaded -> "RESTART & UPDATE"
+                update.isPlayStoreInstall -> "UPDATE ON PLAY"
+                else -> "DOWNLOAD UPDATE"
+              },
+            fontSize = 9.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+        }
+        Button(
+          onClick = onDismiss,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = Color(0xFF0E1D33),
+              contentColor = Color(0xFFCBD5E1),
+            ),
+          border = BorderStroke(1.dp, Color(0xFF475569)),
+          shape = RoundedCornerShape(7.dp),
+          contentPadding = PaddingValues(horizontal = 9.dp, vertical = 4.dp),
+          modifier = Modifier.height(34.dp).testTag("rift_update_banner_dismiss_btn"),
+        ) {
+          Text(
+            text = "LATER",
+            fontSize = 9.2.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
 fun AppNavigation(
   auth: FirebaseAuth = Firebase.auth,
 ) {
   val context = LocalContext.current
+  val navScope = rememberCoroutineScope()
+  val navCredentialManager = remember { CredentialManager.create(context) }
   val localPrefs = remember { LocalPilotPrefs(context) }
   val permanentDeviceUid = remember { localPrefs.getOrCreatePermanentDeviceUid() }
 
@@ -548,12 +771,112 @@ fun AppNavigation(
   var drifterSessionEpoch by remember { mutableIntStateOf(0) }
   var showPreAuthChangelog by remember { mutableStateOf(false) }
   var isStartupAssetsReady by remember { mutableStateOf(false) }
+  var startupProgress by remember { mutableFloatStateOf(0.16f) }
+  var startupStatusText by remember { mutableStateOf("Loading RIFT Pilot Profile...") }
+
+  val isPlayStoreInstall = remember(context) { RiftUpdateManager.isInstalledFromGooglePlay(context) }
+  val appUpdateManager =
+    remember(context, isPlayStoreInstall) {
+      if (isPlayStoreInstall && !RiftUpdateManager.isHeadlessOrTestRuntime()) {
+        runCatching { AppUpdateManagerFactory.create(context) }.getOrNull()
+      } else {
+        null
+      }
+    }
+  var availableUpdate by remember { mutableStateOf<RiftAvailableUpdate?>(null) }
+  var updateStatusLabel by remember { mutableStateOf("v${BuildConfig.VERSION_NAME} UP TO DATE") }
+  var updateBannerDismissed by remember { mutableStateOf(false) }
+
+  val playUpdateLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { _ -> }
+
+  DisposableEffect(appUpdateManager) {
+    if (appUpdateManager == null) {
+      onDispose { }
+    } else {
+      val listener = InstallStateUpdatedListener { state ->
+        if (state.installStatus() == InstallStatus.DOWNLOADED) {
+          availableUpdate =
+            RiftAvailableUpdate(
+              versionLabel = "Google Play Update",
+              headline = "Update downloaded. Tap Restart & Update to finish installing.",
+              downloadUrl = "",
+              isPlayStoreInstall = true,
+              isPlayUpdateDownloaded = true,
+            )
+          updateStatusLabel = "PLAY UPDATE READY TO INSTALL"
+          updateBannerDismissed = false
+        }
+      }
+      runCatching { appUpdateManager.registerListener(listener) }
+      onDispose { runCatching { appUpdateManager.unregisterListener(listener) } }
+    }
+  }
+
+  val executeUpdateCheck: (Boolean, Boolean) -> Unit = { autoPromptPlay, resetDismiss ->
+    navScope.launch {
+      updateStatusLabel = "CHECKING FOR UPDATES..."
+      val (foundUpdate, statusMsg) =
+        if (isPlayStoreInstall && appUpdateManager != null) {
+          RiftUpdateManager.checkAndPromptPlayStoreUpdate(
+            appUpdateManager = appUpdateManager,
+            launcher = playUpdateLauncher,
+            autoLaunchPrompt = autoPromptPlay,
+          )
+        } else if (!isPlayStoreInstall) {
+          RiftUpdateManager.checkDirectReleaseUpdate()
+        } else {
+          null to "v${BuildConfig.VERSION_NAME} UP TO DATE"
+        }
+      availableUpdate = foundUpdate
+      updateStatusLabel = statusMsg
+      if (foundUpdate != null && resetDismiss) {
+        updateBannerDismissed = false
+      }
+    }
+  }
+
+  val applyOrDownloadAvailableUpdate: () -> Unit = {
+    val upd = availableUpdate
+    when {
+      upd == null -> executeUpdateCheck(true, true)
+      upd.isPlayUpdateDownloaded && appUpdateManager != null -> {
+        runCatching { appUpdateManager.completeUpdate() }
+      }
+      upd.isPlayStoreInstall && appUpdateManager != null -> {
+        executeUpdateCheck(true, true)
+      }
+      upd.downloadUrl.isNotBlank() -> {
+        RiftUpdateManager.openExternalUpdateUrl(context, upd.downloadUrl)
+      }
+    }
+  }
+
+  val handleSwitchAccount: () -> Unit = {
+    localPrefs.setGuestBypassEnabled(false)
+    isGuestMode = false
+    signOut(
+      credentialManager = navCredentialManager,
+      scope = navScope,
+      onSignOutComplete = {
+        localPrefs.setGuestBypassEnabled(false)
+        isGuestMode = false
+      },
+    )
+  }
+
   val user = currentUser
 
   LaunchedEffect(Unit) {
     // Allow ViewRootImpl to immediately commit initial frames to satisfy WMS SurfaceSyncGroup (<30ms)
     withFrameNanos { }
     withFrameNanos { }
+    // Fire non-blocking automatic on-open update check in parallel
+    executeUpdateCheck(true, false)
+
+    val isHeadless = RiftUpdateManager.isHeadlessOrTestRuntime()
+    startupProgress = 0.34f
+    startupStatusText = "Preparing 2.5D Starfighters & Rift Station..."
     val prewarmUid = auth.currentUser?.uid ?: permanentDeviceUid
     withContext(Dispatchers.Default) {
       val preferredShip = localPrefs.getPreferredShipId().coerceIn(1, 10)
@@ -569,11 +892,25 @@ fun AppNavigation(
         syndicateTag = savedTag,
       )
     }
+    startupProgress = 0.88f
+    startupStatusText = "Calibrating Sector Shaders & Audio..."
+    if (!isHeadless) {
+      delay(420L)
+    }
+    startupProgress = 1.0f
+    startupStatusText = "Ready to Rift In"
+    if (!isHeadless) {
+      delay(180L)
+    }
     isStartupAssetsReady = true
   }
 
   Box(modifier = Modifier.fillMaxSize().background(Color(0xFF060D1A))) {
     if (!isStartupAssetsReady) {
+      RiftTitleLoadingScreen(
+        progress = startupProgress,
+        statusLabel = startupStatusText,
+      )
       return@Box
     }
     if (user == null && !isGuestMode) {
@@ -614,8 +951,22 @@ fun AppNavigation(
           initialCallsign = initialCallsign,
           isGoogleAuthenticated = user != null,
           localPrefs = localPrefs,
+          onSwitchAccount = handleSwitchAccount,
+          updateStatusLabel = updateStatusLabel,
+          hasUpdateAvailable = availableUpdate != null,
+          onCheckOrApplyUpdate = applyOrDownloadAvailableUpdate,
         )
       }
+    }
+
+    val bannerUpdate = availableUpdate
+    if (bannerUpdate != null && !updateBannerDismissed) {
+      RiftUpdateAvailableBanner(
+        update = bannerUpdate,
+        onApplyOrDownload = applyOrDownloadAvailableUpdate,
+        onDismiss = { updateBannerDismissed = true },
+        modifier = Modifier.align(Alignment.TopCenter).zIndex(45f),
+      )
     }
   }
 }
@@ -627,6 +978,10 @@ fun RiftArenaScreen(
   isGoogleAuthenticated: Boolean,
   localPrefs: LocalPilotPrefs = LocalPilotPrefs(LocalContext.current),
   onOpenChangelog: () -> Unit = {},
+  onSwitchAccount: () -> Unit = {},
+  updateStatusLabel: String = "v${BuildConfig.VERSION_NAME} UP TO DATE",
+  hasUpdateAvailable: Boolean = false,
+  onCheckOrApplyUpdate: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val configuration = LocalConfiguration.current
@@ -3539,9 +3894,28 @@ fun RiftArenaScreen(
                             )
                           },
                           onRequestSignOut = {
+                            pendingStagedLaunch = null
+                            suspendedActiveMatch = null
+                            engine.leaveActiveMatchToNexusOrbit()
+                            isNexusShellOpen = false
                             localPrefs.setGuestBypassEnabled(false)
+                            onSwitchAccount()
                             signOut(credentialManager = credentialManager, scope = scope)
                           },
+                          onSwitchAccount = {
+                            pendingStagedLaunch = null
+                            suspendedActiveMatch = null
+                            engine.leaveActiveMatchToNexusOrbit()
+                            isNexusShellOpen = false
+                            localPrefs.setGuestBypassEnabled(false)
+                            onSwitchAccount()
+                            if (isGoogleAuthenticated) {
+                              signOut(credentialManager = credentialManager, scope = scope)
+                            }
+                          },
+                          updateStatusLabel = updateStatusLabel,
+                          hasUpdateAvailable = hasUpdateAvailable,
+                          onCheckOrApplyUpdate = onCheckOrApplyUpdate,
                           onCloseModal = closeEmbeddedModal,
                           onOpenChangelog = { showFullChangelogModal = true },
                           onOpenAudioForge = {
@@ -4347,6 +4721,17 @@ fun RiftArenaScreen(
                 isNexusShellOpen = true
                 toastMessage = "STAGED CUSTOM RIFT // SELECT HULL & ENTER RIFT"
                 toastVersion++
+              },
+              onSwitchAccount = {
+                pendingStagedLaunch = null
+                suspendedActiveMatch = null
+                engine.leaveActiveMatchToNexusOrbit()
+                isNexusShellOpen = false
+                localPrefs.setGuestBypassEnabled(false)
+                onSwitchAccount()
+                if (isGoogleAuthenticated) {
+                  signOut(credentialManager = credentialManager, scope = scope)
+                }
               },
               embeddedModuleContent = embeddedModuleContent,
             )

@@ -12,6 +12,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -69,8 +70,10 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -251,14 +254,21 @@ fun AuthScreen(
     modifier = Modifier.fillMaxSize().background(Color(0xFF02050B)),
     contentAlignment = Alignment.Center,
   ) {
-    // Deep #02050B starlight backdrop + subtle tactical nebula glow
+    // RIFT Title Artwork atmospheric backdrop + translucent #02050B vignette
+    Image(
+      painter = painterResource(id = R.drawable.rift_title_loading),
+      contentDescription = "RIFT Title Artwork",
+      contentScale = ContentScale.Crop,
+      alpha = 0.36f,
+      modifier = Modifier.fillMaxSize(),
+    )
     Canvas(modifier = Modifier.fillMaxSize()) {
       val w = size.width
       val h = size.height
       drawRect(
         brush =
           Brush.radialGradient(
-            colors = listOf(Color(0xFF08162E), Color(0xFF040A16), Color(0xFF02050B)),
+            colors = listOf(Color(0x9E08162E), Color(0xC9040A16), Color(0xE802050B)),
             center = Offset(w * 0.34f, h * 0.50f),
             radius = maxOf(w, h) * 0.80f,
           )
@@ -311,7 +321,7 @@ fun AuthScreen(
               ),
               RoundedCornerShape(14.dp),
             ),
-        color = Color(0xFF060D1A),
+        color = Color(0xEE060D1A),
         shape = RoundedCornerShape(14.dp),
         tonalElevation = 10.dp,
       ) {
@@ -789,7 +799,7 @@ private fun AuthSafeHarborRadarShowcase(modifier: Modifier = Modifier) {
           .padding(horizontal = 8.dp, vertical = 2.5.dp)
     ) {
       Text(
-        text = "NEXUS STATION • LIVE SAFE HARBOR",
+        text = "RIFT STATION • LIVE SAFE HARBOR",
         color = Color(0xFF00F5D4),
         fontSize = 8.8.sp,
         fontWeight = FontWeight.Black,

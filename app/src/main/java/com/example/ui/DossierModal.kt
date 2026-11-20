@@ -998,7 +998,7 @@ private fun PeakBountyAndExecutionerSection(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
           DossierStatBox(Modifier.weight(1f), "TIME SURVIVED", snapshot.formattedDuration(), DossierCyan)
           DossierStatBox(Modifier.weight(1f), "PVP / BOT KILLS", "${snapshot.pvpKills} PVP • ${snapshot.botKills} BOT", DossierTeal)
-          DossierStatBox(Modifier.weight(1f), "HVT SHUTDOWNS", "${snapshot.hvtShutdowns} HVTs", DossierGold)
+          DossierStatBox(Modifier.weight(1f), "LEADER SHUTDOWNS", "${snapshot.hvtShutdowns} LEADERS", DossierGold)
           DossierStatBox(Modifier.weight(1f), "CRATES / BUFFS", "${snapshot.buffsCollected} COLLECTED", Color(0xFF34D399))
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

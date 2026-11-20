@@ -1044,7 +1044,7 @@ private fun ShipAndCosmeticTurntableBay(
             "HULL_TRIM" to "HULL TRIMS",
             "KILL_FINISHER" to "KILL FINISHERS",
             "WARP_SIGNATURE" to "WARP TRAILS",
-            "HVT_HALO" to "HVT CROWNS",
+            "HVT_HALO" to "LEADER HALOS",
           ).forEach { (cat, title) ->
             val sel = cosmeticCategory == cat
             ForgeChip(
@@ -3404,7 +3404,7 @@ private fun CrateBuffGlassInspectorModal(
       ?: ""
   val tacticalNote =
     codexEntry?.tacticalNote
-      ?: "Synthesized in the Dyson Star Forge Custom Buff Lab and injected directly into Supply Crates."
+      ?: "Synthesized in the Star Forge Custom Buff Lab and injected directly into Supply Crates."
 
   Box(
     modifier =

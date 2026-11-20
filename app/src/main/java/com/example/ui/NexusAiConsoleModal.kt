@@ -146,9 +146,9 @@ import kotlin.math.sin
 private val NEXUS_STARTER_CHIPS =
   listOf(
     "How many pixels are Suppressor's lasers?",
-    "Who holds the highest bounty ever?",
+    "Who holds the highest Peak Resonance record?",
     "Theorycraft a 100-pt Rift Frame sniper build",
-    "Analyze my Peak Bounty Run & Executioner",
+    "Analyze my Peak Resonance Run & Executioner",
     "Compare Eclipse Stasis vs Disruptor EMP",
     "Explain Flux Core, Stasis Breach & Rift Control",
   )
@@ -686,6 +686,7 @@ fun NexusAiConsoleModal(
   onStageExistingCustomInstanceViaHangar: ((String) -> Unit)? = null,
   isNetworkOnline: Boolean = true,
   cloudSyncHealth: CloudSyncHealth = CloudSyncHealth(),
+  onSwitchAccount: () -> Unit = {},
   embeddedModuleContent: (@Composable () -> Unit)? = null,
 ) {
   val context = LocalContext.current
@@ -1137,6 +1138,7 @@ fun NexusAiConsoleModal(
               focusedOrbitalIndex = idx
               onSelectNode(node)
             },
+            onSwitchAccount = onSwitchAccount,
           )
         }
         else -> {
@@ -1444,6 +1446,7 @@ private fun OrbitalHubSpatialStage(
   onSelectNode: (Int, NexusCoreNode) -> Unit,
   isGoogleAuthenticated: Boolean = true,
   cloudSyncHealth: CloudSyncHealth = CloudSyncHealth(),
+  onSwitchAccount: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val headless = remember { isHeadlessGlEnvironment() }
@@ -1637,12 +1640,12 @@ private fun OrbitalHubSpatialStage(
           ) {
             SwirlingRiftVortexGlyph(modifier = Modifier.size(25.dp), isStreaming = isStreaming)
             Text(
-              text = "NEXUS",
+              text = "RIFT HUB",
               color = Color(0xFF00F5D4),
-              fontSize = 13.2.sp,
+              fontSize = 13.0.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
-              letterSpacing = 1.1.sp,
+              letterSpacing = 1.0.sp,
             )
 
             // Clickable Callsign -> Pilot Dossier
@@ -1661,6 +1664,27 @@ private fun OrbitalHubSpatialStage(
                 color = Color(0xFFF8FAFC),
                 fontSize = 11.8.sp,
                 fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+            }
+
+            // Prominent 1-Tap Switch Account Button right beside Callsign
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(6.dp))
+                  .background(Color(0xFF13263D))
+                  .border(1.dp, Color(0xFFFACC15).copy(alpha = 0.88f), RoundedCornerShape(6.dp))
+                  .clickable { onSwitchAccount() }
+                  .padding(horizontal = 8.dp, vertical = 3.5.dp)
+                  .testTag("nexus_top_switch_account"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "SWITCH ACCOUNT",
+                color = Color(0xFFFEF08A),
+                fontSize = 10.6.sp,
+                fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
               )
@@ -4257,10 +4281,10 @@ private fun SubspaceCommsDiscordDeck(
                 ) {
                   Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     DevArchitectBadge()
-                    Text("ARCHITECT // BUILD #$CURRENT_RIFT_BUILD_VERSION NEXUS DISPATCH", color = Color(0xFFFACC15), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                    Text("ARCHITECT // BUILD #$CURRENT_RIFT_BUILD_VERSION RIFT DISPATCH", color = Color(0xFFFACC15), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
                   }
                   Text(
-                    "Welcome to NEXUS (Threshold Dynamics Studio, LLC). Drag across 3D volumetric space to look around and dive into the central NEXUS Tear or any of the 7 crackling Spacetime Rift Tears. All 10 Hulls operate at 100-Point Parity from 0 Resonance — share Rift Frame builds in #shipwright-meta, form Strike Wings in #strike-lfg, and log live telemetry in #bug-reports.",
+                    "Welcome to RIFT (Threshold Dynamics Studio, LLC). Use the Rift Hub Overwatch radar to inspect active matches and Rift In, or open any module deck around the aperture. All 10 ships operate at fair 100-Point Parity from 0 Resonance — share Rift Frame builds in #shipwright-meta, form Strike Wings in #strike-lfg, and post feedback in #bug-reports.",
                     color = Color(0xFFF1F5F9),
                     fontSize = 9.2.sp,
                     lineHeight = 13.sp,
@@ -4291,8 +4315,8 @@ private fun SubspaceCommsDiscordDeck(
 
           if (isStrikeWingCh || isSyndicateCh) {
             Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              TacticalQuickPingChip("ATTACK HVT", Color(0xFFFB7185), "nexus_quick_ping_attack_hvt") {
-                onSendToChannel(selectedChannelKey, "[TACTICAL PING] CONVERGE ON SECTOR HVT NOW!")
+              TacticalQuickPingChip("FOCUS RIFT LEADER", Color(0xFFFB7185), "nexus_quick_ping_attack_hvt") {
+                onSendToChannel(selectedChannelKey, "[TACTICAL PING] CONVERGE ON HIGH-RESONANCE TARGET NOW!")
               }
               TacticalQuickPingChip("FORM ON ME", Color(0xFF38BDF8), "nexus_quick_ping_form_on_me") {
                 onSendToChannel(selectedChannelKey, "[TACTICAL PING] FORM UP ON MY STRIKE WING!")
@@ -4377,8 +4401,9 @@ private fun SubspaceCommsDiscordDeck(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
+              val pilotRes = if (pilot.liveResonance > 0L) pilot.liveResonance else pilot.bounty
               Text(
-                text = "${pilot.sectorId} • BTY ${pilot.bounty}",
+                text = "${pilot.sectorId} • $pilotRes RES",
                 color = Color(0xFF94A3B8),
                 fontSize = 7.4.sp,
                 fontFamily = FontFamily.Monospace,

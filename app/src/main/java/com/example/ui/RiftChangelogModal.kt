@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 91
+const val CURRENT_RIFT_BUILD_VERSION = 92
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 92,
+      versionTag = "v1.0.92 // BUILD #92",
+      releaseDate = "Nov 20, 2026",
+      headline = "RIFT Title Artwork Loading Screen, Automatic On-Open Update Checker, Prominent Switch Account Flow & Complete Plain-English Resonance Scrub",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Full-Screen RIFT Title Artwork Loading Screen & Auth Backdrop: Bundled high-definition RIFT title key art (metallic neon-trimmed RIFT emblem over a crackling purple-cyan plasma rift sphere with dogfighting starfighters) as a crisp responsive startup loading screen with plain-English initialization progress, echoed across the Auth Command Tablet backdrop.",
+          "Automatic On-Open Update Check (Play Store + Sideload Releases): Added automatic launch-time update checking that triggers official Google Play In-App Updates on Play Store installs and checks GitHub Releases (GratzDude/RIFT) on direct APK installs with a non-blocking update banner and 1-tap release download link, plus manual update check controls in Helm Systems.",
+          "Prominent Switch Account Button in Rift Hub & Helm Systems: Surfaced a dedicated Switch Account button in the Rift Hub top bar and at the top of Helm Systems (Audio & Account) that clears Google credentials, signs out of Firebase, resets Drifter guest bypass, and returns cleanly to the Auth screen for both Sworn Pilots and Drifters.",
+          "Final Plain-English Resonance Scrub Across Comms, AI & Modals: Replaced remaining legacy HVT, Bounty/BTY, and Dyson phrasing across Subspace Comms quick pings, Rift AI starter chips and telemetry, Syndicate Citadel, Pilot Dossier, Helm Systems previews, and arena ship labels with plain-English Resonance and Rift Leader terminology.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 91,
       versionTag = "v1.0.91 // BUILD #91",
       releaseDate = "Nov 20, 2026",
       headline = "Silk-Smooth Remote Ship Motion: C1-Continuous Velocity Dead-Reckoning, Critically Damped Frame Smoothing & 95ms Active-Match Heartbeats",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "PREVIOUS BUILD",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

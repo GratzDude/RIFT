@@ -333,7 +333,8 @@ object RiftCalibrationState {
       .joinToString(" ") { word ->
         when (word.uppercase(Locale.US)) {
           "FFA" -> "FFA"
-          "HVT" -> "HVT"
+          "HVT" -> "High Resonance"
+          "BOUNTY" -> "Resonance"
           "FCT" -> "Floating Text"
           "EMP" -> "EMP"
           "HUD" -> "HUD"
@@ -359,7 +360,7 @@ object RiftCalibrationState {
       tabIndex = 0,
       title = "Ship Label Spacing",
       unit = "x",
-      description = "Gap between a ship and its floating name and bounty.",
+      description = "Gap between a ship and its floating name and Resonance.",
       min = 0.60f, max = 2.20f, step = 0.05f, decimals = 2,
       getter = { labelDistanceOffset }, setter = { labelDistanceOffset = it.coerceIn(0.60f, 2.20f) },
     )
@@ -1345,8 +1346,8 @@ object RiftCalibrationState {
       key = "hvtBountyThreshold",
       tabIndex = 7,
       title = camelCaseToPlainEnglish("hvtBountyThreshold"),
-      unit = "Bounty",
-      description = "Bounty score at which any ship becomes a gold-crowned High-Value Target on radar.",
+      unit = "RES",
+      description = "Resonance score at which any ship earns a gold Rift Leader radar ping.",
       min = 150f, max = 1000f, step = 25f, decimals = 0,
       getter = { hvtBountyThreshold.toFloat() }, setter = { hvtBountyThreshold = it.roundToInt().coerceIn(150, 1000) },
     )
@@ -1355,7 +1356,7 @@ object RiftCalibrationState {
       tabIndex = 7,
       title = camelCaseToPlainEnglish("bountyKillBonusPct"),
       unit = "%",
-      description = "Fraction of a victim's accumulated Bounty awarded to their executioner upon termination.",
+      description = "Fraction of a victim's accumulated Resonance awarded to their executioner upon elimination.",
       min = 0.10f, max = 1.00f, step = 0.05f, decimals = 2,
       getter = { bountyKillBonusPct }, setter = { bountyKillBonusPct = it.coerceIn(0.10f, 1.00f) },
     )
@@ -1363,8 +1364,8 @@ object RiftCalibrationState {
       key = "cratePickupBounty",
       tabIndex = 7,
       title = camelCaseToPlainEnglish("cratePickupBounty"),
-      unit = "Bounty",
-      description = "Bonus Bounty points awarded whenever a ship collects a standard Supply Crate.",
+      unit = "RES",
+      description = "Bonus Resonance awarded whenever a ship collects a standard Supply Crate.",
       min = 0f, max = 50f, step = 5f, decimals = 0,
       getter = { cratePickupBounty.toFloat() }, setter = { cratePickupBounty = it.roundToInt().coerceIn(0, 50) },
     )
@@ -1372,8 +1373,8 @@ object RiftCalibrationState {
       key = "fullChargeCrateBounty",
       tabIndex = 7,
       title = camelCaseToPlainEnglish("fullChargeCrateBounty"),
-      unit = "Bounty",
-      description = "Bonus Bounty points awarded when collecting a Full Flux Charge Supply Crate.",
+      unit = "RES",
+      description = "Bonus Resonance awarded when collecting a Full Flux Charge Supply Crate.",
       min = 0f, max = 60f, step = 5f, decimals = 0,
       getter = { fullChargeCrateBounty.toFloat() }, setter = { fullChargeCrateBounty = it.roundToInt().coerceIn(0, 60) },
     )
@@ -1399,9 +1400,9 @@ object RiftCalibrationState {
     list += CalibrationParamDescriptor(
       key = "fluxCoreBountyPerSec",
       tabIndex = 7,
-      title = "Flux Core Carrier Bounty Tick",
-      unit = "Bounty/s",
-      description = "Bounty awarded every second to the pilot carrying the Volatile Flux Core singularity.",
+      title = "Flux Core Carrier Resonance Tick",
+      unit = "RES/s",
+      description = "Resonance awarded every second to the pilot carrying the Volatile Flux Core singularity.",
       min = 5f, max = 50f, step = 5f, decimals = 0,
       getter = { fluxCoreBountyPerSec.toFloat() },
       setter = { fluxCoreBountyPerSec = it.roundToInt().coerceIn(5, 50) },

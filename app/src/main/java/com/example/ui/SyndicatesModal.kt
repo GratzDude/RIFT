@@ -408,7 +408,7 @@ fun SyndicatesModal(
         tag = "syndicate_tab_roster",
       )
       SyndicateTabButton(
-        label = if (isCompactPhone) "3. BOUNTIES & MEDALS" else "3. SYNDICATE BOUNTIES & MEDALS",
+        label = if (isCompactPhone) "3. LEADERS & MEDALS" else "3. HIGH-RES TARGETS & MEDALS",
         selected = activeTab == 2,
         onClick = { activeTab = 2 },
         tag = "syndicate_tab_bounties",
@@ -1227,7 +1227,7 @@ private fun BountyCalloutsAndAchievementsPane(
           .padding(10.dp)
     ) {
       Text(
-        text = "HVT // SECTOR HIGH-VALUE TARGETS (RESONANCE >= 250)",
+        text = "RIFT LEADERS // HIGH-RESONANCE TARGETS (RESONANCE >= 250)",
         color = CitadelGold,
         fontSize = 12.5.sp,
         fontWeight = FontWeight.Black,
@@ -1236,7 +1236,7 @@ private fun BountyCalloutsAndAchievementsPane(
         overflow = TextOverflow.Ellipsis,
       )
       Text(
-        text = "ELIMINATE HVTS FOR RESONANCE SHUTDOWN PAYOUTS & GOLD RADAR PINGS.",
+        text = "ELIMINATE HIGH-RESONANCE TARGETS FOR BONUS RESONANCE & GOLD RADAR PINGS.",
         color = Color(0xFF94A3B8),
         fontSize = 10.sp,
         fontFamily = Sans,
@@ -1289,7 +1289,7 @@ private fun BountyCalloutsAndAchievementsPane(
                     }
                   val synPrefix = if (cleanHvtSyn.isNotEmpty()) "[$cleanHvtSyn] " else ""
                   Text(
-                    text = "HVT // $armTag $synPrefix${hvt.callsign}",
+                    text = "RIFT LEADER // $armTag $synPrefix${hvt.callsign}",
                     color = CitadelGold,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,

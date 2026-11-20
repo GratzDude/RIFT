@@ -352,7 +352,7 @@ fun RiftShardsStoreModal(
           "KILL FINISHERS",
           "3D HULL TRIMS",
           "WARP SIGNATURES",
-          "HVT CROWN HALOS",
+          "RESONANCE HALOS",
           "RIFT FRAME BAYS (A–E)",
           "SHARD VAULT",
         )
@@ -634,7 +634,7 @@ fun RiftShardsStoreModal(
 
           4 -> {
             ConduitCosmeticListDeck(
-              title = "HVT CROWN HALOS // #1 SECTOR RESONANCE LEADER RINGS",
+              title = "RESONANCE HALOS // #1 SECTOR RESONANCE LEADER RINGS",
               categoryKey = "HVT_HALO",
               items = RiftProgressionCatalog.hvtHalos,
               previewedId = previewCosmeticId,
@@ -652,7 +652,7 @@ fun RiftShardsStoreModal(
                   if (unlocked) {
                     localPrefs.setEquippedCosmeticId("HVT_HALO", item.id)
                     refreshTick++
-                    statusBanner = "EQUIPPED HVT CROWN HALO: ${item.name.uppercase(Locale.US)}"
+                    statusBanner = "EQUIPPED RESONANCE HALO: ${item.name.uppercase(Locale.US)}"
                   } else if (trySpendShards(item.shardCost)) {
                     localPrefs.setCosmeticUnlocked("HVT_HALO", item.id, true)
                     localPrefs.setEquippedCosmeticId("HVT_HALO", item.id)
@@ -1067,7 +1067,7 @@ private fun ConduitHoloPreviewStage(
       }
       4 -> {
         val hl = RiftProgressionCatalog.hvtHalos.firstOrNull { it.id == previewCosmeticId }?.name ?: "Hunter Amber Ring"
-        "HVT CROWN // ${hl.uppercase(Locale.US)}"
+        "LEADER HALO // ${hl.uppercase(Locale.US)}"
       }
       5 -> "RIFT FRAME // ${previewFrameSlotId.uppercase(Locale.US)} (100-PT PARITY)"
       6 -> "SHARD VAULT // ${RiftBillingManager.STUDIO_LEGAL_NAME.uppercase(Locale.US)}"

@@ -313,9 +313,9 @@ class NexusAiViewModel : ViewModel() {
         (lower.contains("hub") && !lower.contains("safe"))
     ) {
       return buildString {
-        appendLine("NEXUS SCI-FI COMMAND TABLET & LIVE OVERWATCH TELEMETRY // (BUILD #83)")
+        appendLine("RIFT HUB COMMAND TABLET & LIVE OVERWATCH TELEMETRY // (BUILD #92)")
         appendLine(
-          "- Unified #060D1A Command Tablet: Frames 6 large 192x192 5-stop metallic station-styled module cards — Left Wing: SHIPS & BUILDS (Hangar Deck & 100-Pt parity), RANKS & QUESTS (Rift Conduit & Daily Directives), SKINS & AUDIO (1:1 Dyson Sun Star Forge & track BPM); Right Wing: CHAT & NEXUS AI (Subspace Comms & #nexus-ai), SYNDICATE / STRIKE WING (Syndicate Citadel & [TAG]/Strike Wing), PILOT DOSSIER (Career Telemetry & Ladders; Field Manual Codex in Helm Systems)."
+          "- Unified #060D1A Command Tablet: Frames 6 large 192x192 5-stop metallic station-styled module cards — Left Wing: SHIPS & BUILDS (Hangar Deck & 100-Pt parity), RANKS & QUESTS (Rift Conduit & Daily Directives), SKINS & AUDIO (1:1 Star Core Star Forge & track BPM); Right Wing: CHAT & RIFT AI (Subspace Comms & #nexus-ai), SYNDICATE / STRIKE WING (Syndicate Citadel & [TAG]/Strike Wing), PILOT DOSSIER (Career Telemetry & Ladders; Field Manual Codex in Helm Systems)."
         )
         appendLine(
           "- Round Rippling Dynamic-Lit Overwatch Aperture: Masks #060D1A tablet glass outside a circular viewport whose concentric polar voxel/matrix rings ripple inward into a live top-down match."
@@ -385,9 +385,9 @@ class NexusAiViewModel : ViewModel() {
         lower.contains("afk")
     ) {
       return buildString {
-        appendLine("NEXUS 5X NEXUS STATION SAFE HARBOR, CRYSTAL ASTEROID & STATION NOVA TELEMETRY //")
+        appendLine("RIFT 5X RIFT STATION SAFE HARBOR, CRYSTAL ASTEROID & STATION NOVA TELEMETRY //")
         appendLine(
-          "- 5x Ship-Scale (180px) Nexus Station & Holo-Ring: Active ONLY in Sector Convergence and Flux Core (completely disabled in Rift Control, Stasis Breach, Rift Skirmish, and Syndicate Wars, alongside Open-Space Anti-AFK). Anchored at sector center by a 5x ship-size (180px world radius) Nexus Station metallic sprite with 5-stop ship armor shading, 6 curved docking pylons, a revolving cyan/gold Ops Holo-Ring, and radial stabilizer beams bracing the Safe-Zone rim — all live-editable inside the 1:1 Dyson Sun STAR FORGE (15s max stay / weapon-lockout; entering ejects the Flux Core at 1,650 px/s)."
+          "- 5x Ship-Scale (180px) Rift Station & Holo-Ring: Active ONLY in Sector Convergence and Flux Core (completely disabled in Rift Control, Stasis Breach, Rift Skirmish, and Syndicate Wars, alongside Open-Space Anti-AFK). Anchored at sector center by a 5x ship-size (180px world radius) Rift Station metallic sprite with 5-stop ship armor shading, 6 curved docking pylons, a revolving cyan/gold Ops Holo-Ring, and radial stabilizer beams bracing the Safe-Zone rim — all live-editable inside the 1:1 Star Core STAR FORGE (15s max stay / weapon-lockout; entering ejects the Flux Core at 1,650 px/s)."
         )
         appendLine(
           "- Destructible Crystal Asteroids (2,400 Flux): Display an on-rock circular Flux integrity ring when damaged. Reducing a Crystal Asteroid to 0 Flux (via weapons, Unstable Rift collapse, or >= 260px Gravity Rift 950/s tidal crush) shatters it, drops a guaranteed Supply Crate, and queues a 20.0s respawn."
@@ -413,7 +413,7 @@ class NexusAiViewModel : ViewModel() {
         appendLine(
           "- Active Resonance: Live $liveRes (${tier.title}) | Peak $peakRes | Shards: ${engine?.riftShards ?: 0L} SHARDS"
         )
-        appendLine("- Per-Ship Solar-Gold Resonance (Hulls 1-10): Each hull tracks its own combat Resonance earned from PvP eliminations (+18 RES, +28 on HVT shutdown), assists, Flux damage milestones, and objective captures, driving your Best Ship Solar-Gold Harmonic Crown border in Hangar Deck.")
+        appendLine("- Per-Ship Solar-Gold Resonance (Hulls 1-10): Each hull tracks its own combat Resonance earned from PvP eliminations (+18 RES, +28 on High-Resonance Target shutdown), assists, Flux damage milestones, and objective captures, driving your Best Ship Solar-Gold Harmonic Crown border in Hangar Deck.")
         appendLine("- Ranked Matchmaking & Rewards: Team matchmaking pairs balanced Resonance wings first and caps queue wait at 15.0s max; Peak Resonance permanently unlocks cosmetics & Frame B-E. Tester Mode provides 999,999 non-depleting Rift Shards while commercial Play Billing is dormant.")
         append("- 3 Daily Directives: Earn 40 + 50 + 60 Shards plus the +100 Shards 3/3 Sweep Chest = 250 Shards/day (with 1 free directive reroll per UTC day).")
       }
@@ -521,19 +521,19 @@ class NexusAiViewModel : ViewModel() {
           )
         }
         if (swornAllTime.isNotEmpty()) {
-          appendLine("- Top All-Time Sworn Pilot Bounties:")
+          appendLine("- Top All-Time Sworn Pilot Peak Resonance:")
           swornAllTime.forEachIndexed { i, entry ->
             val tag = if (entry.syndicateTag.isNotBlank()) "[${entry.syndicateTag}] " else ""
             appendLine(
-              "  #${i + 1} $tag${entry.callsign} — Peak ${entry.allTimeBounty} BTY (${entry.allTimeKills}K / ${entry.allTimeDeaths}D)"
+              "  #${i + 1} $tag${entry.callsign} — Peak ${entry.allTimeBounty} RES (${entry.allTimeKills}K / ${entry.allTimeDeaths}D)"
             )
           }
         } else if (swornPvp.isNotEmpty()) {
-          appendLine("- Top PvP Sworn Pilot Bounties:")
+          appendLine("- Top PvP Sworn Pilot Peak Resonance:")
           swornPvp.forEachIndexed { i, entry ->
             val tag = if (entry.syndicateTag.isNotBlank()) "[${entry.syndicateTag}] " else ""
             appendLine(
-              "  #${i + 1} $tag${entry.callsign} — PvP Peak ${entry.pvpBounty} BTY (${entry.pvpKills}K / ${entry.pvpDeaths}D)"
+              "  #${i + 1} $tag${entry.callsign} — PvP Peak ${entry.pvpBounty} RES (${entry.pvpKills}K / ${entry.pvpDeaths}D)"
             )
           }
         } else if (liveTelemetrySnapshot.contains("Top Cloud Sworn Pilot")) {
@@ -752,13 +752,13 @@ class NexusAiViewModel : ViewModel() {
         val isSworn =
           p.syndicateTag.trim().uppercase(Locale.US) !in setOf("RFT", "GUEST")
         appendLine(
-          "- Active Sector: $modeTitle | 5x Nexus Station Safe Harbor Active: ${engine.hasActiveSafeZone()} | Pilot Status: ${if (isSworn) "Sworn Pilot" else "[RFT] Drifter"}"
+          "- Active Sector: $modeTitle | 5x Rift Station Safe Harbor Active: ${engine.hasActiveSafeZone()} | Pilot Status: ${if (isSworn) "Sworn Pilot" else "[RFT] Drifter"}"
         )
       }
-      appendLine("- NEXUS Tablet Hub: 6 Metallic Station Cards (SHIPS & BUILDS, RANKS & QUESTS, SKINS & AUDIO, CHAT & NEXUS AI, SYNDICATE / STRIKE WING, PILOT DOSSIER) + Round Pinch-to-Zoom (1.0x..6.0x) Highest-Resonance Live Overwatch & [RIFT IN].")
+      appendLine("- RIFT Hub Tablet: 6 Metallic Station Cards (SHIPS & BUILDS, RANKS & QUESTS, SKINS & AUDIO, CHAT & RIFT AI, SYNDICATE / STRIKE WING, PILOT DOSSIER) + Round Pinch-to-Zoom (1.0x..6.0x) Highest-Resonance Live Overwatch & [RIFT IN].")
       appendLine("- All 10 Ships (Open at 0 Resonance | 100-Point Parity): Viper, Ricochet, Suppressor, Goliath, Twinfang, Disruptor (Needler + Cloak/EMP), Valkyrie, Manta, Eclipse (6.0s 275px Two-Way Stasis, 320 Flux, 8.5s CD), and modular Rift Frame (100 Pts + Frame A-E).")
       append(
-        "- Ask about any ship's exact pixel/Flux math, 440px Gravity Rift swept growth & >= 260px 950/s Tidal Implosion, 5x (180px) Nexus Station, Unstable Rift 10.0s insta-kill collapse, 1:1 Dyson Sun Star Forge, 5-drone SWARM, 2,400 Flux Crystal Asteroids, 10-hit Station Novas, or Sworn Pilot Leaderboards."
+        "- Ask about any ship's exact pixel/Flux math, 440px Gravity Rift swept growth & >= 260px 950/s Tidal Implosion, 5x (180px) Rift Station, Unstable Rift 10.0s insta-kill collapse, 1:1 Star Core Star Forge, 5-drone SWARM, 2,400 Flux Crystal Asteroids, 10-hit Station Novas, or Sworn Pilot Leaderboards."
       )
     }
   }

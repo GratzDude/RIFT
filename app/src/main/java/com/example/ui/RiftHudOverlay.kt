@@ -1975,7 +1975,7 @@ private fun KillFeedRow(entry: KillFeedEntry, alpha: Float) {
   Text(killerDisplay, color = killerColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
   Text(">>", color = (if (isHighBountyShutdown) Color(0xFFF59E0B) else Color(0xFFCBD5E1)).copy(alpha = 0.85f * alpha), fontSize = 6.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = rowTextStyle)
   Text(victimDisplay, color = victimColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-  Text(if (isHighBountyShutdown || entry.wasHvt) "HVT ${entry.victimBounty}" else "${entry.victimBounty}", color = bountyColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = rowTextStyle, maxLines = 1)
+  Text("${entry.victimBounty} RES", color = bountyColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = rowTextStyle, maxLines = 1)
  }
 }
 

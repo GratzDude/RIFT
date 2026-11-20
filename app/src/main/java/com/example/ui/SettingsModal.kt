@@ -303,6 +303,10 @@ fun SettingsModal(
   currentUserId: String = "",
   activeSectorTag: String = "NEXUS_LOBBY",
   cloudSyncHealth: CloudSyncHealth = CloudSyncHealth(),
+  onSwitchAccount: () -> Unit = onRequestSignOut,
+  updateStatusLabel: String = "v1.0.$CURRENT_RIFT_BUILD_VERSION UP TO DATE",
+  hasUpdateAvailable: Boolean = false,
+  onCheckOrApplyUpdate: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
@@ -520,6 +524,20 @@ fun SettingsModal(
                   }
                 }
 
+                // Prominent Top-of-Card Switch Account Button (works for both Sworn Pilots & Drifters)
+                SettingsBeveledButton(
+                  label = "SWITCH ACCOUNT",
+                  topColor = Color(0xFF0F2D3A),
+                  bottomColor = TabletShellBg,
+                  borderColor = Color(0xFFFACC15),
+                  textColor = Color(0xFFFEF08A),
+                  isCompactPhone = isCompactPhone,
+                  modifier = Modifier.fillMaxWidth(),
+                  heightOverride = if (isCompactPhone) 32.dp else 36.dp,
+                  testTag = "settings_btn_switch_account",
+                  onClick = onSwitchAccount,
+                )
+
                 // Unified Custom Resonance Crest + Single Prismatic Rift Shard Gem
                 Row(
                   modifier = Modifier.fillMaxWidth(),
@@ -615,7 +633,21 @@ fun SettingsModal(
                 }
               }
 
-              Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+              Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                SettingsBeveledButton(
+                  label =
+                    if (hasUpdateAvailable) "[INSTALL / DOWNLOAD UPDATE]"
+                    else "[CHECK FOR UPDATES • ${updateStatusLabel.take(20)}]",
+                  topColor = if (hasUpdateAvailable) Color(0xFF0A362C) else Color(0xFF0C1E35),
+                  bottomColor = TabletShellBg,
+                  borderColor = if (hasUpdateAvailable) Color(0xFF34D399) else TabletCyanBorder.copy(alpha = 0.70f),
+                  textColor = if (hasUpdateAvailable) Color(0xFF6EE7B7) else TabletCyanBorder,
+                  isCompactPhone = isCompactPhone,
+                  modifier = Modifier.fillMaxWidth(),
+                  heightOverride = if (isCompactPhone) 30.dp else 33.dp,
+                  testTag = "settings_btn_check_update",
+                  onClick = onCheckOrApplyUpdate,
+                )
                 SettingsBeveledButton(
                   label = "[TRACK A–C & SFX LAB]",
                   topColor = Color(0xFF1A1036),
@@ -624,7 +656,7 @@ fun SettingsModal(
                   textColor = Color(0xFFF3E8FF),
                   isCompactPhone = isCompactPhone,
                   modifier = Modifier.fillMaxWidth(),
-                  heightOverride = if (isCompactPhone) 32.dp else 36.dp,
+                  heightOverride = if (isCompactPhone) 30.dp else 34.dp,
                   testTag = "settings_btn_open_audio_forge",
                   onClick = onOpenAudioForge,
                 )
@@ -1244,7 +1276,7 @@ fun SettingsModal(
                   )
                   Spacer(modifier = Modifier.height(3.dp))
                   Text(
-                    text = "[SYN] VIPER_ACE • BTY 350",
+                    text = "[SYN] VIPER_ACE • 350 RES",
                     color = TabletCyanBorder,
                     fontSize = (12.5f * playfieldTextScale.coerceIn(0.75f, 1.75f)).sp,
                     fontWeight = FontWeight.Black,

@@ -2613,7 +2613,7 @@ class RiftArenaView(
               (s.kills * 16 + kotlin.math.max(0, s.bounty - 100) / 4 - s.deaths * 4).coerceAtLeast(0),
             )
         }
-      val bountyText = if (isHvt) "HVT $displayedResonance RES" else "$displayedResonance RES"
+      val bountyText = "$displayedResonance RES"
       val teamColor =
         when {
           isFriendly -> Color.parseColor("#60A5FA")
