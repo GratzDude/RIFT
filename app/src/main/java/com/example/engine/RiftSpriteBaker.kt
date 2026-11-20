@@ -124,7 +124,7 @@ object RiftSpriteBaker {
     customShip9HostileBitmap = bakeCustomShip9Bitmap(initialRecipe, 128, isAllied = false)
 
     val buffs = mutableMapOf<Int, Bitmap>()
-    for (buffType in 0..14) {
+    for (buffType in 0..15) {
       buffs[buffType] = bakeBuffIconBitmap(buffType, 68)
     }
     buffs[-10] = bakeBuffIconBitmap(-10, 68) // Speed Overcharge
@@ -1888,7 +1888,7 @@ object RiftSpriteBaker {
   }
 
   fun getBuffIconBitmap(buffType: Int): Bitmap {
-    if (buffType in 0..14 || buffType in -14..-10) {
+    if (buffType in 0..15 || buffType in -14..-10) {
       return buffIconBitmaps[buffType] ?: buffIconBitmaps[10]!!
     }
     synchronized(cacheLock) {
@@ -1903,7 +1903,119 @@ object RiftSpriteBaker {
         return baked
       }
     }
-    return buffIconBitmaps[buffType.mod(15)] ?: buffIconBitmaps[0]!!
+    return buffIconBitmaps[buffType.mod(16)] ?: buffIconBitmaps[0]!!
+  }
+
+  /**
+   * Renders the 8-slice pizza-colored spiked Chakram disc onto any Android Canvas (used for both
+   * Supply Crate / HUD icon baking and live 60fps spinning projectile rendering in RiftArenaView).
+   */
+  fun drawChakramDiscOnCanvas(
+    c: Canvas,
+    cx: Float,
+    cy: Float,
+    radius: Float,
+    spinAngleRad: Float = 0f,
+  ) {
+    val discR = radius * 0.80f
+    val crustInnerR = discR * 0.80f
+    val spikeOuterR = radius * 1.12f
+
+    // 1. 8 metallic saw-tooth spikes around the spinning rim
+    val spikeFill =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#E2E8F0")
+      }
+    val spikeEdge =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = (radius * 0.06f).coerceAtLeast(1.1f)
+        strokeJoin = Paint.Join.ROUND
+        color = Color.parseColor("#64748B")
+      }
+    val spikePath = Path()
+    for (i in 0 until 8) {
+      val baseAng = spinAngleRad + i * (PI.toFloat() * 0.25f) + (PI.toFloat() / 8f)
+      val leadAng = baseAng + 0.16f
+      val trailAng = baseAng - 0.18f
+      val tipAng = baseAng + 0.08f
+      spikePath.reset()
+      spikePath.moveTo(cx + cos(trailAng) * (discR * 0.90f), cy + sin(trailAng) * (discR * 0.90f))
+      spikePath.lineTo(cx + cos(tipAng) * spikeOuterR, cy + sin(tipAng) * spikeOuterR)
+      spikePath.lineTo(cx + cos(leadAng) * (discR * 0.90f), cy + sin(leadAng) * (discR * 0.90f))
+      spikePath.close()
+      c.drawPath(spikePath, spikeFill)
+      c.drawPath(spikePath, spikeEdge)
+    }
+
+    // 2. Toasted golden-crust outer ring
+    val crustPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#D97706")
+      }
+    val crustRimStroke =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = (radius * 0.08f).coerceAtLeast(1.3f)
+        color = Color.parseColor("#F59E0B")
+      }
+    c.drawCircle(cx, cy, discR, crustPaint)
+    c.drawCircle(cx, cy, discR, crustRimStroke)
+
+    // 3. 8 pizza-cut wedge slices (alternating melted solar-cheese & tomato-crimson)
+    val wedgeRect = RectF(cx - crustInnerR, cy - crustInnerR, cx + crustInnerR, cy + crustInnerR)
+    val wedgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    val pepPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#B91C1C")
+      }
+    val cheeseDotPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#FEF08A")
+      }
+    val baseDeg = (spinAngleRad * 180f / PI.toFloat())
+    for (slice in 0 until 8) {
+      val startDeg = baseDeg + slice * 45f
+      val isCheeseSlice = (slice % 2 == 0)
+      wedgePaint.color =
+        if (isCheeseSlice) Color.parseColor("#FACC15") else Color.parseColor("#EF4444")
+      c.drawArc(wedgeRect, startDeg, 45f, true, wedgePaint)
+
+      val midRad = ((startDeg + 22.5f) * PI / 180.0).toFloat()
+      val dotR = crustInnerR * 0.56f
+      val dx = cx + cos(midRad) * dotR
+      val dy = cy + sin(midRad) * dotR
+      c.drawCircle(
+        dx,
+        dy,
+        (radius * 0.095f).coerceAtLeast(1.3f),
+        if (isCheeseSlice) pepPaint else cheeseDotPaint,
+      )
+    }
+
+    // 4. Crisp 8-piece radial slice cut lines + glowing plasma hub
+    val cutPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = (radius * 0.065f).coerceAtLeast(1.15f)
+        color = Color.parseColor("#0F172A")
+      }
+    for (slice in 0 until 8) {
+      val a = spinAngleRad + slice * (PI.toFloat() * 0.25f)
+      c.drawLine(cx, cy, cx + cos(a) * discR, cy + sin(a) * discR, cutPaint)
+    }
+
+    val hubGlow =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#FEF08A")
+      }
+    c.drawCircle(cx, cy, radius * 0.20f, cutPaint)
+    c.drawCircle(cx, cy, radius * 0.17f, hubGlow)
   }
 
   fun bakeCustomBuffIconBitmap(entry: SpecialBuffRegistryEntry, sizePx: Int = 68): Bitmap {
@@ -2053,6 +2165,7 @@ object RiftSpriteBaker {
         12 -> Color.parseColor("#34D399") // Toggleable Tractor Beam
         13 -> Color.parseColor("#FACC15") // Proximity-Lock Infinite Missile
         14 -> Color.parseColor("#A855F7") // Continuous Lance Beam
+        15 -> Color.parseColor("#F59E0B") // Chakram (8-Slice Pizza-Colored Spiked Saw-Disc)
         -10 -> Color.parseColor("#38BDF8") // Speed Overcharge (+8% x3)
         -11 -> Color.parseColor("#F59E0B") // Thrust Overcharge (+8% x3)
         -12 -> Color.parseColor("#10B981") // Reactor Overcharge (+8% x3)
@@ -2332,6 +2445,10 @@ object RiftSpriteBaker {
         c.drawArc(stopBarRect, 200f, 140f, false, glyphCoreStroke)
         c.drawCircle(cx, hitY, r * 0.15f, glyphFillPaint)
         c.drawCircle(cx, emitterY, r * 0.13f, glyphFillPaint)
+      }
+      15 -> {
+        // CHAKRAM: 8-slice pizza-colored spiked saw-disc
+        drawChakramDiscOnCanvas(c, cx, cy, r * 0.62f, spinAngleRad = 0.22f)
       }
       -11 -> {
         // THRUST OVERCHARGE (+8% x3): Twin vector thruster nozzles with high-impulse flare

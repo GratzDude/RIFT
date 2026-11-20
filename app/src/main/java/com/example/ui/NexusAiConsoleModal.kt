@@ -117,6 +117,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.R
 import com.example.data.ArmadaMemberSlot
+import com.example.data.CloudSyncHealth
 import com.example.data.LivePilotState
 import com.example.data.LocalPilotPrefs
 import com.example.data.RiftBillingManager
@@ -684,6 +685,7 @@ fun NexusAiConsoleModal(
   onStageCustomGameViaHangar: ((CustomGameConfig) -> Unit)? = null,
   onStageExistingCustomInstanceViaHangar: ((String) -> Unit)? = null,
   isNetworkOnline: Boolean = true,
+  cloudSyncHealth: CloudSyncHealth = CloudSyncHealth(),
   embeddedModuleContent: (@Composable () -> Unit)? = null,
 ) {
   val context = LocalContext.current
@@ -903,7 +905,7 @@ fun NexusAiConsoleModal(
       overwatchInstances.ifEmpty {
         listOf(
           OverwatchRiftInstance(
-            key = "SECTOR_CONVERGENCE_1",
+            key = "SECTOR_CONVERGENCE",
             modeTitle = "SECTOR CONVERGENCE",
             riftLabel = "RIFT #01",
             rankedMode = RankedGameMode.SECTOR_CONVERGENCE,
@@ -1063,6 +1065,8 @@ fun NexusAiConsoleModal(
             strikeWingOnlineCount = strikeWingOnlineCount,
             unreadCommsCount = unreadCommsCount,
             isNetworkOnline = isNetworkOnline,
+            isGoogleAuthenticated = isGoogleAuthenticated,
+            cloudSyncHealth = cloudSyncHealth,
             bootToNexusHub = bootToNexusHub,
             isInMatch = isInMatch,
             isStreaming = isStreaming,
@@ -1438,6 +1442,8 @@ private fun OrbitalHubSpatialStage(
   onClickOnline: () -> Unit,
   onOpenPilotDossier: () -> Unit,
   onSelectNode: (Int, NexusCoreNode) -> Unit,
+  isGoogleAuthenticated: Boolean = true,
+  cloudSyncHealth: CloudSyncHealth = CloudSyncHealth(),
 ) {
   val context = LocalContext.current
   val headless = remember { isHeadlessGlEnvironment() }
@@ -1749,13 +1755,22 @@ private fun OrbitalHubSpatialStage(
             }
 
             // Clickable ONLINE / OFFLINE -> Chat & NEXUS AI (Subspace Comms)
+            val syncHealthy = isNetworkOnline && (!isGoogleAuthenticated || cloudSyncHealth.lastError.isNullOrBlank() || cloudSyncHealth.isConnected)
+            val onlinePillLabel =
+              when {
+                !isNetworkOnline -> "OFFLINE • LOCAL"
+                !isGoogleAuthenticated -> "DRIFTER • LOCAL"
+                !syncHealthy -> "SYNC RETRY • $totalOnlinePilots"
+                else -> "ONLINE • $totalOnlinePilots"
+              }
+            val onlineAccent = if (isNetworkOnline && isGoogleAuthenticated && syncHealthy) Color(0xFF34D399) else Color(0xFFFBBF24)
             Box(
               modifier =
                 Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(if (isNetworkOnline) Color(0xFF071E1B) else Color(0xFF281906))
+                  .background(if (isNetworkOnline && isGoogleAuthenticated && syncHealthy) Color(0xFF071E1B) else Color(0xFF281906))
                   .border(
                     0.9.dp,
-                    if (isNetworkOnline) Color(0xFF34D399).copy(alpha = 0.78f) else Color(0xFFF59E0B).copy(alpha = 0.85f),
+                    onlineAccent.copy(alpha = 0.82f),
                     RoundedCornerShape(6.dp),
                   )
                   .clickable { onClickOnline() }
@@ -1764,8 +1779,8 @@ private fun OrbitalHubSpatialStage(
               contentAlignment = Alignment.Center,
             ) {
               Text(
-                text = if (isNetworkOnline) "ONLINE • $totalOnlinePilots" else "OFFLINE • LOCAL",
-                color = if (isNetworkOnline) Color(0xFF34D399) else Color(0xFFFBBF24),
+                text = onlinePillLabel,
+                color = onlineAccent,
                 fontSize = 11.4.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,

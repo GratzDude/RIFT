@@ -74,6 +74,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.data.CloudSyncHealth
 import com.example.data.FriendPilotEntry
 import com.example.data.LivePilotState
 import com.example.data.LocalPilotPrefs
@@ -147,7 +148,11 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 private sealed interface StagedRiftLaunch {
-  data class Ranked(val mode: RankedGameMode, val teamSizeBracket: Int) : StagedRiftLaunch
+  data class Ranked(
+    val mode: RankedGameMode,
+    val teamSizeBracket: Int,
+    val sectorInstanceOverride: String? = null,
+  ) : StagedRiftLaunch
 
   data class NewCustom(val config: CustomGameConfig) : StagedRiftLaunch
 
@@ -166,6 +171,7 @@ private data class MatchmakingQueueRequest(
 
 private data class SuspendedActiveMatchSnapshot(
   val sectorTag: String,
+  val activeSectorInstanceOverride: String?,
   val selectedShipId: Int,
   val selectedModeId: String,
   val mode: String,
@@ -179,6 +185,10 @@ private data class SuspendedActiveMatchSnapshot(
   val eastBrigReactorX: Float,
   val westBrigGeneratorHp: Float,
   val eastBrigGeneratorHp: Float,
+  val stasisBreachMatchTimerSec: Float,
+  val stasisWestCaptures: Int,
+  val stasisEastCaptures: Int,
+  val localStasisCaptures: Int,
   val riftAlphaX: Float,
   val riftOmegaX: Float,
   val riftAlphaControlSec: Float,
@@ -220,6 +230,7 @@ private fun captureActiveMatchSnapshot(
 ): SuspendedActiveMatchSnapshot {
   return SuspendedActiveMatchSnapshot(
     sectorTag = engine.activeMatchSectorTag(),
+    activeSectorInstanceOverride = engine.activeSectorInstanceOverride,
     selectedShipId = selectedShipId,
     selectedModeId = selectedModeId,
     mode = engine.mode,
@@ -233,6 +244,10 @@ private fun captureActiveMatchSnapshot(
     eastBrigReactorX = engine.eastBrigReactorX,
     westBrigGeneratorHp = engine.westBrigGeneratorHp,
     eastBrigGeneratorHp = engine.eastBrigGeneratorHp,
+    stasisBreachMatchTimerSec = engine.stasisBreachMatchTimerSec,
+    stasisWestCaptures = engine.stasisWestCaptures,
+    stasisEastCaptures = engine.stasisEastCaptures,
+    localStasisCaptures = engine.localStasisCaptures,
     riftAlphaX = engine.riftAlphaX,
     riftOmegaX = engine.riftOmegaX,
     riftAlphaControlSec = engine.riftAlphaControlSec,
@@ -279,6 +294,7 @@ private fun restoreActiveMatchSnapshot(
   engine.practiceTutorialStepJumpFlashSec = 0f
   engine.hasJoinedMatch = true
   engine.isInLobbyStaging = true
+  engine.activeSectorInstanceOverride = snap.activeSectorInstanceOverride
   engine.mode = snap.mode
   engine.activeRankedMode = snap.activeRankedMode
   engine.activeTeamSizeBracket = snap.activeTeamSizeBracket
@@ -301,6 +317,10 @@ private fun restoreActiveMatchSnapshot(
   )
   engine.westBrigGeneratorHp = snap.westBrigGeneratorHp
   engine.eastBrigGeneratorHp = snap.eastBrigGeneratorHp
+  engine.stasisBreachMatchTimerSec = snap.stasisBreachMatchTimerSec
+  engine.stasisWestCaptures = snap.stasisWestCaptures
+  engine.stasisEastCaptures = snap.stasisEastCaptures
+  engine.localStasisCaptures = snap.localStasisCaptures
   engine.riftAlphaX = snap.riftAlphaX
   engine.riftOmegaX = snap.riftOmegaX
   engine.riftAlphaControlSec = snap.riftAlphaControlSec
@@ -636,6 +656,9 @@ fun RiftArenaScreen(
   val leaderboardState by viewModel.leaderboardState.collectAsStateWithLifecycle()
   val sectorPilotsState by viewModel.sectorPilotsState.collectAsStateWithLifecycle()
   val allOnlineHumansState by viewModel.allOnlineHumansState.collectAsStateWithLifecycle()
+  val sectorCombatEvents by viewModel.sectorCombatEventsState.collectAsStateWithLifecycle()
+  val sectorInstanceState by viewModel.sectorInstanceState.collectAsStateWithLifecycle()
+  val cloudSyncHealth by viewModel.cloudSyncHealth.collectAsStateWithLifecycle()
   val cloudSyndicatesState by viewModel.cloudSyndicatesState.collectAsStateWithLifecycle()
   val sectorCommsState by viewModel.sectorCommsState.collectAsStateWithLifecycle()
   val latestCalibBroadcast by viewModel.latestCalibrationBroadcast.collectAsStateWithLifecycle()
@@ -1037,7 +1060,13 @@ fun RiftArenaScreen(
       localPrefs.recordSyndicateWarOutcome(syndicateTag, won, delta)
       syndicateChannelsRefreshKey++
     }
+    engine.onOutboundCombatEvent = { evt ->
+      if (isGoogleAuthenticated && isDeviceOnline && !engine.isEphemeralPracticeRift) {
+        viewModel.emitCombatEvent(evt)
+      }
+    }
     onDispose {
+      engine.onOutboundCombatEvent = {}
       sfx.release()
     }
   }
@@ -1321,6 +1350,7 @@ fun RiftArenaScreen(
   fun pushLivePilotHeartbeatNow() {
     if (!isGoogleAuthenticated || !isDeviceOnline) return
     val suspended = suspendedActiveMatch
+    val queueTargetSector = activeMatchmakingQueue?.targetSectorKey
     val p = suspended?.localPlayerSnapshot ?: engine.localPlayer
     val activeLiveMatch =
       suspended != null || (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift)
@@ -1328,8 +1358,14 @@ fun RiftArenaScreen(
       p.callsign.trim().ifBlank { callsign.trim() }.ifBlank { "PILOT" }.take(24).let {
         if (it.length < 2) "PILOT" else it
       }
+    val broadcastSector =
+      when {
+        !queueTargetSector.isNullOrBlank() -> queueTargetSector
+        suspended != null -> suspended.sectorTag
+        else -> engine.activeMatchSectorTag()
+      }
     viewModel.syncNativeLiveState(
-      sectorId = suspended?.sectorTag ?: engine.activeMatchSectorTag(),
+      sectorId = broadcastSector,
       callsign = safeCallsign,
       syndicateTag = p.syndicateTag.take(12),
       armadaName = p.armadaName.take(12),
@@ -1346,9 +1382,15 @@ fun RiftArenaScreen(
           activeLiveMatch &&
           engine.fireStickActive &&
           !engine.isCancelActive &&
-          p.canFire,
-      isAfterburning = suspended == null && activeLiveMatch && p.afterburning,
+          p.canFire &&
+          p.respawnTimer <= 0f,
+      isAfterburning = suspended == null && activeLiveMatch && p.afterburning && p.respawnTimer <= 0f,
       isCloaked = activeLiveMatch && p.isCloaked,
+      isRespawning = activeLiveMatch && p.respawnTimer > 0f,
+      isInStasisBrig = activeLiveMatch && p.isInStasisBrig,
+      secondarySeq = engine.localSecondaryFireSeq,
+      secondaryType = p.spec.bombType,
+      secondaryAim = p.weaponAngle.coerceIn(-99f, 99f),
       flux = p.flux.coerceIn(0f, 10000f),
       maxFlux = p.maxFlux.coerceIn(100f, 10000f),
       bounty = p.bounty.coerceAtLeast(0),
@@ -1496,9 +1538,25 @@ fun RiftArenaScreen(
     }
   }
 
-  LaunchedEffect(mergedLivePilots, suspendedActiveMatch == null) {
+  LaunchedEffect(activeMatchmakingQueue?.targetSectorKey) {
+    if (isGoogleAuthenticated && isDeviceOnline) {
+      pushLivePilotHeartbeatNow()
+    }
+  }
+
+  LaunchedEffect(mergedLivePilots, suspendedActiveMatch == null, engine.isEphemeralPracticeRift) {
+    engine.updateRemotePilots(mergedLivePilots, currentUserId)
+  }
+
+  LaunchedEffect(sectorCombatEvents, currentUserId) {
+    if (sectorCombatEvents.isNotEmpty() && !engine.isEphemeralPracticeRift) {
+      engine.applyIncomingCombatEvents(sectorCombatEvents, currentUserId)
+    }
+  }
+
+  LaunchedEffect(sectorInstanceState, currentUserId) {
     if (!engine.isEphemeralPracticeRift) {
-      engine.updateRemotePilots(mergedLivePilots, currentUserId)
+      engine.applyRemoteSectorInstanceState(sectorInstanceState, currentUserId)
     }
   }
 
@@ -1529,14 +1587,29 @@ fun RiftArenaScreen(
     if (!isGoogleAuthenticated || !isDeviceOnline) return@LaunchedEffect
     pushLivePilotHeartbeatNow()
     while (true) {
-      val intervalMs =
-        if (suspendedActiveMatch != null || (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift)) {
-          350L
-        } else {
-          4000L
-        }
+      val inActiveCombatOrQueue =
+        activeMatchmakingQueue != null ||
+          suspendedActiveMatch != null ||
+          (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift)
+      val intervalMs = if (inActiveCombatOrQueue) 220L else 1200L
       delay(intervalMs)
       pushLivePilotHeartbeatNow()
+    }
+  }
+
+  LaunchedEffect(currentUserId, isGoogleAuthenticated, isDeviceOnline) {
+    if (!isGoogleAuthenticated || !isDeviceOnline) return@LaunchedEffect
+    while (true) {
+      delay(350L)
+      if (
+        suspendedActiveMatch == null &&
+          engine.hasJoinedMatch &&
+          !engine.isEphemeralPracticeRift &&
+          engine.effectiveModeRules() != RankedGameMode.SECTOR_CONVERGENCE &&
+          engine.isLocalObjectiveHost(currentUserId)
+      ) {
+        viewModel.publishSectorInstanceState(engine.exportSectorInstanceState(currentUserId))
+      }
     }
   }
 
@@ -1670,10 +1743,12 @@ fun RiftArenaScreen(
           Triple(RankedGameMode.SYNDICATE_WARS, 606, 890),
         )
       rankedSeeds.forEachIndexed { idx, (mode, salt, simRes) ->
-        val (pCount, cRes) = humanStatsForSector(mode.name, simRes)
+        val sectorKey = mode.id
+        val (pCountRaw, cRes) = humanStatsForSector(sectorKey, simRes)
+        val pCount = maxOf(pCountRaw, engine.getHumanPilotCountForSectorKey(sectorKey, mode))
         list.add(
           OverwatchRiftInstance(
-            key = "${mode.name}_1",
+            key = sectorKey,
             modeTitle = mode.title.uppercase(Locale.US),
             riftLabel = String.format(Locale.US, "RIFT #%02d", idx + 1),
             rankedMode = mode,
@@ -1685,6 +1760,12 @@ fun RiftArenaScreen(
         )
       }
       // Secondary Sector Convergence instance (RIFT #07) so pilots can cycle multiple FFA Rifts
+      val (pCount7Raw, cRes7) = humanStatsForSector("SECTOR_CONVERGENCE_2", 740)
+      val pCount7 =
+        maxOf(
+          pCount7Raw,
+          engine.getHumanPilotCountForSectorKey("SECTOR_CONVERGENCE_2", RankedGameMode.SECTOR_CONVERGENCE),
+        )
       list.add(
         OverwatchRiftInstance(
           key = "SECTOR_CONVERGENCE_2",
@@ -1692,8 +1773,8 @@ fun RiftArenaScreen(
           riftLabel = "RIFT #07",
           rankedMode = RankedGameMode.SECTOR_CONVERGENCE,
           customConfig = null,
-          pilotCount = 0,
-          combinedResonance = 740,
+          pilotCount = pCount7,
+          combinedResonance = cRes7,
           seedSalt = 707,
         )
       )
@@ -1703,7 +1784,8 @@ fun RiftArenaScreen(
         .forEachIndexed { cIdx, cfg ->
           val sectorKey = "CUSTOM_${cfg.instanceId}"
           val simFallback = 620 + (kotlin.math.abs(cfg.instanceId.hashCode()) % 520)
-          val (pCount, cRes) = humanStatsForSector(sectorKey, simFallback)
+          val (pCountRaw, cRes) = humanStatsForSector(sectorKey, simFallback)
+          val pCount = maxOf(pCountRaw, engine.getHumanPilotCountForSectorKey(sectorKey, cfg.baseMode))
           list.add(
             OverwatchRiftInstance(
               key = sectorKey,
@@ -1722,15 +1804,17 @@ fun RiftArenaScreen(
 
   val effectiveOverwatchInstance =
     remember(overwatchInstances, userSelectedOverwatchKey, favoriteOverwatchKey) {
+      val normUserKey = userSelectedOverwatchKey.removeSuffix("_1")
+      val normFavKey = favoriteOverwatchKey.removeSuffix("_1")
       val manualMatch =
         if (userSelectedOverwatchKey.isNotBlank()) {
-          overwatchInstances.firstOrNull { it.key == userSelectedOverwatchKey }
+          overwatchInstances.firstOrNull { it.key == userSelectedOverwatchKey || it.key == normUserKey }
         } else {
           null
         }
       val favMatch =
         if (favoriteOverwatchKey.isNotBlank()) {
-          overwatchInstances.firstOrNull { it.key == favoriteOverwatchKey }
+          overwatchInstances.firstOrNull { it.key == favoriteOverwatchKey || it.key == normFavKey }
         } else {
           null
         }
@@ -2188,11 +2272,18 @@ fun RiftArenaScreen(
                 localPrefs.getFriendsList()
               }
             val humanPilotsOnline =
-              remember(frameTick, sectorPilotsState, onlineHumanPilotsList, isDeviceOnline) {
+              remember(frameTick, sectorPilotsState, onlineHumanPilotsList, isDeviceOnline, isGoogleAuthenticated) {
                 if (!isDeviceOnline) {
                   0
                 } else {
-                  maxOf(engine.getTotalHumanPilotsOnline(), onlineHumanPilotsList.size)
+                  val remoteDistinct =
+                    onlineHumanPilotsList
+                      .map { it.userId.ifBlank { it.id } }
+                      .filter { it.isNotBlank() && it != currentUserId }
+                      .distinct()
+                      .size
+                  val combinedOnline = if (isGoogleAuthenticated) 1 + remoteDistinct else remoteDistinct.coerceAtLeast(1)
+                  maxOf(engine.getTotalHumanPilotsOnline(), combinedOnline)
                 }
               }
             val syndicateOnlineCount =
@@ -2633,7 +2724,11 @@ fun RiftArenaScreen(
                                 is StagedRiftLaunch.Ranked -> {
                                   selectedMode = staged.mode.id
                                   localPrefs.setPreferredMode(staged.mode.id)
-                                  engine.deployToRankedMode(staged.mode, staged.teamSizeBracket)
+                                  engine.deployToRankedMode(
+                                    staged.mode,
+                                    staged.teamSizeBracket,
+                                    sectorInstanceOverride = staged.sectorInstanceOverride,
+                                  )
                                 }
                                 is StagedRiftLaunch.NewCustom -> {
                                   selectedMode = staged.config.baseMode.id
@@ -2675,7 +2770,7 @@ fun RiftArenaScreen(
                                 enqueueOrExecuteResonanceMatchmaking(
                                   modeTitle = staged.mode.title.uppercase(Locale.US),
                                   riftLabel = "${staged.teamSizeBracket}V${staged.teamSizeBracket}",
-                                  targetSectorKey = staged.mode.id,
+                                  targetSectorKey = staged.sectorInstanceOverride ?: staged.mode.id,
                                   rankedMode = staged.mode,
                                   isCustomInstance = false,
                                   onExecuteLaunch = finalizeHangarLaunch,
@@ -3391,6 +3486,9 @@ fun RiftArenaScreen(
                             isForgeFullScreenStage = false
                             openNexusNode(NexusCoreNode.STAR_FORGE)
                           },
+                          currentUserId = currentUserId,
+                          activeSectorTag = engine.activeMatchSectorTag(),
+                          cloudSyncHealth = cloudSyncHealth,
                         )
                       }
 
@@ -3518,6 +3616,7 @@ fun RiftArenaScreen(
               },
               totalOnlinePilots = humanPilotsOnline,
               isNetworkOnline = isDeviceOnline,
+              cloudSyncHealth = cloudSyncHealth,
               syndicateOnlineCount = syndicateOnlineCount,
               strikeWingOnlineCount = strikeWingOnlineCount,
               isInMatch =
@@ -4155,9 +4254,19 @@ fun RiftArenaScreen(
                       selectedMode = customCfg.baseMode.id
                       localPrefs.setPreferredMode(customCfg.baseMode.id)
                     } else {
+                      val sectorOverride =
+                        if (inst.key.equals("SECTOR_CONVERGENCE_2", ignoreCase = true)) {
+                          "SECTOR_CONVERGENCE_2"
+                        } else {
+                          null
+                        }
                       selectedMode = inst.rankedMode.id
                       localPrefs.setPreferredMode(inst.rankedMode.id)
-                      engine.deployToRankedMode(inst.rankedMode, targetBracket)
+                      engine.deployToRankedMode(
+                        inst.rankedMode,
+                        targetBracket,
+                        sectorInstanceOverride = sectorOverride,
+                      )
                     }
                     syncEquippedCosmeticsToEngine(engine)
                     engine.onStatsUpdated()

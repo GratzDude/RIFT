@@ -3,6 +3,7 @@ package com.example.ui
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.CloudSyncHealth
 import com.example.data.CloudSyndicateMeta
 import com.example.data.FriendPilotEntry
 import com.example.data.LeaderboardEntry
@@ -11,23 +12,31 @@ import com.example.data.LocalPilotPrefs
 import com.example.data.PilotDossier
 import com.example.data.RiftRepository
 import com.example.data.SectorBugReport
+import com.example.data.SectorCombatEvent
+import com.example.data.SectorInstanceState
 import com.example.data.SyndicateChatMessage
 import com.example.data.SyndicateInfo
 import com.example.data.UgcModeration
 import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
-import com.google.firebase.firestore.FirebaseFirestoreException
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -39,6 +48,19 @@ sealed interface UiState<out T> {
   data class Error(val message: String) : UiState<Nothing>
 }
 
+private fun <T> Flow<T>.retryWithExponentialBackoff(tagLabel: String): Flow<T> =
+  this.retryWhen { cause, attempt ->
+    if (cause is CancellationException) {
+      false
+    } else {
+      val backoffMs = minOf(8_000L, 900L * (1L shl attempt.coerceAtMost(3L).toInt()))
+      Log.w("RiftViewModel", "Retrying $tagLabel stream in ${backoffMs}ms after transient error: ${cause.message}")
+      delay(backoffMs)
+      true
+    }
+  }
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class RiftViewModel(
   private val repository: RiftRepository,
   val currentUserId: String,
@@ -46,31 +68,52 @@ class RiftViewModel(
   val isGoogleAuthenticated: Boolean = Firebase.auth.currentUser != null,
 ) : ViewModel() {
 
-  private val _activeSectorId = MutableStateFlow("SECTOR_CONVERGENCE")
+  private val _activeSectorId = MutableStateFlow("NEXUS_LOBBY")
   val activeSectorId: StateFlow<String> = _activeSectorId.asStateFlow()
 
+  val cloudSyncHealth: StateFlow<CloudSyncHealth> = repository.cloudSyncHealth
+
+  private val cloudReadyFlow: StateFlow<Boolean> =
+    callbackFlow {
+        val auth = Firebase.auth
+        fun checkReady(): Boolean {
+          val uid = auth.currentUser?.uid?.trim()
+          return isGoogleAuthenticated && !uid.isNullOrEmpty() && !uid.startsWith("dev_")
+        }
+        trySend(checkReady())
+        val listener = FirebaseAuth.AuthStateListener { trySend(checkReady()) }
+        auth.addAuthStateListener(listener)
+        awaitClose { auth.removeAuthStateListener(listener) }
+      }
+      .distinctUntilChanged()
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = isGoogleAuthenticated && Firebase.auth.currentUser != null,
+      )
+
   private fun isCloudSessionReady(): Boolean {
-    return isGoogleAuthenticated && Firebase.auth.currentUser != null
+    val uid = Firebase.auth.currentUser?.uid?.trim()
+    return isGoogleAuthenticated && !uid.isNullOrEmpty() && !uid.startsWith("dev_")
   }
 
   val dossierState: StateFlow<UiState<PilotDossier?>> =
-    (if (isCloudSessionReady()) {
-        repository
-          .observePilotDossier(currentUserId)
-          .map<PilotDossier?, UiState<PilotDossier?>> { UiState.Success(it) }
-          .catch { error ->
-            val firestoreError =
-              generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            val rootError = firestoreError ?: error
-            Log.w(TAG, "Error observing pilot dossier", rootError)
-            emit(UiState.Error(rootError.message ?: "Failed to load pilot dossier"))
-          }
-      } else {
-        flowOf(UiState.Success(null))
-      })
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(UiState.Success(null))
+        } else {
+          val resolvedUid = Firebase.auth.currentUser?.uid?.trim()?.ifEmpty { currentUserId } ?: currentUserId
+          repository
+            .observePilotDossier(resolvedUid)
+            .map<PilotDossier?, UiState<PilotDossier?>> { UiState.Success(it) }
+            .retryWithExponentialBackoff("pilotDossier")
+            .catch { error ->
+              if (error is CancellationException) throw error
+              emit(UiState.Error(error.message ?: "Failed to load pilot dossier"))
+            }
+        }
+      }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
@@ -78,48 +121,46 @@ class RiftViewModel(
       )
 
   val leaderboardState: StateFlow<UiState<List<LeaderboardEntry>>> =
-    (if (isCloudSessionReady()) {
-        repository
-          .observeLeaderboard()
-          .map<List<LeaderboardEntry>, UiState<List<LeaderboardEntry>>> { UiState.Success(it) }
-          .catch { error ->
-            val firestoreError =
-              generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            val rootError = firestoreError ?: error
-            Log.w(TAG, "Error observing leaderboard", rootError)
-            emit(UiState.Error(rootError.message ?: "Failed to load leaderboard"))
-          }
-      } else {
-        flowOf(UiState.Success(emptyList()))
-      })
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(UiState.Success(emptyList()))
+        } else {
+          repository
+            .observeLeaderboard()
+            .map<List<LeaderboardEntry>, UiState<List<LeaderboardEntry>>> { UiState.Success(it) }
+            .retryWithExponentialBackoff("leaderboard")
+            .catch { error ->
+              if (error is CancellationException) throw error
+              emit(UiState.Error(error.message ?: "Failed to load leaderboard"))
+            }
+        }
+      }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
         initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(emptyList()),
       )
 
-  @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
   val sectorPilotsState: StateFlow<UiState<List<LivePilotState>>> =
-    (if (isCloudSessionReady()) {
-        _activeSectorId
-          .flatMapLatest { sectorId -> repository.observeSectorPilots(sectorId) }
-          .map<List<LivePilotState>, UiState<List<LivePilotState>>> { UiState.Success(it) }
-          .catch { error ->
-            val firestoreError =
-              generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            val rootError = firestoreError ?: error
-            Log.w(TAG, "Error observing sector pilots", rootError)
-            emit(UiState.Error(rootError.message ?: "Failed to observe sector pilots"))
-          }
-      } else {
-        flowOf(UiState.Success(emptyList()))
-      })
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(UiState.Success(emptyList()))
+        } else {
+          _activeSectorId
+            .flatMapLatest { sectorId ->
+              repository
+                .observeSectorPilots(sectorId)
+                .map<List<LivePilotState>, UiState<List<LivePilotState>>> { UiState.Success(it) }
+                .retryWithExponentialBackoff("sectorPilots:$sectorId")
+                .catch { error ->
+                  if (error is CancellationException) throw error
+                  emit(UiState.Error(error.message ?: "Failed to observe sector pilots"))
+                }
+            }
+        }
+      }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
@@ -127,45 +168,96 @@ class RiftViewModel(
       )
 
   val allOnlineHumansState: StateFlow<List<LivePilotState>> =
-    (if (isCloudSessionReady()) {
-        repository
-          .observeAllOnlineHumanPilots()
-          .catch { error ->
-            val firestoreError =
-              generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            Log.w(TAG, "Error observing all online human pilots", firestoreError ?: error)
-            emit(emptyList())
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(emptyList())
+        } else {
+          repository
+            .observeAllOnlineHumanPilots()
+            .retryWithExponentialBackoff("allOnlineHumanPilots")
+            .catch { error ->
+              if (error is CancellationException) throw error
+              emit(emptyList())
+            }
+        }
+      }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList(),
+      )
+
+  val sectorCombatEventsState: StateFlow<List<SectorCombatEvent>> =
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(emptyList())
+        } else {
+          _activeSectorId.flatMapLatest { sectorId ->
+            if (sectorId == "NEXUS_LOBBY") {
+              flowOf(emptyList())
+            } else {
+              repository
+                .observeSectorCombatEvents(sectorId)
+                .retryWithExponentialBackoff("combatEvents:$sectorId")
+                .catch { error ->
+                  if (error is CancellationException) throw error
+                  emit(emptyList())
+                }
+            }
           }
-      } else {
-        flowOf(emptyList())
-      })
+        }
+      }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
         initialValue = emptyList(),
       )
 
-  val cloudSyndicatesState: StateFlow<UiState<List<SyndicateInfo>>> =
-    (if (isCloudSessionReady()) {
-        repository
-          .observeCloudSyndicates()
-          .map<List<SyndicateInfo>, UiState<List<SyndicateInfo>>> { UiState.Success(it) }
-          .catch { error ->
-            val firestoreError =
-              generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            val rootError = firestoreError ?: error
-            Log.w(TAG, "Error observing cloud syndicates", rootError)
-            emit(UiState.Error(rootError.message ?: "Failed to observe cloud syndicates"))
+  val sectorInstanceState: StateFlow<SectorInstanceState?> =
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(null)
+        } else {
+          _activeSectorId.flatMapLatest { sectorId ->
+            if (sectorId == "NEXUS_LOBBY") {
+              flowOf(null)
+            } else {
+              repository
+                .observeSectorInstanceState(sectorId)
+                .retryWithExponentialBackoff("sectorInstance:$sectorId")
+                .catch { error ->
+                  if (error is CancellationException) throw error
+                  emit(null)
+                }
+            }
           }
-      } else {
-        flowOf(UiState.Success(emptyList()))
-      })
+        }
+      }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        initialValue = null,
+      )
+
+  val cloudSyndicatesState: StateFlow<UiState<List<SyndicateInfo>>> =
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(UiState.Success(emptyList()))
+        } else {
+          repository
+            .observeCloudSyndicates()
+            .map<List<SyndicateInfo>, UiState<List<SyndicateInfo>>> { UiState.Success(it) }
+            .retryWithExponentialBackoff("cloudSyndicates")
+            .catch { error ->
+              if (error is CancellationException) throw error
+              emit(UiState.Error(error.message ?: "Failed to observe cloud syndicates"))
+            }
+        }
+      }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
@@ -173,23 +265,21 @@ class RiftViewModel(
       )
 
   val sectorCommsState: StateFlow<UiState<List<SyndicateChatMessage>>> =
-    (if (isCloudSessionReady()) {
-        repository
-          .observeSectorComms()
-          .map<List<SyndicateChatMessage>, UiState<List<SyndicateChatMessage>>> { UiState.Success(it) }
-          .catch { error ->
-            val firestoreError =
-              generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            val rootError = firestoreError ?: error
-            Log.w(TAG, "Error observing sector comms", rootError)
-            emit(UiState.Error(rootError.message ?: "Failed to observe sector comms"))
-          }
-      } else {
-        flowOf(UiState.Success(emptyList()))
-      })
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(UiState.Success(emptyList()))
+        } else {
+          repository
+            .observeSectorComms()
+            .map<List<SyndicateChatMessage>, UiState<List<SyndicateChatMessage>>> { UiState.Success(it) }
+            .retryWithExponentialBackoff("sectorComms")
+            .catch { error ->
+              if (error is CancellationException) throw error
+              emit(UiState.Error(error.message ?: "Failed to observe sector comms"))
+            }
+        }
+      }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
@@ -197,12 +287,19 @@ class RiftViewModel(
       )
 
   val latestCalibrationBroadcast: StateFlow<RiftRepository.LiveCalibrationBroadcast?> =
-    repository
-      .observeCustomGameCalibration()
-      .catch { error ->
-        if (error is CancellationException) throw error
-        Log.w(TAG, "Error observing custom game calibration", error)
-        emit(null)
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(null)
+        } else {
+          repository
+            .observeCustomGameCalibration()
+            .retryWithExponentialBackoff("customCalibration")
+            .catch { error ->
+              if (error is CancellationException) throw error
+              emit(null)
+            }
+        }
       }
       .stateIn(
         scope = viewModelScope,
@@ -211,8 +308,12 @@ class RiftViewModel(
       )
 
   init {
-    if (isCloudSessionReady()) {
-      ensureInitialProfile()
+    viewModelScope.launch {
+      cloudReadyFlow.collect { ready ->
+        if (ready) {
+          ensureInitialProfile()
+        }
+      }
     }
   }
 
@@ -220,17 +321,18 @@ class RiftViewModel(
     if (!isCloudSessionReady()) return
     viewModelScope.launch {
       try {
-        val existingResult = repository.getPilotDossier(currentUserId)
+        val resolvedUid = Firebase.auth.currentUser?.uid?.trim()?.ifEmpty { currentUserId } ?: currentUserId
+        val existingResult = repository.getPilotDossier(resolvedUid)
         if (existingResult.isFailure) return@launch
         val existing = existingResult.getOrNull()
         if (existing == null) {
           val defaultDossier =
             PilotDossier(
-              userId = currentUserId,
+              userId = resolvedUid,
               callsign = initialCallsign,
               preferredShipId = 1L,
               preferredFoundry = "Independent",
-              preferredMode = "FFA",
+              preferredMode = "SECTOR_CONVERGENCE",
               pvpKills = 0L,
               pvpDeaths = 0L,
               pvpBountyPeak = 100L,
@@ -242,7 +344,7 @@ class RiftViewModel(
           repository.savePilotDossier(defaultDossier)
           repository.saveLeaderboardEntry(
             LeaderboardEntry(
-              userId = currentUserId,
+              userId = resolvedUid,
               callsign = initialCallsign,
               shipId = 1L,
               syndicateTag = "",
@@ -270,11 +372,14 @@ class RiftViewModel(
     if (!isCloudSessionReady() || cleanTag.isEmpty() || cleanTag in setOf("RFT", "GUEST", "SOLO", "FREE", "BOT")) {
       return flowOf(null)
     }
-    return repository.observeCloudSyndicateMeta(cleanTag).catch { error ->
-      if (error is CancellationException) throw error
-      Log.w(TAG, "Error observing syndicate meta for $cleanTag", error)
-      emit(null)
-    }
+    return repository
+      .observeCloudSyndicateMeta(cleanTag)
+      .retryWithExponentialBackoff("syndicateMeta:$cleanTag")
+      .catch { error ->
+        if (error is CancellationException) throw error
+        Log.w(TAG, "Error observing syndicate meta for $cleanTag", error)
+        emit(null)
+      }
   }
 
   fun syncSyndicateMetaToCloud(
@@ -325,6 +430,32 @@ class RiftViewModel(
         repository.postSectorCommMessage(msg)
       } catch (e: Exception) {
         Log.w(TAG, "Failed to post sector comm message", e)
+      }
+    }
+  }
+
+  fun emitCombatEvent(event: SectorCombatEvent) {
+    if (!isCloudSessionReady()) return
+    viewModelScope.launch {
+      try {
+        repository.postSectorCombatEvent(event)
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        Log.w(TAG, "Failed to emit combat event", e)
+      }
+    }
+  }
+
+  fun publishSectorInstanceState(state: SectorInstanceState) {
+    if (!isCloudSessionReady()) return
+    viewModelScope.launch {
+      try {
+        repository.saveSectorInstanceState(state)
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        Log.w(TAG, "Failed to publish sector instance state", e)
       }
     }
   }
@@ -504,7 +635,7 @@ class RiftViewModel(
         val callsign = obj.optString("callsign", initialCallsign)
         val shipId = obj.optLong("shipId", 1L)
         val foundry = obj.optString("foundry", "Independent")
-        val mode = "FFA"
+        val mode = repository.sanitizeSectorMode(obj.optString("mode", "SECTOR_CONVERGENCE"))
         val pvpKills = obj.optLong("pvpKills", 0L)
         val pvpDeaths = obj.optLong("pvpDeaths", 0L)
         val pvpBountyPeak = obj.optLong("pvpBountyPeak", 100L)
@@ -559,7 +690,7 @@ class RiftViewModel(
     viewModelScope.launch {
       try {
         val obj = JSONObject(payloadJson)
-        val sectorId = "FFA"
+        val sectorId = repository.sanitizeSectorMode(obj.optString("sectorId", "SECTOR_CONVERGENCE"))
         if (_activeSectorId.value != sectorId) {
           _activeSectorId.value = sectorId
         }
@@ -602,13 +733,10 @@ class RiftViewModel(
     allTimeBountyPeak: Long,
     convergencesWon: Long,
     syndicateTag: String = "",
+    syndicateName: String = "",
     armadaTag: String = "SOLO",
     armadaTierSize: Int = 1,
   ) {
-    val cleanMode = mode.trim().uppercase(java.util.Locale.US)
-    if (cleanMode.isNotEmpty() && _activeSectorId.value == "FFA") {
-      _activeSectorId.value = cleanMode
-    }
     if (!isCloudSessionReady()) return
     viewModelScope.launch {
       try {
@@ -616,6 +744,8 @@ class RiftViewModel(
           PilotDossier(
             userId = currentUserId,
             callsign = callsign,
+            syndicateTag = syndicateTag,
+            syndicateName = syndicateName,
             preferredShipId = shipId.toLong(),
             preferredFoundry = foundry,
             preferredMode = mode,
@@ -668,12 +798,17 @@ class RiftViewModel(
     isFiringPrimary: Boolean = false,
     isAfterburning: Boolean = false,
     isCloaked: Boolean = false,
+    isRespawning: Boolean = false,
+    isInStasisBrig: Boolean = false,
+    secondarySeq: Long = 0L,
+    secondaryType: String = "NONE",
+    secondaryAim: Float = angle,
     flux: Float,
     maxFlux: Float,
     bounty: Int,
     liveResonance: Int = 0,
   ) {
-    val cleanSector = sectorId.trim().uppercase(java.util.Locale.US).ifEmpty { "SECTOR_CONVERGENCE" }
+    val cleanSector = repository.sanitizeSectorMode(sectorId.ifBlank { "NEXUS_LOBBY" })
     if (_activeSectorId.value != cleanSector) {
       _activeSectorId.value = cleanSector
     }
@@ -698,6 +833,11 @@ class RiftViewModel(
             isFiringPrimary = isFiringPrimary,
             isAfterburning = isAfterburning,
             isCloaked = isCloaked,
+            isRespawning = isRespawning,
+            isInStasisBrig = isInStasisBrig,
+            secondarySeq = secondarySeq,
+            secondaryType = secondaryType,
+            secondaryAim = secondaryAim.toDouble(),
             energy = flux.toLong().coerceIn(0L, 10000L),
             maxEnergy = maxFlux.toLong().coerceIn(100L, 10000L),
             bounty = bounty.toLong(),
@@ -764,7 +904,7 @@ class RiftViewModel(
     val nowMs = System.currentTimeMillis()
     pilotsList.forEach { p ->
       val updatedMs = p.updatedAt?.toDate()?.time ?: nowMs
-      if (p.userId != currentUserId && (nowMs - updatedMs) <= 60_000L) {
+      if (p.userId != currentUserId && kotlin.math.abs(nowMs - updatedMs) <= 60_000L) {
         pilotsArray.put(
           JSONObject().apply {
             put("userId", p.userId.ifEmpty { p.id })

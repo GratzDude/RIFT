@@ -1,8 +1,10 @@
 package com.example.data
 
+import androidx.annotation.Keep
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
+import com.google.firebase.firestore.PropertyName
 import com.google.firebase.firestore.ServerTimestamp
 import java.util.Locale
 import org.json.JSONObject
@@ -62,10 +64,12 @@ data class LeaderboardEntry(
   @ServerTimestamp val updatedAt: Timestamp? = null,
 )
 
+@Keep
 @IgnoreExtraProperties
 data class LivePilotState(
   @DocumentId val id: String = "",
   val userId: String = "",
+  val visibility: String = "public",
   val sectorId: String = "warzone_10v10",
   val callsign: String = "COMMANDER",
   val syndicateTag: String = "",
@@ -78,9 +82,14 @@ data class LivePilotState(
   val vy: Double = 0.0,
   val angle: Double = 0.0,
   val weaponAngle: Double = 0.0,
-  val isFiringPrimary: Boolean = false,
-  val isAfterburning: Boolean = false,
-  val isCloaked: Boolean = false,
+  @get:PropertyName("isFiringPrimary") @PropertyName("isFiringPrimary") val isFiringPrimary: Boolean = false,
+  @get:PropertyName("isAfterburning") @PropertyName("isAfterburning") val isAfterburning: Boolean = false,
+  @get:PropertyName("isCloaked") @PropertyName("isCloaked") val isCloaked: Boolean = false,
+  @get:PropertyName("isRespawning") @PropertyName("isRespawning") val isRespawning: Boolean = false,
+  @get:PropertyName("isInStasisBrig") @PropertyName("isInStasisBrig") val isInStasisBrig: Boolean = false,
+  val secondarySeq: Long = 0L,
+  val secondaryType: String = "NONE",
+  val secondaryAim: Double = 0.0,
   val energy: Long = 2400L,
   val maxEnergy: Long = 2400L,
   val bounty: Long = 100L,
@@ -92,6 +101,63 @@ data class LivePilotState(
   @ServerTimestamp val updatedAt: Timestamp? = null,
 )
 
+data class CloudSyncHealth(
+  val isConnected: Boolean = false,
+  val lastHeartbeatOkMs: Long = 0L,
+  val lastSnapshotOkMs: Long = 0L,
+  val statusLabel: String = "STANDBY",
+  val lastError: String? = null,
+)
+
+@Keep
+@IgnoreExtraProperties
+data class SectorCombatEvent(
+  @DocumentId val id: String = "",
+  val senderUid: String = "",
+  val targetUid: String = "",
+  val sectorId: String = "SECTOR_CONVERGENCE",
+  val eventType: String = "HIT",
+  val damage: Long = 0L,
+  val bountyAward: Long = 0L,
+  val weaponLabel: String = "",
+  val senderCallsign: String = "PILOT",
+  val senderTag: String = "",
+  val senderShipId: Long = 1L,
+  val createdAtMs: Long = 0L,
+  @ServerTimestamp val createdAt: Timestamp? = null,
+)
+
+@Keep
+@IgnoreExtraProperties
+data class SectorInstanceState(
+  @DocumentId val id: String = "",
+  val sectorId: String = "SECTOR_CONVERGENCE",
+  val hostUid: String = "",
+  val fluxCarrierUid: String = "",
+  val fluxOrbX: Double = 4000.0,
+  val fluxOrbY: Double = 3680.0,
+  val fluxOrbVx: Double = 0.0,
+  val fluxOrbVy: Double = 0.0,
+  val fluxTier: Long = 0L,
+  val fluxHoldSec: Double = 0.0,
+  val rcWestScore: Double = 0.0,
+  val rcEastScore: Double = 0.0,
+  val rcTimerSec: Double = 180.0,
+  val rcAlphaCtrl: Double = 0.0,
+  val rcAlphaLock: Long = -1L,
+  val rcOmegaCtrl: Double = 0.0,
+  val rcOmegaLock: Long = -1L,
+  val sbTimerSec: Double = 180.0,
+  val sbWestCaps: Long = 0L,
+  val sbEastCaps: Long = 0L,
+  val sbWestCoreHp: Double = 40000.0,
+  val sbEastCoreHp: Double = 40000.0,
+  val jailedUidsCsv: String = "",
+  val updatedAtMs: Long = 0L,
+  @ServerTimestamp val updatedAt: Timestamp? = null,
+)
+
+@Keep
 @IgnoreExtraProperties
 data class SyndicateInfo(
   @DocumentId val id: String = "",
@@ -102,7 +168,7 @@ data class SyndicateInfo(
   val motto: String = "",
   val memberCount: Int = 1,
   val combinedBounty: Long = 100L,
-  val isCustom: Boolean = false,
+  @get:PropertyName("isCustom") @PropertyName("isCustom") val isCustom: Boolean = false,
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null,
 ) {
@@ -187,6 +253,7 @@ data class ArmadaMemberSlot(
   val isLeader: Boolean = false,
 )
 
+@Keep
 @IgnoreExtraProperties
 data class SyndicateChatMessage(
   @DocumentId val id: String = "",
@@ -195,7 +262,7 @@ data class SyndicateChatMessage(
   val senderSyndicateTag: String = "",
   val timestampLabel: String = "JUST NOW",
   val messageText: String = "",
-  val isArmadaRecruitBanner: Boolean = false,
+  @get:PropertyName("isArmadaRecruitBanner") @PropertyName("isArmadaRecruitBanner") val isArmadaRecruitBanner: Boolean = false,
   val armadaName: String = "",
   val armadaCurrentSize: Int = 1,
   val armadaMaxSize: Int = 5,

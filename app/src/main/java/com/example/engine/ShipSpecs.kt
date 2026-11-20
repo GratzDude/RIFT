@@ -617,9 +617,10 @@ data class SpecialBuffRegistryEntry(
       val strokeHex = obj.optString("strokeColorHex", "#C084FC")
       val aimName = obj.optString("aimMode", BuffAimMode.AIM_DIRECTIONAL.name)
       val effName = obj.optString("specialEffect", CustomBuffEffect.PULL.name)
+      val isCustom = obj.optBoolean("isCustomForged", true)
       return SpecialBuffRegistryEntry(
         id = obj.optString("id", "FORGED_BUFF_${System.currentTimeMillis()}"),
-        buffTypeIndex = obj.optInt("buffTypeIndex", 11).coerceAtLeast(11),
+        buffTypeIndex = obj.optInt("buffTypeIndex", 16).coerceAtLeast(if (isCustom) 16 else 0),
         officialName = obj.optString("officialName", "GRAVITY WELL").take(20),
         shortLabel = obj.optString("shortLabel", "GRAVITY").take(8),
         chargesPerPickup = obj.optInt("chargesPerPickup", 2).coerceIn(1, 8),
@@ -1228,14 +1229,111 @@ data class CustomShipLoadoutSlot(
           "320 Flux • 8.5s CD",
           "6.0s two-way Stasis field (275px radius). Nothing enters or leaves.",
         ),
+        SecondaryAbilityOption(
+          "CHAKRAM",
+          "Chakram Ricochet Saw-Disc",
+          "CHAKRAM",
+          22,
+          "400 Flux • 0.90s CD",
+          "8-slice pizza-colored spiked saw-disc (560 DMG • 4 Wall Bounces) that caroms around corners.",
+        ),
+        SecondaryAbilityOption(
+          "HOLO_PHANTOM",
+          "Holo Phantom Clone + Cloak",
+          "PHANTOM",
+          22,
+          "400 Flux • 3.5s CD",
+          "Launches a mirrored holographic clone forward while cloaking your hull for 2.2s.",
+        ),
+        SecondaryAbilityOption(
+          "STASIS_BARRIER",
+          "Stasis Hard-Light Barrier",
+          "BARRIER",
+          20,
+          "360 Flux • 4.0s CD",
+          "Deploys a 45.0s cyan hard-light forcefield ahead of your ship that reflects enemy fire.",
+        ),
+        SecondaryAbilityOption(
+          "HYPER_SURGE",
+          "Hyper Surge Thruster Boost",
+          "SURGE",
+          18,
+          "320 Flux • 3.8s CD",
+          "Ignites hyper-thrusters for 3.2s of supersonic intercept speed and rapid turn vectoring.",
+        ),
+        SecondaryAbilityOption(
+          "SWARM_DRONES",
+          "5-Drone Hunter Swarm",
+          "SWARM",
+          23,
+          "440 Flux • 1.8s CD",
+          "Unleashes 5 zig-zagging hunter micro-drones (210 DMG each) that weave onto hostile hulls.",
+        ),
+        SecondaryAbilityOption(
+          "TRACTOR_BEAM",
+          "Toggleable Tractor Beam",
+          "TRACTOR",
+          21,
+          "Toggle • 112 Flux/s",
+          "Gravimetric laser web that slows and reels a caught enemy toward your hull; tap again to release.",
+        ),
+        SecondaryAbilityOption(
+          "PROX_SEEKER",
+          "Proximity Patrol Missile (Max 2)",
+          "PROX LOCK",
+          24,
+          "500 Flux • 2.4s CD",
+          "Infinite-bounce patrol warhead (840 DMG) that locks onto any hull entering its proximity ring.",
+        ),
+        SecondaryAbilityOption(
+          "LANCE_BEAM",
+          "Toggleable Plasma Lance",
+          "LANCE",
+          22,
+          "Toggle • 145 Flux/s",
+          "Continuous non-penetrating thermal cutting beam dealing tick damage every 0.5s; tap again to shut off.",
+        ),
+        SecondaryAbilityOption(
+          "NATIVE_RICOCHET",
+          "Ricochet Rounds (+1 Bounce)",
+          "RICOCHET",
+          14,
+          "Passive • +1 Pri Bounce",
+          "Permanently adds +1 wall/obstacle bounce to every primary weapon volley.",
+        ),
+        SecondaryAbilityOption(
+          "REPEL_PULSE",
+          "Repel Shockwave Generator",
+          "REPEL",
+          20,
+          "340 Flux • 2.2s CD",
+          "Triggers a 250px 360° gravimetric Repel shockwave on demand using Flux instead of charges.",
+        ),
       )
+
+    fun getAllAvailableSecondaryOptions(): List<SecondaryAbilityOption> {
+      val customOptions =
+        RiftCodex.getCustomForgedBuffs().map { entry ->
+          SecondaryAbilityOption(
+            id = entry.id,
+            title = "${entry.officialName} (Forged Crate)",
+            shortLabel = entry.shortLabel,
+            pointCost = 22,
+            fluxAndCdLabel = "420 Flux • 1.40s CD",
+            summary = entry.summary,
+          )
+        }
+      return SECONDARY_OPTIONS + customOptions
+    }
 
     fun getPrimaryPointCost(archetype: String): Int =
       PRIMARY_OPTIONS.firstOrNull { it.id == archetype }?.pointCost ?: 0
 
     fun getSecondaryPointCost(secType: String): Int {
       val norm = normalizeLegacySecondaryCode(secType)
-      return SECONDARY_OPTIONS.firstOrNull { it.id == norm }?.pointCost ?: 0
+      SECONDARY_OPTIONS.firstOrNull { it.id == norm }?.let { return it.pointCost }
+      if (RiftCodex.getBuffRegistryEntry(norm)?.isCustomForged == true) return 22
+      return 0
     }
 
     private fun normalizeLegacySecondaryCode(rawCode: String): String =
@@ -1243,6 +1341,7 @@ data class CustomShipLoadoutSlot(
         rawCode == "BURST" -> "NOVA_RING"
         rawCode.equals("SH" + "OTGUN", ignoreCase = true) -> "SHATTER_CONE"
         rawCode.equals("MI" + "SSILE", ignoreCase = true) -> "SEEKER_TORPEDO"
+        rawCode.equals("DISC", ignoreCase = true) -> "CHAKRAM"
         else -> rawCode
       }
 
@@ -1389,7 +1488,17 @@ data class CustomShipLoadoutSlot(
         val rawPri = obj.optString("primaryArchetype", "SNIPER_RAIL")
         val validPri = if (PRIMARY_OPTIONS.any { it.id == rawPri }) rawPri else "SNIPER_RAIL"
         val rawSec = normalizeLegacySecondaryCode(obj.optString("secondaryType", "PHASE_DASH"))
-        val validSec = if (SECONDARY_OPTIONS.any { it.id == rawSec }) rawSec else "NONE"
+        val validSec =
+          if (
+            SECONDARY_OPTIONS.any { it.id == rawSec } ||
+              RiftCodex.getBuffRegistryEntry(rawSec)?.isCustomForged == true ||
+              rawSec.startsWith("FORGED_") ||
+              rawSec.startsWith("CUSTOM_")
+          ) {
+            rawSec
+          } else {
+            "NONE"
+          }
         val cleanSlot = normalizeSlotId(obj.optString("slotId", cleanFallback))
 
         val sp = obj.optInt("speedPts", 25).coerceIn(0, 30)
@@ -1523,7 +1632,7 @@ object RiftCodex {
     get() = CustomShipLoadoutSlot.PRIMARY_OPTIONS
 
   val secondaryAbilityOptions: List<SecondaryAbilityOption>
-    get() = CustomShipLoadoutSlot.SECONDARY_OPTIONS
+    get() = CustomShipLoadoutSlot.getAllAvailableSecondaryOptions()
 
   fun getRiftFramePointBudget(pilotLevel: Int, devOverride: Boolean = false): Int =
     com.example.engine.getRiftFramePointBudget(pilotLevel, devOverride)
@@ -1720,6 +1829,24 @@ object RiftCodex {
           damage = 280f,
           blastRadius = 640f,
         ),
+      "CHAKRAM" to
+        SpecialBuffRegistryEntry(
+          id = "CHAKRAM",
+          buffTypeIndex = 15,
+          officialName = "CHAKRAM",
+          shortLabel = "CHAKRAM",
+          chargesPerPickup = 2,
+          aimMode = BuffAimMode.AIM_DIRECTIONAL,
+          strokeColorHex = "#F59E0B",
+          fillColorArgb = SpecialBuffRegistryEntry.fillColorFromStroke("#F59E0B"),
+          summary = "Launches a high-spin 8-slice pizza-colored spiked saw-disc (560 Flux damage, 4 wall/barrier bounces) that caroms down corridors at 0 Flux cost.",
+          isCustomForged = false,
+          projectileSpeed = 760f,
+          flightDuration = 3.4f,
+          damage = 560f,
+          blastRadius = 140f,
+          wallBounces = 4,
+        ),
     )
 
   val BUFF_REGISTRY: MutableMap<String, SpecialBuffRegistryEntry> = createCoreBuffRegistry()
@@ -1737,6 +1864,7 @@ object RiftCodex {
       "TRACTOR", "TRACTOR_BEAM", "WEB" -> "TRACTOR_BEAM"
       "PROX_MISSILE", "PROX_SEEKER", "PROX_LOCK", "INFINITE_MISSILE" -> "PROX_SEEKER"
       "LANCE", "LANCE_BEAM", "CONTINUOUS_LANCE" -> "LANCE_BEAM"
+      "CHAKRAM", "DISC", "SAW_DISC", "PIZZA_DISC" -> "CHAKRAM"
       else -> clean
     }
   }
@@ -1755,13 +1883,13 @@ object RiftCodex {
   }
 
   fun nextCustomBuffTypeIndex(): Int {
-    val maxExisting = BUFF_REGISTRY.values.maxOfOrNull { it.buffTypeIndex } ?: 14
-    return max(15, maxExisting + 1)
+    val maxExisting = BUFF_REGISTRY.values.maxOfOrNull { it.buffTypeIndex } ?: 15
+    return max(16, maxExisting + 1)
   }
 
   fun registerCustomBuff(entry: SpecialBuffRegistryEntry) {
     val safeEntry =
-      if (entry.isCustomForged && entry.buffTypeIndex <= 14) {
+      if (entry.isCustomForged && entry.buffTypeIndex <= 15) {
         entry.copy(buffTypeIndex = nextCustomBuffTypeIndex())
       } else {
         entry
@@ -1825,13 +1953,16 @@ object RiftCodex {
       }
 
     val supportsNativeMulti = slot.secondaryType == "NATIVE_MULTI"
+    val extraPrimaryBounces = if (slot.secondaryType == "NATIVE_RICOCHET") 1 else 0
     val extraRepel = if (slot.secondaryType == "MINE") 1 else 0
-    val hasSecBomb = slot.secondaryType != "NONE" && slot.secondaryType != "NATIVE_MULTI"
+    val hasSecBomb = slot.secondaryType !in setOf("NONE", "NATIVE_MULTI", "NATIVE_RICOCHET")
 
     val (sTitle, sShort, bCost, bCd, bDmg, bBounces, bRecoil) =
       when (slot.secondaryType) {
         "NATIVE_MULTI" ->
           SecondaryTuple("Native 4-Bolt Multi-Toggle", "TWIN MULTI", 0f, 0f, 0f, 0, 0f)
+        "NATIVE_RICOCHET" ->
+          SecondaryTuple("Ricochet Rounds (+1 Bounce)", "RICOCHET", 0f, 0f, 0f, 0, 0f)
         "PHASE_DASH" ->
           SecondaryTuple("Phase Dash + +35% Overcharge", "PHASE DASH", 320f, 0.65f, 0f, 0, 0f)
         "MINE" ->
@@ -1848,14 +1979,46 @@ object RiftCodex {
           SecondaryTuple("7-Pellet Shatter Cone", "SHATTER", 380f, 0.85f, 195f, 0, 260f)
         "SEEKER_TORPEDO" ->
           SecondaryTuple("Homing Seeker Torpedo", "SEEKER", 460f, 1.05f, 880f, 0, 190f)
+        "CHAKRAM" ->
+          SecondaryTuple("Chakram Ricochet Saw-Disc (4 Bounces)", "CHAKRAM", 400f, 0.90f, 560f, 4, 140f)
+        "HOLO_PHANTOM" ->
+          SecondaryTuple("Holo Phantom Clone + Cloak", "PHANTOM", 400f, 3.5f, 420f, 0, 0f)
+        "STASIS_BARRIER" ->
+          SecondaryTuple("Stasis Hard-Light Barrier", "BARRIER", 360f, 4.0f, 0f, 0, 0f)
+        "HYPER_SURGE" ->
+          SecondaryTuple("Hyper Surge Thruster Boost", "SURGE", 320f, 3.8f, 0f, 0, 0f)
+        "SWARM_DRONES" ->
+          SecondaryTuple("5-Drone Hunter Swarm", "SWARM", 440f, 1.8f, 210f, 0, 0f)
+        "TRACTOR_BEAM" ->
+          SecondaryTuple("Toggleable Tractor Beam (112/s)", "TRACTOR", 0f, 0.35f, 0f, 0, 0f)
+        "PROX_SEEKER" ->
+          SecondaryTuple("Proximity Patrol Missile (Max 2)", "PROX LOCK", 500f, 2.4f, 840f, 99, 170f)
+        "LANCE_BEAM" ->
+          SecondaryTuple("Toggleable Plasma Lance (145/s)", "LANCE", 0f, 0.35f, 280f, 0, 0f)
+        "REPEL_PULSE" ->
+          SecondaryTuple("Repel Shockwave Generator", "REPEL", 340f, 2.2f, 0f, 0, 0f)
         "CLOAK_EMP" ->
           SecondaryTuple("Stealth Cloak + 0-Flux Decloak EMP", "CLOAK", 0f, 4.5f, 0f, 0, 0f)
         "SIEGE" ->
           SecondaryTuple("Heavy Siege Bomb (Air-Burst)", "SIEGE BOMB", 650f, 1.20f, 1350f, 1, 360f)
         "INTERDICTOR_DOME" ->
           SecondaryTuple("Stasis (320 Flux • 6.0s)", "STASIS", 320f, 8.5f, 0f, 0, 0f)
-        else ->
-          SecondaryTuple("Pure Hull Focus (No Secondary)", "NONE", 0f, 0f, 0f, 0, 0f)
+        else -> {
+          val customForged = getBuffRegistryEntry(slot.secondaryType)?.takeIf { it.isCustomForged }
+          if (customForged != null) {
+            SecondaryTuple(
+              "${customForged.officialName} (Forged)",
+              customForged.shortLabel,
+              420f,
+              1.40f,
+              customForged.damage,
+              customForged.wallBounces,
+              140f,
+            )
+          } else {
+            SecondaryTuple("Pure Hull Focus (No Secondary)", "NONE", 0f, 0f, 0f, 0, 0f)
+          }
+        }
       }
 
     val cleanHullTitle = slot.customName.trim().ifEmpty { "Rift Frame" }
@@ -1882,7 +2045,7 @@ object RiftCodex {
       primarySpeed = pSpeed,
       primaryStreams = pStreams,
       primarySpreadRad = pSpread,
-      primaryBounces = pBounce,
+      primaryBounces = pBounce + extraPrimaryBounces,
       isParallelTwin = isParallel,
       hasBomb = hasSecBomb,
       bombType = if (hasSecBomb) slot.secondaryType else "NONE",
@@ -2500,10 +2663,19 @@ object RiftCodex {
         tacticalNote = "Stack Lance crates before activating for a wide, long-reach thermal cutting beam!",
       ),
       PowerUpCodexEntry(
+        id = "special_chakram",
+        buffTypeIndex = 15,
+        title = "CHAKRAM (+2 CHARGES • 4 BOUNCES)",
+        dropRatePercent = 6,
+        category = "BUCKET A: SPECIAL BUFF SLOT (0 FLUX)",
+        effectSummary = "Loads +2 Chakram charges (up to 4) into your Special Buff Button. Hurls an 8-slice pizza-colored spiked saw-disc (560 Flux damage) that bounces up to 4 times off walls and barriers!",
+        tacticalNote = "Bank the spinning Chakram off corridor walls or hard-light barriers to cleave targets twice on the rebound!",
+      ),
+      PowerUpCodexEntry(
         id = "flux_restore",
         buffTypeIndex = 6,
         title = "FLUX SURGE (+750 FLUX)",
-        dropRatePercent = 11,
+        dropRatePercent = 9,
         category = "BUCKET B: INSTANT SHIP ENHANCER",
         effectSummary = "Instantly restores +750 Flux to your ship's health/ammo capacitor.",
         tacticalNote = "Grab mid-dogfight to survive lethal volleys without retreating to Safe Zone.",
@@ -2512,7 +2684,7 @@ object RiftCodex {
         id = "repel_charge",
         buffTypeIndex = 7,
         title = "REPEL CHARGE (+1 CHARGE)",
-        dropRatePercent = 9,
+        dropRatePercent = 7,
         category = "BUCKET B: INSTANT SHIP ENHANCER",
         effectSummary = "Adds +1 Repel Shockwave charge (up to 4 max).",
         tacticalNote = "Deflects enemy bombs, mines, seekers, and ships within 250px!",

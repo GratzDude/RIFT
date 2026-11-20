@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 86
+const val CURRENT_RIFT_BUILD_VERSION = 87
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,21 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 87,
+      versionTag = "v1.0.87 // BUILD #87",
+      releaseDate = "Nov 19, 2026",
+      headline = "Multi-Device Live Online Sync, 5 Combat & Ranked Mode Fixes, Animated Minimap Flux Symbol, Chakram Disc & All Crate Buffs on Rift Frame",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Multi-Device Live Online Presence, Matchmaking & Synchronized PvP Combat (RiftModels, RiftRepository, RiftViewModel, RiftGameEngine, MainActivity, firestore.rules): Aligned /sector_pilots list queries and security rules on visibility == 'public', added @PropertyName annotations on is-prefixed LivePilotState booleans, upgraded cloudReadyFlow with a reactive FirebaseAuth.AuthStateListener, fast-path single-write sector_pilots heartbeats (220ms active / 1.2s lobby) with self-healing schema fallback, canonical Overwatch & Resonance Matchmaking sector keys, deterministic cross-device West/East team placement, velocity dead-reckoning + remote secondary ability replication, real-time /sector_combat_events PvP hit/kill sync, /sector_instances Flux Core / Rift Control / Stasis Breach objective host sync, and live CloudSyncHealth diagnostics in NEXUS and Helm Systems.",
+          "Station 10-Hit Defense Nova & Unstable Rift 10s Convergence Alert (RiftGameEngine, RiftHudOverlay, RiftArenaView): Restored Orbital and Asteroid Stations so shooting a station only increments that individual station's 1..10 counter and fires its 16-bolt 360-degree Station Defense Nova strictly on the 10th hit with zero per-shot salvo or neighbor cascade fire; added warp audio, trauma, and a top-priority pulsing 10.0s UNSTABLE RIFT CONVERGENCE countdown banner whenever two Playfield Rifts merge.",
+          "Stasis Breach 3:00 Capture Scoring & AI Pathing, Rift Control 15s Lock & Live Timer, and Deathmatch Alive Counters (RiftGameEngine, RiftHudOverlay): Added forward lane spawns outside Stasis Jail spheres and AI Stasis Jail ray avoidance so bots engage immediately, plus a 3:00 Stasis Breach timer tracking team and personal Stasis Captures (instant win on Total Stasis Lockdown of all 10 enemies); wired live frameTick recomposition and a 15-second capture lock into RiftControlTugOfWarHudBar; added live WEST X/N ALIVE | EAST Y/N ALIVE counters to Rift Skirmish and Syndicate Wars.",
+          "Animated Minimap Flux Symbol, Chakram Bouncing Disc Buff & All Crate Buffs on Rift Frame (RiftHudOverlay, ShipSpecs, RiftSpriteBaker, RiftArenaView, HangarModal, CodexModal): Replaced the plain leading dot on the circular minimap Flux gauge with a continuously spinning 3D Swirling Plasma Toroid Flux symbol; added the 8-slice spiked pizza-colored CHAKRAM disc Supply Crate buff (buffTypeIndex = 15, 4 ricochets, 560 Flux cleave); unlocked every Supply Crate buff as an equippable Rift Frame Secondary within the 100-Point Parity system.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 86,
       versionTag = "v1.0.86 // BUILD #86",

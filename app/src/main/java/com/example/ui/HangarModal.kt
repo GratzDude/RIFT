@@ -2196,13 +2196,13 @@ private fun NinthShipModularForgePanel(
         }
 
         Text(
-          text = "CLASS ABILITY SLOT (${activeSlot.secondaryPts} PTS • 4TH BUFF SLOT STAYS SEPARATE)",
+          text = "CLASS & CRATE ABILITY SLOT (${activeSlot.secondaryPts} PTS • 4TH BUFF SLOT STAYS SEPARATE)",
           color = HangarSolarGold,
           fontSize = 9.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = Mono,
         )
-        CustomShipLoadoutSlot.SECONDARY_OPTIONS.chunked(2).forEach { rowOptions ->
+        CustomShipLoadoutSlot.getAllAvailableSecondaryOptions().chunked(2).forEach { rowOptions ->
           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             rowOptions.forEach { secOpt ->
               val isSelected = activeSlot.secondaryType == secOpt.id

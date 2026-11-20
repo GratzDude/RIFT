@@ -270,9 +270,9 @@ fun CodexModal(
             ) {
               CodexHighlightCard(
                 modifier = Modifier.weight(1f),
-                title = "SPECIAL BUFF SLOT (0 FLUX)",
+                title = "SPECIAL BUFF SLOT & RIFT FRAME",
                 body =
-                  "Nova Ring, Shatter Cone, Seeker Torpedo, Holo Phantom, Stasis Barrier, Hyper Surge & 5-Drone Swarm equip to the 4th button at 0 Flux cost.",
+                  "Chakram (4-bounce saw-disc), Nova Ring, Shatter Cone, Seeker, Phantom, Barrier, Surge, Swarm, Tractor, Prox Lock & Lance equip at 0 Flux from Crates—or as Rift Frame Secondaries!",
                 bgColor = Color(0xFF092318),
                 borderColor = Color(0xFF10B981),
                 bodyColor = Color(0xFFD1FAE5),
@@ -719,6 +719,10 @@ private fun CodexSupplyBuffCard(
       8 -> Color(0xFFFACC15)
       9 -> Color(0xFFC084FC)
       11 -> Color(0xFF00F5D4)
+      12 -> Color(0xFF34D399)
+      13 -> Color(0xFFFACC15)
+      14 -> Color(0xFFA855F7)
+      15 -> Color(0xFFF59E0B)
       -10 -> Color(0xFF38BDF8)
       -11 -> Color(0xFFF59E0B)
       -12 -> Color(0xFF10B981)

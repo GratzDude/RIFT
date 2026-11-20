@@ -195,15 +195,23 @@
           "type": "string",
           "description": "Owner Firebase Auth UID."
         },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "description": "Visibility scope for query enforcement across online pilot presence queries."
+        },
         "sectorId": {
           "type": "string",
           "enum": [
             "FFA",
             "SECTOR_CONVERGENCE",
+            "SECTOR_CONVERGENCE_2",
             "RIFT_SKIRMISH",
+            "RIFT_CONTROL",
             "FLUX_CORE",
             "STASIS_BREACH",
             "SYNDICATE_WARS",
+            "NEXUS_LOBBY",
             "warzone_10v10",
             "ranked_3v3",
             "ranked_5v5"

@@ -21,6 +21,9 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -92,6 +95,9 @@ typealias LiveCalibrationBroadcast = RiftRepository.LiveCalibrationBroadcast
 
 class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   private val localSeenMsByUid = ConcurrentHashMap<String, Long>()
+  private val knownExistingPilotDocUids = ConcurrentHashMap.newKeySet<String>()
+  private val _cloudSyncHealth = MutableStateFlow(CloudSyncHealth())
+  val cloudSyncHealth: StateFlow<CloudSyncHealth> = _cloudSyncHealth.asStateFlow()
 
   data class LiveCalibrationBroadcast(
     val customGameId: String = "",
@@ -128,6 +134,41 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
 
   private val auth = Firebase.auth
 
+  private fun markHeartbeatSuccess() {
+    val now = System.currentTimeMillis()
+    val prev = _cloudSyncHealth.value
+    _cloudSyncHealth.value =
+      prev.copy(
+        isConnected = true,
+        lastHeartbeatOkMs = now,
+        statusLabel = "LIVE SYNC OK",
+        lastError = null,
+      )
+  }
+
+  private fun markSnapshotSuccess() {
+    val now = System.currentTimeMillis()
+    val prev = _cloudSyncHealth.value
+    _cloudSyncHealth.value =
+      prev.copy(
+        isConnected = true,
+        lastSnapshotOkMs = now,
+        statusLabel = "LIVE SYNC OK",
+        lastError = null,
+      )
+  }
+
+  private fun markSyncError(error: Throwable) {
+    val prev = _cloudSyncHealth.value
+    val msg = (error.message ?: error.javaClass.simpleName).take(72)
+    _cloudSyncHealth.value =
+      prev.copy(
+        isConnected = false,
+        statusLabel = "SYNC RETRYING",
+        lastError = msg,
+      )
+  }
+
   private fun requireUserId(): String {
     val uid = auth.currentUser?.uid?.trim()
     if (uid.isNullOrEmpty() || uid.startsWith("dev_")) {
@@ -163,12 +204,23 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     return if (clean.isEmpty()) "Independent" else clean.take(32)
   }
 
-  private fun sanitizeMode(raw: String): String {
+  fun sanitizeSectorMode(raw: String): String {
     val trimmed = raw.trim()
+    val withoutLegacyOne =
+      when (trimmed.uppercase(Locale.US)) {
+        "SECTOR_CONVERGENCE_1" -> "SECTOR_CONVERGENCE"
+        "FLUX_CORE_1" -> "FLUX_CORE"
+        "RIFT_SKIRMISH_1" -> "RIFT_SKIRMISH"
+        "STASIS_BREACH_1" -> "STASIS_BREACH"
+        "RIFT_CONTROL_1" -> "RIFT_CONTROL"
+        "SYNDICATE_WARS_1" -> "SYNDICATE_WARS"
+        else -> trimmed
+      }
     val allowed =
       setOf(
         "FFA",
         "SECTOR_CONVERGENCE",
+        "SECTOR_CONVERGENCE_2",
         "RIFT_SKIRMISH",
         "RIFT_CONTROL",
         "FLUX_CORE",
@@ -180,13 +232,16 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         "ranked_5v5",
       )
     return when {
-      trimmed in allowed -> trimmed
-      trimmed.startsWith("CUSTOM_") &&
-        trimmed.length <= 30 &&
-        trimmed.matches(Regex("^CUSTOM_[A-Za-z0-9_\\-]+$")) -> trimmed
-      else -> "FFA"
+      withoutLegacyOne in allowed -> withoutLegacyOne
+      withoutLegacyOne.uppercase(Locale.US) in allowed -> withoutLegacyOne.uppercase(Locale.US)
+      withoutLegacyOne.startsWith("CUSTOM_") &&
+        withoutLegacyOne.length <= 30 &&
+        withoutLegacyOne.matches(Regex("^CUSTOM_[A-Za-z0-9_\\-]+$")) -> withoutLegacyOne
+      else -> "SECTOR_CONVERGENCE"
     }
   }
+
+  private fun sanitizeMode(raw: String): String = sanitizeSectorMode(raw)
 
   suspend fun getPilotDossier(userId: String = requireUserId()): Result<PilotDossier?> = runCatching {
     val callerUid = requireUserId()
@@ -197,6 +252,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val path = "users/$resolvedUid"
     try {
       val snapshot = db.collection("users").document(resolvedUid).get().await()
+      markSnapshotSuccess()
       if (snapshot.exists()) {
         snapshot.toObject(PilotDossier::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
       } else {
@@ -206,6 +262,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       throw e
     } catch (e: Exception) {
       if (isAuthenticatedNonGuest()) {
+        markSyncError(e)
         handleFirestoreError(e, OperationType.GET, path)
       }
       throw e
@@ -218,6 +275,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .document(userId)
       .snapshots()
       .map { snapshot ->
+        markSnapshotSuccess()
         if (snapshot.exists()) {
           snapshot.toObject(PilotDossier::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
         } else {
@@ -232,6 +290,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
         if (exceptionToLog != null && isAuthenticatedNonGuest() && auth.currentUser?.uid == userId) {
+          markSyncError(exceptionToLog)
           handleFirestoreError(exceptionToLog, OperationType.GET, path)
         }
         throw error
@@ -242,17 +301,21 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val uid = requireUserId()
     val docRef = db.collection("users").document(uid)
     val safeCallsign = sanitizeCallsign(dossier.callsign)
+    val safeSynTag = sanitizeSyndicateTag(dossier.syndicateTag)
+    val safeSynName = dossier.syndicateName.trim().take(48)
     val safeShipId = dossier.preferredShipId.coerceIn(1L, 10L)
     val safeFoundry = sanitizeFoundry(dossier.preferredFoundry)
     val safeMode = sanitizeMode(dossier.preferredMode)
 
     try {
       val existingSnap = docRef.get().await()
-      if (!existingSnap.exists()) {
+      if (!existingSnap.exists() || existingSnap.getTimestamp("createdAt") == null) {
         val createPayload =
           mapOf(
             "userId" to uid,
             "callsign" to safeCallsign,
+            "syndicateTag" to safeSynTag,
+            "syndicateName" to safeSynName,
             "preferredShipId" to safeShipId,
             "preferredFoundry" to safeFoundry,
             "preferredMode" to safeMode,
@@ -263,7 +326,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
             "allTimeDeaths" to dossier.allTimeDeaths.coerceAtLeast(0L),
             "allTimeBountyPeak" to dossier.allTimeBountyPeak.coerceAtLeast(0L),
             "convergencesWon" to dossier.convergencesWon.coerceAtLeast(0L),
-            "createdAt" to FieldValue.serverTimestamp(),
+            "createdAt" to (existingSnap.getTimestamp("createdAt") ?: FieldValue.serverTimestamp()),
             "updatedAt" to FieldValue.serverTimestamp(),
           )
         docRef.set(createPayload).await()
@@ -276,9 +339,17 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           } else {
             safeCallsign
           }
+        val mergedSynTag =
+          if (safeSynTag.isNotEmpty() && safeSynTag !in setOf("GUEST", "RFT", "BOT")) safeSynTag
+          else existingObj?.syndicateTag?.let { sanitizeSyndicateTag(it) }.orEmpty()
+        val mergedSynName =
+          if (safeSynName.isNotEmpty() && !safeSynName.contains("Guest", ignoreCase = true)) safeSynName
+          else existingObj?.syndicateName?.take(48).orEmpty()
         val updatePayload =
           mapOf(
             "callsign" to mergedCallsign,
+            "syndicateTag" to mergedSynTag,
+            "syndicateName" to mergedSynName,
             "preferredShipId" to safeShipId,
             "preferredFoundry" to safeFoundry,
             "preferredMode" to safeMode,
@@ -293,10 +364,12 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           )
         docRef.update(updatePayload).await()
       }
+      markHeartbeatSuccess()
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
       if (isAuthenticatedNonGuest()) {
+        markSyncError(e)
         handleFirestoreError(e, OperationType.WRITE, docRef.path)
       }
       throw e
@@ -318,7 +391,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
 
     try {
       val existingSnap = docRef.get().await()
-      if (!existingSnap.exists()) {
+      if (!existingSnap.exists() || existingSnap.getTimestamp("createdAt") == null) {
         val createPayload =
           mapOf(
             "userId" to uid,
@@ -336,7 +409,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
             "allTimeDeaths" to entry.allTimeDeaths.coerceAtLeast(0L),
             "allTimeBounty" to entry.allTimeBounty.coerceAtLeast(0L),
             "convergencesWon" to entry.convergencesWon.coerceAtLeast(0L),
-            "createdAt" to FieldValue.serverTimestamp(),
+            "createdAt" to (existingSnap.getTimestamp("createdAt") ?: FieldValue.serverTimestamp()),
             "updatedAt" to FieldValue.serverTimestamp(),
           )
         docRef.set(createPayload).await()
@@ -368,10 +441,12 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           )
         docRef.update(updatePayload).await()
       }
+      markHeartbeatSuccess()
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
       if (isAuthenticatedNonGuest()) {
+        markSyncError(e)
         handleFirestoreError(e, OperationType.WRITE, docRef.path)
       }
       throw e
@@ -384,6 +459,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .whereEqualTo("visibility", "public")
       .snapshots()
       .map { snapshot ->
+        markSnapshotSuccess()
         snapshot
           .toObjects(
             LeaderboardEntry::class.java,
@@ -408,6 +484,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
         if (exceptionToLog != null && isAuthenticatedNonGuest()) {
+          markSyncError(exceptionToLog)
           handleFirestoreError(exceptionToLog, OperationType.LIST, path)
         }
         throw error
@@ -423,6 +500,13 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val safeSector = sanitizeMode(state.sectorId)
     val safeShip = state.shipId.coerceIn(1L, 10L)
     val safeFreq = state.freq.coerceIn(0L, 99L)
+    val safeSecondaryType =
+      state.secondaryType
+        .trim()
+        .uppercase(Locale.US)
+        .replace(Regex("[^A-Z0-9_\\-]"), "")
+        .take(28)
+        .ifEmpty { "NONE" }
     val safePing =
       if (state.lastPingType in listOf("NONE", "ATTACK", "DEFEND", "CONVERGENCE")) {
         state.lastPingType
@@ -430,71 +514,77 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         "NONE"
       }
 
-    try {
-      val existingSnap = docRef.get().await()
-      if (!existingSnap.exists()) {
-        val createPayload =
+    val updatePayload =
+      mapOf(
+        "visibility" to "public",
+        "sectorId" to safeSector,
+        "callsign" to safeCallsign,
+        "syndicateTag" to safeSyndicateTag,
+        "armadaName" to safeArmadaName,
+        "shipId" to safeShip,
+        "freq" to safeFreq,
+        "x" to state.x.coerceIn(-100000.0, 100000.0),
+        "y" to state.y.coerceIn(-100000.0, 100000.0),
+        "vx" to state.vx.coerceIn(-5000.0, 5000.0),
+        "vy" to state.vy.coerceIn(-5000.0, 5000.0),
+        "angle" to state.angle.coerceIn(-100.0, 100.0),
+        "weaponAngle" to state.weaponAngle.coerceIn(-100.0, 100.0),
+        "isFiringPrimary" to state.isFiringPrimary,
+        "isAfterburning" to state.isAfterburning,
+        "isCloaked" to state.isCloaked,
+        "isRespawning" to state.isRespawning,
+        "isInStasisBrig" to state.isInStasisBrig,
+        "secondarySeq" to state.secondarySeq.coerceIn(0L, 100_000_000L),
+        "secondaryType" to safeSecondaryType,
+        "secondaryAim" to state.secondaryAim.coerceIn(-100.0, 100.0),
+        "energy" to state.energy.coerceIn(0L, 10000L),
+        "maxEnergy" to state.maxEnergy.coerceIn(100L, 10000L),
+        "bounty" to state.bounty.coerceIn(0L, 100000000L),
+        "liveResonance" to state.liveResonance.coerceIn(0L, 1_000_000L),
+        "lastPingType" to safePing,
+        "lastPingX" to state.lastPingX.coerceIn(-100000.0, 100000.0),
+        "lastPingY" to state.lastPingY.coerceIn(-100000.0, 100000.0),
+        "updatedAt" to FieldValue.serverTimestamp(),
+      )
+
+    suspend fun initializeOrRepairPilotDoc() {
+      val existingSnap = runCatching { docRef.get().await() }.getOrNull()
+      val preservedCreatedAt =
+        if (existingSnap != null && existingSnap.exists()) {
+          existingSnap.getTimestamp("createdAt") ?: FieldValue.serverTimestamp()
+        } else {
+          FieldValue.serverTimestamp()
+        }
+      val fullPayload =
+        updatePayload +
           mapOf(
             "userId" to uid,
-            "sectorId" to safeSector,
-            "callsign" to safeCallsign,
-            "syndicateTag" to safeSyndicateTag,
-            "armadaName" to safeArmadaName,
-            "shipId" to safeShip,
-            "freq" to safeFreq,
-            "x" to state.x.coerceIn(-100000.0, 100000.0),
-            "y" to state.y.coerceIn(-100000.0, 100000.0),
-            "vx" to state.vx.coerceIn(-5000.0, 5000.0),
-            "vy" to state.vy.coerceIn(-5000.0, 5000.0),
-            "angle" to state.angle.coerceIn(-100.0, 100.0),
-            "weaponAngle" to state.weaponAngle.coerceIn(-100.0, 100.0),
-            "isFiringPrimary" to state.isFiringPrimary,
-            "isAfterburning" to state.isAfterburning,
-            "isCloaked" to state.isCloaked,
-            "energy" to state.energy.coerceIn(0L, 10000L),
-            "maxEnergy" to state.maxEnergy.coerceIn(100L, 10000L),
-            "bounty" to state.bounty.coerceIn(0L, 100000000L),
-            "liveResonance" to state.liveResonance.coerceIn(0L, 1_000_000L),
-            "lastPingType" to safePing,
-            "lastPingX" to state.lastPingX.coerceIn(-100000.0, 100000.0),
-            "lastPingY" to state.lastPingY.coerceIn(-100000.0, 100000.0),
-            "createdAt" to FieldValue.serverTimestamp(),
-            "updatedAt" to FieldValue.serverTimestamp(),
+            "createdAt" to preservedCreatedAt,
           )
-        docRef.set(createPayload).await()
+      docRef.set(fullPayload).await()
+      knownExistingPilotDocUids.add(uid)
+    }
+
+    try {
+      if (uid in knownExistingPilotDocUids) {
+        try {
+          // Single-round-trip fast path for combat & lobby heartbeats
+          docRef.update(updatePayload).await()
+        } catch (updateErr: Exception) {
+          if (updateErr is CancellationException) throw updateErr
+          knownExistingPilotDocUids.remove(uid)
+          initializeOrRepairPilotDoc()
+        }
       } else {
-        val updatePayload =
-          mapOf(
-            "sectorId" to safeSector,
-            "callsign" to safeCallsign,
-            "syndicateTag" to safeSyndicateTag,
-            "armadaName" to safeArmadaName,
-            "shipId" to safeShip,
-            "freq" to safeFreq,
-            "x" to state.x.coerceIn(-100000.0, 100000.0),
-            "y" to state.y.coerceIn(-100000.0, 100000.0),
-            "vx" to state.vx.coerceIn(-5000.0, 5000.0),
-            "vy" to state.vy.coerceIn(-5000.0, 5000.0),
-            "angle" to state.angle.coerceIn(-100.0, 100.0),
-            "weaponAngle" to state.weaponAngle.coerceIn(-100.0, 100.0),
-            "isFiringPrimary" to state.isFiringPrimary,
-            "isAfterburning" to state.isAfterburning,
-            "isCloaked" to state.isCloaked,
-            "energy" to state.energy.coerceIn(0L, 10000L),
-            "maxEnergy" to state.maxEnergy.coerceIn(100L, 10000L),
-            "bounty" to state.bounty.coerceIn(0L, 100000000L),
-            "liveResonance" to state.liveResonance.coerceIn(0L, 1_000_000L),
-            "lastPingType" to safePing,
-            "lastPingX" to state.lastPingX.coerceIn(-100000.0, 100000.0),
-            "lastPingY" to state.lastPingY.coerceIn(-100000.0, 100000.0),
-            "updatedAt" to FieldValue.serverTimestamp(),
-          )
-        docRef.update(updatePayload).await()
+        initializeOrRepairPilotDoc()
       }
+      localSeenMsByUid[uid] = System.currentTimeMillis()
+      markHeartbeatSuccess()
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
       if (isAuthenticatedNonGuest()) {
+        markSyncError(e)
         handleFirestoreError(e, OperationType.WRITE, docRef.path)
       }
       throw e
@@ -505,11 +595,11 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     uid: String,
     updatedAtMs: Long?,
     nowMs: Long,
-    initialWindowMs: Long = 120_000L,
+    initialWindowMs: Long = 90_000L,
   ): Boolean {
     val lastSeenLocal = if (uid.isNotEmpty()) localSeenMsByUid[uid] else null
-    if (lastSeenLocal != null && (nowMs - lastSeenLocal) <= 95_000L) {
-      return true
+    if (lastSeenLocal != null) {
+      return (nowMs - lastSeenLocal) <= 45_000L
     }
     if (updatedAtMs == null) return true
     val skewSafeDelta = kotlin.math.abs(nowMs - updatedAtMs)
@@ -520,9 +610,11 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val path = "sector_pilots"
     val safeSector = sanitizeMode(sectorId)
     return db.collection(path)
+      .whereEqualTo("visibility", "public")
       .whereEqualTo("sectorId", safeSector)
       .snapshots()
       .map { snapshot ->
+        markSnapshotSuccess()
         val nowMs = System.currentTimeMillis()
         for (change in snapshot.documentChanges) {
           val docId = change.document.id.trim()
@@ -530,7 +622,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           when (change.type) {
             DocumentChange.Type.ADDED -> {
               val serverMs = change.document.getTimestamp("updatedAt")?.toDate()?.time
-              if (serverMs == null || kotlin.math.abs(nowMs - serverMs) <= 120_000L) {
+              if (serverMs == null || kotlin.math.abs(nowMs - serverMs) <= 90_000L) {
                 localSeenMsByUid[docId] = nowMs
               }
             }
@@ -550,7 +642,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           .filter { state ->
             val cleanUid = state.userId.ifBlank { state.id }.trim()
             val updatedAtMs = state.updatedAt?.toDate()?.time
-            isPilotFreshEnough(cleanUid, updatedAtMs, nowMs, initialWindowMs = 120_000L)
+            isPilotFreshEnough(cleanUid, updatedAtMs, nowMs, initialWindowMs = 90_000L)
           }
           .sortedWith(
             compareByDescending<LivePilotState> { it.liveResonance }
@@ -565,6 +657,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
         if (exceptionToLog != null && isAuthenticatedNonGuest()) {
+          markSyncError(exceptionToLog)
           handleFirestoreError(exceptionToLog, OperationType.LIST, path)
         }
         throw error
@@ -574,8 +667,10 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   fun observeAllOnlineHumanPilots(): Flow<List<LivePilotState>> {
     val path = "sector_pilots"
     return db.collection(path)
+      .whereEqualTo("visibility", "public")
       .snapshots()
       .map { snapshot ->
+        markSnapshotSuccess()
         val nowMs = System.currentTimeMillis()
         for (change in snapshot.documentChanges) {
           val docId = change.document.id.trim()
@@ -583,7 +678,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           when (change.type) {
             DocumentChange.Type.ADDED -> {
               val serverMs = change.document.getTimestamp("updatedAt")?.toDate()?.time
-              if (serverMs == null || kotlin.math.abs(nowMs - serverMs) <= 120_000L) {
+              if (serverMs == null || kotlin.math.abs(nowMs - serverMs) <= 90_000L) {
                 localSeenMsByUid[docId] = nowMs
               }
             }
@@ -609,7 +704,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
               !cleanUid.startsWith("bot_", ignoreCase = true) &&
               cleanTag != "BOT" &&
               !state.callsign.contains("[BOT]", ignoreCase = true) &&
-              isPilotFreshEnough(cleanUid, updatedAtMs, nowMs, initialWindowMs = 120_000L)
+              isPilotFreshEnough(cleanUid, updatedAtMs, nowMs, initialWindowMs = 90_000L)
           }
           .sortedWith(
             compareByDescending<LivePilotState> { it.liveResonance }
@@ -624,7 +719,171 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
         if (exceptionToLog != null && isAuthenticatedNonGuest()) {
+          markSyncError(exceptionToLog)
           handleFirestoreError(exceptionToLog, OperationType.LIST, path)
+        }
+        throw error
+      }
+  }
+
+  suspend fun postSectorCombatEvent(event: SectorCombatEvent): Result<Unit> = runCatching {
+    val uid = requireUserId()
+    val targetClean = event.targetUid.trim().take(128)
+    if (targetClean.isEmpty() || targetClean == uid) return@runCatching
+    val now = event.createdAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()
+    val rawId = event.id.trim().replace(Regex("[^a-zA-Z0-9_\\-]"), "")
+    val docId = rawId.ifEmpty { "ce_${uid.take(10)}_${now}_${(100..999).random()}" }
+    val docRef = db.collection("sector_combat_events").document(docId)
+    val safeType = if (event.eventType == "ELIMINATED") "ELIMINATED" else "HIT"
+    val payload =
+      mapOf(
+        "senderUid" to uid,
+        "targetUid" to targetClean,
+        "sectorId" to sanitizeMode(event.sectorId),
+        "eventType" to safeType,
+        "damage" to event.damage.coerceIn(0L, 25000L),
+        "bountyAward" to event.bountyAward.coerceIn(0L, 100_000_000L),
+        "weaponLabel" to event.weaponLabel.trim().take(48),
+        "senderCallsign" to sanitizeCallsign(event.senderCallsign),
+        "senderTag" to sanitizeArmadaTag(event.senderTag).take(12),
+        "senderShipId" to event.senderShipId.coerceIn(1L, 10L),
+        "createdAtMs" to now,
+        "createdAt" to FieldValue.serverTimestamp(),
+      )
+    try {
+      docRef.set(payload).await()
+      markHeartbeatSuccess()
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      if (isAuthenticatedNonGuest()) {
+        markSyncError(e)
+        handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      }
+      throw e
+    }
+  }
+
+  fun observeSectorCombatEvents(sectorId: String): Flow<List<SectorCombatEvent>> {
+    val path = "sector_combat_events"
+    val safeSector = sanitizeMode(sectorId)
+    val subscribedLocalMs = System.currentTimeMillis()
+    val seenFreshEventIds = ConcurrentHashMap.newKeySet<String>()
+    return db.collection(path)
+      .whereEqualTo("sectorId", safeSector)
+      .snapshots()
+      .map { snapshot ->
+        markSnapshotSuccess()
+        val nowMs = System.currentTimeMillis()
+        for (change in snapshot.documentChanges) {
+          val id = change.document.id
+          if (change.type == DocumentChange.Type.ADDED) {
+            val serverMs = change.document.getTimestamp("createdAt")?.toDate()?.time
+            val clientMs = change.document.getLong("createdAtMs") ?: nowMs
+            val freshByServer = serverMs == null || (nowMs - serverMs) <= 10_000L
+            val freshBySession = clientMs >= (subscribedLocalMs - 6_000L) || kotlin.math.abs(nowMs - clientMs) <= 10_000L
+            if (freshByServer && freshBySession) {
+              seenFreshEventIds.add(id)
+            }
+          }
+        }
+        snapshot
+          .toObjects(
+            SectorCombatEvent::class.java,
+            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+          )
+          .filter { evt -> evt.id in seenFreshEventIds }
+          .sortedBy { it.createdAt?.toDate()?.time ?: it.createdAtMs }
+          .takeLast(48)
+      }
+      .catch { error ->
+        val firestoreError =
+          generateSequence(error) { it.cause }
+            .filterIsInstance<FirebaseFirestoreException>()
+            .firstOrNull()
+        if (firestoreError == null && error is CancellationException) throw error
+        val exceptionToLog = firestoreError ?: (error as? Exception)
+        if (exceptionToLog != null && isAuthenticatedNonGuest()) {
+          markSyncError(exceptionToLog)
+          handleFirestoreError(exceptionToLog, OperationType.LIST, path)
+        }
+        throw error
+      }
+  }
+
+  suspend fun saveSectorInstanceState(state: SectorInstanceState): Result<Unit> = runCatching {
+    val uid = requireUserId()
+    val safeSector = sanitizeMode(state.sectorId)
+    if (safeSector == "NEXUS_LOBBY") return@runCatching
+    val docRef = db.collection("sector_instances").document(safeSector)
+    val payload =
+      mapOf(
+        "sectorId" to safeSector,
+        "hostUid" to uid,
+        "fluxCarrierUid" to state.fluxCarrierUid.trim().take(128),
+        "fluxOrbX" to state.fluxOrbX.coerceIn(-100000.0, 100000.0),
+        "fluxOrbY" to state.fluxOrbY.coerceIn(-100000.0, 100000.0),
+        "fluxOrbVx" to state.fluxOrbVx.coerceIn(-5000.0, 5000.0),
+        "fluxOrbVy" to state.fluxOrbVy.coerceIn(-5000.0, 5000.0),
+        "fluxTier" to state.fluxTier.coerceIn(0L, 10L),
+        "fluxHoldSec" to state.fluxHoldSec.coerceIn(0.0, 3600.0),
+        "rcWestScore" to state.rcWestScore.coerceIn(0.0, 1000.0),
+        "rcEastScore" to state.rcEastScore.coerceIn(0.0, 1000.0),
+        "rcTimerSec" to state.rcTimerSec.coerceIn(0.0, 600.0),
+        "rcAlphaCtrl" to state.rcAlphaCtrl.coerceIn(-30.0, 30.0),
+        "rcAlphaLock" to state.rcAlphaLock.coerceIn(-1L, 2L),
+        "rcOmegaCtrl" to state.rcOmegaCtrl.coerceIn(-30.0, 30.0),
+        "rcOmegaLock" to state.rcOmegaLock.coerceIn(-1L, 2L),
+        "sbTimerSec" to state.sbTimerSec.coerceIn(0.0, 600.0),
+        "sbWestCaps" to state.sbWestCaps.coerceIn(0L, 10000L),
+        "sbEastCaps" to state.sbEastCaps.coerceIn(0L, 10000L),
+        "sbWestCoreHp" to state.sbWestCoreHp.coerceIn(0.0, 250000.0),
+        "sbEastCoreHp" to state.sbEastCoreHp.coerceIn(0.0, 250000.0),
+        "jailedUidsCsv" to state.jailedUidsCsv.take(640),
+        "updatedAtMs" to (state.updatedAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()),
+        "updatedAt" to FieldValue.serverTimestamp(),
+      )
+    try {
+      docRef.set(payload).await()
+      markHeartbeatSuccess()
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      if (isAuthenticatedNonGuest()) {
+        markSyncError(e)
+        handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      }
+      throw e
+    }
+  }
+
+  fun observeSectorInstanceState(sectorId: String): Flow<SectorInstanceState?> {
+    val safeSector = sanitizeMode(sectorId)
+    val path = "sector_instances/$safeSector"
+    return db.collection("sector_instances")
+      .document(safeSector)
+      .snapshots()
+      .map { snapshot ->
+        markSnapshotSuccess()
+        if (snapshot.exists()) {
+          snapshot.toObject(
+            SectorInstanceState::class.java,
+            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+          )
+        } else {
+          null
+        }
+      }
+      .catch { error ->
+        val firestoreError =
+          generateSequence(error) { it.cause }
+            .filterIsInstance<FirebaseFirestoreException>()
+            .firstOrNull()
+        if (firestoreError == null && error is CancellationException) throw error
+        val exceptionToLog = firestoreError ?: (error as? Exception)
+        if (exceptionToLog != null && isAuthenticatedNonGuest()) {
+          markSyncError(exceptionToLog)
+          handleFirestoreError(exceptionToLog, OperationType.GET, path)
         }
         throw error
       }
@@ -645,7 +904,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val nowMs = System.currentTimeMillis()
 
     try {
-      val liveSnap = db.collection("sector_pilots").get().await()
+      val liveSnap = db.collection("sector_pilots").whereEqualTo("visibility", "public").get().await()
       val liveMatch =
         liveSnap
           .toObjects(LivePilotState::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
@@ -666,10 +925,14 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       if (liveMatch != null) {
         val uid = liveMatch.userId.ifBlank { liveMatch.id }.trim()
         val updatedMs = liveMatch.updatedAt?.toDate()?.time
-        val isOnlineNow = updatedMs == null || (nowMs - updatedMs) <= 45_000L
+        val isOnlineNow =
+          (localSeenMsByUid[uid]?.let { (nowMs - it) <= 45_000L } == true) ||
+            updatedMs == null ||
+            kotlin.math.abs(nowMs - updatedMs) <= 45_000L
         val sectorTitle =
           when {
             liveMatch.sectorId == "SECTOR_CONVERGENCE" || liveMatch.sectorId == "FFA" -> "Sector Convergence"
+            liveMatch.sectorId == "SECTOR_CONVERGENCE_2" -> "Sector Convergence #07"
             liveMatch.sectorId == "RIFT_SKIRMISH" -> "Rift Skirmish"
             liveMatch.sectorId == "RIFT_CONTROL" -> "Rift Control"
             liveMatch.sectorId == "FLUX_CORE" -> "Flux Core"
@@ -746,6 +1009,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .whereEqualTo("isCustom", true)
       .snapshots()
       .map { snapshot ->
+        markSnapshotSuccess()
         snapshot
           .toObjects(
             SyndicateInfo::class.java,
@@ -761,6 +1025,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
         if (exceptionToLog != null && isAuthenticatedNonGuest()) {
+          markSyncError(exceptionToLog)
           handleFirestoreError(exceptionToLog, OperationType.LIST, path)
         }
         throw error
@@ -803,10 +1068,12 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           )
         docRef.update(updatePayload).await()
       }
+      markHeartbeatSuccess()
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
       if (isAuthenticatedNonGuest()) {
+        markSyncError(e)
         handleFirestoreError(e, OperationType.WRITE, docRef.path)
       }
       throw e
@@ -816,7 +1083,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   suspend fun saveCloudSyndicateMeta(meta: CloudSyndicateMeta): Boolean {
     if (!isAuthenticatedNonGuest()) return false
     val fs = firestore ?: return false
-    val cleanTag = sanitizeSyndicateTag(meta.tag).take(3)
+    val cleanTag = sanitizeSyndicateTag(meta.tag).take(4)
     if (cleanTag.isEmpty() || cleanTag in setOf("RFT", "BOT", "SOLO", "GUEST", "FREE")) return false
     val uid = auth.currentUser?.uid?.trim().orEmpty()
     val payload =
@@ -842,7 +1109,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   }
 
   fun observeCloudSyndicateMeta(tag: String): Flow<CloudSyndicateMeta?> = callbackFlow {
-    val cleanTag = sanitizeSyndicateTag(tag).take(3)
+    val cleanTag = sanitizeSyndicateTag(tag).take(4)
     val fs = firestore
     if (fs == null || cleanTag.isEmpty() || cleanTag in setOf("RFT", "BOT", "SOLO", "GUEST", "FREE")) {
       trySend(null)
@@ -896,6 +1163,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       .whereEqualTo("visibility", "public")
       .snapshots()
       .map { snapshot ->
+        markSnapshotSuccess()
         snapshot
           .toObjects(
             SyndicateChatMessage::class.java,
@@ -912,6 +1180,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         if (firestoreError == null && error is CancellationException) throw error
         val exceptionToLog = firestoreError ?: (error as? Exception)
         if (exceptionToLog != null && isAuthenticatedNonGuest()) {
+          markSyncError(exceptionToLog)
           handleFirestoreError(exceptionToLog, OperationType.LIST, path)
         }
         throw error
@@ -954,10 +1223,12 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       )
     try {
       docRef.set(payload).await()
+      markHeartbeatSuccess()
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
       if (isAuthenticatedNonGuest()) {
+        markSyncError(e)
         handleFirestoreError(e, OperationType.WRITE, docRef.path)
       }
       throw e
@@ -973,10 +1244,11 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val safeCat = report.category.trim().uppercase(Locale.US).take(24).ifEmpty { "PHYSICS / COLLISION" }
 
     val fs = firestore
-    if (fs != null) {
+    if (fs != null && isAuthenticatedNonGuest()) {
+      val uid = requireUserId()
       val reportPayload =
         mapOf(
-          "reporterUid" to report.reporterUid.take(64),
+          "reporterUid" to uid,
           "reporterCallsign" to sanitizeCallsign(report.reporterCallsign),
           "syndicateTag" to sanitizeSyndicateTag(report.syndicateTag),
           "category" to safeCat,
@@ -990,12 +1262,6 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         )
       try {
         fs.collection("sector_bug_reports").document(docId).set(reportPayload).await()
-      } catch (e: CancellationException) {
-        throw e
-      } catch (_: Exception) {}
-
-      try {
-        fs.collection("global_state").document("latest_bug_$docId").set(reportPayload).await()
       } catch (e: CancellationException) {
         throw e
       } catch (_: Exception) {}
@@ -1026,14 +1292,15 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     authorCallsign: String,
     payloadJson: String,
   ): Boolean {
+    if (!isAuthenticatedNonGuest()) return false
     val fs = firestore ?: return false
-    val safeGameId = customGameId.trim().ifEmpty { "custom" }
+    val safeGameId = customGameId.trim().take(40).ifEmpty { "custom" }
     val safeAuthor = sanitizeCallsign(authorCallsign)
     val payload =
       mapOf(
         "customGameId" to safeGameId,
         "authorCallsign" to safeAuthor,
-        "payloadJson" to payloadJson,
+        "payloadJson" to payloadJson.take(16384),
         "updatedAtMs" to System.currentTimeMillis(),
       )
     return try {
@@ -1051,7 +1318,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
 
   fun observeCustomGameCalibration(): Flow<LiveCalibrationBroadcast?> = callbackFlow {
     val fs = firestore
-    if (fs == null) {
+    if (fs == null || !isAuthenticatedNonGuest()) {
       trySend(null)
       close()
       return@callbackFlow

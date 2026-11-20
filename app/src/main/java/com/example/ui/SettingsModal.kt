@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.CloudSyncHealth
 import com.example.data.LocalPilotPrefs
 import com.example.data.RiftBillingManager
 import com.example.engine.MusicSynthArchetype
@@ -299,6 +300,9 @@ fun SettingsModal(
   onSubDeckChanged: (Int) -> Unit = {},
   isNexusStreaming: Boolean = false,
   onOpenNexusFromCodex: () -> Unit = onCloseModal,
+  currentUserId: String = "",
+  activeSectorTag: String = "NEXUS_LOBBY",
+  cloudSyncHealth: CloudSyncHealth = CloudSyncHealth(),
 ) {
   val context = LocalContext.current
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
@@ -562,6 +566,52 @@ fun SettingsModal(
                       overflow = TextOverflow.Ellipsis,
                     )
                   }
+                }
+
+                // Live Cloud Uplink Diagnostics Readout
+                val diagColor =
+                  when {
+                    !isGoogleAuthenticated -> Color(0xFFFACC15)
+                    cloudSyncHealth.isConnected -> Color(0xFF34D399)
+                    !cloudSyncHealth.lastError.isNullOrBlank() -> Color(0xFFF87171)
+                    else -> Color(0xFF38BDF8)
+                  }
+                Column(
+                  modifier =
+                    Modifier.fillMaxWidth()
+                      .background(TabletShellBg, RoundedCornerShape(8.dp))
+                      .border(1.dp, diagColor.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
+                      .padding(horizontal = 8.dp, vertical = if (isCompactPhone) 4.dp else 5.5.dp)
+                      .testTag("settings_cloud_diagnostics_card"),
+                  verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                  Text(
+                    text =
+                      if (isGoogleAuthenticated) "UPLINK: ${cloudSyncHealth.statusLabel} • ${activeSectorTag.take(18)}"
+                      else "UPLINK: LOCAL GUEST MODE (SIGN IN FOR LIVE PVP)",
+                    color = diagColor,
+                    fontSize = if (isCompactPhone) 8.2.sp else 8.8.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = Mono,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                  val uidPreview = if (currentUserId.isNotBlank()) currentUserId.take(10) else "UNLINKED"
+                  val diagDetail =
+                    if (!cloudSyncHealth.lastError.isNullOrBlank()) {
+                      "UID $uidPreview • ${cloudSyncHealth.lastError.take(34)}"
+                    } else {
+                      "UID $uidPreview • REAL-TIME TELEMETRY READY"
+                    }
+                  Text(
+                    text = diagDetail,
+                    color = Color(0xFF94A3B8),
+                    fontSize = if (isCompactPhone) 7.6.sp else 8.2.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = Mono,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
                 }
               }
 

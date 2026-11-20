@@ -34,6 +34,7 @@ service cloud.firestore {
         m in [
           'FFA',
           'SECTOR_CONVERGENCE',
+          'SECTOR_CONVERGENCE_2',
           'RIFT_SKIRMISH',
           'RIFT_CONTROL',
           'FLUX_CORE',
@@ -53,6 +54,8 @@ service cloud.firestore {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
              data.userId == request.auth.uid &&
              data.callsign is string && data.callsign.size() >= 2 && data.callsign.size() <= 24 &&
+             (!('syndicateTag' in data) || (data.syndicateTag is string && data.syndicateTag.size() <= 12)) &&
+             (!('syndicateName' in data) || (data.syndicateName is string && data.syndicateName.size() <= 48)) &&
              data.preferredShipId is int && data.preferredShipId >= 1 && data.preferredShipId <= 10 &&
              isValidFoundry(data.preferredFoundry) &&
              isValidSectorMode(data.preferredMode) &&
@@ -93,6 +96,7 @@ service cloud.firestore {
     function isValidLivePilotState(data) {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
              data.userId == request.auth.uid &&
+             (!('visibility' in data) || (data.visibility is string && data.visibility.size() == 6 && data.visibility == 'public')) &&
              isValidSectorMode(data.sectorId) &&
              data.callsign is string && data.callsign.size() >= 2 && data.callsign.size() <= 24 &&
              (!('syndicateTag' in data) || (data.syndicateTag is string && data.syndicateTag.size() <= 12)) &&
@@ -108,6 +112,11 @@ service cloud.firestore {
              (!('isFiringPrimary' in data) || data.isFiringPrimary is bool) &&
              (!('isAfterburning' in data) || data.isAfterburning is bool) &&
              (!('isCloaked' in data) || data.isCloaked is bool) &&
+             (!('isRespawning' in data) || data.isRespawning is bool) &&
+             (!('isInStasisBrig' in data) || data.isInStasisBrig is bool) &&
+             (!('secondarySeq' in data) || (data.secondarySeq is int && data.secondarySeq >= 0 && data.secondarySeq <= 100000000)) &&
+             (!('secondaryType' in data) || (data.secondaryType is string && data.secondaryType.size() <= 28)) &&
+             (!('secondaryAim' in data) || ((data.secondaryAim is int || data.secondaryAim is float) && data.secondaryAim >= -100 && data.secondaryAim <= 100)) &&
              data.energy is int && data.energy >= 0 && data.energy <= 10000 &&
              data.maxEnergy is int && data.maxEnergy >= 100 && data.maxEnergy <= 10000 &&
              data.bounty is int && data.bounty >= 0 && data.bounty <= 100000000 &&
@@ -154,6 +163,52 @@ service cloud.firestore {
              data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
+    // 6. SectorCombatEvent Validation Blueprint (Cross-Device Hit, Elimination & Bounty Credit)
+    function isValidSectorCombatEvent(data) {
+      return data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
+             data.senderUid == request.auth.uid &&
+             data.targetUid is string && data.targetUid.size() >= 1 && data.targetUid.size() <= 128 &&
+             isValidSectorMode(data.sectorId) &&
+             data.eventType is string && data.eventType in ['HIT', 'ELIMINATED'] &&
+             data.damage is int && data.damage >= 0 && data.damage <= 25000 &&
+             data.bountyAward is int && data.bountyAward >= 0 && data.bountyAward <= 100000000 &&
+             data.weaponLabel is string && data.weaponLabel.size() <= 48 &&
+             data.senderCallsign is string && data.senderCallsign.size() >= 2 && data.senderCallsign.size() <= 24 &&
+             data.senderTag is string && data.senderTag.size() <= 12 &&
+             data.senderShipId is int && data.senderShipId >= 1 && data.senderShipId <= 10 &&
+             data.createdAtMs is int && data.createdAtMs >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // 7. SectorInstanceState Validation Blueprint (Shared Mode Objectives: Flux Core, Rift Control, Stasis Breach)
+    function isValidSectorInstanceState(data) {
+      return isValidSectorMode(data.sectorId) &&
+             data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128 &&
+             data.hostUid == request.auth.uid &&
+             data.fluxCarrierUid is string && data.fluxCarrierUid.size() <= 128 &&
+             (data.fluxOrbX is int || data.fluxOrbX is float) && data.fluxOrbX >= -100000 && data.fluxOrbX <= 100000 &&
+             (data.fluxOrbY is int || data.fluxOrbY is float) && data.fluxOrbY >= -100000 && data.fluxOrbY <= 100000 &&
+             (data.fluxOrbVx is int || data.fluxOrbVx is float) && data.fluxOrbVx >= -5000 && data.fluxOrbVx <= 5000 &&
+             (data.fluxOrbVy is int || data.fluxOrbVy is float) && data.fluxOrbVy >= -5000 && data.fluxOrbVy <= 5000 &&
+             data.fluxTier is int && data.fluxTier >= 0 && data.fluxTier <= 10 &&
+             (data.fluxHoldSec is int || data.fluxHoldSec is float) && data.fluxHoldSec >= 0 && data.fluxHoldSec <= 3600 &&
+             (data.rcWestScore is int || data.rcWestScore is float) && data.rcWestScore >= 0 && data.rcWestScore <= 1000 &&
+             (data.rcEastScore is int || data.rcEastScore is float) && data.rcEastScore >= 0 && data.rcEastScore <= 1000 &&
+             (data.rcTimerSec is int || data.rcTimerSec is float) && data.rcTimerSec >= 0 && data.rcTimerSec <= 600 &&
+             (data.rcAlphaCtrl is int || data.rcAlphaCtrl is float) && data.rcAlphaCtrl >= -30 && data.rcAlphaCtrl <= 30 &&
+             data.rcAlphaLock is int && data.rcAlphaLock >= -1 && data.rcAlphaLock <= 2 &&
+             (data.rcOmegaCtrl is int || data.rcOmegaCtrl is float) && data.rcOmegaCtrl >= -30 && data.rcOmegaCtrl <= 30 &&
+             data.rcOmegaLock is int && data.rcOmegaLock >= -1 && data.rcOmegaLock <= 2 &&
+             (data.sbTimerSec is int || data.sbTimerSec is float) && data.sbTimerSec >= 0 && data.sbTimerSec <= 600 &&
+             data.sbWestCaps is int && data.sbWestCaps >= 0 && data.sbWestCaps <= 10000 &&
+             data.sbEastCaps is int && data.sbEastCaps >= 0 && data.sbEastCaps <= 10000 &&
+             (data.sbWestCoreHp is int || data.sbWestCoreHp is float) && data.sbWestCoreHp >= 0 && data.sbWestCoreHp <= 250000 &&
+             (data.sbEastCoreHp is int || data.sbEastCoreHp is float) && data.sbEastCoreHp >= 0 && data.sbEastCoreHp <= 250000 &&
+             data.jailedUidsCsv is string && data.jailedUidsCsv.size() <= 640 &&
+             data.updatedAtMs is int && data.updatedAtMs >= 0 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
     // Collection 1: /users/{userId} (Owner-Isolated PilotDossier)
     match /users/{userId} {
       allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
@@ -169,7 +224,8 @@ service cloud.firestore {
                          'convergencesWon', 'createdAt', 'updatedAt'
                        ]) &&
                        incoming().keys().hasOnly([
-                         'userId', 'callsign', 'preferredShipId', 'preferredFoundry', 'preferredMode',
+                         'userId', 'callsign', 'syndicateTag', 'syndicateName',
+                         'preferredShipId', 'preferredFoundry', 'preferredMode',
                          'pvpKills', 'pvpDeaths', 'pvpBountyPeak',
                          'allTimeKills', 'allTimeDeaths', 'allTimeBountyPeak',
                          'convergencesWon', 'createdAt', 'updatedAt'
@@ -181,12 +237,13 @@ service cloud.firestore {
                        isValidId(userId) &&
                        request.auth.uid == userId &&
                        incoming().userId == existing().userId &&
-                       incoming().createdAt == existing().createdAt &&
+                       (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt) &&
                        incoming().diff(existing()).affectedKeys().hasOnly([
-                         'callsign', 'preferredShipId', 'preferredFoundry', 'preferredMode',
+                         'callsign', 'syndicateTag', 'syndicateName',
+                         'preferredShipId', 'preferredFoundry', 'preferredMode',
                          'pvpKills', 'pvpDeaths', 'pvpBountyPeak',
                          'allTimeKills', 'allTimeDeaths', 'allTimeBountyPeak',
-                         'convergencesWon', 'updatedAt'
+                         'convergencesWon', 'createdAt', 'updatedAt'
                        ]);
 
       allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
@@ -221,38 +278,41 @@ service cloud.firestore {
                        request.auth.uid == userId &&
                        incoming().userId == existing().userId &&
                        incoming().visibility == existing().visibility &&
-                       incoming().createdAt == existing().createdAt &&
+                       (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt) &&
                        incoming().diff(existing()).affectedKeys().hasOnly([
                          'callsign', 'shipId',
                          'syndicateTag', 'armadaTag', 'armadaTierSize', 'foundry',
                          'pvpKills', 'pvpDeaths', 'pvpBounty',
                          'allTimeKills', 'allTimeDeaths', 'allTimeBounty',
-                         'convergencesWon', 'updatedAt'
+                         'convergencesWon', 'createdAt', 'updatedAt'
                        ]);
 
       allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
     }
 
-    // Collection 3: /sector_pilots/{userId} (Real-Time Sector Presence & Holo-Pings)
+    // Collection 3: /sector_pilots/{userId} (Real-Time Sector Presence, Ordnance & Holo-Pings)
     match /sector_pilots/{userId} {
-      allow get: if isSignedIn() && isValidId(userId) && (resource == null || isValidSectorMode(existing().sectorId));
-      allow list: if isSignedIn() && isValidSectorMode(existing().sectorId);
+      allow get: if isSignedIn() && isValidId(userId) && (resource == null || existing().visibility == 'public' || isValidSectorMode(existing().sectorId));
+      allow list: if isSignedIn() && existing().visibility == 'public';
 
       allow create: if isSignedIn() &&
                        isValidId(userId) &&
                        request.auth.uid == userId &&
+                       incoming().visibility == 'public' &&
                        incoming().keys().hasAll([
-                         'userId', 'sectorId', 'callsign', 'shipId', 'freq',
+                         'userId', 'visibility', 'sectorId', 'callsign', 'shipId', 'freq',
                          'x', 'y', 'vx', 'vy', 'angle',
                          'energy', 'maxEnergy', 'bounty',
                          'lastPingType', 'lastPingX', 'lastPingY',
                          'createdAt', 'updatedAt'
                        ]) &&
                        incoming().keys().hasOnly([
-                         'userId', 'sectorId', 'callsign', 'syndicateTag', 'armadaName',
+                         'userId', 'visibility', 'sectorId', 'callsign', 'syndicateTag', 'armadaName',
                          'shipId', 'freq',
                          'x', 'y', 'vx', 'vy', 'angle', 'weaponAngle',
                          'isFiringPrimary', 'isAfterburning', 'isCloaked',
+                         'isRespawning', 'isInStasisBrig',
+                         'secondarySeq', 'secondaryType', 'secondaryAim',
                          'energy', 'maxEnergy', 'bounty', 'liveResonance',
                          'lastPingType', 'lastPingX', 'lastPingY',
                          'createdAt', 'updatedAt'
@@ -263,17 +323,20 @@ service cloud.firestore {
                        isValidLivePilotState(incoming()) &&
                        isValidId(userId) &&
                        request.auth.uid == userId &&
-                       incoming().userId == existing().userId &&
-                       incoming().createdAt == existing().createdAt &&
-                       incoming().diff(existing()).affectedKeys().hasOnly([
-                         'sectorId', 'callsign', 'syndicateTag', 'armadaName',
+                       incoming().visibility == 'public' &&
+                       incoming().keys().hasOnly([
+                         'userId', 'visibility', 'sectorId', 'callsign', 'syndicateTag', 'armadaName',
                          'shipId', 'freq',
                          'x', 'y', 'vx', 'vy', 'angle', 'weaponAngle',
                          'isFiringPrimary', 'isAfterburning', 'isCloaked',
+                         'isRespawning', 'isInStasisBrig',
+                         'secondarySeq', 'secondaryType', 'secondaryAim',
                          'energy', 'maxEnergy', 'bounty', 'liveResonance',
                          'lastPingType', 'lastPingX', 'lastPingY',
-                         'updatedAt'
-                       ]);
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       (!('userId' in existing()) || incoming().userId == existing().userId) &&
+                       (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt);
 
       allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
     }
@@ -345,6 +408,126 @@ service cloud.firestore {
                        ]);
 
       allow delete: if isSignedIn() && isValidId(commId) && existing().senderUid == request.auth.uid;
+    }
+
+    // Collection 6: /sector_combat_events/{eventId} (Authoritative Cross-Device Hit & Elimination Events)
+    match /sector_combat_events/{eventId} {
+      allow get: if isSignedIn() && isValidId(eventId) && (resource == null || isValidSectorMode(existing().sectorId));
+      allow list: if isSignedIn() && isValidSectorMode(existing().sectorId);
+
+      allow create: if isSignedIn() &&
+                       isValidId(eventId) &&
+                       incoming().keys().hasAll([
+                         'senderUid', 'targetUid', 'sectorId', 'eventType',
+                         'damage', 'bountyAward', 'weaponLabel',
+                         'senderCallsign', 'senderTag', 'senderShipId',
+                         'createdAtMs', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'senderUid', 'targetUid', 'sectorId', 'eventType',
+                         'damage', 'bountyAward', 'weaponLabel',
+                         'senderCallsign', 'senderTag', 'senderShipId',
+                         'createdAtMs', 'createdAt'
+                       ]) &&
+                       isValidSectorCombatEvent(incoming());
+
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(eventId) && existing().senderUid == request.auth.uid;
+    }
+
+    // Collection 7: /sector_instances/{sectorId} (Shared Objective Authority per Rift Instance)
+    match /sector_instances/{sectorId} {
+      allow get: if isSignedIn() && isValidSectorMode(sectorId);
+      allow list: if isSignedIn() && isValidSectorMode(existing().sectorId);
+
+      allow create, update: if isSignedIn() &&
+                               isValidSectorMode(sectorId) &&
+                               incoming().sectorId == sectorId &&
+                               incoming().keys().hasAll([
+                                 'sectorId', 'hostUid', 'fluxCarrierUid',
+                                 'fluxOrbX', 'fluxOrbY', 'fluxOrbVx', 'fluxOrbVy',
+                                 'fluxTier', 'fluxHoldSec',
+                                 'rcWestScore', 'rcEastScore', 'rcTimerSec',
+                                 'rcAlphaCtrl', 'rcAlphaLock', 'rcOmegaCtrl', 'rcOmegaLock',
+                                 'sbTimerSec', 'sbWestCaps', 'sbEastCaps', 'sbWestCoreHp', 'sbEastCoreHp',
+                                 'jailedUidsCsv', 'updatedAtMs', 'updatedAt'
+                               ]) &&
+                               incoming().keys().hasOnly([
+                                 'sectorId', 'hostUid', 'fluxCarrierUid',
+                                 'fluxOrbX', 'fluxOrbY', 'fluxOrbVx', 'fluxOrbVy',
+                                 'fluxTier', 'fluxHoldSec',
+                                 'rcWestScore', 'rcEastScore', 'rcTimerSec',
+                                 'rcAlphaCtrl', 'rcAlphaLock', 'rcOmegaCtrl', 'rcOmegaLock',
+                                 'sbTimerSec', 'sbWestCaps', 'sbEastCaps', 'sbWestCoreHp', 'sbEastCoreHp',
+                                 'jailedUidsCsv', 'updatedAtMs', 'updatedAt'
+                               ]) &&
+                               isValidSectorInstanceState(incoming());
+
+      allow delete: if false;
+    }
+
+    // Collection 8: /global_state/{docId} (Authenticated Syndicate Crest/Channels & Custom Game Calibration)
+    match /global_state/{docId} {
+      allow get: if isSignedIn() && isValidId(docId);
+      allow list: if false;
+
+      allow create, update: if isSignedIn() &&
+                               isValidId(docId) &&
+                               (
+                                 (
+                                   docId.matches('^syndicate_meta_[A-Z0-9_\\-]{1,4}$') &&
+                                   incoming().keys().hasOnly([
+                                     'tag', 'ownerId', 'crestJson', 'customChannelsJson',
+                                     'invitedGuestsCsv', 'updatedAtMs'
+                                   ]) &&
+                                   incoming().ownerId == request.auth.uid &&
+                                   (resource == null || !('ownerId' in existing()) || existing().ownerId == request.auth.uid) &&
+                                   incoming().tag is string && incoming().tag.size() >= 1 && incoming().tag.size() <= 4 &&
+                                   incoming().crestJson is string && incoming().crestJson.size() <= 4096 &&
+                                   incoming().customChannelsJson is string && incoming().customChannelsJson.size() <= 1024 &&
+                                   incoming().invitedGuestsCsv is string && incoming().invitedGuestsCsv.size() <= 1024 &&
+                                   incoming().updatedAtMs is int
+                                 ) ||
+                                 (
+                                   docId == 'custom_game_calibration' &&
+                                   incoming().keys().hasOnly([
+                                     'customGameId', 'authorCallsign', 'payloadJson', 'updatedAtMs'
+                                   ]) &&
+                                   incoming().customGameId is string && incoming().customGameId.size() <= 40 &&
+                                   incoming().authorCallsign is string && incoming().authorCallsign.size() <= 24 &&
+                                   incoming().payloadJson is string && incoming().payloadJson.size() <= 16384 &&
+                                   incoming().updatedAtMs is int
+                                 )
+                               );
+
+      allow delete: if false;
+    }
+
+    // Collection 9: /sector_bug_reports/{reportId} (Authenticated Telemetry Bug Reports)
+    match /sector_bug_reports/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId) && (resource == null || existing().reporterUid == request.auth.uid);
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidId(reportId) &&
+                       incoming().keys().hasOnly([
+                         'reporterUid', 'reporterCallsign', 'syndicateTag', 'category',
+                         'description', 'buildVersion', 'activeMode', 'activeShipId',
+                         'screenDpSummary', 'createdAtMs', 'createdAt'
+                       ]) &&
+                       incoming().reporterUid == request.auth.uid &&
+                       incoming().reporterCallsign is string && incoming().reporterCallsign.size() <= 24 &&
+                       incoming().syndicateTag is string && incoming().syndicateTag.size() <= 12 &&
+                       incoming().category is string && incoming().category.size() <= 32 &&
+                       incoming().description is string && incoming().description.size() >= 1 && incoming().description.size() <= 240 &&
+                       incoming().buildVersion is int &&
+                       incoming().activeMode is string && incoming().activeMode.size() <= 32 &&
+                       incoming().activeShipId is int && incoming().activeShipId >= 1 && incoming().activeShipId <= 10 &&
+                       incoming().screenDpSummary is string && incoming().screenDpSummary.size() <= 48 &&
+                       incoming().createdAtMs is int &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time;
+
+      allow update, delete: if false;
     }
   }
 }

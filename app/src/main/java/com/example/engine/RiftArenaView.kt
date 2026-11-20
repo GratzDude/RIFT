@@ -1387,9 +1387,11 @@ class RiftArenaView(
         anomalyRingPaint.color = if (anom.life <= 3.0f) Color.parseColor("#EF4444") else Color.parseColor("#FACC15")
         canvas.drawArc(arcRect, -90f, lifeFrac * 360f, false, anomalyRingPaint)
 
+        val unstableHint =
+          if (engine.hasActiveSafeZone()) "SAFE HARBOR SHELTER" else "EVACUATE BLAST ZONE"
         drawWorldOverheadBanner(
           canvas = canvas,
-          text = String.format(java.util.Locale.US, "UNSTABLE RIFT • %.1fs // COLLAPSE 75%% FLUX", max(0f, anom.life)),
+          text = String.format(java.util.Locale.US, "UNSTABLE RIFT • %.1fs // %s", max(0f, anom.life), unstableHint),
           worldX = anom.x,
           worldY = anom.y - ringR - (20f / safeScale),
           fillColor = if (anom.life <= 3.0f) Color.parseColor("#FB7185") else Color.parseColor("#FACC15"),
@@ -2036,6 +2038,30 @@ class RiftArenaView(
           canvas.drawPath(plumePath, bombRingPaint)
           bombPaint.color = Color.WHITE
           canvas.drawCircle(bm.x + dx * (len * 0.34f), bm.y + dy * (len * 0.34f), 4.0f * projScale, bombPaint)
+        }
+
+        "CHAKRAM" -> {
+          val discR = bm.radius.coerceAtLeast(22f) * projScale
+          val spinRad = tSec * 15.5f + ((bm.ownerId.hashCode() and 0xFF) * 0.07f)
+          // Motion wake arcs
+          val tailX = bm.x - bm.vx * 0.042f
+          val tailY = bm.y - bm.vy * 0.042f
+          bulletPaint.color = Color.argb(135, 245, 158, 11)
+          bulletPaint.strokeWidth = discR * 0.72f
+          canvas.drawLine(bm.x, bm.y, tailX, tailY, bulletPaint)
+          bombRingPaint.strokeWidth = 2.4f * projScale
+          bombRingPaint.color = Color.argb(165, 250, 204, 21)
+          arcRect.set(bm.x - discR * 1.18f, bm.y - discR * 1.18f, bm.x + discR * 1.18f, bm.y + discR * 1.18f)
+          val rotDeg = (spinRad * 180f / PI.toFloat()) % 360f
+          canvas.drawArc(arcRect, rotDeg, 105f, false, bombRingPaint)
+          canvas.drawArc(arcRect, rotDeg + 180f, 105f, false, bombRingPaint)
+          RiftSpriteBaker.drawChakramDiscOnCanvas(
+            c = canvas,
+            cx = bm.x,
+            cy = bm.y,
+            radius = discR,
+            spinAngleRad = spinRad,
+          )
         }
 
         else -> {
@@ -4557,17 +4583,23 @@ class RiftArenaView(
       val bR = effBombRadius()
       val isCloakToggleReady = (p.spec.bombType == "CLOAK_EMP" && !p.isCloaked)
       val isCloakEmpPulseReady = (p.spec.bombType == "CLOAK_EMP" && p.isCloaked)
+      val isTractorSecActive = (p.spec.bombType == "TRACTOR_BEAM" && p.tractorBeamActive)
+      val isTractorSecReady = (p.spec.bombType == "TRACTOR_BEAM" && !p.tractorBeamActive)
+      val isLanceSecActive = (p.spec.bombType == "LANCE_BEAM" && p.lanceBeamActive)
+      val isLanceSecReady = (p.spec.bombType == "LANCE_BEAM" && !p.lanceBeamActive)
       val bombCost =
         when {
           !p.spec.hasBomb -> 300f
           isCloakToggleReady -> RiftCalibrationState.cloakDrainPerSec
-          isCloakEmpPulseReady -> 0f
+          isCloakEmpPulseReady || isTractorSecActive || isLanceSecActive -> 0f
+          isTractorSecReady -> 112f
+          isLanceSecReady -> 145f
           else -> p.spec.bombCost
         }
       val hasEnoughFluxForSecondary =
         when {
-          isCloakEmpPulseReady -> true
-          isCloakToggleReady -> p.flux > 180f
+          isCloakEmpPulseReady || isTractorSecActive || isLanceSecActive -> true
+          isCloakToggleReady || isTractorSecReady || isLanceSecReady -> p.flux > 180f
           else -> (p.flux - bombCost) >= 1f
         }
       val bombAvailable =
@@ -4576,9 +4608,12 @@ class RiftArenaView(
       val strokeCol =
         when {
           engine.isBombCancelActive -> Color.parseColor("#EF4444")
-          p.spec.bombType == "PHASE_DASH" -> Color.parseColor("#38BDF8")
-          p.spec.bombType == "CLOAK_EMP" -> Color.parseColor("#B388FF")
-          p.spec.bombType == "INTERDICTOR_DOME" -> Color.parseColor("#EC4899")
+          p.spec.bombType == "PHASE_DASH" || p.spec.bombType == "STASIS_BARRIER" -> Color.parseColor("#38BDF8")
+          p.spec.bombType == "CLOAK_EMP" || p.spec.bombType == "LANCE_BEAM" -> Color.parseColor("#B388FF")
+          p.spec.bombType == "INTERDICTOR_DOME" || p.spec.bombType == "HYPER_SURGE" -> Color.parseColor("#EC4899")
+          p.spec.bombType == "SWARM_DRONES" || p.spec.bombType == "HOLO_PHANTOM" || p.spec.bombType == "REPEL_PULSE" ->
+            Color.parseColor("#00F5D4")
+          p.spec.bombType == "TRACTOR_BEAM" -> Color.parseColor("#34D399")
           else -> Color.parseColor("#F59E0B")
         }
       val fillCol =
@@ -4639,11 +4674,19 @@ class RiftArenaView(
         } else {
           0
         }
+      val activeProxMissileCount =
+        if (p.spec.bombType == "PROX_SEEKER") {
+          engine.bombs.count { it.ownerId == p.id && it.type == "PROX_MISSILE" }
+        } else {
+          0
+        }
       val bLabel =
         when {
           engine.isBombCancelActive -> "X"
           p.spec.bombType == "PHASE_DASH" -> "PHASE"
           p.spec.bombType == "CLOAK_EMP" -> if (p.isCloaked) "EMP PULSE" else "CLOAK"
+          p.spec.bombType == "TRACTOR_BEAM" -> if (p.tractorBeamActive) "WEB OFF" else "TRACTOR"
+          p.spec.bombType == "LANCE_BEAM" -> if (p.lanceBeamActive) "LANCE OFF" else "LANCE"
           p.spec.bombType == "INTERDICTOR_DOME" -> "STASIS"
           p.spec.bombType == "MINE" -> "PROX MINE"
           p.spec.bombType == "EMP" -> "EMP BOMB"
@@ -4653,6 +4696,13 @@ class RiftArenaView(
           p.spec.bombType == "BURST" || p.spec.bombType == "NOVA_RING" -> "NOVA RING"
           p.spec.bombType == "SHOTGUN" || p.spec.bombType == "SHATTER_CONE" -> "SHATTER"
           p.spec.bombType == "MISSILE" || p.spec.bombType == "SEEKER_TORPEDO" -> "SEEKER"
+          p.spec.bombType == "CHAKRAM" -> "CHAKRAM"
+          p.spec.bombType == "HOLO_PHANTOM" -> "PHANTOM"
+          p.spec.bombType == "STASIS_BARRIER" -> "BARRIER"
+          p.spec.bombType == "HYPER_SURGE" -> "SURGE"
+          p.spec.bombType == "SWARM_DRONES" -> "SWARM"
+          p.spec.bombType == "PROX_SEEKER" -> "PROX LOCK"
+          p.spec.bombType == "REPEL_PULSE" -> "REPEL"
           else -> p.spec.secondaryShortLabel.ifEmpty { "BOMB" }
         }
       val bSub =
@@ -4661,8 +4711,12 @@ class RiftArenaView(
           p.bombTimer > 0.1f -> String.format(java.util.Locale.US, "%.1fs", p.bombTimer)
           isCloakToggleReady -> "${RiftCalibrationState.cloakDrainPerSec.toInt()}/S"
           isCloakEmpPulseReady -> "0 EMP"
+          isTractorSecActive || isLanceSecActive -> "ACTIVE"
+          isTractorSecReady -> "112/S"
+          isLanceSecReady -> "145/S"
           p.spec.bombType == "INTERDICTOR_DOME" -> "${bombCost.toInt()} • ${RiftCalibrationState.interdictorBubbleDuration.toInt()}s"
           p.spec.bombType == "MINE" -> "${bombCost.toInt()} • $activeMineCount/6"
+          p.spec.bombType == "PROX_SEEKER" -> "${bombCost.toInt()} • $activeProxMissileCount/2"
           else -> "${bombCost.toInt()}"
         }
 

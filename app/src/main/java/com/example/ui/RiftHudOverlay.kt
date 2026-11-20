@@ -642,7 +642,7 @@ fun RiftHudOverlay(
       } else Modifier
      )
    if (mode == RankedGameMode.RIFT_CONTROL && !uiUnlocked) {
-    RiftControlTugOfWarHudBar(engine, textScale, onOpenNexus, topBarDragMod.zIndex(11f), topBarRec)
+    RiftControlTugOfWarHudBar(engine, textScale, onOpenNexus, topBarDragMod.zIndex(11f), topBarRec, tickRead)
    } else {
     val defaultAccent = when (mode) {
      RankedGameMode.RIFT_SKIRMISH -> Color(0xFFF59E0B)
@@ -654,9 +654,15 @@ fun RiftHudOverlay(
     }
     val modeAccent = if (topBarRec.isFactoryDefault) defaultAccent else Color(topBarRec.trimColorInt)
     val topBarBg = if (topBarRec.isFactoryDefault) Color(0xD9060E1C) else Color(topBarRec.primaryColorInt).copy(alpha = topBarRec.surfaceOpacity.coerceIn(0.25f, 0.98f))
+    val teamCap = engine.teamSize.coerceAtLeast(1)
+    val westAlive = engine.ships.count { it.freq == 0 && it.respawnTimer <= 0f }
+    val eastAlive = engine.ships.count { it.freq == 1 && it.respawnTimer <= 0f }
     val baseModeSummaryText = when (mode) {
-     RankedGameMode.RIFT_SKIRMISH ->
-      "RIFT SKIRMISH (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • RND ${engine.skirmishCurrentRound} (${engine.skirmishRoundTimerSec.toInt()}s) • WEST ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} EAST"
+     RankedGameMode.RIFT_SKIRMISH -> {
+      val rndSec = engine.skirmishRoundTimerSec.toInt().coerceAtLeast(0)
+      val rndTime = String.format(Locale.US, "%d:%02d", rndSec / 60, rndSec % 60)
+      "RIFT SKIRMISH (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • RND ${engine.skirmishCurrentRound} ($rndTime) • WEST $westAlive/$teamCap ALIVE | EAST $eastAlive/$teamCap ALIVE • SERIES ${engine.skirmishWestRoundWins}-${engine.skirmishEastRoundWins}"
+     }
      RankedGameMode.FLUX_CORE -> {
       val carrierShip = engine.ships.firstOrNull {
        it.id == engine.fluxCoreCarrierEntityId || (engine.fluxCoreOrb.carrierShipId != -1 && it.shipId == engine.fluxCoreOrb.carrierShipId)
@@ -668,15 +674,27 @@ fun RiftHudOverlay(
       }
       "FLUX CORE • $carrierLabel • HOLD ${engine.fluxCoreOrb.holdDurationSec.toInt()}s"
      }
-     RankedGameMode.STASIS_BREACH ->
-      "STASIS BREACH (10v10) • WEST CORE ${engine.westBrigGeneratorHp.toInt()} FLUX | EAST CORE ${engine.eastBrigGeneratorHp.toInt()} FLUX"
+     RankedGameMode.STASIS_BREACH -> {
+      val sbSec = engine.stasisBreachMatchTimerSec.toInt().coerceAtLeast(0)
+      val sbTime = String.format(Locale.US, "%d:%02d", sbSec / 60, sbSec % 60)
+      "STASIS BREACH (10v10) • $sbTime • CAPTURES: WEST ${engine.stasisWestCaptures} - ${engine.stasisEastCaptures} EAST (YOU ${engine.localStasisCaptures}) • CORES ${engine.westBrigGeneratorHp.toInt()}/${engine.eastBrigGeneratorHp.toInt()}"
+     }
      RankedGameMode.RIFT_CONTROL -> {
       val mins = (engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)) / 60
       val secs = (engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)) % 60
       String.format(Locale.US, "RIFT CONTROL (%dv%d) • %d:%02d • WEST %d - %d EAST", engine.activeTeamSizeBracket, engine.activeTeamSizeBracket, mins, secs, engine.riftControlWestScore.toInt(), engine.riftControlEastScore.toInt())
      }
-     RankedGameMode.SYNDICATE_WARS ->
-      "SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • [${player.syndicateTag}] ${engine.skirmishWestRoundWins} - ${engine.skirmishEastRoundWins} [${engine.rivalSyndicateWarTag}] • ${engine.skirmishRoundTimerSec.toInt()}s"
+     RankedGameMode.SYNDICATE_WARS -> {
+      if (engine.isStasisBreachRulesActive()) {
+       val sbSec = engine.stasisBreachMatchTimerSec.toInt().coerceAtLeast(0)
+       val sbTime = String.format(Locale.US, "%d:%02d", sbSec / 60, sbSec % 60)
+       "SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • $sbTime • [${player.syndicateTag}] ${engine.stasisWestCaptures} - ${engine.stasisEastCaptures} [${engine.rivalSyndicateWarTag}] CAPTURES"
+      } else {
+       val rndSec = engine.skirmishRoundTimerSec.toInt().coerceAtLeast(0)
+       val rndTime = String.format(Locale.US, "%d:%02d", rndSec / 60, rndSec % 60)
+       "SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • [${player.syndicateTag}] $westAlive/$teamCap ALIVE | [${engine.rivalSyndicateWarTag}] $eastAlive/$teamCap ALIVE • SERIES ${engine.skirmishWestRoundWins}-${engine.skirmishEastRoundWins} ($rndTime)"
+      }
+     }
      RankedGameMode.SECTOR_CONVERGENCE -> "SECTOR CONVERGENCE • TOP STATUS BAR"
     }
     val modeSummaryText = if (engine.isCustomGameActive()) "CUSTOM: ${engine.currentCustomGame?.title ?: "Custom Match"} • $baseModeSummaryText" else baseModeSummaryText
@@ -826,6 +844,8 @@ fun RiftHudOverlay(
   }
 
   val safeZoneActive = engine.hasActiveSafeZone()
+  val activeUnstableRift = engine.anomalies.firstOrNull { it.isUnstableMergedRift && it.life > 0f }
+  val hasUnstableRift = activeUnstableRift != null && (!engine.isHubOverwatchActive || engine.hasJoinedMatch)
   val shutdownBanner = engine.highBountyShutdownBanner
   val hasShutdown = !shutdownBanner.isNullOrBlank() && engine.highBountyShutdownTimer > 0f
   val hasIdleDrain = player.isIdleDraining && player.respawnTimer <= 0f
@@ -835,7 +855,7 @@ fun RiftHudOverlay(
   val hasSafeLockout = safeZoneActive && player.safeZoneLockoutTimer > 0f && player.respawnTimer <= 0f && distFromCenter <= safeZoneHalfSpan + 260f
   val hasSafeEviction = safeZoneActive && player.inSafeZone && player.respawnTimer <= 0f && player.safeZoneStayTimer >= 3.0f
 
-  if (hasShutdown || hasIdleDrain || hasToast || hasSafeLockout || hasSafeEviction || uiUnlocked) {
+  if (hasUnstableRift || hasShutdown || hasIdleDrain || hasToast || hasSafeLockout || hasSafeEviction || uiUnlocked) {
    val warnRec = remember(visualRev) { RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_WARNING_BANNER) }
    val warnScale = (RiftCalibrationState.idleWarningBannerScale * warnRec.pixelScale).coerceIn(0.6f, 1.8f)
    val pulseWave = 0.55f + 0.45f * (0.5f + 0.5f * sin((System.currentTimeMillis() % 440L) / 440f * 6.28318f))
@@ -850,6 +870,11 @@ fun RiftHudOverlay(
    val promptTextColor: Color
 
    when {
+    hasUnstableRift -> {
+     promptTitle = String.format(Locale.US, "UNSTABLE RIFT CONVERGENCE • DETONATION IN %.1fs", activeUnstableRift!!.life.coerceAtLeast(0f))
+     promptSubtitle = if (safeZoneActive) "SEEK CENTER SAFE HARBOR IMMEDIATELY (75% MAX FLUX BLAST)" else "EVACUATE BLAST ZONE IMMEDIATELY (75% MAX FLUX BLAST)"
+     promptBg = Color(0xF0280714); promptBorder = Color(0xFFFACC15).copy(alpha = pulseWave); promptTextColor = Color(0xFFFEF08A)
+    }
     hasShutdown -> {
      promptTitle = shutdownBanner ?: ""; promptSubtitle = null
      promptBg = Color(0xEE241404); promptBorder = Color(0xFFF59E0B).copy(alpha = pulseWave); promptTextColor = Color(0xFFFEF08A)
@@ -1184,7 +1209,9 @@ private fun RiftControlTugOfWarHudBar(
  onClick: () -> Unit,
  modifier: Modifier = Modifier,
  topBarRec: VisualElementRecipe = RiftVisualForgeState.getRecipe(ForgeElementTarget.HUD_TOP_BAR),
+ frameTick: Int = 0,
 ) {
+ if (frameTick == Int.MIN_VALUE) return
  val totalSec = engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)
  val timerFormatted = String.format(Locale.US, "%d:%02d", totalSec / 60, totalSec % 60)
  val westScore = engine.riftControlWestScore.toInt().coerceIn(0, 1000)
@@ -1199,7 +1226,7 @@ private fun RiftControlTugOfWarHudBar(
    .testTag("hud_rift_control_tug_bar"),
   verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((8f * textScale).dp),
  ) {
-  RiftTugGaugeWing("α ALPHA", "WEST $westScore", (engine.riftControlWestScore / 1000f).coerceIn(0f, 1f), Color(0xFF38BDF8), engine.riftAlphaControlSec, engine.riftAlphaLockedBy, engine.riftAlphaWestCount, engine.riftAlphaEastCount, false, textScale)
+  RiftTugGaugeWing("α ALPHA", "WEST $westScore", (engine.riftControlWestScore / 1000f).coerceIn(0f, 1f), Color(0xFF38BDF8), engine.riftAlphaControlSec, engine.riftAlphaLockedBy, engine.riftAlphaWestCount, engine.riftAlphaEastCount, false, textScale, frameTick)
   Column(
    modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF0A192F))
     .border(0.8.dp, Color(0x6638BDF8), RoundedCornerShape(6.dp))
@@ -1209,7 +1236,7 @@ private fun RiftControlTugOfWarHudBar(
    Text("${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}", color = Color(0xFF00F5D4), fontSize = (7.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
    Text(timerFormatted, color = if (totalSec <= 30) Color(0xFFFACC15) else Color.White, fontSize = (8.6f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
   }
-  RiftTugGaugeWing("Ω OMEGA", "$eastScore EAST", (engine.riftControlEastScore / 1000f).coerceIn(0f, 1f), Color(0xFFF87171), engine.riftOmegaControlSec, engine.riftOmegaLockedBy, engine.riftOmegaWestCount, engine.riftOmegaEastCount, true, textScale)
+  RiftTugGaugeWing("Ω OMEGA", "$eastScore EAST", (engine.riftControlEastScore / 1000f).coerceIn(0f, 1f), Color(0xFFF87171), engine.riftOmegaControlSec, engine.riftOmegaLockedBy, engine.riftOmegaWestCount, engine.riftOmegaEastCount, true, textScale, frameTick)
  }
 }
 
@@ -1225,13 +1252,15 @@ private fun RiftTugGaugeWing(
  eastCount: Int,
  alignEnd: Boolean,
  textScale: Float,
+ frameTick: Int = 0,
 ) {
+ if (frameTick == Int.MIN_VALUE) return
  val isContested = lockedBy == -1 && westCount > 0 && westCount == eastCount
  val statusText = when {
   lockedBy == 0 -> "WEST LOCK"
   lockedBy == 1 -> "EAST LOCK"
   isContested -> "CONTESTED"
-  abs(controlSec) >= 1f -> "${((abs(controlSec) / 30f) * 100f).roundToInt().coerceIn(1, 100)}%"
+  abs(controlSec) >= 0.5f -> "${((abs(controlSec) / 15f) * 100f).roundToInt().coerceIn(1, 100)}%"
   else -> "OPEN"
  }
  val statusColor = when {
@@ -1261,7 +1290,7 @@ private fun RiftTugGaugeWing(
   Canvas(modifier = Modifier.fillMaxWidth().height((8.5f * textScale).dp).clip(RoundedCornerShape(4.dp))) {
    val w = size.width; val h = size.height; val gaugeH = h * 0.68f; val midX = w * 0.5f
    drawRoundRect(Color(0xFF0F1E36), Offset.Zero, Size(w, gaugeH), CornerRadius(3.dp.toPx(), 3.dp.toPx()))
-   val norm = when (lockedBy) { 0 -> -1f; 1 -> 1f; else -> (controlSec / 30f).coerceIn(-1f, 1f) }
+   val norm = when (lockedBy) { 0 -> -1f; 1 -> 1f; else -> (controlSec / 15f).coerceIn(-1f, 1f) }
    if (norm < -0.01f) {
     val fillW = abs(norm) * midX
     drawRoundRect(if (lockedBy == 0) Color(0xFF00F5D4) else Color(0xFF38BDF8), Offset(midX - fillW, 0f), Size(fillW, gaugeH), CornerRadius(2.dp.toPx(), 2.dp.toPx()))
@@ -1827,9 +1856,46 @@ private fun CircularRadarMinimap(
 
     val tipRad = Math.toRadians(-90.0 + sweepDeg.toDouble())
     val tipCenter = Offset(center.x + fluxRingRadius * cos(tipRad).toFloat(), center.y + fluxRingRadius * sin(tipRad).toFloat())
-    drawCircle(ringPrimary.copy(alpha = 0.38f), 4.6.dp.toPx(), tipCenter)
-    drawCircle(Color.White, 2.5.dp.toPx(), tipCenter)
-    drawCircle(ringPrimary, 2.5.dp.toPx(), tipCenter, style = Stroke(1.0.dp.toPx()))
+    val tipSpinDeg = ((nowMs % 1800L) / 1800f) * 360f
+    val tipPulse = 0.90f + 0.14f * sin((nowMs % 900L) / 900f * 6.283185f)
+    val symR = 4.8.dp.toPx() * tipPulse
+    drawCircle(ringPrimary.copy(alpha = 0.34f), symR * 1.32f, tipCenter)
+    drawCircle(Color(0xF0050E1D), symR * 0.96f, tipCenter)
+    drawCircle(ringSecondary.copy(alpha = 0.72f), symR * 0.94f, tipCenter, style = Stroke(0.85.dp.toPx()))
+    val outerArcR = symR * 0.82f
+    val innerArcR = symR * 0.56f
+    for (i in 0 until 3) {
+     val baseDeg = tipSpinDeg + i * 120f
+     drawArc(
+      color = ringSecondary,
+      startAngle = baseDeg,
+      sweepAngle = 82f,
+      useCenter = false,
+      topLeft = Offset(tipCenter.x - outerArcR, tipCenter.y - outerArcR),
+      size = Size(outerArcR * 2f, outerArcR * 2f),
+      style = Stroke(width = 1.25.dp.toPx(), cap = StrokeCap.Round),
+     )
+     drawArc(
+      color = ringPrimary,
+      startAngle = baseDeg + 8f,
+      sweepAngle = 68f,
+      useCenter = false,
+      topLeft = Offset(tipCenter.x - outerArcR, tipCenter.y - outerArcR),
+      size = Size(outerArcR * 2f, outerArcR * 2f),
+      style = Stroke(width = 0.85.dp.toPx(), cap = StrokeCap.Round),
+     )
+     drawArc(
+      color = Color.White.copy(alpha = 0.88f),
+      startAngle = -tipSpinDeg * 0.85f + i * 120f + 22f,
+      sweepAngle = 54f,
+      useCenter = false,
+      topLeft = Offset(tipCenter.x - innerArcR, tipCenter.y - innerArcR),
+      size = Size(innerArcR * 2f, innerArcR * 2f),
+      style = Stroke(width = 0.75.dp.toPx(), cap = StrokeCap.Round),
+     )
+    }
+    drawCircle(ringPrimary, 1.85.dp.toPx(), tipCenter)
+    drawCircle(Color.White, 1.15.dp.toPx(), tipCenter)
    }
   }
 
