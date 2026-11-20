@@ -3255,10 +3255,36 @@ class RiftArenaView(
         canvas.drawLine(xm, ym, x1, y1, anomalyRingPaint)
       }
 
-      // 3. Beveled Outer Capture Boundary Ring + 24 Degree Ticks
+      // 3. Localized Inward-Blooming Ingress Plumes + Beveled Outer Capture Boundary Ring + Optical Meniscus + 24 Degree Ticks
+      RiftSpriteBaker.drawLocalizedIngressPlumes(
+        canvas = canvas,
+        cx = cx,
+        cy = cy,
+        outerRimR = zoneR * 0.985f,
+        innerReachR = zoneR * 0.56f,
+        plumeCount = 6,
+        phaseRad = -spinPhase * 0.68f,
+        outerColor = primaryColor,
+        midColor = secondaryColor,
+        coreColor = Color.WHITE,
+        fadeAlpha = if (isContested || lockedBy != -1) 0.80f else 0.64f,
+        swirlBias = 0.20f,
+      )
       anomalyRingPaint.strokeWidth = if (isContested) 4.4f else 3.4f
       anomalyRingPaint.color = Color.argb(185, Color.red(primaryColor), Color.green(primaryColor), Color.blue(primaryColor))
       canvas.drawCircle(cx, cy, zoneR, anomalyRingPaint)
+      RiftSpriteBaker.drawRefractiveMeniscusRim(
+        canvas = canvas,
+        cx = cx,
+        cy = cy,
+        rimRadius = zoneR * 0.99f,
+        throatRadius = 0f,
+        lightAngleRad = -2.28f + 0.06f * sin(spinPhase),
+        rimTintColor = secondaryColor,
+        secondaryTintColor = primaryColor,
+        fadeAlpha = 0.88f,
+        strokeScale = 0.92f,
+      )
       anomalyRingPaint.strokeWidth = 1.8f
       for (t in 0 until 24) {
         val ta = t * (PI.toFloat() / 12f)
@@ -3436,6 +3462,18 @@ class RiftArenaView(
       alpha = 255,
     )
     canvas.restore()
+    RiftSpriteBaker.drawRefractiveMeniscusRim(
+      canvas = canvas,
+      cx = cx,
+      cy = cy,
+      rimRadius = r * 1.02f,
+      throatRadius = 0f,
+      lightAngleRad = -2.28f,
+      rimTintColor = auraBaseCol,
+      secondaryTintColor = trimCol,
+      fadeAlpha = 0.88f,
+      strokeScale = borderMult,
+    )
   }
 
   private fun drawFreeFluxCoreOrb(
@@ -3477,7 +3515,7 @@ class RiftArenaView(
       if (orb.ejectDecelTimerSec > 0f) {
         "FLUX CORE EJECTED (${orb.ejectDecelTimerSec.toInt()}s)"
       } else {
-        "FLUX CORE SINGULARITY (+15 BOUNTY/S)"
+        "FLUX CORE SINGULARITY (+15 RES/S)"
       }
     drawWorldOverheadBanner(
       canvas = canvas,
@@ -3834,12 +3872,38 @@ class RiftArenaView(
       alphaScale = opScale,
     )
 
-    // Layer 3: Crisp Braced Stabilizer Containment Shield Ring at exact physics radius szR
+    // Layer 3: Localized Inward-Blooming Safe-Harbor Rim Ingress Plumes + Braced Stabilizer Containment Shield Ring + Optical Meniscus at szR
+    RiftSpriteBaker.drawLocalizedIngressPlumes(
+      canvas = canvas,
+      cx = szCX,
+      cy = szCY,
+      outerRimR = szR * 0.985f,
+      innerReachR = max(stationR * 1.08f, szR * 0.66f),
+      plumeCount = 8,
+      phaseRad = -tSec * 0.45f,
+      outerColor = hubSecondary,
+      midColor = hubAccent,
+      coreColor = Color.WHITE,
+      fadeAlpha = (0.72f * opScale).coerceIn(0.20f, 0.88f),
+      swirlBias = 0.18f,
+    )
     val rimColor = hubAccent
     anomalyRingPaint.strokeWidth = 4.2f
     anomalyRingPaint.color =
       Color.argb((225 * opScale).toInt().coerceIn(90, 255), Color.red(rimColor), Color.green(rimColor), Color.blue(rimColor))
     canvas.drawCircle(szCX, szCY, szR, anomalyRingPaint)
+    RiftSpriteBaker.drawRefractiveMeniscusRim(
+      canvas = canvas,
+      cx = szCX,
+      cy = szCY,
+      rimRadius = szR * 0.99f,
+      throatRadius = 0f,
+      lightAngleRad = -2.28f + 0.05f * sin(tSec * 0.6f),
+      rimTintColor = hubAccent,
+      secondaryTintColor = goldCol,
+      fadeAlpha = (0.90f * opScale).coerceIn(0.25f, 1.0f),
+      strokeScale = 0.95f,
+    )
 
     arcRect.set(szCX - szR * 0.97f, szCY - szR * 0.97f, szCX + szR * 0.97f, szCY + szR * 0.97f)
     anomalyRingPaint.strokeWidth = 2.0f
@@ -3862,10 +3926,10 @@ class RiftArenaView(
           )
         p.inSafeZone && p.respawnTimer <= 0f -> {
           val rem = max(0f, RiftCalibrationState.safeZoneIdleLimitSec - p.safeZoneStayTimer)
-          String.format(java.util.Locale.US, "NEXUS SAFE HARBOR // WEAPONS DISARMED • EVICTION WARP IN %.1fs", rem)
+          String.format(java.util.Locale.US, "RIFT STATION SAFE HARBOR // WEAPONS DISARMED • EVICTION WARP IN %.1fs", rem)
         }
         else ->
-          String.format(java.util.Locale.US, "NEXUS SAFE HARBOR // WEAPONS DISARMED • %.0fs MAX STAY", RiftCalibrationState.safeZoneIdleLimitSec)
+          String.format(java.util.Locale.US, "RIFT STATION SAFE HARBOR // WEAPONS DISARMED • %.0fs MAX STAY", RiftCalibrationState.safeZoneIdleLimitSec)
       }
     drawWorldOverheadBanner(
       canvas = canvas,

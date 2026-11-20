@@ -301,7 +301,7 @@ fun SettingsModal(
   isNexusStreaming: Boolean = false,
   onOpenNexusFromCodex: () -> Unit = onCloseModal,
   currentUserId: String = "",
-  activeSectorTag: String = "NEXUS_LOBBY",
+  activeSectorTag: String = "RIFT_LOBBY",
   cloudSyncHealth: CloudSyncHealth = CloudSyncHealth(),
   onSwitchAccount: () -> Unit = onRequestSignOut,
   updateStatusLabel: String = "v1.0.$CURRENT_RIFT_BUILD_VERSION UP TO DATE",
@@ -1199,7 +1199,7 @@ fun SettingsModal(
                   fontFamily = Mono,
                 )
                 Text(
-                  text = "Scales world callsigns, bounties, Rift callouts, and Stasis timers.",
+                  text = "Scales world callsigns, Resonance readouts, Rift callouts, and Stasis timers.",
                   color = Color(0xFFCBD5E1),
                   fontSize = if (isCompactPhone) 9.6.sp else 10.5.sp,
                   fontFamily = Sans,

@@ -1139,8 +1139,11 @@ fun RiftArenaScreen(
       else localPrefs.getSyndicateName()
     )
   }
-  var selectedShipId by remember {
-    mutableIntStateOf(localPrefs.getPreferredShipId().coerceIn(1, 10))
+  var selectedShipId by remember(currentUserId) {
+    mutableIntStateOf(localPrefs.getBestShipId(currentUserId, 1).coerceIn(1, 10))
+  }
+  var hasExplicitHangarLock by remember(currentUserId, isGoogleAuthenticated) {
+    mutableStateOf(false)
   }
   var selectedMode by remember {
     mutableStateOf(localPrefs.getPreferredMode().ifBlank { "SECTOR_CONVERGENCE" })
@@ -2603,7 +2606,56 @@ fun RiftArenaScreen(
                 shipResonancesState,
                 frameTick,
               ) {
-                localPrefs.getBestShipId(currentUserId, selectedShipId)
+                localPrefs.getBestShipId(currentUserId, 1).coerceIn(1, 10)
+              }
+            LaunchedEffect(
+              bestShipId,
+              hasExplicitHangarLock,
+              currentUserId,
+              engine.isShipLockedForMatch,
+              engine.hasJoinedMatch,
+            ) {
+              if (!hasExplicitHangarLock && !engine.isShipLockedForMatch && !engine.hasJoinedMatch) {
+                val targetBest = bestShipId.coerceIn(1, 10)
+                if (selectedShipId != targetBest) {
+                  selectedShipId = targetBest
+                }
+                if (engine.localPlayer.shipId != targetBest) {
+                  engine.switchLocalPlayerShip(targetBest, forceFromHangar = true)
+                  syncEquippedCosmeticsToEngine(engine)
+                }
+              }
+            }
+            val hangarCardShipId =
+              if (hasExplicitHangarLock || engine.isShipLockedForMatch) {
+                selectedShipId.coerceIn(1, 10)
+              } else {
+                bestShipId.coerceIn(1, 10)
+              }
+            val hangarCardShipSummary =
+              remember(
+                hangarCardShipId,
+                hasExplicitHangarLock,
+                engine.isShipLockedForMatch,
+                activeCustomSlot,
+                activeShipTitle,
+                frameTick,
+              ) {
+                val baseTitle =
+                  if (hangarCardShipId == engine.localPlayer.shipId) {
+                    activeShipTitle
+                  } else if (hangarCardShipId == 10) {
+                    activeCustomSlot.customName.ifBlank { "RIFT FRAME" }.uppercase(Locale.US)
+                  } else {
+                    RiftCodex.getAllNineShips()
+                      .find { it.id == hangarCardShipId }
+                      ?.name
+                      ?.replace(Regex("^[0-9]+-"), "")
+                      ?.uppercase(Locale.US) ?: activeShipTitle
+                  }
+                val prefix =
+                  if (hasExplicitHangarLock || engine.isShipLockedForMatch) "LOCKED" else "BEST"
+                "$prefix|$baseTitle"
               }
             val canAccessSyndicate =
               remember(syndicateTag, callsign, syndicateChannelsRefreshKey) {
@@ -2871,31 +2923,109 @@ fun RiftArenaScreen(
               }
             }
 
-            val stageRankedModeIntoHangar: (RankedGameMode, Int) -> Unit = { mode, bracket ->
-              if (mode == RankedGameMode.SYNDICATE_WARS) {
-                val (eligible, reason) = engine.canQueueSyndicateWars()
-                if (!eligible) {
-                  sfx.playMutedClick()
-                  toastMessage = reason
-                  toastVersion++
+            val deployDirectlyWithHangarShip: (RankedGameMode, Int, String?) -> Unit =
+              { mode, bracket, sectorOverride ->
+                if (mode == RankedGameMode.SYNDICATE_WARS) {
+                  val (eligible, reason) = engine.canQueueSyndicateWars()
+                  if (!eligible) {
+                    sfx.playMutedClick()
+                    toastMessage = reason
+                    toastVersion++
+                    syndicateSubDeck = SyndicateCitadelSubDeck.SYNDICATES_WARS
+                    openNexusNode(NexusCoreNode.SYNDICATE_CITADEL)
+                  } else {
+                    val deployShipId =
+                      if (hasExplicitHangarLock || engine.isShipLockedForMatch) {
+                        selectedShipId.coerceIn(1, 10)
+                      } else {
+                        bestShipId.coerceIn(1, 10)
+                      }
+                    selectedShipId = deployShipId
+                    localPrefs.setPreferredShipId(deployShipId)
+                    enqueueOrExecuteResonanceMatchmaking(
+                      modeTitle = mode.title.uppercase(Locale.US),
+                      riftLabel = "${bracket}V${bracket}",
+                      targetSectorKey = sectorOverride ?: mode.id,
+                      rankedMode = mode,
+                      isCustomInstance = false,
+                      onExecuteLaunch = {
+                        pendingStagedLaunch = null
+                        suspendedActiveMatch = null
+                        engine.isShipLockedForMatch = false
+                        engine.switchLocalPlayerShip(deployShipId, forceFromHangar = true)
+                        syncEquippedCosmeticsToEngine(engine)
+                        selectedMode = mode.id
+                        localPrefs.setPreferredMode(mode.id)
+                        engine.deployToRankedMode(
+                          mode,
+                          bracket,
+                          sectorInstanceOverride = sectorOverride,
+                        )
+                        syncEquippedCosmeticsToEngine(engine)
+                        engine.onStatsUpdated()
+                        viewModel.setActiveSector(engine.activeMatchSectorTag())
+                        engine.updateRemotePilots(mergedLivePilots, currentUserId)
+                        pushLivePilotHeartbeatNow()
+                        isNexusShellOpen = false
+                        sfx.playPrize()
+                        toastMessage = "RIFTED INTO ${mode.title.uppercase(Locale.US)}"
+                        toastVersion++
+                        frameTick++
+                      },
+                    )
+                  }
                 } else {
-                  pendingStagedLaunch = StagedRiftLaunch.Ranked(mode, bracket)
-                  selectedMode = mode.id
-                  sfx.playMutedClick()
-                  activeNexusNode = NexusCoreNode.HANGAR_DECK
-                  isNexusShellOpen = true
-                  toastMessage = "STAGED ${mode.title.uppercase(Locale.US)} // SELECT HULL & ENTER RIFT"
-                  toastVersion++
+                  val deployShipId =
+                    if (hasExplicitHangarLock || engine.isShipLockedForMatch) {
+                      selectedShipId.coerceIn(1, 10)
+                    } else {
+                      bestShipId.coerceIn(1, 10)
+                    }
+                  selectedShipId = deployShipId
+                  localPrefs.setPreferredShipId(deployShipId)
+                  val formatLabel =
+                    when (mode) {
+                      RankedGameMode.RIFT_SKIRMISH,
+                      RankedGameMode.RIFT_CONTROL,
+                      RankedGameMode.SYNDICATE_WARS -> "${bracket}V${bracket}"
+                      else -> mode.teamFormatBadge
+                    }
+                  enqueueOrExecuteResonanceMatchmaking(
+                    modeTitle = mode.title.uppercase(Locale.US),
+                    riftLabel = formatLabel,
+                    targetSectorKey = sectorOverride ?: mode.id,
+                    rankedMode = mode,
+                    isCustomInstance = false,
+                    onExecuteLaunch = {
+                      pendingStagedLaunch = null
+                      suspendedActiveMatch = null
+                      engine.isShipLockedForMatch = false
+                      engine.switchLocalPlayerShip(deployShipId, forceFromHangar = true)
+                      syncEquippedCosmeticsToEngine(engine)
+                      selectedMode = mode.id
+                      localPrefs.setPreferredMode(mode.id)
+                      engine.deployToRankedMode(
+                        mode,
+                        bracket,
+                        sectorInstanceOverride = sectorOverride,
+                      )
+                      syncEquippedCosmeticsToEngine(engine)
+                      engine.onStatsUpdated()
+                      viewModel.setActiveSector(engine.activeMatchSectorTag())
+                      engine.updateRemotePilots(mergedLivePilots, currentUserId)
+                      pushLivePilotHeartbeatNow()
+                      isNexusShellOpen = false
+                      sfx.playPrize()
+                      toastMessage = "RIFTED INTO ${mode.title.uppercase(Locale.US)}"
+                      toastVersion++
+                      frameTick++
+                    },
+                  )
                 }
-              } else {
-                pendingStagedLaunch = StagedRiftLaunch.Ranked(mode, bracket)
-                selectedMode = mode.id
-                sfx.playMutedClick()
-                activeNexusNode = NexusCoreNode.HANGAR_DECK
-                isNexusShellOpen = true
-                toastMessage = "STAGED ${mode.title.uppercase(Locale.US)} // SELECT HULL & ENTER RIFT"
-                toastVersion++
               }
+
+            val stageRankedModeIntoHangar: (RankedGameMode, Int) -> Unit = { mode, bracket ->
+              deployDirectlyWithHangarShip(mode, bracket, null)
             }
 
             val stagedTargetTitle: String? =
@@ -3060,6 +3190,7 @@ fun RiftArenaScreen(
                             val clampedShipId = newShipId.coerceIn(1, 10)
                             callsign = cleanCallsign
                             selectedShipId = clampedShipId
+                            hasExplicitHangarLock = true
                             syndicateTag =
                               if (isGoogleAuthenticated) localPrefs.getSyndicateTag(currentUserId)
                               else localPrefs.getSyndicateTag()
@@ -3454,7 +3585,7 @@ fun RiftArenaScreen(
                                   .replace(Regex("[^A-Z0-9_-]"), "")
                                   .take(14)
                               if (trimmedWing.isEmpty() || UgcModeration.containsProfanity(trimmedWing)) {
-                                armadaStatusBanner = "STRIKE WING TAG REJECTED BY SAFETY FILTER."
+                                armadaStatusBanner = "SQUADRON TAG REJECTED BY SAFETY FILTER."
                               } else {
                                 engine.formOrJoinArmada(
                                   trimmedWing,
@@ -3462,7 +3593,7 @@ fun RiftArenaScreen(
                                   else emptyList(),
                                 )
                                 armadaStatusBanner =
-                                  "STRIKE WING [${engine.activeArmadaName}] DEPLOYED (${engine.getCurrentArmadaSize()}/5 PILOTS)"
+                                  "SQUADRON [${engine.activeArmadaName}] DEPLOYED (${engine.getCurrentArmadaSize()}/5 PILOTS)"
                                 friendsRefreshKey++
                               }
                             },
@@ -3470,18 +3601,18 @@ fun RiftArenaScreen(
                               val added = engine.addMemberToArmada(friend)
                               if (added) {
                                 armadaStatusBanner =
-                                  "${friend.callsign} JOINED STRIKE WING [${engine.activeArmadaName}] (${engine.getCurrentArmadaSize()}/5)"
+                                  "${friend.callsign} JOINED SQUADRON [${engine.activeArmadaName}] (${engine.getCurrentArmadaSize()}/5)"
                               }
                               friendsRefreshKey++
                             },
                             onRequestJoinFriendArmada = { friend ->
                               val targetArmada =
                                 friend.currentArmadaName
-                                  .ifEmpty { "${friend.syndicateTag}_WING" }
+                                  .ifEmpty { "${friend.syndicateTag}_SQD" }
                                   .take(14)
                               engine.formOrJoinArmada(targetArmada, listOf(friend))
                               armadaStatusBanner =
-                                "JOINED STRIKE WING [$targetArmada] WITH ${friend.callsign} (${engine.getCurrentArmadaSize()}/5)."
+                                "JOINED SQUADRON [$targetArmada] WITH ${friend.callsign} (${engine.getCurrentArmadaSize()}/5)."
                               friendsRefreshKey++
                             },
                             onRemoveArmadaMember = { callsignToDrop ->
@@ -3492,7 +3623,7 @@ fun RiftArenaScreen(
                             },
                             onLeaveArmadaToSolo = {
                               engine.leaveArmadaToSolo()
-                              armadaStatusBanner = "LEFT STRIKE WING -> OPERATING INDEPENDENTLY."
+                              armadaStatusBanner = "LEFT SQUADRON -> OPERATING INDEPENDENTLY."
                               friendsRefreshKey++
                             },
                             onAddFriendByCallsign = { rawCallsign ->
@@ -3512,7 +3643,7 @@ fun RiftArenaScreen(
                               armadaStatusBanner = "BLOCKED PILOT $pilotCallsign."
                             },
                             onReportPilot = { pilotUid, pilotCallsign ->
-                              localPrefs.reportPilot(pilotUid, pilotCallsign, "Strike Wing Roster Report")
+                              localPrefs.reportPilot(pilotUid, pilotCallsign, "Squadron Roster Report")
                               armadaStatusBanner = "REPORT SUBMITTED FOR $pilotCallsign."
                             },
                             onCloseModal = closeEmbeddedModal,
@@ -3732,7 +3863,8 @@ fun RiftArenaScreen(
                                 else localPrefs.getCallsign()
                               syndicateTag = localPrefs.getSyndicateTag()
                               syndicateName = localPrefs.getSyndicateName()
-                              selectedShipId = localPrefs.getPreferredShipId()
+                              hasExplicitHangarLock = false
+                              selectedShipId = 1
                               slot9BUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
                               slot9CUnlocked = localPrefs.isCustomSlotUnlocked("Frame C", currentUserId)
                               slot9DUnlocked = localPrefs.isCustomSlotUnlocked("Frame D", currentUserId)
@@ -3922,6 +4054,7 @@ fun RiftArenaScreen(
                           onSelectShipForDeploy = { targetShipId ->
                             val clamped = targetShipId.coerceIn(1, 10)
                             selectedShipId = clamped
+                            hasExplicitHangarLock = true
                             localPrefs.setPreferredShipId(clamped)
                             engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
                             engine.onStatsUpdated()
@@ -3974,7 +4107,7 @@ fun RiftArenaScreen(
               messages = nexusMessages,
               streamState = nexusStreamState,
               lastFailedQuestion = nexusViewModel.lastFailedQuestion,
-              activeShipSummary = activeShipTitle,
+              activeShipSummary = hangarCardShipSummary,
               pilotLevel = engine.pilotLevel,
               pointBudget = engine.getCustomizationPointsTotal(),
               highestBountySummary = highestBountySummary,
@@ -4000,7 +4133,7 @@ fun RiftArenaScreen(
               syndicateTag = syndicateTag,
               syndicateName = syndicateName,
               isGoogleAuthenticated = isGoogleAuthenticated,
-              activeShipId = selectedShipId,
+              activeShipId = hangarCardShipId,
               bestShipId = bestShipId,
               riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
               unreadCommsCount = unreadCommsCount,
@@ -4025,11 +4158,11 @@ fun RiftArenaScreen(
                     suspendedActiveMatch == null
                 ) {
                   suspendedActiveMatch =
-                    captureActiveMatchSnapshot(engine, selectedShipId, selectedMode)
+                    captureActiveMatchSnapshot(engine, hangarCardShipId, selectedMode)
                 }
                 pendingStagedLaunch = null
                 engine.isShipLockedForMatch = false
-                engine.switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
+                engine.switchLocalPlayerShip(hangarCardShipId, forceFromHangar = true)
                 syncEquippedCosmeticsToEngine(engine)
                 engine.enterEphemeralPracticeRift(startTutorial = true)
                 isNexusShellOpen = false
@@ -4044,11 +4177,11 @@ fun RiftArenaScreen(
                     suspendedActiveMatch == null
                 ) {
                   suspendedActiveMatch =
-                    captureActiveMatchSnapshot(engine, selectedShipId, selectedMode)
+                    captureActiveMatchSnapshot(engine, hangarCardShipId, selectedMode)
                 }
                 pendingStagedLaunch = null
                 engine.isShipLockedForMatch = false
-                engine.switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
+                engine.switchLocalPlayerShip(hangarCardShipId, forceFromHangar = true)
                 syncEquippedCosmeticsToEngine(engine)
                 engine.enterEphemeralPracticeRift(startTutorial = true)
                 isNexusShellOpen = false
@@ -4073,7 +4206,7 @@ fun RiftArenaScreen(
               canQueueSyndicateWars = engine.canQueueSyndicateWars(),
               syndicateWarRecord = syndicateWarRecord,
               onDeployToRankedMode = { mode, bracket ->
-                stageRankedModeIntoHangar(mode, bracket)
+                deployDirectlyWithHangarShip(mode, bracket, null)
               },
               onLeaveMatch = {
                 pendingStagedLaunch = null
@@ -4103,14 +4236,14 @@ fun RiftArenaScreen(
                   RiftGameEngine.cleanTag(syndicateTag).let {
                     if (it == "GUEST" || it == "RFT" || it.isEmpty()) callsign.take(6) else it
                   }
-                val fleetTag = "${prefix}_WING".take(14)
+                val fleetTag = "${prefix}_SQD".take(14)
                 engine.formOrJoinArmada(
                   fleetTag,
                   if (synMates.isNotEmpty()) synMates else syndicateFriends.take(2),
                 )
                 friendsRefreshKey++
                 toastMessage =
-                  "STRIKE WING [$fleetTag] STAGED (${engine.getCurrentArmadaSize()}/5 PILOTS)"
+                  "SQUADRON [$fleetTag] STAGED (${engine.getCurrentArmadaSize()}/5 PILOTS)"
                 toastVersion++
               },
               onOpenSyndicatesModal = {
@@ -4153,6 +4286,7 @@ fun RiftArenaScreen(
               onOpenHangarForShip = { targetShipId ->
                 val clamped = targetShipId.coerceIn(1, 10)
                 selectedShipId = clamped
+                hasExplicitHangarLock = true
                 localPrefs.setPreferredShipId(clamped)
                 engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
                 engine.onStatsUpdated()
@@ -4162,7 +4296,7 @@ fun RiftArenaScreen(
                     ?.name
                     ?.replace(Regex("^[0-9]+-"), "")
                     ?.uppercase(Locale.US) ?: "RIFT FRAME"
-                toastMessage = "EQUIPPED $shipTitle FOR SECTOR DEPLOYMENT"
+                toastMessage = "LOCKED $shipTitle FOR SECTOR DEPLOYMENT"
                 toastVersion++
               },
               canAccessSyndicateServer = canAccessSyndicate,
@@ -4322,6 +4456,7 @@ fun RiftArenaScreen(
                   }
                 saveCustomSlotShared(loadedSlot)
                 selectedShipId = 10
+                hasExplicitHangarLock = true
                 localPrefs.setPreferredShipId(10)
                 engine.switchLocalPlayerShip(10, forceFromHangar = true)
                 engine.onStatsUpdated()
@@ -4333,7 +4468,7 @@ fun RiftArenaScreen(
               onPostStrikeWingInvite = {
                 val wingTag =
                   engine.activeArmadaName
-                    .ifBlank { "${callsign.take(8)}_WING" }
+                    .ifBlank { "${callsign.take(8)}_SQD" }
                     .uppercase(Locale.US)
                     .take(14)
                 if (engine.activeArmadaName.isBlank()) {
@@ -4341,7 +4476,7 @@ fun RiftArenaScreen(
                 }
                 val slotsNow = engine.getCurrentArmadaSize()
                 val text =
-                  "STRIKE WING [$wingTag] RECRUITING PILOTS // ${engine.activeRankedMode.title.uppercase(Locale.US)}"
+                  "SQUADRON [$wingTag] RECRUITING PILOTS // ${engine.activeRankedMode.title.uppercase(Locale.US)}"
                 val cleanSyn = localPrefs.sanitizeSyndicateTag(syndicateTag)
                 val inviteMsg =
                   viewModel.postStructuredChannelMessage(
@@ -4358,7 +4493,7 @@ fun RiftArenaScreen(
                 if (chatMessages.none { it.id == inviteMsg.id }) {
                   chatMessages.add(inviteMsg)
                 }
-                toastMessage = "POSTED STRIKE WING [$wingTag] INVITE TO #STRIKE-LFG"
+                toastMessage = "POSTED SQUADRON [$wingTag] INVITE TO #SQUADRON-LFG"
                 toastVersion++
               },
               onPostPrivateRoomInvite = { roomCode, modeTitle ->
@@ -4378,13 +4513,13 @@ fun RiftArenaScreen(
                 if (chatMessages.none { it.id == roomMsg.id }) {
                   chatMessages.add(roomMsg)
                 }
-                toastMessage = "SHARED PRIVATE RIFT [$cleanCode] TO #STRIKE-LFG"
+                toastMessage = "SHARED PRIVATE RIFT [$cleanCode] TO #SQUADRON-LFG"
                 toastVersion++
               },
               onJoinSharedStrikeWing = { msg ->
                 val targetWing =
                   msg.armadaName
-                    .ifBlank { "${msg.senderCallsign.take(8)}_WING" }
+                    .ifBlank { "${msg.senderCallsign.take(8)}_SQD" }
                     .uppercase(Locale.US)
                     .take(14)
                 val leaderFriend =
@@ -4394,7 +4529,7 @@ fun RiftArenaScreen(
                       callsign = msg.senderCallsign,
                       syndicateTag = msg.senderSyndicateTag.ifBlank { "FREE" },
                       shipId = 1,
-                      statusText = "ONLINE // STRIKE WING",
+                      statusText = "ONLINE // SQUADRON",
                       isOnline = true,
                       currentArmadaName = targetWing,
                       currentArmadaCount = msg.armadaCurrentSize.coerceIn(1, 5),
@@ -4408,7 +4543,7 @@ fun RiftArenaScreen(
                   if (leaderFriend != null) listOf(leaderFriend) else emptyList(),
                 )
                 friendsRefreshKey++
-                toastMessage = "JOINED STRIKE WING [$targetWing]"
+                toastMessage = "JOINED SQUADRON [$targetWing]"
                 toastVersion++
               },
               onAddOnlinePilotFriend = { targetCallsign ->
@@ -4427,7 +4562,7 @@ fun RiftArenaScreen(
                 if (pUid.isNotBlank() && pUid != currentUserId) {
                   val wingTag =
                     engine.activeArmadaName
-                      .ifBlank { "${callsign.take(8)}_WING" }
+                      .ifBlank { "${callsign.take(8)}_SQD" }
                       .uppercase(Locale.US)
                       .take(14)
                   val verified =
@@ -4449,7 +4584,7 @@ fun RiftArenaScreen(
                     engine.addMemberToArmada(verified)
                   }
                   friendsRefreshKey++
-                  toastMessage = "ADDED ${livePilot.callsign} TO STRIKE WING [$wingTag]"
+                  toastMessage = "ADDED ${livePilot.callsign} TO SQUADRON [$wingTag]"
                   toastVersion++
                 }
               },
@@ -4555,64 +4690,19 @@ fun RiftArenaScreen(
                     toastVersion++
                     syndicateSubDeck = SyndicateCitadelSubDeck.SYNDICATES_WARS
                     openNexusNode(NexusCoreNode.SYNDICATE_CITADEL)
-                  } else if (engine.doesModeLockShipSelection(targetMode)) {
-                    stageRankedModeIntoHangar(inst.rankedMode, targetBracket)
                   } else {
-                    enqueueOrExecuteResonanceMatchmaking(
-                      modeTitle = inst.modeTitle,
-                      riftLabel = inst.riftLabel,
-                      targetSectorKey = inst.key,
-                      rankedMode = inst.rankedMode,
-                      isCustomInstance = false,
-                      onExecuteLaunch = {
-                        pendingStagedLaunch = null
-                        suspendedActiveMatch = null
-                        engine.isShipLockedForMatch = false
-                        engine.switchLocalPlayerShip(
-                          selectedShipId.coerceIn(1, 10),
-                          forceFromHangar = true,
-                        )
-                        syncEquippedCosmeticsToEngine(engine)
-                        selectedMode = inst.rankedMode.id
-                        localPrefs.setPreferredMode(inst.rankedMode.id)
-                        engine.deployToRankedMode(inst.rankedMode, targetBracket)
-                        syncEquippedCosmeticsToEngine(engine)
-                        engine.onStatsUpdated()
-                        viewModel.setActiveSector(engine.activeMatchSectorTag())
-                        engine.updateRemotePilots(mergedLivePilots, currentUserId)
-                        pushLivePilotHeartbeatNow()
-                        isNexusShellOpen = false
-                        sfx.playPrize()
-                        toastMessage = "RIFTED INTO ${inst.modeTitle} // ${inst.riftLabel}"
-                        toastVersion++
-                        frameTick++
-                      },
-                    )
-                  }
-                } else if (engine.doesModeLockShipSelection(targetMode)) {
-                  if (customCfg != null) {
-                    pendingStagedLaunch =
-                      if (engine.activeCustomGames.any { it.instanceId == customCfg.instanceId }) {
-                        StagedRiftLaunch.ExistingCustom(customCfg.instanceId)
-                      } else {
-                        StagedRiftLaunch.NewCustom(customCfg)
-                      }
-                    selectedMode = customCfg.baseMode.id
-                    sfx.playMutedClick()
-                    activeNexusNode = NexusCoreNode.HANGAR_DECK
-                    isNexusShellOpen = true
-                    toastMessage = "STAGED ${inst.riftLabel} // LOCK HULL & ENTER RIFT"
-                    toastVersion++
-                  } else {
-                    stageRankedModeIntoHangar(inst.rankedMode, targetBracket)
+                    deployDirectlyWithHangarShip(inst.rankedMode, targetBracket, null)
                   }
                 } else {
+                  val deployShipId = hangarCardShipId
+                  selectedShipId = deployShipId
+                  localPrefs.setPreferredShipId(deployShipId)
                   val executeDirectRiftIn: () -> Unit = {
                     pendingStagedLaunch = null
                     suspendedActiveMatch = null
                     engine.isShipLockedForMatch = false
                     engine.switchLocalPlayerShip(
-                      selectedShipId.coerceIn(1, 10),
+                      deployShipId,
                       forceFromHangar = true,
                     )
                     syncEquippedCosmeticsToEngine(engine)
@@ -4661,25 +4751,55 @@ fun RiftArenaScreen(
                 }
               },
               onStageRankedModeViaHangar = { mode, bracket ->
-                stageRankedModeIntoHangar(mode, bracket)
+                deployDirectlyWithHangarShip(mode, bracket, null)
               },
               onStageCustomGameViaHangar = { customCfg ->
-                pendingStagedLaunch = StagedRiftLaunch.NewCustom(customCfg)
+                val deployShipId = hangarCardShipId
+                selectedShipId = deployShipId
+                localPrefs.setPreferredShipId(deployShipId)
+                pendingStagedLaunch = null
+                suspendedActiveMatch = null
+                engine.isShipLockedForMatch = false
+                engine.switchLocalPlayerShip(deployShipId, forceFromHangar = true)
+                syncEquippedCosmeticsToEngine(engine)
                 selectedMode = customCfg.baseMode.id
-                sfx.playMutedClick()
-                activeNexusNode = NexusCoreNode.HANGAR_DECK
-                isNexusShellOpen = true
-                toastMessage =
-                  "STAGED CUSTOM RIFT [${customCfg.title.uppercase(Locale.US)}] // SELECT HULL & ENTER RIFT"
+                localPrefs.setPreferredMode(customCfg.baseMode.id)
+                engine.createAndJoinCustomGame(customCfg)
+                syncEquippedCosmeticsToEngine(engine)
+                engine.onStatsUpdated()
+                viewModel.setActiveSector(engine.activeMatchSectorTag())
+                engine.updateRemotePilots(mergedLivePilots, currentUserId)
+                pushLivePilotHeartbeatNow()
+                isNexusShellOpen = false
+                sfx.playPrize()
+                toastMessage = "RIFTED INTO CUSTOM RIFT [${customCfg.title.uppercase(Locale.US)}]"
                 toastVersion++
+                frameTick++
               },
               onStageExistingCustomInstanceViaHangar = { instanceId ->
-                pendingStagedLaunch = StagedRiftLaunch.ExistingCustom(instanceId)
-                sfx.playMutedClick()
-                activeNexusNode = NexusCoreNode.HANGAR_DECK
-                isNexusShellOpen = true
-                toastMessage = "STAGED CUSTOM RIFT // SELECT HULL & ENTER RIFT"
+                val deployShipId = hangarCardShipId
+                selectedShipId = deployShipId
+                localPrefs.setPreferredShipId(deployShipId)
+                pendingStagedLaunch = null
+                suspendedActiveMatch = null
+                engine.isShipLockedForMatch = false
+                engine.switchLocalPlayerShip(deployShipId, forceFromHangar = true)
+                syncEquippedCosmeticsToEngine(engine)
+                engine.joinCustomGame(instanceId)
+                val resolvedModeId =
+                  engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
+                selectedMode = resolvedModeId
+                localPrefs.setPreferredMode(resolvedModeId)
+                syncEquippedCosmeticsToEngine(engine)
+                engine.onStatsUpdated()
+                viewModel.setActiveSector(engine.activeMatchSectorTag())
+                engine.updateRemotePilots(mergedLivePilots, currentUserId)
+                pushLivePilotHeartbeatNow()
+                isNexusShellOpen = false
+                sfx.playPrize()
+                toastMessage = "RIFTED INTO CUSTOM RIFT"
                 toastVersion++
+                frameTick++
               },
               onSwitchAccount = {
                 pendingStagedLaunch = null

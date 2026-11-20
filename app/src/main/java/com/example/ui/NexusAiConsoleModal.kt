@@ -499,7 +499,7 @@ fun SwirlingRiftHeaderPill(onClick: () -> Unit, tag: String, isStreaming: Boolea
   ) {
     SwirlingRiftVortexGlyph(modifier = Modifier.size(18.dp), isStreaming = isStreaming)
     Text(
-      "NEXUS HUB",
+      "RIFT HUB",
       color = Color(0xFF00F5D4),
       fontSize = 9.5.sp,
       fontWeight = FontWeight.Black,
@@ -537,11 +537,11 @@ fun NexusMasterModuleNavigationRibbon(
     horizontalArrangement = Arrangement.spacedBy(6.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    NexusRibbonPill("NEXUS HUB", activeModuleKey == "NEXUS", Color(0xFF00F5D4), "nexus_module_pill_lobby", onSelectNexusLobby)
+    NexusRibbonPill("RIFT HUB", activeModuleKey == "NEXUS", Color(0xFF00F5D4), "nexus_module_pill_lobby", onSelectNexusLobby)
     NexusRibbonPill("HANGAR DECK", activeModuleKey == "HANGAR", Color(0xFF38BDF8), "nexus_module_pill_hangar", onOpenHangar)
-    NexusRibbonPill("STAR FORGE", activeModuleKey == "FORGE", Color(0xFFC084FC), "nexus_module_pill_forge", onOpenForge)
+    NexusRibbonPill("STARFORGE", activeModuleKey == "FORGE", Color(0xFFC084FC), "nexus_module_pill_forge", onOpenForge)
     NexusRibbonPill("RIFT CONDUIT", activeModuleKey == "PROGRESSION", Color(0xFFE879F9), "nexus_module_pill_progression", onOpenProgression)
-    NexusRibbonPill("STRIKE WING", activeModuleKey == "ARMADA", Color(0xFF60A5FA), "nexus_module_pill_armada", onOpenArmadaModal)
+    NexusRibbonPill("SQUADRON", activeModuleKey == "ARMADA", Color(0xFF60A5FA), "nexus_module_pill_armada", onOpenArmadaModal)
     NexusRibbonPill("SYNDICATES", activeModuleKey == "SYNDICATES", Color(0xFFF59E0B), "nexus_module_pill_syndicates", onOpenSyndicateDirectory)
     NexusRibbonPill("PILOT DOSSIER", activeModuleKey == "DOSSIER", Color(0xFFA78BFA), "nexus_module_pill_dossier", onOpenDossier)
     NexusRibbonPill("TACTICAL CODEX", activeModuleKey == "CODEX", Color(0xFF34D399), "nexus_module_pill_codex", onOpenCodex)
@@ -806,52 +806,60 @@ fun NexusAiConsoleModal(
     onSendChannelMessage(channelKey, clean)
   }
 
-  fun stageRankedSelectionIntoHangar(mode: RankedGameMode, bracket: Int) {
+  val resolvedBestShipForGate = bestShipId.coerceIn(1, 10)
+  val clampedActiveShipForGate = activeShipId.coerceIn(1, 10)
+  val isGateShipLocked =
+    activeShipSummary.startsWith("LOCKED|", ignoreCase = true) ||
+      engine?.isShipLockedForMatch == true ||
+      clampedActiveShipForGate != resolvedBestShipForGate
+  val gateDeployShipId = if (isGateShipLocked) clampedActiveShipForGate else resolvedBestShipForGate
+  val gateDeployShipName =
+    remember(gateDeployShipId, RiftSpriteBaker.customShip9Version) {
+      RiftCodex.getShipById(gateDeployShipId)
+        .name
+        .replace(Regex("^[0-9]+-"), "")
+        .trim()
+        .uppercase(Locale.US)
+    }
+  val gateShipStatusSummary = "$gateDeployShipName (${if (isGateShipLocked) "LOCKED" else "BEST"})"
+
+  fun deployOrStageRankedSelection(mode: RankedGameMode, bracket: Int) {
     if (onStageRankedModeViaHangar != null) {
       onStageRankedModeViaHangar(mode, bracket)
       return
     }
-    engine?.let { eng ->
-      eng.currentCustomGame = null
-      eng.activeRankedMode = mode
-      eng.mode = mode.id
-      eng.activeTeamSizeBracket = bracket
-      eng.isShipLockedForMatch = false
-      eng.hasJoinedMatch = false
-      eng.isInLobbyStaging = true
-    }
-    onSelectNode(NexusCoreNode.HANGAR_DECK)
+    onDeployToRankedMode(mode, bracket)
   }
 
-  fun stageExistingCustomIntoHangar(instanceId: String) {
+  fun deployOrStageExistingCustom(instanceId: String) {
     if (onStageExistingCustomInstanceViaHangar != null) {
       onStageExistingCustomInstanceViaHangar(instanceId)
       return
     }
     engine?.let { eng ->
       eng.isShipLockedForMatch = false
+      eng.switchLocalPlayerShip(gateDeployShipId, forceFromHangar = true)
       eng.joinCustomGame(instanceId)
-      eng.isShipLockedForMatch = false
       RiftCalibrationState.applyCalibrationChangesLive(eng, context)
     }
     customGamesRefreshTick++
-    onSelectNode(NexusCoreNode.HANGAR_DECK)
+    onCloseModal()
   }
 
-  fun stageNewCustomConfigIntoHangar(cfg: CustomGameConfig) {
+  fun deployOrStageNewCustomConfig(cfg: CustomGameConfig) {
     if (onStageCustomGameViaHangar != null) {
       onStageCustomGameViaHangar(cfg)
       return
     }
     engine?.let { eng ->
       eng.isShipLockedForMatch = false
+      eng.switchLocalPlayerShip(gateDeployShipId, forceFromHangar = true)
       eng.createAndJoinCustomGame(cfg)
-      eng.isShipLockedForMatch = false
       RiftCalibrationState.botsEnabled = cfg.botsEnabled
       RiftCalibrationState.applyCalibrationChangesLive(eng, context)
     }
     customGamesRefreshTick++
-    onSelectNode(NexusCoreNode.HANGAR_DECK)
+    onCloseModal()
   }
 
   fun joinCustomByRoomCode(rawCode: String) {
@@ -866,8 +874,8 @@ fun NexusAiConsoleModal(
         extractCustomRoomCode(it.instanceId).equals(cleanCode, ignoreCase = true)
       }
     if (matching != null) {
-      roomCodeBanner = "STAGING ROOM [$cleanCode] // ${matching.title} -> CHOOSE HULL"
-      stageExistingCustomIntoHangar(matching.instanceId)
+      roomCodeBanner = "ENTERING ROOM [$cleanCode] // ${matching.title}"
+      deployOrStageExistingCustom(matching.instanceId)
     } else {
       val created =
         CustomGameConfig(
@@ -886,8 +894,8 @@ fun NexusAiConsoleModal(
           rechargeMult = customRechargeMult,
           crateSpawnMult = customCrateSpawnMult,
         )
-      roomCodeBanner = "STAGING PRIVATE RIFT [$cleanCode] -> CHOOSE HULL"
-      stageNewCustomConfigIntoHangar(created)
+      roomCodeBanner = "ENTERING PRIVATE RIFT [$cleanCode]"
+      deployOrStageNewCustomConfig(created)
     }
   }
 
@@ -991,7 +999,7 @@ fun NexusAiConsoleModal(
               KeyEvent.KEYCODE_ENTER -> {
                 val chosenIdx = focusedOrbitalIndex.coerceIn(0, NEXUS_3D_RIFT_TEARS.lastIndex)
                 if (chosenIdx == 0) {
-                  onQuickZoneIntoOverwatch(activeOverwatchInstance)
+                  onSelectNode(NexusCoreNode.CONVERGENCE_GATE)
                 } else {
                   onSelectNode(NEXUS_3D_RIFT_TEARS[chosenIdx].node)
                 }
@@ -1052,9 +1060,11 @@ fun NexusAiConsoleModal(
           OrbitalHubSpatialStage(
             callsign = callsign,
             syndicateTag = cleanSyndicateTag,
+            syndicateName = syndicateName,
             liveResonance = resolvedLiveResonance,
             riftShards = riftShards,
             activeShipId = activeShipId,
+            bestShipId = bestShipId,
             activeShipSummary = activeShipSummary,
             armadaCount = armadaSlots.size.coerceAtLeast(1),
             activeArmadaName = activeArmadaName,
@@ -1195,6 +1205,7 @@ fun NexusAiConsoleModal(
                       activeArmadaName = activeArmadaName,
                       armadaSize = armadaSlots.size.coerceAtLeast(1),
                       syndicateTag = cleanSyndicateTag,
+                      hangarShipSummaryLabel = gateShipStatusSummary,
                       onOpenStrikeWing = {
                         onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.STRIKE_WING)
                         onSelectNode(NexusCoreNode.SYNDICATE_CITADEL)
@@ -1209,7 +1220,7 @@ fun NexusAiConsoleModal(
                       humanPilotCountByMode = humanPilotCountByMode,
                       canQueueSyndicateWars = canQueueSyndicateWars,
                       syndicateWarRecord = syndicateWarRecord,
-                      onStageRanked = { mode, bracket -> stageRankedSelectionIntoHangar(mode, bracket) },
+                      onStageRanked = { mode, bracket -> deployOrStageRankedSelection(mode, bracket) },
                       engine = engine,
                       customIsPrivateRoom = customIsPrivateRoom,
                       onTogglePrivateRoom = {
@@ -1226,7 +1237,7 @@ fun NexusAiConsoleModal(
                       onJoinByRoomCode = { joinCustomByRoomCode(joinRoomCodeDraft) },
                       onShareRoomToLfg = {
                         onPostPrivateRoomInvite(generatedRoomCode, customBaseMode.title)
-                        roomCodeBanner = "SHARED ROOM CODE [$generatedRoomCode] TO #STRIKE-LFG"
+                        roomCodeBanner = "SHARED ROOM CODE [$generatedRoomCode] TO #SQUADRON-LFG"
                       },
                       customRefreshTick = customGamesRefreshTick,
                       customBaseMode = customBaseMode,
@@ -1250,10 +1261,10 @@ fun NexusAiConsoleModal(
                       customCrateSpawnMult = customCrateSpawnMult,
                       onSelectCrateSpawnMult = { customCrateSpawnMult = it },
                       onReturnToRankedFfa = {
-                        stageRankedSelectionIntoHangar(RankedGameMode.SECTOR_CONVERGENCE, 20)
+                        deployOrStageRankedSelection(RankedGameMode.SECTOR_CONVERGENCE, 20)
                         customGamesRefreshTick++
                       },
-                      onJoinCustomInstance = { instanceId -> stageExistingCustomIntoHangar(instanceId) },
+                      onJoinCustomInstance = { instanceId -> deployOrStageExistingCustom(instanceId) },
                       onLaunchCustomGame = {
                         val prefix = if (customIsPrivateRoom) "priv" else "pub"
                         val code = generatedRoomCode
@@ -1278,7 +1289,7 @@ fun NexusAiConsoleModal(
                             rechargeMult = customRechargeMult,
                             crateSpawnMult = customCrateSpawnMult,
                           )
-                        stageNewCustomConfigIntoHangar(cfg)
+                        deployOrStageNewCustomConfig(cfg)
                       },
                     )
                   }
@@ -1402,10 +1413,12 @@ fun NexusAiConsoleModal(
 private fun OrbitalHubSpatialStage(
   callsign: String,
   syndicateTag: String,
+  syndicateName: String = "UNAFFILIATED",
   liveResonance: Int,
   riftShards: Long,
   activeShipId: Int,
-  @Suppress("UNUSED_PARAMETER") activeShipSummary: String,
+  bestShipId: Int = 1,
+  activeShipSummary: String,
   armadaCount: Int,
   activeArmadaName: String,
   @Suppress("UNUSED_PARAMETER") syndicateWarRecord: SyndicateWarRecord,
@@ -1457,19 +1470,26 @@ private fun OrbitalHubSpatialStage(
   val pilotIdentityLabel =
     if (syndicateTag.isNotBlank()) "[$syndicateTag] $callsign" else callsign
 
-  // Live per-card pilot telemetry & cached 192x192 5-stop metallic NEXUS-station module emblems
+  // Live per-card pilot telemetry & cached 192x192 5-stop metallic Rift Station module emblems
   val activeCrestRecipe = RiftVisualForgeState.activeSyndicateCrestRecipe
   val spriteRev = RiftSpriteBaker.spriteVisualRevision
   val customShipRev = RiftSpriteBaker.customShip9Version
   val hullTrim = RiftSpriteBaker.activeHullTrimStyle
   val clampedShipId = activeShipId.coerceIn(1, 10)
+  val resolvedBestShipId = bestShipId.coerceIn(1, 10)
+  val isHangarLocked =
+    activeShipSummary.startsWith("LOCKED|", ignoreCase = true) ||
+      engine?.isShipLockedForMatch == true ||
+      clampedShipId != resolvedBestShipId
+  val hangarIndicatedShipId = if (isHangarLocked) clampedShipId else resolvedBestShipId
 
-  val equippedSpec = remember(clampedShipId, customShipRev) { RiftCodex.getShipById(clampedShipId) }
-  val cleanRoleTitle =
-    remember(equippedSpec.role) {
-      equippedSpec.role.substringBefore("(").trim().uppercase(Locale.US)
+  val indicatedShipSpec =
+    remember(hangarIndicatedShipId, customShipRev) { RiftCodex.getShipById(hangarIndicatedShipId) }
+  val hangarPrimaryStat =
+    remember(indicatedShipSpec.name) {
+      indicatedShipSpec.name.replace(Regex("^[0-9]+-"), "").trim().uppercase(Locale.US)
     }
-  val hangarPrimaryStat = "${equippedSpec.name.uppercase(Locale.US)} • $cleanRoleTitle"
+  val hangarBadgeText = if (isHangarLocked) "LOCKED" else "BEST"
 
   val conduitTier = remember(liveResonance) { RiftProgressionCatalog.getConduitTierForResonance(liveResonance) }
   val directives =
@@ -1477,53 +1497,58 @@ private fun OrbitalHubSpatialStage(
       localPrefs.getDailyDirectives(currentUserId.ifBlank { null })
     }
   val claimableDirectives = directives.count { it.isComplete && !it.claimed }
-  val conduitBadge = if (claimableDirectives > 0) "$claimableDirectives CLAIM" else "$liveResonance RES"
-  val conduitPrimaryStat = "${String.format(Locale.US, "%,d", liveResonance)} RES • ${conduitTier.title}"
+  val conduitBadge = if (claimableDirectives > 0) "$claimableDirectives CLAIM" else null
+  val formattedLiveResonance = remember(liveResonance) { String.format(Locale.US, "%,d", liveResonance) }
+  val conduitPrimaryStat = "${conduitTier.title.uppercase(Locale.US)} • $formattedLiveResonance"
 
-  val activeTrackIdx = RiftSoundSynthesizer.activeTrackSlotIndex.coerceIn(0, 2)
-  val activeMusicRecipe = RiftSoundSynthesizer.trackSlots.getOrNull(activeTrackIdx)
-  val trackArchetypeTitle = (activeMusicRecipe?.archetype?.label ?: "Dark Synthwave").uppercase(Locale.US)
-  val trackBpm = activeMusicRecipe?.bpm ?: 128
-  val forgePrimaryStat = "$trackArchetypeTitle • $trackBpm BPM"
+  val forgePrimaryStat = "SHIPS, SKINS & AUDIO"
 
   val commsBadge =
     when {
       unreadCommsCount > 0 -> "$unreadCommsCount NEW"
       totalOnlinePilots > 0 -> "$totalOnlinePilots LIVE"
-      else -> "AI READY"
+      else -> "RIFT AI"
     }
   val commsPrimaryStat =
     if (unreadCommsCount > 0) {
-      "$unreadCommsCount UNREAD • $totalOnlinePilots ONLINE"
+      "$unreadCommsCount NEW • CHAT & RIFT AI"
     } else {
-      "$totalOnlinePilots PILOTS LIVE • SUBSPACE"
+      "CHAT & RIFT AI • $totalOnlinePilots LIVE"
     }
 
-  val syndicateCardLabel = if (syndicateTag.isNotBlank()) "[$syndicateTag] SYNDICATE" else "SOLO PILOT"
-  val wingLabel =
+  val cleanSyndicateDisplayTitle =
+    remember(syndicateTag, syndicateName) {
+      syndicateName.trim().takeIf { raw ->
+        syndicateTag.isNotBlank() &&
+          raw.isNotBlank() &&
+          raw.uppercase(Locale.US) !in
+            setOf("UNAFFILIATED", "GUEST", "NONE", "SOLO", "FREE", "RFT", "DRIFTER")
+      }?.uppercase(Locale.US) ?: "UNAFFILIATED"
+    }
+  val squadronLabel =
     if (activeArmadaName.isNotBlank()) {
-      "[${activeArmadaName.take(8)}] ${armadaCount.coerceIn(1, 5)}/5"
+      "SQUADRON [${activeArmadaName.take(8)}] ${armadaCount.coerceIn(1, 5)}/5"
     } else {
-      "WING ${armadaCount.coerceIn(1, 5)}/5"
+      "SQUADRON ${armadaCount.coerceIn(1, 5)}/5"
     }
   val citadelBadge =
     when {
-      strikeWingOnlineCount > 0 -> "WING $strikeWingOnlineCount"
+      strikeWingOnlineCount > 0 -> "SQD $strikeWingOnlineCount"
       syndicateTag.isNotBlank() -> "[$syndicateTag]"
       else -> null
     }
-  val citadelPrimaryStat = "$syndicateCardLabel • $wingLabel"
+  val citadelPrimaryStat = squadronLabel
 
   val peakResonance = maxOf(liveResonance, localPrefs.getPeakResonance(currentUserId.ifBlank { null }))
   val totalWins = localPrefs.getConvergencesWon()
   val archiveBadge = if (totalWins > 0L) "${totalWins}W" else null
-  val archivePrimaryStat = "PEAK ${String.format(Locale.US, "%,d", peakResonance)} RES • $totalWins WINS"
+  val archivePrimaryStat = "PEAK ${String.format(Locale.US, "%,d", peakResonance)} • $totalWins WINS"
 
   val hangarEmblem =
-    remember(clampedShipId, spriteRev, customShipRev, hullTrim) {
+    remember(resolvedBestShipId, spriteRev, customShipRev, hullTrim) {
       RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
         moduleKey = "HANGAR",
-        activeShipId = clampedShipId,
+        activeShipId = resolvedBestShipId,
         sizePx = 192,
       ).asImageBitmap()
     }
@@ -1757,7 +1782,7 @@ private fun OrbitalHubSpatialStage(
               )
             }
 
-            // Clickable WING -> Syndicate Citadel (Strike Wing)
+            // Clickable SQUADRON -> Syndicate Citadel (Squadron)
             Box(
               modifier =
                 Modifier.clip(RoundedCornerShape(6.dp))
@@ -1769,7 +1794,7 @@ private fun OrbitalHubSpatialStage(
               contentAlignment = Alignment.Center,
             ) {
               Text(
-                text = "WING $strikeWingOnlineCount",
+                text = "SQUADRON $strikeWingOnlineCount",
                 color = Color(0xFF7DD3FC),
                 fontSize = 11.4.sp,
                 fontWeight = FontWeight.Black,
@@ -1778,7 +1803,7 @@ private fun OrbitalHubSpatialStage(
               )
             }
 
-            // Clickable ONLINE / OFFLINE -> Chat & NEXUS AI (Subspace Comms)
+            // Clickable ONLINE / OFFLINE -> Subspace Comms & Rift AI
             val syncHealthy = isNetworkOnline && (!isGoogleAuthenticated || cloudSyncHealth.lastError.isNullOrBlank() || cloudSyncHealth.isConnected)
             val onlinePillLabel =
               when {
@@ -1918,7 +1943,7 @@ private fun OrbitalHubSpatialStage(
           horizontalArrangement = Arrangement.spacedBy(6.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          // LEFT SCI-FI TABLET DOCK (3 Metallic Station-Styled Module Cards)
+          // LEFT SCI-FI TABLET DOCK (Top: HANGAR DECK • Middle: STARFORGE • Bottom: SUBSPACE COMMS)
           Column(
             modifier =
               Modifier.weight(0.25f)
@@ -1931,12 +1956,12 @@ private fun OrbitalHubSpatialStage(
           ) {
             SciFiTabletModuleCard(
               modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "SHIPS & BUILDS",
+              title = "HANGAR DECK",
               primaryStat = hangarPrimaryStat,
               emblemBitmap = hangarEmblem,
               accent = Color(0xFF38BDF8),
-              secondaryAccent = Color(0xFF00F5D4),
-              badgeText = "SHIP #$clampedShipId",
+              secondaryAccent = if (isHangarLocked) Color(0xFF00F5D4) else Color(0xFFFACC15),
+              badgeText = hangarBadgeText,
               isFocused = focusedOrbitalIndex == 1,
               isRightColumn = false,
               testTag = "nexus_node_hangar_deck",
@@ -1944,29 +1969,29 @@ private fun OrbitalHubSpatialStage(
             )
             SciFiTabletModuleCard(
               modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "RANKS & QUESTS",
-              primaryStat = conduitPrimaryStat,
-              emblemBitmap = conduitEmblem,
-              accent = Color(0xFFFACC15),
-              secondaryAccent = Color(0xFF00F5D4),
-              badgeText = conduitBadge,
-              isFocused = focusedOrbitalIndex == 2,
-              isRightColumn = false,
-              testTag = "nexus_node_rift_conduit",
-              onClick = { onSelectNode(2, NexusCoreNode.RIFT_CONDUIT) },
-            )
-            SciFiTabletModuleCard(
-              modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "SKINS & AUDIO",
+              title = "STARFORGE",
               primaryStat = forgePrimaryStat,
               emblemBitmap = forgeEmblem,
               accent = Color(0xFF00F5D4),
               secondaryAccent = Color(0xFFC084FC),
-              badgeText = "1:1 LAB",
+              badgeText = null,
               isFocused = focusedOrbitalIndex == 3,
               isRightColumn = false,
               testTag = "nexus_node_star_forge",
               onClick = { onSelectNode(3, NexusCoreNode.STAR_FORGE) },
+            )
+            SciFiTabletModuleCard(
+              modifier = Modifier.weight(1f).fillMaxWidth(),
+              title = "SUBSPACE COMMS",
+              primaryStat = commsPrimaryStat,
+              emblemBitmap = commsEmblem,
+              accent = Color(0xFF00F5D4),
+              secondaryAccent = Color(0xFFFACC15),
+              badgeText = commsBadge,
+              isFocused = focusedOrbitalIndex == 4,
+              isRightColumn = false,
+              testTag = "nexus_node_subspace_comms",
+              onClick = { onSelectNode(4, NexusCoreNode.SUBSPACE_COMMS) },
             )
           }
 
@@ -1989,7 +2014,7 @@ private fun OrbitalHubSpatialStage(
             onApertureRootBoundsChanged = onApertureRootBoundsChanged,
           )
 
-          // RIGHT SCI-FI TABLET DOCK (3 Metallic Station-Styled Module Cards)
+          // RIGHT SCI-FI TABLET DOCK (Top: RIFT CONDUIT • Middle: SYNDICATE NAME • Bottom: PILOT DOSSIER)
           Column(
             modifier =
               Modifier.weight(0.25f)
@@ -2002,20 +2027,57 @@ private fun OrbitalHubSpatialStage(
           ) {
             SciFiTabletModuleCard(
               modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "CHAT & NEXUS AI",
-              primaryStat = commsPrimaryStat,
-              emblemBitmap = commsEmblem,
-              accent = Color(0xFF00F5D4),
-              secondaryAccent = Color(0xFFFACC15),
-              badgeText = commsBadge,
-              isFocused = focusedOrbitalIndex == 4,
+              title = "RIFT CONDUIT",
+              primaryStat = conduitPrimaryStat,
+              emblemBitmap = conduitEmblem,
+              accent = Color(0xFFFACC15),
+              secondaryAccent = Color(0xFF00F5D4),
+              badgeText = conduitBadge,
+              isFocused = focusedOrbitalIndex == 2,
               isRightColumn = true,
-              testTag = "nexus_node_subspace_comms",
-              onClick = { onSelectNode(4, NexusCoreNode.SUBSPACE_COMMS) },
+              testTag = "nexus_node_rift_conduit",
+              onClick = { onSelectNode(2, NexusCoreNode.RIFT_CONDUIT) },
+              primaryStatContent = {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                  modifier = Modifier.fillMaxWidth(),
+                ) {
+                  Text(
+                    text = conduitTier.title.uppercase(Locale.US),
+                    color = Color(0xFFFACC15),
+                    fontSize = 10.0.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                  )
+                  Text(
+                    text = "•",
+                    color = Color(0xFF64748B),
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  ResonanceCrestIcon(sizeDp = 13.dp)
+                  Text(
+                    text = formattedLiveResonance,
+                    color = Color(0xFF00F5D4),
+                    fontSize = 10.2.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    softWrap = false,
+                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                  )
+                }
+              },
             )
             SciFiTabletModuleCard(
               modifier = Modifier.weight(1f).fillMaxWidth(),
-              title = "SYNDICATE\nSTRIKE WING",
+              title = cleanSyndicateDisplayTitle,
               primaryStat = citadelPrimaryStat,
               emblemBitmap = citadelEmblem,
               accent = Color(0xFFFACC15),
@@ -2059,6 +2121,7 @@ private fun SciFiTabletModuleCard(
   isRightColumn: Boolean,
   testTag: String,
   onClick: () -> Unit,
+  primaryStatContent: (@Composable () -> Unit)? = null,
 ) {
   val titleGlow =
     remember(accent, isFocused) {
@@ -2215,19 +2278,23 @@ private fun SciFiTabletModuleCard(
           modifier = Modifier.fillMaxWidth(),
         )
 
-        Text(
-          text = primaryStat,
-          color = accent,
-          fontSize = 10.2.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          softWrap = false,
-          overflow = TextOverflow.Ellipsis,
-          textAlign = TextAlign.Center,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-          modifier = Modifier.fillMaxWidth(),
-        )
+        if (primaryStatContent != null) {
+          primaryStatContent()
+        } else {
+          Text(
+            text = primaryStat,
+            color = accent,
+            fontSize = 10.2.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            modifier = Modifier.fillMaxWidth(),
+          )
+        }
       }
     }
   }
@@ -2760,7 +2827,7 @@ private fun RoundRipplingOverwatchAperture(
           )
           ResonanceCrestIcon(sizeDp = 14.dp)
           Text(
-            text = "${formatOverwatchResonance(activeInstance.combinedResonance)} RES",
+            text = formatOverwatchResonance(activeInstance.combinedResonance),
             color = Color(0xFFFACC15),
             fontSize = 9.8.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -2851,7 +2918,7 @@ private fun RoundRipplingOverwatchAperture(
     }
 
     // BOTTOM COMPACT ACTION ROW:
-    // 1-Click [ RIFT IN // RIFT #XX ] + [ ALL MODES ] (CONVERGENCE GATE)
+    // Single Unified [ RIFT IN ] CTA -> Opens Scrollable Mode List (CONVERGENCE GATE)
     val quickZoneGlow =
       remember(isFocused) {
         Shadow(
@@ -2864,7 +2931,7 @@ private fun RoundRipplingOverwatchAperture(
       modifier =
         Modifier.align(Alignment.BottomCenter)
           .padding(bottom = 4.dp, start = 8.dp, end = 8.dp),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      horizontalArrangement = Arrangement.Center,
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Box(
@@ -2876,48 +2943,27 @@ private fun RoundRipplingOverwatchAperture(
               )
             )
             .border(
-              width = if (isFocused) 1.5.dp else 1.1.dp,
+              width = if (isFocused) 1.5.dp else 1.15.dp,
               brush =
                 Brush.horizontalGradient(
                   listOf(Color(0xEE00F5D4), Color(0xCCFACC15), Color(0xEE38BDF8))
                 ),
               shape = RoundedCornerShape(9.dp),
             )
-            .clickable { onQuickZoneIntoOverwatch(activeInstance) }
-            .padding(horizontal = 15.dp, vertical = 7.dp)
-            .testTag("nexus_btn_quick_zone_in"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = "[ RIFT IN // ${activeInstance.riftLabel} ]",
-          color = Color.White,
-          fontSize = 11.6.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          letterSpacing = 0.8.sp,
-          maxLines = 1,
-          style = TextStyle(shadow = quickZoneGlow),
-        )
-      }
-
-      Box(
-        modifier =
-          Modifier.clip(RoundedCornerShape(9.dp))
-            .background(Color(0xEB071224))
-            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.88f), RoundedCornerShape(9.dp))
             .clickable { onOpenAllModesGate() }
-            .padding(horizontal = 12.dp, vertical = 7.dp)
+            .padding(horizontal = 24.dp, vertical = 8.dp)
             .testTag("nexus_node_convergence_gate"),
         contentAlignment = Alignment.Center,
       ) {
         Text(
-          text = "[ ALL MODES ]",
-          color = Color(0xFF38BDF8),
-          fontSize = 9.8.sp,
+          text = "[ RIFT IN ]",
+          color = Color.White,
+          fontSize = 12.2.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
-          letterSpacing = 0.6.sp,
+          letterSpacing = 1.0.sp,
           maxLines = 1,
+          style = TextStyle(shadow = quickZoneGlow),
         )
       }
     }
@@ -2974,7 +3020,7 @@ private fun NexusWarpOffConfirmationModal(
         }
 
         Text(
-          text = "Sure you want to warp off from your active Rift match and return to peaceful NEXUS orbit?",
+          text = "Sure you want to warp off from your active Rift match and return to peaceful Rift Station orbit?",
           color = Color(0xFFE2E8F0),
           fontSize = 10.5.sp,
           lineHeight = 14.5.sp,
@@ -3080,15 +3126,15 @@ private fun GlassTerminalTopHeader(
 ) {
   val (title, accent) =
     when (activeNode) {
-      NexusCoreNode.SUBSPACE_COMMS -> "SUBSPACE COMMS & NEXUS AI" to Color(0xFF00F5D4)
+      NexusCoreNode.SUBSPACE_COMMS -> "SUBSPACE COMMS & RIFT AI" to Color(0xFF00F5D4)
       NexusCoreNode.CONVERGENCE_GATE -> "CONVERGENCE GATE" to Color(0xFF00F5D4)
       NexusCoreNode.HANGAR_DECK -> "HANGAR DECK" to Color(0xFF38BDF8)
       NexusCoreNode.RIFT_CONDUIT -> "RIFT CONDUIT" to Color(0xFFE879F9)
       NexusCoreNode.SYNDICATE_CITADEL -> "SYNDICATE CITADEL" to Color(0xFFFACC15)
       NexusCoreNode.ARCHIVE_CODEX -> "PILOT DOSSIER" to Color(0xFF34D399)
       NexusCoreNode.HELM_SYSTEMS -> "HELM SYSTEMS" to Color(0xFF94A3B8)
-      NexusCoreNode.STAR_FORGE -> "STAR FORGE" to Color(0xFFC084FC)
-      NexusCoreNode.ORBITAL_HUB -> "NEXUS HUB" to Color(0xFF00F5D4)
+      NexusCoreNode.STAR_FORGE -> "STARFORGE" to Color(0xFFC084FC)
+      NexusCoreNode.ORBITAL_HUB -> "RIFT HUB" to Color(0xFF00F5D4)
     }
 
   Row(
@@ -3113,7 +3159,7 @@ private fun GlassTerminalTopHeader(
             .testTag("nexus_btn_back_to_hub"),
       ) {
         Text(
-          text = "< NEXUS HUB",
+          text = "< RIFT HUB",
           color = Color(0xFF00F5D4),
           fontSize = 8.8.sp,
           fontWeight = FontWeight.Black,
@@ -3139,7 +3185,7 @@ private fun GlassTerminalTopHeader(
           onClick = { onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.SYNDICATES_WARS) },
         )
         HeaderSubDeckPill(
-          label = "STRIKE WING ($armadaCount/5)",
+          label = "SQUADRON ($armadaCount/5)",
           selected = syndicateSubDeck == SyndicateCitadelSubDeck.STRIKE_WING,
           accent = Color(0xFF38BDF8),
           tag = "citadel_sub_strike_wing",
@@ -3244,6 +3290,7 @@ private fun ConvergenceGateZeroScrollDeck(
   activeArmadaName: String,
   armadaSize: Int,
   syndicateTag: String,
+  hangarShipSummaryLabel: String = "VIPER (BEST)",
   onOpenStrikeWing: () -> Unit,
   activeRankedMode: RankedGameMode,
   skirmishBracket: Int,
@@ -3295,7 +3342,7 @@ private fun ConvergenceGateZeroScrollDeck(
     modifier = Modifier.fillMaxSize().testTag("nexus_armada_and_ranked_deck"),
     verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
-    // Slim Sub-Bar: Official Ranked vs Custom Rift Gate + Strike Wing Chip + Unified Hangar Staging Cue
+    // Slim Sub-Bar: Official Ranked vs Custom Rift Gate + Squadron Chip + Active Hangar Ship Cue
     Row(
       modifier =
         Modifier.fillMaxWidth()
@@ -3331,17 +3378,17 @@ private fun ConvergenceGateZeroScrollDeck(
               .padding(horizontal = 7.dp, vertical = 3.dp)
               .testTag("nexus_btn_manage_armada"),
         ) {
-          val wingText =
-            if (activeArmadaName.isNotBlank()) "STRIKE WING: [$activeArmadaName] ($armadaSize/5)"
-            else "STRIKE WING: SOLO (1/5)"
-          Text(wingText, color = Color(0xFF38BDF8), fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+          val squadronText =
+            if (activeArmadaName.isNotBlank()) "SQUADRON: [$activeArmadaName] ($armadaSize/5)"
+            else "SQUADRON: SOLO (1/5)"
+          Text(squadronText, color = Color(0xFF38BDF8), fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
         }
       }
 
       Text(
-        text = "1. SELECT RIFT MODE  ->  2. STAGE HULL IN HANGAR DECK",
-        color = Color(0xFF94A3B8),
-        fontSize = 7.8.sp,
+        text = "SHIP: $hangarShipSummaryLabel • TAP A MODE TO RIFT IN",
+        color = Color(0xFF00F5D4),
+        fontSize = 8.0.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
@@ -3350,51 +3397,48 @@ private fun ConvergenceGateZeroScrollDeck(
     }
 
     if (gateTab == ConvergenceGateTab.OFFICIAL_RANKED) {
-      // Fixed 2x3 Non-Scrolling Grid across all 6 Ranked Modes
-      val rows = RankedGameMode.entries.chunked(2)
+      // Scrollable Mode List with SECTOR CONVERGENCE prominently at the top
+      val orderedModes = remember {
+        listOf(RankedGameMode.SECTOR_CONVERGENCE) +
+          RankedGameMode.entries.filter { it != RankedGameMode.SECTOR_CONVERGENCE }
+      }
       Column(
-        modifier = Modifier.weight(1f).fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier =
+          Modifier.weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
       ) {
-        rows.forEach { rowModes ->
-          Row(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
-            rowModes.forEach { mode ->
-              val bracket =
-                when (mode) {
-                  RankedGameMode.RIFT_SKIRMISH -> skirmishBracket
-                  RankedGameMode.RIFT_CONTROL -> riftControlBracket
-                  RankedGameMode.SYNDICATE_WARS -> syndicateWarBracket
-                  RankedGameMode.STASIS_BREACH -> 10
-                  else -> 20
-                }
-              val isCurrent =
-                engine?.hasJoinedMatch == true && activeRankedMode == mode && engine.currentCustomGame == null
-              Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                ZeroScrollRankedModeCard(
-                  mode = mode,
-                  isCurrentActive = isCurrent,
-                  humanCount = humanPilotCountByMode(mode).coerceAtLeast(0),
-                  armadaSize = armadaSize,
-                  syndicateTag = syndicateTag,
-                  selectedBracket = bracket,
-                  onSelectBracket = { nb ->
-                    when (mode) {
-                      RankedGameMode.RIFT_SKIRMISH -> onSelectSkirmishBracket(nb)
-                      RankedGameMode.RIFT_CONTROL -> onSelectRiftControlBracket(nb)
-                      RankedGameMode.SYNDICATE_WARS -> onSelectSyndicateWarBracket(nb)
-                      else -> {}
-                    }
-                  },
-                  canQueueSyndicateWars = canQueueSyndicateWars,
-                  syndicateWarRecord = syndicateWarRecord,
-                  onSelectRiftMode = { onStageRanked(mode, bracket) },
-                )
-              }
+        orderedModes.forEach { mode ->
+          val bracket =
+            when (mode) {
+              RankedGameMode.RIFT_SKIRMISH -> skirmishBracket
+              RankedGameMode.RIFT_CONTROL -> riftControlBracket
+              RankedGameMode.SYNDICATE_WARS -> syndicateWarBracket
+              RankedGameMode.STASIS_BREACH -> 10
+              else -> 20
             }
-          }
+          val isCurrent =
+            engine?.hasJoinedMatch == true && activeRankedMode == mode && engine.currentCustomGame == null
+          ZeroScrollRankedModeCard(
+            mode = mode,
+            isCurrentActive = isCurrent,
+            humanCount = humanPilotCountByMode(mode).coerceAtLeast(0),
+            armadaSize = armadaSize,
+            syndicateTag = syndicateTag,
+            selectedBracket = bracket,
+            onSelectBracket = { nb ->
+              when (mode) {
+                RankedGameMode.RIFT_SKIRMISH -> onSelectSkirmishBracket(nb)
+                RankedGameMode.RIFT_CONTROL -> onSelectRiftControlBracket(nb)
+                RankedGameMode.SYNDICATE_WARS -> onSelectSyndicateWarBracket(nb)
+                else -> {}
+              }
+            },
+            canQueueSyndicateWars = canQueueSyndicateWars,
+            syndicateWarRecord = syndicateWarRecord,
+            onSelectRiftMode = { onStageRanked(mode, bracket) },
+          )
         }
       }
     } else {
@@ -3564,7 +3608,7 @@ private fun ConvergenceGateZeroScrollDeck(
                       .testTag("nexus_join_custom_${game.instanceId}"),
                 ) {
                   Text(
-                    text = if (isJoined) "CHANGE HULL" else "STAGE RIFT >",
+                    text = if (isJoined) "RE-ENTER >" else "RIFT IN >",
                     color = Color.White,
                     fontSize = 7.8.sp,
                     fontWeight = FontWeight.Black,
@@ -3609,7 +3653,7 @@ private fun ConvergenceGateZeroScrollDeck(
                   .padding(horizontal = 7.dp, vertical = 3.dp)
                   .testTag("nexus_btn_share_room_lfg"),
             ) {
-              Text("SHARE TO #STRIKE-LFG", color = Color(0xFF34D399), fontSize = 7.6.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+              Text("SHARE TO #SQUADRON-LFG", color = Color(0xFF34D399), fontSize = 7.6.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
             }
           }
 
@@ -3642,8 +3686,8 @@ private fun ConvergenceGateZeroScrollDeck(
               onSelectCustomTeamBracket,
             )
             CustomRuleChipRow(
-              "FFA WINGS:",
-              listOf(true to "Strike Wings ON", false to "Solo Only"),
+              "FFA SQUADRONS:",
+              listOf(true to "Squadrons ON", false to "Solo Only"),
               customAllowArmadasInFfa,
               onToggleAllowArmadasInFfa,
             )
@@ -3694,8 +3738,8 @@ private fun ConvergenceGateZeroScrollDeck(
           ) {
             Text(
               text =
-                if (customIsPrivateRoom) "STAGE PRIVATE RIFT [$generatedRoomCode] -> CHOOSE HULL"
-                else "STAGE PUBLIC CUSTOM RIFT -> CHOOSE HULL",
+                if (customIsPrivateRoom) "RIFT IN PRIVATE [$generatedRoomCode] >"
+                else "RIFT IN PUBLIC CUSTOM >",
               fontSize = 8.6.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
@@ -3732,28 +3776,37 @@ private fun ZeroScrollRankedModeCard(
   val title = if (mode == RankedGameMode.RIFT_CONTROL) "RIFT CONTROL" else mode.title.uppercase(Locale.US)
   val desc =
     when (mode) {
-      RankedGameMode.SECTOR_CONVERGENCE -> "20-Pilot FFA / 1-5 Strike Wing • Nexus Station Safe Zone • +100 Shards #1 Resonance."
-      RankedGameMode.RIFT_SKIRMISH -> "Best-of-3 Team Rounds • Opposite Warp Rifts • Locks Hull on Hangar Entry."
-      RankedGameMode.FLUX_CORE -> "20-Pilot Carrier FFA • +1 Overcharge Tier / 5s • 30s Safe-Zone Eject."
+      RankedGameMode.SECTOR_CONVERGENCE -> "20-Pilot Free-For-All or 1-5 Squadron • Rift Station Safe Zone • +100 Shards for Top Resonance."
+      RankedGameMode.RIFT_SKIRMISH -> "Best-of-3 Team Rounds • Opposite Warp Rifts • Locks Active Hull on Entry."
+      RankedGameMode.FLUX_CORE -> "20-Pilot Carrier Free-For-All • +1 Overcharge Tier / 5s • 30s Safe-Zone Eject."
       RankedGameMode.STASIS_BREACH -> "10v10 Stasis Jailbreak • No Safe Zone • Destroy 8,000 Flux Jail Core to free allies."
       RankedGameMode.RIFT_CONTROL -> "Dual-Rift Tug-of-War • No Safe Zone • Hold uncontested 30s to lock Rifts."
       RankedGameMode.SYNDICATE_WARS -> "[$syndicateTag] Syndicate Ladder • ${syndicateWarRecord.warTrophies} War Trophies (${syndicateWarRecord.warWins}W-${syndicateWarRecord.warLosses}L)."
     }
   val isLocked = mode == RankedGameMode.SYNDICATE_WARS && !canQueueSyndicateWars.first
+  val isPrimaryTopMode = mode == RankedGameMode.SECTOR_CONVERGENCE
 
   Column(
     modifier =
-      Modifier.fillMaxSize()
+      Modifier.fillMaxWidth()
+        .heightIn(min = if (isPrimaryTopMode) 88.dp else 80.dp)
         .clip(RoundedCornerShape(10.dp))
-        .background(if (isCurrentActive) Color(0xE60B1D33) else Color(0xD907101F))
+        .background(
+          when {
+            isCurrentActive -> Color(0xE60B1D33)
+            isPrimaryTopMode -> Color(0xE608182C)
+            else -> Color(0xD907101F)
+          }
+        )
         .border(
-          if (isCurrentActive) 1.5.dp else 1.dp,
-          if (isCurrentActive) accent else accent.copy(alpha = 0.50f),
+          if (isCurrentActive || isPrimaryTopMode) 1.5.dp else 1.dp,
+          if (isCurrentActive || isPrimaryTopMode) accent else accent.copy(alpha = 0.50f),
           RoundedCornerShape(10.dp),
         )
-        .padding(horizontal = 9.dp, vertical = 6.dp)
+        .clickable(enabled = !isLocked) { onSelectRiftMode() }
+        .padding(horizontal = 11.dp, vertical = 8.dp)
         .testTag("nexus_mode_card_${mode.id}"),
-    verticalArrangement = Arrangement.SpaceBetween,
+    verticalArrangement = Arrangement.spacedBy(5.dp),
   ) {
     Row(
       modifier = Modifier.fillMaxWidth(),
@@ -3768,7 +3821,7 @@ private fun ZeroScrollRankedModeCard(
         Text(
           text = title,
           color = accent,
-          fontSize = 9.8.sp,
+          fontSize = if (isPrimaryTopMode) 10.8.sp else 10.0.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -3780,13 +3833,13 @@ private fun ZeroScrollRankedModeCard(
               .background(accent.copy(alpha = 0.18f))
               .padding(horizontal = 5.dp, vertical = 1.dp),
         ) {
-          Text(mode.teamFormatBadge, color = accent, fontSize = 7.2.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+          Text(mode.teamFormatBadge, color = accent, fontSize = 7.4.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
         }
       }
       Text(
         text = "$humanCount PILOTS",
         color = if (humanCount > 0) Color(0xFF34D399) else Color(0xFF64748B),
-        fontSize = 7.8.sp,
+        fontSize = 8.0.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = FontFamily.Monospace,
       )
@@ -3795,8 +3848,8 @@ private fun ZeroScrollRankedModeCard(
     Text(
       text = desc,
       color = Color(0xFFCBD5E1),
-      fontSize = 8.2.sp,
-      lineHeight = 11.sp,
+      fontSize = 8.6.sp,
+      lineHeight = 11.8.sp,
       maxLines = 2,
       overflow = TextOverflow.Ellipsis,
     )
@@ -3819,9 +3872,9 @@ private fun ZeroScrollRankedModeCard(
             }
           else -> {
             Text(
-              text = if (isCurrentActive) "ACTIVE RIFT" else "STAGE VIA HANGAR",
-              color = if (isCurrentActive) accent else Color(0xFF64748B),
-              fontSize = 7.5.sp,
+              text = if (isCurrentActive) "ACTIVE RIFT" else "TAP TO RIFT IN",
+              color = if (isCurrentActive) accent else Color(0xFF94A3B8),
+              fontSize = 7.8.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
             )
@@ -3834,24 +3887,24 @@ private fun ZeroScrollRankedModeCard(
         enabled = !isLocked,
         colors =
           ButtonDefaults.buttonColors(
-            containerColor = accent.copy(alpha = 0.24f),
+            containerColor = accent.copy(alpha = 0.26f),
             contentColor = Color.White,
             disabledContainerColor = Color(0x551E293B),
             disabledContentColor = Color(0xFF64748B),
           ),
         border = BorderStroke(1.dp, if (isLocked) Color(0xFF475569) else accent),
         shape = RoundedCornerShape(7.dp),
-        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp),
-        modifier = Modifier.height(26.dp).testTag("nexus_deploy_${mode.id}"),
+        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 3.dp),
+        modifier = Modifier.height(28.dp).testTag("nexus_deploy_${mode.id}"),
       ) {
         Text(
           text =
             when {
               isLocked -> "SYNDICATE REQ"
-              armadaSize >= 2 -> "SELECT RIFT ($armadaSize) >"
-              else -> "SELECT RIFT >"
+              armadaSize >= 2 -> "RIFT IN ($armadaSize) >"
+              else -> "RIFT IN >"
             },
-          fontSize = 7.8.sp,
+          fontSize = 8.0.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
         )
@@ -3994,8 +4047,8 @@ private fun SubspaceCommsDiscordDeck(
           .testTag("nexus_channel_directory"),
       verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-      ChannelCategoryHeader("// NEXUS INTEL")
-      ChannelNavItem("#nexus-ai", "AI", selectedChannelKey == "#nexus-ai", Color(0xFF00F5D4), { onSelectChannel("#nexus-ai") }, "nexus_ch_nexus_ai")
+      ChannelCategoryHeader("// RIFT INTEL")
+      ChannelNavItem("RIFT AI", "AI", selectedChannelKey == "#nexus-ai", Color(0xFF00F5D4), { onSelectChannel("#nexus-ai") }, "nexus_ch_nexus_ai")
       ChannelNavItem("#announcements", "DEV", selectedChannelKey == "#announcements", Color(0xFFFACC15), { onSelectChannel("#announcements") }, "nexus_ch_announcements")
       ChannelNavItem("#patch-log", "v1.0.$CURRENT_RIFT_BUILD_VERSION", selectedChannelKey == "#patch-log", Color(0xFF38BDF8), { onSelectChannel("#patch-log") }, "nexus_ch_change_log")
       ChannelNavItem("#bug-reports", "CLOUD", selectedChannelKey == "#bug-reports", Color(0xFFFB7185), { onSelectChannel("#bug-reports") }, "nexus_ch_bug_report")
@@ -4005,7 +4058,7 @@ private fun SubspaceCommsDiscordDeck(
       ChannelCategoryHeader("// COMMUNITY")
       ChannelNavItem("#sector-lounge", "$totalOnlinePilots", selectedChannelKey == "#sector-lounge", Color(0xFF38BDF8), { onSelectChannel("#sector-lounge") }, "nexus_ch_main_lobby")
       ChannelNavItem("#shipwright-meta", "100PT", selectedChannelKey == "#shipwright-meta", Color(0xFFC084FC), { onSelectChannel("#shipwright-meta") }, "nexus_ch_shipwright_meta")
-      ChannelNavItem("#strike-lfg", "LFG", selectedChannelKey == "#strike-lfg", Color(0xFF34D399), { onSelectChannel("#strike-lfg") }, "nexus_ch_strike_lfg")
+      ChannelNavItem("#squadron-lfg", "LFG", selectedChannelKey == "#strike-lfg", Color(0xFF34D399), { onSelectChannel("#strike-lfg") }, "nexus_ch_strike_lfg")
 
       Spacer(modifier = Modifier.height(3.dp))
       ChannelCategoryHeader("// SYNDICATE SERVER")
@@ -4055,9 +4108,9 @@ private fun SubspaceCommsDiscordDeck(
       }
 
       Spacer(modifier = Modifier.height(3.dp))
-      ChannelCategoryHeader("// STRIKE WING")
+      ChannelCategoryHeader("// SQUADRON")
       ChannelNavItem(
-        label = "#strike-wing",
+        label = "#squadron",
         badge = "${armadaSlots.size.coerceAtLeast(1)}/5",
         selected = selectedChannelKey.equals(strikeWingKey, ignoreCase = true),
         accent = Color(0xFF60A5FA),
@@ -4264,11 +4317,11 @@ private fun SubspaceCommsDiscordDeck(
 
           val headerTitle =
             when {
-              isAnnouncements -> "#announcements // ARCHITECT & NEXUS SECTOR DISPATCH"
+              isAnnouncements -> "#announcements // ARCHITECT & RIFT SECTOR DISPATCH"
               isShipwright -> "#shipwright-meta // 100-PT RIFT FRAME LOADOUT EXCHANGE"
-              isLfg -> "#strike-lfg // STRIKE WING & PRIVATE RIFT RECRUITMENT"
+              isLfg -> "#squadron-lfg // SQUADRON & PRIVATE RIFT RECRUITMENT"
               isSyndicateCh -> "[$cleanSyndicateTag] ${selectedChannelKey.substringAfterLast(':')} // $syndicateName"
-              isStrikeWingCh -> "#strike-wing // [${activeArmadaName.ifBlank { "STRIKE WING" }}] ENCRYPTED COMMS"
+              isStrikeWingCh -> "#squadron // [${activeArmadaName.ifBlank { "SQUADRON" }}] ENCRYPTED COMMS"
               else -> "#sector-lounge // LIVE CROSS-SECTOR PILOT FEED"
             }
 
@@ -4297,7 +4350,7 @@ private fun SubspaceCommsDiscordDeck(
                 ActionHeaderChip("SHARE RIFT FRAME BUILD", Color(0xFFC084FC), "nexus_btn_share_build", onShareRiftFrameBuild)
               }
               if (isLfg) {
-                ActionHeaderChip("POST STRIKE WING INVITE", Color(0xFF34D399), "nexus_btn_post_wing_lfg", onPostStrikeWingInvite)
+                ActionHeaderChip("POST SQUADRON INVITE", Color(0xFF34D399), "nexus_btn_post_wing_lfg", onPostStrikeWingInvite)
                 if (!activeCustomRoomCode.isNullOrBlank()) {
                   ActionHeaderChip(
                     "POST ROOM [$activeCustomRoomCode]",
@@ -4337,7 +4390,7 @@ private fun SubspaceCommsDiscordDeck(
                     Text("ARCHITECT // BUILD #$CURRENT_RIFT_BUILD_VERSION RIFT DISPATCH", color = Color(0xFFFACC15), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
                   }
                   Text(
-                    "Welcome to RIFT (Threshold Dynamics Studio, LLC). Use the Rift Hub Overwatch radar to inspect active matches and Rift In, or open any module deck around the aperture. All 10 ships operate at fair 100-Point Parity from 0 Resonance — share Rift Frame builds in #shipwright-meta, form Strike Wings in #strike-lfg, and post feedback in #bug-reports.",
+                    "Welcome to RIFT (Threshold Dynamics Studio, LLC). Use the Rift Hub Overwatch radar to inspect active matches and Rift In, or open any module deck around the aperture. All 10 ships operate at fair 100-Point Parity from 0 Resonance — share Rift Frame builds in #shipwright-meta, form Squadrons in #squadron-lfg, and post feedback in #bug-reports.",
                     color = Color(0xFFF1F5F9),
                     fontSize = 9.2.sp,
                     lineHeight = 13.sp,
@@ -4372,7 +4425,7 @@ private fun SubspaceCommsDiscordDeck(
                 onSendToChannel(selectedChannelKey, "[TACTICAL PING] CONVERGE ON HIGH-RESONANCE TARGET NOW!")
               }
               TacticalQuickPingChip("FORM ON ME", Color(0xFF38BDF8), "nexus_quick_ping_form_on_me") {
-                onSendToChannel(selectedChannelKey, "[TACTICAL PING] FORM UP ON MY STRIKE WING!")
+                onSendToChannel(selectedChannelKey, "[TACTICAL PING] FORM UP ON MY SQUADRON!")
               }
               TacticalQuickPingChip("LOW FLUX", Color(0xFFFACC15), "nexus_quick_ping_low_flux") {
                 onSendToChannel(selectedChannelKey, "[TACTICAL PING] LOW FLUX — NEED STASIS / BARRIER COVER!")
@@ -4389,8 +4442,14 @@ private fun SubspaceCommsDiscordDeck(
               fontFamily = FontFamily.Monospace,
             )
           } else {
+            val composerChannelTitle =
+              when {
+                isLfg -> "#squadron-lfg"
+                isStrikeWingCh -> "#squadron"
+                else -> selectedChannelKey
+              }
             ChannelInputComposer(
-              placeholder = "Transmit to $selectedChannelKey…",
+              placeholder = "Transmit to $composerChannelTitle…",
               value = channelChatInput,
               onValueChange = onChannelChatInputChange,
               onSend = { onSendToChannel(selectedChannelKey, channelChatInput) },
@@ -4483,7 +4542,7 @@ private fun SubspaceCommsDiscordDeck(
                       .padding(vertical = 2.dp),
                   contentAlignment = Alignment.Center,
                 ) {
-                  Text("+ WING", color = Color(0xFF34D399), fontSize = 7.2.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                  Text("+ SQUADRON", color = Color(0xFF34D399), fontSize = 7.0.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
                 }
               }
             }
@@ -4596,17 +4655,17 @@ private fun CloudChannelMessageCard(
         ActionHeaderChip("LOAD INTO BAY", Color(0xFFC084FC), "btn_load_build_${msg.id}") {
           onLoadSharedBuild(buildPayload)
         }
-        ActionHeaderChip("ANALYZE IN #NEXUS-AI", Color(0xFF00F5D4), "btn_ai_build_${msg.id}") {
+        ActionHeaderChip("ANALYZE IN RIFT AI", Color(0xFF00F5D4), "btn_ai_build_${msg.id}") {
           onAskAiAboutBuild("Evaluate this shared 100-Pt Rift Frame loadout and suggest tactical matchups: ${msg.messageText}")
         }
       }
     } else if (roomCode != null) {
-      ActionHeaderChip("STAGE PRIVATE RIFT [$roomCode]", Color(0xFFFACC15), "btn_join_room_${msg.id}") {
+      ActionHeaderChip("ENTER PRIVATE RIFT [$roomCode]", Color(0xFFFACC15), "btn_join_room_${msg.id}") {
         onJoinCustomRoomCode(roomCode)
       }
     } else if (msg.isArmadaRecruitBanner && msg.armadaName.isNotBlank()) {
       ActionHeaderChip(
-        "JOIN STRIKE WING [${msg.armadaName}] (${msg.armadaCurrentSize}/${msg.armadaMaxSize})",
+        "JOIN SQUADRON [${msg.armadaName}] (${msg.armadaCurrentSize}/${msg.armadaMaxSize})",
         Color(0xFF34D399),
         "btn_join_wing_${msg.id}",
       ) {
@@ -4826,7 +4885,7 @@ private fun NexusChangelogChannelView() {
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
     Text(
-      "#patch-log // NEXUS v1.0.$CURRENT_RIFT_BUILD_VERSION (BUILD #$CURRENT_RIFT_BUILD_VERSION)",
+      "#patch-log // RIFT v1.0.$CURRENT_RIFT_BUILD_VERSION (BUILD #$CURRENT_RIFT_BUILD_VERSION)",
       color = Color(0xFFFACC15),
       fontSize = 10.5.sp,
       fontWeight = FontWeight.Black,
@@ -4850,7 +4909,7 @@ private fun NexusRulesChannelView() {
     verticalArrangement = Arrangement.spacedBy(7.dp),
   ) {
     Text(
-      "#rules // OFFICIAL NEXUS SECTOR DIRECTIVES & FAIR-PLAY CODE",
+      "#rules // OFFICIAL RIFT SECTOR DIRECTIVES & FAIR-PLAY CODE",
       color = Color(0xFFA78BFA),
       fontSize = 10.5.sp,
       fontWeight = FontWeight.Black,
@@ -4859,7 +4918,7 @@ private fun NexusRulesChannelView() {
     listOf(
       "1. HUMAN-ONLY TELEMETRY: Online pilot counters strictly count real human pilots — AI bots carry [BOT] and never inflate counts or leaderboards.",
       "2. 100% NON-PAY-TO-WIN PARITY: All 10 Hulls (including Rift Frame at full 100-Point Budget) are unlocked from 0 Resonance.",
-      "3. SYNDICATE WARS ELIGIBILITY: Queuing for Ranked Syndicate Wars requires an enlisted real-player Syndicate and 100% same-Syndicate Strike Wing.",
+      "3. SYNDICATE WARS ELIGIBILITY: Queuing for Ranked Syndicate Wars requires an enlisted real-player Syndicate and 100% same-Syndicate Squadron.",
       "4. CIRCULAR RIFT SAFE ZONE & ANTI-AFK: Active strictly in Sector Convergence and Flux Core (disabled in Rift Control and Stasis Breach).",
     ).forEach { rule -> Text(rule, color = Color(0xFFE2E8F0), fontSize = 9.2.sp, lineHeight = 13.5.sp) }
   }
@@ -4979,7 +5038,7 @@ private fun NexusAiMessageCard(message: NexusChatMessage) {
     ) {
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-          if (isUser) "PILOT QUERY" else "NEXUS // TACTICAL AI",
+          if (isUser) "PILOT QUERY" else "RIFT // TACTICAL AI",
           color = if (isUser) Color(0xFF38BDF8) else Color(0xFF00F5D4),
           fontSize = 8.5.sp,
           fontWeight = FontWeight.ExtraBold,
@@ -4990,7 +5049,7 @@ private fun NexusAiMessageCard(message: NexusChatMessage) {
         }
       }
       if (message.text.isEmpty() && message.isStreaming) {
-        Text("Scanning NEXUS sector physics & records…", color = Color(0xFF94A3B8), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        Text("Scanning RIFT sector physics & records…", color = Color(0xFF94A3B8), fontSize = 10.sp, fontFamily = FontFamily.Monospace)
       } else {
         val formatted = remember(message.text) { formatNexusMarkdown(message.text) }
         Text(formatted, color = Color(0xFFF1F5F9), fontSize = 10.5.sp, lineHeight = 15.sp)
@@ -5013,7 +5072,7 @@ private fun NexusErrorBanner(errorMessage: String, canRetry: Boolean, onRetry: (
     horizontalArrangement = Arrangement.SpaceBetween,
   ) {
     Column(modifier = Modifier.weight(1f)) {
-      Text("NEXUS LINK INTERRUPTED", color = Color(0xFFFF3B4E), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+      Text("RIFT AI LINK INTERRUPTED", color = Color(0xFFFF3B4E), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
       Text(errorMessage, color = Color(0xFFFECDD3), fontSize = 9.5.sp)
     }
     if (canRetry) {

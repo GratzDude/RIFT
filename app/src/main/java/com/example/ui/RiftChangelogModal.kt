@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 94
+const val CURRENT_RIFT_BUILD_VERSION = 95
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,17 +62,32 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
-      buildNumber = 94,
-      versionTag = "v1.0.94 // BUILD #94",
+      buildNumber = 95,
+      versionTag = "v1.0.95 // BUILD #95",
       releaseDate = "Nov 20, 2026",
-      headline = "Droplet Reaction Visuals: Inward-Blooming Ingress Plumes, Reactive Precipitates & Filament Trails, and Refractive Lens Meniscus Rims",
+      headline = "Rift Hub Card Refinement, Rift AI & Squadron Naming Standardization, and Direct Rift In Mode Flow",
       badgeLabel = "LATEST RELEASE",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
-          "Localized Inward-Blooming Plasma Ingress Plumes: Playfield Rifts, Unstable Merged Rifts, Eclipse Stasis spheres, Stasis Breach containment domes, Star Forge stage fields, and Codex previews now emit localized teardrop and bifurcated plasma plumes blooming inward from angular ingress vectors along the containment rim.",
-          "Reactive Crystalline Precipitates & Glowing Filament Trails: Gravity Rift and Unstable Rift ordnance or obstacle absorptions, Stasis dome reflections, Rift plasma or slingshot contacts, and outer Storm Wall strikes now nucleate faceted crystalline precipitate clusters and curved cyan, gold, and violet plasma filament trails along the reaction wake with zero solid white ship hit-flashes.",
-          "Refractive Lens & Optical Meniscus Rim Highlights: Added crisp top-left optical meniscus specular crescents, counter-lit internal caustic arcs, and gravitational throat lensing highlights across circular Rift collars, Stasis containment rims, Star Forge circular cores, and the Rift Hub Overwatch aperture.",
+          "Refined 6-Card Rift Hub Layout: Top-left Hangar Deck displays the active or locked ship name beneath the title, overlays the pilot's Best Ship (or Ship #1 if none), and shows strictly BEST or LOCKED in the top-right badge; middle-left Starforge features a plain-English sub-label; bottom-left Subspace Comms hosts live chat and Rift AI.",
+          "Clean Right-Dock Telemetry & Syndicate Identity: Top-right Rift Conduit shows Conduit Rank alongside the Resonance crest icon without redundant Shard counts; middle-right displays the pilot's active Syndicate name with Squadron status; bottom-right anchors Pilot Dossier.",
+          "Rift Hub, Rift AI & Squadron Terminology Standardization: Standardized all hub headers, navigation pills, Subspace Comms channels, tactical pings, and fleet invites on Rift Hub, Rift AI, Rift Station, and Squadron in plain English.",
+          "Streamlined Rift In Mode Selection Flow: Consolidated Overwatch around a single clean Rift In action that opens the scrollable Convergence Gate mode list with Sector Convergence at the top, entering the chosen Rift directly with the ship indicated on Hangar Deck (BEST or LOCKED).",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 94,
+      versionTag = "v1.0.94 // BUILD #94",
+      releaseDate = "Nov 20, 2026",
+      headline = "Droplet Reaction Visuals: Inward-Blooming Ingress Plumes, Reactive Precipitates & Filament Trails, and Refractive Lens Meniscus Rims",
+      badgeLabel = "PREVIOUS BUILD",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Localized Inward-Blooming Plasma Ingress Plumes: Playfield Rifts, Unstable Merged Rifts, Eclipse Stasis spheres, Stasis Breach containment domes, Rift Control capture zones, Rift Station Safe Harbor, Star Forge stage fields, and Codex previews now emit localized teardrop and bifurcated plasma plumes blooming inward along discrete angular ingress vectors.",
+          "Reactive Crystalline Precipitates & Glowing Filament Trails: Gravity Rift and Unstable Rift projectile, ship-debris, and obstacle absorptions, Stasis dome reflections, Rift plasma or slingshot contacts, and outer Storm Wall strikes now nucleate faceted crystalline precipitate clusters and curved cyan, gold, and violet plasma filament trails along the reaction wake with zero solid white ship hit-flashes.",
+          "Refractive Lens & Optical Meniscus Rim Highlights: Added crisp top-left optical meniscus specular crescents, counter-lit internal caustic refraction arcs, and gravitational throat lensing highlights across circular Rift collars, Stasis and Rift Control containment rims, Flux Core orbs, Rift Station Safe Harbor, Star Forge circular cores, and the Rift Hub Overwatch aperture, paired with plain-English Star Core and Resonance labels.",
         ),
     ),
     RiftVersionLogEntry(

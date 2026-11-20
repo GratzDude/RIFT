@@ -2917,7 +2917,7 @@ private fun DevPlayfieldAndHudStudioBay(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(
-          "TAP DYSON SUN, ANY CRATE BUFF, OR 1:1 ASSET:",
+          "TAP STAR CORE, ANY CRATE BUFF, OR 1:1 ASSET:",
           color = Color(0xFFFACC15),
           fontSize = 7.8.sp,
           fontWeight = FontWeight.Black,
@@ -2973,7 +2973,7 @@ private fun DevPlayfieldAndHudStudioBay(
           exitStarForgeToHubSingleAction()
         }
         ForgeChip(
-          text = "[DYSON FORGE CORE]",
+          text = "[STAR FORGE CORE]",
           bg = if (showDysonCreationOverlay) Color(0xFF523504) else Color(0xFF281906),
           border = Color(0xFFFFD700),
           textColor = Color(0xFFFEF08A),
@@ -3216,7 +3216,7 @@ private fun DevPlayfieldAndHudStudioBay(
               verticalAlignment = Alignment.CenterVertically,
             ) {
               Text(
-                "STAR FORGE // DYSON CREATION CORE",
+                "STAR FORGE // STAR CREATION CORE",
                 color = Color(0xFFFFD700),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
@@ -3236,7 +3236,7 @@ private fun DevPlayfieldAndHudStudioBay(
                 ) { activeDysonTab = dTab }
               }
               ForgeChip(
-                text = "[NEXUS STATION SHADER]",
+                text = "[RIFT STATION SHADER]",
                 bg = Color(0xFF0E293D),
                 border = Color(0xFF38BDF8),
                 textColor = Color(0xFFBAE6FD),
@@ -3651,7 +3651,7 @@ private fun CrateBuffGlassInspectorModal(
 
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ForgeChip(
-              text = "[CLONE / FORGE VARIANT IN DYSON BUFF LAB]",
+              text = "[CLONE / FORGE VARIANT IN STAR BUFF LAB]",
               bg = Color(0xFF065F46),
               border = Color(0xFF34D399),
               textColor = Color.White,

@@ -1328,6 +1328,8 @@ class RiftGameEngine(
       shockwaves.clear()
       shipDebrisChunks.clear()
       interdictorBubbles.clear()
+      reactivePrecipitates.clear()
+      reactiveFilaments.clear()
       killFeed.clear()
 
       currentArenaSeed = seedSalt
@@ -1394,6 +1396,8 @@ class RiftGameEngine(
     shockwaves.clear()
     shipDebrisChunks.clear()
     interdictorBubbles.clear()
+    reactivePrecipitates.clear()
+    reactiveFilaments.clear()
     killFeed.clear()
     remotePilots.clear()
 
@@ -1495,6 +1499,8 @@ class RiftGameEngine(
     greens.clear()
     anomalies.clear()
     interdictorBubbles.clear()
+    reactivePrecipitates.clear()
+    reactiveFilaments.clear()
     remotePilots.clear()
     ships.removeAll { !it.isLocalPlayer }
     localPlayer.vx = 0f
@@ -2479,6 +2485,8 @@ class RiftGameEngine(
     brickWalls.clear()
     shipDebrisChunks.clear()
     interdictorBubbles.clear()
+    reactivePrecipitates.clear()
+    reactiveFilaments.clear()
     rebuildRosterForMode(cfg.baseMode.id)
     for (s in ships) {
       s.maxFlux = s.spec.maxFlux * cfg.healthMult
@@ -2641,6 +2649,8 @@ class RiftGameEngine(
     swarmDrones.clear()
     brickWalls.clear()
     interdictorBubbles.clear()
+    reactivePrecipitates.clear()
+    reactiveFilaments.clear()
     killFeed.clear()
     localPlayer.vx = 0f
     localPlayer.vy = 0f
@@ -2774,6 +2784,8 @@ class RiftGameEngine(
     brickWalls.clear()
     shipDebrisChunks.clear()
     interdictorBubbles.clear()
+    reactivePrecipitates.clear()
+    reactiveFilaments.clear()
 
     rebuildRosterForMode(mode.id)
     spawnLocalPlayerCleanly()
@@ -7988,6 +8000,8 @@ class RiftGameEngine(
     swarmDrones.clear()
     brickWalls.clear()
     shipDebrisChunks.clear()
+    reactivePrecipitates.clear()
+    reactiveFilaments.clear()
     bakeStaticRadarBitmap()
     westBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
     eastBrigGeneratorHp = getEffectiveBrigReactorMaxHp()
@@ -12236,6 +12250,8 @@ class RiftGameEngine(
       swarmDrones.clear()
       brickWalls.clear()
       shipDebrisChunks.clear()
+      reactivePrecipitates.clear()
+      reactiveFilaments.clear()
       bakeStaticRadarBitmap()
       resetRiftControlZones()
       reattachRemotePilotsToRoster()
@@ -12788,6 +12804,34 @@ class RiftGameEngine(
             dr.angle = atan2(dr.vy, dr.vx)
           }
         }
+        for (dcIdx in shipDebrisChunks.indices.reversed()) {
+          val dc = shipDebrisChunks[dcIdx]
+          val dx = anom.x - dc.x
+          val dy = anom.y - dc.y
+          val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+          if (dist < anom.physicalRadius * 0.62f) {
+            anom.recordBoundaryIngress(atan2(dc.y - anom.y, dc.x - anom.x), 0.48f)
+            spawnDropletReactionBurst(
+              originX = dc.x,
+              originY = dc.y,
+              targetOrWakeX = anom.x,
+              targetOrWakeY = anom.y,
+              pullInward = true,
+              crystalCount = 3,
+              filamentCount = 2,
+              outerColor = Color.rgb(236, 72, 153),
+              midColor = Color.rgb(0, 245, 212),
+              coreColor = Color.rgb(250, 204, 21),
+              baseCrystalRadius = 5.4f,
+            )
+            shipDebrisChunks.removeAt(dcIdx)
+          } else if (dist < pullR) {
+            val nx = dx / dist
+            val ny = dy / dist
+            dc.vx += nx * 920f * dt
+            dc.vy += ny * 920f * dt
+          }
+        }
         continue
       }
 
@@ -13317,6 +13361,40 @@ class RiftGameEngine(
               val newSp = hypot(bm.vx, bm.vy).coerceAtLeast(1f)
               bm.vx = (bm.vx / newSp) * sp
               bm.vy = (bm.vy / newSp) * sp
+            }
+          }
+
+          // Pull and absorb drifting 3D metallic ship debris chunks across 0.92x visible Gravity Rift radius into crystalline precipitates & filaments
+          for (dcIdx in shipDebrisChunks.indices.reversed()) {
+            val dc = shipDebrisChunks[dcIdx]
+            val prevX = dc.x - dc.vx * dt
+            val prevY = dc.y - dc.vy * dt
+            val sweptDist = sweptDistToRift(prevX, prevY, dc.x, dc.y)
+            val dx = anom.x - dc.x
+            val dy = anom.y - dc.y
+            val dist = hypot(dx, dy).coerceAtLeast(0.01f)
+            if (sweptDist <= anom.physicalRadius * 0.92f) {
+              anom.recordBoundaryIngress(atan2(dc.y - anom.y, dc.x - anom.x), 0.52f)
+              spawnDropletReactionBurst(
+                originX = dc.x,
+                originY = dc.y,
+                targetOrWakeX = anom.x,
+                targetOrWakeY = anom.y,
+                pullInward = true,
+                crystalCount = 4,
+                filamentCount = 3,
+                outerColor = Color.rgb(168, 85, 247),
+                midColor = Color.rgb(0, 245, 212),
+                coreColor = Color.rgb(250, 204, 21),
+                baseCrystalRadius = 5.6f,
+              )
+              shipDebrisChunks.removeAt(dcIdx)
+            } else if (dist < pullRadius) {
+              val nx = dx / dist
+              val ny = dy / dist
+              val pullMag = pullStrength * 1.05f * (1f - dist / pullRadius).coerceIn(0.20f, 1f)
+              dc.vx += nx * pullMag * dt
+              dc.vy += ny * pullMag * dt
             }
           }
 
