@@ -1,18 +1,18 @@
 <resources>
-    <string name="app_name">NEXUS</string>
-    <string name="auth_title">NEXUS</string>
+    <string name="app_name">RIFT</string>
+    <string name="auth_title">RIFT</string>
     <string name="auth_subtitle">Fast-Paced Competitive 2.5D Space Dogfighter</string>
     <string name="auth_tagline_two">Master the Rifts. Build Your Resonance. Rule the Sector.</string>
     <string name="sign_in_with_google">SIGN IN WITH GOOGLE (SWORN PILOT)</string>
     <string name="enter_as_drifter">PLAY AS DRIFTER (OFFLINE OR QUICK SESSION)</string>
-    <string name="signing_in">Connecting to NEXUS…</string>
+    <string name="signing_in">Connecting to RIFT…</string>
     <string name="auth_feature_physics">10 Distinct Ships • Fair Balanced Loadouts From Day One</string>
     <string name="auth_feature_ships">Solo • Syndicate • Strike Wing — 6 Modes + Custom Arenas</string>
     <string name="auth_feature_cloud">Cloud Save • Syndicates • Live Sector Overwatch</string>
     <string name="sign_out">Sign Out</string>
-    <string name="nexus_orb_content_desc">Open NEXUS Command Hub &amp; Live Overwatch</string>
-    <string name="nexus_console_title">NEXUS // COMMAND TABLET HUB</string>
-    <string name="nexus_input_placeholder">Ask NEXUS AI anything (ship builds, Gravity Rifts, Nexus Station…)</string>
+    <string name="nexus_orb_content_desc">Open Rift Hub &amp; Live Overwatch</string>
+    <string name="nexus_console_title">RIFT // COMMAND TABLET HUB</string>
+    <string name="nexus_input_placeholder">Ask Rift AI anything (ship builds, Gravity Rifts, Rift Station…)</string>
     <string name="nexus_transmit">TRANSMIT</string>
     <string name="nexus_clear">CLEAR</string>
     <string name="nexus_close">CLOSE</string>

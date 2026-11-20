@@ -293,6 +293,10 @@ data class ShipEntity(
   var netTargetAngle: Float = angle,
   var netTargetWeaponAngle: Float = weaponAngle,
   var netPacketAgeSec: Float = 0f,
+  var netSmoothOffsetX: Float = 0f,
+  var netSmoothOffsetY: Float = 0f,
+  var netSmoothVelX: Float = 0f,
+  var netSmoothVelY: Float = 0f,
   var netWasRespawning: Boolean = false,
   var netLocalKillGraceSec: Float = 0f,
   var netRespawnHoldSec: Float = 0f,
@@ -449,9 +453,9 @@ enum class PracticeTutorialStep(
   ),
   ADD_BOT_AND_NEXUS(
     stepNumber = 8,
-    title = "ADD SPARRING BOTS OR ENTER NEXUS",
+    title = "ADD SPARRING BOTS OR ENTER RIFT HUB",
     body =
-      "Tap the stationary [+ ADD BOT] button in the top-left anytime to spawn AI sparring rivals, or tap [EXIT TO NEXUS] when ready for live Rifts.",
+      "Tap the stationary [+ ADD BOT] button in the top-left anytime to spawn AI sparring rivals, or tap [EXIT TO RIFT HUB] when ready for live Rifts.",
   ),
 }
 
@@ -1962,7 +1966,7 @@ class RiftGameEngine(
       CustomGameConfig(
         instanceId = "custom_fat_bullets_ffa",
         title = "MegaFat Bullets 5m FFA",
-        hostCallsign = "NEXUS HOST",
+        hostCallsign = "RIFT HOST",
         baseMode = RankedGameMode.SECTOR_CONVERGENCE,
         teamSizeBracket = 20,
         matchDurationMinutes = 5,
@@ -2496,7 +2500,7 @@ class RiftGameEngine(
     localPlayer.barrelRollTimer = 0f
     updateDynamicArenaGeometryForShipCount(20, regenerateObstacles = true)
     sfx.playMutedClick()
-    onPrizeToast("RETURNED TO NEXUS ORBIT")
+    onPrizeToast("RETURNED TO RIFT STATION ORBIT")
     localLifecycleSyncSeq++
     onLocalLifecycleSyncNeeded()
     onStatsUpdated()
@@ -3740,13 +3744,6 @@ class RiftGameEngine(
           existing.shipId = spec.id
           existing.spec = spec
         }
-        existing.netTargetX = targetX
-        existing.netTargetY = targetY
-        existing.netTargetVx = targetVx
-        existing.netTargetVy = targetVy
-        existing.netTargetAngle = targetAngle
-        existing.netTargetWeaponAngle = targetWeaponAngle
-        existing.netPacketAgeSec = 0f
         existing.independentAimActive = true
         existing.maxFlux = st.maxEnergy.toFloat().coerceAtLeast(100f)
         existing.bounty = st.bounty.toInt()
@@ -3801,16 +3798,34 @@ class RiftGameEngine(
           !existing.hasNetTarget ||
             justFinishedRespawn ||
             st.isRespawning ||
-            jumpDist > 550f
-        existing.hasNetTarget = true
-        if (shouldSnapImmediately && !staleWhileLocallyKilled) {
-          existing.x = targetX
-          existing.y = targetY
-          existing.vx = targetVx
-          existing.vy = targetVy
-          existing.angle = targetAngle
-          existing.weaponAngle = targetWeaponAngle
-          existing.prevHeadingForBank = targetAngle
+            jumpDist > 650f
+        if (!staleWhileLocallyKilled) {
+          if (shouldSnapImmediately) {
+            existing.x = targetX
+            existing.y = targetY
+            existing.vx = targetVx
+            existing.vy = targetVy
+            existing.angle = targetAngle
+            existing.weaponAngle = targetWeaponAngle
+            existing.prevHeadingForBank = targetAngle
+            existing.netSmoothOffsetX = 0f
+            existing.netSmoothOffsetY = 0f
+            existing.netSmoothVelX = 0f
+            existing.netSmoothVelY = 0f
+          } else {
+            existing.netSmoothOffsetX = existing.x - targetX
+            existing.netSmoothOffsetY = existing.y - targetY
+            existing.netSmoothVelX = existing.vx - targetVx
+            existing.netSmoothVelY = existing.vy - targetVy
+          }
+          existing.netTargetX = targetX
+          existing.netTargetY = targetY
+          existing.netTargetVx = targetVx
+          existing.netTargetVy = targetVy
+          existing.netTargetAngle = targetAngle
+          existing.netTargetWeaponAngle = targetWeaponAngle
+          existing.netPacketAgeSec = 0f
+          existing.hasNetTarget = true
         }
 
         if (!needsInitialRosterBuild && ships.none { it.id == existing.id }) {
@@ -4136,6 +4151,7 @@ class RiftGameEngine(
     sfx.playMutedClick()
     if (autoBraking) {
       onPrizeToast("RETRO-BRAKES ENGAGED")
+      notifyLocalLifecycleSync()
     }
   }
 
@@ -4901,6 +4917,7 @@ class RiftGameEngine(
         sfx.playWarp()
         addTrauma(0.22f)
         spawnPooledFct("PHASE DASH + RAIL OVERCHARGE", ship.x, ship.y - 28f, Color.parseColor("#00F5D4"))
+        notifyLocalLifecycleSync()
       }
       return
     }
@@ -4914,6 +4931,9 @@ class RiftGameEngine(
     if (spec.bombRecoil > 0f) {
       ship.vx -= cos(fireAngle) * spec.bombRecoil
       ship.vy -= sin(fireAngle) * spec.bombRecoil
+    }
+    if (ship.isLocalPlayer) {
+      notifyLocalLifecycleSync()
     }
 
     val customDmgMult = currentCustomGame?.damageMult ?: 1.0f
@@ -5083,6 +5103,7 @@ class RiftGameEngine(
         sfx.playWarp()
         addTrauma(0.22f)
         spawnPooledFct("HYPER SURGE (${surgeDur.toInt()}s)", ship.x, ship.y - 28f, Color.parseColor("#F43F5E"))
+        notifyLocalLifecycleSync()
       }
       return
     }
@@ -6015,6 +6036,7 @@ class RiftGameEngine(
           sfx.playWarp()
           addTrauma(0.28f)
           spawnPooledFct("HYPER SURGE (${String.format(java.util.Locale.US, "%.1fs", dur)})", ship.x, ship.y - 28f, Color.parseColor("#F43F5E"))
+          notifyLocalLifecycleSync()
         }
       }
       else -> {
@@ -6045,6 +6067,7 @@ class RiftGameEngine(
               sfx.playWarp()
               addTrauma(0.24f)
               spawnPooledFct(forged.officialName, ship.x, ship.y - 28f, accent)
+              notifyLocalLifecycleSync()
             }
           }
           CustomBuffEffect.CLONE -> {
@@ -7319,7 +7342,7 @@ class RiftGameEngine(
           )
         else ->
           spawnPooledFct(
-            text = if (wasHvt) "+$bountyAward HVT!" else "+$bountyAward RES",
+            text = if (wasHvt) "+$bountyAward TOP RES!" else "+$bountyAward RES",
             x = target.x,
             y = target.y - 26f,
             color = if (wasHvt) Color.parseColor("#F59E0B") else Color.parseColor("#10B981"),
@@ -7403,7 +7426,7 @@ class RiftGameEngine(
           currentLifeStats.pvpKills++
           currentLifeHadPvp = true
           pvpBountyPeak = max(pvpBountyPeak, localPlayer.bounty.toLong())
-          adjustLocalResonance(if (wasHvt) 28 else 18, if (wasHvt) "HVT SHUTDOWN" else "PVP KILL")
+          adjustLocalResonance(if (wasHvt) 28 else 18, if (wasHvt) "HIGH RES SHUTDOWN" else "PVP KILL")
         } else {
           currentLifeStats.botKills++
           val botResGain =
@@ -7627,6 +7650,10 @@ class RiftGameEngine(
         s.netTargetVx = 0f
         s.netTargetVy = 0f
         s.netPacketAgeSec = 0f
+        s.netSmoothOffsetX = 0f
+        s.netSmoothOffsetY = 0f
+        s.netSmoothVelX = 0f
+        s.netSmoothVelY = 0f
         s.netWasRespawning = false
         s.netLocalKillGraceSec = 0f
         s.netRespawnHoldSec = 0f
@@ -7775,6 +7802,10 @@ class RiftGameEngine(
           s.netTargetVx = 0f
           s.netTargetVy = 0f
           s.netPacketAgeSec = 0f
+          s.netSmoothOffsetX = 0f
+          s.netSmoothOffsetY = 0f
+          s.netSmoothVelX = 0f
+          s.netSmoothVelY = 0f
           s.netWasRespawning = false
           s.netLocalKillGraceSec = 0f
           s.netRespawnHoldSec = 0f
@@ -9483,6 +9514,7 @@ class RiftGameEngine(
       localPlayer.weaponsLocked = localInSafe
       localPlayer.canFire = !localInSafe
       localPlayer.weaponState = if (localInSafe) "DISARMED" else "ARMED"
+      val wasAfterburning = localPlayer.afterburning
       localPlayer.afterburning = false
       val turnMult = 1f + localPlayer.turnOverchargeStacks * 0.12f
       val thrustSurgeMult = (1f + localPlayer.thrustOverchargeStacks * RiftCalibrationState.overchargeSurgePctPerStack) * (currentCustomGame?.speedMult ?: 1.0f)
@@ -9514,6 +9546,9 @@ class RiftGameEngine(
           localPlayer.vy = 0f
           autoBraking = false
         }
+      }
+      if (localPlayer.afterburning != wasAfterburning && !isEphemeralPracticeRift) {
+        notifyLocalLifecycleSync()
       }
 
       if (fireStickActive && !isCancelActive) {
@@ -10087,11 +10122,41 @@ class RiftGameEngine(
           baseMaxSp
         }
       val isRemoteHumanShip = s.isHuman && !s.isLocalPlayer
+      var remoteDeadReckonX = s.x
+      var remoteDeadReckonY = s.y
       if (isRemoteHumanShip && s.hasNetTarget) {
-        s.netPacketAgeSec = (s.netPacketAgeSec + dt).coerceAtMost(0.28f)
-        val velBlend = (1f - kotlin.math.exp(-16f * dt)).coerceIn(0f, 1f)
-        s.vx += (s.netTargetVx - s.vx) * velBlend
-        s.vy += (s.netTargetVy - s.vy) * velBlend
+        s.netPacketAgeSec = (s.netPacketAgeSec + dt).coerceAtMost(0.32f)
+        val extrapSec =
+          if (s.netPacketAgeSec <= 0.16f) {
+            s.netPacketAgeSec
+          } else {
+            0.16f + (s.netPacketAgeSec - 0.16f) * 0.40f
+          }
+        val maxRemoteRadial = (arenaRadius - s.radius).coerceAtLeast(120f)
+        remoteDeadReckonX = s.netTargetX + s.netTargetVx * extrapSec
+        remoteDeadReckonY = s.netTargetY + s.netTargetVy * extrapSec
+        val predDx = remoteDeadReckonX - arenaCenterX
+        val predDy = remoteDeadReckonY - arenaCenterY
+        val predRadial = hypot(predDx, predDy)
+        if (predRadial > maxRemoteRadial && predRadial > 0.001f) {
+          remoteDeadReckonX = arenaCenterX + (predDx / predRadial) * maxRemoteRadial
+          remoteDeadReckonY = arenaCenterY + (predDy / predRadial) * maxRemoteRadial
+        }
+
+        // Closed-form critically damped spring-damper decay (zeta = 1.0, zero overshoot)
+        val omega = 14.5f
+        val expTerm = kotlin.math.exp(-omega * dt)
+        val e0x = s.netSmoothOffsetX
+        val v0x = s.netSmoothVelX
+        val e0y = s.netSmoothOffsetY
+        val v0y = s.netSmoothVelY
+        s.netSmoothOffsetX = (e0x + (v0x + omega * e0x) * dt) * expTerm
+        s.netSmoothVelX = (v0x - (v0x + omega * e0x) * omega * dt) * expTerm
+        s.netSmoothOffsetY = (e0y + (v0y + omega * e0y) * dt) * expTerm
+        s.netSmoothVelY = (v0y - (v0y + omega * e0y) * omega * dt) * expTerm
+
+        s.vx = s.netTargetVx + s.netSmoothVelX
+        s.vy = s.netTargetVy + s.netSmoothVelY
       }
 
       val curSp = hypot(s.vx, s.vy)
@@ -10106,30 +10171,26 @@ class RiftGameEngine(
       s.y += s.vy * dt
 
       if (isRemoteHumanShip && s.hasNetTarget) {
-        val maxRemoteRadial = (arenaRadius - s.radius).coerceAtLeast(120f)
-        var predX = s.netTargetX + s.netTargetVx * s.netPacketAgeSec
-        var predY = s.netTargetY + s.netTargetVy * s.netPacketAgeSec
-        val predDx = predX - arenaCenterX
-        val predDy = predY - arenaCenterY
-        val predRadial = hypot(predDx, predDy)
-        if (predRadial > maxRemoteRadial && predRadial > 0.001f) {
-          predX = arenaCenterX + (predDx / predRadial) * maxRemoteRadial
-          predY = arenaCenterY + (predDy / predRadial) * maxRemoteRadial
-        }
-        val errX = predX - s.x
-        val errY = predY - s.y
-        val errDist = hypot(errX, errY)
-        if (errDist > 550f) {
-          s.x = predX
-          s.y = predY
+        val rawErrDist = hypot(remoteDeadReckonX - s.x, remoteDeadReckonY - s.y)
+        if (rawErrDist > 650f) {
+          s.x = remoteDeadReckonX
+          s.y = remoteDeadReckonY
           s.vx = s.netTargetVx
           s.vy = s.netTargetVy
+          s.netSmoothOffsetX = 0f
+          s.netSmoothOffsetY = 0f
+          s.netSmoothVelX = 0f
+          s.netSmoothVelY = 0f
         } else {
-          val posBlend = (1f - kotlin.math.exp(-11.5f * dt)).coerceIn(0f, 1f)
-          s.x += errX * posBlend
-          s.y += errY * posBlend
+          val smoothGoalX = remoteDeadReckonX + s.netSmoothOffsetX
+          val smoothGoalY = remoteDeadReckonY + s.netSmoothOffsetY
+          val anchorBlend = (1f - kotlin.math.exp(-18f * dt)).coerceIn(0f, 1f)
+          s.x += (smoothGoalX - s.x) * anchorBlend
+          s.y += (smoothGoalY - s.y) * anchorBlend
         }
       }
+      val preCollisionRemoteX = s.x
+      val preCollisionRemoteY = s.y
 
       // Mode 4 (STASIS_BREACH): Two-Way Circular Stasis Bubble Jails at West (1400, 4000) and East (6600, 4000)
       if (isStasisBreachRulesActive()) {
@@ -10279,12 +10340,18 @@ class RiftGameEngine(
           s.x = arenaCenterX + (cdx / cdist) * clampR
           s.y = arenaCenterY + (cdy / cdist) * clampR
         }
+        if (s.hasNetTarget && hypot(s.x - preCollisionRemoteX, s.y - preCollisionRemoteY) > 0.5f) {
+          s.netSmoothOffsetX = s.x - remoteDeadReckonX
+          s.netSmoothOffsetY = s.y - remoteDeadReckonY
+          s.netSmoothVelX = s.vx - s.netTargetVx
+          s.netSmoothVelY = s.vy - s.netTargetVy
+        }
       }
 
       val postBounceSpeed = hypot(s.vx, s.vy)
       if (isRemoteHumanShip && s.hasNetTarget) {
-        val rotBlend = (1f - kotlin.math.exp(-16f * dt)).coerceIn(0f, 1f)
-        val desiredHeading = if (postBounceSpeed > 18f) atan2(s.vy, s.vx) else s.netTargetAngle
+        val rotBlend = (1f - kotlin.math.exp(-18f * dt)).coerceIn(0f, 1f)
+        val desiredHeading = if (postBounceSpeed > 24f) atan2(s.vy, s.vx) else s.netTargetAngle
         val headingDiff = atan2(sin(desiredHeading - s.angle), cos(desiredHeading - s.angle))
         s.angle += headingDiff * rotBlend
         val aimDiff =
@@ -11892,6 +11959,10 @@ class RiftGameEngine(
             s.netTargetVx = 0f
             s.netTargetVy = 0f
             s.netPacketAgeSec = 0f
+            s.netSmoothOffsetX = 0f
+            s.netSmoothOffsetY = 0f
+            s.netSmoothVelX = 0f
+            s.netSmoothVelY = 0f
             s.netWasRespawning = false
             s.netLocalKillGraceSec = 0f
             s.netRespawnHoldSec = 0f

@@ -1,6 +1,6 @@
 {
-  "name": "NEXUS",
-  "description": "Competitive 120Hz 2D Newtonian space arena by Threshold Dynamics Studio, LLC featuring Ring-Space 3D Rifts, 10 modular hulls, and Firebase Firestore multiplayer.",
+  "name": "RIFT",
+  "description": "Fast-paced competitive 2.5D Newtonian space dogfighter by Threshold Dynamics Studio, LLC featuring Playfield Rifts, 10 balanced ships, Syndicates, Strike Wings, and live multiplayer.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

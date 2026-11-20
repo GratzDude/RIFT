@@ -466,9 +466,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Collection 8: /global_state/{docId} (Authenticated Syndicate Crest/Channels & Custom Game Calibration)
+    // Collection 8: /global_state/{docId} (Authenticated Syndicate Crest/Channels, Custom Calibration & Owner-Isolated Pilot Progression)
     match /global_state/{docId} {
-      allow get: if isSignedIn() && isValidId(docId);
+      allow get: if isSignedIn() &&
+                    isValidId(docId) &&
+                    (!docId.matches('^pilot_prog_.*$') || docId == ('pilot_prog_' + request.auth.uid));
       allow list: if false;
 
       allow create, update: if isSignedIn() &&
@@ -496,6 +498,16 @@ service cloud.firestore {
                                    incoming().customGameId is string && incoming().customGameId.size() <= 40 &&
                                    incoming().authorCallsign is string && incoming().authorCallsign.size() <= 24 &&
                                    incoming().payloadJson is string && incoming().payloadJson.size() <= 16384 &&
+                                   incoming().updatedAtMs is int
+                                 ) ||
+                                 (
+                                   docId == ('pilot_prog_' + request.auth.uid) &&
+                                   incoming().keys().hasOnly([
+                                     'ownerId', 'payloadJson', 'updatedAtMs'
+                                   ]) &&
+                                   incoming().ownerId == request.auth.uid &&
+                                   (resource == null || !('ownerId' in existing()) || existing().ownerId == request.auth.uid) &&
+                                   incoming().payloadJson is string && incoming().payloadJson.size() >= 2 && incoming().payloadJson.size() <= 16384 &&
                                    incoming().updatedAtMs is int
                                  )
                                );

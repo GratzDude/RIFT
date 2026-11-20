@@ -48,10 +48,34 @@ class LocalPilotPrefs(context: Context) {
 
   fun generateRandomDrifterCallsign(): String = DRIFTER_NAMES.random()
 
+  fun isDrifterOrEphemeralUid(uid: String? = null): Boolean {
+    val clean = uid?.trim().orEmpty()
+    if (
+      clean.startsWith("drifter_", ignoreCase = true) ||
+        clean.startsWith("dev_", ignoreCase = true) ||
+        clean.startsWith("guest_", ignoreCase = true)
+    ) {
+      return true
+    }
+    return isGuestBypassEnabled() && clean.isEmpty()
+  }
+
+  private fun canUseLegacyUnscopedFallback(uid: String?): Boolean {
+    if (isDrifterOrEphemeralUid(uid)) return false
+    val clean = uid?.trim().orEmpty()
+    if (clean.isEmpty()) return !isGuestBypassEnabled()
+    val owner = prefs.getString(KEY_PRIMARY_SWORN_UID, null)?.trim().orEmpty()
+    if (owner.isEmpty()) {
+      prefs.edit().putString(KEY_PRIMARY_SWORN_UID, clean).apply()
+      return true
+    }
+    return owner == clean
+  }
+
   /**
-   * Starts a brand-new ephemeral Drifter session on launch or guest entry:
-   * assigns a fresh session UID, locks tag to [RFT], resets transient session stats,
-   * and picks a random 5-8 char single-word Drifter callsign.
+   * Starts a brand-new ephemeral Drifter session on launch or in-app swap:
+   * assigns a fresh session UID, locks Drifter tag to [RFT], and picks a random Drifter callsign
+   * WITHOUT touching any Sworn Pilot UID-scoped or unscoped progression keys.
    */
   fun startFreshDrifterSession(): String {
     val freshUid = "drifter_" + UUID.randomUUID().toString().replace("-", "").take(12)
@@ -60,20 +84,20 @@ class LocalPilotPrefs(context: Context) {
       .edit()
       .putString(KEY_DEVICE_UID, freshUid)
       .putBoolean(KEY_GUEST_BYPASS, true)
-      .putString(KEY_CALLSIGN, randomCallsign)
+      .putString(KEY_DRIFTER_CALLSIGN, randomCallsign)
       .putString("${KEY_CALLSIGN}_$freshUid", randomCallsign)
-      .putString(KEY_SYNDICATE_TAG, "RFT")
-      .putString(KEY_SYNDICATE_NAME, "Rift Drifters")
-      .putString(KEY_ARMADA_NAME, "")
-      .putLong(KEY_PVP_KILLS, 0L)
-      .putLong(KEY_PVP_DEATHS, 0L)
-      .putLong(KEY_PVP_BOUNTY_PEAK, 100L)
-      .putLong(KEY_ALL_KILLS, 0L)
-      .putLong(KEY_ALL_DEATHS, 0L)
-      .putLong(KEY_ALL_BOUNTY_PEAK, 100L)
-      .putLong(KEY_CONVERGENCES_WON, 0L)
-      .putLong(KEY_HVT_ELIMINATIONS, 0L)
-      .putLong(KEY_GREENS_COLLECTED, 0L)
+      .putString("${KEY_SYNDICATE_TAG}_$freshUid", "RFT")
+      .putString("${KEY_SYNDICATE_NAME}_$freshUid", "Rift Drifters")
+      .putString("${KEY_ARMADA_NAME}_$freshUid", "")
+      .putLong("${KEY_PVP_KILLS}_$freshUid", 0L)
+      .putLong("${KEY_PVP_DEATHS}_$freshUid", 0L)
+      .putLong("${KEY_PVP_BOUNTY_PEAK}_$freshUid", 100L)
+      .putLong("${KEY_ALL_KILLS}_$freshUid", 0L)
+      .putLong("${KEY_ALL_DEATHS}_$freshUid", 0L)
+      .putLong("${KEY_ALL_BOUNTY_PEAK}_$freshUid", 100L)
+      .putLong("${KEY_CONVERGENCES_WON}_$freshUid", 0L)
+      .putLong("${KEY_HVT_ELIMINATIONS}_$freshUid", 0L)
+      .putLong("${KEY_GREENS_COLLECTED}_$freshUid", 0L)
       .apply()
     return randomCallsign
   }
@@ -93,15 +117,19 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getCallsign(uid: String? = null): String {
-    if (isGuestBypassEnabled()) {
-      val drifterName = prefs.getString(KEY_CALLSIGN, null)
+    if (isGuestBypassEnabled() || isDrifterOrEphemeralUid(uid)) {
+      val drifterName =
+        (if (!uid.isNullOrBlank()) prefs.getString(uidKey(KEY_CALLSIGN, uid), null) else null)
+          ?: prefs.getString(KEY_DRIFTER_CALLSIGN, null)
       if (!drifterName.isNullOrBlank() && drifterName != "COMMANDER") return drifterName
       return generateRandomDrifterCallsign().also {
-        prefs.edit().putString(KEY_CALLSIGN, it).apply()
+        val ed = prefs.edit().putString(KEY_DRIFTER_CALLSIGN, it)
+        if (!uid.isNullOrBlank()) ed.putString(uidKey(KEY_CALLSIGN, uid), it)
+        ed.apply()
       }
     }
     val perUid = if (!uid.isNullOrBlank()) prefs.getString(uidKey(KEY_CALLSIGN, uid), null) else null
-    val global = prefs.getString(KEY_CALLSIGN, null)
+    val global = if (canUseLegacyUnscopedFallback(uid)) prefs.getString(KEY_CALLSIGN, null) else null
     fun isChosenSwornName(s: String?): Boolean {
       if (s.isNullOrBlank()) return false
       val u = s.trim().uppercase(Locale.US)
@@ -111,10 +139,10 @@ class LocalPilotPrefs(context: Context) {
     val chosenGlobal = global?.takeIf { isChosenSwornName(it) }
     val resolved = chosenPerUid ?: chosenGlobal
     if (resolved != null) {
-      if (chosenGlobal != resolved || (!uid.isNullOrBlank() && chosenPerUid != resolved)) {
-        val editor = prefs.edit().putString(KEY_CALLSIGN, resolved)
-        if (!uid.isNullOrBlank()) {
-          editor.putString(uidKey(KEY_CALLSIGN, uid), resolved)
+      if (!uid.isNullOrBlank() && chosenPerUid != resolved) {
+        val editor = prefs.edit().putString(uidKey(KEY_CALLSIGN, uid), resolved)
+        if (canUseLegacyUnscopedFallback(uid)) {
+          editor.putString(KEY_CALLSIGN, resolved)
         }
         editor.apply()
       }
@@ -136,7 +164,12 @@ class LocalPilotPrefs(context: Context) {
       } else {
         sanitizedRaw
       }
-    val editor = prefs.edit().putString(KEY_CALLSIGN, cleaned)
+    val editor = prefs.edit()
+    if (isGuestBypassEnabled() || isDrifterOrEphemeralUid(uid)) {
+      editor.putString(KEY_DRIFTER_CALLSIGN, cleaned)
+    } else if (canUseLegacyUnscopedFallback(uid)) {
+      editor.putString(KEY_CALLSIGN, cleaned)
+    }
     if (!uid.isNullOrBlank()) {
       editor.putString(uidKey(KEY_CALLSIGN, uid), cleaned)
     }
@@ -145,31 +178,33 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getCallsignChangeCount(uid: String? = null): Int =
-    prefs.getInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), prefs.getInt(KEY_CALLSIGN_CHANGE_COUNT, 0))
+    prefs.getInt(
+      uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid),
+      if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_CALLSIGN_CHANGE_COUNT, 0) else 0,
+    )
 
   fun incrementCallsignChangeCount(uid: String? = null) {
     val next = getCallsignChangeCount(uid) + 1
-    prefs
-      .edit()
-      .putInt(KEY_CALLSIGN_CHANGE_COUNT, next)
-      .putInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), next)
-      .apply()
+    val ed = prefs.edit().putInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), next)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putInt(KEY_CALLSIGN_CHANGE_COUNT, next)
+    }
+    ed.apply()
   }
 
   fun hasChosenInitialCallsign(uid: String? = null): Boolean {
+    if (isGuestBypassEnabled() || isDrifterOrEphemeralUid(uid)) return false
     val explicitChosen =
       prefs.getBoolean(
         uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid),
-        prefs.getBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, false),
+        if (canUseLegacyUnscopedFallback(uid)) prefs.getBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, false) else false,
       )
     if (explicitChosen) return true
-    if (!isGuestBypassEnabled()) {
-      val existing = getCallsign(uid)
-      val upper = existing.trim().uppercase(Locale.US)
-      if (upper.isNotBlank() && upper != "COMMANDER" && !upper.startsWith("RFT-") && !upper.startsWith("#RFT")) {
-        setHasChosenInitialCallsign(true, uid)
-        return true
-      }
+    val existing = getCallsign(uid)
+    val upper = existing.trim().uppercase(Locale.US)
+    if (upper.isNotBlank() && upper != "COMMANDER" && !upper.startsWith("RFT-") && !upper.startsWith("#RFT")) {
+      setHasChosenInitialCallsign(true, uid)
+      return true
     }
     return false
   }
@@ -274,54 +309,68 @@ class LocalPilotPrefs(context: Context) {
     return true
   }
 
-  fun getSyndicateTag(): String {
-    if (isGuestBypassEnabled()) return "RFT"
-    val raw = (prefs.getString(KEY_SYNDICATE_TAG, "") ?: "").trim().uppercase(Locale.US)
-    val rawName = (prefs.getString(KEY_SYNDICATE_NAME, "") ?: "").trim()
+  fun getSyndicateTag(uid: String? = null): String {
+    if (isGuestBypassEnabled() || isDrifterOrEphemeralUid(uid)) return "RFT"
+    val fallbackTag = if (canUseLegacyUnscopedFallback(uid)) (prefs.getString(KEY_SYNDICATE_TAG, "") ?: "") else ""
+    val fallbackName = if (canUseLegacyUnscopedFallback(uid)) (prefs.getString(KEY_SYNDICATE_NAME, "") ?: "") else ""
+    val raw = (prefs.getString(uidKey(KEY_SYNDICATE_TAG, uid), fallbackTag) ?: "").trim().uppercase(Locale.US)
+    val rawName = (prefs.getString(uidKey(KEY_SYNDICATE_NAME, uid), fallbackName) ?: "").trim()
     val clean = sanitizeSyndicateTag(raw)
     if (clean.isEmpty() || raw in NON_PLAYER_SYNDICATE_TAGS || isGhostSyndicateName(rawName)) {
       if (raw.isNotEmpty() || (rawName.isNotEmpty() && !rawName.equals("Unaffiliated", ignoreCase = true))) {
-        prefs
-          .edit()
-          .putString(KEY_SYNDICATE_TAG, "")
-          .putString(KEY_SYNDICATE_NAME, "Unaffiliated")
-          .apply()
+        val ed =
+          prefs
+            .edit()
+            .putString(uidKey(KEY_SYNDICATE_TAG, uid), "")
+            .putString(uidKey(KEY_SYNDICATE_NAME, uid), "Unaffiliated")
+        if (canUseLegacyUnscopedFallback(uid)) {
+          ed.putString(KEY_SYNDICATE_TAG, "").putString(KEY_SYNDICATE_NAME, "Unaffiliated")
+        }
+        ed.apply()
       }
       return ""
     }
     return clean
   }
 
-  fun getSyndicateName(): String {
-    if (isGuestBypassEnabled()) return "Rift Drifters"
-    val tag = getSyndicateTag()
+  fun getSyndicateName(uid: String? = null): String {
+    if (isGuestBypassEnabled() || isDrifterOrEphemeralUid(uid)) return "Rift Drifters"
+    val tag = getSyndicateTag(uid)
     if (tag.isBlank()) return "Unaffiliated"
-    val raw = (prefs.getString(KEY_SYNDICATE_NAME, "Unaffiliated") ?: "Unaffiliated").trim()
+    val fallbackName =
+      if (canUseLegacyUnscopedFallback(uid)) (prefs.getString(KEY_SYNDICATE_NAME, "Unaffiliated") ?: "Unaffiliated")
+      else "Unaffiliated"
+    val raw = (prefs.getString(uidKey(KEY_SYNDICATE_NAME, uid), fallbackName) ?: "Unaffiliated").trim()
     return if (isGhostSyndicateName(raw)) {
-      prefs
-        .edit()
-        .putString(KEY_SYNDICATE_TAG, "")
-        .putString(KEY_SYNDICATE_NAME, "Unaffiliated")
-        .apply()
+      val ed =
+        prefs
+          .edit()
+          .putString(uidKey(KEY_SYNDICATE_TAG, uid), "")
+          .putString(uidKey(KEY_SYNDICATE_NAME, uid), "Unaffiliated")
+      if (canUseLegacyUnscopedFallback(uid)) {
+        ed.putString(KEY_SYNDICATE_TAG, "").putString(KEY_SYNDICATE_NAME, "Unaffiliated")
+      }
+      ed.apply()
       "Unaffiliated"
     } else {
       raw
     }
   }
 
-  fun getSyndicateLockUntilMs(): Long {
-    return prefs.getLong(KEY_SYNDICATE_LOCK_UNTIL_MS, 0L)
+  fun getSyndicateLockUntilMs(uid: String? = null): Long {
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_SYNDICATE_LOCK_UNTIL_MS, 0L) else 0L
+    return prefs.getLong(uidKey(KEY_SYNDICATE_LOCK_UNTIL_MS, uid), fallback)
   }
 
-  fun getRemainingSyndicateLockDays(nowMs: Long = System.currentTimeMillis()): Int {
-    val lockUntil = getSyndicateLockUntilMs()
+  fun getRemainingSyndicateLockDays(nowMs: Long = System.currentTimeMillis(), uid: String? = null): Int {
+    val lockUntil = getSyndicateLockUntilMs(uid)
     if (lockUntil <= nowMs) return 0
     val diffMs = lockUntil - nowMs
     return ceil(diffMs.toDouble() / (24.0 * 3600.0 * 1000.0)).toInt()
   }
 
-  fun getRemainingSyndicateLockFormatted(nowMs: Long = System.currentTimeMillis()): String {
-    val lockUntil = getSyndicateLockUntilMs()
+  fun getRemainingSyndicateLockFormatted(nowMs: Long = System.currentTimeMillis(), uid: String? = null): String {
+    val lockUntil = getSyndicateLockUntilMs(uid)
     if (lockUntil <= nowMs) return "00d 00h"
     val diffMs = lockUntil - nowMs
     val totalHours = ceil(diffMs.toDouble() / (3600.0 * 1000.0)).toInt()
@@ -335,13 +384,14 @@ class LocalPilotPrefs(context: Context) {
     name: String,
     apply15DayLock: Boolean = true,
     role: String = "Pilot",
+    uid: String? = null,
   ): Boolean {
-    if (isGuestBypassEnabled()) return false
+    if (isGuestBypassEnabled() || isDrifterOrEphemeralUid(uid)) return false
     val cleanTag = sanitizeSyndicateTag(tag)
     if (cleanTag.isEmpty() || isGhostSyndicateName(name)) {
       return false
     }
-    if (apply15DayLock && getRemainingSyndicateLockDays() > 0) {
+    if (apply15DayLock && getRemainingSyndicateLockDays(uid = uid) > 0) {
       return false
     }
     val now = System.currentTimeMillis()
@@ -350,40 +400,56 @@ class LocalPilotPrefs(context: Context) {
       if (apply15DayLock) {
         now + FIFTEEN_DAYS_MS
       } else {
-        getSyndicateLockUntilMs()
+        getSyndicateLockUntilMs(uid)
       }
-    prefs
-      .edit()
-      .putString(KEY_SYNDICATE_TAG, cleanTag)
-      .putString(KEY_SYNDICATE_NAME, cleanName)
-      .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
-      .apply()
+    val ed =
+      prefs
+        .edit()
+        .putString(uidKey(KEY_SYNDICATE_TAG, uid), cleanTag)
+        .putString(uidKey(KEY_SYNDICATE_NAME, uid), cleanName)
+        .putLong(uidKey(KEY_SYNDICATE_LOCK_UNTIL_MS, uid), lockUntil)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed
+        .putString(KEY_SYNDICATE_TAG, cleanTag)
+        .putString(KEY_SYNDICATE_NAME, cleanName)
+        .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
+    }
+    ed.apply()
     appendSyndicateServiceTransition(
       newTag = cleanTag,
       newName = cleanName,
       newRole = role,
       nowMs = now,
+      uid = uid,
     )
     return true
   }
 
-  fun leaveSyndicate(): Boolean {
-    if (getRemainingSyndicateLockDays() > 0) {
+  fun leaveSyndicate(uid: String? = null): Boolean {
+    if (getRemainingSyndicateLockDays(uid = uid) > 0) {
       return false
     }
     val now = System.currentTimeMillis()
     val lockUntil = now + FIFTEEN_DAYS_MS
-    prefs
-      .edit()
-      .putString(KEY_SYNDICATE_TAG, "")
-      .putString(KEY_SYNDICATE_NAME, "Unaffiliated")
-      .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
-      .apply()
+    val ed =
+      prefs
+        .edit()
+        .putString(uidKey(KEY_SYNDICATE_TAG, uid), "")
+        .putString(uidKey(KEY_SYNDICATE_NAME, uid), "Unaffiliated")
+        .putLong(uidKey(KEY_SYNDICATE_LOCK_UNTIL_MS, uid), lockUntil)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed
+        .putString(KEY_SYNDICATE_TAG, "")
+        .putString(KEY_SYNDICATE_NAME, "Unaffiliated")
+        .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
+    }
+    ed.apply()
     appendSyndicateServiceTransition(
       newTag = "UNAFFILIATED",
       newName = "Unaffiliated",
       newRole = "Pilot",
       nowMs = now,
+      uid = uid,
     )
     return true
   }
@@ -464,15 +530,23 @@ class LocalPilotPrefs(context: Context) {
   ): List<SyndicateMemberEntry> =
     getMySyndicateRoster(currentUid, callsign, shipId, bounty, kills)
 
-  fun getPreferredShipId(): Int = prefs.getInt(KEY_SHIP_ID, 1).coerceIn(1, 10)
-
-  fun setPreferredShipId(shipId: Int) {
-    prefs.edit().putInt(KEY_SHIP_ID, shipId.coerceIn(1, 10)).apply()
+  fun getPreferredShipId(uid: String? = null): Int {
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_SHIP_ID, 1) else 1
+    return prefs.getInt(uidKey(KEY_SHIP_ID, uid), fallback).coerceIn(1, 10)
   }
 
-  fun getLastShipId(): Int = getPreferredShipId()
+  fun setPreferredShipId(shipId: Int, uid: String? = null) {
+    val clamped = shipId.coerceIn(1, 10)
+    val ed = prefs.edit().putInt(uidKey(KEY_SHIP_ID, uid), clamped)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putInt(KEY_SHIP_ID, clamped)
+    }
+    ed.apply()
+  }
 
-  fun setLastShipId(shipId: Int) = setPreferredShipId(shipId)
+  fun getLastShipId(uid: String? = null): Int = getPreferredShipId(uid)
+
+  fun setLastShipId(shipId: Int, uid: String? = null) = setPreferredShipId(shipId, uid)
 
   /**
    * Always-NEXUS Boot Law:
@@ -579,16 +653,34 @@ class LocalPilotPrefs(context: Context) {
     prefs.edit().putString(KEY_MODE, clean).apply()
   }
 
-  fun getPvpKills(): Long = prefs.getLong(KEY_PVP_KILLS, 0L)
-  fun getPvpDeaths(): Long = prefs.getLong(KEY_PVP_DEATHS, 0L)
-  fun getPvpBountyPeak(): Long = prefs.getLong(KEY_PVP_BOUNTY_PEAK, 100L)
-  fun getAllTimeKills(): Long = prefs.getLong(KEY_ALL_KILLS, 0L)
-  fun getAllTimeDeaths(): Long = prefs.getLong(KEY_ALL_DEATHS, 0L)
-  fun getAllTimeBountyPeak(): Long = prefs.getLong(KEY_ALL_BOUNTY_PEAK, 100L)
-  fun getConvergencesWon(): Long = prefs.getLong(KEY_CONVERGENCES_WON, 0L)
-  fun getPublicGameWins(): Long = getConvergencesWon()
-  fun getHvtEliminations(): Long = prefs.getLong(KEY_HVT_ELIMINATIONS, 0L)
-  fun getGreensCollected(): Long = prefs.getLong(KEY_GREENS_COLLECTED, 0L)
+  fun getPvpKills(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_PVP_KILLS, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_PVP_KILLS, 0L) else 0L)
+
+  fun getPvpDeaths(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_PVP_DEATHS, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_PVP_DEATHS, 0L) else 0L)
+
+  fun getPvpBountyPeak(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_PVP_BOUNTY_PEAK, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_PVP_BOUNTY_PEAK, 100L) else 100L)
+
+  fun getAllTimeKills(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_ALL_KILLS, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_ALL_KILLS, 0L) else 0L)
+
+  fun getAllTimeDeaths(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_ALL_DEATHS, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_ALL_DEATHS, 0L) else 0L)
+
+  fun getAllTimeBountyPeak(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_ALL_BOUNTY_PEAK, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_ALL_BOUNTY_PEAK, 100L) else 100L)
+
+  fun getConvergencesWon(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_CONVERGENCES_WON, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_CONVERGENCES_WON, 0L) else 0L)
+
+  fun getPublicGameWins(uid: String? = null): Long = getConvergencesWon(uid)
+
+  fun getHvtEliminations(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_HVT_ELIMINATIONS, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_HVT_ELIMINATIONS, 0L) else 0L)
+
+  fun getGreensCollected(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_GREENS_COLLECTED, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_GREENS_COLLECTED, 0L) else 0L)
 
   // 5 XP Earning Sources & Pilot Level Progression (Levels 1..100) persisted per UID
   private fun uidKey(baseKey: String, uid: String? = null): String {
@@ -597,19 +689,19 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getXpFromBuffs(uid: String? = null): Long =
-    prefs.getLong(uidKey(KEY_XP_BUFFS, uid), prefs.getLong(KEY_XP_BUFFS, 0L))
+    prefs.getLong(uidKey(KEY_XP_BUFFS, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_XP_BUFFS, 0L) else 0L)
 
   fun getXpFromDamage(uid: String? = null): Long =
-    prefs.getLong(uidKey(KEY_XP_DAMAGE, uid), prefs.getLong(KEY_XP_DAMAGE, 0L))
+    prefs.getLong(uidKey(KEY_XP_DAMAGE, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_XP_DAMAGE, 0L) else 0L)
 
   fun getXpFromAccuracy(uid: String? = null): Long =
-    prefs.getLong(uidKey(KEY_XP_ACCURACY, uid), prefs.getLong(KEY_XP_ACCURACY, 0L))
+    prefs.getLong(uidKey(KEY_XP_ACCURACY, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_XP_ACCURACY, 0L) else 0L)
 
   fun getXpFromBountyEarned(uid: String? = null): Long =
-    prefs.getLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), prefs.getLong(KEY_XP_BOUNTY_EARNED, 0L))
+    prefs.getLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_XP_BOUNTY_EARNED, 0L) else 0L)
 
   fun getXpFromBountyKilled(uid: String? = null): Long =
-    prefs.getLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), prefs.getLong(KEY_XP_BOUNTY_KILLED, 0L))
+    prefs.getLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_XP_BOUNTY_KILLED, 0L) else 0L)
 
   fun getTotalXp(uid: String? = null): Long =
     getXpFromBuffs(uid) +
@@ -793,23 +885,33 @@ class LocalPilotPrefs(context: Context) {
     highestMilestoneLevelClaimed: Int,
   ) {
     val cleanShards = riftShards.coerceAtLeast(0L)
-    prefs
-      .edit()
-      .putLong(KEY_XP_BUFFS, kotlin.math.max(getXpFromBuffs(uid), xpFromBuffs))
-      .putLong(uidKey(KEY_XP_BUFFS, uid), kotlin.math.max(getXpFromBuffs(uid), xpFromBuffs))
-      .putLong(KEY_XP_DAMAGE, kotlin.math.max(getXpFromDamage(uid), xpFromDamage))
-      .putLong(uidKey(KEY_XP_DAMAGE, uid), kotlin.math.max(getXpFromDamage(uid), xpFromDamage))
-      .putLong(KEY_XP_ACCURACY, kotlin.math.max(getXpFromAccuracy(uid), xpFromAccuracy))
-      .putLong(uidKey(KEY_XP_ACCURACY, uid), kotlin.math.max(getXpFromAccuracy(uid), xpFromAccuracy))
-      .putLong(KEY_XP_BOUNTY_EARNED, kotlin.math.max(getXpFromBountyEarned(uid), xpFromBountyEarned))
-      .putLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), kotlin.math.max(getXpFromBountyEarned(uid), xpFromBountyEarned))
-      .putLong(KEY_XP_BOUNTY_KILLED, kotlin.math.max(getXpFromBountyKilled(uid), xpFromBountyKilled))
-      .putLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), kotlin.math.max(getXpFromBountyKilled(uid), xpFromBountyKilled))
-      .putLong(KEY_RIFT_SHARDS, cleanShards)
-      .putLong(uidKey(KEY_RIFT_SHARDS, uid), cleanShards)
-      .putInt(KEY_HIGHEST_MILESTONE_LVL, kotlin.math.max(getHighestMilestoneLevelClaimed(uid), highestMilestoneLevelClaimed))
-      .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), kotlin.math.max(getHighestMilestoneLevelClaimed(uid), highestMilestoneLevelClaimed))
-      .apply()
+    val nextBuffs = kotlin.math.max(getXpFromBuffs(uid), xpFromBuffs)
+    val nextDmg = kotlin.math.max(getXpFromDamage(uid), xpFromDamage)
+    val nextAcc = kotlin.math.max(getXpFromAccuracy(uid), xpFromAccuracy)
+    val nextEarned = kotlin.math.max(getXpFromBountyEarned(uid), xpFromBountyEarned)
+    val nextKilled = kotlin.math.max(getXpFromBountyKilled(uid), xpFromBountyKilled)
+    val nextMilestone = kotlin.math.max(getHighestMilestoneLevelClaimed(uid), highestMilestoneLevelClaimed)
+    val ed =
+      prefs
+        .edit()
+        .putLong(uidKey(KEY_XP_BUFFS, uid), nextBuffs)
+        .putLong(uidKey(KEY_XP_DAMAGE, uid), nextDmg)
+        .putLong(uidKey(KEY_XP_ACCURACY, uid), nextAcc)
+        .putLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), nextEarned)
+        .putLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), nextKilled)
+        .putLong(uidKey(KEY_RIFT_SHARDS, uid), cleanShards)
+        .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), nextMilestone)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed
+        .putLong(KEY_XP_BUFFS, nextBuffs)
+        .putLong(KEY_XP_DAMAGE, nextDmg)
+        .putLong(KEY_XP_ACCURACY, nextAcc)
+        .putLong(KEY_XP_BOUNTY_EARNED, nextEarned)
+        .putLong(KEY_XP_BOUNTY_KILLED, nextKilled)
+        .putLong(KEY_RIFT_SHARDS, cleanShards)
+        .putInt(KEY_HIGHEST_MILESTONE_LVL, nextMilestone)
+    }
+    ed.apply()
   }
 
   fun claimPendingMilestoneShards(currentLevel: Int, uid: String? = null): Long {
@@ -822,13 +924,17 @@ class LocalPilotPrefs(context: Context) {
       )
     if (reward > 0L || clampedLevel > highestClaimed) {
       val nextShards = getRiftShards(uid) + reward
-      prefs
-        .edit()
-        .putLong(KEY_RIFT_SHARDS, nextShards)
-        .putLong(uidKey(KEY_RIFT_SHARDS, uid), nextShards)
-        .putInt(KEY_HIGHEST_MILESTONE_LVL, clampedLevel)
-        .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), clampedLevel)
-        .apply()
+      val ed =
+        prefs
+          .edit()
+          .putLong(uidKey(KEY_RIFT_SHARDS, uid), nextShards)
+          .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), clampedLevel)
+      if (canUseLegacyUnscopedFallback(uid)) {
+        ed
+          .putLong(KEY_RIFT_SHARDS, nextShards)
+          .putInt(KEY_HIGHEST_MILESTONE_LVL, clampedLevel)
+      }
+      ed.apply()
     }
     return reward
   }
@@ -889,7 +995,8 @@ class LocalPilotPrefs(context: Context) {
 
   private fun getShipResonanceRaw(shipId: Int, uid: String? = null): Int {
     val base = shipResonanceBaseKey(shipId)
-    return prefs.getInt(uidKey(base, uid), prefs.getInt(base, 0)).coerceAtLeast(0)
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(base, 0) else 0
+    return prefs.getInt(uidKey(base, uid), fallback).coerceAtLeast(0)
   }
 
   private fun ensureShipResonancesMigrated(uid: String? = null) {
@@ -900,16 +1007,19 @@ class LocalPilotPrefs(context: Context) {
     for (id in 1..10) {
       sum += getShipResonanceRaw(id, uid)
     }
+    val fallbackLive = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_LIVE_RESONANCE, 0) else 0
     val existingLive =
       prefs
-        .getInt(uidKey(KEY_LIVE_RESONANCE, uid), prefs.getInt(KEY_LIVE_RESONANCE, 0))
+        .getInt(uidKey(KEY_LIVE_RESONANCE, uid), fallbackLive)
         .coerceAtLeast(0)
     val ed = prefs.edit().putBoolean(migKey, true)
     if (sum == 0 && existingLive > 0) {
-      val seedShipId = getLastShipId().coerceIn(1, 10)
+      val seedShipId = getLastShipId(uid).coerceIn(1, 10)
       val base = shipResonanceBaseKey(seedShipId)
-      ed.putInt(base, existingLive)
       ed.putInt(uidKey(base, uid), existingLive)
+      if (canUseLegacyUnscopedFallback(uid)) {
+        ed.putInt(base, existingLive)
+      }
     }
     ed.apply()
   }
@@ -933,23 +1043,25 @@ class LocalPilotPrefs(context: Context) {
     val cleanId = shipId.coerceIn(1, 10)
     val cleanVal = value.coerceAtLeast(0)
     val base = shipResonanceBaseKey(cleanId)
-    prefs
-      .edit()
-      .putInt(base, cleanVal)
-      .putInt(uidKey(base, uid), cleanVal)
-      .apply()
+    val edShip = prefs.edit().putInt(uidKey(base, uid), cleanVal)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      edShip.putInt(base, cleanVal)
+    }
+    edShip.apply()
     var totalLive = 0
     for (id in 1..10) {
       totalLive += if (id == cleanId) cleanVal else getShipResonanceRaw(id, uid)
     }
     val nextPeak = kotlin.math.max(getPeakResonance(uid), totalLive)
-    prefs
-      .edit()
-      .putInt(KEY_LIVE_RESONANCE, totalLive)
-      .putInt(uidKey(KEY_LIVE_RESONANCE, uid), totalLive)
-      .putInt(KEY_PEAK_RESONANCE, nextPeak)
-      .putInt(uidKey(KEY_PEAK_RESONANCE, uid), nextPeak)
-      .apply()
+    val edTot =
+      prefs
+        .edit()
+        .putInt(uidKey(KEY_LIVE_RESONANCE, uid), totalLive)
+        .putInt(uidKey(KEY_PEAK_RESONANCE, uid), nextPeak)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      edTot.putInt(KEY_LIVE_RESONANCE, totalLive).putInt(KEY_PEAK_RESONANCE, nextPeak)
+    }
+    edTot.apply()
     return cleanVal to totalLive
   }
 
@@ -965,19 +1077,23 @@ class LocalPilotPrefs(context: Context) {
   private fun ensureResonanceMigrated(uid: String? = null) {
     val scopedKey = uidKey(KEY_RESONANCE_MIGRATED, uid)
     if (prefs.getBoolean(scopedKey, false)) return
-    val hasLiveKey = prefs.contains(uidKey(KEY_LIVE_RESONANCE, uid)) || prefs.contains(KEY_LIVE_RESONANCE)
+    val hasLiveKey =
+      prefs.contains(uidKey(KEY_LIVE_RESONANCE, uid)) ||
+        (canUseLegacyUnscopedFallback(uid) && prefs.contains(KEY_LIVE_RESONANCE))
     val lvl = getPilotLevel(uid)
-    val careerKills = getAllTimeKills()
+    val careerKills = getAllTimeKills(uid)
     if (!hasLiveKey && (careerKills > 0L || lvl > 1)) {
       val seeded = ((lvl - 1) * 18).coerceAtLeast(0)
-      prefs
-        .edit()
-        .putInt(KEY_LIVE_RESONANCE, seeded)
-        .putInt(uidKey(KEY_LIVE_RESONANCE, uid), seeded)
-        .putInt(KEY_PEAK_RESONANCE, seeded)
-        .putInt(uidKey(KEY_PEAK_RESONANCE, uid), seeded)
-        .putBoolean(scopedKey, true)
-        .apply()
+      val ed =
+        prefs
+          .edit()
+          .putInt(uidKey(KEY_LIVE_RESONANCE, uid), seeded)
+          .putInt(uidKey(KEY_PEAK_RESONANCE, uid), seeded)
+          .putBoolean(scopedKey, true)
+      if (canUseLegacyUnscopedFallback(uid)) {
+        ed.putInt(KEY_LIVE_RESONANCE, seeded).putInt(KEY_PEAK_RESONANCE, seeded)
+      }
+      ed.apply()
     } else {
       prefs.edit().putBoolean(scopedKey, true).apply()
     }
@@ -989,9 +1105,10 @@ class LocalPilotPrefs(context: Context) {
     for (id in 1..10) {
       sum += getShipResonanceRaw(id, uid)
     }
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_LIVE_RESONANCE, 0) else 0
     val rawLive =
       prefs
-        .getInt(uidKey(KEY_LIVE_RESONANCE, uid), prefs.getInt(KEY_LIVE_RESONANCE, 0))
+        .getInt(uidKey(KEY_LIVE_RESONANCE, uid), fallback)
         .coerceAtLeast(0)
     return kotlin.math.max(sum, rawLive)
   }
@@ -1004,22 +1121,23 @@ class LocalPilotPrefs(context: Context) {
       sum += getShipResonanceRaw(id, uid)
     }
     val ed = prefs.edit()
+    val allowLegacy = canUseLegacyUnscopedFallback(uid)
     if (clean > sum) {
       val diff = clean - sum
-      val targetShip = getBestShipId(uid, getLastShipId()).coerceIn(1, 10)
+      val targetShip = getBestShipId(uid, getLastShipId(uid)).coerceIn(1, 10)
       val base = shipResonanceBaseKey(targetShip)
       val updatedShipRes = getShipResonanceRaw(targetShip, uid) + diff
-      ed.putInt(base, updatedShipRes)
       ed.putInt(uidKey(base, uid), updatedShipRes)
+      if (allowLegacy) ed.putInt(base, updatedShipRes)
     } else if (clean < sum && sum > 0) {
       var remainingDrop = sum - clean
-      val activeShip = getLastShipId().coerceIn(1, 10)
+      val activeShip = getLastShipId(uid).coerceIn(1, 10)
       val activeRes = getShipResonanceRaw(activeShip, uid)
       val dropActive = kotlin.math.min(activeRes, remainingDrop)
       if (dropActive > 0) {
         val base = shipResonanceBaseKey(activeShip)
-        ed.putInt(base, activeRes - dropActive)
         ed.putInt(uidKey(base, uid), activeRes - dropActive)
+        if (allowLegacy) ed.putInt(base, activeRes - dropActive)
         remainingDrop -= dropActive
       }
       if (remainingDrop > 0) {
@@ -1029,8 +1147,8 @@ class LocalPilotPrefs(context: Context) {
           val d = kotlin.math.min(r, remainingDrop)
           if (d > 0) {
             val base = shipResonanceBaseKey(id)
-            ed.putInt(base, r - d)
             ed.putInt(uidKey(base, uid), r - d)
+            if (allowLegacy) ed.putInt(base, r - d)
             remainingDrop -= d
           }
         }
@@ -1038,22 +1156,25 @@ class LocalPilotPrefs(context: Context) {
     }
     val nextPeak = kotlin.math.max(getPeakResonance(uid), clean)
     ed
-      .putInt(KEY_LIVE_RESONANCE, clean)
       .putInt(uidKey(KEY_LIVE_RESONANCE, uid), clean)
-      .putInt(KEY_PEAK_RESONANCE, nextPeak)
       .putInt(uidKey(KEY_PEAK_RESONANCE, uid), nextPeak)
-      .apply()
+    if (allowLegacy) {
+      ed.putInt(KEY_LIVE_RESONANCE, clean).putInt(KEY_PEAK_RESONANCE, nextPeak)
+    }
+    ed.apply()
   }
 
   fun getPeakResonance(uid: String? = null): Int {
     ensureResonanceMigrated(uid)
+    val fallbackPeak = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_PEAK_RESONANCE, 0) else 0
+    val fallbackLive = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_LIVE_RESONANCE, 0) else 0
     val rawPeak =
       prefs
-        .getInt(uidKey(KEY_PEAK_RESONANCE, uid), prefs.getInt(KEY_PEAK_RESONANCE, 0))
+        .getInt(uidKey(KEY_PEAK_RESONANCE, uid), fallbackPeak)
         .coerceAtLeast(0)
     val live =
       prefs
-        .getInt(uidKey(KEY_LIVE_RESONANCE, uid), prefs.getInt(KEY_LIVE_RESONANCE, 0))
+        .getInt(uidKey(KEY_LIVE_RESONANCE, uid), fallbackLive)
         .coerceAtLeast(0)
     return kotlin.math.max(rawPeak, live)
   }
@@ -1227,19 +1348,33 @@ class LocalPilotPrefs(context: Context) {
     convergencesWon: Long,
     hvtEliminations: Long,
     greensCollected: Long,
+    uid: String? = null,
   ) {
-    prefs
-      .edit()
-      .putLong(KEY_PVP_KILLS, pvpKills)
-      .putLong(KEY_PVP_DEATHS, pvpDeaths)
-      .putLong(KEY_PVP_BOUNTY_PEAK, pvpBountyPeak)
-      .putLong(KEY_ALL_KILLS, allTimeKills)
-      .putLong(KEY_ALL_DEATHS, allTimeDeaths)
-      .putLong(KEY_ALL_BOUNTY_PEAK, allTimeBountyPeak)
-      .putLong(KEY_CONVERGENCES_WON, convergencesWon)
-      .putLong(KEY_HVT_ELIMINATIONS, hvtEliminations)
-      .putLong(KEY_GREENS_COLLECTED, greensCollected)
-      .apply()
+    val ed =
+      prefs
+        .edit()
+        .putLong(uidKey(KEY_PVP_KILLS, uid), pvpKills)
+        .putLong(uidKey(KEY_PVP_DEATHS, uid), pvpDeaths)
+        .putLong(uidKey(KEY_PVP_BOUNTY_PEAK, uid), pvpBountyPeak)
+        .putLong(uidKey(KEY_ALL_KILLS, uid), allTimeKills)
+        .putLong(uidKey(KEY_ALL_DEATHS, uid), allTimeDeaths)
+        .putLong(uidKey(KEY_ALL_BOUNTY_PEAK, uid), allTimeBountyPeak)
+        .putLong(uidKey(KEY_CONVERGENCES_WON, uid), convergencesWon)
+        .putLong(uidKey(KEY_HVT_ELIMINATIONS, uid), hvtEliminations)
+        .putLong(uidKey(KEY_GREENS_COLLECTED, uid), greensCollected)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed
+        .putLong(KEY_PVP_KILLS, pvpKills)
+        .putLong(KEY_PVP_DEATHS, pvpDeaths)
+        .putLong(KEY_PVP_BOUNTY_PEAK, pvpBountyPeak)
+        .putLong(KEY_ALL_KILLS, allTimeKills)
+        .putLong(KEY_ALL_DEATHS, allTimeDeaths)
+        .putLong(KEY_ALL_BOUNTY_PEAK, allTimeBountyPeak)
+        .putLong(KEY_CONVERGENCES_WON, convergencesWon)
+        .putLong(KEY_HVT_ELIMINATIONS, hvtEliminations)
+        .putLong(KEY_GREENS_COLLECTED, greensCollected)
+    }
+    ed.apply()
   }
 
   private fun isVerifiedRealFriend(entry: FriendPilotEntry): Boolean {
@@ -2220,6 +2355,228 @@ class LocalPilotPrefs(context: Context) {
     return !hasCompletedSwornPracticeTutorial(uid)
   }
 
+  fun exportCloudProgressionJson(uid: String): String {
+    if (uid.isBlank() || isDrifterOrEphemeralUid(uid)) return ""
+    val obj = JSONObject()
+    obj.put("uid", uid)
+    obj.put("xpBuffs", getXpFromBuffs(uid))
+    obj.put("xpDamage", getXpFromDamage(uid))
+    obj.put("xpAccuracy", getXpFromAccuracy(uid))
+    obj.put("xpEarned", getXpFromBountyEarned(uid))
+    obj.put("xpKilled", getXpFromBountyKilled(uid))
+    obj.put("liveRes", getLiveResonance(uid))
+    obj.put("peakRes", getPeakResonance(uid))
+    obj.put("shards", getRiftShards(uid))
+    obj.put("milestoneLvl", getHighestMilestoneLevelClaimed(uid))
+    obj.put("extraSlots", getUnlockedExtraSlots(uid))
+    obj.put("shipId", getPreferredShipId(uid))
+    obj.put("activeSlot", getActiveCustomSlotId(uid))
+    obj.put("pvpKills", getPvpKills(uid))
+    obj.put("pvpDeaths", getPvpDeaths(uid))
+    obj.put("pvpPeak", getPvpBountyPeak(uid))
+    obj.put("allKills", getAllTimeKills(uid))
+    obj.put("allDeaths", getAllTimeDeaths(uid))
+    obj.put("allPeak", getAllTimeBountyPeak(uid))
+    obj.put("wins", getConvergencesWon(uid))
+    obj.put("hvts", getHvtEliminations(uid))
+    obj.put("greens", getGreensCollected(uid))
+    val shipResObj = JSONObject()
+    for (id in 1..10) {
+      shipResObj.put(id.toString(), getShipResonance(id, uid))
+    }
+    obj.put("shipRes", shipResObj)
+    val slotsObj = JSONObject()
+    for (slotId in com.example.engine.CustomShipLoadoutSlot.ALL_SLOT_IDS) {
+      slotsObj.put(slotId, getCustomShipSlot(slotId, uid).toJsonString())
+    }
+    obj.put("slots", slotsObj)
+    obj.put("updatedAtMs", System.currentTimeMillis())
+    return obj.toString()
+  }
+
+  fun mergeCloudProgressionJson(uid: String, rawJson: String): Boolean {
+    if (uid.isBlank() || isDrifterOrEphemeralUid(uid) || rawJson.isBlank()) return false
+    return try {
+      val obj = JSONObject(rawJson)
+      val mergedXpBuffs = kotlin.math.max(getXpFromBuffs(uid), obj.optLong("xpBuffs", 0L))
+      val mergedXpDamage = kotlin.math.max(getXpFromDamage(uid), obj.optLong("xpDamage", 0L))
+      val mergedXpAcc = kotlin.math.max(getXpFromAccuracy(uid), obj.optLong("xpAccuracy", 0L))
+      val mergedXpEarned = kotlin.math.max(getXpFromBountyEarned(uid), obj.optLong("xpEarned", 0L))
+      val mergedXpKilled = kotlin.math.max(getXpFromBountyKilled(uid), obj.optLong("xpKilled", 0L))
+      val mergedShards = kotlin.math.max(getRiftShards(uid), obj.optLong("shards", 0L))
+      val mergedMilestone = kotlin.math.max(getHighestMilestoneLevelClaimed(uid), obj.optInt("milestoneLvl", 1))
+      savePilotProgression(
+        uid = uid,
+        xpFromBuffs = mergedXpBuffs,
+        xpFromDamage = mergedXpDamage,
+        xpFromAccuracy = mergedXpAcc,
+        xpFromBountyEarned = mergedXpEarned,
+        xpFromBountyKilled = mergedXpKilled,
+        riftShards = mergedShards,
+        highestMilestoneLevelClaimed = mergedMilestone,
+      )
+      setUnlockedExtraSlots(kotlin.math.max(getUnlockedExtraSlots(uid), obj.optInt("extraSlots", 0)), uid)
+
+      val shipResObj = obj.optJSONObject("shipRes")
+      var mergedTotalRes = 0
+      if (shipResObj != null) {
+        val allowLegacy = canUseLegacyUnscopedFallback(uid)
+        val ed = prefs.edit()
+        for (id in 1..10) {
+          val cloudR = shipResObj.optInt(id.toString(), 0).coerceAtLeast(0)
+          val localR = getShipResonanceRaw(id, uid)
+          val bestR = kotlin.math.max(localR, cloudR)
+          mergedTotalRes += bestR
+          val base = shipResonanceBaseKey(id)
+          ed.putInt(uidKey(base, uid), bestR)
+          if (allowLegacy) ed.putInt(base, bestR)
+        }
+        ed.putBoolean(uidKey(KEY_SHIP_RESONANCE_MIGRATED, uid), true)
+        ed.putBoolean(uidKey(KEY_RESONANCE_MIGRATED, uid), true)
+        ed.apply()
+      }
+      val cloudLive = obj.optInt("liveRes", 0).coerceAtLeast(0)
+      val cloudPeak = obj.optInt("peakRes", 0).coerceAtLeast(0)
+      val bestLive = kotlin.math.max(getLiveResonance(uid), kotlin.math.max(mergedTotalRes, cloudLive))
+      if (bestLive > getLiveResonance(uid)) {
+        setLiveResonance(bestLive, uid)
+      }
+      val bestPeak = kotlin.math.max(getPeakResonance(uid), kotlin.math.max(bestLive, cloudPeak))
+      val edPeak = prefs.edit().putInt(uidKey(KEY_PEAK_RESONANCE, uid), bestPeak)
+      if (canUseLegacyUnscopedFallback(uid)) {
+        edPeak.putInt(KEY_PEAK_RESONANCE, bestPeak)
+      }
+      edPeak.apply()
+
+      saveCombatStats(
+        pvpKills = kotlin.math.max(getPvpKills(uid), obj.optLong("pvpKills", 0L)),
+        pvpDeaths = kotlin.math.max(getPvpDeaths(uid), obj.optLong("pvpDeaths", 0L)),
+        pvpBountyPeak = kotlin.math.max(getPvpBountyPeak(uid), obj.optLong("pvpPeak", 100L)),
+        allTimeKills = kotlin.math.max(getAllTimeKills(uid), obj.optLong("allKills", 0L)),
+        allTimeDeaths = kotlin.math.max(getAllTimeDeaths(uid), obj.optLong("allDeaths", 0L)),
+        allTimeBountyPeak = kotlin.math.max(getAllTimeBountyPeak(uid), obj.optLong("allPeak", 100L)),
+        convergencesWon = kotlin.math.max(getConvergencesWon(uid), obj.optLong("wins", 0L)),
+        hvtEliminations = kotlin.math.max(getHvtEliminations(uid), obj.optLong("hvts", 0L)),
+        greensCollected = kotlin.math.max(getGreensCollected(uid), obj.optLong("greens", 0L)),
+        uid = uid,
+      )
+
+      val cloudShipId = obj.optInt("shipId", 0)
+      if (cloudShipId in 1..10 && !prefs.contains(uidKey(KEY_SHIP_ID, uid))) {
+        setPreferredShipId(cloudShipId, uid)
+      }
+      val slotsObj = obj.optJSONObject("slots")
+      if (slotsObj != null) {
+        for (slotId in com.example.engine.CustomShipLoadoutSlot.ALL_SLOT_IDS) {
+          val baseKey = "${KEY_CUSTOM_SLOT_PREFIX}_$slotId"
+          if (!prefs.contains(uidKey(baseKey, uid))) {
+            val slotJson = slotsObj.optString(slotId, "")
+            if (slotJson.isNotBlank()) {
+              saveCustomShipSlot(com.example.engine.CustomShipLoadoutSlot.fromJsonString(slotJson, slotId), uid)
+            }
+          }
+        }
+      }
+      true
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  fun getPersistedCommsMessages(): List<SyndicateChatMessage> {
+    val raw = userSettingsPrefs.getString(KEY_PERSISTED_COMMS_JSON, "[]") ?: "[]"
+    val out = mutableListOf<SyndicateChatMessage>()
+    try {
+      val arr = JSONArray(raw)
+      for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        val label = o.optString("timestampLabel", "").trim()
+        if (label.startsWith("#WING-") || label.startsWith("#VOICE-")) continue
+        val id = o.optString("id", "").trim()
+        if (id.isEmpty()) continue
+        out.add(
+          SyndicateChatMessage(
+            id = id,
+            senderUid = o.optString("senderUid", ""),
+            senderCallsign = o.optString("senderCallsign", "PILOT"),
+            senderSyndicateTag = sanitizeSyndicateTag(o.optString("senderSyndicateTag", "")),
+            timestampLabel = label.ifEmpty { "#sector-lounge" },
+            messageText = o.optString("messageText", ""),
+            isArmadaRecruitBanner = o.optBoolean("isArmadaRecruitBanner", false),
+            armadaName = o.optString("armadaName", ""),
+            armadaCurrentSize = o.optInt("armadaCurrentSize", 1).coerceIn(1, 5),
+            armadaMaxSize = o.optInt("armadaMaxSize", 5).coerceIn(1, 5),
+            armadaObjective = o.optString("armadaObjective", ""),
+            requestSent = o.optBoolean("requestSent", false),
+            createdAtMs = o.optLong("createdAtMs", 0L),
+          )
+        )
+      }
+    } catch (_: Exception) {}
+    return out
+  }
+
+  fun savePersistedCommsMessages(messages: List<SyndicateChatMessage>) {
+    val filtered =
+      messages
+        .filter { m ->
+          val lbl = m.timestampLabel.trim().uppercase(Locale.US)
+          !lbl.startsWith("#WING-") && !lbl.startsWith("#VOICE-") && m.messageText.isNotBlank()
+        }
+        .distinctBy { it.id }
+        .takeLast(120)
+    val arr = JSONArray()
+    for (m in filtered) {
+      arr.put(
+        JSONObject().apply {
+          put("id", m.id)
+          put("senderUid", m.senderUid)
+          put("senderCallsign", m.senderCallsign)
+          put("senderSyndicateTag", m.senderSyndicateTag)
+          put("timestampLabel", m.timestampLabel)
+          put("messageText", m.messageText)
+          put("isArmadaRecruitBanner", m.isArmadaRecruitBanner)
+          put("armadaName", m.armadaName)
+          put("armadaCurrentSize", m.armadaCurrentSize)
+          put("armadaMaxSize", m.armadaMaxSize)
+          put("armadaObjective", m.armadaObjective)
+          put("requestSent", m.requestSent)
+          put("createdAtMs", m.createdAtMs)
+        }
+      )
+    }
+    userSettingsPrefs.edit().putString(KEY_PERSISTED_COMMS_JSON, arr.toString()).apply()
+  }
+
+  fun recordRiftHubTap(xNorm: Float, yNorm: Float, nodeName: String) {
+    val entry =
+      String.format(
+        Locale.US,
+        "%s:%.2f,%.2f",
+        nodeName.take(10),
+        xNorm.coerceIn(0f, 1f),
+        yNorm.coerceIn(0f, 1f),
+      )
+    val existing =
+      (userSettingsPrefs.getString(KEY_HUB_TAP_BUFFER, "") ?: "")
+        .split(";")
+        .filter { it.isNotBlank() }
+        .toMutableList()
+    existing.add(entry)
+    val capped = existing.takeLast(24)
+    userSettingsPrefs.edit().putString(KEY_HUB_TAP_BUFFER, capped.joinToString(";")).apply()
+  }
+
+  fun drainRiftHubTapSummary(minCountToFlush: Int = 8): String? {
+    val existing =
+      (userSettingsPrefs.getString(KEY_HUB_TAP_BUFFER, "") ?: "")
+        .split(";")
+        .filter { it.isNotBlank() }
+    if (existing.size < minCountToFlush) return null
+    userSettingsPrefs.edit().putString(KEY_HUB_TAP_BUFFER, "").apply()
+    return existing.takeLast(12).joinToString(";").take(235)
+  }
+
   companion object {
     val NON_PLAYER_SYNDICATE_TAGS: Set<String> =
       setOf(
@@ -2267,6 +2624,10 @@ class LocalPilotPrefs(context: Context) {
 
     private const val PREFS_NAME = "rift_permanent_pilot_prefs"
     private const val USER_SETTINGS_PREFS_NAME = "rift_user_settings"
+    private const val KEY_PRIMARY_SWORN_UID = "primary_sworn_uid_v90"
+    private const val KEY_DRIFTER_CALLSIGN = "drifter_ephemeral_callsign"
+    private const val KEY_PERSISTED_COMMS_JSON = "persisted_subspace_comms_v90"
+    private const val KEY_HUB_TAP_BUFFER = "rift_hub_tap_buffer_v90"
     private const val KEY_BLOCKED_PILOT_UIDS = "ugc_blocked_pilot_uids"
     private const val KEY_REPORTED_PILOTS_JSON = "ugc_reported_pilots_json"
     private const val KEY_DEVICE_UID = "permanent_device_uid"

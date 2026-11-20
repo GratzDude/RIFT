@@ -277,4 +277,20 @@ test("dossier, leaderboard, syndicates, and syndicate crest global_state enforce
       updatedAtMs: Date.now(),
     })
   );
+  await assertSucceeds(
+    aliceDb.collection("global_state").doc(`pilot_prog_${ALICE_UID}`).set({
+      ownerId: ALICE_UID,
+      payloadJson: "{\"liveRes\":450,\"lvl\":12}",
+      updatedAtMs: Date.now(),
+    })
+  );
+  await assertSucceeds(aliceDb.collection("global_state").doc(`pilot_prog_${ALICE_UID}`).get());
+  await assertFails(bobDb.collection("global_state").doc(`pilot_prog_${ALICE_UID}`).get());
+  await assertFails(
+    bobDb.collection("global_state").doc(`pilot_prog_${ALICE_UID}`).set({
+      ownerId: BOB_UID,
+      payloadJson: "{\"liveRes\":9999}",
+      updatedAtMs: Date.now(),
+    })
+  );
 });

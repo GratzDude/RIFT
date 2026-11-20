@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 89
+const val CURRENT_RIFT_BUILD_VERSION = 91
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,41 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 91,
+      versionTag = "v1.0.91 // BUILD #91",
+      releaseDate = "Nov 20, 2026",
+      headline = "Silk-Smooth Remote Ship Motion: C1-Continuous Velocity Dead-Reckoning, Critically Damped Frame Smoothing & 95ms Active-Match Heartbeats",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "C1-Continuous Target & Error-Offset Tracking (Zero Packet Snapping): Incoming remote pilot heartbeats now update smooth target coordinates, velocity, heading, and turret aim while capturing continuous positional and velocity offsets relative to the live ship state so packet arrivals never yank coordinates or cause short-distance micro-hops.",
+          "Closed-Form Critically Damped Dead-Reckoning Every Frame: Remote human ships integrate velocity continuously every simulation frame (x += vx * dt, y += vy * dt) paired with closed-form critically damped spring-damper decay (omega = 14.5 rad/s, zero overshoot), shortest-arc heading/aim smoothing, post-bounce offset alignment, and safe arenaRadius clamping, snapping immediately only on large warps (> 650px), fresh spawn/respawn, or sector entry.",
+          "95ms Active-Match Heartbeats & Instant Burst Sync: Tightened active combat and matchmaking queue heartbeat cadence to 95ms (keeping 1,200ms in unjoined hub orbit) and wired instant out-of-band heartbeat pushes on spawn/respawn, afterburner ignition/release, manual brake engagement, Phase Dash, Hyper Surge / speed boosts, secondary ability fire, and sector changes.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 90,
+      versionTag = "v1.0.90 // BUILD #90",
+      releaseDate = "Nov 20, 2026",
+      headline = "Rift Hub & Rift Station Rebrand, Cohesive Rift & Star Forge Visuals, Account/Drifter Switcher, Context-Aware Strike Wing Invites, Per-UID Cloud Resonance & Level Persistence, Above-Average Resonance Glow, Team Voice & Adaptive Bot Resonance",
+      badgeLabel = "PREVIOUS BUILD",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Rift Hub, Rift Station, Rift In / Rift Out & Plain-English Scrub: Standardized nomenclature across Auth, Rift Hub, Rift Station, Rift AI, Hangar, Star Forge, Pilot Dossier, Syndicates, Rift Conduit, Codex, and 2.5D HUD with plain-English labels and zero HVT, Dyson, Bounty/BTY, or developer jargon.",
+          "In-App Account & Drifter Switcher + Context-Aware Strike Wing Invites: Added instant in-app switching between Google accounts, Sworn Pilot, and Drifter without uninstalling, plus real-time Strike Wing invites displaying a centered modal in Rift Hub, a compact top-left banner in public FFA Rifts, and automatic rejection during team matches.",
+          "Per-UID Resonance & Pilot Level Persistence + Cloud Progression Sync: Isolated all 5 XP sources, Pilot Level, per-ship Resonance (1..10), Live/Peak Resonance, Rift Shards, combat stats, and Frame A-E loadouts per Sworn UID so swapping to Drifter or switching accounts never resets progression, backed by monotonic Firestore cloud sync.",
+          "Above-Average Resonance Glow & Cohesive Rift / Star Core Visuals: Replaced HVT ship labels with a dynamic golden-cyan halo on every pilot above the active match's average Resonance, and unified Playfield Rifts and the central Star Forge Star Core with multi-layered swirling plasma filaments matching the outer Rift storm wall and Stasis spheres.",
+          "Persisted Discord-Style Subspace Comms, Team Voice Chat, Adaptive Bot Skill & Hub Tap Telemetry: Persisted Subspace Comms locally and via Firestore across restarts, added runtime-permission Team Voice mic controls and speaking status in team matches and Strike Wing comms, scaled AI bot Resonance and combat skill dynamically to player Resonance with aggregated cloud bot telemetry, and added non-text Rift Hub screen tap logging.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 89,
       versionTag = "v1.0.89 // BUILD #89",
       releaseDate = "Nov 20, 2026",
       headline = "Smooth Per-Frame Remote Ship Dead-Reckoning, 110ms Active Combat Heartbeats & Post-Death Instance Sync Stability",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "PREVIOUS BUILD",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
@@ -648,7 +678,7 @@ fun RiftChangelogModal(
             NexusMergedBrandEmblem(modifier = Modifier.size(30.dp))
             Column {
               Text(
-                text = "NEXUS // RING SPACE TRANSMISSION & VERSION LOG",
+                text = "RIFT // SECTOR TRANSMISSION & VERSION LOG",
                 color = Color(0xFF00F5D4),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.ExtraBold,

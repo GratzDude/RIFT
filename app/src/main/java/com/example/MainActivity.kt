@@ -734,7 +734,7 @@ fun RiftArenaScreen(
       if (initialStartInPracticeRift) {
         "PRACTICE RIFT INITIALIZED // SOLO FLIGHT BRIEFING"
       } else {
-        "NEXUS CORE ONLINE // SELECT RIFT TO DEPLOY"
+        "RIFT HUB ONLINE // SELECT RIFT TO DEPLOY"
       }
     )
   }
@@ -1422,7 +1422,7 @@ fun RiftArenaScreen(
     var lastLifecyclePushElapsedMs = 0L
     engine.onLocalLifecycleSyncNeeded = {
       val nowElapsed = android.os.SystemClock.elapsedRealtime()
-      if (nowElapsed - lastLifecyclePushElapsedMs >= 25L) {
+      if (nowElapsed - lastLifecyclePushElapsedMs >= 30L) {
         lastLifecyclePushElapsedMs = nowElapsed
         pushLivePilotHeartbeatNow()
       }
@@ -1635,7 +1635,7 @@ fun RiftArenaScreen(
         activeMatchmakingQueue != null ||
           suspendedActiveMatch != null ||
           (engine.hasJoinedMatch && !engine.isEphemeralPracticeRift)
-      val intervalMs = if (inActiveCombatOrQueue) 110L else 1200L
+      val intervalMs = if (inActiveCombatOrQueue) 95L else 1200L
       delay(intervalMs)
       pushLivePilotHeartbeatNow()
     }
@@ -3232,10 +3232,10 @@ fun RiftArenaScreen(
                                 PilotAchievement(
                                   id = "apex_hunter",
                                   title = "APEX HUNTER",
-                                  description = "Eliminate a Sector High-Value Target (Resonance >= 250).",
+                                  description = "Eliminate an above-average Resonance rival (Resonance >= 250).",
                                   unlocked =
                                     engine.hvtEliminations >= 1L || engine.allTimeBountyPeak >= 250L,
-                                  progressText = "${engine.hvtEliminations} HVT KILLS",
+                                  progressText = "${engine.hvtEliminations} TOP-RES KILLS",
                                 ),
                                 PilotAchievement(
                                   id = "trench_runner",
@@ -3248,7 +3248,7 @@ fun RiftArenaScreen(
                                 PilotAchievement(
                                   id = "first_convergence",
                                   title = "FIRST CONVERGENCE",
-                                  description = "Reach 250+ Resonance and become a High-Value Target.",
+                                  description = "Reach 250+ Resonance in open Rift combat.",
                                   unlocked = engine.allTimeBountyPeak >= 250L,
                                   progressText = "${engine.allTimeBountyPeak} / 250 RES",
                                 ),
@@ -3748,7 +3748,7 @@ fun RiftArenaScreen(
                 engine.leaveActiveMatchToNexusOrbit()
                 viewModel.setActiveSector(engine.activeMatchSectorTag())
                 pushLivePilotHeartbeatNow()
-                toastMessage = "LEFT MATCH // ORBITING NEXUS SECTOR"
+                toastMessage = "RIFT OUT // ORBITING RIFT STATION"
                 toastVersion++
                 frameTick++
               },
