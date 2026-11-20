@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 93
+const val CURRENT_RIFT_BUILD_VERSION = 94
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 94,
+      versionTag = "v1.0.94 // BUILD #94",
+      releaseDate = "Nov 20, 2026",
+      headline = "Droplet Reaction Visuals: Inward-Blooming Ingress Plumes, Reactive Precipitates & Filament Trails, and Refractive Lens Meniscus Rims",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Localized Inward-Blooming Plasma Ingress Plumes: Playfield Rifts, Unstable Merged Rifts, Eclipse Stasis spheres, Stasis Breach containment domes, Star Forge stage fields, and Codex previews now emit localized teardrop and bifurcated plasma plumes blooming inward from angular ingress vectors along the containment rim.",
+          "Reactive Crystalline Precipitates & Glowing Filament Trails: Gravity Rift and Unstable Rift ordnance or obstacle absorptions, Stasis dome reflections, Rift plasma or slingshot contacts, and outer Storm Wall strikes now nucleate faceted crystalline precipitate clusters and curved cyan, gold, and violet plasma filament trails along the reaction wake with zero solid white ship hit-flashes.",
+          "Refractive Lens & Optical Meniscus Rim Highlights: Added crisp top-left optical meniscus specular crescents, counter-lit internal caustic arcs, and gravitational throat lensing highlights across circular Rift collars, Stasis containment rims, Star Forge circular cores, and the Rift Hub Overwatch aperture.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 93,
       versionTag = "v1.0.93 // BUILD #93",
       releaseDate = "Nov 20, 2026",
       headline = "Per-Account Callsign Isolation, Cross-Device Cloud Callsign Carry-Over, Live Matchmaking Queue ViewModel & Plain-English Resonance Targets",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "PREVIOUS BUILD",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

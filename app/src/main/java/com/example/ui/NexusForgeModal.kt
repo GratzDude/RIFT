@@ -2508,6 +2508,35 @@ private fun DevPlayfieldAndHudStudioBay(
             center = Offset(szCx, szCy),
             style = Stroke(width = 2.2.dp.toPx() * rimRec.borderWeight),
           )
+          drawIntoCanvas { c ->
+            val nc = c.nativeCanvas
+            RiftSpriteBaker.drawLocalizedIngressPlumes(
+              canvas = nc,
+              cx = szCx,
+              cy = szCy,
+              outerRimR = szScreenR * 0.985f,
+              innerReachR = max(dysonScreenR * 1.16f, szScreenR * 0.62f),
+              plumeCount = 6,
+              phaseRad = -timeSec * 0.48f,
+              outerColor = rimRec.primaryColorInt,
+              midColor = rimRec.glowColorInt,
+              coreColor = android.graphics.Color.WHITE,
+              fadeAlpha = (rimRec.surfaceOpacity * 0.78f).coerceIn(0.18f, 0.92f),
+              swirlBias = 0.20f,
+            )
+            RiftSpriteBaker.drawRefractiveMeniscusRim(
+              canvas = nc,
+              cx = szCx,
+              cy = szCy,
+              rimRadius = szScreenR * 0.99f,
+              throatRadius = 0f,
+              lightAngleRad = -2.28f + 0.06f * sin(timeSec * 0.6f),
+              rimTintColor = rimRec.glowColorInt,
+              secondaryTintColor = rimRec.trimColorInt,
+              fadeAlpha = rimRec.surfaceOpacity.coerceIn(0.25f, 1f),
+              strokeScale = rimRec.borderWeight.coerceIn(0.6f, 1.8f),
+            )
+          }
           for (tick in 0 until 24) {
             val a = tick * (PI.toFloat() / 12f) + timeSec * 0.25f
             val r0 = szScreenR * 0.95f
@@ -2639,6 +2668,35 @@ private fun DevPlayfieldAndHudStudioBay(
           val brigR = (360f * brigRec.pixelScale * worldScale).coerceAtLeast(26f)
           val brigCoreR = (54f * brigRec.pixelScale * worldScale).coerceAtLeast(10f)
           drawCircle(Color(brigRec.primaryColorInt).copy(alpha = 0.45f * brigRec.surfaceOpacity), brigR, Offset(brigCx, brigCy))
+          drawIntoCanvas { c ->
+            val nc = c.nativeCanvas
+            RiftSpriteBaker.drawLocalizedIngressPlumes(
+              canvas = nc,
+              cx = brigCx,
+              cy = brigCy,
+              outerRimR = brigR * 0.985f,
+              innerReachR = max(brigCoreR * 1.35f, brigR * 0.56f),
+              plumeCount = 6,
+              phaseRad = -timeSec * 0.55f,
+              outerColor = brigRec.trimColorInt,
+              midColor = brigRec.glowColorInt,
+              coreColor = android.graphics.Color.WHITE,
+              fadeAlpha = (brigRec.surfaceOpacity * 0.80f).coerceIn(0.18f, 0.92f),
+              swirlBias = 0.20f,
+            )
+            RiftSpriteBaker.drawRefractiveMeniscusRim(
+              canvas = nc,
+              cx = brigCx,
+              cy = brigCy,
+              rimRadius = brigR * 0.99f,
+              throatRadius = brigCoreR * 0.92f,
+              lightAngleRad = -2.28f,
+              rimTintColor = brigRec.glowColorInt,
+              secondaryTintColor = brigRec.trimColorInt,
+              fadeAlpha = brigRec.surfaceOpacity.coerceIn(0.25f, 1f),
+              strokeScale = brigRec.borderWeight.coerceIn(0.6f, 1.8f),
+            )
+          }
           drawCircle(Color(brigRec.trimColorInt), brigR, Offset(brigCx, brigCy), style = Stroke(2.6.dp.toPx() * brigRec.borderWeight))
           drawCircle(Color(brigRec.glowColorInt), brigCoreR, Offset(brigCx, brigCy))
           drawCircle(Color.White, brigCoreR * 0.42f, Offset(brigCx, brigCy))
@@ -4223,6 +4281,37 @@ private fun DrawScope.drawShaderOrFallbackVortex(
       }
     }
   }
+  if (mode < 1.5f && radiusPx > 10f) {
+    drawIntoCanvas { c ->
+      val nc = c.nativeCanvas
+      RiftSpriteBaker.drawLocalizedIngressPlumes(
+        canvas = nc,
+        cx = center.x,
+        cy = center.y,
+        outerRimR = radiusPx * 0.98f,
+        innerReachR = radiusPx * 0.54f,
+        plumeCount = 6,
+        phaseRad = -timeSec * (0.55f + 0.35f * recipe.shaderTurbulence.coerceIn(0.1f, 2.0f)),
+        outerColor = recipe.primaryColorInt,
+        midColor = recipe.glowColorInt,
+        coreColor = android.graphics.Color.WHITE,
+        fadeAlpha = (recipe.surfaceOpacity * 0.84f).coerceIn(0.18f, 0.95f),
+        swirlBias = 0.20f,
+      )
+      RiftSpriteBaker.drawRefractiveMeniscusRim(
+        canvas = nc,
+        cx = center.x,
+        cy = center.y,
+        rimRadius = radiusPx * 0.99f,
+        throatRadius = if (mode < 0.5f) radiusPx * 0.28f else 0f,
+        lightAngleRad = -2.28f + 0.07f * sin(timeSec * 0.8f),
+        rimTintColor = recipe.glowColorInt,
+        secondaryTintColor = recipe.trimColorInt,
+        fadeAlpha = recipe.surfaceOpacity.coerceIn(0.25f, 1f),
+        strokeScale = recipe.borderWeight.coerceIn(0.6f, 1.9f),
+      )
+    }
+  }
 }
 
 private fun DrawScope.drawIsolatedTargetSpecimen(
@@ -4578,6 +4667,18 @@ private fun DrawScope.drawFluxCoreOrbSpecimen(
       alpha = 255,
     )
     nc.restore()
+    RiftSpriteBaker.drawRefractiveMeniscusRim(
+      canvas = nc,
+      cx = center.x,
+      cy = center.y,
+      rimRadius = r * 1.02f,
+      throatRadius = 0f,
+      lightAngleRad = -2.28f,
+      rimTintColor = recipe.glowColorInt,
+      secondaryTintColor = recipe.trimColorInt,
+      fadeAlpha = 0.88f,
+      strokeScale = borderMult,
+    )
   }
 }
 

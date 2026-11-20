@@ -402,7 +402,20 @@ data class SpatialAnomalyEntity(
   var partnerId: String = "",
   var absorbedWeaponCount: Int = 0,
   var isUnstableMergedRift: Boolean = false,
-)
+  var lastIngressAngle: Float = 0f,
+  var lastIngressTimer: Float = 0f,
+  var secondaryIngressAngle: Float = 0f,
+  var secondaryIngressTimer: Float = 0f,
+) {
+  fun recordBoundaryIngress(angleRad: Float, durationSec: Float = 0.56f) {
+    if (lastIngressTimer > 0.08f && kotlin.math.abs(atan2(sin(angleRad - lastIngressAngle), cos(angleRad - lastIngressAngle))) > 0.28f) {
+      secondaryIngressAngle = lastIngressAngle
+      secondaryIngressTimer = lastIngressTimer
+    }
+    lastIngressAngle = angleRad
+    lastIngressTimer = max(lastIngressTimer, durationSec)
+  }
+}
 
 enum class PracticeTutorialStep(
   val stepNumber: Int,
@@ -559,6 +572,54 @@ data class InterdictorBubbleEntity(
   var radius: Float,
   var life: Float,
   val maxLife: Float,
+  var lastIngressAngle: Float = 0f,
+  var lastIngressTimer: Float = 0f,
+  var secondaryIngressAngle: Float = 0f,
+  var secondaryIngressTimer: Float = 0f,
+) {
+  fun recordBoundaryIngress(angleRad: Float, durationSec: Float = 0.54f) {
+    if (lastIngressTimer > 0.08f && kotlin.math.abs(atan2(sin(angleRad - lastIngressAngle), cos(angleRad - lastIngressAngle))) > 0.28f) {
+      secondaryIngressAngle = lastIngressAngle
+      secondaryIngressTimer = lastIngressTimer
+    }
+    lastIngressAngle = angleRad
+    lastIngressTimer = max(lastIngressTimer, durationSec)
+  }
+}
+
+data class ReactivePrecipitateCluster(
+  var x: Float,
+  var y: Float,
+  var vx: Float,
+  var vy: Float,
+  val anchorX: Float,
+  val anchorY: Float,
+  val pullToAnchor: Boolean,
+  var angle: Float,
+  val angVel: Float,
+  val radius: Float,
+  var life: Float,
+  val maxLife: Float,
+  val primaryColor: Int,
+  val coreColor: Int,
+  val facetSeed: Int,
+)
+
+data class ReactiveFilamentTrail(
+  var x0: Float,
+  var y0: Float,
+  var ctrlX: Float,
+  var ctrlY: Float,
+  var x1: Float,
+  var y1: Float,
+  var vx1: Float,
+  var vy1: Float,
+  var life: Float,
+  val maxLife: Float,
+  val outerColor: Int,
+  val midColor: Int,
+  val coreColor: Int,
+  val thickness: Float,
 )
 
 data class FloatingPopup(
@@ -828,7 +889,99 @@ class RiftGameEngine(
   val phaseAfterimages = mutableListOf<PhaseAfterimageEntity>()
   val interdictorBubbles = mutableListOf<InterdictorBubbleEntity>()
   val anomalies = mutableListOf<SpatialAnomalyEntity>()
+  val reactivePrecipitates = mutableListOf<ReactivePrecipitateCluster>()
+  val reactiveFilaments = mutableListOf<ReactiveFilamentTrail>()
   private var nextAnomalyId: Long = 1L
+  private var nextPrecipitateSeed: Int = 1
+
+  private fun spawnDropletReactionBurst(
+    originX: Float,
+    originY: Float,
+    targetOrWakeX: Float,
+    targetOrWakeY: Float,
+    pullInward: Boolean,
+    crystalCount: Int,
+    filamentCount: Int,
+    outerColor: Int,
+    midColor: Int,
+    coreColor: Int,
+    baseCrystalRadius: Float = 5.6f,
+    durationSec: Float = 0.56f,
+  ) {
+    val dx = targetOrWakeX - originX
+    val dy = targetOrWakeY - originY
+    val span = hypot(dx, dy).coerceAtLeast(1f)
+    val ux = dx / span
+    val uy = dy / span
+    val px = -uy
+    val py = ux
+
+    val maxPrecipitates = 96
+    if (reactivePrecipitates.size + crystalCount > maxPrecipitates) {
+      val drop = (reactivePrecipitates.size + crystalCount - maxPrecipitates).coerceAtLeast(0)
+      repeat(min(drop, reactivePrecipitates.size)) { reactivePrecipitates.removeAt(0) }
+    }
+    for (c in 0 until crystalCount) {
+      val spread = (Random.nextFloat() - 0.5f) * 1.15f
+      val baseSpeed = if (pullInward) (115f + Random.nextFloat() * 145f) else (78f + Random.nextFloat() * 135f)
+      val dirAng = atan2(uy, ux) + spread * 0.55f
+      val seed = nextPrecipitateSeed++
+      val life = (durationSec * (0.78f + Random.nextFloat() * 0.36f)).coerceIn(0.24f, 1.15f)
+      reactivePrecipitates.add(
+        ReactivePrecipitateCluster(
+          x = originX + px * spread * 14f,
+          y = originY + py * spread * 14f,
+          vx = cos(dirAng) * baseSpeed + px * spread * 48f,
+          vy = sin(dirAng) * baseSpeed + py * spread * 48f,
+          anchorX = targetOrWakeX,
+          anchorY = targetOrWakeY,
+          pullToAnchor = pullInward,
+          angle = Random.nextFloat() * (PI.toFloat() * 2f),
+          angVel = (if (seed % 2 == 0) 1f else -1f) * (3.2f + Random.nextFloat() * 4.2f),
+          radius = (baseCrystalRadius * (0.76f + Random.nextFloat() * 0.52f)).coerceIn(2.6f, 12.5f),
+          life = life,
+          maxLife = life,
+          primaryColor = if (c % 2 == 0) midColor else outerColor,
+          coreColor = coreColor,
+          facetSeed = seed,
+        )
+      )
+    }
+
+    val maxFilaments = 84
+    if (reactiveFilaments.size + filamentCount > maxFilaments) {
+      val drop = (reactiveFilaments.size + filamentCount - maxFilaments).coerceAtLeast(0)
+      repeat(min(drop, reactiveFilaments.size)) { reactiveFilaments.removeAt(0) }
+    }
+    for (f in 0 until filamentCount) {
+      val archSign = if (f % 2 == 0) 1f else -1f
+      val archOffset = (16f + Random.nextFloat() * 26f) * archSign
+      val reach = if (pullInward) min(span * 0.88f, 138f) else (38f + Random.nextFloat() * 58f)
+      val endX = originX + ux * reach + px * (archSign * 10f)
+      val endY = originY + uy * reach + py * (archSign * 10f)
+      val ctrlX = originX + ux * (reach * 0.52f) + px * archOffset
+      val ctrlY = originY + uy * (reach * 0.52f) + py * archOffset
+      val fLife = (durationSec * (0.72f + Random.nextFloat() * 0.30f)).coerceIn(0.22f, 0.95f)
+      reactiveFilaments.add(
+        ReactiveFilamentTrail(
+          x0 = originX,
+          y0 = originY,
+          ctrlX = ctrlX,
+          ctrlY = ctrlY,
+          x1 = endX,
+          y1 = endY,
+          vx1 = ux * (if (pullInward) 85f else 64f) + px * archSign * 34f,
+          vy1 = uy * (if (pullInward) 85f else 64f) + py * archSign * 34f,
+          life = fLife,
+          maxLife = fLife,
+          outerColor = outerColor,
+          midColor = midColor,
+          coreColor = coreColor,
+          thickness = (2.8f + Random.nextFloat() * 1.8f),
+        )
+      )
+    }
+  }
 
   // Executioner Callcard Telemetry (populated on local pilot death)
   var lastKillerCallsign: String = ""
@@ -2876,6 +3029,8 @@ class RiftGameEngine(
     pendingBuffSpawns.clear()
     recentBuffSpawnLocations.clear()
     interdictorBubbles.clear()
+    reactivePrecipitates.clear()
+    reactiveFilaments.clear()
     spawnInitialSpatialAnomalies()
     val initialCap = getEffectiveBuffCap()
     repeat(initialCap) { spawnGreenCrate() }
@@ -6990,6 +7145,20 @@ class RiftGameEngine(
         ship.vx = (preVx - 2f * dotOut * outNx) * elast
         ship.vy = (preVy - 2f * dotOut * outNy) * elast
         triggerWallBounceReaction(ship, -outNx, -outNy, preVx, preVy)
+        spawnDropletReactionBurst(
+          originX = arenaCenterX + outNx * arenaRadius,
+          originY = arenaCenterY + outNy * arenaRadius,
+          targetOrWakeX = ship.x + ship.vx * 0.16f,
+          targetOrWakeY = ship.y + ship.vy * 0.16f,
+          pullInward = false,
+          crystalCount = 4,
+          filamentCount = 3,
+          outerColor = Color.rgb(168, 85, 247),
+          midColor = Color.rgb(0, 245, 212),
+          coreColor = Color.rgb(250, 204, 21),
+          baseCrystalRadius = 6.2f,
+          durationSec = 0.58f,
+        )
         if (ship.isLocalPlayer && hypot(ship.vx, ship.vy) > 45f) {
           sfx.playBounce()
         }
@@ -7668,6 +7837,8 @@ class RiftGameEngine(
     brickWalls.clear()
     shipDebrisChunks.clear()
     interdictorBubbles.clear()
+    reactivePrecipitates.clear()
+    reactiveFilaments.clear()
     bakeStaticRadarBitmap()
 
     if (!hasJoinedMatch) {
@@ -9682,6 +9853,8 @@ class RiftGameEngine(
     for (ibIdx in interdictorBubbles.indices.reversed()) {
       val ib = interdictorBubbles[ibIdx]
       ib.life -= rawDt
+      if (ib.lastIngressTimer > 0f) ib.lastIngressTimer = max(0f, ib.lastIngressTimer - rawDt)
+      if (ib.secondaryIngressTimer > 0f) ib.secondaryIngressTimer = max(0f, ib.secondaryIngressTimer - rawDt)
       if (ib.life <= 0f) {
         shockwaves.add(ShockwaveEntity(ib.x, ib.y, ib.radius * 0.25f, ib.radius, Color.parseColor("#EC4899")))
         interdictorBubbles.removeAt(ibIdx)
@@ -10264,6 +10437,21 @@ class RiftGameEngine(
               s.vx = (preVx - 2f * dot * nx) * elast
               s.vy = (preVy - 2f * dot * ny) * elast
               triggerWallBounceReaction(s, -nx, -ny, preVx, preVy)
+              val hitAng = atan2(ny, nx)
+              ib.recordBoundaryIngress(hitAng, 0.58f)
+              spawnDropletReactionBurst(
+                originX = ib.x + nx * ib.radius,
+                originY = ib.y + ny * ib.radius,
+                targetOrWakeX = s.x + s.vx * 0.14f,
+                targetOrWakeY = s.y + s.vy * 0.14f,
+                pullInward = true,
+                crystalCount = 4,
+                filamentCount = 3,
+                outerColor = Color.rgb(236, 72, 153),
+                midColor = Color.rgb(0, 245, 212),
+                coreColor = Color.rgb(254, 249, 195),
+                baseCrystalRadius = 5.8f,
+              )
               if (s.isLocalPlayer) sfx.playBounce()
             }
           }
@@ -10283,6 +10471,21 @@ class RiftGameEngine(
               s.vx = (preVx - 2f * dot * nx) * elast
               s.vy = (preVy - 2f * dot * ny) * elast
               triggerWallBounceReaction(s, nx, ny, preVx, preVy)
+              val hitAng = atan2(ny, nx)
+              ib.recordBoundaryIngress(hitAng, 0.58f)
+              spawnDropletReactionBurst(
+                originX = ib.x + nx * ib.radius,
+                originY = ib.y + ny * ib.radius,
+                targetOrWakeX = s.x + s.vx * 0.15f,
+                targetOrWakeY = s.y + s.vy * 0.15f,
+                pullInward = false,
+                crystalCount = 4,
+                filamentCount = 3,
+                outerColor = Color.rgb(236, 72, 153),
+                midColor = Color.rgb(0, 245, 212),
+                coreColor = Color.rgb(254, 249, 195),
+                baseCrystalRadius = 5.8f,
+              )
               if (s.isLocalPlayer) sfx.playBounce()
             }
           }
@@ -10671,6 +10874,21 @@ class RiftGameEngine(
             b.vx -= 2f * dot * rnx
             b.vy -= 2f * dot * rny
           }
+          ib.recordBoundaryIngress(atan2(rny, rnx), 0.44f)
+          spawnDropletReactionBurst(
+            originX = b.x,
+            originY = b.y,
+            targetOrWakeX = b.x + b.vx * 0.07f,
+            targetOrWakeY = b.y + b.vy * 0.07f,
+            pullInward = true,
+            crystalCount = 2,
+            filamentCount = 2,
+            outerColor = Color.rgb(236, 72, 153),
+            midColor = Color.rgb(0, 245, 212),
+            coreColor = Color.WHITE,
+            baseCrystalRadius = 4.2f,
+            durationSec = 0.40f,
+          )
           reflectedByBubble = true
           break
         } else if (prevDist > ib.radius && nextDist <= ib.radius) {
@@ -10684,6 +10902,21 @@ class RiftGameEngine(
             b.vx -= 2f * dot * rnx
             b.vy -= 2f * dot * rny
           }
+          ib.recordBoundaryIngress(atan2(rny, rnx), 0.44f)
+          spawnDropletReactionBurst(
+            originX = b.x,
+            originY = b.y,
+            targetOrWakeX = b.x + b.vx * 0.07f,
+            targetOrWakeY = b.y + b.vy * 0.07f,
+            pullInward = false,
+            crystalCount = 2,
+            filamentCount = 2,
+            outerColor = Color.rgb(236, 72, 153),
+            midColor = Color.rgb(0, 245, 212),
+            coreColor = Color.WHITE,
+            baseCrystalRadius = 4.2f,
+            durationSec = 0.40f,
+          )
           reflectedByBubble = true
           break
         }
@@ -11253,6 +11486,21 @@ class RiftGameEngine(
             b.vx -= 2f * dot * rnx
             b.vy -= 2f * dot * rny
           }
+          ib.recordBoundaryIngress(atan2(rny, rnx), 0.52f)
+          spawnDropletReactionBurst(
+            originX = b.x,
+            originY = b.y,
+            targetOrWakeX = b.x + b.vx * 0.09f,
+            targetOrWakeY = b.y + b.vy * 0.09f,
+            pullInward = true,
+            crystalCount = 3,
+            filamentCount = 3,
+            outerColor = Color.rgb(236, 72, 153),
+            midColor = Color.rgb(0, 245, 212),
+            coreColor = Color.rgb(250, 204, 21),
+            baseCrystalRadius = 5.4f,
+            durationSec = 0.48f,
+          )
           bombReflectedByBubble = true
           break
         } else if (prevDist > ib.radius && nextDist <= ib.radius) {
@@ -11266,6 +11514,21 @@ class RiftGameEngine(
             b.vx -= 2f * dot * rnx
             b.vy -= 2f * dot * rny
           }
+          ib.recordBoundaryIngress(atan2(rny, rnx), 0.52f)
+          spawnDropletReactionBurst(
+            originX = b.x,
+            originY = b.y,
+            targetOrWakeX = b.x + b.vx * 0.09f,
+            targetOrWakeY = b.y + b.vy * 0.09f,
+            pullInward = false,
+            crystalCount = 3,
+            filamentCount = 3,
+            outerColor = Color.rgb(236, 72, 153),
+            midColor = Color.rgb(0, 245, 212),
+            coreColor = Color.rgb(250, 204, 21),
+            baseCrystalRadius = 5.4f,
+            durationSec = 0.48f,
+          )
           bombReflectedByBubble = true
           break
         }
@@ -11696,6 +11959,45 @@ class RiftGameEngine(
       val pa = phaseAfterimages[i]
       pa.life -= rawDt
       if (pa.life <= 0f) phaseAfterimages.removeAt(i)
+    }
+
+    for (i in reactivePrecipitates.indices.reversed()) {
+      val pc = reactivePrecipitates[i]
+      pc.life -= rawDt
+      if (pc.life <= 0f) {
+        reactivePrecipitates.removeAt(i)
+        continue
+      }
+      if (pc.pullToAnchor) {
+        val ax = pc.anchorX - pc.x
+        val ay = pc.anchorY - pc.y
+        val ad = hypot(ax, ay).coerceAtLeast(1f)
+        val nx = ax / ad
+        val ny = ay / ad
+        // Swirl + radial pull into Rift singularity throat
+        pc.vx += (nx * 360f - ny * 185f) * dt
+        pc.vy += (ny * 360f + nx * 185f) * dt
+      } else {
+        val drag = 0.24.pow(dt.toDouble()).toFloat()
+        pc.vx *= drag
+        pc.vy *= drag
+      }
+      pc.x += pc.vx * dt
+      pc.y += pc.vy * dt
+      pc.angle += pc.angVel * dt
+    }
+
+    for (i in reactiveFilaments.indices.reversed()) {
+      val fl = reactiveFilaments[i]
+      fl.life -= rawDt
+      if (fl.life <= 0f) {
+        reactiveFilaments.removeAt(i)
+        continue
+      }
+      fl.x1 += fl.vx1 * dt
+      fl.y1 += fl.vy1 * dt
+      fl.ctrlX += fl.vx1 * 0.45f * dt
+      fl.ctrlY += fl.vy1 * 0.45f * dt
     }
 
     for (i in floatingPopups.indices.reversed()) {
@@ -12232,6 +12534,8 @@ class RiftGameEngine(
     for (aIdx in anomalies.indices.reversed()) {
       val anom = anomalies[aIdx]
       anom.life -= rawDt
+      if (anom.lastIngressTimer > 0f) anom.lastIngressTimer = max(0f, anom.lastIngressTimer - rawDt)
+      if (anom.secondaryIngressTimer > 0f) anom.secondaryIngressTimer = max(0f, anom.secondaryIngressTimer - rawDt)
 
       if (anom.isUnstableMergedRift) {
         // Calm, ominous spacetime-tear rotation speed
@@ -12365,6 +12669,20 @@ class RiftGameEngine(
             s.plasmaRiftTickTimer = 0.55f
             val dmg = s.maxFlux * 0.12f
             s.flux -= dmg
+            anom.recordBoundaryIngress(atan2(s.y - anom.y, s.x - anom.x), 0.55f)
+            spawnDropletReactionBurst(
+              originX = s.x,
+              originY = s.y,
+              targetOrWakeX = anom.x,
+              targetOrWakeY = anom.y,
+              pullInward = true,
+              crystalCount = 4,
+              filamentCount = 3,
+              outerColor = Color.rgb(236, 72, 153),
+              midColor = Color.rgb(0, 245, 212),
+              coreColor = Color.rgb(250, 204, 21),
+              baseCrystalRadius = 6.0f,
+            )
             if (s.isLocalPlayer) {
               currentLifeStats.damageTaken += dmg
               addTrauma(0.20f)
@@ -12380,6 +12698,20 @@ class RiftGameEngine(
           val dy = anom.y - b.y
           val dist = hypot(dx, dy).coerceAtLeast(0.01f)
           if (dist < anom.physicalRadius * 0.42f) {
+            anom.recordBoundaryIngress(atan2(b.y - anom.y, b.x - anom.x), 0.48f)
+            spawnDropletReactionBurst(
+              originX = b.x,
+              originY = b.y,
+              targetOrWakeX = anom.x,
+              targetOrWakeY = anom.y,
+              pullInward = true,
+              crystalCount = 3,
+              filamentCount = 2,
+              outerColor = Color.rgb(250, 204, 21),
+              midColor = Color.rgb(0, 245, 212),
+              coreColor = Color.WHITE,
+              baseCrystalRadius = 5.0f,
+            )
             bullets.removeAt(bIdx)
             anom.physicalRadius = (anom.physicalRadius + 4f).coerceAtMost(420f)
           } else if (dist < pullR * 0.9f) {
@@ -12399,6 +12731,20 @@ class RiftGameEngine(
           val dy = anom.y - bm.y
           val dist = hypot(dx, dy).coerceAtLeast(0.01f)
           if (dist < anom.physicalRadius * 0.44f) {
+            anom.recordBoundaryIngress(atan2(bm.y - anom.y, bm.x - anom.x), 0.58f)
+            spawnDropletReactionBurst(
+              originX = bm.x,
+              originY = bm.y,
+              targetOrWakeX = anom.x,
+              targetOrWakeY = anom.y,
+              pullInward = true,
+              crystalCount = 5,
+              filamentCount = 3,
+              outerColor = Color.rgb(236, 72, 153),
+              midColor = Color.rgb(250, 204, 21),
+              coreColor = Color.rgb(0, 245, 212),
+              baseCrystalRadius = 6.6f,
+            )
             bombs.removeAt(bmIdx)
             anom.physicalRadius = (anom.physicalRadius + 12f).coerceAtMost(420f)
           } else if (dist < pullR * 0.9f) {
@@ -12418,6 +12764,20 @@ class RiftGameEngine(
           val dy = anom.y - dr.y
           val dist = hypot(dx, dy).coerceAtLeast(0.01f)
           if (dist < anom.physicalRadius * 0.44f) {
+            anom.recordBoundaryIngress(atan2(dr.y - anom.y, dr.x - anom.x), 0.50f)
+            spawnDropletReactionBurst(
+              originX = dr.x,
+              originY = dr.y,
+              targetOrWakeX = anom.x,
+              targetOrWakeY = anom.y,
+              pullInward = true,
+              crystalCount = 3,
+              filamentCount = 2,
+              outerColor = Color.rgb(0, 245, 212),
+              midColor = Color.rgb(250, 204, 21),
+              coreColor = Color.WHITE,
+              baseCrystalRadius = 5.4f,
+            )
             swarmDrones.removeAt(drIdx)
             anom.physicalRadius = (anom.physicalRadius + 6f).coerceAtMost(420f)
           } else if (dist < pullR * 0.9f) {
@@ -12505,6 +12865,20 @@ class RiftGameEngine(
                   life = 0.30f,
                 )
               )
+              anom.recordBoundaryIngress(atan2(s.y - anom.y, s.x - anom.x), 0.56f)
+              spawnDropletReactionBurst(
+                originX = s.x,
+                originY = s.y,
+                targetOrWakeX = s.x + s.vx * 0.16f,
+                targetOrWakeY = s.y + s.vy * 0.16f,
+                pullInward = false,
+                crystalCount = 4,
+                filamentCount = 3,
+                outerColor = Color.rgb(239, 68, 68),
+                midColor = Color.rgb(217, 70, 239),
+                coreColor = Color.rgb(250, 204, 21),
+                baseCrystalRadius = 5.8f,
+              )
               if (s.isLocalPlayer) {
                 currentLifeStats.damageTaken += dmg
                 sfx.playBounce()
@@ -12525,6 +12899,19 @@ class RiftGameEngine(
           for (dIdx in decoys.indices.reversed()) {
             val d = decoys[dIdx]
             if (hypot(d.x - anom.x, d.y - anom.y) < tearRadius + 18f) {
+              anom.recordBoundaryIngress(atan2(d.y - anom.y, d.x - anom.x), 0.50f)
+              spawnDropletReactionBurst(
+                originX = d.x,
+                originY = d.y,
+                targetOrWakeX = anom.x,
+                targetOrWakeY = anom.y,
+                pullInward = true,
+                crystalCount = 3,
+                filamentCount = 2,
+                outerColor = Color.rgb(239, 68, 68),
+                midColor = Color.rgb(217, 70, 239),
+                coreColor = Color.WHITE,
+              )
               decoys.removeAt(dIdx)
               spawnExplosion(d.x, d.y, Color.parseColor("#EF4444"))
             }
@@ -12532,6 +12919,19 @@ class RiftGameEngine(
           for (drIdx in swarmDrones.indices.reversed()) {
             val dr = swarmDrones[drIdx]
             if (hypot(dr.x - anom.x, dr.y - anom.y) < tearRadius + 14f) {
+              anom.recordBoundaryIngress(atan2(dr.y - anom.y, dr.x - anom.x), 0.48f)
+              spawnDropletReactionBurst(
+                originX = dr.x,
+                originY = dr.y,
+                targetOrWakeX = anom.x,
+                targetOrWakeY = anom.y,
+                pullInward = true,
+                crystalCount = 3,
+                filamentCount = 2,
+                outerColor = Color.rgb(239, 68, 68),
+                midColor = Color.rgb(217, 70, 239),
+                coreColor = Color.WHITE,
+              )
               swarmDrones.removeAt(drIdx)
               spawnExplosion(dr.x, dr.y, Color.parseColor("#EF4444"))
             }
@@ -12558,6 +12958,21 @@ class RiftGameEngine(
                 s.vx = nx * catapultSpeed
                 s.vy = ny * catapultSpeed
                 s.rocketBoostTimer = max(s.rocketBoostTimer, 0.45f)
+                anom.recordBoundaryIngress(atan2(dy, dx), 0.60f)
+                spawnDropletReactionBurst(
+                  originX = anom.x + nx * (anom.physicalRadius * 0.72f),
+                  originY = anom.y + ny * (anom.physicalRadius * 0.72f),
+                  targetOrWakeX = s.x + s.vx * 0.14f,
+                  targetOrWakeY = s.y + s.vy * 0.14f,
+                  pullInward = false,
+                  crystalCount = 5,
+                  filamentCount = 4,
+                  outerColor = Color.rgb(56, 189, 248),
+                  midColor = Color.rgb(0, 245, 212),
+                  coreColor = Color.rgb(250, 204, 21),
+                  baseCrystalRadius = 6.2f,
+                  durationSec = 0.62f,
+                )
                 shockwaves.add(ShockwaveEntity(anom.x, anom.y, 16f, anom.physicalRadius * 1.15f, Color.parseColor("#38BDF8")))
                 if (s.isLocalPlayer) {
                   sfx.playBounce()
@@ -12669,6 +13084,20 @@ class RiftGameEngine(
                 s.vx = 0f
                 s.vy = 0f
                 s.blackHoleImmunityTimer = RiftCalibrationState.gravityStopImmunitySec
+                anom.recordBoundaryIngress(atan2(s.y - anom.y, s.x - anom.x), 0.62f)
+                spawnDropletReactionBurst(
+                  originX = s.x,
+                  originY = s.y,
+                  targetOrWakeX = anom.x,
+                  targetOrWakeY = anom.y,
+                  pullInward = true,
+                  crystalCount = 5,
+                  filamentCount = 4,
+                  outerColor = Color.rgb(168, 85, 247),
+                  midColor = Color.rgb(0, 245, 212),
+                  coreColor = Color.rgb(250, 204, 21),
+                  baseCrystalRadius = 6.4f,
+                )
                 spawnExplosion(s.x, s.y, Color.parseColor("#C084FC"))
                 if (s.isLocalPlayer) {
                   sfx.playBounce()
@@ -12707,6 +13136,20 @@ class RiftGameEngine(
             val dy = anom.y - d.y
             val dist = hypot(dx, dy).coerceAtLeast(0.01f)
             if (sweptDist <= anom.physicalRadius * 0.92f) {
+              anom.recordBoundaryIngress(atan2(d.y - anom.y, d.x - anom.x), 0.56f)
+              spawnDropletReactionBurst(
+                originX = d.x,
+                originY = d.y,
+                targetOrWakeX = anom.x,
+                targetOrWakeY = anom.y,
+                pullInward = true,
+                crystalCount = 4,
+                filamentCount = 3,
+                outerColor = Color.rgb(168, 85, 247),
+                midColor = Color.rgb(0, 245, 212),
+                coreColor = Color.rgb(250, 204, 21),
+                baseCrystalRadius = 5.8f,
+              )
               decoys.removeAt(dIdx)
               anom.absorbedWeaponCount++
               anom.physicalRadius = (anom.physicalRadius + 14f).coerceAtMost(440f)
@@ -12741,6 +13184,20 @@ class RiftGameEngine(
             val dy = anom.y - dr.y
             val dist = hypot(dx, dy).coerceAtLeast(0.01f)
             if (sweptDist <= anom.physicalRadius * 0.92f) {
+              anom.recordBoundaryIngress(atan2(dr.y - anom.y, dr.x - anom.x), 0.56f)
+              spawnDropletReactionBurst(
+                originX = dr.x,
+                originY = dr.y,
+                targetOrWakeX = anom.x,
+                targetOrWakeY = anom.y,
+                pullInward = true,
+                crystalCount = 4,
+                filamentCount = 3,
+                outerColor = Color.rgb(168, 85, 247),
+                midColor = Color.rgb(0, 245, 212),
+                coreColor = Color.rgb(250, 204, 21),
+                baseCrystalRadius = 5.6f,
+              )
               swarmDrones.removeAt(drIdx)
               anom.absorbedWeaponCount++
               anom.physicalRadius = (anom.physicalRadius + 14f).coerceAtMost(440f)
@@ -12774,6 +13231,20 @@ class RiftGameEngine(
             val dy = anom.y - b.y
             val dist = hypot(dx, dy).coerceAtLeast(0.01f)
             if (sweptDist <= anom.physicalRadius * 0.92f) {
+              anom.recordBoundaryIngress(atan2(b.y - anom.y, b.x - anom.x), 0.52f)
+              spawnDropletReactionBurst(
+                originX = b.x,
+                originY = b.y,
+                targetOrWakeX = anom.x,
+                targetOrWakeY = anom.y,
+                pullInward = true,
+                crystalCount = 3,
+                filamentCount = 2,
+                outerColor = Color.rgb(168, 85, 247),
+                midColor = Color.rgb(0, 245, 212),
+                coreColor = Color.rgb(233, 213, 255),
+                baseCrystalRadius = 5.2f,
+              )
               bullets.removeAt(bIdx)
               anom.absorbedWeaponCount++
               anom.physicalRadius = (anom.physicalRadius + 18f).coerceAtMost(440f)
@@ -12809,6 +13280,21 @@ class RiftGameEngine(
             val dy = anom.y - bm.y
             val dist = hypot(dx, dy).coerceAtLeast(0.01f)
             if (sweptDist <= anom.physicalRadius * 0.95f) {
+              anom.recordBoundaryIngress(atan2(bm.y - anom.y, bm.x - anom.x), 0.65f)
+              spawnDropletReactionBurst(
+                originX = bm.x,
+                originY = bm.y,
+                targetOrWakeX = anom.x,
+                targetOrWakeY = anom.y,
+                pullInward = true,
+                crystalCount = 6,
+                filamentCount = 4,
+                outerColor = Color.rgb(168, 85, 247),
+                midColor = Color.rgb(250, 204, 21),
+                coreColor = Color.rgb(0, 245, 212),
+                baseCrystalRadius = 7.0f,
+                durationSec = 0.68f,
+              )
               bombs.removeAt(bmIdx)
               anom.absorbedWeaponCount += 3
               anom.physicalRadius = (anom.physicalRadius + 40f).coerceAtMost(440f)
@@ -12869,9 +13355,41 @@ class RiftGameEngine(
                   w.hp -= 950f * dt
                   w.lastHitAngle = atan2(anom.y - wCy, anom.x - wCx)
                   w.hitFlashTimer = max(w.hitFlashTimer, 0.12f)
+                  anom.recordBoundaryIngress(atan2(wCy - anom.y, wCx - anom.x), 0.35f)
+                  if (Random.nextFloat() < 0.35f) {
+                    spawnDropletReactionBurst(
+                      originX = wCx,
+                      originY = wCy,
+                      targetOrWakeX = anom.x,
+                      targetOrWakeY = anom.y,
+                      pullInward = true,
+                      crystalCount = 2,
+                      filamentCount = 2,
+                      outerColor = Color.rgb(168, 85, 247),
+                      midColor = Color.rgb(0, 245, 212),
+                      coreColor = Color.rgb(250, 204, 21),
+                      baseCrystalRadius = 5.4f,
+                      durationSec = 0.42f,
+                    )
+                  }
                 }
 
                 if (w.hp <= 0f || dist <= anom.physicalRadius * 0.42f) {
+                  anom.recordBoundaryIngress(atan2(wCy - anom.y, wCx - anom.x), 0.72f)
+                  spawnDropletReactionBurst(
+                    originX = wCx,
+                    originY = wCy,
+                    targetOrWakeX = anom.x,
+                    targetOrWakeY = anom.y,
+                    pullInward = true,
+                    crystalCount = 8,
+                    filamentCount = 5,
+                    outerColor = Color.rgb(168, 85, 247),
+                    midColor = Color.rgb(0, 245, 212),
+                    coreColor = Color.rgb(250, 204, 21),
+                    baseCrystalRadius = 8.2f,
+                    durationSec = 0.78f,
+                  )
                   val isStation =
                     w.style == SpaceObstacleStyle.ORBITAL_STATION ||
                       w.style == SpaceObstacleStyle.ASTEROID_STATION
@@ -13019,9 +13537,26 @@ class RiftGameEngine(
             for (s in ships) {
               if (s.respawnTimer > 0f) continue
               if (s.phaseRiftCooldownTimer <= 0f && hypot(s.x - anom.x, s.y - anom.y) < nodeRadius + s.radius * 0.5f) {
+                val entryAng = atan2(s.y - anom.y, s.x - anom.x)
+                val exitAng = atan2(s.vy, s.vx)
+                anom.recordBoundaryIngress(entryAng, 0.60f)
+                partner.recordBoundaryIngress(exitAng, 0.60f)
                 s.x = partner.x
                 s.y = partner.y
                 s.phaseRiftCooldownTimer = phaseCd
+                spawnDropletReactionBurst(
+                  originX = partner.x + cos(exitAng) * (partner.physicalRadius * 0.55f),
+                  originY = partner.y + sin(exitAng) * (partner.physicalRadius * 0.55f),
+                  targetOrWakeX = s.x + s.vx * 0.18f,
+                  targetOrWakeY = s.y + s.vy * 0.18f,
+                  pullInward = false,
+                  crystalCount = 5,
+                  filamentCount = 4,
+                  outerColor = Color.rgb(45, 212, 191),
+                  midColor = Color.rgb(56, 189, 248),
+                  coreColor = Color.rgb(250, 204, 21),
+                  baseCrystalRadius = 6.0f,
+                )
                 spawnExplosion(anom.x, anom.y, Color.parseColor("#2DD4BF"))
                 spawnExplosion(partner.x, partner.y, Color.parseColor("#2DD4BF"))
                 if (s.isLocalPlayer) {
@@ -13033,6 +13568,8 @@ class RiftGameEngine(
 
             for (d in decoys) {
               if (d.phaseRiftCooldownTimer <= 0f && hypot(d.x - anom.x, d.y - anom.y) < nodeRadius + 18f) {
+                anom.recordBoundaryIngress(atan2(d.y - anom.y, d.x - anom.x), 0.50f)
+                partner.recordBoundaryIngress(atan2(d.vy, d.vx), 0.50f)
                 d.x = partner.x
                 d.y = partner.y
                 d.phaseRiftCooldownTimer = phaseCd
@@ -13043,6 +13580,8 @@ class RiftGameEngine(
 
             for (dr in swarmDrones) {
               if (dr.phaseRiftCooldownTimer <= 0f && hypot(dr.x - anom.x, dr.y - anom.y) < nodeRadius + 14f) {
+                anom.recordBoundaryIngress(atan2(dr.y - anom.y, dr.x - anom.x), 0.50f)
+                partner.recordBoundaryIngress(atan2(dr.vy, dr.vx), 0.50f)
                 dr.x = partner.x
                 dr.y = partner.y
                 dr.phaseRiftCooldownTimer = phaseCd
@@ -13053,6 +13592,8 @@ class RiftGameEngine(
 
             for (b in bullets) {
               if (b.phaseRiftCooldownTimer <= 0f && hypot(b.x - anom.x, b.y - anom.y) < nodeRadius) {
+                anom.recordBoundaryIngress(atan2(b.y - anom.y, b.x - anom.x), 0.42f)
+                partner.recordBoundaryIngress(atan2(b.vy, b.vx), 0.42f)
                 b.x = partner.x
                 b.y = partner.y
                 b.phaseRiftCooldownTimer = phaseCd
@@ -13061,6 +13602,8 @@ class RiftGameEngine(
 
             for (bm in bombs) {
               if (bm.phaseRiftCooldownTimer <= 0f && hypot(bm.x - anom.x, bm.y - anom.y) < nodeRadius) {
+                anom.recordBoundaryIngress(atan2(bm.y - anom.y, bm.x - anom.x), 0.52f)
+                partner.recordBoundaryIngress(atan2(bm.vy, bm.vx), 0.52f)
                 bm.x = partner.x
                 bm.y = partner.y
                 bm.phaseRiftCooldownTimer = phaseCd

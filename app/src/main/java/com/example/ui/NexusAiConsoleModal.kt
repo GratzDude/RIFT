@@ -2608,6 +2608,59 @@ private fun RoundRipplingOverwatchAperture(
           cap = StrokeCap.Round,
         )
       }
+
+      // 4. Optical Meniscus Specular Crescent & Internal Caustic Refraction Lens Highlights
+      val meniscusShiftDeg = if (headless) 0f else sin(ripplePhase) * 6f
+      val meniscusLightDeg = -130f + meniscusShiftDeg
+      val dispersionR = apertureR * 0.972f
+      drawArc(
+        color = Color(0xFF00F5D4).copy(alpha = if (isFocused) 0.34f else 0.24f),
+        startAngle = meniscusLightDeg - 48f,
+        sweepAngle = 96f,
+        useCenter = false,
+        topLeft = Offset(cx - dispersionR, cy - dispersionR),
+        size = Size(dispersionR * 2f, dispersionR * 2f),
+        style = Stroke(width = 2.8.dp.toPx(), cap = StrokeCap.Round),
+      )
+      val specularR = apertureR * 0.986f
+      drawArc(
+        color = Color(0xFFF8FAFC).copy(alpha = if (isFocused) 0.86f else 0.70f),
+        startAngle = meniscusLightDeg - 34f,
+        sweepAngle = 68f,
+        useCenter = false,
+        topLeft = Offset(cx - specularR, cy - specularR),
+        size = Size(specularR * 2f, specularR * 2f),
+        style = Stroke(width = 1.25.dp.toPx(), cap = StrokeCap.Round),
+      )
+      drawArc(
+        color = Color.White.copy(alpha = if (isFocused) 0.94f else 0.80f),
+        startAngle = meniscusLightDeg - 12f,
+        sweepAngle = 16f,
+        useCenter = false,
+        topLeft = Offset(cx - specularR, cy - specularR),
+        size = Size(specularR * 2f, specularR * 2f),
+        style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+      )
+      val causticOuterR = apertureR * 0.946f
+      drawArc(
+        color = Color(0xFFFACC15).copy(alpha = 0.26f + 0.16f * energyNorm),
+        startAngle = meniscusLightDeg + 146f,
+        sweepAngle = 68f,
+        useCenter = false,
+        topLeft = Offset(cx - causticOuterR, cy - causticOuterR),
+        size = Size(causticOuterR * 2f, causticOuterR * 2f),
+        style = Stroke(width = 1.35.dp.toPx(), cap = StrokeCap.Round),
+      )
+      val causticInnerR = apertureR * 0.918f
+      drawArc(
+        color = Color(0xFF38BDF8).copy(alpha = 0.22f + 0.12f * energyNorm),
+        startAngle = meniscusLightDeg + 160f,
+        sweepAngle = 40f,
+        useCenter = false,
+        topLeft = Offset(cx - causticInnerR, cy - causticInnerR),
+        size = Size(causticInnerR * 2f, causticInnerR * 2f),
+        style = Stroke(width = 0.95.dp.toPx(), cap = StrokeCap.Round),
+      )
     }
 
     // INTERACTIVE CIRCULAR OVERWATCH TOUCH SURFACE:

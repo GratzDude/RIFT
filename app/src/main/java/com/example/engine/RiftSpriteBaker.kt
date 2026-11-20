@@ -35,6 +35,9 @@ object RiftSpriteBaker {
   private val sharedRiftRibbonPath = Path()
   private val sharedRiftSpinePath = Path()
   private val sharedRiftArcRect = RectF()
+  private val sharedPlumePath = Path()
+  private val sharedCrystalPath = Path()
+  private val sharedFilamentPath = Path()
 
   private val stationHoloArcRect = RectF()
   private val stationHoloBandPaint =
@@ -3243,6 +3246,22 @@ object RiftSpriteBaker {
       )
     canvas.drawCircle(cx, cy, waveR, ringPaint)
 
+    // Layer 2b: Localized Inward-Blooming Droplet-Reaction Plasma Ingress Plumes from Inner Collar Lip
+    drawLocalizedIngressPlumes(
+      canvas = canvas,
+      cx = cx,
+      cy = cy,
+      outerRimR = r * 0.875f,
+      innerReachR = if (inwardSpiral) r * 0.34f else r * 0.44f,
+      plumeCount = 5,
+      phaseRad = spinAngle * (if (inwardSpiral) -0.82f else 0.74f) + pulsePhase * twoPi * 0.5f,
+      outerColor = outerColor,
+      midColor = midColor,
+      coreColor = coreColor,
+      fadeAlpha = fadeAlpha,
+      swirlBias = twistSign * 0.22f,
+    )
+
     // Layer 3: Precision Circular 5-Stop Metallic Containment Collar (0.88r..0.99r)
     val collarInnerR = r * 0.88f
     val collarOuterR = r * 0.99f
@@ -3342,11 +3361,470 @@ object RiftSpriteBaker {
       fillPaint.color = Color.argb((255 * fadeAlpha).roundToInt().coerceIn(0, 255), 255, 255, 255)
       canvas.drawCircle(cx - throatR * 0.12f, cy - throatR * 0.12f, throatR * 0.25f, fillPaint)
     }
+
+    // Layer 5: Optical Meniscus Specular Crescent & Internal Caustic Lens Refraction Highlights
+    drawRefractiveMeniscusRim(
+      canvas = canvas,
+      cx = cx,
+      cy = cy,
+      rimRadius = collarInnerR,
+      throatRadius = throatR,
+      lightAngleRad = -2.26f + 0.12f * sin(spinAngle * 0.5f),
+      rimTintColor = midColor,
+      secondaryTintColor = outerColor,
+      fadeAlpha = fadeAlpha,
+      strokeScale = 1.0f,
+    )
+  }
+
+  /**
+   * Renders localized droplet-reaction inward-blooming plasma ingress plumes originating along
+   * discrete angular vectors on `outerRimR` and blooming into the containment interior toward
+   * `innerReachR`, with teardrop plume heads, bifurcated curl tendrils, and glowing rim menisci.
+   */
+  fun drawLocalizedIngressPlumes(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    outerRimR: Float,
+    innerReachR: Float,
+    plumeCount: Int,
+    phaseRad: Float,
+    outerColor: Int,
+    midColor: Int,
+    coreColor: Int,
+    fadeAlpha: Float = 1.0f,
+    swirlBias: Float = 0.22f,
+  ) {
+    if (outerRimR <= 6f || fadeAlpha <= 0.02f || plumeCount <= 0) return
+    val fill = sharedRiftFillPaint
+    val stroke = sharedRiftStrokePaint
+    val path = sharedPlumePath
+    fill.shader = null
+    stroke.shader = null
+
+    val oR = Color.red(outerColor)
+    val oG = Color.green(outerColor)
+    val oB = Color.blue(outerColor)
+    val mR = Color.red(midColor)
+    val mG = Color.green(midColor)
+    val mB = Color.blue(midColor)
+    val cR = Color.red(coreColor)
+    val cG = Color.green(coreColor)
+    val cB = Color.blue(coreColor)
+
+    val twoPi = PI.toFloat() * 2f
+    val clampedInner = innerReachR.coerceIn(outerRimR * 0.18f, outerRimR * 0.86f)
+    val maxPlumeSpan = (outerRimR - clampedInner).coerceAtLeast(3.5f)
+
+    for (idx in 0 until plumeCount) {
+      // Slightly Golden-Ratio / harmonic angular spacing so plumes read as organic localized ingress points
+      val baseAng =
+        phaseRad +
+          idx * (twoPi / plumeCount.toFloat()) +
+          0.19f * sin(phaseRad * 1.7f + idx * 2.35f)
+      val bloomCycle = 0.5f + 0.5f * sin(phaseRad * 2.3f + idx * 1.83f)
+      val reachFrac = 0.48f + 0.52f * bloomCycle
+      val tipR = (outerRimR - maxPlumeSpan * reachFrac).coerceAtLeast(clampedInner * 0.85f)
+      val neckSpread = 0.055f + 0.032f * (1f - bloomCycle)
+      val headSpread = 0.115f + 0.065f * bloomCycle
+      val curlAng = baseAng + swirlBias * (0.45f + 0.55f * bloomCycle)
+
+      val rootLx = cx + cos(baseAng - neckSpread) * outerRimR
+      val rootLy = cy + sin(baseAng - neckSpread) * outerRimR
+      val rootRx = cx + cos(baseAng + neckSpread) * outerRimR
+      val rootRy = cy + sin(baseAng + neckSpread) * outerRimR
+      val rootCx = cx + cos(baseAng) * outerRimR
+      val rootCy = cy + sin(baseAng) * outerRimR
+
+      val midR = outerRimR - (outerRimR - tipR) * 0.58f
+      val lobeLx = cx + cos(curlAng - headSpread) * midR
+      val lobeLy = cy + sin(curlAng - headSpread) * midR
+      val lobeRx = cx + cos(curlAng + headSpread) * midR
+      val lobeRy = cy + sin(curlAng + headSpread) * midR
+
+      val tipX = cx + cos(curlAng) * tipR
+      val tipY = cy + sin(curlAng) * tipR
+
+      // Outer billowing plasma ingress plume envelope
+      path.reset()
+      path.moveTo(rootLx, rootLy)
+      path.cubicTo(
+        cx + cos(baseAng - neckSpread * 0.7f) * (outerRimR - maxPlumeSpan * 0.24f),
+        cy + sin(baseAng - neckSpread * 0.7f) * (outerRimR - maxPlumeSpan * 0.24f),
+        lobeLx,
+        lobeLy,
+        tipX,
+        tipY,
+      )
+      path.cubicTo(
+        lobeRx,
+        lobeRy,
+        cx + cos(baseAng + neckSpread * 0.7f) * (outerRimR - maxPlumeSpan * 0.24f),
+        cy + sin(baseAng + neckSpread * 0.7f) * (outerRimR - maxPlumeSpan * 0.24f),
+        rootRx,
+        rootRy,
+      )
+      path.close()
+
+      val envAlpha = ((72f + 64f * bloomCycle) * fadeAlpha).roundToInt().coerceIn(0, 255)
+      fill.color = Color.argb(envAlpha, oR, oG, oB)
+      canvas.drawPath(path, fill)
+
+      // Inner concentrated droplet-bloom core bulb + filament jet
+      val coreBulbR = (outerRimR * (0.042f + 0.026f * bloomCycle)).coerceAtLeast(1.4f)
+      val coreAlpha = ((135f + 85f * bloomCycle) * fadeAlpha).roundToInt().coerceIn(0, 255)
+      fill.color = Color.argb(coreAlpha, mR, mG, mB)
+      canvas.drawCircle(tipX, tipY, coreBulbR * 1.35f, fill)
+      fill.color = Color.argb(((195f + 55f * bloomCycle) * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+      canvas.drawCircle(tipX, tipY, coreBulbR * 0.68f, fill)
+
+      // Curved feeder filament spine + bifurcated curl tendril at plume front
+      path.reset()
+      path.moveTo(rootCx, rootCy)
+      path.quadTo(
+        cx + cos((baseAng + curlAng) * 0.5f + swirlBias * 0.25f) * ((outerRimR + tipR) * 0.5f),
+        cy + sin((baseAng + curlAng) * 0.5f + swirlBias * 0.25f) * ((outerRimR + tipR) * 0.5f),
+        tipX,
+        tipY,
+      )
+      stroke.strokeWidth = (outerRimR * 0.020f).coerceAtLeast(1.0f)
+      stroke.color = Color.argb(((170f + 65f * bloomCycle) * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+      canvas.drawPath(path, stroke)
+
+      // Bifurcated droplet-vortex curl arms peeling off the blooming plume head
+      val curlArmR = (tipR - maxPlumeSpan * 0.08f).coerceAtLeast(clampedInner * 0.72f)
+      stroke.strokeWidth = (outerRimR * 0.013f).coerceAtLeast(0.85f)
+      stroke.color = Color.argb(((138f * bloomCycle + 38f) * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
+      val armSpread = 0.16f + 0.09f * bloomCycle
+      canvas.drawLine(
+        tipX,
+        tipY,
+        cx + cos(curlAng - armSpread) * curlArmR,
+        cy + sin(curlAng - armSpread) * curlArmR,
+        stroke,
+      )
+      canvas.drawLine(
+        tipX,
+        tipY,
+        cx + cos(curlAng + armSpread) * curlArmR,
+        cy + sin(curlAng + armSpread) * curlArmR,
+        stroke,
+      )
+
+      // Localized rim ingress meniscus bead where the plume pierces the boundary
+      fill.color = Color.argb(((190f + 55f * bloomCycle) * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+      canvas.drawCircle(rootCx, rootCy, (outerRimR * 0.026f).coerceAtLeast(1.2f), fill)
+    }
+  }
+
+  /**
+   * Renders a single high-energy contact-triggered inward ingress plume at `ingressAngleRad`
+   * when ordnance, debris, or a starfighter crosses or rebounds off a Rift or Stasis boundary.
+   */
+  fun drawContactIngressBurstPlume(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    outerRimR: Float,
+    ingressAngleRad: Float,
+    intensity: Float,
+    outerColor: Int,
+    midColor: Int,
+    coreColor: Int,
+  ) {
+    val norm = intensity.coerceIn(0f, 1f)
+    if (outerRimR <= 6f || norm <= 0.02f) return
+    val fill = sharedRiftFillPaint
+    val stroke = sharedRiftStrokePaint
+    val path = sharedPlumePath
+    fill.shader = null
+    stroke.shader = null
+
+    val penetration = outerRimR * (0.24f + 0.38f * (1f - norm * 0.45f))
+    val tipR = (outerRimR - penetration).coerceAtLeast(outerRimR * 0.22f)
+    val rootSpread = 0.09f + 0.08f * norm
+    val headSpread = 0.16f + 0.10f * (1f - norm * 0.3f)
+
+    val rLx = cx + cos(ingressAngleRad - rootSpread) * outerRimR
+    val rLy = cy + sin(ingressAngleRad - rootSpread) * outerRimR
+    val rRx = cx + cos(ingressAngleRad + rootSpread) * outerRimR
+    val rRy = cy + sin(ingressAngleRad + rootSpread) * outerRimR
+    val rCx = cx + cos(ingressAngleRad) * outerRimR
+    val rCy = cy + sin(ingressAngleRad) * outerRimR
+    val midR = (outerRimR + tipR) * 0.52f
+    val tipX = cx + cos(ingressAngleRad) * tipR
+    val tipY = cy + sin(ingressAngleRad) * tipR
+
+    path.reset()
+    path.moveTo(rLx, rLy)
+    path.quadTo(cx + cos(ingressAngleRad - headSpread) * midR, cy + sin(ingressAngleRad - headSpread) * midR, tipX, tipY)
+    path.quadTo(cx + cos(ingressAngleRad + headSpread) * midR, cy + sin(ingressAngleRad + headSpread) * midR, rRx, rRy)
+    path.close()
+
+    fill.color =
+      Color.argb(
+        (165f * norm).roundToInt().coerceIn(0, 255),
+        Color.red(outerColor),
+        Color.green(outerColor),
+        Color.blue(outerColor),
+      )
+    canvas.drawPath(path, fill)
+
+    stroke.strokeWidth = (outerRimR * 0.028f).coerceAtLeast(1.4f)
+    stroke.color =
+      Color.argb(
+        (235f * norm).roundToInt().coerceIn(0, 255),
+        Color.red(midColor),
+        Color.green(midColor),
+        Color.blue(midColor),
+      )
+    canvas.drawLine(rCx, rCy, tipX, tipY, stroke)
+
+    fill.color =
+      Color.argb(
+        (248f * norm).roundToInt().coerceIn(0, 255),
+        Color.red(coreColor),
+        Color.green(coreColor),
+        Color.blue(coreColor),
+      )
+    canvas.drawCircle(tipX, tipY, (outerRimR * 0.048f * (0.6f + 0.4f * norm)).coerceAtLeast(1.8f), fill)
+    canvas.drawCircle(rCx, rCy, (outerRimR * 0.036f).coerceAtLeast(1.5f), fill)
+  }
+
+  /**
+   * Renders crisp optical meniscus specular crescents, counter-lit internal caustic arcs, and
+   * optional gravitational throat lensing highlights along circular Rift & Stasis boundaries.
+   */
+  fun drawRefractiveMeniscusRim(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    rimRadius: Float,
+    throatRadius: Float = 0f,
+    lightAngleRad: Float = -2.26f,
+    rimTintColor: Int,
+    secondaryTintColor: Int,
+    fadeAlpha: Float = 1.0f,
+    strokeScale: Float = 1.0f,
+  ) {
+    if (rimRadius <= 5f || fadeAlpha <= 0.02f) return
+    val stroke = sharedRiftStrokePaint
+    val arcRect = sharedRiftArcRect
+    stroke.shader = null
+
+    val tR = Color.red(rimTintColor)
+    val tG = Color.green(rimTintColor)
+    val tB = Color.blue(rimTintColor)
+    val sR = Color.red(secondaryTintColor)
+    val sG = Color.green(secondaryTintColor)
+    val sB = Color.blue(secondaryTintColor)
+
+    val lightDeg = (lightAngleRad * 180f / PI.toFloat())
+
+    // 1. Feathered chromatic dispersion sheen just inside the optical meniscus lip
+    val dispersionR = rimRadius * 0.962f
+    arcRect.set(cx - dispersionR, cy - dispersionR, cx + dispersionR, cy + dispersionR)
+    stroke.strokeWidth = (rimRadius * 0.030f * strokeScale).coerceAtLeast(1.2f)
+    stroke.color = Color.argb((112f * fadeAlpha).roundToInt().coerceIn(0, 255), tR, tG, tB)
+    canvas.drawArc(arcRect, lightDeg - 52f, 104f, false, stroke)
+
+    // 2. Razor-sharp primary optical meniscus specular highlight crescent
+    val meniscusR = rimRadius * 0.978f
+    arcRect.set(cx - meniscusR, cy - meniscusR, cx + meniscusR, cy + meniscusR)
+    stroke.strokeWidth = (rimRadius * 0.015f * strokeScale).coerceAtLeast(0.95f)
+    stroke.color = Color.argb((232f * fadeAlpha).roundToInt().coerceIn(0, 255), 248, 252, 255)
+    canvas.drawArc(arcRect, lightDeg - 38f, 76f, false, stroke)
+
+    // Secondary pinpoint specular glint near the leading meniscus horn
+    stroke.strokeWidth = (rimRadius * 0.021f * strokeScale).coerceAtLeast(1.1f)
+    stroke.color = Color.argb((248f * fadeAlpha).roundToInt().coerceIn(0, 255), 255, 255, 255)
+    canvas.drawArc(arcRect, lightDeg - 14f, 18f, false, stroke)
+
+    // 3. Opposite-hemisphere internal total-reflection caustic crescent
+    val causticR = rimRadius * 0.934f
+    arcRect.set(cx - causticR, cy - causticR, cx + causticR, cy + causticR)
+    stroke.strokeWidth = (rimRadius * 0.018f * strokeScale).coerceAtLeast(0.95f)
+    stroke.color = Color.argb((148f * fadeAlpha).roundToInt().coerceIn(0, 255), sR, sG, sB)
+    canvas.drawArc(arcRect, lightDeg + 144f, 72f, false, stroke)
+
+    val innerCausticR = rimRadius * 0.904f
+    arcRect.set(cx - innerCausticR, cy - innerCausticR, cx + innerCausticR, cy + innerCausticR)
+    stroke.strokeWidth = (rimRadius * 0.011f * strokeScale).coerceAtLeast(0.8f)
+    stroke.color = Color.argb((118f * fadeAlpha).roundToInt().coerceIn(0, 255), 224, 242, 254)
+    canvas.drawArc(arcRect, lightDeg + 158f, 44f, false, stroke)
+
+    // 4. Optional Einstein-ring throat meniscus lensing crescents
+    if (throatRadius > 2.4f) {
+      val lensR = throatRadius * 1.22f
+      arcRect.set(cx - lensR, cy - lensR, cx + lensR, cy + lensR)
+      stroke.strokeWidth = (throatRadius * 0.085f * strokeScale).coerceAtLeast(0.95f)
+      stroke.color = Color.argb((210f * fadeAlpha).roundToInt().coerceIn(0, 255), 240, 249, 255)
+      canvas.drawArc(arcRect, lightDeg - 44f, 68f, false, stroke)
+      stroke.color = Color.argb((165f * fadeAlpha).roundToInt().coerceIn(0, 255), tR, tG, tB)
+      canvas.drawArc(arcRect, lightDeg + 136f, 64f, false, stroke)
+    }
+  }
+
+  /**
+   * Renders a faceted 3D crystalline precipitate cluster (hexagonal / diamond / dendritic micro-shards)
+   * nucleated during Rift ordnance absorption or Stasis / Storm / Rift plasma hull-obstacle reactions.
+   */
+  fun drawPrecipitateCrystalCluster(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    radius: Float,
+    angleRad: Float,
+    primaryColor: Int,
+    coreColor: Int,
+    alphaFrac: Float,
+    facetSeed: Int,
+  ) {
+    val normAlpha = alphaFrac.coerceIn(0f, 1f)
+    if (radius <= 1.2f || normAlpha <= 0.02f) return
+    val fill = sharedRiftFillPaint
+    val stroke = sharedRiftStrokePaint
+    val path = sharedCrystalPath
+    fill.shader = null
+    stroke.shader = null
+
+    val pR = Color.red(primaryColor)
+    val pG = Color.green(primaryColor)
+    val pB = Color.blue(primaryColor)
+    val cR = Color.red(coreColor)
+    val cG = Color.green(coreColor)
+    val cB = Color.blue(coreColor)
+
+    // Soft refractive halo around the crystallizing precipitate
+    fill.color = Color.argb((68f * normAlpha).roundToInt().coerceIn(0, 255), pR, pG, pB)
+    canvas.drawCircle(cx, cy, radius * 1.45f, fill)
+
+    // Primary 6-point asymmetric crystal prism facet
+    val vertices = if (facetSeed % 2 == 0) 6 else 4
+    val step = (PI.toFloat() * 2f) / vertices.toFloat()
+    path.reset()
+    for (v in 0 until vertices) {
+      val a = angleRad + v * step
+      val stretch =
+        when {
+          v % 2 == 0 -> 1.18f
+          else -> 0.64f
+        }
+      val vx = cx + cos(a) * (radius * stretch)
+      val vy = cy + sin(a) * (radius * stretch)
+      if (v == 0) path.moveTo(vx, vy) else path.lineTo(vx, vy)
+    }
+    path.close()
+
+    fill.color = Color.argb((192f * normAlpha).roundToInt().coerceIn(0, 255), pR, pG, pB)
+    canvas.drawPath(path, fill)
+
+    stroke.strokeWidth = (radius * 0.16f).coerceAtLeast(1.0f)
+    stroke.color = Color.argb((238f * normAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+    canvas.drawPath(path, stroke)
+
+    // Internal specular crystal ridge + satellite dendritic micro-crystal needles
+    val ridgeA = angleRad
+    stroke.strokeWidth = (radius * 0.12f).coerceAtLeast(0.85f)
+    stroke.color = Color.argb((245f * normAlpha).roundToInt().coerceIn(0, 255), 255, 255, 255)
+    canvas.drawLine(
+      cx - cos(ridgeA) * (radius * 0.78f),
+      cy - sin(ridgeA) * (radius * 0.78f),
+      cx + cos(ridgeA) * (radius * 0.78f),
+      cy + sin(ridgeA) * (radius * 0.78f),
+      stroke,
+    )
+
+    val satCount = 3
+    for (s in 0 until satCount) {
+      val sa = -angleRad * 0.8f + s * (PI.toFloat() * 2f / satCount.toFloat()) + (facetSeed % 5) * 0.4f
+      val dist = radius * 1.12f
+      val sx = cx + cos(sa) * dist
+      val sy = cy + sin(sa) * dist
+      fill.color = Color.argb((215f * normAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+      canvas.drawCircle(sx, sy, (radius * 0.22f).coerceAtLeast(1.0f), fill)
+    }
+  }
+
+  /**
+   * Renders a curved, multi-stop luminous plasma filament trail (outer sheath -> mid plasma -> razor core)
+   * connecting a Rift / Stasis / Storm reaction point along its fluid wake.
+   */
+  fun drawReactiveFilamentStrand(
+    canvas: Canvas,
+    x0: Float,
+    y0: Float,
+    ctrlX: Float,
+    ctrlY: Float,
+    x1: Float,
+    y1: Float,
+    thickness: Float,
+    outerColor: Int,
+    midColor: Int,
+    coreColor: Int,
+    alphaFrac: Float,
+  ) {
+    val normAlpha = alphaFrac.coerceIn(0f, 1f)
+    if (normAlpha <= 0.02f || thickness <= 0.3f) return
+    val stroke = sharedRiftStrokePaint
+    val fill = sharedRiftFillPaint
+    val path = sharedFilamentPath
+    stroke.shader = null
+    fill.shader = null
+
+    path.reset()
+    path.moveTo(x0, y0)
+    path.quadTo(ctrlX, ctrlY, x1, y1)
+
+    // Outer plasma sheath
+    stroke.strokeWidth = (thickness * 2.15f).coerceAtLeast(2.2f)
+    stroke.color =
+      Color.argb(
+        (92f * normAlpha).roundToInt().coerceIn(0, 255),
+        Color.red(outerColor),
+        Color.green(outerColor),
+        Color.blue(outerColor),
+      )
+    canvas.drawPath(path, stroke)
+
+    // Mid harmonic filament body
+    stroke.strokeWidth = thickness.coerceAtLeast(1.2f)
+    stroke.color =
+      Color.argb(
+        (198f * normAlpha).roundToInt().coerceIn(0, 255),
+        Color.red(midColor),
+        Color.green(midColor),
+        Color.blue(midColor),
+      )
+    canvas.drawPath(path, stroke)
+
+    // High-luminance filament spine
+    stroke.strokeWidth = (thickness * 0.42f).coerceAtLeast(0.85f)
+    stroke.color =
+      Color.argb(
+        (245f * normAlpha).roundToInt().coerceIn(0, 255),
+        Color.red(coreColor),
+        Color.green(coreColor),
+        Color.blue(coreColor),
+      )
+    canvas.drawPath(path, stroke)
+
+    // Droplet bead nodes along filament anchor & tip
+    fill.color =
+      Color.argb(
+        (225f * normAlpha).roundToInt().coerceIn(0, 255),
+        Color.red(coreColor),
+        Color.green(coreColor),
+        Color.blue(coreColor),
+      )
+    canvas.drawCircle(x1, y1, (thickness * 0.58f).coerceAtLeast(1.2f), fill)
   }
 
   /**
    * Renders the converged 10.0s multicolored `Unstable Rift` as a smooth circular 2.5D
-   * dual-collared singularity vortex with counter-revolving harmonic plasma rings.
+   * dual-collared singularity vortex with counter-revolving harmonic plasma rings,
+   * intensified inward-blooming ingress plumes, orbiting precipitate crystals, and refractive meniscus rims.
    */
   fun drawUnstableMergedRiftOnCanvas(
     canvas: Canvas,
@@ -3390,6 +3868,37 @@ object RiftSpriteBaker {
       pulsePhaseOverride = (1f - pulsePhase).coerceIn(0f, 1f),
     )
 
+    // Cross-collar multicolored inward-blooming ingress plumes + shear precipitate crystals
+    drawLocalizedIngressPlumes(
+      canvas = canvas,
+      cx = cx,
+      cy = cy,
+      outerRimR = r * 0.88f,
+      innerReachR = r * 0.28f,
+      plumeCount = 6,
+      phaseRad = -calmPrimarySpin * 1.35f + pulsePhase * PI.toFloat() * 2f,
+      outerColor = Color.rgb(236, 72, 153),
+      midColor = Color.rgb(0, 245, 212),
+      coreColor = Color.rgb(254, 249, 195),
+      fadeAlpha = fadeAlpha * 0.90f,
+      swirlBias = -0.28f,
+    )
+    for (cIdx in 0 until 4) {
+      val cAng = calmCounterSpin * 1.9f + cIdx * (PI.toFloat() * 0.5f)
+      val cDist = r * (0.62f + 0.06f * sin(pulsePhase * PI.toFloat() * 2f + cIdx))
+      drawPrecipitateCrystalCluster(
+        canvas = canvas,
+        cx = cx + cos(cAng) * cDist,
+        cy = cy + sin(cAng) * cDist,
+        radius = (r * 0.048f).coerceAtLeast(2.2f),
+        angleRad = cAng * 1.5f,
+        primaryColor = if (cIdx % 2 == 0) Color.rgb(0, 245, 212) else Color.rgb(250, 204, 21),
+        coreColor = Color.WHITE,
+        alphaFrac = fadeAlpha * 0.85f,
+        facetSeed = cIdx,
+      )
+    }
+
     val arcPaint = sharedRiftStrokePaint
     val arcRect = sharedRiftArcRect
     arcPaint.shader = null
@@ -3408,6 +3917,19 @@ object RiftSpriteBaker {
       arcPaint.color = palette[i % palette.size]
       canvas.drawArc(arcRect, baseDeg + i * 45f, 24f, false, arcPaint)
     }
+
+    drawRefractiveMeniscusRim(
+      canvas = canvas,
+      cx = cx,
+      cy = cy,
+      rimRadius = r * 0.98f,
+      throatRadius = r * 0.18f,
+      lightAngleRad = -2.24f,
+      rimTintColor = Color.rgb(0, 245, 212),
+      secondaryTintColor = Color.rgb(250, 204, 21),
+      fadeAlpha = fadeAlpha,
+      strokeScale = 1.12f,
+    )
   }
 
   private fun bakeRiftAnomalyIconBitmap(riftId: String, sizePx: Int = 96): Bitmap {
@@ -5565,6 +6087,34 @@ object RiftSpriteBaker {
       fill.color = if (node % 2 == 0) sunPrimary else sunSecondary
       c.drawCircle(cx + ca * outerDysonR, cy + sa * outerDysonR, (bandW * 0.22f).coerceAtLeast(1.5f), fill)
     }
+
+    // 4b. Inward-Blooming Stellar Ingress Plumes & Refractive Meniscus Lens Highlights on the Star Forge Core
+    drawLocalizedIngressPlumes(
+      canvas = c,
+      cx = cx,
+      cy = cy,
+      outerRimR = outerDysonR - bandW * 0.52f,
+      innerReachR = coreR * 0.92f,
+      plumeCount = 6,
+      phaseRad = -timeSec * 0.56f,
+      outerColor = sunSecondary,
+      midColor = sunPrimary,
+      coreColor = sunCore,
+      fadeAlpha = 0.82f,
+      swirlBias = 0.24f,
+    )
+    drawRefractiveMeniscusRim(
+      canvas = c,
+      cx = cx,
+      cy = cy,
+      rimRadius = outerDysonR - bandW * 0.48f,
+      throatRadius = coreR * 0.82f,
+      lightAngleRad = -2.28f + 0.08f * sin(timeSec * 0.7f),
+      rimTintColor = sunPrimary,
+      secondaryTintColor = sunSecondary,
+      fadeAlpha = 0.90f,
+      strokeScale = 0.95f,
+    )
 
     // 5. Orbiting Holographic Ring Emitting "STAR FORGE" Letters
     val holoOrbitR = stationRadius * 1.13f

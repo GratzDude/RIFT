@@ -1178,12 +1178,13 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
               inwardSpiral = false,
               pulsePhaseOverride = pulsePhase,
             )
-          "gravity_rift" ->
+          "gravity_rift" -> {
+            val gravR = minDim * 0.38f
             RiftSpriteBaker.draw3dPlayfieldRift(
               nc,
               cx,
               cy,
-              minDim * 0.38f,
+              gravR,
               spinAngle * 1.35f,
               android.graphics.Color.rgb(168, 85, 247),
               android.graphics.Color.rgb(99, 102, 241),
@@ -1192,6 +1193,38 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
               inwardSpiral = true,
               pulsePhaseOverride = pulsePhase,
             )
+            for (cIdx in 0 until 3) {
+              val ang = -spinAngle * 1.4f + cIdx * (2f * PI.toFloat() / 3f)
+              val dist = gravR * (0.48f + 0.24f * (1f - pulsePhase))
+              val px = cx + kotlin.math.cos(ang) * dist
+              val py = cy + kotlin.math.sin(ang) * dist
+              RiftSpriteBaker.drawReactiveFilamentStrand(
+                canvas = nc,
+                x0 = cx + kotlin.math.cos(ang - 0.35f) * (gravR * 0.84f),
+                y0 = cy + kotlin.math.sin(ang - 0.35f) * (gravR * 0.84f),
+                ctrlX = cx + kotlin.math.cos(ang - 0.16f) * (gravR * 0.66f),
+                ctrlY = cy + kotlin.math.sin(ang - 0.16f) * (gravR * 0.66f),
+                x1 = px,
+                y1 = py,
+                thickness = (gravR * 0.055f).coerceAtLeast(1.1f),
+                outerColor = android.graphics.Color.rgb(168, 85, 247),
+                midColor = android.graphics.Color.rgb(0, 245, 212),
+                coreColor = android.graphics.Color.rgb(250, 204, 21),
+                alphaFrac = 0.82f,
+              )
+              RiftSpriteBaker.drawPrecipitateCrystalCluster(
+                canvas = nc,
+                cx = px,
+                cy = py,
+                radius = (gravR * 0.085f).coerceAtLeast(1.6f),
+                angleRad = ang * 1.8f,
+                primaryColor = android.graphics.Color.rgb(0, 245, 212),
+                coreColor = android.graphics.Color.WHITE,
+                alphaFrac = 0.88f,
+                facetSeed = cIdx,
+              )
+            }
+          }
           "unstable_rift" ->
             RiftSpriteBaker.drawUnstableMergedRiftOnCanvas(
               nc,

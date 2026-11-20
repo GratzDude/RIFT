@@ -1381,6 +1381,32 @@ class RiftArenaView(
           spinAngle = anom.spinAngle,
           fadeAlpha = 1.0f,
         )
+        if (anom.lastIngressTimer > 0.01f) {
+          RiftSpriteBaker.drawContactIngressBurstPlume(
+            canvas = canvas,
+            cx = anom.x,
+            cy = anom.y,
+            outerRimR = r * 0.88f,
+            ingressAngleRad = anom.lastIngressAngle,
+            intensity = (anom.lastIngressTimer / 0.58f).coerceIn(0f, 1f),
+            outerColor = Color.rgb(236, 72, 153),
+            midColor = Color.rgb(0, 245, 212),
+            coreColor = Color.rgb(254, 249, 195),
+          )
+        }
+        if (anom.secondaryIngressTimer > 0.01f) {
+          RiftSpriteBaker.drawContactIngressBurstPlume(
+            canvas = canvas,
+            cx = anom.x,
+            cy = anom.y,
+            outerRimR = r * 0.88f,
+            ingressAngleRad = anom.secondaryIngressAngle,
+            intensity = (anom.secondaryIngressTimer / 0.58f).coerceIn(0f, 1f) * 0.82f,
+            outerColor = Color.rgb(250, 204, 21),
+            midColor = Color.rgb(0, 245, 212),
+            coreColor = Color.WHITE,
+          )
+        }
         val ringR = r * 1.08f
         arcRect.set(anom.x - ringR, anom.y - ringR, anom.x + ringR, anom.y + ringR)
         anomalyRingPaint.strokeWidth = 5.4f
@@ -1404,6 +1430,14 @@ class RiftArenaView(
 
       val fadeAlpha = (anom.life / 2.0f).coerceIn(0f, 1f)
       val baseAlphaInt = (255 * fadeAlpha).toInt().coerceIn(0, 255)
+      val (ingOuter, ingMid, ingCore) =
+        when (anom.type) {
+          AnomalyType.PLASMA_RIFT -> Triple(Color.rgb(239, 68, 68), Color.rgb(217, 70, 239), Color.rgb(255, 228, 230))
+          AnomalyType.REPULSOR_RIFT -> Triple(Color.rgb(56, 189, 248), Color.rgb(0, 245, 212), Color.WHITE)
+          AnomalyType.GRAVITY_RIFT -> Triple(Color.rgb(168, 85, 247), Color.rgb(0, 245, 212), Color.rgb(250, 204, 21))
+          else -> Triple(Color.rgb(45, 212, 191), Color.rgb(56, 189, 248), Color.rgb(240, 253, 250))
+        }
+      val effRimR = if (anom.type == AnomalyType.PHASE_RIFT_A || anom.type == AnomalyType.PHASE_RIFT_B) r * 0.85f * 0.88f else r * 0.88f
 
       when (anom.type) {
         AnomalyType.PLASMA_RIFT -> {
@@ -1511,6 +1545,33 @@ class RiftArenaView(
           )
         }
       }
+
+      if (anom.lastIngressTimer > 0.01f) {
+        RiftSpriteBaker.drawContactIngressBurstPlume(
+          canvas = canvas,
+          cx = anom.x,
+          cy = anom.y,
+          outerRimR = effRimR,
+          ingressAngleRad = anom.lastIngressAngle,
+          intensity = (anom.lastIngressTimer / 0.62f).coerceIn(0f, 1f) * fadeAlpha,
+          outerColor = ingOuter,
+          midColor = ingMid,
+          coreColor = ingCore,
+        )
+      }
+      if (anom.secondaryIngressTimer > 0.01f) {
+        RiftSpriteBaker.drawContactIngressBurstPlume(
+          canvas = canvas,
+          cx = anom.x,
+          cy = anom.y,
+          outerRimR = effRimR,
+          ingressAngleRad = anom.secondaryIngressAngle,
+          intensity = (anom.secondaryIngressTimer / 0.62f).coerceIn(0f, 1f) * fadeAlpha * 0.82f,
+          outerColor = ingOuter,
+          midColor = ingMid,
+          coreColor = ingCore,
+        )
+      }
     }
 
     // 7. AimingTelegraphSystem — Spread Cones & 2-Bounce Raycast Prediction
@@ -1603,6 +1664,48 @@ class RiftArenaView(
       canvas.drawCircle(ib.x, ib.y, r, anomalyFillPaint)
 
       val spinPhase = ((System.currentTimeMillis() % 4000L) / 4000f) * (PI.toFloat() * 2f) * bubbleRec.glowIntensity.coerceIn(0.2f, 2.5f)
+      // Localized inward-blooming Stasis plasma ingress plumes + contact reaction plumes
+      RiftSpriteBaker.drawLocalizedIngressPlumes(
+        canvas = canvas,
+        cx = ib.x,
+        cy = ib.y,
+        outerRimR = r * 0.985f,
+        innerReachR = r * 0.56f,
+        plumeCount = 6,
+        phaseRad = -spinPhase * 0.72f,
+        outerColor = bubblePrimary,
+        midColor = bubbleGlow,
+        coreColor = Color.WHITE,
+        fadeAlpha = (fadeAlpha * 0.82f).coerceIn(0.15f, 0.95f),
+        swirlBias = 0.18f,
+      )
+      if (ib.lastIngressTimer > 0.01f) {
+        RiftSpriteBaker.drawContactIngressBurstPlume(
+          canvas = canvas,
+          cx = ib.x,
+          cy = ib.y,
+          outerRimR = r * 0.99f,
+          ingressAngleRad = ib.lastIngressAngle,
+          intensity = (ib.lastIngressTimer / 0.58f).coerceIn(0f, 1f) * fadeAlpha,
+          outerColor = bubblePrimary,
+          midColor = bubbleGlow,
+          coreColor = Color.WHITE,
+        )
+      }
+      if (ib.secondaryIngressTimer > 0.01f) {
+        RiftSpriteBaker.drawContactIngressBurstPlume(
+          canvas = canvas,
+          cx = ib.x,
+          cy = ib.y,
+          outerRimR = r * 0.99f,
+          ingressAngleRad = ib.secondaryIngressAngle,
+          intensity = (ib.secondaryIngressTimer / 0.58f).coerceIn(0f, 1f) * fadeAlpha * 0.80f,
+          outerColor = bubbleTrim,
+          midColor = bubbleGlow,
+          coreColor = Color.WHITE,
+        )
+      }
+
       anomalyRingPaint.strokeWidth = 2.2f * bubbleRec.borderWeight.coerceIn(0.5f, 2.5f)
       anomalyRingPaint.color =
         Color.argb((150 * fadeAlpha).toInt().coerceIn(30, 255), Color.red(bubbleGlow), Color.green(bubbleGlow), Color.blue(bubbleGlow))
@@ -1617,6 +1720,20 @@ class RiftArenaView(
       anomalyRingPaint.color =
         Color.argb((225 * fadeAlpha).toInt().coerceIn(45, 255), Color.red(bubblePrimary), Color.green(bubblePrimary), Color.blue(bubblePrimary))
       canvas.drawCircle(ib.x, ib.y, r, anomalyRingPaint)
+
+      // Crisp optical meniscus specular crescent & counter-caustic lens refraction highlight
+      RiftSpriteBaker.drawRefractiveMeniscusRim(
+        canvas = canvas,
+        cx = ib.x,
+        cy = ib.y,
+        rimRadius = r * 0.99f,
+        throatRadius = 0f,
+        lightAngleRad = -2.28f + 0.08f * sin(spinPhase),
+        rimTintColor = bubbleGlow,
+        secondaryTintColor = bubbleTrim,
+        fadeAlpha = fadeAlpha,
+        strokeScale = bubbleRec.borderWeight.coerceIn(0.6f, 2.0f),
+      )
 
       for (nodeIdx in 0 until 8) {
         val na = spinPhase * 0.5f + nodeIdx * (PI.toFloat() * 0.25f)
@@ -2742,7 +2859,46 @@ class RiftArenaView(
       )
     }
 
-    // 11. Particles, Shockwaves & Object-Pooled FCT with Elastic Scale Overshoot & Quadratic Fade
+    // 11. Reactive Filament Trails, Faceted Precipitate Crystals, Particles, Shockwaves & Object-Pooled FCT
+    for (fl in engine.reactiveFilaments) {
+      val minX = min(min(fl.x0, fl.x1), fl.ctrlX) - 24f
+      val maxX = max(max(fl.x0, fl.x1), fl.ctrlX) + 24f
+      val minY = min(min(fl.y0, fl.y1), fl.ctrlY) - 24f
+      val maxY = max(max(fl.y0, fl.y1), fl.ctrlY) + 24f
+      if (maxX < viewLeft || minX > viewRight || maxY < viewTop || minY > viewBottom) continue
+      val lifeFrac = (fl.life / fl.maxLife.coerceAtLeast(0.05f)).coerceIn(0f, 1f)
+      RiftSpriteBaker.drawReactiveFilamentStrand(
+        canvas = canvas,
+        x0 = fl.x0,
+        y0 = fl.y0,
+        ctrlX = fl.ctrlX,
+        ctrlY = fl.ctrlY,
+        x1 = fl.x1,
+        y1 = fl.y1,
+        thickness = fl.thickness * RiftCalibrationState.projectileScale,
+        outerColor = fl.outerColor,
+        midColor = fl.midColor,
+        coreColor = fl.coreColor,
+        alphaFrac = lifeFrac * (2f - lifeFrac),
+      )
+    }
+
+    for (pc in engine.reactivePrecipitates) {
+      if (pc.x + 28f < viewLeft || pc.x - 28f > viewRight || pc.y + 28f < viewTop || pc.y - 28f > viewBottom) continue
+      val lifeFrac = (pc.life / pc.maxLife.coerceAtLeast(0.05f)).coerceIn(0f, 1f)
+      RiftSpriteBaker.drawPrecipitateCrystalCluster(
+        canvas = canvas,
+        cx = pc.x,
+        cy = pc.y,
+        radius = pc.radius * RiftCalibrationState.projectileScale,
+        angleRad = pc.angle,
+        primaryColor = pc.primaryColor,
+        coreColor = pc.coreColor,
+        alphaFrac = lifeFrac * (2f - lifeFrac),
+        facetSeed = pc.facetSeed,
+      )
+    }
+
     for (pt in engine.particles) {
       if (pt.x < viewLeft || pt.x > viewRight || pt.y < viewTop || pt.y > viewBottom) continue
       particlePaint.color = pt.color
@@ -2917,10 +3073,36 @@ class RiftArenaView(
         )
       }
 
-      // 4. Crisp Outer 3D Stasis Perimeter Ring + 12 Beveled Emitter Pylons
+      // 4. Localized Inward-Blooming Stasis Ingress Plumes + Crisp Outer 3D Stasis Perimeter Ring + Meniscus Lens
+      RiftSpriteBaker.drawLocalizedIngressPlumes(
+        canvas = canvas,
+        cx = reactorX,
+        cy = reactorY,
+        outerRimR = jailR * 0.985f,
+        innerReachR = jailR * 0.58f,
+        plumeCount = 8,
+        phaseRad = -spinPhase * 0.65f,
+        outerColor = borderCol,
+        midColor = midCol,
+        coreColor = Color.WHITE,
+        fadeAlpha = 0.78f,
+        swirlBias = 0.20f,
+      )
       anomalyRingPaint.strokeWidth = 5.0f
       anomalyRingPaint.color = borderCol
       canvas.drawCircle(reactorX, reactorY, jailR, anomalyRingPaint)
+      RiftSpriteBaker.drawRefractiveMeniscusRim(
+        canvas = canvas,
+        cx = reactorX,
+        cy = reactorY,
+        rimRadius = jailR * 0.99f,
+        throatRadius = 0f,
+        lightAngleRad = -2.28f + 0.06f * sin(spinPhase),
+        rimTintColor = midCol,
+        secondaryTintColor = borderCol,
+        fadeAlpha = 0.90f,
+        strokeScale = 0.95f,
+      )
       for (i in 0 until 12) {
         val na = spinPhase * 0.5f + i * (PI.toFloat() * 2f / 12f)
         val nx = reactorX + cos(na) * jailR
@@ -3906,6 +4088,35 @@ class RiftArenaView(
         }
         anomalyCorePaint.color = Color.argb(midAlpha, 224, 242, 254)
         canvas.drawCircle(rootX, rootY, 7.5f * proximityFrac + 3f, anomalyCorePaint)
+        // Storm-plasma hull crystallization glint & trailing filament curl (zero solid white ship hit-flashes)
+        val hullRimX = s.x + cos(rootAng) * (s.radius * 0.72f)
+        val hullRimY = s.y + sin(rootAng) * (s.radius * 0.72f)
+        val wakeAng = rootAng + PI.toFloat() + 0.35f * sin(tSec * 7.2f + s.shipId)
+        RiftSpriteBaker.drawReactiveFilamentStrand(
+          canvas = canvas,
+          x0 = hullRimX,
+          y0 = hullRimY,
+          ctrlX = s.x + cos(wakeAng + 0.45f) * 26f,
+          ctrlY = s.y + sin(wakeAng + 0.45f) * 26f,
+          x1 = s.x + cos(wakeAng) * (36f + 22f * proximityFrac),
+          y1 = s.y + sin(wakeAng) * (36f + 22f * proximityFrac),
+          thickness = 2.8f + 1.4f * proximityFrac,
+          outerColor = Color.rgb(168, 85, 247),
+          midColor = Color.rgb(0, 245, 212),
+          coreColor = Color.rgb(250, 204, 21),
+          alphaFrac = proximityFrac * 0.88f,
+        )
+        RiftSpriteBaker.drawPrecipitateCrystalCluster(
+          canvas = canvas,
+          cx = hullRimX,
+          cy = hullRimY,
+          radius = 4.5f + 3.2f * proximityFrac,
+          angleRad = tSec * 3.8f + s.shipId,
+          primaryColor = Color.rgb(0, 245, 212),
+          coreColor = Color.rgb(250, 204, 21),
+          alphaFrac = proximityFrac * 0.92f,
+          facetSeed = s.shipId,
+        )
       }
     }
   }
