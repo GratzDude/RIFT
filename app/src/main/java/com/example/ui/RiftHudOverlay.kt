@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -33,12 +34,16 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.zIndex
 import com.example.data.RiftBillingManager
@@ -642,7 +647,7 @@ fun RiftHudOverlay(
       } else Modifier
      )
    if (mode == RankedGameMode.RIFT_CONTROL && !uiUnlocked) {
-    RiftControlTugOfWarHudBar(engine, textScale, onOpenNexus, topBarDragMod.zIndex(11f), topBarRec, tickRead)
+    RiftControlTugOfWarHudBar(engine, player.freq, textScale, onOpenNexus, topBarDragMod.zIndex(11f), topBarRec, tickRead)
    } else {
     val defaultAccent = when (mode) {
      RankedGameMode.RIFT_SKIRMISH -> Color(0xFFF59E0B)
@@ -657,47 +662,134 @@ fun RiftHudOverlay(
     val teamCap = engine.teamSize.coerceAtLeast(1)
     val westAlive = engine.ships.count { it.freq == 0 && it.respawnTimer <= 0f }
     val eastAlive = engine.ships.count { it.freq == 1 && it.respawnTimer <= 0f }
-    val baseModeSummaryText = when (mode) {
-     RankedGameMode.RIFT_SKIRMISH -> {
-      val rndSec = engine.skirmishRoundTimerSec.toInt().coerceAtLeast(0)
-      val rndTime = String.format(Locale.US, "%d:%02d", rndSec / 60, rndSec % 60)
-      "RIFT SKIRMISH (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • RND ${engine.skirmishCurrentRound} ($rndTime) • WEST $westAlive/$teamCap ALIVE | EAST $eastAlive/$teamCap ALIVE • SERIES ${engine.skirmishWestRoundWins}-${engine.skirmishEastRoundWins}"
+    val localIsEast = player.freq == 1
+    val yourAlive = if (localIsEast) eastAlive else westAlive
+    val enemyAlive = if (localIsEast) westAlive else eastAlive
+    val yourRounds = if (localIsEast) engine.skirmishEastRoundWins else engine.skirmishWestRoundWins
+    val enemyRounds = if (localIsEast) engine.skirmishWestRoundWins else engine.skirmishEastRoundWins
+    val yourCaptures = if (localIsEast) engine.stasisEastCaptures else engine.stasisWestCaptures
+    val enemyCaptures = if (localIsEast) engine.stasisWestCaptures else engine.stasisEastCaptures
+    val yourCoreHp = (if (localIsEast) engine.eastBrigGeneratorHp else engine.westBrigGeneratorHp).toInt()
+    val enemyCoreHp = (if (localIsEast) engine.westBrigGeneratorHp else engine.eastBrigGeneratorHp).toInt()
+    val yourCtrlScore = (if (localIsEast) engine.riftControlEastScore else engine.riftControlWestScore).toInt()
+    val enemyCtrlScore = (if (localIsEast) engine.riftControlWestScore else engine.riftControlEastScore).toInt()
+    val allyBlue = Color(0xFF38BDF8)
+    val enemyRed = Color(0xFFFB7185)
+    val customPrefix = if (engine.isCustomGameActive()) "CUSTOM: ${engine.currentCustomGame?.title ?: "Custom Match"} • " else ""
+
+    val modeAnnotatedText: AnnotatedString = buildAnnotatedString {
+     if (customPrefix.isNotEmpty()) {
+      withStyle(SpanStyle(color = Color(0xFFC084FC))) { append(customPrefix) }
      }
-     RankedGameMode.FLUX_CORE -> {
-      val carrierShip = engine.ships.firstOrNull {
-       it.id == engine.fluxCoreCarrierEntityId || (engine.fluxCoreOrb.carrierShipId != -1 && it.shipId == engine.fluxCoreOrb.carrierShipId)
-      }
-      val carrierLabel = when {
-       engine.fluxCoreCarrierEntityId == player.id -> "CARRIER: YOU (TIER ${engine.fluxCoreOrb.overchargeTier}/10)"
-       carrierShip != null -> "CARRIER: ${carrierShip.callsign} (TIER ${engine.fluxCoreOrb.overchargeTier}/10)"
-       else -> "ORB AT (${engine.fluxCoreOrb.x.toInt()},${engine.fluxCoreOrb.y.toInt()})"
-      }
-      "FLUX CORE • $carrierLabel • HOLD ${engine.fluxCoreOrb.holdDurationSec.toInt()}s"
-     }
-     RankedGameMode.STASIS_BREACH -> {
-      val sbSec = engine.stasisBreachMatchTimerSec.toInt().coerceAtLeast(0)
-      val sbTime = String.format(Locale.US, "%d:%02d", sbSec / 60, sbSec % 60)
-      "STASIS BREACH (10v10) • $sbTime • CAPTURES: WEST ${engine.stasisWestCaptures} - ${engine.stasisEastCaptures} EAST (YOU ${engine.localStasisCaptures}) • CORES ${engine.westBrigGeneratorHp.toInt()}/${engine.eastBrigGeneratorHp.toInt()}"
-     }
-     RankedGameMode.RIFT_CONTROL -> {
-      val mins = (engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)) / 60
-      val secs = (engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)) % 60
-      String.format(Locale.US, "RIFT CONTROL (%dv%d) • %d:%02d • WEST %d - %d EAST", engine.activeTeamSizeBracket, engine.activeTeamSizeBracket, mins, secs, engine.riftControlWestScore.toInt(), engine.riftControlEastScore.toInt())
-     }
-     RankedGameMode.SYNDICATE_WARS -> {
-      if (engine.isStasisBreachRulesActive()) {
-       val sbSec = engine.stasisBreachMatchTimerSec.toInt().coerceAtLeast(0)
-       val sbTime = String.format(Locale.US, "%d:%02d", sbSec / 60, sbSec % 60)
-       "SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • $sbTime • [${player.syndicateTag}] ${engine.stasisWestCaptures} - ${engine.stasisEastCaptures} [${engine.rivalSyndicateWarTag}] CAPTURES"
-      } else {
+     when (mode) {
+      RankedGameMode.RIFT_SKIRMISH -> {
        val rndSec = engine.skirmishRoundTimerSec.toInt().coerceAtLeast(0)
        val rndTime = String.format(Locale.US, "%d:%02d", rndSec / 60, rndSec % 60)
-       "SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) • [${player.syndicateTag}] $westAlive/$teamCap ALIVE | [${engine.rivalSyndicateWarTag}] $eastAlive/$teamCap ALIVE • SERIES ${engine.skirmishWestRoundWins}-${engine.skirmishEastRoundWins} ($rndTime)"
+       withStyle(SpanStyle(color = allyBlue)) {
+        append("YOUR TEAM $yourAlive/$teamCap [$yourRounds]")
+       }
+       withStyle(SpanStyle(color = modeAccent)) {
+        append("  •  RIFT SKIRMISH (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) RND ${engine.skirmishCurrentRound} ($rndTime)  •  ")
+       }
+       withStyle(SpanStyle(color = enemyRed)) {
+        append("[$enemyRounds] $enemyAlive/$teamCap ENEMY TEAM")
+       }
+      }
+      RankedGameMode.FLUX_CORE -> {
+       val carrierShip = engine.ships.firstOrNull {
+        it.id == engine.fluxCoreCarrierEntityId || (engine.fluxCoreOrb.carrierShipId != -1 && it.shipId == engine.fluxCoreOrb.carrierShipId)
+       }
+       val tier = engine.fluxCoreOrb.overchargeTier
+       val holdSec = engine.fluxCoreOrb.holdDurationSec.toInt()
+       when {
+        engine.fluxCoreCarrierEntityId == player.id -> {
+         withStyle(SpanStyle(color = allyBlue)) {
+          append("YOUR TEAM • YOU HOLD FLUX CORE (TIER $tier/10)")
+         }
+         withStyle(SpanStyle(color = modeAccent)) { append(" • HOLD ${holdSec}s") }
+        }
+        carrierShip != null && engine.areAllied(player, carrierShip) -> {
+         withStyle(SpanStyle(color = allyBlue)) {
+          append("YOUR TEAM • ${carrierShip.callsign} (TIER $tier/10)")
+         }
+         withStyle(SpanStyle(color = modeAccent)) { append(" • HOLD ${holdSec}s") }
+        }
+        carrierShip != null -> {
+         withStyle(SpanStyle(color = modeAccent)) { append("FLUX CORE • HOLD ${holdSec}s  •  ") }
+         withStyle(SpanStyle(color = enemyRed)) {
+          append("ENEMY TEAM • ${carrierShip.callsign} (TIER $tier/10)")
+         }
+        }
+        else -> {
+         withStyle(SpanStyle(color = modeAccent)) {
+          append("FLUX CORE • ORB UNCLAIMED (${engine.fluxCoreOrb.x.toInt()},${engine.fluxCoreOrb.y.toInt()}) • HOLD ${holdSec}s")
+         }
+        }
+       }
+      }
+      RankedGameMode.STASIS_BREACH -> {
+       val sbSec = engine.stasisBreachMatchTimerSec.toInt().coerceAtLeast(0)
+       val sbTime = String.format(Locale.US, "%d:%02d", sbSec / 60, sbSec % 60)
+       withStyle(SpanStyle(color = allyBlue)) {
+        append("YOUR TEAM $yourCaptures CAP (CORE $yourCoreHp)")
+       }
+       withStyle(SpanStyle(color = modeAccent)) {
+        append("  •  STASIS BREACH $sbTime (YOU ${engine.localStasisCaptures})  •  ")
+       }
+       withStyle(SpanStyle(color = enemyRed)) {
+        append("(CORE $enemyCoreHp) $enemyCaptures CAP ENEMY TEAM")
+       }
+      }
+      RankedGameMode.RIFT_CONTROL -> {
+       val mins = (engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)) / 60
+       val secs = (engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)) % 60
+       val timeFmt = String.format(Locale.US, "%d:%02d", mins, secs)
+       withStyle(SpanStyle(color = allyBlue)) {
+        append("YOUR TEAM $yourCtrlScore")
+       }
+       withStyle(SpanStyle(color = modeAccent)) {
+        append("  •  RIFT CONTROL (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) $timeFmt  •  ")
+       }
+       withStyle(SpanStyle(color = enemyRed)) {
+        append("$enemyCtrlScore ENEMY TEAM")
+       }
+      }
+      RankedGameMode.SYNDICATE_WARS -> {
+       val yourSynTag = player.syndicateTag.ifBlank { "SYN" }
+       val enemySynTag = engine.rivalSyndicateWarTag.ifBlank { "OPP" }
+       if (engine.isStasisBreachRulesActive()) {
+        val sbSec = engine.stasisBreachMatchTimerSec.toInt().coerceAtLeast(0)
+        val sbTime = String.format(Locale.US, "%d:%02d", sbSec / 60, sbSec % 60)
+        withStyle(SpanStyle(color = allyBlue)) {
+         append("YOUR TEAM [$yourSynTag] $yourCaptures CAP")
+        }
+        withStyle(SpanStyle(color = modeAccent)) {
+         append("  •  SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) $sbTime  •  ")
+        }
+        withStyle(SpanStyle(color = enemyRed)) {
+         append("$enemyCaptures CAP [$enemySynTag] ENEMY TEAM")
+        }
+       } else {
+        val rndSec = engine.skirmishRoundTimerSec.toInt().coerceAtLeast(0)
+        val rndTime = String.format(Locale.US, "%d:%02d", rndSec / 60, rndSec % 60)
+        withStyle(SpanStyle(color = allyBlue)) {
+         append("YOUR TEAM [$yourSynTag] $yourAlive/$teamCap [$yourRounds]")
+        }
+        withStyle(SpanStyle(color = modeAccent)) {
+         append("  •  SYNDICATE WARS (${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}) $rndTime  •  ")
+        }
+        withStyle(SpanStyle(color = enemyRed)) {
+         append("[$enemyRounds] $enemyAlive/$teamCap [$enemySynTag] ENEMY TEAM")
+        }
+       }
+      }
+      RankedGameMode.SECTOR_CONVERGENCE -> {
+       withStyle(SpanStyle(color = modeAccent)) {
+        append("SECTOR CONVERGENCE • TOP STATUS BAR")
+       }
       }
      }
-     RankedGameMode.SECTOR_CONVERGENCE -> "SECTOR CONVERGENCE • TOP STATUS BAR"
     }
-    val modeSummaryText = if (engine.isCustomGameActive()) "CUSTOM: ${engine.currentCustomGame?.title ?: "Custom Match"} • $baseModeSummaryText" else baseModeSummaryText
 
     Box(
      modifier = topBarDragMod.zIndex(11f).clip(RoundedCornerShape(9.dp))
@@ -708,7 +800,7 @@ fun RiftHudOverlay(
     ) {
      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
       if (mode == RankedGameMode.FLUX_CORE) FluxEmblem(sizeDp = (10f * textScale).dp)
-      Text(modeSummaryText, color = modeAccent, fontSize = (8.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(modeAnnotatedText, fontSize = (8.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
      }
     }
    }
@@ -1199,12 +1291,182 @@ fun RiftHudOverlay(
     }
    }
   }
+
+  // Off-Screen Edge Directional Chevrons + Distance Readouts for Allies & Active Mode Objectives
+  if (
+   engine.hasJoinedMatch &&
+    !engine.isEphemeralPracticeRift &&
+    !uiUnlocked &&
+    rootScreenSize.width > 120 &&
+    rootScreenSize.height > 120
+  ) {
+   OffScreenTacticalChevronsOverlay(
+    engine = engine,
+    screenWidthPx = rootScreenSize.width.toFloat(),
+    screenHeightPx = rootScreenSize.height.toFloat(),
+    textScale = textScale,
+    frameTick = tickRead,
+   )
+  }
+ }
+}
+
+@Composable
+private fun OffScreenTacticalChevronsOverlay(
+ engine: RiftGameEngine,
+ screenWidthPx: Float,
+ screenHeightPx: Float,
+ textScale: Float,
+ frameTick: Int,
+) {
+ if (frameTick == Int.MIN_VALUE) return
+ val density = LocalDensity.current
+ val camTarget = engine.localPlayer
+ val camX = if (camTarget.respawnTimer > 0f) camTarget.deathX else camTarget.x
+ val camY = if (camTarget.respawnTimer > 0f) camTarget.deathY else camTarget.y
+ val worldScale = engine.effectiveCameraScale().coerceAtLeast(0.15f)
+ val targets = engine.collectTacticalWaypointsForLocal()
+ if (targets.isEmpty()) return
+
+ val cx = screenWidthPx * 0.5f
+ val cy = screenHeightPx * 0.5f
+ val edgePadPx = with(density) { 36.dp.toPx() }
+ val minSafeXPx = with(density) { 66.dp.toPx() }
+ val maxSafeXPx = (screenWidthPx - with(density) { 66.dp.toPx() }).coerceAtLeast(minSafeXPx + 1f)
+ val minSafeYPx = with(density) { 62.dp.toPx() }
+ val maxSafeYPx = (screenHeightPx - with(density) { 98.dp.toPx() }).coerceAtLeast(minSafeYPx + 1f)
+
+ val leftStickZoneX = with(density) { 205.dp.toPx() }
+ val leftStickZoneY = screenHeightPx - with(density) { 215.dp.toPx() }
+ val rightArcZoneX = screenWidthPx - with(density) { 225.dp.toPx() }
+ val rightArcZoneY = screenHeightPx - with(density) { 250.dp.toPx() }
+ val bottomConsoleHalfW = with(density) { 305.dp.toPx() }
+ val bottomConsoleZoneY = screenHeightPx - with(density) { 116.dp.toPx() }
+ val topLeftMinimapX = with(density) { 165.dp.toPx() }
+ val topLeftMinimapY = with(density) { 165.dp.toPx() }
+ val topRightFeedX = screenWidthPx - with(density) { 225.dp.toPx() }
+ val topRightFeedY = with(density) { 145.dp.toPx() }
+
+ data class ProjectedChevron(
+  val target: OffScreenTacticalTarget,
+  val anchorX: Float,
+  val anchorY: Float,
+  val angleRad: Float,
+ )
+
+ val offScreenItems =
+  targets
+   .mapNotNull { t ->
+    val sx = (t.worldX - camX) * worldScale + cx
+    val sy = (t.worldY - camY) * worldScale + cy
+    val isOffScreen =
+     sx < edgePadPx ||
+      sx > screenWidthPx - edgePadPx ||
+      sy < edgePadPx ||
+      sy > screenHeightPx - edgePadPx
+    if (!isOffScreen) {
+     null
+    } else {
+     val dx = t.worldX - camX
+     val dy = t.worldY - camY
+     val ang = kotlin.math.atan2(dy, dx)
+     val cosA = kotlin.math.cos(ang)
+     val sinA = kotlin.math.sin(ang)
+     val halfSpanX = ((maxSafeXPx - minSafeXPx) * 0.5f).coerceAtLeast(40f)
+     val halfSpanY = ((maxSafeYPx - minSafeYPx) * 0.5f).coerceAtLeast(40f)
+     val txRay = if (kotlin.math.abs(cosA) > 0.001f) halfSpanX / kotlin.math.abs(cosA) else Float.MAX_VALUE
+     val tyRay = if (kotlin.math.abs(sinA) > 0.001f) halfSpanY / kotlin.math.abs(sinA) else Float.MAX_VALUE
+     val rayLen = kotlin.math.min(txRay, tyRay)
+     val midSafeY = (minSafeYPx + maxSafeYPx) * 0.5f
+     var px = (cx + cosA * rayLen).coerceIn(minSafeXPx, maxSafeXPx)
+     var py = (midSafeY + sinA * rayLen).coerceIn(minSafeYPx, maxSafeYPx)
+
+     // Clamp clear of Left Thumbstick, Right Action Buttons, Bottom Console, Minimap & Kill Feed
+     if (px < leftStickZoneX && py > leftStickZoneY) {
+      if (abs(cosA) > abs(sinA)) py = leftStickZoneY else px = leftStickZoneX
+     }
+     if (px > rightArcZoneX && py > rightArcZoneY) {
+      if (abs(cosA) > abs(sinA)) py = rightArcZoneY else px = rightArcZoneX
+     }
+     if (px in (cx - bottomConsoleHalfW)..(cx + bottomConsoleHalfW) && py > bottomConsoleZoneY) {
+      py = bottomConsoleZoneY
+     }
+     if (px < topLeftMinimapX && py < topLeftMinimapY) {
+      if (abs(cosA) > abs(sinA)) py = topLeftMinimapY else px = topLeftMinimapX
+     }
+     if (px > topRightFeedX && py < topRightFeedY) {
+      if (abs(cosA) > abs(sinA)) py = topRightFeedY else px = topRightFeedX
+     }
+     px = px.coerceIn(minSafeXPx, maxSafeXPx)
+     py = py.coerceIn(minSafeYPx, maxSafeYPx)
+
+     ProjectedChevron(target = t, anchorX = px, anchorY = py, angleRad = ang)
+    }
+   }
+   .sortedWith(
+    compareByDescending<ProjectedChevron> { it.target.kind != OffScreenTargetKind.ALLY_SHIP }
+     .thenByDescending { it.target.isUrgent }
+     .thenBy { it.target.distanceMeters }
+   )
+   .take(6)
+
+ if (offScreenItems.isEmpty()) return
+
+ Box(modifier = Modifier.fillMaxSize().zIndex(6f).testTag("hud_offscreen_chevrons_layer")) {
+  val pillHalfW = with(density) { (46f * textScale).dp.toPx() }
+  val pillHalfH = with(density) { (12f * textScale).dp.toPx() }
+  offScreenItems.forEach { item ->
+   val accent = Color(item.target.colorHex)
+   val deg = (item.angleRad * 180f / PI.toFloat())
+   Row(
+    modifier =
+     Modifier.offset {
+       IntOffset(
+        (item.anchorX - pillHalfW).roundToInt(),
+        (item.anchorY - pillHalfH).roundToInt(),
+       )
+      }
+      .clip(RoundedCornerShape(7.dp))
+      .background(Color(0xDD060D1A))
+      .border(1.1.dp, accent, RoundedCornerShape(7.dp))
+      .padding(horizontal = (5.5f * textScale).dp, vertical = (2.2f * textScale).dp)
+      .testTag("hud_offscreen_chevron_${item.target.id}"),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy((3.5f * textScale).dp),
+   ) {
+    Canvas(modifier = Modifier.size((10f * textScale).dp)) {
+     val c = Offset(size.width * 0.5f, size.height * 0.5f)
+     val r = size.minDimension * 0.44f
+     rotate(degrees = deg, pivot = c) {
+      val path =
+       Path().apply {
+        moveTo(c.x + r, c.y)
+        lineTo(c.x - r * 0.72f, c.y - r * 0.78f)
+        lineTo(c.x - r * 0.30f, c.y)
+        lineTo(c.x - r * 0.72f, c.y + r * 0.78f)
+        close()
+       }
+      drawPath(path, color = accent)
+     }
+    }
+    Text(
+     text = "${item.target.label} • ${item.target.distanceMeters}m",
+     color = accent,
+     fontSize = (7.2f * textScale).sp,
+     fontWeight = FontWeight.Black,
+     fontFamily = FontFamily.Monospace,
+     style = WingTelemetryTextStyle,
+     maxLines = 1,
+    )
+   }
+  }
  }
 }
 
 @Composable
 private fun RiftControlTugOfWarHudBar(
  engine: RiftGameEngine,
+ localPlayerFreq: Int = 0,
  textScale: Float,
  onClick: () -> Unit,
  modifier: Modifier = Modifier,
@@ -1214,8 +1476,11 @@ private fun RiftControlTugOfWarHudBar(
  if (frameTick == Int.MIN_VALUE) return
  val totalSec = engine.riftControlMatchTimerSec.toInt().coerceAtLeast(0)
  val timerFormatted = String.format(Locale.US, "%d:%02d", totalSec / 60, totalSec % 60)
- val westScore = engine.riftControlWestScore.toInt().coerceIn(0, 1000)
- val eastScore = engine.riftControlEastScore.toInt().coerceIn(0, 1000)
+ val localIsEast = localPlayerFreq == 1
+ val yourRawScore = if (localIsEast) engine.riftControlEastScore else engine.riftControlWestScore
+ val enemyRawScore = if (localIsEast) engine.riftControlWestScore else engine.riftControlEastScore
+ val yourScore = yourRawScore.toInt().coerceIn(0, 1000)
+ val enemyScore = enemyRawScore.toInt().coerceIn(0, 1000)
  val barBg = if (topBarRec.isFactoryDefault) Color(0xEA050D1A) else Color(topBarRec.primaryColorInt).copy(alpha = topBarRec.surfaceOpacity.coerceIn(0.25f, 0.98f))
  val barBorder = if (topBarRec.isFactoryDefault) Color(0xFF38BDF8) else Color(topBarRec.trimColorInt)
 
@@ -1226,7 +1491,7 @@ private fun RiftControlTugOfWarHudBar(
    .testTag("hud_rift_control_tug_bar"),
   verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((8f * textScale).dp),
  ) {
-  RiftTugGaugeWing("α ALPHA", "WEST $westScore", (engine.riftControlWestScore / 1000f).coerceIn(0f, 1f), Color(0xFF38BDF8), engine.riftAlphaControlSec, engine.riftAlphaLockedBy, engine.riftAlphaWestCount, engine.riftAlphaEastCount, false, textScale, frameTick)
+  RiftTugGaugeWing("α ALPHA", "YOUR TEAM $yourScore", (yourRawScore / 1000f).coerceIn(0f, 1f), Color(0xFF38BDF8), engine.riftAlphaControlSec, engine.riftAlphaLockedBy, engine.riftAlphaWestCount, engine.riftAlphaEastCount, localIsEast, false, textScale, frameTick)
   Column(
    modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0xFF0A192F))
     .border(0.8.dp, Color(0x6638BDF8), RoundedCornerShape(6.dp))
@@ -1236,7 +1501,7 @@ private fun RiftControlTugOfWarHudBar(
    Text("${engine.activeTeamSizeBracket}v${engine.activeTeamSizeBracket}", color = Color(0xFF00F5D4), fontSize = (7.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
    Text(timerFormatted, color = if (totalSec <= 30) Color(0xFFFACC15) else Color.White, fontSize = (8.6f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
   }
-  RiftTugGaugeWing("Ω OMEGA", "$eastScore EAST", (engine.riftControlEastScore / 1000f).coerceIn(0f, 1f), Color(0xFFF87171), engine.riftOmegaControlSec, engine.riftOmegaLockedBy, engine.riftOmegaWestCount, engine.riftOmegaEastCount, true, textScale, frameTick)
+  RiftTugGaugeWing("Ω OMEGA", "$enemyScore ENEMY TEAM", (enemyRawScore / 1000f).coerceIn(0f, 1f), Color(0xFFFB7185), engine.riftOmegaControlSec, engine.riftOmegaLockedBy, engine.riftOmegaWestCount, engine.riftOmegaEastCount, localIsEast, true, textScale, frameTick)
  }
 }
 
@@ -1250,53 +1515,58 @@ private fun RiftTugGaugeWing(
  lockedBy: Int,
  westCount: Int,
  eastCount: Int,
+ localIsEast: Boolean,
  alignEnd: Boolean,
  textScale: Float,
  frameTick: Int = 0,
 ) {
  if (frameTick == Int.MIN_VALUE) return
+ val localFreq = if (localIsEast) 1 else 0
+ val enemyFreq = 1 - localFreq
+ // Relative control: negative = Your Team progress, positive = Enemy Team progress
+ val relativeControlSec = if (localIsEast) -controlSec else controlSec
  val isContested = lockedBy == -1 && westCount > 0 && westCount == eastCount
  val statusText = when {
-  lockedBy == 0 -> "WEST LOCK"
-  lockedBy == 1 -> "EAST LOCK"
+  lockedBy == localFreq -> "YOUR LOCK"
+  lockedBy == enemyFreq -> "ENEMY LOCK"
   isContested -> "CONTESTED"
-  abs(controlSec) >= 0.5f -> "${((abs(controlSec) / 15f) * 100f).roundToInt().coerceIn(1, 100)}%"
+  abs(relativeControlSec) >= 0.5f -> "${((abs(relativeControlSec) / 15f) * 100f).roundToInt().coerceIn(1, 100)}%"
   else -> "OPEN"
  }
  val statusColor = when {
-  lockedBy == 0 -> Color(0xFF00F5D4)
-  lockedBy == 1 -> Color(0xFFF43F5E)
+  lockedBy == localFreq -> Color(0xFF00F5D4)
+  lockedBy == enemyFreq -> Color(0xFFFB7185)
   isContested -> Color(0xFFFACC15)
-  controlSec < -0.5f -> Color(0xFF38BDF8)
-  controlSec > 0.5f -> Color(0xFFF87171)
+  relativeControlSec < -0.5f -> Color(0xFF38BDF8)
+  relativeControlSec > 0.5f -> Color(0xFFFB7185)
   else -> Color(0xFF94A3B8)
  }
 
  Column(
-  modifier = Modifier.width((116f * textScale).dp),
+  modifier = Modifier.width((124f * textScale).dp),
   horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start,
   verticalArrangement = Arrangement.spacedBy(2.dp),
  ) {
   Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
    if (alignEnd) {
-    Text(teamScoreLabel, color = teamScoreColor, fontSize = (7.4f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
-    Text("$riftTitle • $statusText", color = statusColor, fontSize = (7.0f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+    Text(teamScoreLabel, color = teamScoreColor, fontSize = (7.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+    Text("$riftTitle • $statusText", color = statusColor, fontSize = (6.8f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
    } else {
-    Text("$riftTitle • $statusText", color = statusColor, fontSize = (7.0f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
-    Text(teamScoreLabel, color = teamScoreColor, fontSize = (7.4f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+    Text("$riftTitle • $statusText", color = statusColor, fontSize = (6.8f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+    Text(teamScoreLabel, color = teamScoreColor, fontSize = (7.2f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
    }
   }
 
   Canvas(modifier = Modifier.fillMaxWidth().height((8.5f * textScale).dp).clip(RoundedCornerShape(4.dp))) {
    val w = size.width; val h = size.height; val gaugeH = h * 0.68f; val midX = w * 0.5f
    drawRoundRect(Color(0xFF0F1E36), Offset.Zero, Size(w, gaugeH), CornerRadius(3.dp.toPx(), 3.dp.toPx()))
-   val norm = when (lockedBy) { 0 -> -1f; 1 -> 1f; else -> (controlSec / 15f).coerceIn(-1f, 1f) }
+   val norm = when (lockedBy) { localFreq -> -1f; enemyFreq -> 1f; else -> (relativeControlSec / 15f).coerceIn(-1f, 1f) }
    if (norm < -0.01f) {
     val fillW = abs(norm) * midX
-    drawRoundRect(if (lockedBy == 0) Color(0xFF00F5D4) else Color(0xFF38BDF8), Offset(midX - fillW, 0f), Size(fillW, gaugeH), CornerRadius(2.dp.toPx(), 2.dp.toPx()))
+    drawRoundRect(if (lockedBy == localFreq) Color(0xFF00F5D4) else Color(0xFF38BDF8), Offset(midX - fillW, 0f), Size(fillW, gaugeH), CornerRadius(2.dp.toPx(), 2.dp.toPx()))
    } else if (norm > 0.01f) {
     val fillW = norm * midX
-    drawRoundRect(if (lockedBy == 1) Color(0xFFF43F5E) else Color(0xFFEF4444), Offset(midX, 0f), Size(fillW, gaugeH), CornerRadius(2.dp.toPx(), 2.dp.toPx()))
+    drawRoundRect(if (lockedBy == enemyFreq) Color(0xFFF43F5E) else Color(0xFFEF4444), Offset(midX, 0f), Size(fillW, gaugeH), CornerRadius(2.dp.toPx(), 2.dp.toPx()))
    }
    if (isContested) drawCircle(Color(0xFFFACC15), gaugeH * 0.52f, Offset(midX, gaugeH * 0.5f))
    else drawLine(Color(0xCCE2E8F0), Offset(midX, 0f), Offset(midX, gaugeH), 1.2.dp.toPx())

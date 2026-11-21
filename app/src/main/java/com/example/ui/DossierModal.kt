@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -25,7 +26,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
@@ -109,8 +113,16 @@ fun DossierModal(
   liveResonance: Int = -1,
   peakResonance: Int = -1,
   startingBounty: Int = -1,
+  onRenameCallsign: ((String) -> Pair<Boolean, String>)? = null,
 ) {
-  BackHandler { onCloseModal() }
+  var showResetPilotConfirmDialog by remember { mutableStateOf(false) }
+  BackHandler {
+    if (showResetPilotConfirmDialog) {
+      showResetPilotConfirmDialog = false
+    } else {
+      onCloseModal()
+    }
+  }
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val context = LocalContext.current
   val localPrefs = remember(context) { LocalPilotPrefs(context) }
@@ -264,6 +276,7 @@ fun DossierModal(
   val displayedPeakSnapshot =
     if (activeTab == 0) pvpPeakSnapshot else (allTimePeakSnapshot ?: currentLifeSnapshot)
 
+  Box(modifier = Modifier.fillMaxSize()) {
   Column(
     modifier =
       Modifier.fillMaxSize()
@@ -323,7 +336,7 @@ fun DossierModal(
       ) {
         if (onResetLocalPilotData != null) {
           Button(
-            onClick = onResetLocalPilotData,
+            onClick = { showResetPilotConfirmDialog = true },
             colors =
               ButtonDefaults.buttonColors(
                 containerColor = DossierCardBg,
@@ -503,16 +516,25 @@ fun DossierModal(
             }
             Button(
               onClick = {
-                val (success, updatedCallsign, remainingShards) =
-                  localPrefs.changeSwornPilotCallsign(newCallsignInput, riftShards, permanentUid)
-                if (success) {
+                if (onRenameCallsign != null) {
+                  val (ok, statusMessage) = onRenameCallsign(newCallsignInput)
                   callsignChangeCount = localPrefs.getCallsignChangeCount(permanentUid)
-                  onCallsignChanged(updatedCallsign)
-                  onUpdateRiftShards(remainingShards)
-                  callsignStatusMsg = "Callsign updated to $updatedCallsign"
-                  showCallsignEditor = false
+                  callsignStatusMsg = statusMessage
+                  if (ok) {
+                    showCallsignEditor = false
+                  }
                 } else {
-                  callsignStatusMsg = "Requires 3–14 chars & 250 Rift Shards after 1st free change"
+                  val (success, updatedCallsignOrReason, remainingShards) =
+                    localPrefs.changeSwornPilotCallsign(newCallsignInput, riftShards, permanentUid)
+                  if (success) {
+                    callsignChangeCount = localPrefs.getCallsignChangeCount(permanentUid)
+                    onCallsignChanged(updatedCallsignOrReason)
+                    onUpdateRiftShards(remainingShards)
+                    callsignStatusMsg = "Callsign updated to $updatedCallsignOrReason"
+                    showCallsignEditor = false
+                  } else {
+                    callsignStatusMsg = updatedCallsignOrReason
+                  }
                 }
               },
               colors =
@@ -902,6 +924,101 @@ fun DossierModal(
           syndicateServiceHistory,
         )
     }
+  }
+
+  if (showResetPilotConfirmDialog && onResetLocalPilotData != null) {
+    Box(
+      modifier =
+        Modifier.fillMaxSize()
+          .background(Color(0xD802050B))
+          .clickable { showResetPilotConfirmDialog = false }
+          .testTag("dossier_reset_confirm_modal"),
+      contentAlignment = Alignment.Center,
+    ) {
+      Surface(
+        modifier =
+          Modifier.widthIn(min = 290.dp, max = 460.dp)
+            .fillMaxWidth(0.78f)
+            .clickable(enabled = false) {}
+            .border(
+              1.4.dp,
+              Brush.linearGradient(listOf(Color(0xFFFB7185), DossierGold, DossierTeal)),
+              RoundedCornerShape(14.dp),
+            ),
+        color = DossierTabletBg,
+        shape = RoundedCornerShape(14.dp),
+      ) {
+        Column(
+          modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          Text(
+            text = "CONFIRM PILOT TELEMETRY RESET",
+            color = Color(0xFFFB7185),
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 0.6.sp,
+          )
+          Text(
+            text =
+              "Reset your local combat stats, ship Resonance, and progression back to 0 Resonance? Your Sworn Pilot callsign will be preserved, and you will leave your current Squadron.",
+            color = Color(0xFFE2E8F0),
+            fontSize = 10.5.sp,
+            lineHeight = 14.5.sp,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(DossierCardBg)
+                  .border(1.dp, DossierTeal, RoundedCornerShape(8.dp))
+                  .clickable { showResetPilotConfirmDialog = false }
+                  .padding(horizontal = 14.dp, vertical = 7.dp)
+                  .testTag("dossier_reset_cancel_btn"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "[CANCEL]",
+                color = DossierTeal,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(Color(0xFF310E1B))
+                  .border(1.2.dp, Color(0xFFFB7185), RoundedCornerShape(8.dp))
+                  .clickable {
+                    showResetPilotConfirmDialog = false
+                    onResetLocalPilotData()
+                  }
+                  .padding(horizontal = 14.dp, vertical = 7.dp)
+                  .testTag("dossier_reset_confirm_btn"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "[CONFIRM RESET]",
+                color = Color(0xFFFFB4C0),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+        }
+      }
+    }
+  }
   }
 }
 

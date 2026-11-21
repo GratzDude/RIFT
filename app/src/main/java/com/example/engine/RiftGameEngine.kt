@@ -13827,4 +13827,213 @@ class RiftGameEngine(
       }
     }
   }
+
+  /**
+   * Collects relative team & objective waypoints (living allies + active Flux Core, Stasis Breach,
+   * and Rift Control objectives) for off-screen edge directional chevrons.
+   */
+  fun collectTacticalWaypointsForLocal(): List<OffScreenTacticalTarget> {
+    val p = localPlayer
+    val out = ArrayList<OffScreenTacticalTarget>(10)
+    val localFreq = if (p.freq == 1) 1 else 0
+
+    // 1. Active Mode Objectives (highest tactical priority)
+    if (isFluxCoreRulesActive()) {
+      if (fluxCoreCarrierEntityId.isEmpty()) {
+        val distM = (hypot(fluxCoreOrb.x - p.x, fluxCoreOrb.y - p.y) / 10f).roundToInt()
+        out.add(
+          OffScreenTacticalTarget(
+            id = "obj_flux_orb",
+            kind = OffScreenTargetKind.FLUX_CORE_ORB,
+            label = "FLUX CORE",
+            worldX = fluxCoreOrb.x,
+            worldY = fluxCoreOrb.y,
+            distanceMeters = distM,
+            colorHex = 0xFFFACC15L,
+            isUrgent = true,
+          )
+        )
+      } else if (fluxCoreCarrierEntityId != p.id) {
+        val carrier = ships.firstOrNull { it.id == fluxCoreCarrierEntityId && it.respawnTimer <= 0f }
+        if (carrier != null && (!carrier.isCloaked || areAllied(p, carrier))) {
+          val distM = (hypot(carrier.x - p.x, carrier.y - p.y) / 10f).roundToInt()
+          val alliedCarrier = areAllied(p, carrier)
+          out.add(
+            OffScreenTacticalTarget(
+              id = "obj_flux_carrier_${carrier.id}",
+              kind =
+                if (alliedCarrier) OffScreenTargetKind.FLUX_CORE_ALLY_CARRIER
+                else OffScreenTargetKind.FLUX_CORE_ENEMY_CARRIER,
+              label =
+                if (alliedCarrier) "ESCORT ${carrier.callsign.take(8)}"
+                else "CORE ${carrier.callsign.take(8)}",
+              worldX = carrier.x,
+              worldY = carrier.y,
+              distanceMeters = distM,
+              colorHex = if (alliedCarrier) 0xFF38BDF8L else 0xFFFB7185L,
+              isUrgent = true,
+            )
+          )
+        }
+      }
+    }
+
+    if (isStasisBreachRulesActive()) {
+      val yourBrigX = if (localFreq == 1) eastBrigReactorX else westBrigReactorX
+      val yourBrigY = if (localFreq == 1) eastBrigReactorY else westBrigReactorY
+      val enemyBrigX = if (localFreq == 1) westBrigReactorX else eastBrigReactorX
+      val enemyBrigY = if (localFreq == 1) westBrigReactorY else eastBrigReactorY
+      val yourBrigHp = if (localFreq == 1) eastBrigGeneratorHp else westBrigGeneratorHp
+      val capturedAllies =
+        ships.count { it.id != p.id && areAllied(p, it) && it.isInStasisBrig }
+      val capturedEnemies =
+        ships.count { !areAllied(p, it) && it.isInStasisBrig }
+
+      val enemyBrigDistM = (hypot(enemyBrigX - p.x, enemyBrigY - p.y) / 10f).roundToInt()
+      out.add(
+        OffScreenTacticalTarget(
+          id = "obj_stasis_enemy_brig",
+          kind = OffScreenTargetKind.STASIS_ENEMY_BRIG,
+          label =
+            if (capturedAllies > 0) "FREE $capturedAllies ALLY"
+            else "BREACH CORE",
+          worldX = enemyBrigX,
+          worldY = enemyBrigY,
+          distanceMeters = enemyBrigDistM,
+          colorHex = if (capturedAllies > 0) 0xFFFACC15L else 0xFFFB7185L,
+          isUrgent = capturedAllies > 0,
+        )
+      )
+
+      if (capturedEnemies > 0 || yourBrigHp < getEffectiveBrigReactorMaxHp() * 0.92f) {
+        val yourBrigDistM = (hypot(yourBrigX - p.x, yourBrigY - p.y) / 10f).roundToInt()
+        out.add(
+          OffScreenTacticalTarget(
+            id = "obj_stasis_ally_brig",
+            kind = OffScreenTargetKind.STASIS_ALLY_BRIG,
+            label = "DEFEND CORE",
+            worldX = yourBrigX,
+            worldY = yourBrigY,
+            distanceMeters = yourBrigDistM,
+            colorHex = 0xFF38BDF8L,
+            isUrgent = yourBrigHp < getEffectiveBrigReactorMaxHp() * 0.50f,
+          )
+        )
+      }
+    }
+
+    if (isRiftControlRulesActive()) {
+      fun addControlPoint(
+        pointId: String,
+        shortName: String,
+        tx: Float,
+        ty: Float,
+        controlSec: Float,
+        lockedBy: Int,
+        westCnt: Int,
+        eastCnt: Int,
+      ) {
+        val isContested = westCnt > 0 && eastCnt > 0 && westCnt == eastCnt
+        val friendlyHeld =
+          lockedBy == localFreq ||
+            (localFreq == 0 && controlSec < -0.25f) ||
+            (localFreq == 1 && controlSec > 0.25f)
+        val enemyHeld =
+          lockedBy == (1 - localFreq) ||
+            (localFreq == 0 && controlSec > 0.25f) ||
+            (localFreq == 1 && controlSec < -0.25f)
+        val colorHex =
+          when {
+            isContested -> 0xFFFACC15L
+            friendlyHeld -> 0xFF38BDF8L
+            enemyHeld -> 0xFFFB7185L
+            else -> 0xFF00F5D4L
+          }
+        val stateSuffix =
+          when {
+            isContested -> " CONTEST"
+            lockedBy == localFreq -> " YOURS"
+            lockedBy == (1 - localFreq) -> " ENEMY"
+            else -> ""
+          }
+        out.add(
+          OffScreenTacticalTarget(
+            id = pointId,
+            kind = OffScreenTargetKind.RIFT_CONTROL_POINT,
+            label = "$shortName$stateSuffix",
+            worldX = tx,
+            worldY = ty,
+            distanceMeters = (hypot(tx - p.x, ty - p.y) / 10f).roundToInt(),
+            colorHex = colorHex,
+            isUrgent = isContested || enemyHeld,
+          )
+        )
+      }
+
+      addControlPoint(
+        pointId = "obj_rift_alpha",
+        shortName = "ALPHA",
+        tx = riftAlphaX,
+        ty = riftAlphaY,
+        controlSec = riftAlphaControlSec,
+        lockedBy = riftAlphaLockedBy,
+        westCnt = riftAlphaWestCount,
+        eastCnt = riftAlphaEastCount,
+      )
+      addControlPoint(
+        pointId = "obj_rift_omega",
+        shortName = "OMEGA",
+        tx = riftOmegaX,
+        ty = riftOmegaY,
+        controlSec = riftOmegaControlSec,
+        lockedBy = riftOmegaLockedBy,
+        westCnt = riftOmegaWestCount,
+        eastCnt = riftOmegaEastCount,
+      )
+    }
+
+    // 2. Living Allied Ships (skip if already represented as Flux Core carrier)
+    for (s in ships) {
+      if (s.id == p.id || s.respawnTimer > 0f) continue
+      if (!areAllied(p, s)) continue
+      if (isFluxCoreRulesActive() && fluxCoreCarrierEntityId == s.id) continue
+      val distM = (hypot(s.x - p.x, s.y - p.y) / 10f).roundToInt()
+      val lowFlux = (s.flux / s.maxFlux.coerceAtLeast(1f)) < 0.30f
+      out.add(
+        OffScreenTacticalTarget(
+          id = "ally_${s.id}",
+          kind = OffScreenTargetKind.ALLY_SHIP,
+          label = s.callsign.take(9),
+          worldX = s.x,
+          worldY = s.y,
+          distanceMeters = distM,
+          colorHex = if (s.isInStasisBrig) 0xFFFACC15L else 0xFF38BDF8L,
+          isUrgent = s.isInStasisBrig || lowFlux,
+        )
+      )
+    }
+
+    return out
+  }
 }
+
+enum class OffScreenTargetKind {
+  ALLY_SHIP,
+  FLUX_CORE_ORB,
+  FLUX_CORE_ALLY_CARRIER,
+  FLUX_CORE_ENEMY_CARRIER,
+  STASIS_ALLY_BRIG,
+  STASIS_ENEMY_BRIG,
+  RIFT_CONTROL_POINT,
+}
+
+data class OffScreenTacticalTarget(
+  val id: String,
+  val kind: OffScreenTargetKind,
+  val label: String,
+  val worldX: Float,
+  val worldY: Float,
+  val distanceMeters: Int,
+  val colorHex: Long,
+  val isUrgent: Boolean = false,
+)

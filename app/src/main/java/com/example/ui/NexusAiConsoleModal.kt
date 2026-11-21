@@ -807,6 +807,7 @@ fun NexusAiConsoleModal(
 
   var focusedOrbitalIndex by remember { mutableIntStateOf(0) }
   var showWarpOffConfirmModal by remember { mutableStateOf(false) }
+  var showSwitchAccountConfirmModal by remember { mutableStateOf(false) }
   val localEchoMessages = remember { mutableStateMapOf<String, MutableList<SyndicateChatMessage>>() }
 
   val lastMsgTextLen = messages.lastOrNull()?.text?.length ?: 0
@@ -1254,7 +1255,7 @@ fun NexusAiConsoleModal(
               focusedOrbitalIndex = idx
               onSelectNode(node)
             },
-            onSwitchAccount = onSwitchAccount,
+            onSwitchAccount = { showSwitchAccountConfirmModal = true },
           )
           }
         }
@@ -1342,6 +1343,9 @@ fun NexusAiConsoleModal(
                       armadaSize = armadaSlots.size.coerceAtLeast(1),
                       syndicateTag = cleanSyndicateTag,
                       hangarShipSummaryLabel = gateShipStatusSummary,
+                      activeShipId = gateDeployShipId,
+                      bestShipId = resolvedBestShipForGate,
+                      onSelectShipInPlace = { chosenShipId -> onOpenHangarForShip(chosenShipId) },
                       onOpenStrikeWing = {
                         onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.STRIKE_WING)
                         onSelectNode(NexusCoreNode.SYNDICATE_CITADEL)
@@ -1567,6 +1571,15 @@ fun NexusAiConsoleModal(
           onConfirmWarpOff = {
             showWarpOffConfirmModal = false
             onLeaveMatch()
+          },
+        )
+      }
+      if (showSwitchAccountConfirmModal) {
+        NexusSwitchAccountConfirmationModal(
+          onCancel = { showSwitchAccountConfirmModal = false },
+          onConfirmSwitchAccount = {
+            showSwitchAccountConfirmModal = false
+            onSwitchAccount()
           },
         )
       }
@@ -3244,6 +3257,111 @@ private fun NexusWarpOffConfirmationModal(
 }
 
 @Composable
+private fun NexusSwitchAccountConfirmationModal(
+  onCancel: () -> Unit,
+  onConfirmSwitchAccount: () -> Unit,
+) {
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .background(Color(0xCC02050B))
+        .clickable(onClick = onCancel)
+        .testTag("nexus_switch_account_confirm_modal"),
+    contentAlignment = Alignment.Center,
+  ) {
+    Surface(
+      modifier =
+        Modifier.widthIn(min = 300.dp, max = 460.dp)
+          .fillMaxWidth(0.76f)
+          .clickable(enabled = false) {}
+          .border(
+            1.4.dp,
+            Brush.linearGradient(listOf(Color(0xFFFACC15), Color(0xFF00F5D4), Color(0xFF38BDF8))),
+            RoundedCornerShape(14.dp),
+          ),
+      color = Color(0xF8060D1A),
+      shape = RoundedCornerShape(14.dp),
+    ) {
+      Column(
+        modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          SwirlingRiftVortexGlyph(modifier = Modifier.size(22.dp))
+          Text(
+            text = "CONFIRM ACCOUNT SWITCH",
+            color = Color(0xFFFEF08A),
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 0.6.sp,
+          )
+        }
+
+        Text(
+          text =
+            "Switch to another Pilot account? Your current cloud progress is saved, and you will return to the Pilot sign-in screen.",
+          color = Color(0xFFE2E8F0),
+          fontSize = 10.5.sp,
+          lineHeight = 14.5.sp,
+          fontWeight = FontWeight.SemiBold,
+          fontFamily = FontFamily.SansSerif,
+        )
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Box(
+            modifier =
+              Modifier.minimumInteractiveComponentSize()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF0A2438))
+                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                .clickable { onCancel() }
+                .padding(horizontal = 14.dp, vertical = 7.dp)
+                .testTag("switch_account_cancel_button"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "[CANCEL]",
+              color = Color(0xFF00F5D4),
+              fontSize = 10.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+
+          Box(
+            modifier =
+              Modifier.minimumInteractiveComponentSize()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF2B2208))
+                .border(1.2.dp, Color(0xFFFACC15), RoundedCornerShape(8.dp))
+                .clickable { onConfirmSwitchAccount() }
+                .padding(horizontal = 14.dp, vertical = 7.dp)
+                .testTag("switch_account_confirm_button"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "[SWITCH ACCOUNT]",
+              color = Color(0xFFFEF08A),
+              fontSize = 10.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
 private fun GlassTerminalHeaderGlyph(node: NexusCoreNode, accent: Color, sizeDp: Int = 22) {
   if (node == NexusCoreNode.SUBSPACE_COMMS || node == NexusCoreNode.ORBITAL_HUB) {
     NexusMergedBrandEmblem(modifier = Modifier.size(sizeDp.dp))
@@ -3504,6 +3622,9 @@ private fun ConvergenceGateZeroScrollDeck(
   armadaSize: Int,
   syndicateTag: String,
   hangarShipSummaryLabel: String = "VIPER (BEST)",
+  activeShipId: Int = 1,
+  bestShipId: Int = 1,
+  onSelectShipInPlace: (Int) -> Unit = {},
   onOpenStrikeWing: () -> Unit,
   activeRankedMode: RankedGameMode,
   skirmishBracket: Int,
@@ -3553,11 +3674,14 @@ private fun ConvergenceGateZeroScrollDeck(
   onJoinCustomInstance: (String) -> Unit,
   onLaunchCustomGame: () -> Unit,
 ) {
+  var showGateInlineShipPicker by remember { mutableStateOf(false) }
+  val allGateShips = remember(RiftSpriteBaker.customShip9Version) { RiftCodex.getAllNineShips() }
+
   Column(
     modifier = Modifier.fillMaxSize().testTag("nexus_armada_and_ranked_deck"),
     verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
-    // Slim Sub-Bar: Official Ranked vs Custom Rift Gate + Squadron Chip + Active Hangar Ship Cue
+    // Slim Sub-Bar: Official Ranked vs Custom Rift Gate + Squadron Chip + In-Place Clickable Ship Selector Pill
     Row(
       modifier =
         Modifier.fillMaxWidth()
@@ -3600,15 +3724,102 @@ private fun ConvergenceGateZeroScrollDeck(
         }
       }
 
-      Text(
-        text = "SHIP: $hangarShipSummaryLabel • TAP A MODE TO RIFT IN",
-        color = Color(0xFF00F5D4),
-        fontSize = 8.0.sp,
-        fontWeight = FontWeight.ExtraBold,
-        fontFamily = FontFamily.Monospace,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(6.dp))
+            .background(if (showGateInlineShipPicker) Color(0xFF0F2D3A) else Color(0xFF0A1B30))
+            .border(
+              1.dp,
+              if (showGateInlineShipPicker) Color(0xFFFACC15) else Color(0xFF00F5D4),
+              RoundedCornerShape(6.dp),
+            )
+            .clickable { showGateInlineShipPicker = !showGateInlineShipPicker }
+            .padding(horizontal = 8.dp, vertical = 3.5.dp)
+            .testTag("gate_ship_selector_pill"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text =
+            if (showGateInlineShipPicker) "SHIP: $hangarShipSummaryLabel [CLOSE]"
+            else "SHIP: $hangarShipSummaryLabel [CHANGE]",
+          color = if (showGateInlineShipPicker) Color(0xFFFEF08A) else Color(0xFF00F5D4),
+          fontSize = 8.0.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+    }
+
+    if (showGateInlineShipPicker) {
+      Row(
+        modifier =
+          Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF061020))
+            .border(1.dp, Color(0xFF00F5D4).copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 8.dp, vertical = 5.dp)
+            .testTag("gate_inline_ship_picker_row"),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          text = "DEPLOY HULL:",
+          color = Color(0xFF94A3B8),
+          fontSize = 8.2.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+        )
+        allGateShips.forEach { ship ->
+          val isActiveHull = ship.id == activeShipId.coerceIn(1, 10)
+          val isBestHull = ship.id == bestShipId.coerceIn(1, 10)
+          val cleanShipTitle =
+            ship.name.replace(Regex("^[0-9]+-"), "").trim().uppercase(Locale.US)
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(6.dp))
+                .background(
+                  when {
+                    isActiveHull -> Color(0xFF0F2D3A)
+                    isBestHull -> Color(0xFF1E1908)
+                    else -> Color(0xFF0A1628)
+                  }
+                )
+                .border(
+                  1.dp,
+                  when {
+                    isActiveHull -> Color(0xFF00F5D4)
+                    isBestHull -> Color(0xFFFACC15)
+                    else -> Color(0xFF334155)
+                  },
+                  RoundedCornerShape(6.dp),
+                )
+                .clickable {
+                  onSelectShipInPlace(ship.id)
+                  showGateInlineShipPicker = false
+                }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .testTag("gate_inline_ship_option_${ship.id}"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = if (isBestHull) "$cleanShipTitle (BEST)" else cleanShipTitle,
+              color =
+                when {
+                  isActiveHull -> Color(0xFF00F5D4)
+                  isBestHull -> Color(0xFFFEF08A)
+                  else -> Color(0xFFE2E8F0)
+                },
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
+          }
+        }
+      }
     }
 
     if (gateTab == ConvergenceGateTab.OFFICIAL_RANKED) {

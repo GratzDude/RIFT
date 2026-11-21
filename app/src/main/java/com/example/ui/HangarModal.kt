@@ -421,9 +421,16 @@ fun HangarModal(
   stagedHullLockNotice: Boolean = false,
   onCancelStagedModeToGate: (() -> Unit)? = null,
   shipResonances: Map<Int, Int> = emptyMap(),
+  callsignChangeCount: Int = 0,
+  isGuestDrifter: Boolean = false,
+  onRenameCallsign: ((String) -> Pair<Boolean, String>)? = null,
 ) {
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   var callsignInput by remember(initialCallsign) { mutableStateOf(initialCallsign) }
+  var localCallsignChanges by remember(callsignChangeCount, initialCallsign) {
+    mutableIntStateOf(callsignChangeCount)
+  }
+  var hangarCallsignStatus by remember { mutableStateOf<String?>(null) }
   var currentShipId by remember(selectedShipId) { mutableIntStateOf(selectedShipId.coerceIn(1, 10)) }
   var lockedShipId by remember(selectedShipId) { mutableStateOf<Int?>(selectedShipId.coerceIn(1, 10)) }
   val clampedBestShipId = bestShipId.coerceIn(1, 10)
@@ -442,7 +449,7 @@ fun HangarModal(
   fun handleHullTap(targetId: Int) {
     val safeId = targetId.coerceIn(1, 10)
     currentShipId = safeId
-    lockedShipId = if (lockedShipId == safeId) null else safeId
+    lockedShipId = safeId
   }
 
   val spriteVersion = RiftSpriteBaker.customShip9Version
@@ -479,6 +486,22 @@ fun HangarModal(
   val effectivePeakRes = maxOf(liveResonance, peakResonance)
   val startBounty = RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
   val isTesterInfiniteShards = RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE
+  var local9B by
+    remember(slot9BUnlocked, effectivePeakRes, unlockFullNinthShipOverride) {
+      mutableStateOf(slot9BUnlocked || effectivePeakRes >= 300 || unlockFullNinthShipOverride)
+    }
+  var local9C by
+    remember(slot9CUnlocked, effectivePeakRes, unlockFullNinthShipOverride) {
+      mutableStateOf(slot9CUnlocked || effectivePeakRes >= 650 || unlockFullNinthShipOverride)
+    }
+  var local9D by
+    remember(slot9DUnlocked, effectivePeakRes, unlockFullNinthShipOverride) {
+      mutableStateOf(slot9DUnlocked || effectivePeakRes >= 1100 || unlockFullNinthShipOverride)
+    }
+  var local9E by
+    remember(slot9EUnlocked, effectivePeakRes, unlockFullNinthShipOverride) {
+      mutableStateOf(slot9EUnlocked || effectivePeakRes >= 1600 || unlockFullNinthShipOverride)
+    }
 
   Column(
     modifier =
@@ -777,83 +800,143 @@ fun HangarModal(
       val activeModeTitle =
         stagedTargetTitle?.uppercase(Locale.US)
           ?: RankedGameMode.fromId(currentMode).title.uppercase(Locale.US)
-      Row(
+      Column(
         modifier =
           Modifier.fillMaxWidth()
             .background(HangarTabletPanel, RoundedCornerShape(8.dp))
             .border(1.dp, HangarElectricCyan.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
       ) {
-        Text(
-          text = "CALLSIGN:",
-          color = Color(0xFF94A3B8),
-          fontSize = 9.5.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = Mono,
-        )
-        Box(
-          modifier =
-            Modifier.width(142.dp)
-              .height(if (isCompactPhone) 34.dp else 38.dp)
-              .background(HangarTabletAbyss, RoundedCornerShape(8.dp))
-              .border(1.dp, HangarNexusTeal, RoundedCornerShape(8.dp))
-              .padding(horizontal = 10.dp),
-          contentAlignment = Alignment.CenterStart,
-        ) {
-          BasicTextField(
-            value = callsignInput,
-            onValueChange = { if (it.length <= 14) callsignInput = it.uppercase(Locale.US) },
-            singleLine = true,
-            textStyle =
-              TextStyle(
-                color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = Mono,
-              ),
-            cursorBrush = SolidColor(HangarNexusTeal),
-            modifier = Modifier.fillMaxWidth().testTag("input_pilot_callsign"),
-          )
-        }
-        Box(
-          modifier =
-            Modifier.testTag("btn_hangar_manage_syndicate")
-              .clip(RoundedCornerShape(8.dp))
-              .background(HangarTabletAbyss)
-              .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(8.dp))
-              .clickable { onOpenSyndicatesModal() }
-              .padding(horizontal = 9.dp, vertical = 5.dp)
+        Row(
+          modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           Text(
-            text = "[$syndicateTag] SYNDICATE CITADEL",
-            color = Color(0xFFE9D5FF),
+            text = "CALLSIGN:",
+            color = Color(0xFF94A3B8),
             fontSize = 9.5.sp,
-            fontWeight = FontWeight.Black,
+            fontWeight = FontWeight.Bold,
             fontFamily = Mono,
           )
-        }
-        Text(
-          text = "TARGET RIFT:",
-          color = Color(0xFF94A3B8),
-          fontSize = 9.5.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = Mono,
-        )
-        Box(
-          modifier =
-            Modifier.testTag("mode_chip_FFA")
-              .clip(RoundedCornerShape(8.dp))
-              .background(HangarTabletAbyss)
-              .border(1.dp, HangarNexusTeal, RoundedCornerShape(8.dp))
-              .padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
+          Box(
+            modifier =
+              Modifier.width(142.dp)
+                .height(if (isCompactPhone) 34.dp else 38.dp)
+                .background(HangarTabletAbyss, RoundedCornerShape(8.dp))
+                .border(1.dp, HangarNexusTeal, RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+          ) {
+            BasicTextField(
+              value = callsignInput,
+              onValueChange = {
+                callsignInput =
+                  it.uppercase(Locale.US)
+                    .filter { c -> c.isLetterOrDigit() || c == '_' || c == '-' }
+                    .take(14)
+              },
+              singleLine = true,
+              textStyle =
+                TextStyle(
+                  color = Color.White,
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = Mono,
+                ),
+              cursorBrush = SolidColor(HangarNexusTeal),
+              modifier = Modifier.fillMaxWidth().testTag("input_pilot_callsign"),
+            )
+          }
+          Row(
+            modifier =
+              Modifier.testTag("btn_hangar_apply_callsign")
+                .clip(RoundedCornerShape(8.dp))
+                .background(HangarTabletAbyss)
+                .border(1.dp, HangarNexusTeal, RoundedCornerShape(8.dp))
+                .clickable {
+                  if (onRenameCallsign != null) {
+                    val (ok, msg) = onRenameCallsign(callsignInput)
+                    hangarCallsignStatus = msg
+                    if (ok && !isGuestDrifter) {
+                      localCallsignChanges++
+                    }
+                  } else {
+                    callsignInput =
+                      UgcModeration.sanitizeIdentifier(callsignInput.trim(), "COMMANDER")
+                    hangarCallsignStatus = "Callsign staged: $callsignInput"
+                  }
+                }
+                .padding(horizontal = 9.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            if (!isGuestDrifter && localCallsignChanges > 0) {
+              RiftShardGemIcon(sizeDp = 12.dp)
+            }
+            Text(
+              text =
+                when {
+                  isGuestDrifter -> "APPLY"
+                  localCallsignChanges == 0 -> "APPLY (1ST FREE)"
+                  else -> "APPLY (250)"
+                },
+              color = HangarNexusTeal,
+              fontSize = 9.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = Mono,
+            )
+          }
+          Box(
+            modifier =
+              Modifier.testTag("btn_hangar_manage_syndicate")
+                .clip(RoundedCornerShape(8.dp))
+                .background(HangarTabletAbyss)
+                .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(8.dp))
+                .clickable { onOpenSyndicatesModal() }
+                .padding(horizontal = 9.dp, vertical = 5.dp)
+          ) {
+            Text(
+              text = "[$syndicateTag] SYNDICATE CITADEL",
+              color = Color(0xFFE9D5FF),
+              fontSize = 9.5.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = Mono,
+            )
+          }
           Text(
-            text = activeModeTitle,
-            color = HangarNexusTeal,
+            text = "TARGET RIFT:",
+            color = Color(0xFF94A3B8),
             fontSize = 9.5.sp,
-            fontWeight = FontWeight.Black,
+            fontWeight = FontWeight.Bold,
+            fontFamily = Mono,
+          )
+          Box(
+            modifier =
+              Modifier.testTag("mode_chip_FFA")
+                .clip(RoundedCornerShape(8.dp))
+                .background(HangarTabletAbyss)
+                .border(1.dp, HangarNexusTeal, RoundedCornerShape(8.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+          ) {
+            Text(
+              text = activeModeTitle,
+              color = HangarNexusTeal,
+              fontSize = 9.5.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = Mono,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+        if (hangarCallsignStatus != null) {
+          Text(
+            text = hangarCallsignStatus!!,
+            color = Color(0xFFFDE047),
+            fontSize = 9.2.sp,
+            fontWeight = FontWeight.Bold,
             fontFamily = Mono,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1090,16 +1173,61 @@ fun HangarModal(
                 verticalAlignment = Alignment.CenterVertically,
               ) {
                 listOf("FRAME A", "FRAME B", "FRAME C", "FRAME D", "FRAME E").forEach { frameLbl ->
+                  val suffix = frameLbl.removePrefix("FRAME ").trim()
+                  val slotKey = "Frame $suffix"
+                  val isFrameUnlocked =
+                    when (suffix) {
+                      "A" -> true
+                      "B" -> local9B
+                      "C" -> local9C
+                      "D" -> local9D
+                      "E" -> local9E
+                      else -> false
+                    }
                   val isActiveFrame = normalizedSlot.equals(frameLbl, ignoreCase = true)
                   Box(
                     modifier =
-                      Modifier.clip(RoundedCornerShape(5.dp))
-                        .background(if (isActiveFrame) HangarTabletElevated else HangarTabletAbyss)
+                      Modifier.testTag("hangar_matrix_frame_pill_$suffix")
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(
+                          when {
+                            isActiveFrame -> HangarTabletElevated
+                            isFrameUnlocked -> HangarTabletAbyss
+                            else -> Color(0xFF0A0F1D)
+                          }
+                        )
                         .border(
                           1.dp,
-                          if (isActiveFrame) Color(0xFFEC4899) else Color(0xFF334155),
+                          when {
+                            isActiveFrame -> Color(0xFFEC4899)
+                            isFrameUnlocked -> HangarNexusTeal.copy(alpha = 0.72f)
+                            else -> Color(0xFF475569)
+                          },
                           RoundedCornerShape(5.dp),
                         )
+                        .clickable {
+                          currentShipId = 10
+                          lockedShipId = 10
+                          if (isFrameUnlocked) {
+                            onSwitchCustomSlot(slotKey)
+                            forgeStatusBanner = "EQUIPPED RIFT $frameLbl"
+                          } else {
+                            val unlockedNow = onUnlockCustomSlot(slotKey)
+                            if (unlockedNow) {
+                              when (suffix) {
+                                "B" -> local9B = true
+                                "C" -> local9C = true
+                                "D" -> local9D = true
+                                "E" -> local9E = true
+                              }
+                              onSwitchCustomSlot(slotKey)
+                              forgeStatusBanner = "UNLOCKED & EQUIPPED RIFT $frameLbl"
+                            } else {
+                              forgeStatusBanner =
+                                "$frameLbl LOCKED — EARN RESONANCE OR SPEND 120 RIFT SHARDS"
+                            }
+                          }
+                        }
                         .padding(horizontal = 5.dp, vertical = 3.dp),
                     contentAlignment = Alignment.Center,
                   ) {
@@ -1109,8 +1237,13 @@ fun HangarModal(
                     ) {
                       ShipSpritePreview(shipId = 10, sizeDp = 14)
                       Text(
-                        text = frameLbl.removePrefix("FRAME "),
-                        color = if (isActiveFrame) Color.White else Color(0xFF94A3B8),
+                        text = if (isFrameUnlocked) suffix else "$suffix+",
+                        color =
+                          when {
+                            isActiveFrame -> Color.White
+                            isFrameUnlocked -> HangarNexusTeal
+                            else -> Color(0xFF94A3B8)
+                          },
                         fontSize = 9.5.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = Mono,
@@ -1144,6 +1277,18 @@ fun HangarModal(
               }
             }
           }
+          if (forgeStatusBanner != null) {
+            Text(
+              text = forgeStatusBanner!!,
+              color = Color(0xFFF472B6),
+              fontSize = 9.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = Mono,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.padding(horizontal = 4.dp),
+            )
+          }
         }
 
         ShipComparisonInspectorPanel(
@@ -1163,7 +1308,7 @@ fun HangarModal(
           onOpenNinthShipForge = { showFullNinthShipForgeModal = true },
           onOpenShipForge = onOpenShipForge,
           onDeployShip = {
-            val targetId = lockedShipId ?: return@ShipComparisonInspectorPanel
+            val targetId = (lockedShipId ?: currentShipId).coerceIn(1, 10)
             onDeployPilot(
               UgcModeration.sanitizeIdentifier(callsignInput.trim(), "COMMANDER"),
               targetId,

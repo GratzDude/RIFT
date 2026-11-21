@@ -3047,6 +3047,48 @@ fun RiftArenaScreen(
               deployDirectlyWithHangarShip(mode, bracket, null)
             }
 
+            var callsignRenameRefreshTick by remember { mutableIntStateOf(0) }
+            val currentCallsignChangeCount =
+              remember(currentUserId, isGoogleAuthenticated, callsignRenameRefreshTick) {
+                if (isGoogleAuthenticated) localPrefs.getCallsignChangeCount(currentUserId) else 0
+              }
+            val applyUnifiedCallsignRename: (String) -> Pair<Boolean, String> = { rawRequested ->
+              val trimmedReq = rawRequested.trim()
+              if (trimmedReq.equals(callsign, ignoreCase = true) && callsign.isNotBlank()) {
+                Pair(true, "Callsign already active: $callsign")
+              } else if (isGoogleAuthenticated && !localPrefs.isGuestBypassEnabled()) {
+                val effectiveBalance = RiftBillingManager.effectiveShardBalance(engine.riftShards)
+                val (success, savedOrError, remainingShards) =
+                  localPrefs.changeSwornPilotCallsign(trimmedReq, effectiveBalance, currentUserId)
+                if (success) {
+                  val finalShards = RiftBillingManager.effectiveShardBalance(remainingShards)
+                  engine.riftShards = finalShards
+                  localPrefs.setRiftShards(finalShards, currentUserId)
+                  callsign = savedOrError
+                  engine.localPlayer.callsign = savedOrError
+                  engine.syncLocalArmadaSelfSlot()
+                  renamedCallsignInCurrentSession = true
+                  needsInitialSwornCallsign = false
+                  callsignRenameRefreshTick++
+                  engine.onStatsUpdated()
+                  pushLivePilotHeartbeatNow()
+                  toastMessage = "SWORN PILOT CALLSIGN UPDATED TO $savedOrError"
+                  toastVersion++
+                  Pair(true, "Callsign updated to $savedOrError")
+                } else {
+                  Pair(false, savedOrError)
+                }
+              } else {
+                val cleanGuest = localPrefs.setCallsign(trimmedReq)
+                callsign = cleanGuest
+                engine.localPlayer.callsign = cleanGuest
+                engine.syncLocalArmadaSelfSlot()
+                callsignRenameRefreshTick++
+                engine.onStatsUpdated()
+                Pair(true, "Drifter callsign updated to $cleanGuest")
+              }
+            }
+
             val stagedTargetTitle: String? =
               remember(pendingStagedLaunch, frameTick) {
                 when (val staged = pendingStagedLaunch) {
@@ -3125,6 +3167,9 @@ fun RiftArenaScreen(
                           liveResonance = engine.liveResonance,
                           peakResonance = engine.peakResonance,
                           shipResonances = shipResonancesState,
+                          callsignChangeCount = currentCallsignChangeCount,
+                          isGuestDrifter = !isGoogleAuthenticated || localPrefs.isGuestBypassEnabled(),
+                          onRenameCallsign = applyUnifiedCallsignRename,
                           stagedTargetTitle = stagedTargetTitle,
                           stagedHullLockNotice = stagedHullLockNotice,
                           onCancelStagedModeToGate =
@@ -3184,22 +3229,17 @@ fun RiftArenaScreen(
                           },
                           onDeployPilot = { newCallsign, newShipId, _, asGuest ->
                             if (asGuest) localPrefs.setGuestBypassEnabled(true)
-                            val previousCallsign = callsign
                             val cleanCallsign =
-                              if (isGoogleAuthenticated) localPrefs.setCallsign(newCallsign, currentUserId)
-                              else localPrefs.setCallsign(newCallsign)
-                            if (
-                              isGoogleAuthenticated &&
-                                cleanCallsign.length >= 3 &&
-                                cleanCallsign != "COMMANDER" &&
-                                !cleanCallsign.startsWith("RFT-")
-                            ) {
-                              if (!cleanCallsign.equals(previousCallsign, ignoreCase = true)) {
-                                renamedCallsignInCurrentSession = true
+                              if (!newCallsign.trim().equals(callsign, ignoreCase = true)) {
+                                val (renamedOk, renameMsg) = applyUnifiedCallsignRename(newCallsign)
+                                if (!renamedOk) {
+                                  toastMessage = renameMsg
+                                  toastVersion++
+                                }
+                                callsign
+                              } else {
+                                callsign
                               }
-                              localPrefs.setHasChosenInitialCallsign(true, currentUserId)
-                              needsInitialSwornCallsign = false
-                            }
                             val clampedShipId = newShipId.coerceIn(1, 10)
                             callsign = cleanCallsign
                             selectedShipId = clampedShipId
@@ -4083,6 +4123,7 @@ fun RiftArenaScreen(
                               localPrefs.setRiftShards(effective, currentUserId)
                               engine.onStatsUpdated()
                             },
+                            onRenameCallsign = applyUnifiedCallsignRename,
                             onCloseModal = closeEmbeddedModal,
                           )
                         }

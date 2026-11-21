@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -26,13 +27,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -359,6 +363,12 @@ fun SettingsModal(
       }
     }
 
+  var showSwitchAccountConfirmModal by remember { mutableStateOf(false) }
+  BackHandler(enabled = showSwitchAccountConfirmModal) {
+    showSwitchAccountConfirmModal = false
+  }
+
+  Box(modifier = Modifier.fillMaxSize()) {
   Column(
     modifier =
       Modifier.fillMaxSize()
@@ -535,7 +545,7 @@ fun SettingsModal(
                   modifier = Modifier.fillMaxWidth(),
                   heightOverride = if (isCompactPhone) 32.dp else 36.dp,
                   testTag = "settings_btn_switch_account",
-                  onClick = onSwitchAccount,
+                  onClick = { showSwitchAccountConfirmModal = true },
                 )
 
                 // Unified Custom Resonance Crest + Single Prismatic Rift Shard Gem
@@ -1312,6 +1322,102 @@ fun SettingsModal(
         }
       }
     }
+  }
+
+  if (showSwitchAccountConfirmModal) {
+    Box(
+      modifier =
+        Modifier.fillMaxSize()
+          .background(Color(0xD802050B))
+          .clickable { showSwitchAccountConfirmModal = false }
+          .testTag("settings_switch_account_confirm_modal"),
+      contentAlignment = Alignment.Center,
+    ) {
+      Surface(
+        modifier =
+          Modifier.widthIn(min = 290.dp, max = 460.dp)
+            .fillMaxWidth(0.78f)
+            .clickable(enabled = false) {}
+            .border(
+              1.4.dp,
+              Brush.linearGradient(listOf(Color(0xFFFACC15), TabletTealBorder, TabletCyanBorder)),
+              RoundedCornerShape(14.dp),
+            ),
+        color = TabletShellBg,
+        shape = RoundedCornerShape(14.dp),
+      ) {
+        Column(
+          modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          Text(
+            text = "CONFIRM ACCOUNT SWITCH",
+            color = Color(0xFFFEF08A),
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = Mono,
+            letterSpacing = 0.6.sp,
+          )
+          Text(
+            text =
+              "Switch to another Pilot account? Your current cloud progress is saved, and you will return to the Pilot sign-in screen.",
+            color = Color(0xFFE2E8F0),
+            fontSize = 10.5.sp,
+            lineHeight = 14.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = Sans,
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(TabletCardBg)
+                  .border(1.dp, TabletTealBorder, RoundedCornerShape(8.dp))
+                  .clickable { showSwitchAccountConfirmModal = false }
+                  .padding(horizontal = 14.dp, vertical = 7.dp)
+                  .testTag("settings_switch_cancel_btn"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "[CANCEL]",
+                color = TabletTealBorder,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = Mono,
+              )
+            }
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(Color(0xFF2B2208))
+                  .border(1.2.dp, Color(0xFFFACC15), RoundedCornerShape(8.dp))
+                  .clickable {
+                    showSwitchAccountConfirmModal = false
+                    onSwitchAccount()
+                  }
+                  .padding(horizontal = 14.dp, vertical = 7.dp)
+                  .testTag("settings_switch_confirm_btn"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "[SWITCH ACCOUNT]",
+                color = Color(0xFFFEF08A),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = Mono,
+              )
+            }
+          }
+        }
+      }
+    }
+  }
   }
 }
 

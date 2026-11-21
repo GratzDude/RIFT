@@ -2516,6 +2516,84 @@ class RiftArenaView(
       val lateralScaleY = kotlin.math.abs(cosRoll).coerceAtLeast(0.28f) * drawScale
       val rollSkewY = sinRoll * 0.14f
 
+      // 10a-0. Grounded 2.5D Under-Ship Tactical Readability Ring (Self / Ally / Enemy + Leader Crown)
+      if (!isHubOverwatchMode || overwatchLabelAlphaFactor > 0.15f) {
+        val ringAlphaScale = if (isHubOverwatchMode) overwatchLabelAlphaFactor else 1.0f
+        val groundY = s.y + 4.5f * RiftCalibrationState.shipScale
+        val isResLeader = s.bounty >= RiftCalibrationState.hvtBountyThreshold
+        canvas.save()
+        canvas.translate(s.x, groundY)
+        // Perspective 2.5D ground-plane foreshortening beneath the banking ship
+        canvas.scale(1.0f, 0.80f)
+        if (s.isLocalPlayer) {
+          val outerR = 45f * RiftCalibrationState.shipScale
+          val innerR = 37f * RiftCalibrationState.shipScale
+          anomalyFillPaint.color = Color.argb((26 * ringAlphaScale).roundToInt().coerceIn(0, 80), 0, 245, 212)
+          canvas.drawCircle(0f, 0f, outerR + 3f, anomalyFillPaint)
+          bombRingPaint.strokeWidth = 2.4f
+          bombRingPaint.color = Color.argb((220 * ringAlphaScale).roundToInt().coerceIn(0, 255), 0, 245, 212)
+          canvas.drawCircle(0f, 0f, outerR, bombRingPaint)
+          bombRingPaint.strokeWidth = 1.4f
+          bombRingPaint.color = Color.argb((150 * ringAlphaScale).roundToInt().coerceIn(0, 255), 56, 189, 248)
+          canvas.drawCircle(0f, 0f, innerR, bombRingPaint)
+
+          // Crisp Forward Heading Chevron anchored to local hull nose
+          val noseX = cos(renderHeadingRad)
+          val noseY = sin(renderHeadingRad)
+          val perpX = -noseY
+          val perpY = noseX
+          val tipDist = outerR + 11.5f * RiftCalibrationState.shipScale
+          val baseDist = outerR + 3.0f * RiftCalibrationState.shipScale
+          val wingHalf = 7.5f * RiftCalibrationState.shipScale
+          val tipX = noseX * tipDist
+          val tipY = noseY * tipDist
+          val leftX = noseX * baseDist + perpX * wingHalf
+          val leftY = noseY * baseDist + perpY * wingHalf
+          val rightX = noseX * baseDist - perpX * wingHalf
+          val rightY = noseY * baseDist - perpY * wingHalf
+          bombRingPaint.strokeWidth = 2.8f
+          bombRingPaint.color = Color.argb((245 * ringAlphaScale).roundToInt().coerceIn(0, 255), 0, 245, 212)
+          canvas.drawLine(leftX, leftY, tipX, tipY, bombRingPaint)
+          canvas.drawLine(rightX, rightY, tipX, tipY, bombRingPaint)
+          bombRingPaint.strokeWidth = 2.2f
+        } else if (isFriendly) {
+          val allyR = 41f * RiftCalibrationState.shipScale
+          anomalyFillPaint.color = Color.argb((22 * ringAlphaScale).roundToInt().coerceIn(0, 70), 56, 189, 248)
+          canvas.drawCircle(0f, 0f, allyR + 2f, anomalyFillPaint)
+          bombRingPaint.strokeWidth = 2.1f
+          bombRingPaint.color = Color.argb((205 * ringAlphaScale).roundToInt().coerceIn(0, 255), 56, 189, 248)
+          canvas.drawCircle(0f, 0f, allyR, bombRingPaint)
+          val tickIn = allyR - 3.5f * RiftCalibrationState.shipScale
+          val tickOut = allyR + 3.5f * RiftCalibrationState.shipScale
+          bombRingPaint.strokeWidth = 1.8f
+          bombRingPaint.color = Color.argb((185 * ringAlphaScale).roundToInt().coerceIn(0, 255), 96, 165, 250)
+          canvas.drawLine(tickIn, 0f, tickOut, 0f, bombRingPaint)
+          canvas.drawLine(-tickOut, 0f, -tickIn, 0f, bombRingPaint)
+          canvas.drawLine(0f, tickIn, 0f, tickOut, bombRingPaint)
+          canvas.drawLine(0f, -tickOut, 0f, -tickIn, bombRingPaint)
+          bombRingPaint.strokeWidth = 2.2f
+        } else {
+          val enemyR = 41f * RiftCalibrationState.shipScale
+          anomalyFillPaint.color = Color.argb((20 * ringAlphaScale).roundToInt().coerceIn(0, 68), 251, 113, 133)
+          canvas.drawCircle(0f, 0f, enemyR + 2f, anomalyFillPaint)
+          bombRingPaint.strokeWidth = 2.0f
+          bombRingPaint.color = Color.argb((200 * ringAlphaScale).roundToInt().coerceIn(0, 255), 251, 113, 133)
+          canvas.drawCircle(0f, 0f, enemyR, bombRingPaint)
+          if (isResLeader) {
+            val crownR = enemyR + 5.8f * RiftCalibrationState.shipScale
+            arcRect.set(-crownR, -crownR, crownR, crownR)
+            val crownSpin = (tSec * 38f) % 360f
+            bombRingPaint.strokeWidth = 2.3f
+            bombRingPaint.color = Color.argb((230 * ringAlphaScale).roundToInt().coerceIn(0, 255), 250, 204, 21)
+            for (seg in 0 until 4) {
+              canvas.drawArc(arcRect, crownSpin + seg * 90f, 46f, false, bombRingPaint)
+            }
+          }
+          bombRingPaint.strokeWidth = 2.2f
+        }
+        canvas.restore()
+      }
+
       // 10a. Offset 3D Silhouette Drop-Shadow beneath the banking/rolling ship
       if (!s.isCloaked) {
         shadowMatrix.reset()
@@ -2713,6 +2791,40 @@ class RiftArenaView(
         continue // Skip drawing nametag when projected under HUD buttons so ship names never bleed over MULTI or BRAKE STOP
       }
 
+      // Compact Overhead Allied Flux Micro-Bar above friendly teammates in the 2.5D arena
+      var alliedFluxBarTopShift = 0f
+      if (isFriendly && !s.isLocalPlayer && !isHubOverwatchMode) {
+        val fluxFrac = (s.flux / s.maxFlux.coerceAtLeast(1f)).coerceIn(0f, 1f)
+        val barWidthW = (44f * dpDensity * baseTextScale) / safeWorldScale
+        val barHeightW = (4.8f * dpDensity * baseTextScale) / safeWorldScale
+        val barCenterY = s.y - (44f * RiftCalibrationState.shipScale + 5.5f)
+        val barLeft = s.x - barWidthW * 0.5f
+        val barTop = barCenterY - barHeightW * 0.5f
+        val barCorner = (2.2f * dpDensity) / safeWorldScale
+
+        arcRect.set(barLeft, barTop, barLeft + barWidthW, barTop + barHeightW)
+        hudCircleFillPaint.color = Color.argb((215 * (labelAlpha / 255f)).roundToInt().coerceIn(0, 235), 6, 13, 26)
+        canvas.drawRoundRect(arcRect, barCorner, barCorner, hudCircleFillPaint)
+
+        if (fluxFrac > 0.01f) {
+          val fillW = (barWidthW * fluxFrac).coerceAtLeast(barHeightW * 0.5f)
+          arcRect.set(barLeft, barTop, barLeft + fillW, barTop + barHeightW)
+          hudCircleFillPaint.color =
+            when {
+              fluxFrac >= 0.45f -> Color.argb(labelAlpha, 0, 245, 212)
+              fluxFrac >= 0.22f -> Color.argb(labelAlpha, 250, 204, 21)
+              else -> Color.argb(labelAlpha, 251, 113, 133)
+            }
+          canvas.drawRoundRect(arcRect, barCorner, barCorner, hudCircleFillPaint)
+        }
+
+        arcRect.set(barLeft, barTop, barLeft + barWidthW, barTop + barHeightW)
+        anomalyRingPaint.strokeWidth = (1.1f * dpDensity) / safeWorldScale
+        anomalyRingPaint.color = Color.argb((195 * (labelAlpha / 255f)).roundToInt().coerceIn(0, 235), 56, 189, 248)
+        canvas.drawRoundRect(arcRect, barCorner, barCorner, anomalyRingPaint)
+        alliedFluxBarTopShift = barHeightW + (4.2f * dpDensity) / safeWorldScale
+      }
+
       val badgePrefix =
         when {
           s.armadaName.isNotEmpty() -> "[${s.armadaName}]"
@@ -2739,6 +2851,7 @@ class RiftArenaView(
       val bountyColor = if (isHvt) Color.parseColor("#FFD700") else Color.parseColor("#FACC15")
 
       val radialDist = (44f * RiftCalibrationState.shipScale + 12f) * RiftCalibrationState.labelDistanceOffset
+      val topRadialDist = radialDist + alliedFluxBarTopShift
 
       val isConsolidated = (RiftCalibrationState.bountyPlacement == LabelPlacement.CONSOLIDATED_TOP ||
         RiftCalibrationState.bountyPlacement == LabelPlacement.CONSOLIDATED_BOTTOM ||
@@ -2751,7 +2864,7 @@ class RiftArenaView(
         val isTop = (RiftCalibrationState.bountyPlacement == LabelPlacement.CONSOLIDATED_TOP ||
           RiftCalibrationState.tagPlacement == LabelPlacement.CONSOLIDATED_TOP ||
           RiftCalibrationState.namePlacement == LabelPlacement.CONSOLIDATED_TOP)
-        val textY = if (isTop) s.y - radialDist else s.y + radialDist + callsignTextSize * 0.85f
+        val textY = if (isTop) s.y - topRadialDist else s.y + radialDist + callsignTextSize * 0.85f
         val lineText = "$badgePrefix ${s.callsign} • $bountyText"
 
         shipLabelStrokePaint.strokeWidth = (1.7f * dpDensity * baseTextScale) / safeWorldScale
@@ -2809,7 +2922,7 @@ class RiftArenaView(
             when (pos) {
               LabelPlacement.TOP -> {
                 itemX = s.x
-                itemY = if (items.size == 1) s.y - radialDist else s.y - radialDist - (items.size - 1 - i) * (size * 0.95f)
+                itemY = if (items.size == 1) s.y - topRadialDist else s.y - topRadialDist - (items.size - 1 - i) * (size * 0.95f)
               }
               LabelPlacement.BOTTOM -> {
                 itemX = s.x
@@ -3565,6 +3678,7 @@ class RiftArenaView(
     canvas.drawText(text, worldX, worldY, shipLabelFillPaint)
   }
 
+  @Suppress("UNUSED_PARAMETER")
   private fun drawRankedModeScreenOverlay(
     canvas: Canvas,
     vw: Float,
@@ -3574,94 +3688,8 @@ class RiftArenaView(
     effectiveCamY: Float,
     worldScale: Float,
   ) {
-    // Off-Screen Directional Indicator for Free/Unclaimed Flux Core Orb ONLY (top banner is rendered cleanly by Compose RiftHudOverlay)
-    if (engine.isFluxCoreRulesActive() && engine.fluxCoreCarrierEntityId.isEmpty()) {
-      val tx = engine.fluxCoreOrb.x
-      val ty = engine.fluxCoreOrb.y
-      val sx = (tx - effectiveCamX) * worldScale + vw * 0.5f
-      val sy = (ty - effectiveCamY) * worldScale + vh * 0.5f
-      if (sx < 40f || sx > vw - 40f || sy < 40f || sy > vh - 40f) {
-        val ang = atan2(ty - effectiveCamY, tx - effectiveCamX)
-        val edgeR = min(vw, vh) * 0.38f
-        val ix = vw * 0.5f + cos(ang) * edgeR
-        val iy = vh * 0.5f + sin(ang) * edgeR
-        hudCircleFillPaint.color = Color.argb(225, 10, 18, 34)
-        canvas.drawCircle(ix, iy, 13f * dpDensity, hudCircleFillPaint)
-        hudCircleStrokePaint.strokeWidth = 1.8f * dpDensity
-        hudCircleStrokePaint.color = Color.parseColor("#FFD700")
-        canvas.drawCircle(ix, iy, 13f * dpDensity, hudCircleStrokePaint)
-        hudCircleStrokePaint.strokeWidth = 2.6f
-        RiftSpriteBaker.drawFluxPrismIcon(canvas, ix, iy, 7.2f * dpDensity, alpha = 255)
-      }
-    }
-
-    // Off-Screen Directional Pointers for RIFT ALPHA & RIFT OMEGA in RIFT_CONTROL
-    if (engine.isRiftControlRulesActive()) {
-      fun drawRiftPointer(
-        tx: Float,
-        ty: Float,
-        controlSec: Float,
-        lockedBy: Int,
-        westCnt: Int,
-        eastCnt: Int,
-        shortName: String,
-      ) {
-        val sx = (tx - effectiveCamX) * worldScale + vw * 0.5f
-        val sy = (ty - effectiveCamY) * worldScale + vh * 0.5f
-        if (sx < 56f || sx > vw - 56f || sy < 56f || sy > vh - 56f) {
-          val ang = atan2(ty - effectiveCamY, tx - effectiveCamX)
-          val edgeRx = (vw * 0.5f - 68f * dpDensity).coerceAtLeast(80f)
-          val edgeRy = (vh * 0.5f - 58f * dpDensity).coerceAtLeast(60f)
-          val ix = (vw * 0.5f + cos(ang) * edgeRx).coerceIn(58f * dpDensity, vw - 58f * dpDensity)
-          val iy = (vh * 0.5f + sin(ang) * edgeRy).coerceIn(48f * dpDensity, vh - 86f * dpDensity)
-          val distM = (hypot(tx - p.x, ty - p.y) / 10f).toInt()
-          val isContested = westCnt > 0 && eastCnt > 0 && westCnt == eastCnt
-          val badgeColor =
-            when {
-              isContested -> Color.parseColor("#F59E0B")
-              lockedBy == 0 || controlSec < -0.2f -> Color.parseColor("#38BDF8")
-              lockedBy == 1 || controlSec > 0.2f -> Color.parseColor("#EF4444")
-              else -> Color.parseColor("#A855F7")
-            }
-          val pillW = 48f * dpDensity
-          val pillH = 13f * dpDensity
-          arcRect.set(ix - pillW, iy - pillH, ix + pillW, iy + pillH)
-          hudCircleFillPaint.color = Color.argb(215, 7, 14, 28)
-          canvas.drawRoundRect(arcRect, 6f * dpDensity, 6f * dpDensity, hudCircleFillPaint)
-          anomalyRingPaint.strokeWidth = 1.6f * dpDensity
-          anomalyRingPaint.color = badgeColor
-          canvas.drawRoundRect(arcRect, 6f * dpDensity, 6f * dpDensity, anomalyRingPaint)
-
-          val arrowTipX = ix + cos(ang) * (pillW + 7f * dpDensity)
-          val arrowTipY = iy + sin(ang) * (pillH + 7f * dpDensity)
-          hudCircleFillPaint.color = badgeColor
-          canvas.drawCircle(arrowTipX, arrowTipY, 3.6f * dpDensity, hudCircleFillPaint)
-
-          hudLabelPaint.textSize = 8.2f * dpDensity
-          hudLabelPaint.color = badgeColor
-          canvas.drawText("$shortName • ${distM}m", ix, iy + 3f * dpDensity, hudLabelPaint)
-        }
-      }
-
-      drawRiftPointer(
-        tx = engine.riftAlphaX,
-        ty = engine.riftAlphaY,
-        controlSec = engine.riftAlphaControlSec,
-        lockedBy = engine.riftAlphaLockedBy,
-        westCnt = engine.riftAlphaWestCount,
-        eastCnt = engine.riftAlphaEastCount,
-        shortName = "ALPHA",
-      )
-      drawRiftPointer(
-        tx = engine.riftOmegaX,
-        ty = engine.riftOmegaY,
-        controlSec = engine.riftOmegaControlSec,
-        lockedBy = engine.riftOmegaLockedBy,
-        westCnt = engine.riftOmegaWestCount,
-        eastCnt = engine.riftOmegaEastCount,
-        shortName = "OMEGA",
-      )
-    }
+    // Off-screen ally and active mode objective directional chevrons with distance readouts are
+    // rendered uniformly in RiftHudOverlay so they stay clamped clear of all HUD controls without duplicate icons.
   }
 
   private fun drawExtrudedBox3D(

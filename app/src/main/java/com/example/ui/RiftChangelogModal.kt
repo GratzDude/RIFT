@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 97
+const val CURRENT_RIFT_BUILD_VERSION = 98
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,21 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 98,
+      versionTag = "v1.0.98 // BUILD #98",
+      releaseDate = "Nov 21, 2026",
+      headline = "2.5D Arena & HUD Team Readability, Destructive Action Confirmation Guards & In-Place Pill Controls",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "2.5D Grounded Tactical Rings & Allied Overhead Flux Bars: Added perspective-grounded under-ship tactical rings in the 2.5D arena featuring an Emerald-Cyan dual ring and forward heading chevron for your ship, Sky-Blue rings and overhead Flux micro-bars for allied ships, and Crimson-Coral rings with Solar-Gold leader accents for enemy ships.",
+          "Relative Your Team vs Enemy Team Scoreboards & Off-Screen Edge Chevrons: Updated the top ranked mode banner and Rift Control tug-of-war bar to display Your Team in Sky-Blue on the left and Enemy Team in Crimson on the right relative to your frequency, paired with HUD-safe off-screen directional chevrons and distance readouts for allies and active mode objectives.",
+          "Confirmation Guards on Reset Pilot & Switch Account: Added confirmation dialogs before executing Reset Pilot in Pilot Dossier or Switch Account in Rift Hub and Helm Systems to prevent accidental single-tap progress resets or account sign-outs.",
+          "In-Place Ship & Frame Pill Controls Plus Unified Callsign Rename: Kept Hangar ship selection always valid without deselecting on re-tap, made Frame A to E pills on Ship 10 interactive in place, made the Convergence Gate Ship pill selectable in place across all 10 hulls, and unified Callsign rename rules across Hangar and Pilot Dossier (first rename free per account, 250 Rift Shards thereafter).",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 97,
       versionTag = "v1.0.97 // BUILD #97",
