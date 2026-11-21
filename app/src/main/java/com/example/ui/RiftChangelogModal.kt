@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 98
+const val CURRENT_RIFT_BUILD_VERSION = 101
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,51 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 101,
+      versionTag = "v1.0.101 // BUILD #101",
+      releaseDate = "Nov 21, 2026",
+      headline = "Edge-to-Edge Overwatch Rift Hub, Digitizing Side-Bays, Circular Glass Prompts & Charge Flux Ship Lock",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Edge-to-Edge Overwatch Centerpiece & Sculpted Gunmetal/Cyan Hardware Terminal: Expanded the live circular Overwatch stage (1.0x to 6.0x pinch-to-zoom, drag pan, double-tap reset, Favorite pin, Highest Combined Resonance default, Rift In, and All Modes) edge-to-edge across the full viewport with zero outer margin frame, framed by a sculpted gunmetal and cyan radar bezel (#091528 and #0B192E with #00F5D4 and #38BDF8 accents), 72 calibrated degree ticks, radial reticle lines, top-left specular meniscus highlights, >= 48dp hardware bays in deep abyssal slate (#02050B, #030711, and #060D1A), and an anchored top-left Rift Hub return trigger.",
+          "Digitizing 10-Ship Hangar Side-Bays, Circular Glass Ship Prompt & Charge Flux Orbiting Lock: Tapping Hangar Deck smoothly digitizes the flanking bays beside Overwatch into 10 slowly spinning 2.5D ships (5 on the left and 5 on the right). Tapping any ship opens a circular glass stats prompt confined inside the Overwatch lens with a CHARGE [Flux icon] button matched 1:1 to the CHARGE text scale that locks that ship across all game modes until another ship is charged, rings the ship with rotating Flux icons, and carries that charged ship with its orbiting Flux icons back into the Rift Hub view.",
+          "Clean Squadron & Syndicate Split, Circular Pilot Dossier & Playfield-Style Right Formation: Split Squadron and Syndicate into dedicated Rift Hub hardware bays. Tapping Squadron digitizes the left bay into a filterable online pilot roster (All, Syndicate, and Friends) displaying each pilot's Best Ship 2.5D graphic before their callsign, opens a circular glass dossier with Squad Up controls inside Overwatch when a pilot is tapped, and renders locked-in 2.5D ship graphics on the right with ship Resonance above and callsign below matching 2.5D playfield style.",
+          "Digitizing Game Mode Selector Flanking Bays & Full-Screen Subspace Comms With Voice Controls: Wired All Modes into smooth digitizing flanking bays beside Overwatch for all 6 competitive modes, Public Custom Game rooms, and 6-character Private Join Codes in plain-English Rift terminology, while keeping Subspace Comms full-screen with Rift AI and runtime-permission Team Match and Squadron voice chat controls preserved.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 100,
+      versionTag = "v1.0.100 // BUILD #100",
+      releaseDate = "Nov 21, 2026",
+      headline = "Overwatch-Anchored Radial 2.5D/3D Rift Hub UI Redesign & Multi-Device Touch Polish",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Expanded Dimensional Overwatch Centerpiece & 72-Tick Vernier Bezel: Enlarged the live circular Overwatch viewport (1.0x to 6.0x pinch-to-zoom, drag pan, double-tap reset, Favorite pin, and Highest Combined Resonance default) inside a precision multi-stepped 3D titanium collar with 72 radial azimuth ticks, 4 optical lock clamps, inward-rippling polar matrix rings, meniscus specular and chromatic dispersion highlights, and arc-contoured top sector selector and bottom Rift In / All Modes cradles.",
+          "Orbital C-Arc Wing Geometry & Concave-Contoured 2.5D/3D Module Plates: Staggered and arc-contoured the six surrounding Rift Hub module plates (Ships & Builds, Star Forge, Comms & Rift AI, Rift Conduit, Syndicate & Squadron, and Pilot Dossier) around the circular Overwatch equator with concave inner bezels, under-chassis ambient occlusion shadows, stepped obsidian readout wells, illuminated coupling manifolds, and 24-tick 3D turret emblem sockets.",
+          "Concentric Radial Bridge Chassis & Sculpted Internal Hub Decks: Anchored the Rift Hub bridge backdrop directly to the Overwatch center with polar astrogation gridlines, dual beveled bulkhead rings, and six dual-walled plasma power conduits, while upgrading Convergence Gate and Subspace Comms & Rift AI panels to matching multi-layered 2.5D hardware bevels.",
+          "Universal >= 48dp Touch Targets & Phone / 8.8-Inch Tablet Fit: Tuned responsive wing-to-center proportions, cradle widths, and >= 48dp interactive hit targets via BoxWithConstraints and WindowInsets.safeDrawing so compact phones, ultrawide phones, foldables, and 8.8-inch tablets render with generous clearance and zero clipping.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 99,
+      versionTag = "v1.0.99 // BUILD #99",
+      releaseDate = "Nov 21, 2026",
+      headline = "Sculpted 2.5D/3D Rift Hub Redesign Framing the Dimensional Overwatch Centerpiece",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Dimensional Overwatch Centerpiece Bezel & Zero-Overlap 3-Tier Bay: Framed the live circular Overwatch viewport (1.0x to 6.0x pinch-to-zoom, drag pan, double-tap reset, Favorite pin, and Highest Combined Resonance default) inside a dedicated 3-tier bay with a sculpted titanium collar, 36 radial azimuth ticks, optical meniscus specular rim highlights, top instance selector bridge, and bottom Rift In plus All Modes launch actuators.",
+          "Sculpted 2.5D/3D Radial-Coupled Bridge Module Plates: Replaced flat rectangular Rift Hub cards with six contoured multi-layer hardware plates (Ships & Builds, Star Forge, Comms & Rift AI, Rift Conduit, Syndicate & Squadron, and Pilot Dossier) featuring 3D turret emblem sockets, beveled specular rims, illuminated Overwatch coupling conduits, and distinct non-duplicated live readouts.",
+          "Armored Top Command Crown & >= 48dp Touch Ergonomics: Redesigned the Rift Hub top command bar with recessed dark-glass telemetry wells, tactile beveled hardware switches for Pilot Dossier, Switch Account, Rift Conduit, Syndicate, Squadron, Guide, Helm Systems, Rift Out, and Practice Rift, and generous >= 48dp touch targets throughout.",
+          "Responsive Multi-Form-Factor Bridge Scaling: Tuned Rift Hub wing-to-viewport proportions, typography, and spacing via BoxWithConstraints and WindowInsets.safeDrawing so both compact landscape phones and 8.8-inch tablets render with crisp hierarchy and zero clipping.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 98,
       versionTag = "v1.0.98 // BUILD #98",
