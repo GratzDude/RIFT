@@ -1106,6 +1106,8 @@ fun RiftArenaScreen(
   var bootToNexusHub by remember { mutableStateOf(true) }
   var isNexusShellOpen by remember { mutableStateOf(!initialStartInPracticeRift) }
   var activeNexusNode by remember { mutableStateOf(NexusCoreNode.ORBITAL_HUB) }
+  var hubRequestedSideBay by remember { mutableStateOf("HUB_MAIN") }
+  var hubSideBayRequestNonce by remember { mutableIntStateOf(0) }
   var syndicateSubDeck by remember { mutableStateOf(SyndicateCitadelSubDeck.SYNDICATES_WARS) }
   var archiveSubDeck by remember { mutableStateOf(ArchiveCodexSubDeck.PILOT_DOSSIER) }
   var helmInitialSubDeck by remember { mutableIntStateOf(0) }
@@ -1307,19 +1309,65 @@ fun RiftArenaScreen(
     if (resolvedNode == NexusCoreNode.ARCHIVE_CODEX) {
       archiveSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER
     }
-    if (resolvedNode == NexusCoreNode.SUBSPACE_COMMS) {
-      unreadCommsCount = 0
-      viewModel.setActiveSector(engine.activeMatchSectorTag())
-    }
-    if (resolvedNode == NexusCoreNode.STAR_FORGE) {
-      isForgeFullScreenStage = (forgeInitialTab == NexusForgeTab.DEV_STUDIO_STAGE)
-    } else {
-      isForgeFullScreenStage = false
-    }
     if (resolvedNode == NexusCoreNode.CONVERGENCE_GATE) {
       pendingStagedLaunch = null
     }
-    activeNexusNode = resolvedNode
+    when (resolvedNode) {
+      NexusCoreNode.SUBSPACE_COMMS -> {
+        unreadCommsCount = 0
+        isForgeFullScreenStage = false
+        viewModel.setActiveSector(engine.activeMatchSectorTag())
+        activeNexusNode = NexusCoreNode.SUBSPACE_COMMS
+      }
+      NexusCoreNode.STAR_FORGE -> {
+        isForgeFullScreenStage = (forgeInitialTab == NexusForgeTab.DEV_STUDIO_STAGE)
+        activeNexusNode = NexusCoreNode.STAR_FORGE
+      }
+      NexusCoreNode.ORBITAL_HUB -> {
+        isForgeFullScreenStage = false
+        hubRequestedSideBay = "HUB_MAIN"
+        hubSideBayRequestNonce++
+        activeNexusNode = NexusCoreNode.ORBITAL_HUB
+      }
+      NexusCoreNode.HANGAR_DECK -> {
+        isForgeFullScreenStage = false
+        hubRequestedSideBay = "HANGAR_BAY"
+        hubSideBayRequestNonce++
+        activeNexusNode = NexusCoreNode.ORBITAL_HUB
+      }
+      NexusCoreNode.CONVERGENCE_GATE -> {
+        isForgeFullScreenStage = false
+        hubRequestedSideBay = "GAME_MODES_BAY"
+        hubSideBayRequestNonce++
+        activeNexusNode = NexusCoreNode.ORBITAL_HUB
+      }
+      NexusCoreNode.RIFT_CONDUIT -> {
+        isForgeFullScreenStage = false
+        hubRequestedSideBay = "CONDUIT_BAY"
+        hubSideBayRequestNonce++
+        activeNexusNode = NexusCoreNode.ORBITAL_HUB
+      }
+      NexusCoreNode.SYNDICATE_CITADEL -> {
+        isForgeFullScreenStage = false
+        hubRequestedSideBay =
+          if (syndicateSubDeck == SyndicateCitadelSubDeck.STRIKE_WING) "SQUADRON_BAY"
+          else "SYNDICATE_BAY"
+        hubSideBayRequestNonce++
+        activeNexusNode = NexusCoreNode.ORBITAL_HUB
+      }
+      NexusCoreNode.ARCHIVE_CODEX -> {
+        isForgeFullScreenStage = false
+        hubRequestedSideBay = "DOSSIER_BAY"
+        hubSideBayRequestNonce++
+        activeNexusNode = NexusCoreNode.ORBITAL_HUB
+      }
+      NexusCoreNode.HELM_SYSTEMS -> {
+        isForgeFullScreenStage = false
+        hubRequestedSideBay = "HELM_CODEX_BAY"
+        hubSideBayRequestNonce++
+        activeNexusNode = NexusCoreNode.ORBITAL_HUB
+      }
+    }
     isNexusShellOpen = true
   }
 
@@ -2079,9 +2127,12 @@ fun RiftArenaScreen(
       !isLiveHudDragPillOpen
 
   val overwatchInstances =
-    remember(mergedLivePilots, cloudPublicCustomConfigs, frameTick) {
+    remember(mergedLivePilots, cloudPublicCustomConfigs, callsign, frameTick) {
       val cleanHumans = mergedLivePilots
-      fun humanStatsForSector(sectorTag: String, fallbackSimResonance: Int): Pair<Int, Int> {
+      val publicHourResetSec =
+        (3600 - ((System.currentTimeMillis() / 1000L) % 3600L).toInt()).coerceIn(1, 3600)
+
+      fun humanStatsForSector(sectorTag: String, fallbackSimResonance: Int): Triple<Int, Int, Int> {
         val matching =
           cleanHumans.filter { p ->
             val pSec = p.sectorId.trim()
@@ -2092,86 +2143,130 @@ fun RiftArenaScreen(
               pSec.equals(sectorTag, ignoreCase = true)
             }
           }
-        if (matching.isEmpty()) return Pair(0, fallbackSimResonance)
+        if (matching.isEmpty()) {
+          val simAvg = (fallbackSimResonance / 6).coerceAtLeast(180)
+          return Triple(0, fallbackSimResonance, simAvg)
+        }
         val combinedRes =
           matching.sumOf { p ->
             if (p.liveResonance > 0L) p.liveResonance.toInt()
             else (p.bounty.toInt() / 2).coerceAtLeast(180)
           }
-        return Pair(matching.size, combinedRes)
+        val avgRes = (combinedRes / matching.size).coerceAtLeast(0)
+        return Triple(matching.size, combinedRes, avgRes)
       }
 
       val list = mutableListOf<OverwatchRiftInstance>()
-      val rankedSeeds =
-        listOf(
-          Triple(RankedGameMode.SECTOR_CONVERGENCE, 101, 1420),
-          Triple(RankedGameMode.FLUX_CORE, 202, 1080),
-          Triple(RankedGameMode.RIFT_SKIRMISH, 303, 940),
-          Triple(RankedGameMode.STASIS_BREACH, 404, 860),
-          Triple(RankedGameMode.RIFT_CONTROL, 505, 1190),
-          Triple(RankedGameMode.SYNDICATE_WARS, 606, 890),
-        )
-      rankedSeeds.forEachIndexed { idx, (mode, salt, simRes) ->
-        val sectorKey = mode.id
-        val (pCountRaw, cRes) = humanStatsForSector(sectorKey, simRes)
-        val pCount = maxOf(pCountRaw, engine.getHumanPilotCountForSectorKey(sectorKey, mode))
-        list.add(
-          OverwatchRiftInstance(
-            key = sectorKey,
-            modeTitle = mode.title.uppercase(Locale.US),
-            riftLabel = String.format(Locale.US, "RIFT #%02d", idx + 1),
-            rankedMode = mode,
-            customConfig = null,
-            pilotCount = pCount,
-            combinedResonance = cRes,
-            seedSalt = salt,
-          )
-        )
-      }
-      // Secondary Sector Convergence instance (RIFT #07) so pilots can cycle multiple FFA Rifts
-      val (pCount7Raw, cRes7) = humanStatsForSector("SECTOR_CONVERGENCE_2", 740)
-      val pCount7 =
+
+      // 1. Always-running public Sector Convergence #01 (1-hour reset)
+      val (pCount1Raw, cRes1, avgRes1) = humanStatsForSector("SECTOR_CONVERGENCE", 1420)
+      val pCount1 =
         maxOf(
-          pCount7Raw,
+          pCount1Raw,
+          engine.getHumanPilotCountForSectorKey("SECTOR_CONVERGENCE", RankedGameMode.SECTOR_CONVERGENCE),
+        )
+      list.add(
+        OverwatchRiftInstance(
+          key = "SECTOR_CONVERGENCE",
+          modeTitle = RankedGameMode.SECTOR_CONVERGENCE.title.uppercase(Locale.US),
+          riftLabel = "RIFT #01",
+          rankedMode = RankedGameMode.SECTOR_CONVERGENCE,
+          customConfig = null,
+          pilotCount = pCount1,
+          combinedResonance = cRes1,
+          seedSalt = 101,
+          avgResonance = avgRes1,
+          remainingSeconds = publicHourResetSec,
+        )
+      )
+
+      // 2. Always-running public Sector Convergence #02 (1-hour reset)
+      val (pCount2Raw, cRes2, avgRes2) = humanStatsForSector("SECTOR_CONVERGENCE_2", 980)
+      val pCount2 =
+        maxOf(
+          pCount2Raw,
           engine.getHumanPilotCountForSectorKey("SECTOR_CONVERGENCE_2", RankedGameMode.SECTOR_CONVERGENCE),
         )
       list.add(
         OverwatchRiftInstance(
           key = "SECTOR_CONVERGENCE_2",
           modeTitle = RankedGameMode.SECTOR_CONVERGENCE.title.uppercase(Locale.US),
-          riftLabel = "RIFT #07",
+          riftLabel = "RIFT #02",
           rankedMode = RankedGameMode.SECTOR_CONVERGENCE,
           customConfig = null,
-          pilotCount = pCount7,
-          combinedResonance = cRes7,
+          pilotCount = pCount2,
+          combinedResonance = cRes2,
           seedSalt = 707,
+          avgResonance = avgRes2,
+          remainingSeconds = publicHourResetSec,
         )
       )
-      // Public Custom Rifts (RIFT #08+)
-      val publicCustomMerged =
+
+      // 3. Always-running public Flux Core #03 (1-hour reset)
+      val (pCount3Raw, cRes3, avgRes3) = humanStatsForSector("FLUX_CORE", 1080)
+      val pCount3 =
+        maxOf(
+          pCount3Raw,
+          engine.getHumanPilotCountForSectorKey("FLUX_CORE", RankedGameMode.FLUX_CORE),
+        )
+      list.add(
+        OverwatchRiftInstance(
+          key = "FLUX_CORE",
+          modeTitle = RankedGameMode.FLUX_CORE.title.uppercase(Locale.US),
+          riftLabel = "RIFT #03",
+          rankedMode = RankedGameMode.FLUX_CORE,
+          customConfig = null,
+          pilotCount = pCount3,
+          combinedResonance = cRes3,
+          seedSalt = 202,
+          avgResonance = avgRes3,
+          remainingSeconds = publicHourResetSec,
+        )
+      )
+
+      // 4. Strictly your own active Custom Game ONLY if baseMode is SECTOR_CONVERGENCE (FFA) or FLUX_CORE
+      val ownEligibleCustoms =
         buildList {
           val seen = hashSetOf<String>()
+          val activeJoinedInstanceId =
+            if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
+              engine.currentCustomGame?.instanceId.orEmpty()
+            } else {
+              ""
+            }
           for (c in cloudPublicCustomConfigs + engine.activeCustomGames) {
-            if (!isPrivateCustomGame(c) && seen.add(c.instanceId.uppercase(java.util.Locale.US))) {
+            val isAllowedBase =
+              c.baseMode == RankedGameMode.SECTOR_CONVERGENCE ||
+                c.baseMode == RankedGameMode.FLUX_CORE
+            val isOwnCustom =
+              (callsign.isNotBlank() && c.hostCallsign.equals(callsign, ignoreCase = true)) ||
+                (activeJoinedInstanceId.isNotBlank() &&
+                  c.instanceId.equals(activeJoinedInstanceId, ignoreCase = true))
+            if (isAllowedBase && isOwnCustom && seen.add(c.instanceId.uppercase(Locale.US))) {
               add(c)
             }
           }
         }
-      publicCustomMerged.forEachIndexed { cIdx, cfg ->
+      ownEligibleCustoms.forEach { cfg ->
         val sectorKey = "CUSTOM_${cfg.instanceId}"
-        val simFallback = 620 + (kotlin.math.abs(cfg.instanceId.hashCode()) % 520)
-        val (pCountRaw, cRes) = humanStatsForSector(sectorKey, simFallback)
+        val simFallback = 720 + (kotlin.math.abs(cfg.instanceId.hashCode()) % 420)
+        val (pCountRaw, cRes, avgRes) = humanStatsForSector(sectorKey, simFallback)
         val pCount = maxOf(pCountRaw, engine.getHumanPilotCountForSectorKey(sectorKey, cfg.baseMode))
+        val customRemSec =
+          if (cfg.matchDurationMinutes <= 0) publicHourResetSec
+          else (cfg.matchDurationMinutes.coerceIn(1, 120) * 60)
         list.add(
           OverwatchRiftInstance(
             key = sectorKey,
-            modeTitle = "CUSTOM • ${cfg.baseMode.title.uppercase(java.util.Locale.US)}",
-            riftLabel = String.format(java.util.Locale.US, "RIFT #%02d", 8 + cIdx),
+            modeTitle = "CUSTOM • ${cfg.baseMode.title.uppercase(Locale.US)}",
+            riftLabel = "CUSTOM",
             rankedMode = cfg.baseMode,
             customConfig = cfg,
             pilotCount = pCount,
             combinedResonance = cRes,
             seedSalt = cfg.instanceId.hashCode(),
+            avgResonance = avgRes,
+            remainingSeconds = customRemSec,
           )
         )
       }
@@ -4248,7 +4343,16 @@ fun RiftArenaScreen(
                             selectedShipId = clamped
                             hasExplicitHangarLock = true
                             localPrefs.setPreferredShipId(clamped)
-                            engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
+                            if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
+                              engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
+                            } else {
+                              val chosenSpec = RiftCodex.getShipById(clamped)
+                              engine.localPlayer.shipId = clamped
+                              engine.localPlayer.spec = chosenSpec
+                              engine.localPlayer.liveResonanceRating = engine.getShipResonance(clamped)
+                              engine.syncLocalArmadaSelfSlot()
+                            }
+                            syncEquippedCosmeticsToEngine(engine)
                             engine.onStatsUpdated()
                             sfx.playPrize()
                           },
@@ -4484,19 +4588,31 @@ fun RiftArenaScreen(
               },
               onOpenHangarForShip = { targetShipId ->
                 val clamped = targetShipId.coerceIn(1, 10)
+                val changedSelection = selectedShipId != clamped || !hasExplicitHangarLock
                 selectedShipId = clamped
                 hasExplicitHangarLock = true
                 localPrefs.setPreferredShipId(clamped)
-                engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
+                if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
+                  engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
+                } else {
+                  val chosenSpec = RiftCodex.getShipById(clamped)
+                  engine.localPlayer.shipId = clamped
+                  engine.localPlayer.spec = chosenSpec
+                  engine.localPlayer.liveResonanceRating = engine.getShipResonance(clamped)
+                  engine.syncLocalArmadaSelfSlot()
+                }
+                syncEquippedCosmeticsToEngine(engine)
                 engine.onStatsUpdated()
-                val shipTitle =
-                  RiftCodex.getAllNineShips()
-                    .find { it.id == clamped }
-                    ?.name
-                    ?.replace(Regex("^[0-9]+-"), "")
-                    ?.uppercase(Locale.US) ?: "RIFT FRAME"
-                toastMessage = "LOCKED $shipTitle FOR SECTOR DEPLOYMENT"
-                toastVersion++
+                if (changedSelection) {
+                  val shipTitle =
+                    RiftCodex.getAllNineShips()
+                      .find { it.id == clamped }
+                      ?.name
+                      ?.replace(Regex("^[0-9]+-"), "")
+                      ?.uppercase(Locale.US) ?: "RIFT FRAME"
+                  toastMessage = "CHARGED $shipTitle ACROSS ALL MODES"
+                  toastVersion++
+                }
               },
               canAccessSyndicateServer = canAccessSyndicate,
               syndicateCustomChannels = customSyndicateChannels,
@@ -4657,7 +4773,16 @@ fun RiftArenaScreen(
                 selectedShipId = 10
                 hasExplicitHangarLock = true
                 localPrefs.setPreferredShipId(10)
-                engine.switchLocalPlayerShip(10, forceFromHangar = true)
+                if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
+                  engine.switchLocalPlayerShip(10, forceFromHangar = true)
+                } else {
+                  val chosenSpec = RiftCodex.getShipById(10)
+                  engine.localPlayer.shipId = 10
+                  engine.localPlayer.spec = chosenSpec
+                  engine.localPlayer.liveResonanceRating = engine.getShipResonance(10)
+                  engine.syncLocalArmadaSelfSlot()
+                }
+                syncEquippedCosmeticsToEngine(engine)
                 engine.onStatsUpdated()
                 sfx.playPrize()
                 openNexusNode(NexusCoreNode.HANGAR_DECK)
@@ -5030,6 +5155,308 @@ fun RiftArenaScreen(
                 if (isGoogleAuthenticated) {
                   signOut(credentialManager = credentialManager, scope = scope)
                 }
+              },
+              requestedSideBayKey = hubRequestedSideBay,
+              requestedSideBayNonce = hubSideBayRequestNonce,
+              syndicateDirectory =
+                remember(syndicateTag, frameTick, cloudSyndicatesState, syndicateChannelsRefreshKey) {
+                  val cloudList = (cloudSyndicatesState as? UiState.Success)?.data ?: emptyList()
+                  localPrefs.mergeCloudSyndicates(cloudList)
+                  localPrefs.getAllSyndicates()
+                },
+              syndicateStatusMessage = syndicateStatusBanner,
+              onJoinOfficialSyndicate = { info ->
+                val joined = localPrefs.joinOfficialSyndicate(info.tag, info.name)
+                if (joined) {
+                  syndicateTag = localPrefs.getSyndicateTag()
+                  syndicateName = localPrefs.getSyndicateName()
+                  syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+                  engine.localPlayer.syndicateTag = syndicateTag
+                  engine.syncLocalArmadaSelfSlot()
+                  syndicateStatusBanner =
+                    "JOINED [$syndicateTag] $syndicateName! 15-DAY LOCK COOLDOWN (15d 00h) ACTIVE."
+                  engine.onStatsUpdated()
+                } else {
+                  syndicateStatusBanner =
+                    "CANNOT SWITCH SYNDICATES YET: ${localPrefs.getRemainingSyndicateLockFormatted()} REMAINING."
+                }
+              },
+              onLeaveCurrentSyndicate = {
+                val left = localPrefs.leaveSyndicate()
+                if (left) {
+                  syndicateTag = localPrefs.getSyndicateTag()
+                  syndicateName = localPrefs.getSyndicateName()
+                  syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+                  engine.localPlayer.syndicateTag = syndicateTag
+                  engine.syncLocalArmadaSelfSlot()
+                  syndicateStatusBanner =
+                    "LEFT SYNDICATE -> UNAFFILIATED. 15-DAY LOCK COOLDOWN TRIGGERED."
+                  engine.onStatsUpdated()
+                } else {
+                  syndicateStatusBanner =
+                    "CANNOT LEAVE SYNDICATE YET: ${localPrefs.getRemainingSyndicateLockFormatted()} REMAINING."
+                }
+              },
+              onCharterCustomSyndicate = { rawTag, rawName, rawMotto ->
+                val res =
+                  localPrefs.createCustomSyndicate(
+                    tag = rawTag,
+                    name = rawName,
+                    motto = rawMotto,
+                    ownerUid = currentUserId.ifBlank { "local_founder" },
+                  )
+                res
+                  .onSuccess { created ->
+                    syndicateTag = created.tag
+                    syndicateName = created.name
+                    syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+                    engine.localPlayer.syndicateTag = syndicateTag
+                    engine.syncLocalArmadaSelfSlot()
+                    if (isGoogleAuthenticated) {
+                      viewModel.createCloudSyndicate(created)
+                    }
+                    syndicateChannelsRefreshKey++
+                    syndicateStatusBanner =
+                      "CHARTERED [${created.tag}] ${created.name}! LOCKED FOR 15d 00h."
+                    engine.onStatsUpdated()
+                  }
+                  .onFailure { err ->
+                    syndicateStatusBanner = err.message ?: "INVALID SYNDICATE CHARTER."
+                  }
+              },
+              onClaimDailyDirectiveSlot = { slotIdx ->
+                val claimed = localPrefs.claimDailyDirectiveReward(slotIdx, currentUserId)
+                if (claimed != null) {
+                  engine.riftShards =
+                    RiftBillingManager.effectiveShardBalance(engine.riftShards + claimed.first)
+                  localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                  engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
+                  engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
+                  if (!engine.hasJoinedMatch) {
+                    engine.localPlayer.bounty = engine.getLocalStartingBounty()
+                  }
+                  directivesRefreshKey++
+                  sfx.playPrize()
+                  engine.onStatsUpdated()
+                  claimed.first
+                } else {
+                  0L
+                }
+              },
+              onRerollDailyDirectiveSlot = { slotIdx ->
+                val ok = localPrefs.rerollDailyDirective(slotIdx, currentUserId)
+                if (ok) {
+                  directivesRefreshKey++
+                  sfx.playMutedClick()
+                }
+                ok
+              },
+              onClaimDailySweepBonus = {
+                val sweep = localPrefs.claimDailySweepBonus(currentUserId)
+                if (sweep != null) {
+                  engine.riftShards =
+                    RiftBillingManager.effectiveShardBalance(engine.riftShards + sweep.first)
+                  localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                  engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
+                  engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
+                  if (!engine.hasJoinedMatch) {
+                    engine.localPlayer.bounty = engine.getLocalStartingBounty()
+                  }
+                  directivesRefreshKey++
+                  sfx.playPrize()
+                  engine.onStatsUpdated()
+                  sweep.first
+                } else {
+                  0L
+                }
+              },
+              onUnlockOrEquipCosmeticItem = { category, item ->
+                val alreadyUnlocked =
+                  engine.peakResonance >= item.freeAtResonance ||
+                    localPrefs.isCosmeticUnlocked(
+                      category = category,
+                      itemId = item.id,
+                      pilotLevel = engine.pilotLevel,
+                      uid = currentUserId,
+                    )
+                if (alreadyUnlocked) {
+                  localPrefs.setEquippedCosmeticId(category, item.id, currentUserId)
+                  syncEquippedCosmeticsToEngine(engine)
+                  cosmeticsRefreshKey++
+                  sfx.playPrize()
+                  engine.onStatsUpdated()
+                  true to "EQUIPPED ${item.name.uppercase(Locale.US)}"
+                } else if (RiftBillingManager.canAffordShardSpend(engine.riftShards, item.shardCost)) {
+                  engine.riftShards =
+                    RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, item.shardCost)
+                  localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                  localPrefs.setCosmeticUnlocked(category, item.id, true, currentUserId)
+                  localPrefs.setEquippedCosmeticId(category, item.id, currentUserId)
+                  syncEquippedCosmeticsToEngine(engine)
+                  cosmeticsRefreshKey++
+                  sfx.playPrize()
+                  engine.onStatsUpdated()
+                  val spendNote =
+                    if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) {
+                      "TESTER 0 SHARDS DEPLETED"
+                    } else {
+                      "-${item.shardCost} SHARDS"
+                    }
+                  true to "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} ($spendNote)"
+                } else {
+                  false to
+                    "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost} RIFT SHARDS"
+                }
+              },
+              onUnlockOrSelectFrameSlotId = { slotId ->
+                val gate = RiftProgressionCatalog.getFrameSlotGate(slotId)
+                val unlockedNow =
+                  slotId.equals("Frame A", ignoreCase = true) ||
+                    localPrefs.isCustomSlotUnlocked(slotId, currentUserId)
+                if (unlockedNow) {
+                  switchCustomSlotShared(slotId)
+                  selectedShipId = 10
+                  hasExplicitHangarLock = true
+                  localPrefs.setPreferredShipId(10)
+                  if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
+                    engine.switchLocalPlayerShip(10, forceFromHangar = true)
+                  } else {
+                    val chosenSpec = RiftCodex.getShipById(10)
+                    engine.localPlayer.shipId = 10
+                    engine.localPlayer.spec = chosenSpec
+                    engine.localPlayer.liveResonanceRating = engine.getShipResonance(10)
+                    engine.syncLocalArmadaSelfSlot()
+                  }
+                  syncEquippedCosmeticsToEngine(engine)
+                  engine.onStatsUpdated()
+                  openNexusNode(NexusCoreNode.HANGAR_DECK)
+                  true to "SELECTED ${slotId.uppercase(Locale.US)} // OPENING HANGAR BAY"
+                } else if (unlockCustomSlotShared(slotId)) {
+                  selectedShipId = 10
+                  hasExplicitHangarLock = true
+                  localPrefs.setPreferredShipId(10)
+                  if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
+                    engine.switchLocalPlayerShip(10, forceFromHangar = true)
+                  } else {
+                    val chosenSpec = RiftCodex.getShipById(10)
+                    engine.localPlayer.shipId = 10
+                    engine.localPlayer.spec = chosenSpec
+                    engine.localPlayer.liveResonanceRating = engine.getShipResonance(10)
+                    engine.syncLocalArmadaSelfSlot()
+                  }
+                  syncEquippedCosmeticsToEngine(engine)
+                  engine.onStatsUpdated()
+                  val freeNote =
+                    when {
+                      engine.peakResonance >= gate.freeAtResonance -> "PEAK RESONANCE MILESTONE"
+                      RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE -> "TESTER 0 SHARDS DEPLETED"
+                      else -> "-${gate.shardCost} RIFT SHARDS"
+                    }
+                  true to "UNLOCKED ${slotId.uppercase(Locale.US)} ($freeNote)"
+                } else {
+                  false to
+                    "REQUIRES ${gate.freeAtResonance} PEAK RESONANCE (FREE) OR ${gate.shardCost} RIFT SHARDS"
+                }
+              },
+              activeCustomSlotId = activeCustomSlotId,
+              cloudLeaderboardEntries = realSwornCloudLeaderboard,
+              onRenamePilotCallsign = applyUnifiedCallsignRename,
+              onResetLocalPilotTelemetry = {
+                localPrefs.resetAllLocalPilotData(
+                  if (isGoogleAuthenticated) currentUserId else null
+                )
+                callsign =
+                  if (isGoogleAuthenticated) localPrefs.getCallsign(currentUserId)
+                  else localPrefs.getCallsign()
+                syndicateTag = localPrefs.getSyndicateTag()
+                syndicateName = localPrefs.getSyndicateName()
+                hasExplicitHangarLock = false
+                selectedShipId = 1
+                slot9BUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
+                slot9CUnlocked = localPrefs.isCustomSlotUnlocked("Frame C", currentUserId)
+                slot9DUnlocked = localPrefs.isCustomSlotUnlocked("Frame D", currentUserId)
+                slot9EUnlocked = localPrefs.isCustomSlotUnlocked("Frame E", currentUserId)
+                engine.pvpKills = 0L
+                engine.pvpDeaths = 0L
+                engine.pvpBountyPeak = 100L
+                engine.allTimeKills = 0L
+                engine.allTimeDeaths = 0L
+                engine.allTimeBountyPeak = 100L
+                engine.convergencesWon = 0L
+                engine.hvtEliminations = 0L
+                engine.greensCollected = 0L
+                engine.xpFromBuffs = 0f
+                engine.xpFromDamage = 0f
+                engine.xpFromAccuracy = 0f
+                engine.xpFromBountyEarned = 0f
+                engine.xpFromBountyKilled = 0f
+                engine.pilotLevel = 1
+                engine.riftShards = RiftBillingManager.effectiveShardBalance(0L)
+                localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                engine.liveResonance = 0
+                engine.peakResonance = 0
+                shipResonancesState = localPrefs.getAllShipResonances(currentUserId)
+                engine.loadShipResonances(shipResonancesState, 0)
+                engine.highestMilestoneLevelClaimed = 0
+                engine.spentCustomizationPoints = 0
+                engine.unlockedExtraSlots = 0
+                engine.aiShipDesignTokens = 0
+                engine.localPlayer.callsign = callsign
+                engine.localPlayer.syndicateTag = syndicateTag
+                engine.localPlayer.bounty = 100
+                engine.leaveArmadaToSolo()
+                if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
+                  engine.switchLocalPlayerShip(1, forceFromHangar = true)
+                } else {
+                  val resetSpec = RiftCodex.getShipById(1)
+                  engine.localPlayer.shipId = 1
+                  engine.localPlayer.spec = resetSpec
+                  engine.localPlayer.liveResonanceRating = 0
+                  engine.syncLocalArmadaSelfSlot()
+                }
+                syncEquippedCosmeticsToEngine(engine)
+                engine.resetCurrentLifeStats()
+                allTimePeakSnapshot = null
+                pvpPeakSnapshot = null
+                syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+                friendsRefreshKey++
+                directivesRefreshKey++
+                cosmeticsRefreshKey++
+                engine.onStatsUpdated()
+                toastMessage = "PILOT TELEMETRY RESET TO 0 RESONANCE (CALLSIGN PRESERVED)"
+                toastVersion++
+              },
+              helmInitialSubDeck = helmInitialSubDeck,
+              sfxEnabled = sfxEnabled,
+              musicEnabled = musicEnabled,
+              musicBpm = musicBpm,
+              musicVolume = musicVolume,
+              sfxVolume = sfxVolume,
+              cameraZoom = cameraZoom,
+              playfieldTextScale = playfieldTextScale,
+              onToggleSfx = toggleSfxShared,
+              onToggleMusic = toggleMusicShared,
+              onChangeMusicBpm = changeMusicBpmShared,
+              onChangeMusicVolume = changeMusicVolShared,
+              onChangeSfxVolume = changeSfxVolShared,
+              onChangeCameraZoom = { newZoom ->
+                val clamped = newZoom.coerceIn(0.5f, 1.5f)
+                cameraZoom = clamped
+                engine.cameraZoom = clamped
+                localPrefs.setCameraZoom(clamped)
+              },
+              onChangePlayfieldTextScale = { newScale ->
+                val clamped = newScale.coerceIn(0.75f, 1.75f)
+                playfieldTextScale = clamped
+                engine.playfieldTextScale = clamped
+                localPrefs.setPlayfieldTextScale(clamped)
+                frameTick++
+              },
+              onOpenChangelogModal = { showFullChangelogModal = true },
+              onOpenAudioSynthForge = {
+                forgeInitialTab = NexusForgeTab.AUDIO_SFX
+                isForgeFullScreenStage = false
+                openNexusNode(NexusCoreNode.STAR_FORGE)
               },
               renderModuleForNode = renderModuleForNode,
               embeddedModuleContent = embeddedModuleContent,

@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 101
+const val CURRENT_RIFT_BUILD_VERSION = 102
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,21 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 102,
+      versionTag = "v1.0.102 // BUILD #102",
+      releaseDate = "Nov 21, 2026",
+      headline = "True Top-to-Bottom Overwatch, Terminal Readout, Filtered Public/Custom Overwatch, Non-Launching Ship Charge & Clean Full-Screen Subspace Comms",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "True Top-to-Bottom Edge-to-Edge Overwatch Stage & Open-Corner Hardware Ergonomics: Removed horizontal bars and dead vertical padding above and below Overwatch so the live circular Overwatch radar viewport (1.0x to 6.0x pinch-to-zoom, drag pan, double-tap reset, gunmetal/cyan #091528, #00F5D4, and #38BDF8 bezel, 72 calibrated degree ticks, and top-left optical specular meniscus highlight) spans top-to-bottom across phones and 8.8-inch tablets with >= 48dp touch targets.",
+          "Terminal-Style Top-Left Overwatch Readout, Up/Down Chevrons & Strict Public/Custom Match Filter: Framed crisp monospace terminal telemetry between simple up and down chevrons in the upper-left open space outside Overwatch showing active game mode/name, live 1-hour reset or match countdown, average Resonance, and real human player count, placed Rift In opposite in the upper-right open space, placed contextual Back/Cancel and Charge/Confirm controls in the lower-left and lower-right open spaces, and filtered Overwatch strictly to public Sector Convergence, public Flux Core, and your own active Custom Game only when its base mode is Sector Convergence or Flux Core.",
+          "Non-Launching CHARGE [Flux Icon] Ship Lock Returning Cleanly to Rift Hub: Tapping CHARGE [Flux icon] (matched 1:1 to CHARGE text scale) locks that ship across all game modes with orbiting Flux icons and dissolves cleanly back to the Rift Hub without automatically launching into the match currently shown in Overwatch.",
+          "Unified Side-Bay & Circular Overwatch Glass Prompt Flow + Clean Full-Screen Subspace Comms Header: Routed all non-full-screen Hub views (Hangar, Squadron, Syndicate, Game Mode Selector, Rift Conduit, Pilot Dossier, and Helm Systems / Tactical Codex) into flanking side-bays and circular Overwatch glass prompts with a persistent top-left Rift Hub return button, while keeping Subspace Comms full-screen and stripping out the old top multi-tab navigation bar.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 101,
       versionTag = "v1.0.101 // BUILD #101",

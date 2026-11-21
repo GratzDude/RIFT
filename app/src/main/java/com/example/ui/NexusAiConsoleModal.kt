@@ -143,11 +143,16 @@ import com.example.data.ArmadaMemberSlot
 import com.example.data.CloudSyncHealth
 import com.example.data.LivePilotState
 import com.example.data.LocalPilotPrefs
+import androidx.compose.runtime.produceState
+import com.example.data.LeaderboardEntry
 import com.example.data.RiftBillingManager
 import com.example.data.RiftCommunityRoles
 import com.example.data.SyndicateChatMessage
+import com.example.data.SyndicateInfo
 import com.example.data.SyndicateWarRecord
+import com.example.engine.CosmeticCatalogItem
 import com.example.engine.CustomGameConfig
+import com.example.engine.DailyConduitDirective
 import com.example.engine.RankedGameMode
 import com.example.engine.RiftCalibrationState
 import com.example.engine.RiftCodex
@@ -218,8 +223,24 @@ private enum class RiftHubSideBayMode {
   HUB_MAIN,
   HANGAR_BAY,
   SQUADRON_BAY,
+  SYNDICATE_BAY,
   GAME_MODES_BAY,
+  CONDUIT_BAY,
+  DOSSIER_BAY,
+  HELM_CODEX_BAY,
 }
+
+private fun parseSideBayModeKey(rawKey: String): RiftHubSideBayMode =
+  when (rawKey.trim().uppercase(Locale.US)) {
+    "HANGAR_BAY" -> RiftHubSideBayMode.HANGAR_BAY
+    "SQUADRON_BAY" -> RiftHubSideBayMode.SQUADRON_BAY
+    "SYNDICATE_BAY" -> RiftHubSideBayMode.SYNDICATE_BAY
+    "GAME_MODES_BAY" -> RiftHubSideBayMode.GAME_MODES_BAY
+    "CONDUIT_BAY" -> RiftHubSideBayMode.CONDUIT_BAY
+    "DOSSIER_BAY" -> RiftHubSideBayMode.DOSSIER_BAY
+    "HELM_CODEX_BAY" -> RiftHubSideBayMode.HELM_CODEX_BAY
+    else -> RiftHubSideBayMode.HUB_MAIN
+  }
 
 private enum class SquadronPilotFilter {
   ALL,
@@ -244,6 +265,15 @@ private sealed interface OverwatchCircularPrompt {
   data object None : OverwatchCircularPrompt
   data class ShipInspect(val shipId: Int) : OverwatchCircularPrompt
   data class PilotInspect(val pilot: SquadronOnlinePilotItem) : OverwatchCircularPrompt
+  data class ActionConfirm(
+    val kicker: String,
+    val title: String,
+    val subtitle: String,
+    val confirmLabel: String,
+    val accentHex: Long,
+    val onConfirm: () -> Unit = {},
+  ) : OverwatchCircularPrompt
+  data class CallsignRename(val initialCallsign: String) : OverwatchCircularPrompt
 }
 
 data class OverwatchRiftInstance(
@@ -255,10 +285,19 @@ data class OverwatchRiftInstance(
   val pilotCount: Int,
   val combinedResonance: Int,
   val seedSalt: Int,
+  val avgResonance: Int = 0,
+  val remainingSeconds: Int = 3600,
 )
 
 private fun formatOverwatchResonance(value: Int): String =
   String.format(Locale.US, "%,d", value.coerceAtLeast(0))
+
+private fun formatOverwatchTimerMmSs(totalSeconds: Int): String {
+  val clamped = totalSeconds.coerceAtLeast(0)
+  val mins = clamped / 60
+  val secs = clamped % 60
+  return String.format(Locale.US, "%02d:%02d", mins, secs)
+}
 
 internal fun generateSixCharRoomCode(seedSalt: Long = System.currentTimeMillis()): String {
   val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -963,6 +1002,39 @@ fun NexusAiConsoleModal(
   isNetworkOnline: Boolean = true,
   cloudSyncHealth: CloudSyncHealth = CloudSyncHealth(),
   onSwitchAccount: () -> Unit = {},
+  requestedSideBayKey: String = "HUB_MAIN",
+  requestedSideBayNonce: Int = 0,
+  syndicateDirectory: List<SyndicateInfo> = emptyList(),
+  syndicateStatusMessage: String? = null,
+  onJoinOfficialSyndicate: (SyndicateInfo) -> Unit = {},
+  onLeaveCurrentSyndicate: () -> Unit = {},
+  onCharterCustomSyndicate: (tag: String, name: String, motto: String) -> Unit = { _, _, _ -> },
+  onClaimDailyDirectiveSlot: (Int) -> Long = { 0L },
+  onRerollDailyDirectiveSlot: (Int) -> Boolean = { false },
+  onClaimDailySweepBonus: () -> Long = { 0L },
+  onUnlockOrEquipCosmeticItem: (String, CosmeticCatalogItem) -> Pair<Boolean, String> = { _, _ -> false to "" },
+  onUnlockOrSelectFrameSlotId: (String) -> Pair<Boolean, String> = { false to "" },
+  activeCustomSlotId: String = "Frame A",
+  cloudLeaderboardEntries: List<LeaderboardEntry> = emptyList(),
+  onRenamePilotCallsign: (String) -> Pair<Boolean, String> = { false to "" },
+  onResetLocalPilotTelemetry: () -> Unit = {},
+  helmInitialSubDeck: Int = 0,
+  sfxEnabled: Boolean = true,
+  musicEnabled: Boolean = true,
+  musicBpm: Int = 118,
+  musicVolume: Float = 0.70f,
+  sfxVolume: Float = 0.85f,
+  cameraZoom: Float = 1.0f,
+  playfieldTextScale: Float = 1.0f,
+  onToggleSfx: () -> Unit = {},
+  onToggleMusic: () -> Unit = {},
+  onChangeMusicBpm: (Int) -> Unit = {},
+  onChangeMusicVolume: (Float) -> Unit = {},
+  onChangeSfxVolume: (Float) -> Unit = {},
+  onChangeCameraZoom: (Float) -> Unit = {},
+  onChangePlayfieldTextScale: (Float) -> Unit = {},
+  onOpenChangelogModal: () -> Unit = {},
+  onOpenAudioSynthForge: () -> Unit = {},
   renderModuleForNode: (@Composable (NexusCoreNode) -> Unit)? = null,
   embeddedModuleContent: (@Composable () -> Unit)? = null,
 ) {
@@ -1045,11 +1117,18 @@ fun NexusAiConsoleModal(
   var bugStatusBanner by remember { mutableStateOf<String?>(null) }
 
   var focusedOrbitalIndex by remember { mutableIntStateOf(0) }
-  var sideBayMode by remember { mutableStateOf(RiftHubSideBayMode.HUB_MAIN) }
+  var sideBayMode by remember { mutableStateOf(parseSideBayModeKey(requestedSideBayKey)) }
   var overwatchPrompt by remember { mutableStateOf<OverwatchCircularPrompt>(OverwatchCircularPrompt.None) }
   var squadronFilter by remember { mutableStateOf(SquadronPilotFilter.ALL) }
   var selectedSquadronPilotUid by remember { mutableStateOf("") }
   var squadronStatusBanner by remember { mutableStateOf<String?>(null) }
+
+  LaunchedEffect(requestedSideBayNonce, requestedSideBayKey) {
+    if (requestedSideBayNonce > 0) {
+      overwatchPrompt = OverwatchCircularPrompt.None
+      sideBayMode = parseSideBayModeKey(requestedSideBayKey)
+    }
+  }
 
   val localPrefs = remember(context) { LocalPilotPrefs(context) }
   val chargedPrefs =
@@ -1065,6 +1144,7 @@ fun NexusAiConsoleModal(
       mutableIntStateOf(chargedPrefs.getInt(chargedPrefsKey, 0).let { if (it in 1..10) it else 0 })
     }
 
+  // Strictly locks/charges the ship across all game modes WITHOUT launching or auto-Rifting into Overwatch
   fun chargeShipAcrossAllModes(targetShipId: Int) {
     val clamped = targetShipId.coerceIn(1, 10)
     chargedShipId = clamped
@@ -1072,12 +1152,14 @@ fun NexusAiConsoleModal(
     localPrefs.setPreferredShipId(clamped)
     onOpenHangarForShip(clamped)
     engine?.let { eng ->
-      eng.isShipLockedForMatch = false
-      eng.switchLocalPlayerShip(clamped, forceFromHangar = true)
+      if (eng.hasJoinedMatch && !eng.isHubOverwatchActive) {
+        eng.isShipLockedForMatch = false
+        eng.switchLocalPlayerShip(clamped, forceFromHangar = true)
+      }
     }
   }
 
-  // Keep any persisted Charged ship locked across all game modes on mount / user switch
+  // Keep any persisted Charged ship locked across all game modes on mount / user switch (never auto-launching)
   LaunchedEffect(chargedShipId, currentUserId) {
     if (chargedShipId in 1..10 && activeShipId.coerceIn(1, 10) != chargedShipId) {
       localPrefs.setPreferredShipId(chargedShipId)
@@ -1312,8 +1394,22 @@ fun NexusAiConsoleModal(
   var modalRootOrigin by remember { mutableStateOf(Offset.Zero) }
 
   val resolvedOverwatchInstances =
-    remember(overwatchInstances) {
-      overwatchInstances.ifEmpty {
+    remember(overwatchInstances, callsign, engine?.currentCustomGame, engine?.hasJoinedMatch) {
+      val allowedModes = setOf(RankedGameMode.SECTOR_CONVERGENCE, RankedGameMode.FLUX_CORE)
+      val filtered =
+        overwatchInstances.filter { inst ->
+          val cfg = inst.customConfig
+          if (cfg == null) {
+            inst.rankedMode in allowedModes
+          } else {
+            val isOwnCustom =
+              cfg.hostCallsign.equals(callsign, ignoreCase = true) ||
+                (engine?.hasJoinedMatch == true &&
+                  engine.currentCustomGame?.instanceId?.equals(cfg.instanceId, ignoreCase = true) == true)
+            isOwnCustom && cfg.baseMode in allowedModes
+          }
+        }
+      filtered.ifEmpty {
         listOf(
           OverwatchRiftInstance(
             key = "SECTOR_CONVERGENCE",
@@ -1324,7 +1420,21 @@ fun NexusAiConsoleModal(
             pilotCount = 0,
             combinedResonance = 1040,
             seedSalt = 101,
-          )
+            avgResonance = 175,
+            remainingSeconds = 3600,
+          ),
+          OverwatchRiftInstance(
+            key = "FLUX_CORE",
+            modeTitle = "FLUX CORE",
+            riftLabel = "RIFT #03",
+            rankedMode = RankedGameMode.FLUX_CORE,
+            customConfig = null,
+            pilotCount = 0,
+            combinedResonance = 920,
+            seedSalt = 202,
+            avgResonance = 154,
+            remainingSeconds = 3600,
+          ),
         )
       }
     }
@@ -1718,19 +1828,54 @@ fun NexusAiConsoleModal(
                 deployOrStageNewCustomConfig(cfg)
               },
               onOpenFullCustomGate = {
-                gateTab = ConvergenceGateTab.CUSTOM_RIFT_GATE
-                onSelectNode(NexusCoreNode.CONVERGENCE_GATE)
+                overwatchPrompt = OverwatchCircularPrompt.None
+                sideBayMode = RiftHubSideBayMode.GAME_MODES_BAY
               },
               onOpenShipwrightStudio = {
-                focusedOrbitalIndex = 1
-                onSelectNode(NexusCoreNode.HANGAR_DECK)
+                focusedOrbitalIndex = 3
+                onOpenForge()
               },
               onOpenFullSquadronModal = {
                 focusedOrbitalIndex = 5
-                onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.STRIKE_WING)
-                onSelectNode(NexusCoreNode.SYNDICATE_CITADEL)
+                overwatchPrompt = OverwatchCircularPrompt.None
+                sideBayMode = RiftHubSideBayMode.SQUADRON_BAY
               },
               syndicateWarRecord = syndicateWarRecord,
+              syndicateDirectory = syndicateDirectory,
+              syndicateStatusMessage = syndicateStatusMessage,
+              onJoinOfficialSyndicate = onJoinOfficialSyndicate,
+              onLeaveCurrentSyndicate = onLeaveCurrentSyndicate,
+              onCharterCustomSyndicate = onCharterCustomSyndicate,
+              onClaimDailyDirectiveSlot = { slotIdx -> onClaimDailyDirectiveSlot(slotIdx) },
+              onRerollDailyDirectiveSlot = { slotIdx -> onRerollDailyDirectiveSlot(slotIdx) },
+              onClaimDailySweepBonus = { onClaimDailySweepBonus() },
+              onUnlockOrEquipCosmeticItem = { item ->
+                onUnlockOrEquipCosmeticItem(item.category, item)
+              },
+              onUnlockOrSelectFrameSlotId = { slotId ->
+                onUnlockOrSelectFrameSlotId(slotId)
+              },
+              activeCustomSlotId = activeCustomSlotId,
+              cloudLeaderboardEntries = cloudLeaderboardEntries,
+              onRenamePilotCallsign = { updated -> onRenamePilotCallsign(updated) },
+              onResetLocalPilotTelemetry = onResetLocalPilotTelemetry,
+              helmInitialSubDeck = helmInitialSubDeck,
+              sfxEnabled = sfxEnabled,
+              musicEnabled = musicEnabled,
+              musicBpm = musicBpm,
+              musicVolume = musicVolume,
+              sfxVolume = sfxVolume,
+              cameraZoom = cameraZoom,
+              playfieldTextScale = playfieldTextScale,
+              onToggleSfx = { _ -> onToggleSfx() },
+              onToggleMusic = { _ -> onToggleMusic() },
+              onChangeMusicBpm = onChangeMusicBpm,
+              onChangeMusicVolume = onChangeMusicVolume,
+              onChangeSfxVolume = onChangeSfxVolume,
+              onChangeCameraZoom = onChangeCameraZoom,
+              onChangePlayfieldTextScale = onChangePlayfieldTextScale,
+              onOpenChangelogModal = onOpenChangelogModal,
+              onOpenAudioSynthForge = onOpenAudioSynthForge,
               engine = engine,
               currentUserId = currentUserId,
               totalOnlinePilots = totalOnlinePilots,
@@ -1786,21 +1931,23 @@ fun NexusAiConsoleModal(
               onCloseModal = onCloseModal,
               onClickCallsign = {
                 focusedOrbitalIndex = 6
-                onSelectArchiveSubDeck(ArchiveCodexSubDeck.PILOT_DOSSIER)
-                onSelectNode(NexusCoreNode.ARCHIVE_CODEX)
+                overwatchPrompt = OverwatchCircularPrompt.None
+                sideBayMode = RiftHubSideBayMode.DOSSIER_BAY
               },
               onClickResonance = {
                 focusedOrbitalIndex = 2
-                onSelectNode(NexusCoreNode.RIFT_CONDUIT)
+                overwatchPrompt = OverwatchCircularPrompt.None
+                sideBayMode = RiftHubSideBayMode.CONDUIT_BAY
               },
               onClickShards = {
                 focusedOrbitalIndex = 2
-                onSelectNode(NexusCoreNode.RIFT_CONDUIT)
+                overwatchPrompt = OverwatchCircularPrompt.None
+                sideBayMode = RiftHubSideBayMode.CONDUIT_BAY
               },
               onClickSyn = {
                 focusedOrbitalIndex = 5
-                onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.SYNDICATES_WARS)
-                onSelectNode(NexusCoreNode.SYNDICATE_CITADEL)
+                overwatchPrompt = OverwatchCircularPrompt.None
+                sideBayMode = RiftHubSideBayMode.SYNDICATE_BAY
               },
               onClickWing = {
                 focusedOrbitalIndex = 5
@@ -1813,8 +1960,8 @@ fun NexusAiConsoleModal(
               },
               onOpenPilotDossier = {
                 focusedOrbitalIndex = 6
-                onSelectArchiveSubDeck(ArchiveCodexSubDeck.PILOT_DOSSIER)
-                onSelectNode(NexusCoreNode.ARCHIVE_CODEX)
+                overwatchPrompt = OverwatchCircularPrompt.None
+                sideBayMode = RiftHubSideBayMode.DOSSIER_BAY
               },
               onSelectNode = { idx, node ->
                 focusedOrbitalIndex = idx
@@ -1826,6 +1973,32 @@ fun NexusAiConsoleModal(
                   NexusCoreNode.CONVERGENCE_GATE -> {
                     overwatchPrompt = OverwatchCircularPrompt.None
                     sideBayMode = RiftHubSideBayMode.GAME_MODES_BAY
+                  }
+                  NexusCoreNode.RIFT_CONDUIT -> {
+                    overwatchPrompt = OverwatchCircularPrompt.None
+                    sideBayMode = RiftHubSideBayMode.CONDUIT_BAY
+                  }
+                  NexusCoreNode.SYNDICATE_CITADEL -> {
+                    overwatchPrompt = OverwatchCircularPrompt.None
+                    sideBayMode =
+                      if (syndicateSubDeck == SyndicateCitadelSubDeck.STRIKE_WING) {
+                        RiftHubSideBayMode.SQUADRON_BAY
+                      } else {
+                        RiftHubSideBayMode.SYNDICATE_BAY
+                      }
+                  }
+                  NexusCoreNode.ARCHIVE_CODEX -> {
+                    overwatchPrompt = OverwatchCircularPrompt.None
+                    sideBayMode =
+                      if (archiveSubDeck == ArchiveCodexSubDeck.TACTICAL_CODEX) {
+                        RiftHubSideBayMode.HELM_CODEX_BAY
+                      } else {
+                        RiftHubSideBayMode.DOSSIER_BAY
+                      }
+                  }
+                  NexusCoreNode.HELM_SYSTEMS -> {
+                    overwatchPrompt = OverwatchCircularPrompt.None
+                    sideBayMode = RiftHubSideBayMode.HELM_CODEX_BAY
                   }
                   else -> onSelectNode(node)
                 }
@@ -2124,8 +2297,9 @@ fun NexusAiConsoleModal(
                         },
                         onRevokeGuest = onRevokeSyndicateGuest,
                         onOpenSyndicateCitadel = {
-                          onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.SYNDICATES_WARS)
-                          onSelectNode(NexusCoreNode.SYNDICATE_CITADEL)
+                          overwatchPrompt = OverwatchCircularPrompt.None
+                          sideBayMode = RiftHubSideBayMode.SYNDICATE_BAY
+                          onSelectNode(NexusCoreNode.ORBITAL_HUB)
                         },
                         lobbyMessages = lobbyMessages,
                         localEchoMessages = localEchoMessages,
@@ -2275,6 +2449,37 @@ private fun OrbitalHubSpatialStage(
   onOpenShipwrightStudio: () -> Unit = {},
   onOpenFullSquadronModal: () -> Unit = {},
   @Suppress("UNUSED_PARAMETER") syndicateWarRecord: SyndicateWarRecord,
+  syndicateDirectory: List<SyndicateInfo> = emptyList(),
+  syndicateStatusMessage: String? = null,
+  onJoinOfficialSyndicate: (SyndicateInfo) -> Unit = {},
+  onLeaveCurrentSyndicate: () -> Unit = {},
+  onCharterCustomSyndicate: (tag: String, name: String, motto: String) -> Unit = { _, _, _ -> },
+  onClaimDailyDirectiveSlot: (Int) -> Unit = {},
+  onRerollDailyDirectiveSlot: (Int) -> Unit = {},
+  onClaimDailySweepBonus: () -> Unit = {},
+  onUnlockOrEquipCosmeticItem: (CosmeticCatalogItem) -> Unit = {},
+  onUnlockOrSelectFrameSlotId: (String) -> Unit = {},
+  activeCustomSlotId: String = "A",
+  cloudLeaderboardEntries: List<LeaderboardEntry> = emptyList(),
+  onRenamePilotCallsign: (String) -> Unit = {},
+  onResetLocalPilotTelemetry: () -> Unit = {},
+  helmInitialSubDeck: Int = 0,
+  sfxEnabled: Boolean = true,
+  musicEnabled: Boolean = true,
+  musicBpm: Int = 128,
+  musicVolume: Float = 0.7f,
+  sfxVolume: Float = 0.85f,
+  cameraZoom: Float = 1.0f,
+  playfieldTextScale: Float = 1.0f,
+  onToggleSfx: (Boolean) -> Unit = {},
+  onToggleMusic: (Boolean) -> Unit = {},
+  onChangeMusicBpm: (Int) -> Unit = {},
+  onChangeMusicVolume: (Float) -> Unit = {},
+  onChangeSfxVolume: (Float) -> Unit = {},
+  onChangeCameraZoom: (Float) -> Unit = {},
+  onChangePlayfieldTextScale: (Float) -> Unit = {},
+  onOpenChangelogModal: () -> Unit = {},
+  onOpenAudioSynthForge: () -> Unit = {},
   engine: RiftGameEngine?,
   currentUserId: String,
   totalOnlinePilots: Int,
@@ -2315,8 +2520,21 @@ private fun OrbitalHubSpatialStage(
   onSwitchAccount: () -> Unit = {},
 ) {
   val context = LocalContext.current
+  val density = LocalDensity.current
   val headless = remember { isHeadlessGlEnvironment() }
   val localPrefs = remember(context) { LocalPilotPrefs(context) }
+  var renameDraftState by remember(callsign) { mutableStateOf(callsign) }
+
+  // Live 1-second ticker for the 1-hour public match reset / active match countdown
+  val nowEpochMs by
+    produceState(initialValue = System.currentTimeMillis(), key1 = headless) {
+      if (!headless) {
+        while (true) {
+          kotlinx.coroutines.delay(1000L)
+          value = System.currentTimeMillis()
+        }
+      }
+    }
 
   // Continuous 2.5D ship rotation + orbiting Flux icon phase shared across Hangar Bay, Circular Prompt & Rift Hub
   val shipSpinDeg =
@@ -2599,6 +2817,30 @@ private fun OrbitalHubSpatialStage(
       else -> Color(0xFFFACC15)
     }
 
+  val liveRemainingSec =
+    remember(activeOverwatchInstance, nowEpochMs, engine?.hasJoinedMatch, engine?.publicMatchDurationSec) {
+      val cfg = activeOverwatchInstance.customConfig
+      when {
+        engine?.hasJoinedMatch == true &&
+          engine.activeMatchSectorTag().equals(activeOverwatchInstance.key, ignoreCase = true) ->
+          (engine.publicMatchCycleLimitSec - engine.publicMatchDurationSec).roundToInt().coerceAtLeast(0)
+        cfg != null ->
+          if (cfg.matchDurationMinutes <= 0) 3600 else cfg.matchDurationMinutes.coerceIn(1, 120) * 60
+        activeOverwatchInstance.remainingSeconds in 1..3600 && headless ->
+          activeOverwatchInstance.remainingSeconds
+        else -> (3600 - ((nowEpochMs / 1000L) % 3600L).toInt()).coerceIn(1, 3600)
+      }
+    }
+  val liveAvgResonance =
+    remember(activeOverwatchInstance) {
+      when {
+        activeOverwatchInstance.avgResonance > 0 -> activeOverwatchInstance.avgResonance
+        activeOverwatchInstance.pilotCount > 0 ->
+          (activeOverwatchInstance.combinedResonance / activeOverwatchInstance.pilotCount).coerceAtLeast(0)
+        else -> activeOverwatchInstance.combinedResonance.coerceAtLeast(0)
+      }
+    }
+
   BoxWithConstraints(
     modifier = Modifier.fillMaxSize(),
   ) {
@@ -2606,32 +2848,80 @@ private fun OrbitalHubSpatialStage(
     val safeH = maxHeight
     val aspect = safeW.value / safeH.value.coerceAtLeast(1f)
     val isTabletDeck = safeH >= 480.dp || aspect < 1.76f
-    val isUltraWidePhone = !isTabletDeck && aspect >= 2.05f
-    val wingWeight =
-      when {
-        isTabletDeck && aspect < 1.48f -> 0.282f
-        isTabletDeck -> 0.268f
-        isUltraWidePhone -> 0.308f
-        else -> 0.298f
-      }
-    val centerWeight = (1f - wingWeight * 2f).coerceAtLeast(0.384f)
-    val outerPadH = if (isTabletDeck) 6.dp else 4.dp
-    val outerPadV = if (isTabletDeck) 3.dp else 1.dp
-    val deckGap = if (isTabletDeck) 8.dp else 4.dp
-    val wingStackGap = if (isTabletDeck) 6.dp else 4.dp
-    val equatorRecessDp = if (isTabletDeck) 10.dp else 7.dp
-    val cornerPodHeight = if (isTabletDeck) 50.dp else 48.dp
+    val outerPadH = if (isTabletDeck) 5.dp else 3.dp
+    val wingStackGap = if (isTabletDeck) 5.dp else 3.5.dp
+    val equatorRecessDp = if (isTabletDeck) 8.dp else 5.dp
+    val cornerPodHeight = if (isTabletDeck) 49.dp else 48.dp
 
-    Row(
-      modifier =
-        Modifier.fillMaxSize()
-          .padding(horizontal = outerPadH, vertical = outerPadV),
-      horizontalArrangement = Arrangement.spacedBy(deckGap),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      // PORT FLANKING HARDWARE WING (Digitizes between Main Hub, Hangar Ships 1..5, Squadron Pilot List, & 6 Modes)
+    // True Top-to-Bottom Edge-to-Edge Overwatch Stage Diameter (100% safeH on phones & 8.8" tablets)
+    val minWingReserveTotal = if (isTabletDeck) 312.dp else 264.dp
+    val overwatchStageDiameterDp =
+      minOf(safeH, (safeW - minWingReserveTotal).coerceAtLeast(156.dp))
+    val sideSpanEachDp = ((safeW - overwatchStageDiameterDp) * 0.5f - outerPadH).coerceAtLeast(126.dp)
+    val wingWidthDp =
+      if (aspect >= 1.85f) {
+        (sideSpanEachDp * 0.86f).coerceIn(142.dp, if (isTabletDeck) 232.dp else 198.dp)
+      } else {
+        (sideSpanEachDp - 2.dp).coerceIn(134.dp, if (isTabletDeck) 220.dp else 192.dp)
+      }
+    val openCornerAnchorDp = outerPadH + wingWidthDp + 4.dp
+    val openCornerMaxWidthDp =
+      ((safeW * 0.5f) - openCornerAnchorDp - overwatchStageDiameterDp * 0.16f).coerceIn(112.dp, 214.dp)
+
+    Box(modifier = Modifier.fillMaxSize()) {
+      // 1. TRUE TOP-TO-BOTTOM EDGE-TO-EDGE CIRCULAR OVERWATCH CENTERPIECE (0dp top/bottom dead padding)
+      val centerFocused = focusedOrbitalIndex == 0
+      RoundRipplingOverwatchAperture(
+        modifier =
+          Modifier.align(Alignment.Center)
+            .size(overwatchStageDiameterDp),
+        isFocused = centerFocused,
+        isTabletDeck = isTabletDeck,
+        drawHeadlessSafeZoneFallback = headless,
+        activeInstance = activeOverwatchInstance,
+        overwatchPrompt = overwatchPrompt,
+        chargedShipId = chargedShipId,
+        bestShipId = resolvedBestShipId,
+        shipSpinDeg = shipSpinDeg,
+        fluxOrbitRad = fluxOrbitRad,
+        renameDraft = renameDraftState,
+        onRenameDraftChange = { renameDraftState = it },
+        resolveShipResonance = { resolveLocalShipResonance(it) },
+        onChargeShip = { chosenShip ->
+          onChargeShip(chosenShip)
+          onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+          onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+        },
+        onDismissPrompt = { onChangeOverwatchPrompt(OverwatchCircularPrompt.None) },
+        onSquadUpPilot = { pilotItem ->
+          onInviteOnlinePilotToWing(pilotItem.rawLivePilot)
+        },
+        onAddFriendPilot = { pilotItem ->
+          onAddOnlinePilotFriend(pilotItem.callsign)
+        },
+        onConfirmActionPrompt = { confirmPrompt ->
+          confirmPrompt.onConfirm()
+          onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+        },
+        onSaveCallsignRename = { rawDraft ->
+          val clean = rawDraft.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(14)
+          if (clean.length >= 2) {
+            onRenamePilotCallsign(clean)
+            onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+          }
+        },
+        onOverwatchTransformGesture = onOverwatchTransformGesture,
+        onResetOverwatchCamera = onResetOverwatchCamera,
+        onApertureRootBoundsChanged = onApertureRootBoundsChanged,
+      )
+
+      // 2. PORT FLANKING HARDWARE WING (All Non-Full-Screen Windows Digitize Into Flanking Side-Bays)
       HubDigitizingScanlineBox(
-        modifier = Modifier.weight(wingWeight).fillMaxHeight(),
+        modifier =
+          Modifier.align(Alignment.CenterStart)
+            .padding(start = outerPadH, top = 2.dp, bottom = 2.dp)
+            .width(wingWidthDp)
+            .fillMaxHeight(),
         scanProgress = digitizeScanProgress.value,
         isRightSide = false,
       ) {
@@ -2755,7 +3045,10 @@ private fun OrbitalHubSpatialStage(
                 shipSpinDeg = shipSpinDeg,
                 fluxOrbitRad = fluxOrbitRad,
                 shipResonanceFor = { resolveLocalShipResonance(it) },
-                onBackToHub = { onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN) },
+                onBackToHub = {
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+                  onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+                },
                 onOpenStudio = onOpenShipwrightStudio,
                 onTapShip = { shipId ->
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId))
@@ -2772,11 +3065,44 @@ private fun OrbitalHubSpatialStage(
                 pilots = filteredSquadronPilots,
                 selectedPilotUid = activeInspectedPilot?.uid.orEmpty(),
                 squadronStatusBanner = squadronStatusBanner,
-                onBackToHub = { onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN) },
+                onBackToHub = {
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+                  onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+                },
                 onBroadcastLfg = onPostStrikeWingInvite,
                 onTapPilot = { pilotItem ->
                   onSelectSquadronPilotUid(pilotItem.uid)
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.PilotInspect(pilotItem))
+                },
+              )
+            }
+            RiftHubSideBayMode.SYNDICATE_BAY -> {
+              SyndicateLeftDirectoryBay(
+                isTabletDeck = isTabletDeck,
+                headerHeight = cornerPodHeight,
+                wingStackGap = wingStackGap,
+                currentTag = syndicateTag,
+                syndicateDirectory = syndicateDirectory,
+                statusMessage = syndicateStatusMessage,
+                onBackToHub = {
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+                  onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+                },
+                onInspectSyndicate = { syn ->
+                  val isCurrent = syndicateTag.isNotBlank() && syn.tag.equals(syndicateTag, ignoreCase = true)
+                  onChangeOverwatchPrompt(
+                    OverwatchCircularPrompt.ActionConfirm(
+                      kicker = "SYNDICATE CITADEL",
+                      title = "[${syn.tag.uppercase(Locale.US)}] ${syn.name.uppercase(Locale.US)}",
+                      subtitle =
+                        "${syn.memberCount.coerceAtLeast(1)} PILOTS • ${String.format(Locale.US, "%,d", syn.combinedBounty.coerceAtLeast(0L))} RES\n${syn.motto.ifBlank { "Sector Syndicate" }}",
+                      confirmLabel = if (isCurrent) "LEAVE" else "JOIN",
+                      accentHex = if (isCurrent) 0xFFFB7185L else 0xFFFFD700L,
+                      onConfirm = {
+                        if (isCurrent) onLeaveCurrentSyndicate() else onJoinOfficialSyndicate(syn)
+                      },
+                    )
+                  )
                 },
               )
             }
@@ -2796,61 +3122,103 @@ private fun OrbitalHubSpatialStage(
                 canQueueSyndicateWars = canQueueSyndicateWars,
                 overwatchInstances = overwatchInstances,
                 onSelectOverwatchKey = onSelectOverwatchKey,
-                onBackToHub = { onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN) },
+                onBackToHub = {
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+                  onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+                },
                 onDeployMode = onStageRanked,
+              )
+            }
+            RiftHubSideBayMode.CONDUIT_BAY -> {
+              ConduitLeftDirectivesBay(
+                isTabletDeck = isTabletDeck,
+                headerHeight = cornerPodHeight,
+                wingStackGap = wingStackGap,
+                liveResonance = liveResonance,
+                conduitTier = conduitTier,
+                directives = directives,
+                isSweepClaimed = localPrefs.isDailySweepBonusClaimed(currentUserId.ifBlank { null }),
+                onBackToHub = {
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+                  onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+                },
+                onClaimDirective = onClaimDailyDirectiveSlot,
+                onRerollDirective = onRerollDailyDirectiveSlot,
+                onClaimSweep = onClaimDailySweepBonus,
+              )
+            }
+            RiftHubSideBayMode.DOSSIER_BAY -> {
+              DossierLeftIdentityBay(
+                isTabletDeck = isTabletDeck,
+                headerHeight = cornerPodHeight,
+                wingStackGap = wingStackGap,
+                callsign = callsign,
+                syndicateTag = syndicateTag,
+                liveResonance = liveResonance,
+                peakResonance = peakResonance,
+                localPrefs = localPrefs,
+                currentUserId = currentUserId,
+                onBackToHub = {
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+                  onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+                },
+                onOpenRenamePrompt = {
+                  renameDraftState = callsign
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.CallsignRename(callsign))
+                },
+                onOpenResetPrompt = {
+                  onChangeOverwatchPrompt(
+                    OverwatchCircularPrompt.ActionConfirm(
+                      kicker = "DESTRUCTIVE ACTION",
+                      title = "RESET PILOT RECORD?",
+                      subtitle = "Clears local match telemetry and career counters on this device.",
+                      confirmLabel = "RESET",
+                      accentHex = 0xFFFB7185L,
+                      onConfirm = onResetLocalPilotTelemetry,
+                    )
+                  )
+                },
+                onSwitchAccount = onSwitchAccount,
+              )
+            }
+            RiftHubSideBayMode.HELM_CODEX_BAY -> {
+              HelmLeftSystemsBay(
+                isTabletDeck = isTabletDeck,
+                headerHeight = cornerPodHeight,
+                wingStackGap = wingStackGap,
+                sfxEnabled = sfxEnabled,
+                musicEnabled = musicEnabled,
+                musicBpm = musicBpm,
+                musicVolume = musicVolume,
+                sfxVolume = sfxVolume,
+                cameraZoom = cameraZoom,
+                playfieldTextScale = playfieldTextScale,
+                onToggleSfx = onToggleSfx,
+                onToggleMusic = onToggleMusic,
+                onChangeMusicBpm = onChangeMusicBpm,
+                onChangeMusicVolume = onChangeMusicVolume,
+                onChangeSfxVolume = onChangeSfxVolume,
+                onChangeCameraZoom = onChangeCameraZoom,
+                onChangePlayfieldTextScale = onChangePlayfieldTextScale,
+                onOpenChangelogModal = onOpenChangelogModal,
+                onOpenAudioSynthForge = onOpenAudioSynthForge,
+                onBackToHub = {
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+                  onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+                },
               )
             }
           }
         }
       }
 
-      // FULL-HEIGHT CENTERPIECE: EDGE-TO-EDGE OVERWATCH RADAR STAGE + CONFINED CIRCULAR GLASS PROMPTS
-      val centerFocused = focusedOrbitalIndex == 0
-      RoundRipplingOverwatchAperture(
-        modifier = Modifier.weight(centerWeight).fillMaxHeight(),
-        isFocused = centerFocused,
-        isTabletDeck = isTabletDeck,
-        drawHeadlessSafeZoneFallback = headless,
-        overwatchInstances = overwatchInstances,
-        activeInstance = activeOverwatchInstance,
-        favoriteOverwatchKey = favoriteOverwatchKey,
-        overwatchZoom = overwatchZoom,
-        sideBayMode = sideBayMode,
-        overwatchPrompt = overwatchPrompt,
-        chargedShipId = chargedShipId,
-        bestShipId = resolvedBestShipId,
-        shipSpinDeg = shipSpinDeg,
-        fluxOrbitRad = fluxOrbitRad,
-        resolveShipResonance = { resolveLocalShipResonance(it) },
-        onChargeShip = { chosenShip ->
-          onChargeShip(chosenShip)
-          onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
-        },
-        onDismissPrompt = { onChangeOverwatchPrompt(OverwatchCircularPrompt.None) },
-        onSquadUpPilot = { pilotItem ->
-          onInviteOnlinePilotToWing(pilotItem.rawLivePilot)
-        },
-        onAddFriendPilot = { pilotItem ->
-          onAddOnlinePilotFriend(pilotItem.callsign)
-        },
-        onSelectOverwatchKey = onSelectOverwatchKey,
-        onToggleFavoriteOverwatchKey = onToggleFavoriteOverwatchKey,
-        onQuickZoneIntoOverwatch = onQuickZoneIntoOverwatch,
-        onOverwatchTransformGesture = onOverwatchTransformGesture,
-        onResetOverwatchCamera = onResetOverwatchCamera,
-        onOpenAllModesGate = {
-          if (sideBayMode == RiftHubSideBayMode.GAME_MODES_BAY) {
-            onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
-          } else {
-            onChangeSideBayMode(RiftHubSideBayMode.GAME_MODES_BAY)
-          }
-        },
-        onApertureRootBoundsChanged = onApertureRootBoundsChanged,
-      )
-
-      // STARBOARD FLANKING HARDWARE WING (Digitizes between Main Hub, Hangar Ships 6..10, Playfield Ship Stage, & Custom Games)
+      // 3. STARBOARD FLANKING HARDWARE WING (All Non-Full-Screen Windows Digitize Into Flanking Side-Bays)
       HubDigitizingScanlineBox(
-        modifier = Modifier.weight(wingWeight).fillMaxHeight(),
+        modifier =
+          Modifier.align(Alignment.CenterEnd)
+            .padding(end = outerPadH, top = 2.dp, bottom = 2.dp)
+            .width(wingWidthDp)
+            .fillMaxHeight(),
         scanProgress = digitizeScanProgress.value,
         isRightSide = true,
       ) {
@@ -2977,7 +3345,10 @@ private fun OrbitalHubSpatialStage(
                 shipSpinDeg = shipSpinDeg,
                 fluxOrbitRad = fluxOrbitRad,
                 shipResonanceFor = { resolveLocalShipResonance(it) },
-                onBackToHub = { onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN) },
+                onBackToHub = {
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+                  onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+                },
                 onOpenStudio = onOpenShipwrightStudio,
                 onTapShip = { shipId ->
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId))
@@ -3003,6 +3374,31 @@ private fun OrbitalHubSpatialStage(
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.PilotInspect(pilotItem))
                 },
                 onOpenFullSquadronModal = onOpenFullSquadronModal,
+              )
+            }
+            RiftHubSideBayMode.SYNDICATE_BAY -> {
+              SyndicateRightCitadelBay(
+                isTabletDeck = isTabletDeck,
+                headerHeight = cornerPodHeight,
+                wingStackGap = wingStackGap,
+                syndicateTag = syndicateTag,
+                syndicateName = cleanSyndicateDisplayTitle,
+                syndicateOnlineCount = syndicateOnlineCount,
+                syndicateWarRecord = syndicateWarRecord,
+                onLeaveCurrentSyndicate = {
+                  onChangeOverwatchPrompt(
+                    OverwatchCircularPrompt.ActionConfirm(
+                      kicker = "SYNDICATE CITADEL",
+                      title = "LEAVE [$syndicateTag]?",
+                      subtitle = "Returns your pilot identity to unaffiliated status until you join or charter another Syndicate.",
+                      confirmLabel = "LEAVE",
+                      accentHex = 0xFFFB7185L,
+                      onConfirm = onLeaveCurrentSyndicate,
+                    )
+                  )
+                },
+                onCharterCustomSyndicate = onCharterCustomSyndicate,
+                onOpenCrestForge = onOpenShipwrightStudio,
               )
             }
             RiftHubSideBayMode.GAME_MODES_BAY -> {
@@ -3032,9 +3428,123 @@ private fun OrbitalHubSpatialStage(
                 onQuickCreateCustomGame = onQuickCreateCustomGame,
               )
             }
+            RiftHubSideBayMode.CONDUIT_BAY -> {
+              ConduitRightVaultBay(
+                isTabletDeck = isTabletDeck,
+                headerHeight = cornerPodHeight,
+                wingStackGap = wingStackGap,
+                shardText = shardText,
+                activeCustomSlotId = activeCustomSlotId,
+                localPrefs = localPrefs,
+                currentUserId = currentUserId,
+                onSelectFrameSlot = onUnlockOrSelectFrameSlotId,
+                onInspectCosmetic = { item, isUnlocked, isEquipped ->
+                  onChangeOverwatchPrompt(
+                    OverwatchCircularPrompt.ActionConfirm(
+                      kicker = item.category.replace("_", " "),
+                      title = item.name.uppercase(Locale.US),
+                      subtitle = item.summary,
+                      confirmLabel = when {
+                        isEquipped -> "EQUIPPED"
+                        isUnlocked -> "EQUIP"
+                        else -> "UNLOCK"
+                      },
+                      accentHex = if (isUnlocked) 0xFF00F5D4L else 0xFFFFD700L,
+                      onConfirm = { onUnlockOrEquipCosmeticItem(item) },
+                    )
+                  )
+                },
+              )
+            }
+            RiftHubSideBayMode.DOSSIER_BAY -> {
+              DossierRightCareerBay(
+                isTabletDeck = isTabletDeck,
+                headerHeight = cornerPodHeight,
+                wingStackGap = wingStackGap,
+                bestShipId = resolvedBestShipId,
+                shipSpinDeg = shipSpinDeg,
+                fluxOrbitRad = fluxOrbitRad,
+                shipResonanceFor = { resolveLocalShipResonance(it) },
+                cloudLeaderboardEntries = cloudLeaderboardEntries,
+                onInspectShip = { shipId ->
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId))
+                },
+              )
+            }
+            RiftHubSideBayMode.HELM_CODEX_BAY -> {
+              HelmRightCodexBay(
+                isTabletDeck = isTabletDeck,
+                headerHeight = cornerPodHeight,
+                wingStackGap = wingStackGap,
+                initialSubDeck = helmInitialSubDeck,
+              )
+            }
           }
         }
       }
+
+      // 4. OPEN-SPACE CORNER CONTROLS OUTSIDE OVERWATCH (Top-Left Terminal + Chevrons, Top-Right RIFT IN, Bottom-Left/Right Confirm/Back)
+      OverwatchOpenSpaceCornerOverlays(
+        openCornerAnchorDp = openCornerAnchorDp,
+        openCornerMaxWidthDp = openCornerMaxWidthDp,
+        isTabletDeck = isTabletDeck,
+        isFocused = centerFocused,
+        overwatchInstances = overwatchInstances,
+        activeInstance = activeOverwatchInstance,
+        favoriteOverwatchKey = favoriteOverwatchKey,
+        overwatchZoom = overwatchZoom,
+        liveRemainingSec = liveRemainingSec,
+        liveAvgResonance = liveAvgResonance,
+        sideBayMode = sideBayMode,
+        overwatchPrompt = overwatchPrompt,
+        chargedShipId = chargedShipId,
+        renameDraft = renameDraftState,
+        density = density,
+        onSelectOverwatchKey = onSelectOverwatchKey,
+        onToggleFavoriteOverwatchKey = onToggleFavoriteOverwatchKey,
+        onResetOverwatchCamera = onResetOverwatchCamera,
+        onQuickZoneIntoOverwatch = onQuickZoneIntoOverwatch,
+        onToggleAllModesBay = {
+          onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+          if (sideBayMode == RiftHubSideBayMode.GAME_MODES_BAY) {
+            onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+          } else {
+            onChangeSideBayMode(RiftHubSideBayMode.GAME_MODES_BAY)
+          }
+        },
+        onBottomLeftBackOrCancel = {
+          if (overwatchPrompt != OverwatchCircularPrompt.None) {
+            onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+          } else if (sideBayMode != RiftHubSideBayMode.HUB_MAIN) {
+            onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+          }
+        },
+        onBottomRightConfirmOrCharge = {
+          when (val p = overwatchPrompt) {
+            is OverwatchCircularPrompt.ShipInspect -> {
+              onChargeShip(p.shipId)
+              onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+              onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+            }
+            is OverwatchCircularPrompt.PilotInspect -> {
+              onInviteOnlinePilotToWing(p.pilot.rawLivePilot)
+              onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+            }
+            is OverwatchCircularPrompt.ActionConfirm -> {
+              p.onConfirm()
+              onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+            }
+            is OverwatchCircularPrompt.CallsignRename -> {
+              val clean = renameDraftState.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(14)
+              if (clean.length >= 2) {
+                onRenamePilotCallsign(clean)
+                onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+              }
+            }
+            OverwatchCircularPrompt.None -> Unit
+          }
+        },
+      )
     }
   }
 }
@@ -4874,6 +5384,9 @@ private fun GameModesLeftRankedBay(
           }
         val canDeploy = mode != RankedGameMode.SYNDICATE_WARS || canQueueSyndicateWars.first
 
+        val isOverwatchEligible =
+          mode == RankedGameMode.SECTOR_CONVERGENCE || mode == RankedGameMode.FLUX_CORE
+
         Column(
           modifier =
             Modifier.fillMaxWidth()
@@ -4883,9 +5396,11 @@ private fun GameModesLeftRankedBay(
                 secondaryBorder = if (isActive) Color(0xFFFFD700) else Color(0xFF091528),
               )
               .clickable {
-                overwatchInstances
-                  .firstOrNull { it.customConfig == null && it.rankedMode == mode }
-                  ?.let { onSelectOverwatchKey(it.key) }
+                if (isOverwatchEligible) {
+                  overwatchInstances
+                    .firstOrNull { it.customConfig == null && it.rankedMode == mode }
+                    ?.let { onSelectOverwatchKey(it.key) }
+                }
               }
               .padding(horizontal = 7.dp, vertical = 5.dp)
               .testTag("game_modes_card_${mode.name.lowercase(Locale.US)}"),
@@ -4907,10 +5422,10 @@ private fun GameModesLeftRankedBay(
                 overflow = TextOverflow.Ellipsis,
               )
               val subLine =
-                if (mode == RankedGameMode.SYNDICATE_WARS && !canDeploy) {
-                  canQueueSyndicateWars.second
-                } else {
-                  "${humans}P LIVE • TAP TO PREVIEW OVERWATCH"
+                when {
+                  mode == RankedGameMode.SYNDICATE_WARS && !canDeploy -> canQueueSyndicateWars.second
+                  isOverwatchEligible -> "${humans}P LIVE • TAP TO PREVIEW OVERWATCH"
+                  else -> "${humans}P LIVE • <=15S RESONANCE QUEUE"
                 }
               Text(
                 text = subLine,
@@ -5408,13 +5923,433 @@ private fun GameModesRightCustomBay(
 }
 
 /**
- * Signature Rift Hub Centerpiece — Edge-to-Edge Overwatch Radar Stage:
- * 1. Top Chamfered Sci-Fi Sector Pod (`<`, Mode + Rift # + Combined Resonance + Pilots, `[1x]` reset, `[FAV]`, `>`).
- * 2. Maximized Circular Overwatch Viewport (`lensRadiusFraction = 0.476f`, `1.0x .. 6.0x` pinch-to-zoom, drag pan,
- *    double-tap reset) framed by a sculpted circular 2.5D radar bezel (`0.955r .. 1.044r`) with 72 calibrated degree
- *    ticks in solar gold (#FFD700) & electric cyan (#00F5D4), subtle perimeter radial reticle lines, harmonic Resonance
- *    arcs, and layered top-left optical specular meniscus highlights.
- * 3. Bottom Chamfered Dual-Actuator Launch Pod (`[ RIFT IN ]` into the active Overwatch Rift + `[ ALL MODES ]`).
+ * Renders the four open-space corner regions outside the curved top-to-bottom Overwatch circle:
+ * 1. Top-Left (between Port Wing & Overwatch): Simple up chevron above (`nexus_overwatch_prev`),
+ *    crisp monospace terminal telemetry readout (active mode/name + `[FAV]`, live 1-hour reset / match
+ *    countdown `MM:SS`, average Resonance `[ResonanceCrestIcon] XXX AVG RES`, real human pilot count + `[1x]`),
+ *    and simple down chevron below (`nexus_overwatch_next`).
+ * 2. Top-Right (opposite top-left terminal readout): Primary `RIFT IN` launch trigger (`nexus_overwatch_rift_in`)
+ *    plus compact `ALL MODES` actuator (`nexus_node_convergence_gate`).
+ * 3. Bottom-Left: Contextual `CANCEL` / `< RIFT HUB` return trigger.
+ * 4. Bottom-Right: Contextual `CHARGE [Flux icon]` / `SQUAD UP` / `CONFIRM` trigger.
+ */
+@Composable
+private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
+  openCornerAnchorDp: Dp,
+  openCornerMaxWidthDp: Dp,
+  isTabletDeck: Boolean,
+  isFocused: Boolean,
+  overwatchInstances: List<OverwatchRiftInstance>,
+  activeInstance: OverwatchRiftInstance,
+  favoriteOverwatchKey: String,
+  overwatchZoom: Float,
+  liveRemainingSec: Int,
+  liveAvgResonance: Int,
+  sideBayMode: RiftHubSideBayMode,
+  overwatchPrompt: OverwatchCircularPrompt,
+  chargedShipId: Int,
+  @Suppress("UNUSED_PARAMETER") renameDraft: String,
+  density: androidx.compose.ui.unit.Density,
+  onSelectOverwatchKey: (String) -> Unit,
+  onToggleFavoriteOverwatchKey: (String) -> Unit,
+  onResetOverwatchCamera: () -> Unit,
+  onQuickZoneIntoOverwatch: (OverwatchRiftInstance) -> Unit,
+  onToggleAllModesBay: () -> Unit,
+  onBottomLeftBackOrCancel: () -> Unit,
+  onBottomRightConfirmOrCharge: () -> Unit,
+) {
+  val totalInstances = overwatchInstances.size.coerceAtLeast(1)
+  val currentIdx =
+    remember(overwatchInstances, activeInstance.key) {
+      overwatchInstances.indexOfFirst { it.key == activeInstance.key }.let { if (it < 0) 0 else it }
+    }
+  val isFavorite = favoriteOverwatchKey.isNotBlank() && favoriteOverwatchKey == activeInstance.key
+  val countdownText = remember(liveRemainingSec) { formatOverwatchTimerMmSs(liveRemainingSec) }
+  val humanCount = activeInstance.pilotCount.coerceAtLeast(0)
+  val modeHeaderLine =
+    if (activeInstance.customConfig != null) {
+      activeInstance.modeTitle.uppercase(Locale.US)
+    } else {
+      "${activeInstance.modeTitle.uppercase(Locale.US)} // ${activeInstance.riftLabel}"
+    }
+
+  // 1. TOP-LEFT OPEN SPACE: Simple Up Chevron + Crisp Terminal Readout + Simple Down Chevron
+  Column(
+    modifier =
+      Modifier.align(Alignment.TopStart)
+        .padding(start = openCornerAnchorDp, top = 0.dp)
+        .widthIn(max = openCornerMaxWidthDp)
+        .testTag("nexus_overwatch_terminal_readout"),
+    horizontalAlignment = Alignment.Start,
+    verticalArrangement = Arrangement.spacedBy(0.dp),
+  ) {
+    // Simple Up Chevron Above (>= 48dp touch target)
+    Box(
+      modifier =
+        Modifier.minimumInteractiveComponentSize()
+          .size(width = 48.dp, height = 48.dp)
+          .clickable {
+            val prevIdx = if (currentIdx <= 0) totalInstances - 1 else currentIdx - 1
+            onSelectOverwatchKey(overwatchInstances[prevIdx].key)
+          }
+          .testTag("nexus_overwatch_prev"),
+      contentAlignment = Alignment.CenterStart,
+    ) {
+      Canvas(modifier = Modifier.padding(start = 8.dp).size(width = 16.dp, height = 9.dp)) {
+        val p =
+          Path().apply {
+            moveTo(0f, size.height)
+            lineTo(size.width * 0.5f, 0f)
+            lineTo(size.width, size.height)
+          }
+        drawPath(p, color = Color(0xFF00F5D4), style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round))
+      }
+    }
+
+    // Terminal Telemetry Readout (Mode/Name, Countdown, Avg Resonance, Human Pilots)
+    Column(
+      modifier =
+        Modifier.drawBehind {
+            drawRect(color = Color(0xB8020611))
+            drawLine(
+              brush = Brush.verticalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
+              start = Offset(0f, 0f),
+              end = Offset(0f, size.height),
+              strokeWidth = 2.dp.toPx(),
+            )
+          }
+          .padding(start = 7.dp, end = 6.dp, top = 3.dp, bottom = 3.dp),
+      verticalArrangement = Arrangement.spacedBy(1.5.dp),
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        Text(
+          text = modeHeaderLine,
+          color = Color.White,
+          fontSize = if (isTabletDeck) 9.8.sp else 8.4.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.weight(1f, fill = false),
+          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        )
+        Box(
+          modifier =
+            Modifier.clickable { onToggleFavoriteOverwatchKey(activeInstance.key) }
+              .padding(horizontal = 3.dp, vertical = 1.dp)
+              .testTag("nexus_overwatch_fav_toggle"),
+        ) {
+          Text(
+            text = if (isFavorite) "[FAV*]" else "[FAV]",
+            color = if (isFavorite) Color(0xFFFFD700) else Color(0xFF94A3B8),
+            fontSize = if (isTabletDeck) 8.0.sp else 7.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+        }
+      }
+
+      Text(
+        text = "RESET $countdownText",
+        color = Color(0xFF00F5D4),
+        fontSize = if (isTabletDeck) 9.0.sp else 7.8.sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+      )
+
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        ResonanceCrestIcon(sizeDp = if (isTabletDeck) 12.dp else 10.dp)
+        Text(
+          text = "${formatOverwatchResonance(liveAvgResonance)} AVG RES",
+          color = Color(0xFFFFD700),
+          fontSize = if (isTabletDeck) 9.0.sp else 7.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        )
+      }
+
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+      ) {
+        Text(
+          text = if (humanCount == 1) "1 PILOT" else "$humanCount PILOTS",
+          color = if (humanCount > 0) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+          fontSize = if (isTabletDeck) 8.8.sp else 7.6.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        )
+        if (overwatchZoom > 1.03f) {
+          Box(
+            modifier =
+              Modifier.clickable { onResetOverwatchCamera() }
+                .padding(horizontal = 3.dp, vertical = 1.dp)
+                .testTag("nexus_overwatch_zoom_reset"),
+          ) {
+            Text(
+              text = "[${String.format(Locale.US, "%.1fx", overwatchZoom)}•1x]",
+              color = Color(0xFF00F5D4),
+              fontSize = 7.4.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
+          }
+        }
+      }
+    }
+
+    // Simple Down Chevron Below (>= 48dp touch target)
+    Box(
+      modifier =
+        Modifier.minimumInteractiveComponentSize()
+          .size(width = 48.dp, height = 48.dp)
+          .clickable {
+            val nextIdx = (currentIdx + 1) % totalInstances
+            onSelectOverwatchKey(overwatchInstances[nextIdx].key)
+          }
+          .testTag("nexus_overwatch_next"),
+      contentAlignment = Alignment.CenterStart,
+    ) {
+      Canvas(modifier = Modifier.padding(start = 8.dp).size(width = 16.dp, height = 9.dp)) {
+        val p =
+          Path().apply {
+            moveTo(0f, 0f)
+            lineTo(size.width * 0.5f, size.height)
+            lineTo(size.width, 0f)
+          }
+        drawPath(p, color = Color(0xFF00F5D4), style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round))
+      }
+    }
+  }
+
+  // 2. TOP-RIGHT OPEN SPACE: Primary [ RIFT IN ] Launch Trigger + Compact [ ALL MODES ]
+  val riftInGlow =
+    remember(isFocused) {
+      Shadow(
+        color = if (isFocused) Color.White else Color(0xFF00F5D4),
+        offset = Offset.Zero,
+        blurRadius = 9f,
+      )
+    }
+  Column(
+    modifier =
+      Modifier.align(Alignment.TopEnd)
+        .padding(end = openCornerAnchorDp, top = 3.dp)
+        .widthIn(max = openCornerMaxWidthDp),
+    horizontalAlignment = Alignment.End,
+    verticalArrangement = Arrangement.spacedBy(3.dp),
+  ) {
+    Box(
+      modifier =
+        Modifier.minimumInteractiveComponentSize()
+          .height(48.dp)
+          .drawBehind {
+            val w = size.width
+            val h = size.height
+            val cut = 9.dp.toPx()
+            val p =
+              Path().apply {
+                moveTo(cut, 0f)
+                lineTo(w, 0f)
+                lineTo(w, h - cut)
+                lineTo(w - cut, h)
+                lineTo(0f, h)
+                lineTo(0f, cut)
+                close()
+              }
+            drawPath(
+              path = p,
+              brush = Brush.verticalGradient(listOf(Color(0xFF0D2D46), Color(0xFF091528), Color(0xFF030711))),
+            )
+            drawPath(
+              path = p,
+              brush = Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700), Color(0xFF38BDF8))),
+              style = Stroke(width = if (isFocused) 1.7.dp.toPx() else 1.35.dp.toPx()),
+            )
+          }
+          .clickable { onQuickZoneIntoOverwatch(activeInstance) }
+          .padding(horizontal = 12.dp)
+          .testTag("nexus_overwatch_rift_in"),
+      contentAlignment = Alignment.Center,
+    ) {
+      Text(
+        text = "RIFT IN >",
+        color = Color.White,
+        fontSize = if (isTabletDeck) 11.8.sp else 10.4.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        letterSpacing = 0.8.sp,
+        maxLines = 1,
+        style = TextStyle(shadow = riftInGlow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+      )
+    }
+
+    Box(
+      modifier =
+        Modifier.minimumInteractiveComponentSize()
+          .height(48.dp)
+          .clickable { onToggleAllModesBay() }
+          .padding(vertical = 6.dp)
+          .testTag("nexus_node_convergence_gate"),
+      contentAlignment = Alignment.CenterEnd,
+    ) {
+      val isModesOpen = sideBayMode == RiftHubSideBayMode.GAME_MODES_BAY
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(6.dp))
+            .background(Color(0xD9060D1A))
+            .border(1.dp, if (isModesOpen) Color(0xFF00F5D4) else Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+            .padding(horizontal = 9.dp, vertical = 5.dp),
+      ) {
+        Text(
+          text = if (isModesOpen) "< RIFT HUB" else "ALL MODES",
+          color = if (isModesOpen) Color(0xFF00F5D4) else Color(0xFFE2E8F0),
+          fontSize = if (isTabletDeck) 9.0.sp else 8.0.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+      }
+    }
+  }
+
+  // 3. LOWER-LEFT OPEN SPACE: Contextual Back / Cancel (>= 48dp touch target)
+  val showBottomLeft = overwatchPrompt != OverwatchCircularPrompt.None || sideBayMode != RiftHubSideBayMode.HUB_MAIN
+  if (showBottomLeft) {
+    val bottomLeftLabel = if (overwatchPrompt != OverwatchCircularPrompt.None) "CANCEL" else "< RIFT HUB"
+    Box(
+      modifier =
+        Modifier.align(Alignment.BottomStart)
+          .padding(start = openCornerAnchorDp, bottom = 3.dp)
+          .minimumInteractiveComponentSize()
+          .height(48.dp)
+          .clickable { onBottomLeftBackOrCancel() }
+          .padding(vertical = 5.dp)
+          .testTag("overwatch_corner_back_cancel"),
+      contentAlignment = Alignment.CenterStart,
+    ) {
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(8.dp))
+            .background(Color(0xE0060D1A))
+            .border(
+              1.1.dp,
+              if (overwatchPrompt != OverwatchCircularPrompt.None) Color(0xFF64748B) else Color(0xFF00F5D4),
+              RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+      ) {
+        Text(
+          text = bottomLeftLabel,
+          color = if (overwatchPrompt != OverwatchCircularPrompt.None) Color(0xFFE2E8F0) else Color(0xFF00F5D4),
+          fontSize = if (isTabletDeck) 9.4.sp else 8.2.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+      }
+    }
+  }
+
+  // 4. LOWER-RIGHT OPEN SPACE: Contextual Charge [Flux icon] / Squad Up / Confirm (>= 48dp touch target)
+  if (overwatchPrompt != OverwatchCircularPrompt.None) {
+    val confirmFontSp = if (isTabletDeck) 10.4.sp else 9.2.sp
+    val fluxExactDp = with(density) { confirmFontSp.toDp() }
+    Box(
+      modifier =
+        Modifier.align(Alignment.BottomEnd)
+          .padding(end = openCornerAnchorDp, bottom = 3.dp)
+          .minimumInteractiveComponentSize()
+          .height(48.dp)
+          .clickable { onBottomRightConfirmOrCharge() }
+          .padding(vertical = 5.dp)
+          .testTag("overwatch_corner_confirm_charge"),
+      contentAlignment = Alignment.CenterEnd,
+    ) {
+      Row(
+        modifier =
+          Modifier.clip(RoundedCornerShape(8.dp))
+            .background(Brush.horizontalGradient(listOf(Color(0xFF0D3554), Color(0xFF091528))))
+            .border(
+              1.25.dp,
+              Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
+              RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 11.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+      ) {
+        when (overwatchPrompt) {
+          is OverwatchCircularPrompt.ShipInspect -> {
+            val alreadyCharged = chargedShipId == overwatchPrompt.shipId
+            Text(
+              text = if (alreadyCharged) "CHARGED" else "CHARGE",
+              color = Color.White,
+              fontSize = confirmFontSp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            )
+            FluxToroidIcon(sizeDp = fluxExactDp)
+          }
+          is OverwatchCircularPrompt.PilotInspect -> {
+            Text(
+              text = if (overwatchPrompt.pilot.isInSquadron) "IN SQUADRON" else "SQUAD UP",
+              color = Color.White,
+              fontSize = confirmFontSp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
+          }
+          is OverwatchCircularPrompt.ActionConfirm -> {
+            Text(
+              text = overwatchPrompt.confirmLabel,
+              color = Color.White,
+              fontSize = confirmFontSp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
+          }
+          is OverwatchCircularPrompt.CallsignRename -> {
+            Text(
+              text = "SAVE NAME",
+              color = Color.White,
+              fontSize = confirmFontSp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
+          }
+          OverwatchCircularPrompt.None -> Unit
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Signature Rift Hub Centerpiece — True Top-to-Bottom Edge-to-Edge Circular Overwatch Viewport:
+ * Zero horizontal bars or vertical padding above/below the circle (`lensRadiusFraction = 0.476f`,
+ * `1.0x .. 6.0x` pinch-to-zoom, drag pan, double-tap reset) framed by a sculpted circular 2.5D radar
+ * bezel (`0.955r .. 1.044r`) with 72 calibrated degree ticks in solar gold (#FFD700) & electric cyan (#00F5D4),
+ * subtle perimeter radial reticle lines, harmonic Resonance arcs, and top-left optical specular meniscus highlights.
  */
 @Composable
 private fun RoundRipplingOverwatchAperture(
@@ -5422,28 +6357,24 @@ private fun RoundRipplingOverwatchAperture(
   isFocused: Boolean,
   isTabletDeck: Boolean = false,
   drawHeadlessSafeZoneFallback: Boolean,
-  overwatchInstances: List<OverwatchRiftInstance>,
   activeInstance: OverwatchRiftInstance,
-  favoriteOverwatchKey: String,
-  overwatchZoom: Float,
-  sideBayMode: RiftHubSideBayMode = RiftHubSideBayMode.HUB_MAIN,
   overwatchPrompt: OverwatchCircularPrompt = OverwatchCircularPrompt.None,
   chargedShipId: Int = 0,
   bestShipId: Int = 1,
   shipSpinDeg: Float = 0f,
   fluxOrbitRad: Float = 0f,
+  renameDraft: String = "",
+  onRenameDraftChange: (String) -> Unit = {},
   resolveShipResonance: (Int) -> Int = { 0 },
   onChargeShip: (Int) -> Unit = {},
   onDismissPrompt: () -> Unit = {},
   onSquadUpPilot: (SquadronOnlinePilotItem) -> Unit = {},
   onAddFriendPilot: (SquadronOnlinePilotItem) -> Unit = {},
-  onSelectOverwatchKey: (String) -> Unit,
-  onToggleFavoriteOverwatchKey: (String) -> Unit,
-  onQuickZoneIntoOverwatch: (OverwatchRiftInstance) -> Unit,
+  onConfirmActionPrompt: (OverwatchCircularPrompt.ActionConfirm) -> Unit = {},
+  onSaveCallsignRename: (String) -> Unit = {},
   onOverwatchTransformGesture:
     (centroidRootX: Float, centroidRootY: Float, panDxPx: Float, panDyPx: Float, zoomChange: Float) -> Unit,
   onResetOverwatchCamera: () -> Unit,
-  onOpenAllModesGate: () -> Unit,
   onApertureRootBoundsChanged: (cx: Float, cy: Float, radiusPx: Float) -> Unit,
 ) {
   val headless = remember { isHeadlessGlEnvironment() }
@@ -5463,12 +6394,6 @@ private fun RoundRipplingOverwatchAperture(
       p
     }
 
-  val totalInstances = overwatchInstances.size.coerceAtLeast(1)
-  val currentIdx =
-    remember(overwatchInstances, activeInstance.key) {
-      overwatchInstances.indexOfFirst { it.key == activeInstance.key }.let { if (it < 0) 0 else it }
-    }
-  val isFavorite = favoriteOverwatchKey.isNotBlank() && favoriteOverwatchKey == activeInstance.key
   val energyNorm = (activeInstance.combinedResonance / 1600f).coerceIn(0.24f, 1.0f)
 
   var lensBoxSize by remember { mutableStateOf(IntSize.Zero) }
@@ -5480,237 +6405,23 @@ private fun RoundRipplingOverwatchAperture(
       val rPx = if (minDim > 8f) (minDim * lensRadiusFraction).coerceAtLeast(48f) else 132.dp.toPx()
       (rPx * 2f).toDp()
     }
-  val cradleMaxWidth = if (isTabletDeck) 446.dp else 356.dp
-  val podHeight = if (isTabletDeck) 50.dp else 48.dp
 
-  Column(
-    modifier = modifier,
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 3.dp else 1.5.dp),
+  Box(
+    modifier =
+      modifier.onGloballyPositioned { coords ->
+        lensBoxSize = coords.size
+        val rootPos = coords.positionInRoot()
+        val w = coords.size.width.toFloat()
+        val h = coords.size.height.toFloat()
+        if (w > 8f && h > 8f) {
+          val cx = rootPos.x + w * 0.5f
+          val cy = rootPos.y + h * 0.5f
+          val radius = (min(w, h) * lensRadiusFraction).coerceAtLeast(48f)
+          onApertureRootBoundsChanged(cx, cy, radius)
+        }
+      },
+    contentAlignment = Alignment.Center,
   ) {
-    // TIER 1: SLEEK CHAMFERED SCI-FI SECTOR SELECTOR POD (>= 48dp touch targets, zero viewport overlap)
-    Row(
-      modifier =
-        Modifier.widthIn(max = cradleMaxWidth)
-          .fillMaxWidth()
-          .height(podHeight)
-          .drawBehind {
-            val w = size.width
-            val h = size.height
-            val cut = 10.dp.toPx()
-            val bodyH = h - 1.8.dp.toPx()
-            val archDip = 2.8.dp.toPx()
-            val cradlePath =
-              Path().apply {
-                moveTo(cut, 0f)
-                lineTo(w - cut, 0f)
-                lineTo(w, cut)
-                lineTo(w - 4.dp.toPx(), bodyH)
-                quadraticTo(w * 0.5f, bodyH - archDip, 4.dp.toPx(), bodyH)
-                lineTo(0f, cut)
-                close()
-              }
-            drawPath(cradlePath, color = Color(0xE0010308))
-            drawPath(
-              path = cradlePath,
-              brush =
-                Brush.verticalGradient(
-                  listOf(Color(0xFA091528), Color(0xF8060D1A), Color(0xFC030711))
-                ),
-            )
-            drawPath(
-              path = cradlePath,
-              brush =
-                Brush.horizontalGradient(
-                  listOf(Color(0xB800F5D4), Color(0x7838BDF8), Color(0xB8FFD700))
-                ),
-              style = Stroke(width = 1.2.dp.toPx()),
-            )
-            drawLine(
-              brush =
-                Brush.horizontalGradient(
-                  listOf(Color.White.copy(alpha = 0.45f), Color(0xFF00F5D4).copy(alpha = 0.36f), Color.Transparent)
-                ),
-              start = Offset(cut + 5.dp.toPx(), 1.2.dp.toPx()),
-              end = Offset(w * 0.68f, 1.2.dp.toPx()),
-              strokeWidth = 1.1.dp.toPx(),
-            )
-          }
-          .padding(horizontal = 4.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-      // Previous Overwatch Rift Stepper (>= 48dp touch target)
-      Box(
-        modifier =
-          Modifier.minimumInteractiveComponentSize()
-            .size(48.dp)
-            .clickable {
-              val prevIdx = if (currentIdx <= 0) totalInstances - 1 else currentIdx - 1
-              onSelectOverwatchKey(overwatchInstances[prevIdx].key)
-            }
-            .testTag("nexus_overwatch_prev"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = "<",
-          color = Color(0xFF00F5D4),
-          fontSize = 15.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-
-      Box(modifier = Modifier.width(1.dp).height(22.dp).background(Color(0x3D38BDF8)))
-
-      // Center Uncrowded Live Sector Telemetry Readout
-      Column(
-        modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-      ) {
-        Text(
-          text = activeInstance.modeTitle,
-          color = Color.White,
-          fontSize = if (isTabletDeck) 10.6.sp else 9.6.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-          Text(
-            text = activeInstance.riftLabel,
-            color = Color(0xFF38BDF8),
-            fontSize = if (isTabletDeck) 9.2.sp else 8.4.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-          )
-          Text(
-            text = "•",
-            color = Color(0xFF64748B),
-            fontSize = 8.4.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-          )
-          ResonanceCrestIcon(sizeDp = 12.dp)
-          Text(
-            text = formatOverwatchResonance(activeInstance.combinedResonance),
-            color = Color(0xFFFFD700),
-            fontSize = if (isTabletDeck) 9.4.sp else 8.6.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-          )
-          if (activeInstance.pilotCount > 0) {
-            Text(
-              text = "• ${activeInstance.pilotCount}P",
-              color = Color(0xFF00F5D4),
-              fontSize = if (isTabletDeck) 9.0.sp else 8.2.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-            )
-          }
-        }
-      }
-
-      // Inline Zoom Reset Keycap (only when zoomed > 1.03x — never overlaps Overwatch lens)
-      if (overwatchZoom > 1.03f) {
-        Box(modifier = Modifier.width(1.dp).height(22.dp).background(Color(0x3D00F5D4)))
-        Box(
-          modifier =
-            Modifier.minimumInteractiveComponentSize()
-              .fillMaxHeight()
-              .clickable { onResetOverwatchCamera() }
-              .padding(horizontal = 5.dp)
-              .testTag("nexus_overwatch_zoom_reset"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = "${String.format(Locale.US, "%.1fx", overwatchZoom)}•1x",
-            color = Color(0xFF00F5D4),
-            fontSize = 8.2.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-          )
-        }
-      }
-
-      Box(modifier = Modifier.width(1.dp).height(22.dp).background(Color(0x3DFACC15)))
-
-      // [FAV] Pin Latch (>= 48dp touch target)
-      Box(
-        modifier =
-          Modifier.minimumInteractiveComponentSize()
-            .fillMaxHeight()
-            .clickable { onToggleFavoriteOverwatchKey(activeInstance.key) }
-            .padding(horizontal = 7.dp)
-            .testTag("nexus_overwatch_fav_toggle"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = if (isFavorite) "FAV *" else "FAV",
-          color = if (isFavorite) Color(0xFFFFD700) else Color(0xFFCBD5E1),
-          fontSize = 8.8.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-        )
-      }
-
-      Box(modifier = Modifier.width(1.dp).height(22.dp).background(Color(0x3D38BDF8)))
-
-      // Next Overwatch Rift Stepper (>= 48dp touch target)
-      Box(
-        modifier =
-          Modifier.minimumInteractiveComponentSize()
-            .size(48.dp)
-            .clickable {
-              val nextIdx = (currentIdx + 1) % totalInstances
-              onSelectOverwatchKey(overwatchInstances[nextIdx].key)
-            }
-            .testTag("nexus_overwatch_next"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = ">",
-          color = Color(0xFF00F5D4),
-          fontSize = 15.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-    }
-
-    // TIER 2: MAXIMIZED CIRCULAR OVERWATCH APERTURE & SCULPTED RADAR BEZEL
-    Box(
-      modifier =
-        Modifier.weight(1f)
-          .fillMaxWidth()
-          .onGloballyPositioned { coords ->
-            lensBoxSize = coords.size
-            val rootPos = coords.positionInRoot()
-            val w = coords.size.width.toFloat()
-            val h = coords.size.height.toFloat()
-            if (w > 8f && h > 8f) {
-              val cx = rootPos.x + w * 0.5f
-              val cy = rootPos.y + h * 0.5f
-              val radius = (min(w, h) * lensRadiusFraction).coerceAtLeast(48f)
-              onApertureRootBoundsChanged(cx, cy, radius)
-            }
-          },
-      contentAlignment = Alignment.Center,
-    ) {
       Canvas(modifier = Modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
@@ -6033,203 +6744,19 @@ private fun RoundRipplingOverwatchAperture(
             bestShipId = bestShipId,
             shipSpinDeg = shipSpinDeg,
             fluxOrbitRad = fluxOrbitRad,
+            renameDraft = renameDraft,
+            onRenameDraftChange = onRenameDraftChange,
             resolveShipResonance = resolveShipResonance,
             onChargeShip = onChargeShip,
             onDismissPrompt = onDismissPrompt,
             onSquadUpPilot = onSquadUpPilot,
             onAddFriendPilot = onAddFriendPilot,
+            onConfirmActionPrompt = onConfirmActionPrompt,
+            onSaveCallsignRename = onSaveCallsignRename,
           )
         }
       }
     }
-
-    // TIER 3: SLEEK CHAMFERED SCI-FI LAUNCH POD ([ RIFT IN ] + [ ALL MODES ], >= 48dp touch targets)
-    val riftInGlow =
-      remember(isFocused) {
-        Shadow(
-          color = if (isFocused) Color.White else Color(0xFF00F5D4),
-          offset = Offset.Zero,
-          blurRadius = 9f,
-        )
-      }
-    Row(
-      modifier =
-        Modifier.widthIn(max = cradleMaxWidth)
-          .fillMaxWidth()
-          .height(podHeight),
-      horizontalArrangement = Arrangement.spacedBy(6.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      // Primary Launch Actuator -> Immediately Rifts Into the Active Overwatch Sector
-      Box(
-        modifier =
-          Modifier.weight(1.35f)
-            .fillMaxHeight()
-            .minimumInteractiveComponentSize()
-            .drawBehind {
-              val w = size.width
-              val h = size.height
-              val cut = 10.dp.toPx()
-              val bodyH = h - 2.0.dp.toPx()
-              val shadowP =
-                Path().apply {
-                  moveTo(cut, 2.0.dp.toPx())
-                  lineTo(w - 5.dp.toPx(), 2.0.dp.toPx())
-                  lineTo(w, 7.0.dp.toPx())
-                  lineTo(w, h)
-                  lineTo(cut, h)
-                  lineTo(0f, h - cut)
-                  lineTo(0f, 2.0.dp.toPx() + cut)
-                  close()
-                }
-              drawPath(shadowP, color = Color(0xE0010308))
-              val keyP =
-                Path().apply {
-                  moveTo(cut, 0f)
-                  quadraticTo(w * 0.58f, 2.0.dp.toPx(), w - 5.dp.toPx(), 0f)
-                  lineTo(w, 5.dp.toPx())
-                  lineTo(w, bodyH - 5.dp.toPx())
-                  lineTo(w - 5.dp.toPx(), bodyH)
-                  lineTo(cut, bodyH)
-                  lineTo(0f, bodyH - cut)
-                  lineTo(0f, cut)
-                  close()
-                }
-              drawPath(
-                path = keyP,
-                brush =
-                  Brush.verticalGradient(
-                    listOf(Color(0xFF0D2D46), Color(0xFF091528), Color(0xFF030711))
-                  ),
-              )
-              drawPath(
-                path = keyP,
-                brush =
-                  Brush.horizontalGradient(
-                    listOf(Color(0xFF00F5D4), Color(0xFFFFD700), Color(0xFF38BDF8))
-                  ),
-                style = Stroke(width = if (isFocused) 1.75.dp.toPx() else 1.4.dp.toPx()),
-              )
-              drawLine(
-                brush =
-                  Brush.horizontalGradient(
-                    listOf(Color.White.copy(alpha = 0.54f), Color(0xFF00F5D4).copy(alpha = 0.42f), Color.Transparent)
-                  ),
-                start = Offset(cut + 4.dp.toPx(), 2.0.dp.toPx()),
-                end = Offset(w * 0.72f, 2.0.dp.toPx()),
-                strokeWidth = 1.15.dp.toPx(),
-              )
-            }
-            .clickable { onQuickZoneIntoOverwatch(activeInstance) }
-            .padding(horizontal = 8.dp)
-            .testTag("nexus_overwatch_rift_in"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-          Text(
-            text = "RIFT IN",
-            color = Color.White,
-            fontSize = if (isTabletDeck) 12.2.sp else 11.0.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 0.8.sp,
-            maxLines = 1,
-            style = TextStyle(shadow = riftInGlow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
-          )
-          Text(
-            text = "// ${activeInstance.riftLabel}",
-            color = Color(0xFF00F5D4),
-            fontSize = if (isTabletDeck) 9.8.sp else 8.8.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-          )
-        }
-      }
-
-      // Secondary Mode Browser Actuator -> Opens Full Convergence Gate (6 Ranked Modes + Custom Rift Gate)
-      Box(
-        modifier =
-          Modifier.weight(0.92f)
-            .fillMaxHeight()
-            .minimumInteractiveComponentSize()
-            .drawBehind {
-              val w = size.width
-              val h = size.height
-              val cut = 10.dp.toPx()
-              val bodyH = h - 2.0.dp.toPx()
-              val shadowP =
-                Path().apply {
-                  moveTo(5.dp.toPx(), 2.0.dp.toPx())
-                  lineTo(w - cut, 2.0.dp.toPx())
-                  lineTo(w, 2.0.dp.toPx() + cut)
-                  lineTo(w, h - cut)
-                  lineTo(w - cut, h)
-                  lineTo(0f, h)
-                  lineTo(0f, 7.0.dp.toPx())
-                  close()
-                }
-              drawPath(shadowP, color = Color(0xE0010308))
-              val keyP =
-                Path().apply {
-                  moveTo(5.dp.toPx(), 0f)
-                  quadraticTo(w * 0.42f, 2.0.dp.toPx(), w - cut, 0f)
-                  lineTo(w, cut)
-                  lineTo(w, bodyH - cut)
-                  lineTo(w - cut, bodyH)
-                  lineTo(5.dp.toPx(), bodyH)
-                  lineTo(0f, bodyH - 5.dp.toPx())
-                  lineTo(0f, 5.dp.toPx())
-                  close()
-                }
-              drawPath(
-                path = keyP,
-                brush =
-                  Brush.verticalGradient(
-                    listOf(Color(0xFF091528), Color(0xFF060D1A), Color(0xFF030711))
-                  ),
-              )
-              drawPath(
-                path = keyP,
-                brush =
-                  Brush.horizontalGradient(
-                    listOf(Color(0xFF38BDF8), Color(0xFFFACC15))
-                  ),
-                style = Stroke(width = 1.25.dp.toPx()),
-              )
-              drawLine(
-                brush =
-                  Brush.horizontalGradient(
-                    listOf(Color.White.copy(alpha = 0.44f), Color(0xFF38BDF8).copy(alpha = 0.36f), Color.Transparent)
-                  ),
-                start = Offset(7.dp.toPx(), 2.0.dp.toPx()),
-                end = Offset(w * 0.72f, 2.0.dp.toPx()),
-                strokeWidth = 1.05.dp.toPx(),
-              )
-            }
-            .clickable { onOpenAllModesGate() }
-            .padding(horizontal = 8.dp)
-            .testTag("nexus_node_convergence_gate"),
-        contentAlignment = Alignment.Center,
-      ) {
-        val isModesDigitized = sideBayMode == RiftHubSideBayMode.GAME_MODES_BAY
-        Text(
-          text = if (isModesDigitized) "< RIFT HUB" else "ALL MODES",
-          color = if (isModesDigitized) Color(0xFF00F5D4) else Color(0xFFF8FAFC),
-          fontSize = if (isTabletDeck) 10.8.sp else 9.6.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          letterSpacing = 0.7.sp,
-          maxLines = 1,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-      }
-    }
-  }
 }
 
 @Composable
@@ -6240,11 +6767,15 @@ private fun OverwatchCircularGlassPromptOverlay(
   bestShipId: Int,
   shipSpinDeg: Float,
   fluxOrbitRad: Float,
+  renameDraft: String = "",
+  onRenameDraftChange: (String) -> Unit = {},
   resolveShipResonance: (Int) -> Int,
   onChargeShip: (Int) -> Unit,
   onDismissPrompt: () -> Unit,
   onSquadUpPilot: (SquadronOnlinePilotItem) -> Unit,
   onAddFriendPilot: (SquadronOnlinePilotItem) -> Unit,
+  onConfirmActionPrompt: (OverwatchCircularPrompt.ActionConfirm) -> Unit = {},
+  onSaveCallsignRename: (String) -> Unit = {},
 ) {
   val density = LocalDensity.current
   Box(
@@ -6621,6 +7152,204 @@ private fun OverwatchCircularGlassPromptOverlay(
           }
         }
       }
+
+      is OverwatchCircularPrompt.ActionConfirm -> {
+        val accentCol = Color(prompt.accentHex)
+        Column(
+          modifier = Modifier.fillMaxWidth(0.84f),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 6.dp else 4.dp),
+        ) {
+          Text(
+            text = prompt.kicker.uppercase(Locale.US),
+            color = accentCol,
+            fontSize = if (isTabletDeck) 8.8.sp else 7.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 0.7.sp,
+            maxLines = 1,
+          )
+          Text(
+            text = prompt.title,
+            color = Color.White,
+            fontSize = if (isTabletDeck) 11.4.sp else 9.8.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            text = prompt.subtitle,
+            color = Color(0xFFCBD5E1),
+            fontSize = if (isTabletDeck) 8.4.sp else 7.4.sp,
+            fontWeight = FontWeight.Medium,
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.Center,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable { onConfirmActionPrompt(prompt) }
+                  .padding(vertical = 5.dp)
+                  .testTag("overwatch_action_confirm_button"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(16.dp))
+                    .background(Brush.horizontalGradient(listOf(Color(0xFF0D3554), Color(0xFF091528))))
+                    .border(1.25.dp, accentCol, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+              ) {
+                Text(
+                  text = prompt.confirmLabel,
+                  color = Color.White,
+                  fontSize = if (isTabletDeck) 9.8.sp else 8.6.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable { onDismissPrompt() }
+                  .padding(vertical = 5.dp)
+                  .testTag("overwatch_action_cancel_button"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(CircleShape)
+                    .background(Color(0xCC060D1A))
+                    .border(1.dp, Color(0xFF64748B), CircleShape)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+              ) {
+                Text(
+                  text = "CANCEL",
+                  color = Color(0xFFCBD5E1),
+                  fontSize = 7.8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+          }
+        }
+      }
+
+      is OverwatchCircularPrompt.CallsignRename -> {
+        Column(
+          modifier = Modifier.fillMaxWidth(0.84f),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 6.dp else 4.dp),
+        ) {
+          Text(
+            text = "PILOT CALLSIGN",
+            color = Color(0xFF00F5D4),
+            fontSize = if (isTabletDeck) 8.8.sp else 7.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          Box(
+            modifier =
+              Modifier.fillMaxWidth(0.86f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xEE02050B))
+                .border(1.1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+          ) {
+            BasicTextField(
+              value = renameDraft,
+              onValueChange = { raw ->
+                onRenameDraftChange(raw.uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(14))
+              },
+              singleLine = true,
+              cursorBrush = SolidColor(Color(0xFF00F5D4)),
+              textStyle =
+                TextStyle(
+                  color = Color.White,
+                  fontSize = if (isTabletDeck) 11.2.sp else 9.8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  textAlign = TextAlign.Center,
+                ),
+              modifier = Modifier.fillMaxWidth().testTag("overwatch_callsign_rename_input"),
+            )
+          }
+          Text(
+            text = "2-14 CHARS • A-Z, 0-9, -, _",
+            color = Color(0xFF94A3B8),
+            fontSize = 7.2.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable { onSaveCallsignRename(renameDraft) }
+                  .padding(vertical = 5.dp)
+                  .testTag("overwatch_callsign_save_button"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(16.dp))
+                    .background(Brush.horizontalGradient(listOf(Color(0xFF0D3554), Color(0xFF091528))))
+                    .border(1.25.dp, Color(0xFF00F5D4), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+              ) {
+                Text(
+                  text = "SAVE NAME",
+                  color = Color.White,
+                  fontSize = if (isTabletDeck) 9.6.sp else 8.4.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable { onDismissPrompt() }
+                  .padding(vertical = 5.dp)
+                  .testTag("overwatch_callsign_cancel_button"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(CircleShape)
+                    .background(Color(0xCC060D1A))
+                    .border(1.dp, Color(0xFF64748B), CircleShape)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+              ) {
+                Text(
+                  text = "CANCEL",
+                  color = Color(0xFFCBD5E1),
+                  fontSize = 7.8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -6659,6 +7388,1435 @@ private fun CircularPromptStatBar(
             .fillMaxHeight()
             .background(color),
       )
+    }
+  }
+}
+
+@Composable
+private fun SyndicateLeftDirectoryBay(
+  isTabletDeck: Boolean,
+  headerHeight: Dp,
+  wingStackGap: Dp,
+  currentTag: String,
+  syndicateDirectory: List<SyndicateInfo>,
+  statusMessage: String?,
+  onBackToHub: () -> Unit,
+  onInspectSyndicate: (SyndicateInfo) -> Unit,
+) {
+  val cleanSyndicates =
+    remember(syndicateDirectory) {
+      syndicateDirectory
+        .filter { it.isRealPlayerFoundedSyndicate() }
+        .distinctBy { it.tag.trim().uppercase(Locale.US) }
+        .sortedByDescending { it.combinedBounty }
+    }
+  Column(
+    modifier = Modifier.fillMaxSize().testTag("syndicate_left_directory_bay"),
+    verticalArrangement = Arrangement.spacedBy(wingStackGap),
+  ) {
+    HubDigitizedReturnBar(
+      heightDp = headerHeight,
+      isRightSide = false,
+      isTabletDeck = isTabletDeck,
+      sectionTitle = "SYNDICATES (${cleanSyndicates.size})",
+      accent = Color(0xFFFACC15),
+      onBackToHub = onBackToHub,
+    )
+    if (!statusMessage.isNullOrBlank()) {
+      Text(
+        text = statusMessage,
+        color = Color(0xFF00F5D4),
+        fontSize = 7.6.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 2,
+        modifier = Modifier.padding(horizontal = 6.dp),
+      )
+    }
+    Column(
+      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+    ) {
+      if (cleanSyndicates.isEmpty()) {
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .chamferedSciFiPodSurface(
+                isRightSide = false,
+                primaryBorder = Color(0xFF38BDF8),
+                secondaryBorder = Color(0xFF091528),
+              )
+              .padding(10.dp),
+        ) {
+          Text(
+            text = "NO HUMAN-CHARTERED SYNDICATES YET. FOUND ONE ON THE RIGHT WING.",
+            color = Color(0xFF94A3B8),
+            fontSize = if (isTabletDeck) 8.6.sp else 7.6.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      } else {
+        cleanSyndicates.forEach { syn ->
+          val isMember = currentTag.isNotBlank() && syn.tag.equals(currentTag, ignoreCase = true)
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .minimumInteractiveComponentSize()
+                .chamferedSciFiPodSurface(
+                  isRightSide = false,
+                  primaryBorder = if (isMember) Color(0xFFFFD700) else Color(0xFF38BDF8),
+                  secondaryBorder = if (isMember) Color(0xFF00F5D4) else Color(0xFF091528),
+                )
+                .clickable { onInspectSyndicate(syn) }
+                .padding(horizontal = 8.dp, vertical = 6.dp)
+                .testTag("syndicate_row_${syn.tag.lowercase(Locale.US)}"),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
+              Text(
+                text = "[${syn.tag.uppercase(Locale.US)}] ${syn.name.uppercase(Locale.US)}",
+                color = Color.White,
+                fontSize = if (isTabletDeck) 9.4.sp else 8.2.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                ResonanceCrestIcon(sizeDp = 10.dp)
+                Text(
+                  text = "${String.format(Locale.US, "%,d", syn.combinedBounty.coerceAtLeast(0L))} RES • ${syn.memberCount.coerceAtLeast(1)}P",
+                  color = Color(0xFFFFD700),
+                  fontSize = 7.6.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                )
+              }
+            }
+            Text(
+              text = if (isMember) "ENLISTED" else "INSPECT >",
+              color = if (isMember) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+              fontSize = 7.6.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun SyndicateRightCitadelBay(
+  isTabletDeck: Boolean,
+  headerHeight: Dp,
+  wingStackGap: Dp,
+  syndicateTag: String,
+  syndicateName: String,
+  syndicateOnlineCount: Int,
+  syndicateWarRecord: SyndicateWarRecord,
+  onLeaveCurrentSyndicate: () -> Unit,
+  onCharterCustomSyndicate: (tag: String, name: String, motto: String) -> Unit,
+  onOpenCrestForge: () -> Unit,
+) {
+  var draftTag by remember { mutableStateOf("") }
+  var draftName by remember { mutableStateOf("") }
+  var draftMotto by remember { mutableStateOf("") }
+
+  Column(
+    modifier = Modifier.fillMaxSize().testTag("syndicate_right_citadel_bay"),
+    verticalArrangement = Arrangement.spacedBy(wingStackGap),
+  ) {
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(headerHeight)
+          .chamferedSciFiPodSurface(
+            isRightSide = true,
+            primaryBorder = Color(0xFFFACC15),
+            secondaryBorder = Color(0xFF38BDF8),
+          )
+          .padding(horizontal = 8.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(
+        text = if (syndicateTag.isNotBlank()) "[$syndicateTag] CITADEL" else "CHARTER CITADEL",
+        color = Color(0xFFFFD700),
+        fontSize = if (isTabletDeck) 9.6.sp else 8.4.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+      )
+      Box(
+        modifier =
+          Modifier.minimumInteractiveComponentSize()
+            .clickable { onOpenCrestForge() }
+            .padding(horizontal = 4.dp, vertical = 6.dp)
+            .testTag("syndicate_open_crest_forge"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = "CREST >",
+          color = Color(0xFF00F5D4),
+          fontSize = 7.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
+    }
+
+    Column(
+      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+    ) {
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .chamferedSciFiPodSurface(
+              isRightSide = true,
+              primaryBorder = Color(0xFF38BDF8),
+              secondaryBorder = Color(0xFF091528),
+            )
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+      ) {
+        Text(
+          text = if (syndicateTag.isNotBlank()) syndicateName else "UNAFFILIATED PILOT",
+          color = Color.White,
+          fontSize = if (isTabletDeck) 9.6.sp else 8.4.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+        Text(
+          text = "ONLINE: $syndicateOnlineCount • WARS: ${syndicateWarRecord.warWins}W-${syndicateWarRecord.warLosses}L",
+          color = Color(0xFF38BDF8),
+          fontSize = 7.6.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+        )
+        if (syndicateTag.isNotBlank()) {
+          Box(
+            modifier =
+              Modifier.minimumInteractiveComponentSize()
+                .height(48.dp)
+                .clickable { onLeaveCurrentSyndicate() }
+                .padding(vertical = 5.dp)
+                .testTag("syndicate_leave_button"),
+            contentAlignment = Alignment.CenterStart,
+          ) {
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(6.dp))
+                  .background(Color(0x33FB7185))
+                  .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(6.dp))
+                  .padding(horizontal = 9.dp, vertical = 5.dp),
+            ) {
+              Text(
+                text = "LEAVE [$syndicateTag]",
+                color = Color(0xFFFB7185),
+                fontSize = 7.8.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+        }
+      }
+
+      // Charter Human-Founded Syndicate Box
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .chamferedSciFiPodSurface(
+              isRightSide = true,
+              primaryBorder = Color(0xFFFFD700),
+              secondaryBorder = Color(0xFF00F5D4),
+            )
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        Text(
+          text = "FOUND NEW SYNDICATE (1-3 TAG)",
+          color = Color(0xFFFFD700),
+          fontSize = 8.0.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+        BasicTextField(
+          value = draftTag,
+          onValueChange = { draftTag = it.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(3) },
+          singleLine = true,
+          cursorBrush = SolidColor(Color(0xFF00F5D4)),
+          textStyle = TextStyle(color = Color.White, fontSize = 8.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace),
+          decorationBox = { inner ->
+            Box(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .clip(RoundedCornerShape(5.dp))
+                  .background(Color(0xDD02050B))
+                  .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(5.dp))
+                  .padding(horizontal = 7.dp, vertical = 5.dp),
+            ) {
+              if (draftTag.isEmpty()) {
+                Text("TAG (E.G. VTX)", color = Color(0xFF64748B), fontSize = 8.0.sp, fontFamily = FontFamily.Monospace)
+              }
+              inner()
+            }
+          },
+          modifier = Modifier.testTag("syndicate_charter_tag_input"),
+        )
+        BasicTextField(
+          value = draftName,
+          onValueChange = { draftName = it.take(22) },
+          singleLine = true,
+          cursorBrush = SolidColor(Color(0xFF00F5D4)),
+          textStyle = TextStyle(color = Color.White, fontSize = 8.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
+          decorationBox = { inner ->
+            Box(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .clip(RoundedCornerShape(5.dp))
+                  .background(Color(0xDD02050B))
+                  .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(5.dp))
+                  .padding(horizontal = 7.dp, vertical = 5.dp),
+            ) {
+              if (draftName.isEmpty()) {
+                Text("SYNDICATE NAME", color = Color(0xFF64748B), fontSize = 8.0.sp, fontFamily = FontFamily.Monospace)
+              }
+              inner()
+            }
+          },
+          modifier = Modifier.testTag("syndicate_charter_name_input"),
+        )
+        BasicTextField(
+          value = draftMotto,
+          onValueChange = { draftMotto = it.take(36) },
+          singleLine = true,
+          cursorBrush = SolidColor(Color(0xFF00F5D4)),
+          textStyle = TextStyle(color = Color(0xFFCBD5E1), fontSize = 8.2.sp, fontFamily = FontFamily.Monospace),
+          decorationBox = { inner ->
+            Box(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .clip(RoundedCornerShape(5.dp))
+                  .background(Color(0xDD02050B))
+                  .border(1.dp, Color(0x5538BDF8), RoundedCornerShape(5.dp))
+                  .padding(horizontal = 7.dp, vertical = 5.dp),
+            ) {
+              if (draftMotto.isEmpty()) {
+                Text("SECTOR MOTTO", color = Color(0xFF64748B), fontSize = 7.8.sp, fontFamily = FontFamily.Monospace)
+              }
+              inner()
+            }
+          },
+          modifier = Modifier.testTag("syndicate_charter_motto_input"),
+        )
+        val canCharter = draftTag.trim().length in 1..3 && draftName.trim().length >= 3
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .minimumInteractiveComponentSize()
+              .height(48.dp)
+              .clickable(enabled = canCharter) {
+                onCharterCustomSyndicate(draftTag.trim(), draftName.trim(), draftMotto.trim())
+                draftTag = ""
+                draftName = ""
+                draftMotto = ""
+              }
+              .padding(vertical = 5.dp)
+              .testTag("syndicate_charter_submit_button"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (canCharter) Color(0xFF0D2D46) else Color(0xFF0F172A))
+                .border(1.dp, if (canCharter) Color(0xFFFFD700) else Color(0xFF475569), RoundedCornerShape(6.dp))
+                .padding(vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "CHARTER SYNDICATE >",
+              color = if (canCharter) Color.White else Color(0xFF64748B),
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ConduitLeftDirectivesBay(
+  isTabletDeck: Boolean,
+  headerHeight: Dp,
+  wingStackGap: Dp,
+  liveResonance: Int,
+  conduitTier: com.example.engine.ConduitRankTier,
+  directives: List<DailyConduitDirective>,
+  isSweepClaimed: Boolean,
+  onBackToHub: () -> Unit,
+  onClaimDirective: (Int) -> Unit,
+  onRerollDirective: (Int) -> Unit,
+  onClaimSweep: () -> Unit,
+) {
+  val nextMilestone = remember(liveResonance) { RiftProgressionCatalog.getNextConduitTierThreshold(liveResonance) }
+  val tierProgress = remember(liveResonance) { RiftProgressionCatalog.getConduitProgressFraction(liveResonance) }
+  val allClaimed = directives.size >= 3 && directives.all { it.claimed }
+
+  Column(
+    modifier = Modifier.fillMaxSize().testTag("conduit_left_directives_bay"),
+    verticalArrangement = Arrangement.spacedBy(wingStackGap),
+  ) {
+    HubDigitizedReturnBar(
+      heightDp = headerHeight,
+      isRightSide = false,
+      isTabletDeck = isTabletDeck,
+      sectionTitle = "RANKS & QUESTS",
+      accent = Color(0xFFFFD700),
+      onBackToHub = onBackToHub,
+    )
+
+    Column(
+      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+    ) {
+      // Rank Tier Progress Pod
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .chamferedSciFiPodSurface(
+              isRightSide = false,
+              primaryBorder = Color(0xFFFFD700),
+              secondaryBorder = Color(0xFF00F5D4),
+            )
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = conduitTier.title.uppercase(Locale.US),
+            color = Color.White,
+            fontSize = if (isTabletDeck) 9.8.sp else 8.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            ResonanceCrestIcon(sizeDp = 11.dp)
+            Text(
+              text = "${String.format(Locale.US, "%,d", liveResonance)} RES",
+              color = Color(0xFFFFD700),
+              fontSize = 8.4.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+        CircularPromptStatBar(
+          modifier = Modifier.fillMaxWidth(),
+          label = "NEXT",
+          fraction = tierProgress,
+          color = Color(0xFF00F5D4),
+        )
+        Text(
+          text = "NEXT TIER: ${nextMilestone.second} @ ${nextMilestone.first} RES",
+          color = Color(0xFF94A3B8),
+          fontSize = 7.2.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
+
+      directives.forEach { dir ->
+        Column(
+          modifier =
+            Modifier.fillMaxWidth()
+              .chamferedSciFiPodSurface(
+                isRightSide = false,
+                primaryBorder = if (dir.isComplete && !dir.claimed) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+                secondaryBorder = Color(0xFF091528),
+              )
+              .padding(horizontal = 8.dp, vertical = 6.dp),
+          verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+          Text(
+            text = dir.title.uppercase(Locale.US),
+            color = Color.White,
+            fontSize = if (isTabletDeck) 9.0.sp else 8.0.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+          Text(
+            text = "${dir.progressValue}/${dir.targetValue} • +${dir.shardReward} SHARDS • +${dir.resonanceReward} RES",
+            color = Color(0xFF38BDF8),
+            fontSize = 7.4.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable(enabled = dir.isComplete && !dir.claimed) { onClaimDirective(dir.slotIndex) }
+                  .padding(vertical = 6.dp)
+                  .testTag("conduit_claim_slot_${dir.slotIndex}"),
+              contentAlignment = Alignment.CenterStart,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(6.dp))
+                    .background(if (dir.isComplete && !dir.claimed) Color(0xFF0D3554) else Color(0xFF091528))
+                    .border(
+                      1.dp,
+                      if (dir.isComplete && !dir.claimed) Color(0xFF00F5D4) else Color(0xFF475569),
+                      RoundedCornerShape(6.dp),
+                    )
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+              ) {
+                Text(
+                  text = when {
+                    dir.claimed -> "CLAIMED"
+                    dir.isComplete -> "CLAIM >"
+                    else -> "IN PROGRESS"
+                  },
+                  color = if (dir.isComplete && !dir.claimed) Color.White else Color(0xFF94A3B8),
+                  fontSize = 7.6.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+            if (!dir.claimed && !dir.isComplete) {
+              Box(
+                modifier =
+                  Modifier.minimumInteractiveComponentSize()
+                    .height(48.dp)
+                    .clickable { onRerollDirective(dir.slotIndex) }
+                    .padding(vertical = 6.dp)
+                    .testTag("conduit_reroll_slot_${dir.slotIndex}"),
+                contentAlignment = Alignment.CenterEnd,
+              ) {
+                Text(
+                  text = "REROLL",
+                  color = Color(0xFFFACC15),
+                  fontSize = 7.6.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+          }
+        }
+      }
+
+      if (allClaimed && !isSweepClaimed) {
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .minimumInteractiveComponentSize()
+              .height(48.dp)
+              .clickable { onClaimSweep() }
+              .padding(vertical = 4.dp)
+              .testTag("conduit_claim_sweep_bonus"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF0D3554))
+                .border(1.2.dp, Color(0xFFFFD700), RoundedCornerShape(8.dp))
+                .padding(vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "CLAIM DAILY SWEEP BONUS >",
+              color = Color(0xFFFFD700),
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ConduitRightVaultBay(
+  isTabletDeck: Boolean,
+  headerHeight: Dp,
+  wingStackGap: Dp,
+  shardText: String,
+  activeCustomSlotId: String,
+  localPrefs: LocalPilotPrefs,
+  currentUserId: String,
+  onSelectFrameSlot: (String) -> Unit,
+  onInspectCosmetic: (CosmeticCatalogItem, Boolean, Boolean) -> Unit,
+) {
+  val uidOrNull = currentUserId.ifBlank { null }
+  val allCosmetics = remember {
+    RiftProgressionCatalog.hullTrims +
+      RiftProgressionCatalog.killFinishers +
+      RiftProgressionCatalog.warpSignatures
+  }
+
+  Column(
+    modifier = Modifier.fillMaxSize().testTag("conduit_right_vault_bay"),
+    verticalArrangement = Arrangement.spacedBy(wingStackGap),
+  ) {
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(headerHeight)
+          .chamferedSciFiPodSurface(
+            isRightSide = true,
+            primaryBorder = Color(0xFFFFD700),
+            secondaryBorder = Color(0xFF00F5D4),
+          )
+          .padding(horizontal = 8.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(
+        text = "COSMETIC VAULT",
+        color = Color.White,
+        fontSize = if (isTabletDeck) 9.4.sp else 8.2.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+      )
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        RiftShardGemIcon(sizeDp = 12.dp)
+        Text(
+          text = shardText,
+          color = Color(0xFF00F5D4),
+          fontSize = 8.2.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
+    }
+
+    // Rift Frame Loadout Slots A..E
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(48.dp)
+          .chamferedSciFiPodSurface(
+            isRightSide = true,
+            primaryBorder = Color(0xFF38BDF8),
+            secondaryBorder = Color(0xFF091528),
+          )
+          .padding(horizontal = 4.dp),
+      horizontalArrangement = Arrangement.spacedBy(3.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      listOf("A", "B", "C", "D", "E").forEach { slot ->
+        val sel = activeCustomSlotId.equals(slot, ignoreCase = true)
+        Box(
+          modifier =
+            Modifier.weight(1f)
+              .fillMaxHeight()
+              .minimumInteractiveComponentSize()
+              .clickable { onSelectFrameSlot(slot) }
+              .padding(vertical = 6.dp)
+              .testTag("conduit_frame_slot_$slot"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Box(
+            modifier =
+              Modifier.fillMaxSize()
+                .clip(RoundedCornerShape(5.dp))
+                .background(if (sel) Color(0x3800F5D4) else Color(0x6602050B))
+                .border(1.dp, if (sel) Color(0xFF00F5D4) else Color(0x4438BDF8), RoundedCornerShape(5.dp)),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = slot,
+              color = if (sel) Color.White else Color(0xFF94A3B8),
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+    }
+
+    Column(
+      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+    ) {
+      allCosmetics.forEach { item ->
+        val unlocked = localPrefs.isCosmeticUnlocked(item.category, item.id, uid = uidOrNull)
+        val equipped = localPrefs.getEquippedCosmeticId(item.category, uidOrNull) == item.id
+        Row(
+          modifier =
+            Modifier.fillMaxWidth()
+              .minimumInteractiveComponentSize()
+              .chamferedSciFiPodSurface(
+                isRightSide = true,
+                primaryBorder = if (equipped) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+                secondaryBorder = if (unlocked) Color(0xFFFFD700) else Color(0xFF091528),
+              )
+              .clickable { onInspectCosmetic(item, unlocked, equipped) }
+              .padding(horizontal = 8.dp, vertical = 6.dp)
+              .testTag("conduit_cosmetic_${item.category.lowercase(Locale.US)}_${item.id}"),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
+            Text(
+              text = item.name.uppercase(Locale.US),
+              color = Color.White,
+              fontSize = if (isTabletDeck) 8.8.sp else 7.8.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+              text = item.category.replace("_", " "),
+              color = Color(0xFF94A3B8),
+              fontSize = 7.0.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+          Text(
+            text = when {
+              equipped -> "ACTIVE"
+              unlocked -> "EQUIP >"
+              else -> "${item.shardCost}S"
+            },
+            color = when {
+              equipped -> Color(0xFF00F5D4)
+              unlocked -> Color(0xFFFACC15)
+              else -> Color(0xFFCBD5E1)
+            },
+            fontSize = 7.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun DossierLeftIdentityBay(
+  isTabletDeck: Boolean,
+  headerHeight: Dp,
+  wingStackGap: Dp,
+  callsign: String,
+  syndicateTag: String,
+  liveResonance: Int,
+  peakResonance: Int,
+  localPrefs: LocalPilotPrefs,
+  currentUserId: String,
+  onBackToHub: () -> Unit,
+  onOpenRenamePrompt: () -> Unit,
+  onOpenResetPrompt: () -> Unit,
+  onSwitchAccount: () -> Unit,
+) {
+  val uidOrNull = currentUserId.ifBlank { null }
+  val allKills = remember(currentUserId, liveResonance) { localPrefs.getAllTimeKills(uidOrNull) }
+  val allDeaths = remember(currentUserId, liveResonance) { localPrefs.getAllTimeDeaths(uidOrNull) }
+  val pvpKills = remember(currentUserId, liveResonance) { localPrefs.getPvpKills(uidOrNull) }
+  val wins = remember(currentUserId, liveResonance) { localPrefs.getConvergencesWon() }
+  val kdText =
+    remember(allKills, allDeaths) {
+      if (allDeaths <= 0L) String.format(Locale.US, "%.1f", allKills.toDouble())
+      else String.format(Locale.US, "%.2f", allKills.toDouble() / allDeaths.toDouble())
+    }
+
+  Column(
+    modifier = Modifier.fillMaxSize().testTag("dossier_left_identity_bay"),
+    verticalArrangement = Arrangement.spacedBy(wingStackGap),
+  ) {
+    HubDigitizedReturnBar(
+      heightDp = headerHeight,
+      isRightSide = false,
+      isTabletDeck = isTabletDeck,
+      sectionTitle = "PILOT DOSSIER",
+      accent = Color(0xFF00F5D4),
+      onBackToHub = onBackToHub,
+    )
+
+    Column(
+      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+    ) {
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .chamferedSciFiPodSurface(
+              isRightSide = false,
+              primaryBorder = Color(0xFF00F5D4),
+              secondaryBorder = Color(0xFFFFD700),
+            )
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        Text(
+          text = if (syndicateTag.isNotBlank()) "[$syndicateTag] $callsign" else callsign,
+          color = Color.White,
+          fontSize = if (isTabletDeck) 10.6.sp else 9.4.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+          ResonanceCrestIcon(sizeDp = 12.dp)
+          Text(
+            text = "LIVE ${String.format(Locale.US, "%,d", liveResonance)} RES • PEAK ${String.format(Locale.US, "%,d", peakResonance)} RES",
+            color = Color(0xFFFFD700),
+            fontSize = 7.8.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+        }
+        Text(
+          text = "ELIMS: $allKills (PVP $pvpKills) • K/D: $kdText • WINS: $wins",
+          color = Color(0xFF38BDF8),
+          fontSize = 7.6.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
+
+      // Rename Callsign Trigger -> Opens Circular Glass Rename Prompt in Overwatch
+      Box(
+        modifier =
+          Modifier.fillMaxWidth()
+            .minimumInteractiveComponentSize()
+            .height(48.dp)
+            .clickable { onOpenRenamePrompt() }
+            .padding(vertical = 4.dp)
+            .testTag("dossier_rename_callsign_button"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(7.dp))
+              .background(Color(0xFF0D2D46))
+              .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(7.dp))
+              .padding(vertical = 6.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = "RENAME CALLSIGN >",
+            color = Color.White,
+            fontSize = 8.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
+
+      // Switch Account Trigger
+      Box(
+        modifier =
+          Modifier.fillMaxWidth()
+            .minimumInteractiveComponentSize()
+            .height(48.dp)
+            .clickable { onSwitchAccount() }
+            .padding(vertical = 4.dp)
+            .testTag("dossier_switch_account_button"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(7.dp))
+              .background(Color(0xFF091528))
+              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(7.dp))
+              .padding(vertical = 6.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = "SWITCH PILOT ACCOUNT",
+            color = Color(0xFFE2E8F0),
+            fontSize = 8.0.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
+
+      // Reset Local Telemetry Trigger -> Opens Circular Glass Confirmation in Overwatch
+      Box(
+        modifier =
+          Modifier.fillMaxWidth()
+            .minimumInteractiveComponentSize()
+            .height(48.dp)
+            .clickable { onOpenResetPrompt() }
+            .padding(vertical = 4.dp)
+            .testTag("dossier_reset_pilot_button"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(7.dp))
+              .background(Color(0x26FB7185))
+              .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(7.dp))
+              .padding(vertical = 6.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = "RESET LOCAL RECORD",
+            color = Color(0xFFFB7185),
+            fontSize = 8.0.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun DossierRightCareerBay(
+  isTabletDeck: Boolean,
+  headerHeight: Dp,
+  wingStackGap: Dp,
+  bestShipId: Int,
+  shipSpinDeg: Float,
+  fluxOrbitRad: Float,
+  shipResonanceFor: (Int) -> Int,
+  cloudLeaderboardEntries: List<LeaderboardEntry>,
+  onInspectShip: (Int) -> Unit,
+) {
+  var showLadderTab by remember { mutableStateOf(false) }
+  val shipsSorted = remember(bestShipId) {
+    RiftCodex.getAllTenShips().sortedByDescending { shipResonanceFor(it.id) }
+  }
+  val realHumanLeaders = remember(cloudLeaderboardEntries) {
+    cloudLeaderboardEntries
+      .filter { e ->
+        val uid = e.userId.ifBlank { e.id }.trim()
+        uid.isNotBlank() &&
+          !uid.startsWith("bot_", ignoreCase = true) &&
+          !e.callsign.equals("COMMANDER", ignoreCase = true)
+      }
+      .distinctBy { (it.userId.ifBlank { it.id }).lowercase(Locale.US) }
+      .sortedByDescending { it.allTimeBounty }
+      .take(20)
+  }
+
+  Column(
+    modifier = Modifier.fillMaxSize().testTag("dossier_right_career_bay"),
+    verticalArrangement = Arrangement.spacedBy(wingStackGap),
+  ) {
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(headerHeight)
+          .chamferedSciFiPodSurface(
+            isRightSide = true,
+            primaryBorder = Color(0xFF00F5D4),
+            secondaryBorder = Color(0xFFFFD700),
+          )
+          .padding(horizontal = 4.dp),
+      horizontalArrangement = Arrangement.spacedBy(4.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      listOf(false to "SHIP RES", true to "HALL OF FAME").forEach { (isLadder, label) ->
+        val sel = showLadderTab == isLadder
+        Box(
+          modifier =
+            Modifier.weight(1f)
+              .fillMaxHeight()
+              .minimumInteractiveComponentSize()
+              .clickable { showLadderTab = isLadder }
+              .padding(vertical = 5.dp)
+              .testTag(if (isLadder) "dossier_tab_hall_of_fame" else "dossier_tab_ship_res"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Box(
+            modifier =
+              Modifier.fillMaxSize()
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (sel) Color(0x3800F5D4) else Color(0x6602050B))
+                .border(1.dp, if (sel) Color(0xFF00F5D4) else Color(0x4438BDF8), RoundedCornerShape(6.dp)),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = label,
+              color = if (sel) Color.White else Color(0xFF94A3B8),
+              fontSize = 7.8.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+    }
+
+    Column(
+      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+    ) {
+      if (!showLadderTab) {
+        shipsSorted.forEach { ship ->
+          val res = shipResonanceFor(ship.id)
+          val isBest = ship.id == bestShipId
+          val cleanName = ship.name.replace(Regex("^[0-9]+-"), "").trim().uppercase(Locale.US)
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .minimumInteractiveComponentSize()
+                .chamferedSciFiPodSurface(
+                  isRightSide = true,
+                  primaryBorder = if (isBest) Color(0xFFFFD700) else Color(0xFF38BDF8),
+                  secondaryBorder = Color(0xFF091528),
+                )
+                .clickable { onInspectShip(ship.id) }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .testTag("dossier_ship_row_${ship.id}"),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+              modifier = Modifier.weight(1f),
+            ) {
+              Spinning25dShipWithOrbitingFlux(
+                shipId = ship.id,
+                shipSpinDeg = shipSpinDeg,
+                fluxOrbitRad = fluxOrbitRad,
+                isCharged = false,
+                isBestShip = isBest,
+                sizeDp = 32.dp,
+              )
+              Column {
+                Text(
+                  text = cleanName,
+                  color = Color.White,
+                  fontSize = if (isTabletDeck) 8.8.sp else 7.8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                )
+                if (isBest) {
+                  Text(
+                    text = "BEST HULL",
+                    color = Color(0xFFFFD700),
+                    fontSize = 6.8.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
+              }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+              ResonanceCrestIcon(sizeDp = 10.dp)
+              Text(
+                text = "${String.format(Locale.US, "%,d", res)} RES",
+                color = Color(0xFFFFD700),
+                fontSize = 8.0.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+        }
+      } else {
+        if (realHumanLeaders.isEmpty()) {
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .chamferedSciFiPodSurface(
+                  isRightSide = true,
+                  primaryBorder = Color(0xFF38BDF8),
+                  secondaryBorder = Color(0xFF091528),
+                )
+                .padding(10.dp),
+          ) {
+            Text(
+              text = "REAL-PLAYER HALL OF FAME SYNCS WHEN ONLINE.",
+              color = Color(0xFF94A3B8),
+              fontSize = 7.8.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        } else {
+          realHumanLeaders.forEachIndexed { idx, entry ->
+            val cleanTag =
+              entry.syndicateTag.trim().uppercase(Locale.US).takeIf {
+                it !in setOf("GUEST", "RFT", "NONE", "SOLO", "UNAFFILIATED", "FREE", "BOT")
+              }.orEmpty()
+            val label = if (cleanTag.isNotEmpty()) "[${cleanTag}] ${entry.callsign}" else entry.callsign
+            Row(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .chamferedSciFiPodSurface(
+                    isRightSide = true,
+                    primaryBorder = if (idx == 0) Color(0xFFFFD700) else Color(0xFF38BDF8),
+                    secondaryBorder = Color(0xFF091528),
+                  )
+                  .padding(horizontal = 8.dp, vertical = 6.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                text = "#${idx + 1} $label",
+                color = Color.White,
+                fontSize = 8.0.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(end = 6.dp),
+              )
+              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                ResonanceCrestIcon(sizeDp = 10.dp)
+                Text(
+                  text = "${String.format(Locale.US, "%,d", entry.allTimeBounty.coerceAtLeast(0L))} RES",
+                  color = Color(0xFFFFD700),
+                  fontSize = 7.8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun HelmLeftSystemsBay(
+  isTabletDeck: Boolean,
+  headerHeight: Dp,
+  wingStackGap: Dp,
+  sfxEnabled: Boolean,
+  musicEnabled: Boolean,
+  musicBpm: Int,
+  musicVolume: Float,
+  sfxVolume: Float,
+  cameraZoom: Float,
+  playfieldTextScale: Float,
+  onToggleSfx: (Boolean) -> Unit,
+  onToggleMusic: (Boolean) -> Unit,
+  onChangeMusicBpm: (Int) -> Unit,
+  onChangeMusicVolume: (Float) -> Unit,
+  onChangeSfxVolume: (Float) -> Unit,
+  onChangeCameraZoom: (Float) -> Unit,
+  onChangePlayfieldTextScale: (Float) -> Unit,
+  onOpenChangelogModal: () -> Unit,
+  onOpenAudioSynthForge: () -> Unit,
+  onBackToHub: () -> Unit,
+) {
+  Column(
+    modifier = Modifier.fillMaxSize().testTag("helm_left_systems_bay"),
+    verticalArrangement = Arrangement.spacedBy(wingStackGap),
+  ) {
+    HubDigitizedReturnBar(
+      heightDp = headerHeight,
+      isRightSide = false,
+      isTabletDeck = isTabletDeck,
+      sectionTitle = "HELM SYSTEMS",
+      accent = Color(0xFF00F5D4),
+      trailingLabel = "PATCH LOG",
+      trailingTag = "helm_open_changelog",
+      onTrailingClick = onOpenChangelogModal,
+      onBackToHub = onBackToHub,
+    )
+
+    Column(
+      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        Box(
+          modifier =
+            Modifier.weight(1f)
+              .minimumInteractiveComponentSize()
+              .height(48.dp)
+              .chamferedSciFiPodSurface(
+                isRightSide = false,
+                primaryBorder = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFF475569),
+                secondaryBorder = Color(0xFF091528),
+              )
+              .clickable { onToggleMusic(!musicEnabled) }
+              .testTag("helm_toggle_music"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = if (musicEnabled) "MUSIC: ON" else "MUSIC: OFF",
+            color = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFF94A3B8),
+            fontSize = 8.0.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+        Box(
+          modifier =
+            Modifier.weight(1f)
+              .minimumInteractiveComponentSize()
+              .height(48.dp)
+              .chamferedSciFiPodSurface(
+                isRightSide = false,
+                primaryBorder = if (sfxEnabled) Color(0xFF00F5D4) else Color(0xFF475569),
+                secondaryBorder = Color(0xFF091528),
+              )
+              .clickable { onToggleSfx(!sfxEnabled) }
+              .testTag("helm_toggle_sfx"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = if (sfxEnabled) "SFX: ON" else "SFX: OFF",
+            color = if (sfxEnabled) Color(0xFF00F5D4) else Color(0xFF94A3B8),
+            fontSize = 8.0.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
+
+      HelmStepperControlRow(
+        label = "MUSIC VOL",
+        valueText = "${(musicVolume * 100f).roundToInt()}%",
+        onMinus = { onChangeMusicVolume((musicVolume - 0.10f).coerceIn(0f, 1f)) },
+        onPlus = { onChangeMusicVolume((musicVolume + 0.10f).coerceIn(0f, 1f)) },
+      )
+      HelmStepperControlRow(
+        label = "SFX VOL",
+        valueText = "${(sfxVolume * 100f).roundToInt()}%",
+        onMinus = { onChangeSfxVolume((sfxVolume - 0.10f).coerceIn(0f, 1f)) },
+        onPlus = { onChangeSfxVolume((sfxVolume + 0.10f).coerceIn(0f, 1f)) },
+      )
+      HelmStepperControlRow(
+        label = "SYNTH BPM",
+        valueText = "$musicBpm",
+        onMinus = { onChangeMusicBpm((musicBpm - 6).coerceIn(96, 168)) },
+        onPlus = { onChangeMusicBpm((musicBpm + 6).coerceIn(96, 168)) },
+      )
+      HelmStepperControlRow(
+        label = "ARENA ZOOM",
+        valueText = String.format(Locale.US, "%.2fx", cameraZoom),
+        onMinus = { onChangeCameraZoom((cameraZoom - 0.08f).coerceIn(0.65f, 1.45f)) },
+        onPlus = { onChangeCameraZoom((cameraZoom + 0.08f).coerceIn(0.65f, 1.45f)) },
+      )
+      HelmStepperControlRow(
+        label = "HUD TEXT",
+        valueText = String.format(Locale.US, "%.2fx", playfieldTextScale),
+        onMinus = { onChangePlayfieldTextScale((playfieldTextScale - 0.08f).coerceIn(0.80f, 1.35f)) },
+        onPlus = { onChangePlayfieldTextScale((playfieldTextScale + 0.08f).coerceIn(0.80f, 1.35f)) },
+      )
+
+      Box(
+        modifier =
+          Modifier.fillMaxWidth()
+            .minimumInteractiveComponentSize()
+            .height(48.dp)
+            .clickable { onOpenAudioSynthForge() }
+            .padding(vertical = 4.dp)
+            .testTag("helm_open_audio_synth_forge"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(7.dp))
+              .background(Color(0xFF0D2D46))
+              .border(1.dp, Color(0xFFFFD700), RoundedCornerShape(7.dp))
+              .padding(vertical = 6.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = "AUDIO SYNTH LAB >",
+            color = Color(0xFFFFD700),
+            fontSize = 8.0.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun HelmStepperControlRow(
+  label: String,
+  valueText: String,
+  onMinus: () -> Unit,
+  onPlus: () -> Unit,
+) {
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .height(48.dp)
+        .chamferedSciFiPodSurface(
+          isRightSide = false,
+          primaryBorder = Color(0xFF38BDF8),
+          secondaryBorder = Color(0xFF091528),
+        )
+        .padding(horizontal = 6.dp),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(
+      text = label,
+      color = Color(0xFFE2E8F0),
+      fontSize = 7.8.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+    )
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+      Box(
+        modifier =
+          Modifier.minimumInteractiveComponentSize()
+            .size(48.dp)
+            .clickable { onMinus() },
+        contentAlignment = Alignment.Center,
+      ) {
+        Text("[-]", color = Color(0xFF00F5D4), fontSize = 9.0.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+      }
+      Text(
+        text = valueText,
+        color = Color(0xFFFFD700),
+        fontSize = 8.2.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+      )
+      Box(
+        modifier =
+          Modifier.minimumInteractiveComponentSize()
+            .size(48.dp)
+            .clickable { onPlus() },
+        contentAlignment = Alignment.Center,
+      ) {
+        Text("[+]", color = Color(0xFF00F5D4), fontSize = 9.0.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+      }
+    }
+  }
+}
+
+@Composable
+private fun HelmRightCodexBay(
+  isTabletDeck: Boolean,
+  headerHeight: Dp,
+  wingStackGap: Dp,
+  @Suppress("UNUSED_PARAMETER") initialSubDeck: Int = 0,
+) {
+  val codexCards = remember {
+    listOf(
+      "SECTOR CONVERGENCE & FLUX CORE" to
+        "Always-running public Rifts with 1-hour sector resets. Build per-ship and overall Resonance by outlasting rivals, holding the Flux Orb, and securing Nexus Station safe-harbor extracts.",
+      "RESONANCE & MATCHMAKING" to
+        "Each of the 10 hulls tracks its own Resonance in gold. Squadron & team modes match closest opponent Resonance in 15 seconds or less.",
+      "GRAVITY RIFTS & OBSTACLES" to
+        "Projectiles feed Gravity Rifts up to 440px, pulling Asteroids, Stations, and Barriers inward until tidal implosion drops a 3D Supply Pod.",
+      "CONTROLS & TACTICAL SYSTEMS" to
+        "Twin-stick 2.5D flight: left thrust/strafe, right aim/fire, secondary ordnance, utility systems, and stacked anti-bleed barriers.",
+    )
+  }
+
+  Column(
+    modifier = Modifier.fillMaxSize().testTag("helm_right_codex_bay"),
+    verticalArrangement = Arrangement.spacedBy(wingStackGap),
+  ) {
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(headerHeight)
+          .chamferedSciFiPodSurface(
+            isRightSide = true,
+            primaryBorder = Color(0xFFFFD700),
+            secondaryBorder = Color(0xFF00F5D4),
+          )
+          .padding(horizontal = 8.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(
+        text = "TACTICAL CODEX",
+        color = Color(0xFFFFD700),
+        fontSize = if (isTabletDeck) 9.6.sp else 8.4.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+      )
+      Text(
+        text = "PLAIN GUIDE",
+        color = Color(0xFF00F5D4),
+        fontSize = 7.6.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+      )
+    }
+
+    Column(
+      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+    ) {
+      codexCards.forEach { (heading, body) ->
+        Column(
+          modifier =
+            Modifier.fillMaxWidth()
+              .chamferedSciFiPodSurface(
+                isRightSide = true,
+                primaryBorder = Color(0xFF38BDF8),
+                secondaryBorder = Color(0xFF091528),
+              )
+              .padding(8.dp),
+          verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+          Text(
+            text = heading,
+            color = Color.White,
+            fontSize = if (isTabletDeck) 8.8.sp else 7.8.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          Text(
+            text = body,
+            color = Color(0xFFCBD5E1),
+            fontSize = if (isTabletDeck) 8.0.sp else 7.2.sp,
+            fontWeight = FontWeight.Medium,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
     }
   }
 }
@@ -6908,15 +9066,15 @@ private fun GlassTerminalHeaderGlyph(node: NexusCoreNode, accent: Color, sizeDp:
 @Composable
 private fun GlassTerminalTopHeader(
   activeNode: NexusCoreNode,
-  syndicateSubDeck: SyndicateCitadelSubDeck,
-  onSelectSyndicateSubDeck: (SyndicateCitadelSubDeck) -> Unit,
+  @Suppress("UNUSED_PARAMETER") syndicateSubDeck: SyndicateCitadelSubDeck,
+  @Suppress("UNUSED_PARAMETER") onSelectSyndicateSubDeck: (SyndicateCitadelSubDeck) -> Unit,
   @Suppress("UNUSED_PARAMETER") archiveSubDeck: ArchiveCodexSubDeck,
   @Suppress("UNUSED_PARAMETER") onSelectArchiveSubDeck: (ArchiveCodexSubDeck) -> Unit,
-  onOpenCodexInHelm: () -> Unit = {},
-  armadaCount: Int,
+  @Suppress("UNUSED_PARAMETER") onOpenCodexInHelm: () -> Unit = {},
+  @Suppress("UNUSED_PARAMETER") armadaCount: Int,
   showClearAi: Boolean,
   isInMatch: Boolean,
-  onSelectHubCard: (NexusCoreNode) -> Unit = {},
+  @Suppress("UNUSED_PARAMETER") onSelectHubCard: (NexusCoreNode) -> Unit = {},
   onBackToHub: () -> Unit,
   onClearAi: () -> Unit,
   onLeaveMatch: () -> Unit,
@@ -6925,7 +9083,7 @@ private fun GlassTerminalTopHeader(
 ) {
   val (title, accent) =
     when (activeNode) {
-      NexusCoreNode.SUBSPACE_COMMS -> "SUBSPACE COMMS & RIFT AI" to Color(0xFF00F5D4)
+      NexusCoreNode.SUBSPACE_COMMS -> "SUBSPACE COMMS" to Color(0xFF00F5D4)
       NexusCoreNode.CONVERGENCE_GATE -> "CONVERGENCE GATE" to Color(0xFF00F5D4)
       NexusCoreNode.HANGAR_DECK -> "HANGAR DECK" to Color(0xFF38BDF8)
       NexusCoreNode.RIFT_CONDUIT -> "RIFT CONDUIT" to Color(0xFFE879F9)
@@ -6936,17 +9094,7 @@ private fun GlassTerminalTopHeader(
       NexusCoreNode.ORBITAL_HUB -> "RIFT HUB" to Color(0xFF00F5D4)
     }
 
-  val hubQuickCards = remember {
-    listOf(
-      Triple(NexusCoreNode.HANGAR_DECK, "SHIPS", Color(0xFF38BDF8)),
-      Triple(NexusCoreNode.STAR_FORGE, "FORGE", Color(0xFFC084FC)),
-      Triple(NexusCoreNode.SUBSPACE_COMMS, "COMMS", Color(0xFF00F5D4)),
-      Triple(NexusCoreNode.RIFT_CONDUIT, "CONDUIT", Color(0xFFE879F9)),
-      Triple(NexusCoreNode.SYNDICATE_CITADEL, "SYNDICATE", Color(0xFFFACC15)),
-      Triple(NexusCoreNode.ARCHIVE_CODEX, "DOSSIER", Color(0xFF34D399)),
-    )
-  }
-
+  // Clean, stripped-down full-screen header (zero legacy multi-tab switcher strip)
   Row(
     modifier =
       Modifier.fillMaxWidth()
@@ -6969,9 +9117,9 @@ private fun GlassTerminalTopHeader(
     verticalAlignment = Alignment.CenterVertically,
   ) {
     Row(
-      modifier = Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxHeight(),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(6.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       Box(
         modifier =
@@ -7007,73 +9155,8 @@ private fun GlassTerminalTopHeader(
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
       )
-
-      if (activeNode == NexusCoreNode.SYNDICATE_CITADEL) {
-        HeaderSubDeckPill(
-          label = "SYNDICATES & WARS",
-          selected = syndicateSubDeck == SyndicateCitadelSubDeck.SYNDICATES_WARS,
-          accent = Color(0xFFFACC15),
-          tag = "citadel_sub_syndicates",
-          onClick = { onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.SYNDICATES_WARS) },
-        )
-        HeaderSubDeckPill(
-          label = "SQUADRON ($armadaCount/5)",
-          selected = syndicateSubDeck == SyndicateCitadelSubDeck.STRIKE_WING,
-          accent = Color(0xFF38BDF8),
-          tag = "citadel_sub_strike_wing",
-          onClick = { onSelectSyndicateSubDeck(SyndicateCitadelSubDeck.STRIKE_WING) },
-        )
-      } else if (activeNode == NexusCoreNode.ARCHIVE_CODEX) {
-        HeaderSubDeckPill(
-          label = "HELM CODEX >",
-          selected = false,
-          accent = Color(0xFF34D399),
-          tag = "archive_sub_codex",
-          onClick = onOpenCodexInHelm,
-        )
-      }
-
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.padding(start = 4.dp).testTag("rift_hub_card_switcher_row"),
-      ) {
-        hubQuickCards.forEach { (cardNode, shortLabel, cardAccent) ->
-          val isCurrentCard = activeNode == cardNode
-          Box(
-            modifier =
-              Modifier.minimumInteractiveComponentSize()
-                .height(48.dp)
-                .clickable { onSelectHubCard(cardNode) }
-                .padding(vertical = 7.dp)
-                .testTag("hub_quick_card_${cardNode.name.lowercase(Locale.US)}"),
-            contentAlignment = Alignment.Center,
-          ) {
-            Box(
-              modifier =
-                Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(if (isCurrentCard) cardAccent.copy(alpha = 0.26f) else Color(0xFF0A1426))
-                  .border(
-                    1.dp,
-                    if (isCurrentCard) cardAccent else cardAccent.copy(alpha = 0.42f),
-                    RoundedCornerShape(6.dp),
-                  )
-                  .padding(horizontal = 7.5.dp, vertical = 4.5.dp),
-              contentAlignment = Alignment.Center,
-            ) {
-              Text(
-                text = shortLabel,
-                color = if (isCurrentCard) Color.White else cardAccent.copy(alpha = 0.90f),
-                fontSize = 8.4.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-              )
-            }
-          }
-        }
-      }
     }
 
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

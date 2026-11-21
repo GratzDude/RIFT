@@ -246,29 +246,37 @@ private fun HelmSubDeckPill(
 ) {
   Box(
     modifier =
-      Modifier.height(28.dp)
-        .clip(RoundedCornerShape(7.dp))
-        .background(
-          if (selected) {
-            Brush.verticalGradient(listOf(accent.copy(alpha = 0.32f), accent.copy(alpha = 0.14f)))
-          } else {
-            Brush.verticalGradient(listOf(TabletCardBg, TabletShellBg))
-          }
-        )
-        .border(1.dp, if (selected) accent else TabletCyanBorder.copy(alpha = 0.42f), RoundedCornerShape(7.dp))
+      Modifier.minimumInteractiveComponentSize()
+        .height(48.dp)
         .clickable(onClick = onClick)
-        .padding(horizontal = 10.dp)
+        .padding(vertical = 8.dp)
         .testTag(testTag),
     contentAlignment = Alignment.Center,
   ) {
-    Text(
-      text = label,
-      color = if (selected) Color.White else Color(0xFFCBD5E1),
-      fontSize = 9.8.sp,
-      fontWeight = FontWeight.ExtraBold,
-      fontFamily = Mono,
-      maxLines = 1,
-    )
+    Box(
+      modifier =
+        Modifier.height(28.dp)
+          .clip(RoundedCornerShape(7.dp))
+          .background(
+            if (selected) {
+              Brush.verticalGradient(listOf(accent.copy(alpha = 0.32f), accent.copy(alpha = 0.14f)))
+            } else {
+              Brush.verticalGradient(listOf(TabletCardBg, TabletShellBg))
+            }
+          )
+          .border(1.dp, if (selected) accent else TabletCyanBorder.copy(alpha = 0.42f), RoundedCornerShape(7.dp))
+          .padding(horizontal = 10.dp),
+      contentAlignment = Alignment.Center,
+    ) {
+      Text(
+        text = label,
+        color = if (selected) Color.White else Color(0xFFCBD5E1),
+        fontSize = 9.8.sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontFamily = Mono,
+        maxLines = 1,
+      )
+    }
   }
 }
 
@@ -311,6 +319,7 @@ fun SettingsModal(
   updateStatusLabel: String = "v1.0.$CURRENT_RIFT_BUILD_VERSION UP TO DATE",
   hasUpdateAvailable: Boolean = false,
   onCheckOrApplyUpdate: () -> Unit = {},
+  showBackToHubButton: Boolean = false,
 ) {
   val context = LocalContext.current
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
@@ -377,9 +386,9 @@ fun SettingsModal(
         .testTag("settings_modal"),
     verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 6.dp else 8.dp),
   ) {
-    // Top Header Row: HELM SYSTEMS // $fps FPS + 3 Sub-Deck Pills + [VERSION LOG]
+    // Top Header Row: optional < RIFT HUB + HELM SYSTEMS // $fps FPS + Sub-Deck Pills + [VERSION LOG]
     Row(
-      modifier = Modifier.fillMaxWidth().height(32.dp),
+      modifier = Modifier.fillMaxWidth().height(48.dp),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -387,6 +396,19 @@ fun SettingsModal(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),
       ) {
+        if (showBackToHubButton) {
+          SettingsBeveledButton(
+            label = "< RIFT HUB",
+            topColor = Color(0xFF122C47),
+            bottomColor = Color(0xFF08182B),
+            borderColor = TabletTealBorder,
+            textColor = TabletTealBorder,
+            isCompactPhone = isCompactPhone,
+            heightOverride = 36.dp,
+            testTag = "settings_back_to_hub",
+            onClick = onCloseModal,
+          )
+        }
         VectorHelmWheelGlyph(accent = TabletTealBorder, sizeDp = 16.dp)
         Text(
           text = "HELM SYSTEMS // $fps FPS",
