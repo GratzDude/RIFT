@@ -25,6 +25,10 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidRoomCode(code) {
+      return code is string && code.size() >= 4 && code.size() <= 8 && code.matches('^[A-Z0-9]+$');
+    }
+
     function isValidFoundry(f) {
       return f is string && f.size() >= 1 && f.size() <= 40;
     }
@@ -41,6 +45,7 @@ service cloud.firestore {
           'STASIS_BREACH',
           'SYNDICATE_WARS',
           'NEXUS_LOBBY',
+          'RIFT_LOBBY',
           'warzone_10v10',
           'ranked_3v3',
           'ranked_5v5'
@@ -78,7 +83,7 @@ service cloud.firestore {
              data.callsign is string && data.callsign.size() >= 2 && data.callsign.size() <= 24 &&
              data.shipId is int && data.shipId >= 1 && data.shipId <= 10 &&
              (!('syndicateTag' in data) || (data.syndicateTag is string && data.syndicateTag.size() <= 12)) &&
-             (!('armadaTag' in data) || (data.armadaTag is string && data.armadaTag.size() <= 12)) &&
+             (!('armadaTag' in data) || (data.armadaTag is string && data.armadaTag.size() <= 16)) &&
              (!('armadaTierSize' in data) || (data.armadaTierSize is int && data.armadaTierSize >= 1 && data.armadaTierSize <= 5)) &&
              isValidFoundry(data.foundry) &&
              data.pvpKills is int && data.pvpKills >= 0 && data.pvpKills <= 10000000 &&
@@ -100,7 +105,7 @@ service cloud.firestore {
              isValidSectorMode(data.sectorId) &&
              data.callsign is string && data.callsign.size() >= 2 && data.callsign.size() <= 24 &&
              (!('syndicateTag' in data) || (data.syndicateTag is string && data.syndicateTag.size() <= 12)) &&
-             (!('armadaName' in data) || (data.armadaName is string && data.armadaName.size() <= 12)) &&
+             (!('armadaName' in data) || (data.armadaName is string && data.armadaName.size() <= 16)) &&
              data.shipId is int && data.shipId >= 1 && data.shipId <= 10 &&
              data.freq is int && data.freq >= 0 && data.freq <= 99 &&
              (data.x is int || data.x is float) && data.x >= -100000 && data.x <= 100000 &&
@@ -133,7 +138,7 @@ service cloud.firestore {
     function isValidSyndicateInfo(data) {
       return data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
              data.ownerId == request.auth.uid &&
-             data.tag is string && data.tag.size() >= 2 && data.tag.size() <= 4 &&
+             data.tag is string && data.tag.size() >= 1 && data.tag.size() <= 4 &&
              data.name is string && data.name.size() >= 1 && data.name.size() <= 36 &&
              isValidFoundry(data.foundryOrigin) &&
              data.motto is string && data.motto.size() >= 1 && data.motto.size() <= 64 &&
@@ -154,7 +159,7 @@ service cloud.firestore {
              data.timestampLabel is string && data.timestampLabel.size() >= 1 && data.timestampLabel.size() <= 24 &&
              data.messageText is string && data.messageText.size() <= 240 &&
              data.isArmadaRecruitBanner is bool &&
-             data.armadaName is string && data.armadaName.size() <= 12 &&
+             data.armadaName is string && data.armadaName.size() <= 16 &&
              data.armadaCurrentSize is int && data.armadaCurrentSize >= 1 && data.armadaCurrentSize <= 5 &&
              data.armadaMaxSize is int && data.armadaMaxSize >= 1 && data.armadaMaxSize <= 5 &&
              data.armadaObjective is string && data.armadaObjective.size() <= 120 &&
@@ -163,7 +168,7 @@ service cloud.firestore {
              data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
-    // 6. SectorCombatEvent Validation Blueprint (Cross-Device Hit, Elimination & Bounty Credit)
+    // 6. SectorCombatEvent Validation Blueprint (Cross-Device Hit, Elimination & Resonance Credit)
     function isValidSectorCombatEvent(data) {
       return data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
              data.senderUid == request.auth.uid &&
@@ -174,7 +179,7 @@ service cloud.firestore {
              data.bountyAward is int && data.bountyAward >= 0 && data.bountyAward <= 100000000 &&
              data.weaponLabel is string && data.weaponLabel.size() <= 48 &&
              data.senderCallsign is string && data.senderCallsign.size() >= 2 && data.senderCallsign.size() <= 24 &&
-             data.senderTag is string && data.senderTag.size() <= 12 &&
+             data.senderTag is string && data.senderTag.size() <= 16 &&
              data.senderShipId is int && data.senderShipId >= 1 && data.senderShipId <= 10 &&
              data.createdAtMs is int && data.createdAtMs >= 0 &&
              data.createdAt is timestamp && data.createdAt <= request.time;
@@ -206,6 +211,44 @@ service cloud.firestore {
              (data.sbEastCoreHp is int || data.sbEastCoreHp is float) && data.sbEastCoreHp >= 0 && data.sbEastCoreHp <= 250000 &&
              data.jailedUidsCsv is string && data.jailedUidsCsv.size() <= 640 &&
              data.updatedAtMs is int && data.updatedAtMs >= 0 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // 8. CustomGameRoom Validation Blueprint (Public Custom Game List + 6-Char Private Join Code Lookup)
+    function isValidCustomGameRoom(data) {
+      return isValidRoomCode(data.roomCode) &&
+             data.instanceId is string && data.instanceId.size() >= 4 && data.instanceId.size() <= 23 &&
+             data.instanceId.matches('^[a-zA-Z0-9_\\-]+$') &&
+             data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128 &&
+             data.hostUid == request.auth.uid &&
+             data.hostCallsign is string && data.hostCallsign.size() >= 2 && data.hostCallsign.size() <= 24 &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 48 &&
+             data.visibility is string && data.visibility.size() <= 8 &&
+             data.visibility in ['public', 'private'] &&
+             data.privateRoom is bool &&
+             ((data.privateRoom == false && data.visibility == 'public') ||
+              (data.privateRoom == true && data.visibility == 'private')) &&
+             data.baseMode is string && data.baseMode.size() <= 24 &&
+             data.baseMode in [
+               'SECTOR_CONVERGENCE',
+               'RIFT_SKIRMISH',
+               'FLUX_CORE',
+               'STASIS_BREACH',
+               'RIFT_CONTROL',
+               'SYNDICATE_WARS'
+             ] &&
+             data.teamSizeBracket is int && data.teamSizeBracket >= 1 && data.teamSizeBracket <= 20 &&
+             data.matchDurationMinutes is int && data.matchDurationMinutes >= 0 && data.matchDurationMinutes <= 120 &&
+             data.allowArmadasInFfa is bool &&
+             data.botsEnabled is bool &&
+             (data.bulletSizeMult is int || data.bulletSizeMult is float) && data.bulletSizeMult >= 0.25 && data.bulletSizeMult <= 4.0 &&
+             (data.damageMult is int || data.damageMult is float) && data.damageMult >= 0.25 && data.damageMult <= 4.0 &&
+             (data.speedMult is int || data.speedMult is float) && data.speedMult >= 0.25 && data.speedMult <= 3.0 &&
+             (data.healthMult is int || data.healthMult is float) && data.healthMult >= 0.25 && data.healthMult <= 4.0 &&
+             (data.rechargeMult is int || data.rechargeMult is float) && data.rechargeMult >= 0.25 && data.rechargeMult <= 4.0 &&
+             (data.crateSpawnMult is int || data.crateSpawnMult is float) && data.crateSpawnMult >= 0.0 && data.crateSpawnMult <= 4.0 &&
+             data.createdAtMs is int && data.createdAtMs >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
@@ -375,7 +418,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isValidId(syndicateTag) && existing().ownerId == request.auth.uid;
     }
 
-    // Collection 5: /sector_comms/{commId} (Real-Time Sector Comms & Armada Recruitment Broadcasts)
+    // Collection 5: /sector_comms/{commId} (Real-Time Sector Comms & Squadron Recruitment Broadcasts)
     match /sector_comms/{commId} {
       allow get: if isSignedIn() && isValidId(commId) && (resource == null || existing().visibility == 'public');
       allow list: if isSignedIn() && existing().visibility == 'public';
@@ -466,7 +509,51 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Collection 8: /global_state/{docId} (Authenticated Syndicate Crest/Channels, Custom Calibration & Owner-Isolated Pilot Progression)
+    // Collection 8: /custom_games/{roomCode} (Public Custom Game List + 6-Char Private Join Code Lookup)
+    match /custom_games/{roomCode} {
+      // Direct lookup by 6-char Join Code works for both Public and Private custom games when signed in
+      allow get: if isSignedIn() && isValidRoomCode(roomCode);
+      // List queries return strictly Public Custom Games; Private games are never exposed via list
+      allow list: if isSignedIn() && existing().visibility == 'public' && existing().privateRoom == false;
+
+      allow create: if isSignedIn() &&
+                       isValidRoomCode(roomCode) &&
+                       incoming().roomCode == roomCode &&
+                       incoming().keys().hasAll([
+                         'roomCode', 'instanceId', 'hostUid', 'hostCallsign', 'title',
+                         'visibility', 'privateRoom', 'baseMode', 'teamSizeBracket',
+                         'matchDurationMinutes', 'allowArmadasInFfa', 'botsEnabled',
+                         'bulletSizeMult', 'damageMult', 'speedMult', 'healthMult',
+                         'rechargeMult', 'crateSpawnMult', 'createdAtMs', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'roomCode', 'instanceId', 'hostUid', 'hostCallsign', 'title',
+                         'visibility', 'privateRoom', 'baseMode', 'teamSizeBracket',
+                         'matchDurationMinutes', 'allowArmadasInFfa', 'botsEnabled',
+                         'bulletSizeMult', 'damageMult', 'speedMult', 'healthMult',
+                         'rechargeMult', 'crateSpawnMult', 'createdAtMs', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidCustomGameRoom(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidCustomGameRoom(incoming()) &&
+                       isValidRoomCode(roomCode) &&
+                       existing().hostUid == request.auth.uid &&
+                       incoming().hostUid == existing().hostUid &&
+                       incoming().roomCode == existing().roomCode &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'instanceId', 'hostCallsign', 'title', 'visibility', 'privateRoom',
+                         'baseMode', 'teamSizeBracket', 'matchDurationMinutes',
+                         'allowArmadasInFfa', 'botsEnabled', 'bulletSizeMult', 'damageMult',
+                         'speedMult', 'healthMult', 'rechargeMult', 'crateSpawnMult',
+                         'createdAtMs', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidRoomCode(roomCode) && existing().hostUid == request.auth.uid;
+    }
+
+    // Collection 9: /global_state/{docId} (Authenticated Syndicate Crest/Channels, Custom Calibration & Owner-Isolated Pilot Progression)
     match /global_state/{docId} {
       allow get: if isSignedIn() &&
                     isValidId(docId) &&
@@ -515,7 +602,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Collection 9: /sector_bug_reports/{reportId} (Authenticated Telemetry Bug Reports)
+    // Collection 10: /sector_bug_reports/{reportId} (Authenticated Telemetry Bug Reports)
     match /sector_bug_reports/{reportId} {
       allow get: if isSignedIn() && isValidId(reportId) && (resource == null || existing().reporterUid == request.auth.uid);
       allow list: if false;

@@ -166,6 +166,8 @@ data class CustomGameConfig(
   val healthMult: Float = 1.0f, // 0.5f..2.5f
   val rechargeMult: Float = 1.0f, // 0.5f..2.5f
   val crateSpawnMult: Float = 1.0f, // 0.0f..2.5f
+  val roomCode: String = "",
+  val privateRoom: Boolean = false,
 ) {
   val projectileSizeMult: Float
     get() = bulletSizeMult
@@ -1009,6 +1011,9 @@ class RiftGameEngine(
   var onLocalLifecycleSyncNeeded: () -> Unit = {}
   var onOutboundCombatEvent: (com.example.data.SectorCombatEvent) -> Unit = {}
   private val processedCombatEventIds = LinkedHashSet<String>()
+  private val lastOutboundHitElapsedByUid = mutableMapOf<String, Long>()
+  private val pendingOutboundHitDamageByUid = mutableMapOf<String, Float>()
+  private val lastLocalSimHitFromRemoteElapsedByUid = mutableMapOf<String, Long>()
 
   private fun notifyLocalLifecycleSync() {
     localLifecycleSyncSeq++
@@ -2437,19 +2442,61 @@ class RiftGameEngine(
     }
   }
 
+  fun syncCloudPublicCustomGames(cloudGames: List<CustomGameConfig>) {
+    val activeInst = currentCustomGame?.instanceId
+    val preservedLocal =
+      activeCustomGames.filter { local ->
+        local.privateRoom ||
+          local.instanceId.startsWith("priv_", ignoreCase = true) ||
+          local.instanceId == activeInst ||
+          cloudGames.none {
+            it.instanceId.equals(local.instanceId, ignoreCase = true) ||
+              (it.roomCode.isNotBlank() && it.roomCode.equals(local.roomCode, ignoreCase = true))
+          }
+      }
+    val merged = ArrayList<CustomGameConfig>(cloudGames.size + preservedLocal.size)
+    for (cg in cloudGames) {
+      if (merged.none { it.instanceId.equals(cg.instanceId, ignoreCase = true) }) {
+        merged.add(cg)
+      }
+    }
+    for (loc in preservedLocal) {
+      if (merged.none { it.instanceId.equals(loc.instanceId, ignoreCase = true) }) {
+        merged.add(loc)
+      }
+    }
+    activeCustomGames.clear()
+    activeCustomGames.addAll(merged)
+    if (activeInst != null) {
+      val updatedCurrent = activeCustomGames.firstOrNull { it.instanceId.equals(activeInst, ignoreCase = true) }
+      if (updatedCurrent != null) {
+        currentCustomGame = updatedCurrent
+      }
+    }
+  }
+
   fun createAndJoinCustomGame(config: CustomGameConfig) {
     isHubOverwatchActive = false
     currentOverwatchKey = ""
     isEphemeralPracticeRift = false
     hasJoinedMatch = true
     isInLobbyStaging = false
-    activeCustomGames.removeAll { it.instanceId == config.instanceId }
+    activeCustomGames.removeAll {
+      it.instanceId.equals(config.instanceId, ignoreCase = true) ||
+        (config.roomCode.isNotBlank() && it.roomCode.equals(config.roomCode, ignoreCase = true))
+    }
     activeCustomGames.add(0, config)
     joinCustomGame(config.instanceId)
   }
 
   fun joinCustomGame(instanceId: String) {
-    val cfg = activeCustomGames.firstOrNull { it.instanceId == instanceId } ?: return
+    val cfg =
+      activeCustomGames.firstOrNull {
+        it.instanceId.equals(instanceId, ignoreCase = true) ||
+          (it.roomCode.isNotBlank() &&
+            (it.roomCode.equals(instanceId, ignoreCase = true) ||
+              instanceId.endsWith("_${it.roomCode}", ignoreCase = true)))
+      } ?: return
     isHubOverwatchActive = false
     currentOverwatchKey = ""
     isEphemeralPracticeRift = false
@@ -2461,7 +2508,8 @@ class RiftGameEngine(
     mode = cfg.baseMode.id
     activeTeamSizeBracket = cfg.teamSizeBracket
     publicMatchDurationSec = 0f
-    publicMatchCycleLimitSec = (cfg.matchDurationMinutes.coerceIn(1, 120) * 60f)
+    publicMatchCycleLimitSec =
+      if (cfg.matchDurationMinutes <= 0) 3600f else (cfg.matchDurationMinutes.coerceIn(1, 120) * 60f)
     skirmishRound = 1
     skirmishWestRoundWins = 0
     skirmishEastRoundWins = 0
@@ -2487,15 +2535,22 @@ class RiftGameEngine(
     interdictorBubbles.clear()
     reactivePrecipitates.clear()
     reactiveFilaments.clear()
+    RiftCalibrationState.botsEnabled = cfg.botsEnabled
     rebuildRosterForMode(cfg.baseMode.id)
+    if (!cfg.botsEnabled) {
+      ships.removeAll { !it.isHuman && !it.isLocalPlayer }
+      updateDynamicArenaGeometryForShipCount(ships.size.coerceAtLeast(2), regenerateObstacles = false)
+    }
     for (s in ships) {
       s.maxFlux = s.spec.maxFlux * cfg.healthMult
       s.flux = s.maxFlux
     }
     spawnLocalPlayerCleanly()
+    reattachRemotePilotsToRoster()
     isShipLockedForMatch = doesModeLockShipSelection()
     sfx.playWarp()
     onPrizeToast("JOINED CUSTOM GAME: ${cfg.title.uppercase()} (${cfg.baseMode.title})")
+    notifyLocalLifecycleSync()
     onStatsUpdated()
   }
 
@@ -4031,7 +4086,7 @@ class RiftGameEngine(
             if (reportedSector != null && !matchesCurrentInstanceSector(reportedSector)) {
               true
             } else {
-              nowCleanupMs - ship.lastNetUpdateElapsedMs > 4_500L
+              nowCleanupMs - ship.lastNetUpdateElapsedMs > 25_000L
             }
           }
         }
@@ -4211,7 +4266,27 @@ class RiftGameEngine(
         continue
       }
       if (ev.senderUid == currentUid) continue
-      if (ev.eventType == "ELIMINATED" && ev.targetUid == currentUid && localPlayer.respawnTimer <= 0f) {
+      if (ev.eventType == "HIT" && ev.targetUid == currentUid && localPlayer.respawnTimer <= 0f) {
+        val nowEl = android.os.SystemClock.elapsedRealtime()
+        val recentSimHitEl = lastLocalSimHitFromRemoteElapsedByUid[ev.senderUid] ?: 0L
+        // Apply authoritative remote hit if local bullet simulation did not already register it within 260ms
+        if (nowEl - recentSimHitEl > 260L && ev.damage > 0L) {
+          val remoteAttacker = remotePilots[ev.senderUid]
+          applyProjectileDamage(
+            target = localPlayer,
+            attackerId = remoteAttacker?.id ?: "remote_${ev.senderUid}",
+            attackerIsHuman = true,
+            rawDamage = ev.damage.toFloat().coerceIn(1f, 4500f),
+            impactAngle =
+              if (remoteAttacker != null) atan2(localPlayer.y - remoteAttacker.y, localPlayer.x - remoteAttacker.x)
+              else localPlayer.angle + PI.toFloat(),
+            isHeavyImpact = ev.damage >= 380L,
+            isEmp = ev.weaponLabel.contains("EMP", ignoreCase = true),
+            attackerShipLabel = remoteAttacker?.let { formatShipLabel(it) } ?: ev.senderCallsign,
+            weaponLabel = ev.weaponLabel.ifBlank { "Plasma Cannon" },
+          )
+        }
+      } else if (ev.eventType == "ELIMINATED" && ev.targetUid == currentUid && localPlayer.respawnTimer <= 0f) {
         val remoteAttacker = remotePilots[ev.senderUid]
         applyProjectileDamage(
           target = localPlayer,
@@ -7375,7 +7450,13 @@ class RiftGameEngine(
       if (target.isHuman) currentLifeHadPvp = true
     } else if (target.isLocalPlayer) {
       currentLifeStats.damageTaken += effectiveDamage
-      if (attackerIsHuman) currentLifeHadPvp = true
+      if (attackerIsHuman) {
+        currentLifeHadPvp = true
+        if (attackerId.startsWith("remote_")) {
+          lastLocalSimHitFromRemoteElapsedByUid[attackerId.removePrefix("remote_")] =
+            android.os.SystemClock.elapsedRealtime()
+        }
+      }
     }
 
     target.hitFlashTimer = 0f
@@ -7710,6 +7791,7 @@ class RiftGameEngine(
           !target.isLocalPlayer
       ) {
         val remoteVictimUid = target.id.removePrefix("remote_")
+        pendingOutboundHitDamageByUid.remove(remoteVictimUid)
         onOutboundCombatEvent(
           com.example.data.SectorCombatEvent(
             targetUid = remoteVictimUid,
@@ -7727,6 +7809,38 @@ class RiftGameEngine(
       }
 
       handleRankedModeShipEliminated(target, attacker)
+    } else if (
+      !isEphemeralPracticeRift &&
+        hasJoinedMatch &&
+        attackerId == localPlayer.id &&
+        target.isHuman &&
+        !target.isLocalPlayer &&
+        effectiveDamage >= 1f
+    ) {
+      val remoteVictimUid = target.id.removePrefix("remote_")
+      val nowEl = android.os.SystemClock.elapsedRealtime()
+      val prevEl = lastOutboundHitElapsedByUid[remoteVictimUid] ?: 0L
+      val accumulated = (pendingOutboundHitDamageByUid[remoteVictimUid] ?: 0f) + effectiveDamage
+      if (isHeavyImpact || isEmp || nowEl - prevEl >= 210L) {
+        lastOutboundHitElapsedByUid[remoteVictimUid] = nowEl
+        pendingOutboundHitDamageByUid.remove(remoteVictimUid)
+        onOutboundCombatEvent(
+          com.example.data.SectorCombatEvent(
+            targetUid = remoteVictimUid,
+            sectorId = activeMatchSectorTag(),
+            eventType = "HIT",
+            damage = accumulated.roundToInt().toLong().coerceIn(1L, 25_000L),
+            bountyAward = 0L,
+            weaponLabel = if (isEmp) "EMP $weaponLabel".take(48) else weaponLabel,
+            senderCallsign = localPlayer.callsign,
+            senderTag = if (localPlayer.armadaName.isNotEmpty()) localPlayer.armadaName else localPlayer.syndicateTag,
+            senderShipId = localPlayer.shipId.toLong(),
+            createdAtMs = System.currentTimeMillis(),
+          )
+        )
+      } else {
+        pendingOutboundHitDamageByUid[remoteVictimUid] = accumulated
+      }
     }
   }
 

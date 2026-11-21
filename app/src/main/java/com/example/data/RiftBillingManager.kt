@@ -182,12 +182,8 @@ object RiftBillingManager {
 
   fun resolveNamedFirestore(context: Context?): FirebaseFirestore? =
     runCatching {
-        if (context != null) {
-          val appCtx = context.applicationContext
-          FirebaseFirestore.getInstance(appCtx.getString(R.string.firestore_database_id))
-        } else {
-          FirebaseFirestore.getInstance()
-        }
+        val appCtx = context?.applicationContext ?: return@runCatching null
+        FirebaseFirestore.getInstance(appCtx.getString(R.string.firestore_database_id))
       }
       .getOrNull()
 

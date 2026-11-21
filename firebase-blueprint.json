@@ -13,6 +13,14 @@
           "type": "string",
           "description": "Pilot display callsign in space and on leaderboards."
         },
+        "syndicateTag": {
+          "type": "string",
+          "description": "Optional Syndicate tag."
+        },
+        "syndicateName": {
+          "type": "string",
+          "description": "Optional Syndicate name."
+        },
         "preferredShipId": {
           "type": "integer",
           "description": "Selected hull ID (1-10)."
@@ -26,10 +34,14 @@
           "enum": [
             "FFA",
             "SECTOR_CONVERGENCE",
+            "SECTOR_CONVERGENCE_2",
             "RIFT_SKIRMISH",
+            "RIFT_CONTROL",
             "FLUX_CORE",
             "STASIS_BREACH",
             "SYNDICATE_WARS",
+            "NEXUS_LOBBY",
+            "RIFT_LOBBY",
             "warzone_10v10",
             "ranked_3v3",
             "ranked_5v5"
@@ -46,7 +58,7 @@
         },
         "pvpBountyPeak": {
           "type": "integer",
-          "description": "Highest bounty achieved in PVP combat."
+          "description": "Highest Resonance achieved in PVP combat."
         },
         "allTimeKills": {
           "type": "integer",
@@ -58,7 +70,7 @@
         },
         "allTimeBountyPeak": {
           "type": "integer",
-          "description": "Highest bounty achieved across all sessions."
+          "description": "Highest Resonance achieved across all sessions."
         },
         "convergencesWon": {
           "type": "integer",
@@ -116,15 +128,15 @@
         },
         "syndicateTag": {
           "type": "string",
-          "description": "Optional 2-4 char Syndicate tag."
+          "description": "Optional 1-4 char Syndicate tag."
         },
         "armadaTag": {
           "type": "string",
-          "description": "Optional Armada squad tag or SOLO."
+          "description": "Optional Squadron tag or SOLO."
         },
         "armadaTierSize": {
           "type": "integer",
-          "description": "Active Armada size bracket (1-5)."
+          "description": "Active Squadron size bracket (1-5)."
         },
         "foundry": {
           "type": "string",
@@ -140,7 +152,7 @@
         },
         "pvpBounty": {
           "type": "integer",
-          "description": "Peak or active PVP bounty."
+          "description": "Peak or active PVP Resonance."
         },
         "allTimeKills": {
           "type": "integer",
@@ -152,7 +164,7 @@
         },
         "allTimeBounty": {
           "type": "integer",
-          "description": "Peak all-time bounty."
+          "description": "Peak all-time Resonance."
         },
         "convergencesWon": {
           "type": "integer",
@@ -202,21 +214,7 @@
         },
         "sectorId": {
           "type": "string",
-          "enum": [
-            "FFA",
-            "SECTOR_CONVERGENCE",
-            "SECTOR_CONVERGENCE_2",
-            "RIFT_SKIRMISH",
-            "RIFT_CONTROL",
-            "FLUX_CORE",
-            "STASIS_BREACH",
-            "SYNDICATE_WARS",
-            "NEXUS_LOBBY",
-            "warzone_10v10",
-            "ranked_3v3",
-            "ranked_5v5"
-          ],
-          "description": "Sector queue identifier."
+          "description": "Sector or Custom Rift queue identifier."
         },
         "callsign": {
           "type": "string",
@@ -228,7 +226,7 @@
         },
         "armadaName": {
           "type": "string",
-          "description": "Active Armada name."
+          "description": "Active Squadron name."
         },
         "shipId": {
           "type": "integer",
@@ -274,6 +272,26 @@
           "type": "boolean",
           "description": "Whether stealth cloak is active."
         },
+        "isRespawning": {
+          "type": "boolean",
+          "description": "Whether the ship is currently respawning."
+        },
+        "isInStasisBrig": {
+          "type": "boolean",
+          "description": "Whether the ship is held in Stasis Breach containment."
+        },
+        "secondarySeq": {
+          "type": "integer",
+          "description": "Monotonic secondary ordnance sequence counter."
+        },
+        "secondaryType": {
+          "type": "string",
+          "description": "Active secondary ordnance type."
+        },
+        "secondaryAim": {
+          "type": "number",
+          "description": "Secondary ordnance aim angle in radians."
+        },
         "energy": {
           "type": "integer",
           "description": "Current unified Flux capacitor value."
@@ -284,7 +302,11 @@
         },
         "bounty": {
           "type": "integer",
-          "description": "Current active bounty in sector."
+          "description": "Current active combat Resonance in sector."
+        },
+        "liveResonance": {
+          "type": "integer",
+          "description": "Overall Pilot Resonance rating."
         },
         "lastPingType": {
           "type": "string",
@@ -302,12 +324,12 @@
         "createdAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp of presence creation."
+          "description": "Server timestamp of presence creation (FieldValue.serverTimestamp())."
         },
         "updatedAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp of latest telemetry heartbeat."
+          "description": "Server timestamp of latest telemetry heartbeat (FieldValue.serverTimestamp())."
         }
       },
       "required": [
@@ -362,7 +384,7 @@
         },
         "combinedBounty": {
           "type": "integer",
-          "description": "Combined Syndicate bounty."
+          "description": "Combined Syndicate Resonance."
         },
         "isCustom": {
           "type": "boolean",
@@ -371,12 +393,12 @@
         "createdAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp of Syndicate creation."
+          "description": "Server timestamp of Syndicate creation (FieldValue.serverTimestamp())."
         },
         "updatedAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp of last Syndicate update."
+          "description": "Server timestamp of last Syndicate update (FieldValue.serverTimestamp())."
         }
       },
       "required": [
@@ -394,7 +416,7 @@
     },
     "SyndicateChatMessage": {
       "title": "SyndicateChatMessage",
-      "description": "Sector comms message or Armada recruitment broadcast.",
+      "description": "Sector comms message or Squadron recruitment broadcast.",
       "type": "object",
       "properties": {
         "senderUid": {
@@ -416,7 +438,7 @@
         },
         "timestampLabel": {
           "type": "string",
-          "description": "Formatted timestamp label."
+          "description": "Channel or formatted timestamp label."
         },
         "messageText": {
           "type": "string",
@@ -424,23 +446,23 @@
         },
         "isArmadaRecruitBanner": {
           "type": "boolean",
-          "description": "Whether this message is an Armada recruitment banner."
+          "description": "Whether this message is a Squadron recruitment banner."
         },
         "armadaName": {
           "type": "string",
-          "description": "Armada squad name."
+          "description": "Squadron name."
         },
         "armadaCurrentSize": {
           "type": "integer",
-          "description": "Current Armada member count (1-5)."
+          "description": "Current Squadron member count (1-5)."
         },
         "armadaMaxSize": {
           "type": "integer",
-          "description": "Max Armada member count (1-5)."
+          "description": "Max Squadron member count (1-5)."
         },
         "armadaObjective": {
           "type": "string",
-          "description": "Armada tactical objective."
+          "description": "Squadron tactical objective or room code metadata."
         },
         "requestSent": {
           "type": "boolean",
@@ -453,7 +475,7 @@
         "createdAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp of message creation."
+          "description": "Server timestamp of message creation (FieldValue.serverTimestamp())."
         }
       },
       "required": [
@@ -472,6 +494,382 @@
         "createdAtMs",
         "createdAt"
       ]
+    },
+    "SectorCombatEvent": {
+      "title": "SectorCombatEvent",
+      "description": "Cross-device hit and elimination telemetry event.",
+      "type": "object",
+      "properties": {
+        "senderUid": {
+          "type": "string",
+          "description": "Attacker Firebase Auth UID."
+        },
+        "targetUid": {
+          "type": "string",
+          "description": "Victim Firebase Auth UID."
+        },
+        "sectorId": {
+          "type": "string",
+          "description": "Sector or Custom Rift identifier."
+        },
+        "eventType": {
+          "type": "string",
+          "enum": ["HIT", "ELIMINATED"],
+          "description": "Combat event type."
+        },
+        "damage": {
+          "type": "integer",
+          "description": "Damage applied."
+        },
+        "bountyAward": {
+          "type": "integer",
+          "description": "Resonance awarded."
+        },
+        "weaponLabel": {
+          "type": "string",
+          "description": "Weapon name."
+        },
+        "senderCallsign": {
+          "type": "string",
+          "description": "Attacker callsign."
+        },
+        "senderTag": {
+          "type": "string",
+          "description": "Attacker Syndicate or Squadron tag."
+        },
+        "senderShipId": {
+          "type": "integer",
+          "description": "Attacker hull ID (1-10)."
+        },
+        "createdAtMs": {
+          "type": "integer",
+          "description": "Client epoch timestamp in ms."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of combat event (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "senderUid",
+        "targetUid",
+        "sectorId",
+        "eventType",
+        "damage",
+        "bountyAward",
+        "weaponLabel",
+        "senderCallsign",
+        "senderTag",
+        "senderShipId",
+        "createdAtMs",
+        "createdAt"
+      ]
+    },
+    "SectorInstanceState": {
+      "title": "SectorInstanceState",
+      "description": "Shared objective state per Rift or Custom Game instance.",
+      "type": "object",
+      "properties": {
+        "sectorId": {
+          "type": "string",
+          "description": "Sector or Custom Rift identifier."
+        },
+        "hostUid": {
+          "type": "string",
+          "description": "Objective host Firebase Auth UID."
+        },
+        "fluxCarrierUid": {
+          "type": "string",
+          "description": "Current Flux Core carrier UID."
+        },
+        "fluxOrbX": {
+          "type": "number"
+        },
+        "fluxOrbY": {
+          "type": "number"
+        },
+        "fluxOrbVx": {
+          "type": "number"
+        },
+        "fluxOrbVy": {
+          "type": "number"
+        },
+        "fluxTier": {
+          "type": "integer"
+        },
+        "fluxHoldSec": {
+          "type": "number"
+        },
+        "rcWestScore": {
+          "type": "number"
+        },
+        "rcEastScore": {
+          "type": "number"
+        },
+        "rcTimerSec": {
+          "type": "number"
+        },
+        "rcAlphaCtrl": {
+          "type": "number"
+        },
+        "rcAlphaLock": {
+          "type": "integer"
+        },
+        "rcOmegaCtrl": {
+          "type": "number"
+        },
+        "rcOmegaLock": {
+          "type": "integer"
+        },
+        "sbTimerSec": {
+          "type": "number"
+        },
+        "sbWestCaps": {
+          "type": "integer"
+        },
+        "sbEastCaps": {
+          "type": "integer"
+        },
+        "sbWestCoreHp": {
+          "type": "number"
+        },
+        "sbEastCoreHp": {
+          "type": "number"
+        },
+        "jailedUidsCsv": {
+          "type": "string"
+        },
+        "updatedAtMs": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of objective update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "sectorId",
+        "hostUid",
+        "fluxCarrierUid",
+        "fluxOrbX",
+        "fluxOrbY",
+        "fluxOrbVx",
+        "fluxOrbVy",
+        "fluxTier",
+        "fluxHoldSec",
+        "rcWestScore",
+        "rcEastScore",
+        "rcTimerSec",
+        "rcAlphaCtrl",
+        "rcAlphaLock",
+        "rcOmegaCtrl",
+        "rcOmegaLock",
+        "sbTimerSec",
+        "sbWestCaps",
+        "sbEastCaps",
+        "sbWestCoreHp",
+        "sbEastCoreHp",
+        "jailedUidsCsv",
+        "updatedAtMs",
+        "updatedAt"
+      ]
+    },
+    "CustomGameRoom": {
+      "title": "CustomGameRoom",
+      "description": "Publicly listed or 6-character Join Code Private Custom Rift game room.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "description": "Uppercase 4-8 character alphanumeric room join code."
+        },
+        "instanceId": {
+          "type": "string",
+          "description": "Canonical instance ID (pub_<CODE> or priv_<CODE>)."
+        },
+        "hostUid": {
+          "type": "string",
+          "description": "Creator Firebase Auth UID."
+        },
+        "hostCallsign": {
+          "type": "string",
+          "description": "Creator pilot callsign."
+        },
+        "title": {
+          "type": "string",
+          "description": "Custom Rift display title."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public", "private"],
+          "description": "Visibility scope enforcing public directory listing vs private join-code-only lookup."
+        },
+        "privateRoom": {
+          "type": "boolean",
+          "description": "False for Public Custom Games list; true for Private Join Code games."
+        },
+        "baseMode": {
+          "type": "string",
+          "enum": [
+            "SECTOR_CONVERGENCE",
+            "RIFT_SKIRMISH",
+            "FLUX_CORE",
+            "STASIS_BREACH",
+            "RIFT_CONTROL",
+            "SYNDICATE_WARS"
+          ],
+          "description": "Underlying competitive ruleset."
+        },
+        "teamSizeBracket": {
+          "type": "integer",
+          "description": "Team size bracket (1-20)."
+        },
+        "matchDurationMinutes": {
+          "type": "integer",
+          "description": "Match reset duration in minutes (0 = unlimited, up to 120)."
+        },
+        "allowArmadasInFfa": {
+          "type": "boolean",
+          "description": "Whether Squadrons are permitted in FFA rules."
+        },
+        "botsEnabled": {
+          "type": "boolean",
+          "description": "Whether AI backfill bots are enabled."
+        },
+        "bulletSizeMult": {
+          "type": "number",
+          "description": "Projectile size multiplier."
+        },
+        "damageMult": {
+          "type": "number",
+          "description": "Weapon damage multiplier."
+        },
+        "speedMult": {
+          "type": "number",
+          "description": "Ship top speed multiplier."
+        },
+        "healthMult": {
+          "type": "number",
+          "description": "Hull max Flux multiplier."
+        },
+        "rechargeMult": {
+          "type": "number",
+          "description": "Flux recharge multiplier."
+        },
+        "crateSpawnMult": {
+          "type": "number",
+          "description": "Supply crate spawn multiplier."
+        },
+        "createdAtMs": {
+          "type": "integer",
+          "description": "Client creation epoch ms."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of room creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest room update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "roomCode",
+        "instanceId",
+        "hostUid",
+        "hostCallsign",
+        "title",
+        "visibility",
+        "privateRoom",
+        "baseMode",
+        "teamSizeBracket",
+        "matchDurationMinutes",
+        "allowArmadasInFfa",
+        "botsEnabled",
+        "bulletSizeMult",
+        "damageMult",
+        "speedMult",
+        "healthMult",
+        "rechargeMult",
+        "crateSpawnMult",
+        "createdAtMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GlobalStateDocument": {
+      "title": "GlobalStateDocument",
+      "description": "Syndicate crest/channel metadata, custom calibration, and owner-isolated pilot progression.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string"
+        },
+        "payloadJson": {
+          "type": "string"
+        },
+        "updatedAtMs": {
+          "type": "integer"
+        }
+      }
+    },
+    "SectorBugReport": {
+      "title": "SectorBugReport",
+      "description": "Authenticated telemetry bug report.",
+      "type": "object",
+      "properties": {
+        "reporterUid": {
+          "type": "string"
+        },
+        "reporterCallsign": {
+          "type": "string"
+        },
+        "syndicateTag": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "buildVersion": {
+          "type": "integer"
+        },
+        "activeMode": {
+          "type": "string"
+        },
+        "activeShipId": {
+          "type": "integer"
+        },
+        "screenDpSummary": {
+          "type": "string"
+        },
+        "createdAtMs": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "reporterUid",
+        "reporterCallsign",
+        "syndicateTag",
+        "category",
+        "description",
+        "buildVersion",
+        "activeMode",
+        "activeShipId",
+        "screenDpSummary",
+        "createdAtMs",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -485,7 +883,7 @@
       "schema": {
         "$ref": "#/entities/LeaderboardEntry"
       },
-      "description": "Global dual-bucket competitive leaderboard (PVP Only and All-Time)."
+      "description": "Global dual-bucket competitive leaderboard."
     },
     "/sector_pilots/{userId}": {
       "schema": {
@@ -503,7 +901,37 @@
       "schema": {
         "$ref": "#/entities/SyndicateChatMessage"
       },
-      "description": "Real-time Sector Comms and Armada recruitment broadcasts."
+      "description": "Real-time Sector Comms and Squadron recruitment broadcasts."
+    },
+    "/sector_combat_events/{eventId}": {
+      "schema": {
+        "$ref": "#/entities/SectorCombatEvent"
+      },
+      "description": "Authoritative cross-device hit and elimination events."
+    },
+    "/sector_instances/{sectorId}": {
+      "schema": {
+        "$ref": "#/entities/SectorInstanceState"
+      },
+      "description": "Shared objective state per Rift instance."
+    },
+    "/custom_games/{roomCode}": {
+      "schema": {
+        "$ref": "#/entities/CustomGameRoom"
+      },
+      "description": "Publicly queryable Custom Rift directory and 6-character Private Join Code lookup."
+    },
+    "/global_state/{docId}": {
+      "schema": {
+        "$ref": "#/entities/GlobalStateDocument"
+      },
+      "description": "Syndicate metadata, custom calibration, and owner-isolated pilot progression."
+    },
+    "/sector_bug_reports/{reportId}": {
+      "schema": {
+        "$ref": "#/entities/SectorBugReport"
+      },
+      "description": "Authenticated telemetry bug reports."
     }
   }
 }

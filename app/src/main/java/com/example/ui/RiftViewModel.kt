@@ -3,6 +3,7 @@ package com.example.ui
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.CloudCustomGameRoom
 import com.example.data.CloudSyncHealth
 import com.example.data.CloudSyndicateMeta
 import com.example.data.FriendPilotEntry
@@ -21,8 +22,10 @@ import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -39,6 +42,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -314,11 +318,82 @@ class RiftViewModel(
         initialValue = null,
       )
 
+  val publicCustomGamesState: StateFlow<List<CloudCustomGameRoom>> =
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(emptyList())
+        } else {
+          repository
+            .observePublicCustomGames()
+            .retryWithExponentialBackoff("publicCustomGames")
+            .catch { error ->
+              if (error is CancellationException) throw error
+              emit(emptyList())
+            }
+        }
+      }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList(),
+      )
+
+  private val pendingLivePilotState = MutableStateFlow<LivePilotState?>(null)
+  private val liveStateRevision = AtomicLong(0L)
+  private val liveStateSignal = Channel<Unit>(Channel.CONFLATED)
+
   init {
     viewModelScope.launch {
       cloudReadyFlow.collect { ready ->
         if (ready) {
           ensureInitialProfile()
+          liveStateSignal.trySend(Unit)
+        }
+      }
+    }
+    // Single-flight conflated presence/telemetry writer:
+    // Prevents concurrent Firestore .update() calls from piling up and stalling after initial spawn.
+    viewModelScope.launch {
+      var lastSentRevision = 0L
+      var lastSentSector = ""
+      var lastSentFiring = false
+      var lastSentSecondarySeq = 0L
+      var lastSentRespawning = false
+      while (true) {
+        val currentRev = liveStateRevision.get()
+        val snapshot = pendingLivePilotState.value
+        if (!isCloudSessionReady() || snapshot == null || currentRev <= lastSentRevision) {
+          liveStateSignal.receive()
+          continue
+        }
+        lastSentRevision = currentRev
+        lastSentSector = snapshot.sectorId
+        lastSentFiring = snapshot.isFiringPrimary
+        lastSentSecondarySeq = snapshot.secondarySeq
+        lastSentRespawning = snapshot.isRespawning
+        try {
+          repository.saveLivePilotState(snapshot)
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          Log.w(TAG, "Transient live state sync error", e)
+        }
+        // Pace steady position updates at ~115ms while waking immediately on urgent combat/sector changes
+        withTimeoutOrNull(115L) {
+          while (true) {
+            liveStateSignal.receive()
+            val next = pendingLivePilotState.value
+            if (
+              next != null &&
+                (next.sectorId != lastSentSector ||
+                  next.isFiringPrimary != lastSentFiring ||
+                  next.secondarySeq != lastSentSecondarySeq ||
+                  next.isRespawning != lastSentRespawning)
+            ) {
+              break
+            }
+          }
         }
       }
     }
@@ -503,7 +578,7 @@ class RiftViewModel(
         timestampLabel = safeChannelLabel,
         messageText = safeMessage,
         isArmadaRecruitBanner = isArmadaRecruitBanner,
-        armadaName = armadaName.trim().uppercase(Locale.US).take(12),
+        armadaName = armadaName.trim().uppercase(Locale.US).take(14),
         armadaCurrentSize = armadaCurrentSize.coerceIn(1, 5),
         armadaMaxSize = armadaMaxSize.coerceIn(1, 5),
         armadaObjective = safeObjective,
@@ -633,6 +708,61 @@ class RiftViewModel(
           false
         }
       onResult(ok)
+    }
+  }
+
+  fun publishCustomGameRoom(
+    room: CloudCustomGameRoom,
+    onResult: (Boolean) -> Unit = {},
+  ) {
+    if (!isCloudSessionReady()) {
+      onResult(false)
+      return
+    }
+    viewModelScope.launch {
+      val ok =
+        try {
+          repository.saveCustomGameRoom(room).isSuccess
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          Log.w(TAG, "Failed to publish custom game room", e)
+          false
+        }
+      onResult(ok)
+    }
+  }
+
+  fun lookupCustomGameByCode(
+    rawCode: String,
+    onResult: (CloudCustomGameRoom?, String) -> Unit,
+  ) {
+    val cleanCode = rawCode.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(8)
+    if (cleanCode.length !in 4..8) {
+      onResult(null, "ENTER A VALID 6-CHARACTER JOIN CODE.")
+      return
+    }
+    if (!isCloudSessionReady()) {
+      onResult(null, "SIGN IN WITH GOOGLE TO JOIN REMOTE CUSTOM GAMES BY CODE.")
+      return
+    }
+    viewModelScope.launch {
+      val result =
+        try {
+          repository.getCustomGameByJoinCode(cleanCode)
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          Result.failure(e)
+        }
+      val found = result.getOrNull()
+      if (found != null) {
+        onResult(found, "JOINING CUSTOM GAME [${found.roomCode}] // ${found.title}")
+      } else if (result.isFailure) {
+        onResult(null, "UNABLE TO REACH CLOUD DIRECTORY FOR CODE [$cleanCode].")
+      } else {
+        onResult(null, "NO ACTIVE CUSTOM GAME FOUND FOR CODE [$cleanCode].")
+      }
     }
   }
 
@@ -825,44 +955,39 @@ class RiftViewModel(
       _activeSectorId.value = cleanSector
     }
     if (!isCloudSessionReady()) return
-    viewModelScope.launch {
-      try {
-        repository.saveLivePilotState(
-          LivePilotState(
-            userId = currentUserId,
-            sectorId = cleanSector,
-            callsign = callsign,
-            syndicateTag = syndicateTag,
-            armadaName = armadaName,
-            shipId = shipId.toLong(),
-            freq = freq.toLong(),
-            x = x.toDouble(),
-            y = y.toDouble(),
-            vx = vx.toDouble(),
-            vy = vy.toDouble(),
-            angle = angle.toDouble(),
-            weaponAngle = weaponAngle.toDouble(),
-            isFiringPrimary = isFiringPrimary,
-            isAfterburning = isAfterburning,
-            isCloaked = isCloaked,
-            isRespawning = isRespawning,
-            isInStasisBrig = isInStasisBrig,
-            secondarySeq = secondarySeq,
-            secondaryType = secondaryType,
-            secondaryAim = secondaryAim.toDouble(),
-            energy = flux.toLong().coerceIn(0L, 10000L),
-            maxEnergy = maxFlux.toLong().coerceIn(100L, 10000L),
-            bounty = bounty.toLong(),
-            liveResonance = liveResonance.toLong(),
-            lastPingType = "NONE",
-            lastPingX = 0.0,
-            lastPingY = 0.0,
-          )
-        )
-      } catch (e: Exception) {
-        Log.w(TAG, "Failed to sync native live state", e)
-      }
-    }
+    pendingLivePilotState.value =
+      LivePilotState(
+        userId = currentUserId,
+        sectorId = cleanSector,
+        callsign = callsign,
+        syndicateTag = syndicateTag,
+        armadaName = armadaName.take(14),
+        shipId = shipId.toLong(),
+        freq = freq.toLong(),
+        x = x.toDouble(),
+        y = y.toDouble(),
+        vx = vx.toDouble(),
+        vy = vy.toDouble(),
+        angle = angle.toDouble(),
+        weaponAngle = weaponAngle.toDouble(),
+        isFiringPrimary = isFiringPrimary,
+        isAfterburning = isAfterburning,
+        isCloaked = isCloaked,
+        isRespawning = isRespawning,
+        isInStasisBrig = isInStasisBrig,
+        secondarySeq = secondarySeq,
+        secondaryType = secondaryType,
+        secondaryAim = secondaryAim.toDouble(),
+        energy = flux.toLong().coerceIn(0L, 10000L),
+        maxEnergy = maxFlux.toLong().coerceIn(100L, 10000L),
+        bounty = bounty.toLong(),
+        liveResonance = liveResonance.toLong(),
+        lastPingType = "NONE",
+        lastPingX = 0.0,
+        lastPingY = 0.0,
+      )
+    liveStateRevision.incrementAndGet()
+    liveStateSignal.trySend(Unit)
   }
 
   fun buildCloudSnapshotJson(): String {

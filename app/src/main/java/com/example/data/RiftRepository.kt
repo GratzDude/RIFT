@@ -20,6 +20,7 @@ import com.google.firebase.firestore.QuerySnapshot
 import com.google.firebase.firestore.snapshots
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -99,6 +100,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   private val remoteSeenElapsedMsByUid = ConcurrentHashMap<String, Long>()
   private val remoteLastServerMsByUid = ConcurrentHashMap<String, Long>()
   private val knownExistingPilotDocUids = ConcurrentHashMap.newKeySet<String>()
+  private val pilotSnapshotSeqGen = AtomicLong(1L)
   private val _cloudSyncHealth = MutableStateFlow(CloudSyncHealth())
   val cloudSyncHealth: StateFlow<CloudSyncHealth> = _cloudSyncHealth.asStateFlow()
 
@@ -108,8 +110,6 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val payloadJson: String = "",
     val updatedAtMs: Long = 0L,
   )
-
-  constructor() : this({ FirebaseFirestore.getInstance() })
 
   constructor(db: FirebaseFirestore) : this({ db })
 
@@ -242,6 +242,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         "STASIS_BREACH_1" -> "STASIS_BREACH"
         "RIFT_CONTROL_1" -> "RIFT_CONTROL"
         "SYNDICATE_WARS_1" -> "SYNDICATE_WARS"
+        "RIFT_LOBBY" -> "NEXUS_LOBBY"
         else -> trimmed
       }
     val allowed =
@@ -255,6 +256,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         "STASIS_BREACH",
         "SYNDICATE_WARS",
         "NEXUS_LOBBY",
+        "RIFT_LOBBY",
         "warzone_10v10",
         "ranked_3v3",
         "ranked_5v5",
@@ -264,7 +266,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       withoutLegacyOne.uppercase(Locale.US) in allowed -> withoutLegacyOne.uppercase(Locale.US)
       withoutLegacyOne.startsWith("CUSTOM_") &&
         withoutLegacyOne.length <= 30 &&
-        withoutLegacyOne.matches(Regex("^CUSTOM_[A-Za-z0-9_\\-]+$")) -> withoutLegacyOne
+        withoutLegacyOne.matches(Regex("^CUSTOM_[A-Za-z0-9_\\-]{1,23}$")) -> withoutLegacyOne
       else -> "SECTOR_CONVERGENCE"
     }
   }
@@ -427,7 +429,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val safeCallsign = sanitizeCallsign(entry.callsign)
     val safeShipId = entry.shipId.coerceIn(1L, 10L)
     val safeFoundry = sanitizeFoundry(entry.foundry)
-    val safeArmadaTag = sanitizeArmadaTag(entry.armadaTag).take(12).ifEmpty { "SOLO" }
+    val safeArmadaTag = sanitizeArmadaTag(entry.armadaTag).take(14).ifEmpty { "SOLO" }
     val safeArmadaTierSize = entry.armadaTierSize.coerceIn(1, 5)
 
     try {
@@ -540,7 +542,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val docRef = db.collection("sector_pilots").document(uid)
     val safeCallsign = sanitizeCallsign(state.callsign)
     val safeSyndicateTag = sanitizeSyndicateTag(state.syndicateTag)
-    val safeArmadaName = sanitizeArmadaTag(state.armadaName).take(12)
+    val safeArmadaName = sanitizeArmadaTag(state.armadaName).take(14)
     val safeSector = sanitizeMode(state.sectorId)
     val safeShip = state.shipId.coerceIn(1L, 10L)
     val safeFreq = state.freq.coerceIn(0L, 99L)
@@ -636,18 +638,85 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     }
   }
 
+  private fun DocumentSnapshot.toLivePilotStateSafe(syncSeq: Long): LivePilotState? {
+    if (!exists()) return null
+    val docUid = (getString("userId")?.trim()?.takeIf { it.isNotEmpty() } ?: id.trim())
+    if (docUid.isEmpty()) return null
+    val angleVal = (get("angle") as? Number)?.toDouble() ?: 0.0
+    val weaponAngleVal = (get("weaponAngle") as? Number)?.toDouble() ?: angleVal
+    val firingVal =
+      getBoolean("isFiringPrimary")
+        ?: getBoolean("firingPrimary")
+        ?: false
+    val afterburnVal =
+      getBoolean("isAfterburning")
+        ?: getBoolean("afterburning")
+        ?: false
+    val cloakedVal =
+      getBoolean("isCloaked")
+        ?: getBoolean("cloaked")
+        ?: false
+    val respawningVal =
+      getBoolean("isRespawning")
+        ?: getBoolean("respawning")
+        ?: false
+    val brigVal =
+      getBoolean("isInStasisBrig")
+        ?: getBoolean("inStasisBrig")
+        ?: false
+    return LivePilotState(
+      id = id,
+      userId = docUid,
+      visibility = getString("visibility") ?: "public",
+      sectorId = getString("sectorId") ?: "NEXUS_LOBBY",
+      callsign = getString("callsign") ?: "PILOT",
+      syndicateTag = sanitizeSyndicateTag(getString("syndicateTag").orEmpty()),
+      armadaName = sanitizeArmadaTag(getString("armadaName").orEmpty()).take(14),
+      shipId = ((get("shipId") as? Number)?.toLong() ?: 1L).coerceIn(1L, 10L),
+      freq = ((get("freq") as? Number)?.toLong() ?: 0L).coerceIn(0L, 99L),
+      x = (get("x") as? Number)?.toDouble() ?: 2000.0,
+      y = (get("y") as? Number)?.toDouble() ?: 2000.0,
+      vx = (get("vx") as? Number)?.toDouble() ?: 0.0,
+      vy = (get("vy") as? Number)?.toDouble() ?: 0.0,
+      angle = angleVal,
+      weaponAngle = weaponAngleVal,
+      isFiringPrimary = firingVal,
+      isAfterburning = afterburnVal,
+      isCloaked = cloakedVal,
+      isRespawning = respawningVal,
+      isInStasisBrig = brigVal,
+      secondarySeq = (get("secondarySeq") as? Number)?.toLong() ?: 0L,
+      secondaryType = getString("secondaryType") ?: "NONE",
+      secondaryAim = (get("secondaryAim") as? Number)?.toDouble() ?: weaponAngleVal,
+      energy = (get("energy") as? Number)?.toLong() ?: 2400L,
+      maxEnergy = (get("maxEnergy") as? Number)?.toLong() ?: 2400L,
+      bounty = (get("bounty") as? Number)?.toLong() ?: 100L,
+      liveResonance = (get("liveResonance") as? Number)?.toLong() ?: 0L,
+      lastPingType = getString("lastPingType") ?: "NONE",
+      lastPingX = (get("lastPingX") as? Number)?.toDouble() ?: 0.0,
+      lastPingY = (get("lastPingY") as? Number)?.toDouble() ?: 0.0,
+      createdAt = getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE),
+      updatedAt = getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE),
+      localSyncSeq = syncSeq,
+    )
+  }
+
   private fun recordPilotSnapshotActivity(
     snapshot: QuerySnapshot,
     nowWallMs: Long,
     nowElapsedMs: Long,
-    initialSkewWindowMs: Long = 15L * 60_000L,
+    initialSkewWindowMs: Long = 90_000L,
   ) {
     for (change in snapshot.documentChanges) {
       val docId =
         (change.document.getString("userId")?.trim()?.takeIf { it.isNotEmpty() }
             ?: change.document.id.trim())
       if (docId.isEmpty()) continue
-      val serverMs = change.document.getTimestamp("updatedAt")?.toDate()?.time
+      val serverMs =
+        change.document
+          .getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+          ?.toDate()
+          ?.time
       when (change.type) {
         DocumentChange.Type.ADDED -> {
           val previousElapsed = remoteSeenElapsedMsByUid[docId]
@@ -675,7 +744,10 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       val docId =
         (doc.getString("userId")?.trim()?.takeIf { it.isNotEmpty() } ?: doc.id.trim())
       if (docId.isEmpty()) continue
-      val serverMs = doc.getTimestamp("updatedAt")?.toDate()?.time
+      val serverMs =
+        doc.getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+          ?.toDate()
+          ?.time
       if (serverMs != null) {
         val prevServerMs = remoteLastServerMsByUid[docId]
         if (prevServerMs != null && serverMs != prevServerMs) {
@@ -694,7 +766,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
   private fun isPilotFreshEnough(
     uid: String,
     nowElapsedMs: Long,
-    activeElapsedTtlMs: Long = 120_000L,
+    activeElapsedTtlMs: Long = 75_000L,
   ): Boolean {
     if (uid.isEmpty()) return false
     val seenElapsed = remoteSeenElapsedMsByUid[uid] ?: return false
@@ -712,12 +784,10 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         markSnapshotSuccess()
         val nowWallMs = System.currentTimeMillis()
         val nowElapsedMs = SystemClock.elapsedRealtime()
+        val syncSeq = pilotSnapshotSeqGen.incrementAndGet()
         recordPilotSnapshotActivity(snapshot, nowWallMs, nowElapsedMs)
-        snapshot
-          .toObjects(
-            LivePilotState::class.java,
-            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-          )
+        snapshot.documents
+          .mapNotNull { doc -> doc.toLivePilotStateSafe(syncSeq) }
           .filter { state ->
             val cleanUid = state.userId.ifBlank { state.id }.trim()
             val rawUpperTag = state.syndicateTag.trim().uppercase(Locale.US)
@@ -727,9 +797,6 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
               rawUpperTag != "BOT" &&
               !state.callsign.contains("[BOT]", ignoreCase = true) &&
               isPilotFreshEnough(cleanUid, nowElapsedMs)
-          }
-          .map { state ->
-            state.copy(syndicateTag = sanitizeSyndicateTag(state.syndicateTag))
           }
           .sortedWith(
             compareByDescending<LivePilotState> { it.liveResonance }
@@ -760,12 +827,10 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         markSnapshotSuccess()
         val nowWallMs = System.currentTimeMillis()
         val nowElapsedMs = SystemClock.elapsedRealtime()
+        val syncSeq = pilotSnapshotSeqGen.incrementAndGet()
         recordPilotSnapshotActivity(snapshot, nowWallMs, nowElapsedMs)
-        snapshot
-          .toObjects(
-            LivePilotState::class.java,
-            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
-          )
+        snapshot.documents
+          .mapNotNull { doc -> doc.toLivePilotStateSafe(syncSeq) }
           .filter { state ->
             val cleanUid = state.userId.ifBlank { state.id }.trim()
             val rawUpperTag = state.syndicateTag.trim().uppercase(Locale.US)
@@ -775,9 +840,6 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
               rawUpperTag != "BOT" &&
               !state.callsign.contains("[BOT]", ignoreCase = true) &&
               isPilotFreshEnough(cleanUid, nowElapsedMs)
-          }
-          .map { state ->
-            state.copy(syndicateTag = sanitizeSyndicateTag(state.syndicateTag))
           }
           .sortedWith(
             compareByDescending<LivePilotState> { it.liveResonance }
@@ -818,7 +880,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         "bountyAward" to event.bountyAward.coerceIn(0L, 100_000_000L),
         "weaponLabel" to event.weaponLabel.trim().take(48),
         "senderCallsign" to sanitizeCallsign(event.senderCallsign),
-        "senderTag" to sanitizeArmadaTag(event.senderTag).take(12),
+        "senderTag" to sanitizeArmadaTag(event.senderTag).take(14),
         "senderShipId" to event.senderShipId.coerceIn(1L, 10L),
         "createdAtMs" to now,
         "createdAt" to FieldValue.serverTimestamp(),
@@ -1339,7 +1401,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         "timestampLabel" to safeLabel,
         "messageText" to UgcModeration.sanitizeUgcText(msg.messageText).take(240),
         "isArmadaRecruitBanner" to msg.isArmadaRecruitBanner,
-        "armadaName" to sanitizeArmadaTag(msg.armadaName).take(12),
+        "armadaName" to sanitizeArmadaTag(msg.armadaName).take(14),
         "armadaCurrentSize" to msg.armadaCurrentSize.coerceIn(1, 5),
         "armadaMaxSize" to msg.armadaMaxSize.coerceIn(1, 5),
         "armadaObjective" to safeObjective,
@@ -1470,5 +1532,188 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
           }
         }
     awaitClose { reg.remove() }
+  }
+
+  private fun sanitizeCustomRoomCode(raw: String): String =
+    raw.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(8)
+
+  private fun sanitizeCustomBaseMode(raw: String): String {
+    val clean = raw.trim().uppercase(Locale.US)
+    val allowed =
+      setOf(
+        "SECTOR_CONVERGENCE",
+        "RIFT_SKIRMISH",
+        "FLUX_CORE",
+        "STASIS_BREACH",
+        "RIFT_CONTROL",
+        "SYNDICATE_WARS",
+      )
+    return if (clean in allowed) clean else "SECTOR_CONVERGENCE"
+  }
+
+  private fun DocumentSnapshot.toCloudCustomGameRoomSafe(): CloudCustomGameRoom? {
+    if (!exists()) return null
+    val code = sanitizeCustomRoomCode(getString("roomCode") ?: id)
+    if (code.length !in 4..8) return null
+    val priv = getBoolean("privateRoom") ?: (getString("visibility") == "private")
+    val defaultInst = "${if (priv) "priv" else "pub"}_$code"
+    val inst =
+      (getString("instanceId")?.trim()?.replace(Regex("[^a-zA-Z0-9_\\-]"), "")?.take(23))
+        ?.takeIf { it.length >= 4 }
+        ?: defaultInst
+    return CloudCustomGameRoom(
+      id = id,
+      roomCode = code,
+      instanceId = inst,
+      hostUid = getString("hostUid") ?: "",
+      hostCallsign = sanitizeCallsign(getString("hostCallsign") ?: "PILOT"),
+      title = (getString("title")?.trim()?.take(48))?.takeIf { it.length >= 2 } ?: "CUSTOM RIFT [$code]",
+      visibility = if (priv) "private" else "public",
+      privateRoom = priv,
+      baseMode = sanitizeCustomBaseMode(getString("baseMode") ?: "SECTOR_CONVERGENCE"),
+      teamSizeBracket = ((get("teamSizeBracket") as? Number)?.toInt() ?: 5).coerceIn(1, 20),
+      matchDurationMinutes = ((get("matchDurationMinutes") as? Number)?.toInt() ?: 10).coerceIn(0, 120),
+      allowArmadasInFfa = getBoolean("allowArmadasInFfa") ?: true,
+      botsEnabled = getBoolean("botsEnabled") ?: true,
+      bulletSizeMult = ((get("bulletSizeMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.25, 4.0),
+      damageMult = ((get("damageMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.25, 4.0),
+      speedMult = ((get("speedMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.25, 3.0),
+      healthMult = ((get("healthMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.25, 4.0),
+      rechargeMult = ((get("rechargeMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.25, 4.0),
+      crateSpawnMult = ((get("crateSpawnMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.0, 4.0),
+      createdAtMs = (get("createdAtMs") as? Number)?.toLong() ?: 0L,
+      createdAt = getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE),
+      updatedAt = getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE),
+    )
+  }
+
+  suspend fun saveCustomGameRoom(room: CloudCustomGameRoom): Result<Unit> = runCatching {
+    val uid = requireUserId()
+    val cleanCode = sanitizeCustomRoomCode(room.roomCode)
+    if (cleanCode.length !in 4..8) {
+      throw IllegalArgumentException("Custom game Join Code must be 4 to 8 uppercase characters.")
+    }
+    val priv = room.privateRoom
+    val cleanVis = if (priv) "private" else "public"
+    val fallbackInst = "${if (priv) "priv" else "pub"}_$cleanCode"
+    val cleanInst =
+      room.instanceId
+        .trim()
+        .replace(Regex("[^a-zA-Z0-9_\\-]"), "")
+        .take(23)
+        .let { if (it.length >= 4) it else fallbackInst }
+    val safeCallsign = sanitizeCallsign(room.hostCallsign)
+    val safeTitle =
+      UgcModeration.sanitizeUgcText(room.title)
+        .trim()
+        .take(48)
+        .let { if (it.length >= 2) it else "$safeCallsign RIFT [$cleanCode]".take(48) }
+    val safeBaseMode = sanitizeCustomBaseMode(room.baseMode)
+    val nowMs = room.createdAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()
+    val docRef = db.collection("custom_games").document(cleanCode)
+
+    val mutablePayload =
+      mapOf(
+        "instanceId" to cleanInst,
+        "hostCallsign" to safeCallsign,
+        "title" to safeTitle,
+        "visibility" to cleanVis,
+        "privateRoom" to priv,
+        "baseMode" to safeBaseMode,
+        "teamSizeBracket" to room.teamSizeBracket.coerceIn(1, 20),
+        "matchDurationMinutes" to room.matchDurationMinutes.coerceIn(0, 120),
+        "allowArmadasInFfa" to room.allowArmadasInFfa,
+        "botsEnabled" to room.botsEnabled,
+        "bulletSizeMult" to room.bulletSizeMult.coerceIn(0.25, 4.0),
+        "damageMult" to room.damageMult.coerceIn(0.25, 4.0),
+        "speedMult" to room.speedMult.coerceIn(0.25, 3.0),
+        "healthMult" to room.healthMult.coerceIn(0.25, 4.0),
+        "rechargeMult" to room.rechargeMult.coerceIn(0.25, 4.0),
+        "crateSpawnMult" to room.crateSpawnMult.coerceIn(0.0, 4.0),
+        "createdAtMs" to nowMs.coerceAtLeast(0L),
+        "updatedAt" to FieldValue.serverTimestamp(),
+      )
+
+    try {
+      val existing = docRef.get().await()
+      if (!existing.exists()) {
+        val createPayload =
+          mutablePayload +
+            mapOf(
+              "roomCode" to cleanCode,
+              "hostUid" to uid,
+              "createdAt" to FieldValue.serverTimestamp(),
+            )
+        docRef.set(createPayload).await()
+      } else if (existing.getString("hostUid") == uid) {
+        docRef.update(mutablePayload).await()
+      } else {
+        throw IllegalStateException("Join Code [$cleanCode] is already in use by another pilot.")
+      }
+      markHeartbeatSuccess()
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      if (isAuthenticatedNonGuest()) {
+        markSyncError(e)
+        handleFirestoreError(e, OperationType.WRITE, docRef.path)
+      }
+      throw e
+    }
+  }
+
+  fun observePublicCustomGames(): Flow<List<CloudCustomGameRoom>> {
+    val path = "custom_games"
+    return db.collection(path)
+      .whereEqualTo("visibility", "public")
+      .whereEqualTo("privateRoom", false)
+      .snapshots()
+      .map { snapshot ->
+        markSnapshotSuccess()
+        val nowWallMs = System.currentTimeMillis()
+        snapshot.documents
+          .mapNotNull { doc -> doc.toCloudCustomGameRoomSafe() }
+          .filter { room ->
+            val updatedMs = room.updatedAt?.toDate()?.time ?: room.createdAtMs
+            updatedMs <= 0L || kotlin.math.abs(nowWallMs - updatedMs) <= 6L * 3600_000L
+          }
+          .sortedByDescending { it.updatedAt?.toDate()?.time ?: it.createdAtMs }
+          .take(40)
+      }
+      .catch { error ->
+        val firestoreError =
+          generateSequence(error) { it.cause }
+            .filterIsInstance<FirebaseFirestoreException>()
+            .firstOrNull()
+        if (firestoreError == null && error is CancellationException) throw error
+        val exceptionToLog = firestoreError ?: (error as? Exception)
+        if (exceptionToLog != null && isAuthenticatedNonGuest()) {
+          markSyncError(exceptionToLog)
+          handleFirestoreError(exceptionToLog, OperationType.LIST, path)
+        }
+        throw error
+      }
+  }
+
+  suspend fun getCustomGameByJoinCode(rawCode: String): Result<CloudCustomGameRoom?> = runCatching {
+    requireUserId()
+    val cleanCode = sanitizeCustomRoomCode(rawCode)
+    if (cleanCode.length !in 4..8) {
+      return@runCatching null
+    }
+    val docRef = db.collection("custom_games").document(cleanCode)
+    try {
+      val snap = docRef.get().await()
+      markSnapshotSuccess()
+      if (snap.exists()) snap.toCloudCustomGameRoomSafe() else null
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      if (isAuthenticatedNonGuest()) {
+        markSyncError(e)
+        handleFirestoreError(e, OperationType.GET, docRef.path)
+      }
+      throw e
+    }
   }
 }

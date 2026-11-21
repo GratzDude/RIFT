@@ -2,6 +2,8 @@ package com.example.ui
 
 import android.content.Context
 import android.view.KeyEvent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -10,6 +12,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -215,15 +222,43 @@ internal fun generateSixCharRoomCode(seedSalt: Long = System.currentTimeMillis()
 
 internal fun extractCustomRoomCode(instanceId: String): String {
   val parts = instanceId.split("_")
-  if ((parts.firstOrNull() == "priv" || parts.firstOrNull() == "pub") && parts.size >= 2) {
-    val candidate = parts[1].uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(6)
-    if (candidate.length in 4..6) return candidate
+  val prefix = parts.firstOrNull()?.lowercase(Locale.US)
+  if ((prefix == "priv" || prefix == "pub") && parts.size >= 2) {
+    val candidate = parts[1].uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(8)
+    if (candidate.length in 4..8) return candidate
   }
   return generateSixCharRoomCode(instanceId.hashCode().toLong())
 }
 
+internal fun extractCustomRoomCode(config: CustomGameConfig): String =
+  config.roomCode
+    .trim()
+    .uppercase(Locale.US)
+    .replace(Regex("[^A-Z0-9]"), "")
+    .take(8)
+    .takeIf { it.length in 4..8 }
+    ?: extractCustomRoomCode(config.instanceId)
+
 internal fun isPrivateCustomGame(config: CustomGameConfig): Boolean =
-  config.instanceId.startsWith("priv_", ignoreCase = true)
+  config.privateRoom || config.instanceId.startsWith("priv_", ignoreCase = true)
+
+private fun riftHubCardTransitionOrder(node: NexusCoreNode): Int =
+  when (node) {
+    NexusCoreNode.ORBITAL_HUB -> -1
+    NexusCoreNode.HANGAR_DECK -> 0
+    NexusCoreNode.STAR_FORGE -> 1
+    NexusCoreNode.SUBSPACE_COMMS -> 2
+    NexusCoreNode.CONVERGENCE_GATE -> 3
+    NexusCoreNode.RIFT_CONDUIT -> 4
+    NexusCoreNode.SYNDICATE_CITADEL -> 5
+    NexusCoreNode.ARCHIVE_CODEX -> 6
+    NexusCoreNode.HELM_SYSTEMS -> 7
+  }
+
+private fun isLeftSideHubCard(node: NexusCoreNode): Boolean =
+  node == NexusCoreNode.HANGAR_DECK ||
+    node == NexusCoreNode.STAR_FORGE ||
+    node == NexusCoreNode.SUBSPACE_COMMS
 
 @Composable
 fun ResonanceCrestIcon(sizeDp: Dp = 14.dp, modifier: Modifier = Modifier) {
@@ -684,9 +719,12 @@ fun NexusAiConsoleModal(
   onStageRankedModeViaHangar: ((RankedGameMode, Int) -> Unit)? = null,
   onStageCustomGameViaHangar: ((CustomGameConfig) -> Unit)? = null,
   onStageExistingCustomInstanceViaHangar: ((String) -> Unit)? = null,
+  publicCustomGames: List<CustomGameConfig> = emptyList(),
+  onLookupCustomRoomByCode: ((String, (CustomGameConfig?, String) -> Unit) -> Unit)? = null,
   isNetworkOnline: Boolean = true,
   cloudSyncHealth: CloudSyncHealth = CloudSyncHealth(),
   onSwitchAccount: () -> Unit = {},
+  renderModuleForNode: (@Composable (NexusCoreNode) -> Unit)? = null,
   embeddedModuleContent: (@Composable () -> Unit)? = null,
 ) {
   val context = LocalContext.current
@@ -863,23 +901,64 @@ fun NexusAiConsoleModal(
   }
 
   fun joinCustomByRoomCode(rawCode: String) {
-    val cleanCode = rawCode.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(6)
+    val cleanCode = rawCode.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(8)
     if (cleanCode.length < 4) {
-      roomCodeBanner = "ENTER A VALID 6-CHARACTER RIFT ROOM CODE."
+      roomCodeBanner = "ENTER A VALID 6-CHARACTER JOIN CODE."
       return
     }
     if (cleanCode !in unlockedPrivateCodes) unlockedPrivateCodes.add(cleanCode)
+    val combinedKnown =
+      buildList {
+        addAll(publicCustomGames)
+        addAll(engine?.activeCustomGames.orEmpty())
+      }
     val matching =
-      engine?.activeCustomGames?.firstOrNull {
-        extractCustomRoomCode(it.instanceId).equals(cleanCode, ignoreCase = true)
+      combinedKnown.firstOrNull { candidate ->
+        extractCustomRoomCode(candidate).equals(cleanCode, ignoreCase = true) ||
+          candidate.instanceId.equals("priv_$cleanCode", ignoreCase = true) ||
+          candidate.instanceId.equals("pub_$cleanCode", ignoreCase = true)
       }
     if (matching != null) {
-      roomCodeBanner = "ENTERING ROOM [$cleanCode] // ${matching.title}"
+      engine?.let { eng ->
+        if (eng.activeCustomGames.none { it.instanceId.equals(matching.instanceId, ignoreCase = true) }) {
+          eng.activeCustomGames.add(0, matching)
+        }
+      }
+      roomCodeBanner = "JOINING ROOM [$cleanCode] // ${matching.title}"
+      customGamesRefreshTick++
       deployOrStageExistingCustom(matching.instanceId)
+      return
+    }
+    if (onLookupCustomRoomByCode != null) {
+      roomCodeBanner = "SEARCHING SECTOR FOR JOIN CODE [$cleanCode]..."
+      onLookupCustomRoomByCode(cleanCode) { cloudMatch, statusMsg ->
+        if (cloudMatch != null) {
+          val resolvedCode = extractCustomRoomCode(cloudMatch)
+          if (resolvedCode !in unlockedPrivateCodes) unlockedPrivateCodes.add(resolvedCode)
+          engine?.let { eng ->
+            val existingIdx =
+              eng.activeCustomGames.indexOfFirst {
+                it.instanceId.equals(cloudMatch.instanceId, ignoreCase = true)
+              }
+            if (existingIdx >= 0) {
+              eng.activeCustomGames[existingIdx] = cloudMatch
+            } else {
+              eng.activeCustomGames.add(0, cloudMatch)
+            }
+          }
+          roomCodeBanner = "JOINING ROOM [$resolvedCode] // ${cloudMatch.title}"
+          customGamesRefreshTick++
+          deployOrStageExistingCustom(cloudMatch.instanceId)
+        } else {
+          roomCodeBanner = statusMsg.ifBlank { "NO ACTIVE CUSTOM GAME FOUND FOR CODE [$cleanCode]." }
+        }
+      }
     } else {
       val created =
         CustomGameConfig(
-          instanceId = "priv_${cleanCode}_${System.currentTimeMillis()}",
+          instanceId = "priv_$cleanCode",
+          roomCode = cleanCode,
+          privateRoom = true,
           title = "PRIVATE RIFT [$cleanCode]",
           hostCallsign = callsign,
           baseMode = customBaseMode,
@@ -939,17 +1018,34 @@ fun NexusAiConsoleModal(
     view.focusedTearIndex = -1
   }
 
+  var lastCardNodeForSlide by remember { mutableStateOf(NexusCoreNode.HANGAR_DECK) }
+  if (activeNode != NexusCoreNode.ORBITAL_HUB) {
+    lastCardNodeForSlide = activeNode
+  }
+  val enterDirectionSign = if (isLeftSideHubCard(lastCardNodeForSlide)) -1f else 1f
   val terminalScale by
     animateFloatAsState(
-      targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 0.94f else 1.0f,
-      animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+      targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 0.95f else 1.0f,
+      animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
       label = "terminal_emerge_scale",
     )
   val terminalAlpha by
     animateFloatAsState(
       targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 0.0f else 1.0f,
-      animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
+      animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing),
       label = "terminal_emerge_alpha",
+    )
+  val terminalSlideFraction by
+    animateFloatAsState(
+      targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 0.08f * enterDirectionSign else 0.0f,
+      animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+      label = "terminal_slide_fraction",
+    )
+  val hubStageAlpha by
+    animateFloatAsState(
+      targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 1.0f else 0.0f,
+      animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing),
+      label = "hub_stage_alpha",
     )
 
   // Full-bleed container BEFORE safeDrawing:
@@ -1051,13 +1147,23 @@ fun NexusAiConsoleModal(
       contentAlignment = Alignment.Center,
     ) {
       when {
-        isFullScreenForgeStage && embeddedModuleContent != null -> {
+        isFullScreenForgeStage && (renderModuleForNode != null || embeddedModuleContent != null) -> {
           Box(modifier = Modifier.fillMaxSize().testTag("nexus_embedded_module_container")) {
-            embeddedModuleContent()
+            if (renderModuleForNode != null) {
+              renderModuleForNode(activeNode)
+            } else {
+              embeddedModuleContent?.invoke()
+            }
           }
         }
         activeNode == NexusCoreNode.ORBITAL_HUB -> {
-          OrbitalHubSpatialStage(
+          Box(
+            modifier =
+              Modifier.fillMaxSize().graphicsLayer {
+                alpha = hubStageAlpha
+              }
+          ) {
+            OrbitalHubSpatialStage(
             callsign = callsign,
             syndicateTag = cleanSyndicateTag,
             syndicateName = syndicateName,
@@ -1150,6 +1256,7 @@ fun NexusAiConsoleModal(
             },
             onSwitchAccount = onSwitchAccount,
           )
+          }
         }
         else -> {
           Surface(
@@ -1160,6 +1267,7 @@ fun NexusAiConsoleModal(
                   scaleX = terminalScale
                   scaleY = terminalScale
                   alpha = terminalAlpha
+                  translationX = size.width * terminalSlideFraction
                 }
                 .border(
                   1.3.dp,
@@ -1183,6 +1291,11 @@ fun NexusAiConsoleModal(
                 armadaCount = armadaSlots.size.coerceAtLeast(1),
                 showClearAi = activeNode == NexusCoreNode.SUBSPACE_COMMS && selectedChannelKey == "#nexus-ai" && messages.isNotEmpty(),
                 isInMatch = isInMatch,
+                onSelectHubCard = { nextCardNode ->
+                  if (nextCardNode != activeNode) {
+                    onSelectNode(nextCardNode)
+                  }
+                },
                 onBackToHub = { onSelectNode(NexusCoreNode.ORBITAL_HUB) },
                 onClearAi = onClearHistory,
                 onLeaveMatch = {
@@ -1196,9 +1309,32 @@ fun NexusAiConsoleModal(
                 onCloseToArena = onCloseModal,
               )
 
-              Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                  activeNode == NexusCoreNode.CONVERGENCE_GATE -> {
+              AnimatedContent(
+                targetState = activeNode,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                transitionSpec = {
+                  val fromOrder = riftHubCardTransitionOrder(initialState)
+                  val toOrder = riftHubCardTransitionOrder(targetState)
+                  val forward = toOrder >= fromOrder
+                  (slideInHorizontally(
+                    animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                  ) { fullWidth ->
+                    if (forward) (fullWidth / 5).coerceAtLeast(24) else -(fullWidth / 5).coerceAtLeast(24)
+                  } + fadeIn(animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing)))
+                    .togetherWith(
+                      slideOutHorizontally(
+                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                      ) { fullWidth ->
+                        if (forward) -(fullWidth / 6).coerceAtLeast(20) else (fullWidth / 6).coerceAtLeast(20)
+                      } + fadeOut(animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing))
+                    )
+                    .using(SizeTransform(clip = false))
+                },
+                label = "rift_hub_card_deck_transition",
+              ) { targetCardNode ->
+                Box(modifier = Modifier.fillMaxSize()) {
+                  when {
+                    targetCardNode == NexusCoreNode.CONVERGENCE_GATE -> {
                     ConvergenceGateZeroScrollDeck(
                       gateTab = gateTab,
                       onSelectGateTab = { gateTab = it },
@@ -1222,6 +1358,8 @@ fun NexusAiConsoleModal(
                       syndicateWarRecord = syndicateWarRecord,
                       onStageRanked = { mode, bracket -> deployOrStageRankedSelection(mode, bracket) },
                       engine = engine,
+                      publicCustomGames = publicCustomGames,
+                      onlineHumanPilots = onlineHumanPilots,
                       customIsPrivateRoom = customIsPrivateRoom,
                       onTogglePrivateRoom = {
                         customIsPrivateRoom = it
@@ -1230,14 +1368,21 @@ fun NexusAiConsoleModal(
                       generatedRoomCode = generatedRoomCode,
                       joinRoomCodeDraft = joinRoomCodeDraft,
                       onJoinRoomCodeDraftChange = { raw ->
-                        joinRoomCodeDraft = raw.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(6)
+                        joinRoomCodeDraft = raw.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(8)
                       },
                       roomCodeBanner = roomCodeBanner,
                       unlockedPrivateCodes = unlockedPrivateCodes,
                       onJoinByRoomCode = { joinCustomByRoomCode(joinRoomCodeDraft) },
                       onShareRoomToLfg = {
-                        onPostPrivateRoomInvite(generatedRoomCode, customBaseMode.title)
-                        roomCodeBanner = "SHARED ROOM CODE [$generatedRoomCode] TO #SQUADRON-LFG"
+                        val activeRoom = engine?.currentCustomGame
+                        val shareCode =
+                          if (activeRoom != null && engine.hasJoinedMatch) extractCustomRoomCode(activeRoom)
+                          else generatedRoomCode
+                        val shareMode =
+                          if (activeRoom != null && engine.hasJoinedMatch) activeRoom.baseMode.title
+                          else customBaseMode.title
+                        onPostPrivateRoomInvite(shareCode, shareMode)
+                        roomCodeBanner = "SHARED JOIN CODE [$shareCode] TO #SQUADRON-LFG"
                       },
                       customRefreshTick = customGamesRefreshTick,
                       customBaseMode = customBaseMode,
@@ -1264,17 +1409,30 @@ fun NexusAiConsoleModal(
                         deployOrStageRankedSelection(RankedGameMode.SECTOR_CONVERGENCE, 20)
                         customGamesRefreshTick++
                       },
-                      onJoinCustomInstance = { instanceId -> deployOrStageExistingCustom(instanceId) },
+                      onJoinCustomInstance = { instanceId ->
+                        val known =
+                          publicCustomGames.firstOrNull {
+                            it.instanceId.equals(instanceId, ignoreCase = true)
+                          }
+                        if (known != null && engine != null) {
+                          if (engine.activeCustomGames.none { it.instanceId.equals(known.instanceId, ignoreCase = true) }) {
+                            engine.activeCustomGames.add(0, known)
+                          }
+                        }
+                        deployOrStageExistingCustom(instanceId)
+                      },
                       onLaunchCustomGame = {
                         val prefix = if (customIsPrivateRoom) "priv" else "pub"
                         val code = generatedRoomCode
-                        if (customIsPrivateRoom && code !in unlockedPrivateCodes) {
+                        if (code !in unlockedPrivateCodes) {
                           unlockedPrivateCodes.add(code)
                         }
                         val modeShort = customBaseMode.title.uppercase(Locale.US)
                         val cfg =
                           CustomGameConfig(
-                            instanceId = "${prefix}_${code}_${System.currentTimeMillis()}",
+                            instanceId = "${prefix}_${code}",
+                            roomCode = code,
+                            privateRoom = customIsPrivateRoom,
                             title = "${callsign.uppercase(Locale.US)} $modeShort [$code]",
                             hostCallsign = callsign,
                             baseMode = customBaseMode,
@@ -1289,11 +1447,12 @@ fun NexusAiConsoleModal(
                             rechargeMult = customRechargeMult,
                             crateSpawnMult = customCrateSpawnMult,
                           )
+                        generatedRoomCode = generateSixCharRoomCode(System.currentTimeMillis() + 7919L)
                         deployOrStageNewCustomConfig(cfg)
                       },
                     )
                   }
-                  activeNode == NexusCoreNode.SUBSPACE_COMMS -> {
+                  targetCardNode == NexusCoreNode.SUBSPACE_COMMS -> {
                     SubspaceCommsDiscordDeck(
                       selectedChannelKey = selectedChannelKey,
                       onSelectChannel = { selectedChannelKey = it },
@@ -1364,7 +1523,7 @@ fun NexusAiConsoleModal(
                           keyboardController?.hide()
                         }
                       },
-                      activeCustomRoomCode = engine?.currentCustomGame?.let { extractCustomRoomCode(it.instanceId) },
+                      activeCustomRoomCode = engine?.currentCustomGame?.let { extractCustomRoomCode(it) },
                       activeCustomModeTitle = engine?.currentCustomGame?.baseMode?.title,
                       onShareRiftFrameBuild = onShareActiveRiftFrameBuild,
                       onLoadSharedBuild = onLoadSharedRiftFrameBuild,
@@ -1384,11 +1543,17 @@ fun NexusAiConsoleModal(
                       onInviteOnlinePilotToWing = onInviteOnlinePilotToWing,
                     )
                   }
+                  renderModuleForNode != null -> {
+                    Box(modifier = Modifier.fillMaxSize().testTag("nexus_embedded_module_container")) {
+                      renderModuleForNode(targetCardNode)
+                    }
+                  }
                   embeddedModuleContent != null -> {
                     Box(modifier = Modifier.fillMaxSize().testTag("nexus_embedded_module_container")) {
                       embeddedModuleContent()
                     }
                   }
+                }
                 }
               }
             }
@@ -3118,6 +3283,7 @@ private fun GlassTerminalTopHeader(
   armadaCount: Int,
   showClearAi: Boolean,
   isInMatch: Boolean,
+  onSelectHubCard: (NexusCoreNode) -> Unit = {},
   onBackToHub: () -> Unit,
   onClearAi: () -> Unit,
   onLeaveMatch: () -> Unit,
@@ -3137,6 +3303,17 @@ private fun GlassTerminalTopHeader(
       NexusCoreNode.ORBITAL_HUB -> "RIFT HUB" to Color(0xFF00F5D4)
     }
 
+  val hubQuickCards = remember {
+    listOf(
+      Triple(NexusCoreNode.HANGAR_DECK, "SHIPS", Color(0xFF38BDF8)),
+      Triple(NexusCoreNode.STAR_FORGE, "FORGE", Color(0xFFC084FC)),
+      Triple(NexusCoreNode.SUBSPACE_COMMS, "COMMS", Color(0xFF00F5D4)),
+      Triple(NexusCoreNode.RIFT_CONDUIT, "CONDUIT", Color(0xFFE879F9)),
+      Triple(NexusCoreNode.SYNDICATE_CITADEL, "SYNDICATE", Color(0xFFFACC15)),
+      Triple(NexusCoreNode.ARCHIVE_CODEX, "DOSSIER", Color(0xFF34D399)),
+    )
+  }
+
   Row(
     modifier =
       Modifier.fillMaxWidth()
@@ -3148,7 +3325,11 @@ private fun GlassTerminalTopHeader(
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+      modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
       Box(
         modifier =
           Modifier.clip(RoundedCornerShape(6.dp))
@@ -3199,6 +3380,38 @@ private fun GlassTerminalTopHeader(
           tag = "archive_sub_codex",
           onClick = onOpenCodexInHelm,
         )
+      }
+
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.padding(start = 4.dp).testTag("rift_hub_card_switcher_row"),
+      ) {
+        hubQuickCards.forEach { (cardNode, shortLabel, cardAccent) ->
+          val isCurrentCard = activeNode == cardNode
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(5.dp))
+                .background(if (isCurrentCard) cardAccent.copy(alpha = 0.24f) else Color(0xFF0A1426))
+                .border(
+                  1.dp,
+                  if (isCurrentCard) cardAccent else cardAccent.copy(alpha = 0.36f),
+                  RoundedCornerShape(5.dp),
+                )
+                .clickable { onSelectHubCard(cardNode) }
+                .padding(horizontal = 6.dp, vertical = 3.dp)
+                .testTag("hub_quick_card_${cardNode.name.lowercase(Locale.US)}"),
+          ) {
+            Text(
+              text = shortLabel,
+              color = if (isCurrentCard) Color.White else cardAccent.copy(alpha = 0.88f),
+              fontSize = 7.6.sp,
+              fontWeight = FontWeight.ExtraBold,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
+          }
+        }
       }
     }
 
@@ -3304,6 +3517,8 @@ private fun ConvergenceGateZeroScrollDeck(
   syndicateWarRecord: SyndicateWarRecord,
   onStageRanked: (RankedGameMode, Int) -> Unit,
   engine: RiftGameEngine?,
+  publicCustomGames: List<CustomGameConfig> = emptyList(),
+  onlineHumanPilots: List<LivePilotState> = emptyList(),
   customIsPrivateRoom: Boolean,
   onTogglePrivateRoom: (Boolean) -> Unit,
   generatedRoomCode: String,
@@ -3442,24 +3657,42 @@ private fun ConvergenceGateZeroScrollDeck(
         }
       }
     } else {
-      // Fixed 2-Column Custom Rift Gate: Left = 6-Char Room Code Join + Public Browser, Right = 10-Rule Sandbox Cloner
+      // Fixed 2-Column Custom Rift Gate: Left = 6-Char Private Join Code + Live Public Custom Game List, Right = 10-Rule Sandbox Cloner
       val activeCustom = remember(engine?.currentCustomGame, customRefreshTick) { engine?.currentCustomGame }
       val visibleCustomGames =
-        remember(engine?.activeCustomGames?.size, customRefreshTick, unlockedPrivateCodes.size) {
-          (engine?.activeCustomGames?.toList() ?: emptyList()).filter { g ->
-            val code = extractCustomRoomCode(g.instanceId)
-            !isPrivateCustomGame(g) || activeCustom?.instanceId == g.instanceId || code in unlockedPrivateCodes
+        remember(
+          publicCustomGames,
+          engine?.activeCustomGames?.size,
+          customRefreshTick,
+          unlockedPrivateCodes.size,
+        ) {
+          val byKey = linkedMapOf<String, CustomGameConfig>()
+          for (cloudCfg in publicCustomGames) {
+            byKey[cloudCfg.instanceId.uppercase(Locale.US)] = cloudCfg
+          }
+          for (localCfg in engine?.activeCustomGames.orEmpty()) {
+            val k = localCfg.instanceId.uppercase(Locale.US)
+            if (!byKey.containsKey(k)) {
+              byKey[k] = localCfg
+            }
+          }
+          byKey.values.filter { g ->
+            val code = extractCustomRoomCode(g)
+            !isPrivateCustomGame(g) ||
+              activeCustom?.instanceId.equals(g.instanceId, ignoreCase = true) ||
+              code in unlockedPrivateCodes
           }
         }
+      val publicCount = visibleCustomGames.count { !isPrivateCustomGame(it) }
 
       Row(
         modifier = Modifier.weight(1f).fillMaxWidth().testTag("nexus_custom_games_section"),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        // Left Pane: 6-Char Code Joiner + Public Custom Rift Browser
+        // Left Pane: Private Game Join Code + Public Custom Game List
         Column(
           modifier =
-            Modifier.weight(0.45f)
+            Modifier.weight(0.46f)
               .fillMaxHeight()
               .clip(RoundedCornerShape(10.dp))
               .background(Color(0xCC07101F))
@@ -3468,7 +3701,7 @@ private fun ConvergenceGateZeroScrollDeck(
           verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
           Text(
-            text = "PRIVATE RIFT ROOM CODE (6-CHAR)",
+            text = "PRIVATE GAME JOIN CODE (6-CHAR)",
             color = Color(0xFF00F5D4),
             fontSize = 9.sp,
             fontWeight = FontWeight.Black,
@@ -3486,7 +3719,7 @@ private fun ConvergenceGateZeroScrollDeck(
               contentAlignment = Alignment.CenterStart,
             ) {
               if (joinRoomCodeDraft.isEmpty()) {
-                Text("ENTER 6-CHAR CODE…", color = Color(0xFF64748B), fontSize = 8.5.sp, fontFamily = FontFamily.Monospace)
+                Text("ENTER 6-CHAR JOIN CODE...", color = Color(0xFF64748B), fontSize = 8.5.sp, fontFamily = FontFamily.Monospace)
               }
               BasicTextField(
                 value = joinRoomCodeDraft,
@@ -3513,6 +3746,7 @@ private fun ConvergenceGateZeroScrollDeck(
           }
 
           if (activeCustom != null && engine?.hasJoinedMatch == true) {
+            val activeCode = extractCustomRoomCode(activeCustom)
             Row(
               modifier =
                 Modifier.fillMaxWidth()
@@ -3524,12 +3758,13 @@ private fun ConvergenceGateZeroScrollDeck(
               verticalAlignment = Alignment.CenterVertically,
             ) {
               Text(
-                text = "ACTIVE: ${activeCustom.title}",
+                text = "ACTIVE [$activeCode]: ${activeCustom.title}",
                 color = Color(0xFF34D399),
                 fontSize = 8.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
               )
               Box(
@@ -3547,20 +3782,20 @@ private fun ConvergenceGateZeroScrollDeck(
           }
 
           Text(
-            text = "PUBLIC CUSTOM RIFT DIRECTORY (${visibleCustomGames.size})",
+            text = "PUBLIC CUSTOM GAME LIST ($publicCount PUBLIC)",
             color = Color(0xFF94A3B8),
             fontSize = 8.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
           LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier.weight(1f).fillMaxWidth().testTag("public_custom_game_list"),
             verticalArrangement = Arrangement.spacedBy(5.dp),
           ) {
             if (visibleCustomGames.isEmpty()) {
               item {
                 Text(
-                  "0 public custom Rifts active. Configure rules on the right to stage a Public or Private Rift.",
+                  "No public custom games active right now. Create a Public Custom Game on the right or enter a 6-character Private Join Code above.",
                   color = Color(0xFF64748B),
                   fontSize = 8.4.sp,
                   fontFamily = FontFamily.Monospace,
@@ -3568,47 +3803,71 @@ private fun ConvergenceGateZeroScrollDeck(
               }
             }
             items(visibleCustomGames, key = { it.instanceId }) { game ->
-              val isJoined = engine?.hasJoinedMatch == true && activeCustom?.instanceId == game.instanceId
-              val count = engine?.getHumanPilotCountForCustomGame(game.instanceId) ?: 0
-              val code = extractCustomRoomCode(game.instanceId)
+              val isJoined =
+                engine?.hasJoinedMatch == true &&
+                  activeCustom?.instanceId.equals(game.instanceId, ignoreCase = true)
+              val cloudSectorId = "CUSTOM_${game.instanceId}"
+              val cloudHumansInRoom =
+                onlineHumanPilots.count { p -> p.sectorId.equals(cloudSectorId, ignoreCase = true) }
+              val localCount = engine?.getHumanPilotCountForCustomGame(game.instanceId) ?: 0
+              val count = maxOf(cloudHumansInRoom, localCount)
+              val code = extractCustomRoomCode(game)
+              val isPrivateEntry = isPrivateCustomGame(game)
               Row(
                 modifier =
                   Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(7.dp))
                     .background(if (isJoined) Color(0xCC0D2638) else Color(0x99060E1C))
-                    .border(1.dp, if (isJoined) Color(0xFF00F5D4) else Color(0xFF334155), RoundedCornerShape(7.dp))
+                    .border(
+                      1.dp,
+                      when {
+                        isJoined -> Color(0xFF00F5D4)
+                        isPrivateEntry -> Color(0xFFFACC15)
+                        else -> Color(0xFF334155)
+                      },
+                      RoundedCornerShape(7.dp),
+                    )
                     .padding(6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
               ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
+                  val visBadge = if (isPrivateEntry) "[PRIVATE] " else "[PUBLIC] "
                   Text(
-                    text = "${game.title} • $count PILOTS",
-                    color = if (isJoined) Color(0xFF00F5D4) else Color.White,
+                    text = "$visBadge${game.title} • $count PILOTS",
+                    color =
+                      when {
+                        isJoined -> Color(0xFF00F5D4)
+                        isPrivateEntry -> Color(0xFFFACC15)
+                        else -> Color.White
+                      },
                     fontSize = 8.2.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                   )
                   Text(
-                    text = "${game.baseMode.title} • CODE: $code • Bots: ${if (game.botsEnabled) "ON" else "OFF"}",
+                    text =
+                      "${game.baseMode.title} • HOST: ${game.hostCallsign} • CODE: $code • BOTS: ${if (game.botsEnabled) "ON" else "OFF"}",
                     color = Color(0xFF94A3B8),
                     fontSize = 7.4.sp,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                   )
                 }
                 Box(
                   modifier =
                     Modifier.clip(RoundedCornerShape(6.dp))
-                      .background(if (isJoined) Color(0xFF065F46) else Color(0xFF1E293B))
+                      .background(if (isJoined) Color(0xFF065F46) else Color(0xFF0E7490))
                       .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
                       .clickable { onJoinCustomInstance(game.instanceId) }
                       .padding(horizontal = 8.dp, vertical = 4.dp)
                       .testTag("nexus_join_custom_${game.instanceId}"),
                 ) {
                   Text(
-                    text = if (isJoined) "RE-ENTER >" else "RIFT IN >",
+                    text = if (isJoined) "RE-ENTER >" else "JOIN >",
                     color = Color.White,
                     fontSize = 7.8.sp,
                     fontWeight = FontWeight.Black,

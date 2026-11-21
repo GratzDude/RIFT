@@ -87,6 +87,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.data.CloudCustomGameRoom
 import com.example.data.CloudSyncHealth
 import com.example.data.FriendPilotEntry
 import com.example.data.LivePilotState
@@ -147,6 +148,8 @@ import com.example.ui.SettingsModal
 import com.example.ui.SyndicateCitadelSubDeck
 import com.example.ui.SyndicatesModal
 import com.example.ui.UiState
+import com.example.ui.extractCustomRoomCode
+import com.example.ui.isPrivateCustomGame
 import com.example.ui.onGoogleSignInClicked
 import com.example.ui.signOut
 import com.example.ui.theme.MyApplicationTheme
@@ -1014,6 +1017,11 @@ fun RiftArenaScreen(
   val cloudSyndicatesState by viewModel.cloudSyndicatesState.collectAsStateWithLifecycle()
   val sectorCommsState by viewModel.sectorCommsState.collectAsStateWithLifecycle()
   val latestCalibBroadcast by viewModel.latestCalibrationBroadcast.collectAsStateWithLifecycle()
+  val publicCustomRoomsState by viewModel.publicCustomGamesState.collectAsStateWithLifecycle()
+  val cloudPublicCustomConfigs =
+    remember(publicCustomRoomsState) {
+      publicCustomRoomsState.map { it.toCustomGameConfig() }
+    }
 
   val nexusViewModel: NexusAiViewModel = viewModel(key = "nexus_$currentUserId")
   val nexusMessages by nexusViewModel.messages.collectAsStateWithLifecycle()
@@ -1742,9 +1750,9 @@ fun RiftArenaScreen(
         if (prev == null) {
           byUid[pUid] = pilot
         } else {
-          val prevMs = prev.updatedAt?.toDate()?.time ?: Long.MAX_VALUE
-          val curMs = pilot.updatedAt?.toDate()?.time ?: Long.MAX_VALUE
-          if (curMs >= prevMs) {
+          val prevMs = prev.updatedAt?.toDate()?.time ?: 0L
+          val curMs = pilot.updatedAt?.toDate()?.time ?: 0L
+          if (curMs > prevMs || (curMs == prevMs && pilot.localSyncSeq >= prev.localSyncSeq)) {
             byUid[pUid] = pilot
           }
         }
@@ -1908,6 +1916,10 @@ fun RiftArenaScreen(
     }
   }
 
+  LaunchedEffect(cloudPublicCustomConfigs) {
+    engine.syncCloudPublicCustomGames(cloudPublicCustomConfigs)
+  }
+
   LaunchedEffect(cloudSyndicatesState) {
     val cloudList = (cloudSyndicatesState as? UiState.Success)?.data ?: return@LaunchedEffect
     localPrefs.mergeCloudSyndicates(cloudList)
@@ -2067,7 +2079,7 @@ fun RiftArenaScreen(
       !isLiveHudDragPillOpen
 
   val overwatchInstances =
-    remember(mergedLivePilots, frameTick) {
+    remember(mergedLivePilots, cloudPublicCustomConfigs, frameTick) {
       val cleanHumans = mergedLivePilots
       fun humanStatsForSector(sectorTag: String, fallbackSimResonance: Int): Pair<Int, Int> {
         val matching =
@@ -2136,26 +2148,33 @@ fun RiftArenaScreen(
         )
       )
       // Public Custom Rifts (RIFT #08+)
-      engine.activeCustomGames
-        .filter { !it.instanceId.startsWith("priv_", ignoreCase = true) }
-        .forEachIndexed { cIdx, cfg ->
-          val sectorKey = "CUSTOM_${cfg.instanceId}"
-          val simFallback = 620 + (kotlin.math.abs(cfg.instanceId.hashCode()) % 520)
-          val (pCountRaw, cRes) = humanStatsForSector(sectorKey, simFallback)
-          val pCount = maxOf(pCountRaw, engine.getHumanPilotCountForSectorKey(sectorKey, cfg.baseMode))
-          list.add(
-            OverwatchRiftInstance(
-              key = sectorKey,
-              modeTitle = "CUSTOM • ${cfg.baseMode.title.uppercase(Locale.US)}",
-              riftLabel = String.format(Locale.US, "RIFT #%02d", 8 + cIdx),
-              rankedMode = cfg.baseMode,
-              customConfig = cfg,
-              pilotCount = pCount,
-              combinedResonance = cRes,
-              seedSalt = cfg.instanceId.hashCode(),
-            )
-          )
+      val publicCustomMerged =
+        buildList {
+          val seen = hashSetOf<String>()
+          for (c in cloudPublicCustomConfigs + engine.activeCustomGames) {
+            if (!isPrivateCustomGame(c) && seen.add(c.instanceId.uppercase(java.util.Locale.US))) {
+              add(c)
+            }
+          }
         }
+      publicCustomMerged.forEachIndexed { cIdx, cfg ->
+        val sectorKey = "CUSTOM_${cfg.instanceId}"
+        val simFallback = 620 + (kotlin.math.abs(cfg.instanceId.hashCode()) % 520)
+        val (pCountRaw, cRes) = humanStatsForSector(sectorKey, simFallback)
+        val pCount = maxOf(pCountRaw, engine.getHumanPilotCountForSectorKey(sectorKey, cfg.baseMode))
+        list.add(
+          OverwatchRiftInstance(
+            key = sectorKey,
+            modeTitle = "CUSTOM • ${cfg.baseMode.title.uppercase(java.util.Locale.US)}",
+            riftLabel = String.format(java.util.Locale.US, "RIFT #%02d", 8 + cIdx),
+            rankedMode = cfg.baseMode,
+            customConfig = cfg,
+            pilotCount = pCount,
+            combinedResonance = cRes,
+            seedSalt = cfg.instanceId.hashCode(),
+          )
+        )
+      }
       list.toList()
     }
 
@@ -3068,15 +3087,9 @@ fun RiftArenaScreen(
                 }
               }
 
-            val embeddedModuleContent: (@Composable () -> Unit)? =
-              when (activeNexusNode) {
-                NexusCoreNode.ORBITAL_HUB,
-                NexusCoreNode.SUBSPACE_COMMS,
-                NexusCoreNode.CONVERGENCE_GATE -> null
-                else -> {
-                  {
-                    when (activeNexusNode) {
-                      NexusCoreNode.HANGAR_DECK -> {
+            val renderModuleForNode: @Composable (NexusCoreNode) -> Unit = { targetNode ->
+              when (targetNode) {
+                NexusCoreNode.HANGAR_DECK -> {
                         val (_, _, hangarLvlFrac) =
                           remember(frameTick) { engine.getXpProgressInCurrentLevel() }
                         val currentSectorModeId =
@@ -3227,9 +3240,20 @@ fun RiftArenaScreen(
                                   selectedMode = staged.config.baseMode.id
                                   localPrefs.setPreferredMode(staged.config.baseMode.id)
                                   engine.createAndJoinCustomGame(staged.config)
+                                  RiftCalibrationState.botsEnabled = staged.config.botsEnabled
+                                  RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                                  if (isGoogleAuthenticated && isDeviceOnline && currentUserId.isNotBlank()) {
+                                    viewModel.publishCustomGameRoom(
+                                      staged.config.toCloudCustomGameRoom(currentUserId)
+                                    )
+                                  }
                                 }
                                 is StagedRiftLaunch.ExistingCustom -> {
                                   engine.joinCustomGame(staged.instanceId)
+                                  engine.currentCustomGame?.let { joinedCfg ->
+                                    RiftCalibrationState.botsEnabled = joinedCfg.botsEnabled
+                                    RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                                  }
                                   val resolvedModeId =
                                     engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
                                   selectedMode = resolvedModeId
@@ -3564,17 +3588,144 @@ fun RiftArenaScreen(
 
                       NexusCoreNode.SYNDICATE_CITADEL -> {
                         if (syndicateSubDeck == SyndicateCitadelSubDeck.STRIKE_WING) {
-                          val friendsList =
+                          val rawFriendsList =
                             remember(syndicateTag, frameTick, friendsRefreshKey) {
                               localPrefs.getFriendsList()
+                            }
+                          val enrichedFriendsList =
+                            remember(
+                              rawFriendsList,
+                              mergedLivePilots,
+                              realSwornCloudLeaderboard,
+                              frameTick,
+                            ) {
+                              rawFriendsList.map { friend ->
+                                val liveMatch =
+                                  mergedLivePilots.firstOrNull { p ->
+                                    val pUid = p.userId.ifBlank { p.id }
+                                    (friend.uid.isNotBlank() && pUid == friend.uid) ||
+                                      p.callsign.equals(friend.callsign, ignoreCase = true)
+                                  }
+                                val cloudEntry =
+                                  realSwornCloudLeaderboard.firstOrNull { e ->
+                                    (friend.uid.isNotBlank() && e.userId == friend.uid) ||
+                                      e.callsign.equals(friend.callsign, ignoreCase = true)
+                                  }
+                                val derivedCloudRes =
+                                  cloudEntry?.let {
+                                    ((it.pvpBounty - 100L).coerceAtLeast(0L) +
+                                        it.pvpKills * 12L +
+                                        it.convergencesWon * 35L)
+                                      .coerceIn(0L, 50_000L)
+                                      .toInt()
+                                  } ?: 0
+                                val resolvedRes =
+                                  when {
+                                    liveMatch != null && liveMatch.liveResonance > 0L ->
+                                      liveMatch.liveResonance.toInt()
+                                    derivedCloudRes > 0 -> derivedCloudRes
+                                    else -> friend.bounty.coerceAtLeast(0)
+                                  }
+                                val isPilotOnline = liveMatch != null
+                                val resolvedActivity =
+                                  when {
+                                    liveMatch == null -> "OFFLINE"
+                                    liveMatch.sectorId.equals("NEXUS_LOBBY", ignoreCase = true) ||
+                                      liveMatch.sectorId.equals("RIFT_LOBBY", ignoreCase = true) ->
+                                      "ONLINE • RIFT HUB"
+                                    else -> "IN COMBAT • ${liveMatch.sectorId}"
+                                  }
+                                friend.copy(
+                                  shipId = liveMatch?.shipId?.toInt()?.coerceIn(1, 10) ?: friend.shipId,
+                                  syndicateTag =
+                                    liveMatch?.syndicateTag?.takeIf { it.isNotBlank() }
+                                      ?: friend.syndicateTag,
+                                  isOnline = isPilotOnline,
+                                  statusText = resolvedActivity,
+                                  currentArmadaName =
+                                    liveMatch?.armadaName?.takeIf { !it.equals("SOLO", ignoreCase = true) }
+                                      ?: friend.currentArmadaName,
+                                  bounty = resolvedRes,
+                                )
+                              }
+                            }
+                          val enrichedArmadaSlots =
+                            remember(
+                              engine.activeArmadaSlots.size,
+                              mergedLivePilots,
+                              realSwornCloudLeaderboard,
+                              engine.liveResonance,
+                              isDeviceOnline,
+                              frameTick,
+                            ) {
+                              engine.activeArmadaSlots.toList().map { slot ->
+                                val isLocalSelf =
+                                  (currentUserId.isNotBlank() && slot.uid == currentUserId) ||
+                                    (slot.isLeader && slot.callsign.equals(callsign, ignoreCase = true))
+                                if (isLocalSelf) {
+                                  val selfActivity =
+                                    when {
+                                      !isDeviceOnline -> "OFFLINE"
+                                      engine.hasJoinedMatch && !engine.isEphemeralPracticeRift ->
+                                        "IN COMBAT • ${engine.activeMatchSectorTag()}"
+                                      else -> "ONLINE • RIFT HUB"
+                                    }
+                                  slot.copy(
+                                    resonance = engine.liveResonance.coerceAtLeast(0),
+                                    isOnline = isDeviceOnline,
+                                    activityLabel = selfActivity,
+                                  )
+                                } else {
+                                  val liveMatch =
+                                    mergedLivePilots.firstOrNull { p ->
+                                      val pUid = p.userId.ifBlank { p.id }
+                                      (slot.uid.isNotBlank() && pUid == slot.uid) ||
+                                        p.callsign.equals(slot.callsign, ignoreCase = true)
+                                    }
+                                  val cloudEntry =
+                                    realSwornCloudLeaderboard.firstOrNull { e ->
+                                      (slot.uid.isNotBlank() && e.userId == slot.uid) ||
+                                        e.callsign.equals(slot.callsign, ignoreCase = true)
+                                    }
+                                  val derivedCloudRes =
+                                    cloudEntry?.let {
+                                      ((it.pvpBounty - 100L).coerceAtLeast(0L) +
+                                          it.pvpKills * 12L +
+                                          it.convergencesWon * 35L)
+                                        .coerceIn(0L, 50_000L)
+                                        .toInt()
+                                    } ?: 0
+                                  val resolvedRes =
+                                    when {
+                                      liveMatch != null && liveMatch.liveResonance > 0L ->
+                                        liveMatch.liveResonance.toInt()
+                                      derivedCloudRes > 0 -> derivedCloudRes
+                                      else -> slot.resonance.coerceAtLeast(0)
+                                    }
+                                  val resolvedActivity =
+                                    when {
+                                      liveMatch == null -> "OFFLINE"
+                                      liveMatch.sectorId.equals("NEXUS_LOBBY", ignoreCase = true) ||
+                                        liveMatch.sectorId.equals("RIFT_LOBBY", ignoreCase = true) ->
+                                        "ONLINE • RIFT HUB"
+                                      else -> "IN COMBAT • ${liveMatch.sectorId}"
+                                    }
+                                  slot.copy(
+                                    shipId = liveMatch?.shipId?.toInt()?.coerceIn(1, 10) ?: slot.shipId,
+                                    resonance = resolvedRes,
+                                    isOnline = liveMatch != null,
+                                    activityLabel = resolvedActivity,
+                                  )
+                                }
+                              }
                             }
 
                           ArmadaFleetModal(
                             currentSyndicateTag = syndicateTag,
                             activeArmadaName = engine.activeArmadaName,
                             armadaTierLabel = engine.getCurrentArmadaTierLabel(),
-                            armadaSlots = engine.activeArmadaSlots.toList(),
-                            friendsList = friendsList,
+                            armadaSlots = enrichedArmadaSlots,
+                            friendsList = enrichedFriendsList,
                             blockedPilotUids = blockedPilotUids,
                             statusBannerMessage = armadaStatusBanner,
                             onCreateOrRenameArmada = { newArmadaName ->
@@ -3589,7 +3740,7 @@ fun RiftArenaScreen(
                               } else {
                                 engine.formOrJoinArmada(
                                   trimmedWing,
-                                  if (engine.activeArmadaSlots.size <= 1) friendsList.take(1)
+                                  if (engine.activeArmadaSlots.size <= 1) enrichedFriendsList.take(1)
                                   else emptyList(),
                                 )
                                 armadaStatusBanner =
@@ -4100,6 +4251,13 @@ fun RiftArenaScreen(
                       else -> Unit
                     }
                   }
+            val embeddedModuleContent: (@Composable () -> Unit)? =
+              when (activeNexusNode) {
+                NexusCoreNode.ORBITAL_HUB,
+                NexusCoreNode.SUBSPACE_COMMS,
+                NexusCoreNode.CONVERGENCE_GATE -> null
+                else -> {
+                  { renderModuleForNode(activeNexusNode) }
                 }
               }
 
@@ -4765,6 +4923,13 @@ fun RiftArenaScreen(
                 selectedMode = customCfg.baseMode.id
                 localPrefs.setPreferredMode(customCfg.baseMode.id)
                 engine.createAndJoinCustomGame(customCfg)
+                RiftCalibrationState.botsEnabled = customCfg.botsEnabled
+                RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                if (isGoogleAuthenticated && isDeviceOnline && currentUserId.isNotBlank()) {
+                  viewModel.publishCustomGameRoom(
+                    customCfg.toCloudCustomGameRoom(currentUserId)
+                  )
+                }
                 syncEquippedCosmeticsToEngine(engine)
                 engine.onStatsUpdated()
                 viewModel.setActiveSector(engine.activeMatchSectorTag())
@@ -4786,6 +4951,10 @@ fun RiftArenaScreen(
                 engine.switchLocalPlayerShip(deployShipId, forceFromHangar = true)
                 syncEquippedCosmeticsToEngine(engine)
                 engine.joinCustomGame(instanceId)
+                engine.currentCustomGame?.let { joinedCfg ->
+                  RiftCalibrationState.botsEnabled = joinedCfg.botsEnabled
+                  RiftCalibrationState.applyCalibrationChangesLive(engine, context)
+                }
                 val resolvedModeId =
                   engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
                 selectedMode = resolvedModeId
@@ -4797,9 +4966,16 @@ fun RiftArenaScreen(
                 pushLivePilotHeartbeatNow()
                 isNexusShellOpen = false
                 sfx.playPrize()
-                toastMessage = "RIFTED INTO CUSTOM RIFT"
+                val joinedTitle = engine.currentCustomGame?.title?.uppercase(Locale.US) ?: instanceId
+                toastMessage = "RIFTED INTO CUSTOM RIFT [$joinedTitle]"
                 toastVersion++
                 frameTick++
+              },
+              publicCustomGames = cloudPublicCustomConfigs,
+              onLookupCustomRoomByCode = { rawCode, onResult ->
+                viewModel.lookupCustomGameByCode(rawCode) { cloudRoom, statusMsg ->
+                  onResult(cloudRoom?.toCustomGameConfig(), statusMsg)
+                }
               },
               onSwitchAccount = {
                 pendingStagedLaunch = null
@@ -4814,6 +4990,7 @@ fun RiftArenaScreen(
                   signOut(credentialManager = credentialManager, scope = scope)
                 }
               },
+              renderModuleForNode = renderModuleForNode,
               embeddedModuleContent = embeddedModuleContent,
             )
           }
@@ -5229,3 +5406,79 @@ fun RiftArenaScreen(
     }
   }
 }
+
+private fun CloudCustomGameRoom.toCustomGameConfig(): CustomGameConfig {
+  val cleanCode =
+    roomCode
+      .ifBlank { id }
+      .trim()
+      .uppercase(java.util.Locale.US)
+      .replace(Regex("[^A-Z0-9]"), "")
+      .take(8)
+  val isPriv = privateRoom || visibility.equals("private", ignoreCase = true)
+  val resolvedInstanceId =
+    instanceId
+      .trim()
+      .replace(Regex("[^A-Za-z0-9_\\-]"), "")
+      .take(23)
+      .ifBlank { "${if (isPriv) "priv" else "pub"}_$cleanCode" }
+  val resolvedMode =
+    RankedGameMode.entries.firstOrNull {
+      it.id.equals(baseMode, ignoreCase = true) || it.name.equals(baseMode, ignoreCase = true)
+    } ?: RankedGameMode.SECTOR_CONVERGENCE
+  return CustomGameConfig(
+    instanceId = resolvedInstanceId,
+    roomCode = cleanCode,
+    privateRoom = isPriv,
+    title =
+      title.ifBlank {
+        "${hostCallsign.uppercase(java.util.Locale.US)} ${resolvedMode.title.uppercase(java.util.Locale.US)} [$cleanCode]"
+      },
+    hostCallsign = hostCallsign.ifBlank { "PILOT" },
+    baseMode = resolvedMode,
+    teamSizeBracket = teamSizeBracket.coerceIn(2, 20),
+    matchDurationMinutes = matchDurationMinutes.coerceIn(0, 60),
+    allowArmadasInFfa = allowArmadasInFfa,
+    botsEnabled = botsEnabled,
+    bulletSizeMult = bulletSizeMult.toFloat().coerceIn(0.4f, 4.0f),
+    damageMult = damageMult.toFloat().coerceIn(0.25f, 4.0f),
+    speedMult = speedMult.toFloat().coerceIn(0.4f, 3.0f),
+    healthMult = healthMult.toFloat().coerceIn(0.5f, 4.0f),
+    rechargeMult = rechargeMult.toFloat().coerceIn(0.4f, 4.0f),
+    crateSpawnMult = crateSpawnMult.toFloat().coerceIn(0.2f, 4.0f),
+  )
+}
+
+private fun CustomGameConfig.toCloudCustomGameRoom(hostUid: String): CloudCustomGameRoom {
+  val code = extractCustomRoomCode(this)
+  val isPriv = isPrivateCustomGame(this)
+  val cleanInstanceId =
+    instanceId
+      .trim()
+      .replace(Regex("[^A-Za-z0-9_\\-]"), "")
+      .take(23)
+      .ifBlank { "${if (isPriv) "priv" else "pub"}_$code" }
+  return CloudCustomGameRoom(
+    id = code,
+    roomCode = code,
+    instanceId = cleanInstanceId,
+    hostUid = hostUid,
+    hostCallsign = hostCallsign.ifBlank { "PILOT" }.take(24),
+    title = title.ifBlank { "CUSTOM RIFT [$code]" }.take(48),
+    visibility = if (isPriv) "private" else "public",
+    privateRoom = isPriv,
+    baseMode = baseMode.id,
+    teamSizeBracket = teamSizeBracket.coerceIn(2, 20),
+    matchDurationMinutes = matchDurationMinutes.coerceIn(0, 60),
+    allowArmadasInFfa = allowArmadasInFfa,
+    botsEnabled = botsEnabled,
+    bulletSizeMult = bulletSizeMult.toDouble(),
+    damageMult = damageMult.toDouble(),
+    speedMult = speedMult.toDouble(),
+    healthMult = healthMult.toDouble(),
+    rechargeMult = rechargeMult.toDouble(),
+    crateSpawnMult = crateSpawnMult.toDouble(),
+    createdAtMs = System.currentTimeMillis(),
+  )
+}
+

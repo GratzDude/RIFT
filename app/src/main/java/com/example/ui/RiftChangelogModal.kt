@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 95
+const val CURRENT_RIFT_BUILD_VERSION = 97
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,39 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 97,
+      versionTag = "v1.0.97 // BUILD #97",
+      releaseDate = "Nov 20, 2026",
+      headline = "Smooth Rift Hub Card Transitions, Squadron Sorting, Live Multi-Player Combat Sync & Cloud Custom Game Directory",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Smooth Rift Hub 6-Card Slide & Fade Transitions: Added directional slide and fade transitions when entering, exiting, or switching directly between the 6 Rift Hub cards (Ships, Forge, Comms, Conduit, Syndicate, and Dossier) via quick-switch header pills without occluding the live Overwatch aperture.",
+          "Squadron Management Sorting by Activity or Resonance: Added interactive Activity and Resonance sort toggles in Squadron Command so pilots can organize Squadron members and linked Sworn Pilots by live combat/online status or Resonance level with real-time Resonance badges.",
+          "Continuous Real-Time Multi-Player Position, Weapon & Hit Sync: Fixed a timestamp merge bug where initial null server timestamps froze remote pilots at Rift Station Safe Harbor, replaced concurrent presence writes with a single-flight conflated ~9Hz telemetry channel, and added reflection-safe pilot deserialization plus deduplicated HIT combat reconciliation.",
+          "Cloud Public Custom Game List & 6-Character Private Join Codes: Added Firestore-synced custom game rooms (/custom_games/{roomCode}) with deterministic sector IDs, a live Public Custom Game List in Convergence Gate and Overwatch, and instant Private Custom Game lookup and entry via 6-character Join Codes.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 96,
+      versionTag = "v1.0.96 // BUILD #96",
+      releaseDate = "Nov 20, 2026",
+      headline = "Official RIFT Winged Vortex Crest Adaptive & Multi-Density App Icon",
+      badgeLabel = "PREVIOUS BUILD",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "High-Definition RIFT Winged Vortex Crest Adaptive Icon: Installed the official gunmetal, gold, and cyan-magenta swirling vortex crest artwork inside the 66dp Material You safe zone of ic_launcher_foreground.xml over a seamless #03060B deep-space background.",
+          "Full Multi-Density Square & Circular PNG Launcher Suite: Generated crisp PNG32 ic_launcher.png and circular-masked RGBA ic_launcher_round.png icons across mdpi, hdpi, xhdpi, xxhdpi, and xxxhdpi densities for universal Android launcher and Play Store compatibility.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 95,
       versionTag = "v1.0.95 // BUILD #95",
       releaseDate = "Nov 20, 2026",
       headline = "Rift Hub Card Refinement, Rift AI & Squadron Naming Standardization, and Direct Rift In Mode Flow",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "PREVIOUS BUILD",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

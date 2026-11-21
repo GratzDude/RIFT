@@ -536,6 +536,53 @@ fun SyndicatesModal(
   }
 }
 
+private enum class SquadronSortMode {
+  ACTIVITY,
+  RESONANCE,
+}
+
+private fun squadronActivityPriority(isOnline: Boolean, statusLabel: String): Int {
+  if (!isOnline) return 0
+  val upper = statusLabel.uppercase(Locale.US)
+  return if (
+    upper.contains("COMBAT") ||
+      (upper.contains("IN ") && !upper.contains("HUB") && !upper.contains("LOBBY"))
+  ) {
+    2
+  } else {
+    1
+  }
+}
+
+@Composable
+private fun SquadronSortTogglePill(
+  label: String,
+  selected: Boolean,
+  accent: Color,
+  tag: String,
+  onClick: () -> Unit,
+) {
+  Box(
+    modifier =
+      Modifier.clip(RoundedCornerShape(6.dp))
+        .background(if (selected) accent.copy(alpha = 0.24f) else CitadelCardBg)
+        .border(1.dp, if (selected) accent else Color(0xFF334155), RoundedCornerShape(6.dp))
+        .clickable { onClick() }
+        .padding(horizontal = 8.dp, vertical = 4.dp)
+        .testTag(tag),
+    contentAlignment = Alignment.Center,
+  ) {
+    Text(
+      text = label,
+      color = if (selected) Color.White else Color(0xFF94A3B8),
+      fontSize = 8.8.sp,
+      fontWeight = FontWeight.ExtraBold,
+      fontFamily = Mono,
+      maxLines = 1,
+    )
+  }
+}
+
 @Composable
 fun ArmadaFleetModal(
   currentSyndicateTag: String,
@@ -557,6 +604,7 @@ fun ArmadaFleetModal(
   onCloseModal: () -> Unit = {},
 ) {
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
+  var squadronSortMode by remember { mutableStateOf(SquadronSortMode.ACTIVITY) }
   val realArmadaSlots =
     remember(armadaSlots) {
       armadaSlots.filter {
@@ -576,7 +624,7 @@ fun ArmadaFleetModal(
         .testTag("armada_fleet_modal")
   ) {
     Row(
-      modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 30.dp else 36.dp),
+      modifier = Modifier.fillMaxWidth().height(if (isCompactPhone) 32.dp else 36.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -591,10 +639,10 @@ fun ArmadaFleetModal(
         )
         Text(
           text =
-            if (isCompactPhone) "STRIKE WING COMMAND (1–5 PILOTS)"
-            else "STRIKE WING COMMAND // 1–5 SWORN PILOT TACTICAL FORMATION",
+            if (isCompactPhone) "SQUADRON COMMAND (1–5 PILOTS)"
+            else "SQUADRON COMMAND // 1–5 SWORN PILOT FORMATION",
           color = Color.White,
-          fontSize = if (isCompactPhone) 12.5.sp else 14.sp,
+          fontSize = if (isCompactPhone) 12.sp else 13.5.sp,
           fontWeight = FontWeight.Black,
           fontFamily = Sans,
           letterSpacing = 0.6.sp,
@@ -628,12 +676,39 @@ fun ArmadaFleetModal(
                 "[SOLO] INDEPENDENT"
               },
             color = if (isDeployedInArmada) Color(0xFF34D399) else CitadelCyan,
-            fontSize = if (isCompactPhone) 9.5.sp else 10.sp,
+            fontSize = if (isCompactPhone) 9.2.sp else 9.8.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = Mono,
             maxLines = 1,
           )
         }
+      }
+
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        Text(
+          text = "SORT:",
+          color = Color(0xFF94A3B8),
+          fontSize = 8.6.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = Mono,
+        )
+        SquadronSortTogglePill(
+          label = "ACTIVITY",
+          selected = squadronSortMode == SquadronSortMode.ACTIVITY,
+          accent = Color(0xFF00F5D4),
+          tag = "squadron_sort_activity",
+          onClick = { squadronSortMode = SquadronSortMode.ACTIVITY },
+        )
+        SquadronSortTogglePill(
+          label = "RESONANCE",
+          selected = squadronSortMode == SquadronSortMode.RESONANCE,
+          accent = CitadelGold,
+          tag = "squadron_sort_resonance",
+          onClick = { squadronSortMode = SquadronSortMode.RESONANCE },
+        )
       }
     }
 
@@ -666,6 +741,7 @@ fun ArmadaFleetModal(
         armadaTierLabel = armadaTierLabel,
         armadaSlots = realArmadaSlots,
         friendsList = friendsList,
+        sortMode = squadronSortMode,
         blockedPilotUids = blockedPilotUids,
         onCreateOrRenameArmada = onCreateOrRenameArmada,
         onInviteFriendToArmada = onInviteFriendToArmada,
@@ -1679,6 +1755,7 @@ private fun ArmadaAndFriendsTabPane(
   armadaTierLabel: String,
   armadaSlots: List<ArmadaMemberSlot>,
   friendsList: List<FriendPilotEntry>,
+  sortMode: SquadronSortMode = SquadronSortMode.ACTIVITY,
   blockedPilotUids: Set<String> = emptySet(),
   onCreateOrRenameArmada: (String) -> Unit,
   onInviteFriendToArmada: (FriendPilotEntry) -> Unit,
@@ -1690,17 +1767,55 @@ private fun ArmadaAndFriendsTabPane(
   onReportPilot: (uid: String, callsign: String) -> Unit = { _, _ -> },
 ) {
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
+  val sortedSquadronSlots =
+    remember(armadaSlots, sortMode) {
+      when (sortMode) {
+        SquadronSortMode.RESONANCE ->
+          armadaSlots.sortedWith(
+            compareByDescending<ArmadaMemberSlot> { it.resonance }
+              .thenByDescending { squadronActivityPriority(it.isOnline, it.activityLabel) }
+              .thenByDescending { it.isLeader }
+              .thenBy { it.callsign }
+          )
+        SquadronSortMode.ACTIVITY ->
+          armadaSlots.sortedWith(
+            compareByDescending<ArmadaMemberSlot> {
+                squadronActivityPriority(it.isOnline, it.activityLabel)
+              }
+              .thenByDescending { it.isLeader }
+              .thenByDescending { it.resonance }
+              .thenBy { it.callsign }
+          )
+      }
+    }
   val visibleFriends =
-    remember(friendsList, blockedPilotUids) {
-      friendsList.filter { friend ->
-        friend.uid !in blockedPilotUids &&
-          !friend.uid.startsWith("friend_custom_") &&
-          !friend.uid.startsWith("bot_") &&
-          !friend.callsign.contains("[BOT]", ignoreCase = true)
+    remember(friendsList, blockedPilotUids, sortMode) {
+      val filtered =
+        friendsList.filter { friend ->
+          friend.uid !in blockedPilotUids &&
+            !friend.uid.startsWith("friend_custom_") &&
+            !friend.uid.startsWith("bot_") &&
+            !friend.callsign.contains("[BOT]", ignoreCase = true)
+        }
+      when (sortMode) {
+        SquadronSortMode.RESONANCE ->
+          filtered.sortedWith(
+            compareByDescending<FriendPilotEntry> { it.bounty }
+              .thenByDescending { squadronActivityPriority(it.isOnline, it.statusText) }
+              .thenBy { it.callsign }
+          )
+        SquadronSortMode.ACTIVITY ->
+          filtered.sortedWith(
+            compareByDescending<FriendPilotEntry> {
+                squadronActivityPriority(it.isOnline, it.statusText)
+              }
+              .thenByDescending { it.bounty }
+              .thenBy { it.callsign }
+          )
       }
     }
   var armadaNameInput by
-    remember(activeArmadaName) { mutableStateOf(activeArmadaName.ifEmpty { "APEX_WING" }) }
+    remember(activeArmadaName) { mutableStateOf(activeArmadaName.ifEmpty { "APEX_SQD" }) }
   var newFriendInput by remember { mutableStateOf("") }
   var inputFocused by remember { mutableStateOf(false) }
 
@@ -1729,7 +1844,7 @@ private fun ArmadaAndFriendsTabPane(
   ) {
     Column(
       modifier =
-        Modifier.width(if (isCompactPhone) 272.dp else 310.dp)
+        Modifier.width(if (isCompactPhone) 272.dp else 316.dp)
           .fillMaxHeight()
           .background(CitadelCardBg, RoundedCornerShape(10.dp))
           .border(1.dp, CitadelCyan.copy(alpha = 0.48f), RoundedCornerShape(10.dp))
@@ -1740,14 +1855,14 @@ private fun ArmadaAndFriendsTabPane(
       Text(
         text =
           if (activeArmadaName.isEmpty()) "[STATUS: OPERATING INDEPENDENTLY]"
-          else "[STRIKE WING: $activeArmadaName] (${armadaSlots.size}/5 • $armadaTierLabel)",
+          else "[SQUADRON: $activeArmadaName] (${sortedSquadronSlots.size}/5 • $armadaTierLabel)",
         color = if (activeArmadaName.isEmpty()) CitadelCyan else Color(0xFF34D399),
         fontSize = if (isCompactPhone) 10.5.sp else 11.8.sp,
         fontWeight = FontWeight.Black,
         fontFamily = Sans,
       )
       Text(
-        text = "STRIKE WING TAG (UP TO 14 CHARS)",
+        text = "SQUADRON TAG (UP TO 14 CHARS)",
         color = CitadelCyan,
         fontSize = 9.5.sp,
         fontWeight = FontWeight.Bold,
@@ -1765,7 +1880,7 @@ private fun ArmadaAndFriendsTabPane(
             armadaNameInput =
               it.uppercase(Locale.US).replace(Regex("[^A-Z0-9_-]"), "").take(14)
           },
-          placeholder = "STRIKE WING TAG",
+          placeholder = "SQUADRON TAG",
           borderColor = CitadelCyan,
           textColor = Color.White,
           height = inputBoxHeight,
@@ -1795,7 +1910,7 @@ private fun ArmadaAndFriendsTabPane(
               .testTag("form_armada_button"),
         ) {
           Text(
-            text = if (activeArmadaName.isEmpty()) "FORM WING" else "RENAME WING",
+            text = if (activeArmadaName.isEmpty()) "FORM SQD" else "RENAME SQD",
             fontSize = 9.8.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = Mono,
@@ -1803,11 +1918,21 @@ private fun ArmadaAndFriendsTabPane(
         }
       }
 
+      Text(
+        text =
+          if (sortMode == SquadronSortMode.RESONANCE) "ROSTER ORDER: HIGHEST RESONANCE"
+          else "ROSTER ORDER: ACTIVITY STATUS",
+        color = if (sortMode == SquadronSortMode.RESONANCE) CitadelGold else CitadelTeal,
+        fontSize = 8.8.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = Mono,
+      )
+
       Column(
         modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        if (armadaSlots.isEmpty()) {
+        if (sortedSquadronSlots.isEmpty()) {
           Box(
             modifier =
               Modifier.fillMaxWidth()
@@ -1817,14 +1942,21 @@ private fun ArmadaAndFriendsTabPane(
           ) {
             Text(
               text =
-                "FLYING [SOLO] IN OPEN SECTOR.\nLINK SWORN PILOTS ON THE RIGHT TO FORM A 1–5 PILOT STRIKE WING.",
+                "FLYING [SOLO] IN OPEN SECTOR.\nLINK SWORN PILOTS ON THE RIGHT TO FORM A 1–5 PILOT SQUADRON.",
               color = Color(0xFFCBD5E1),
               fontSize = if (isCompactPhone) 9.6.sp else 10.2.sp,
               fontFamily = Sans,
             )
           }
         } else {
-          armadaSlots.forEach { slot ->
+          sortedSquadronSlots.forEach { slot ->
+            val actRank = squadronActivityPriority(slot.isOnline, slot.activityLabel)
+            val statusDotCol =
+              when (actRank) {
+                2 -> Color(0xFF00E676)
+                1 -> CitadelCyan
+                else -> Color(0xFF64748B)
+              }
             Row(
               modifier =
                 Modifier.fillMaxWidth()
@@ -1836,22 +1968,45 @@ private fun ArmadaAndFriendsTabPane(
             ) {
               Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                modifier = Modifier.weight(1f),
               ) {
+                Box(
+                  modifier =
+                    Modifier.size(8.dp).clip(CircleShape).background(statusDotCol)
+                )
                 ShipSpritePreview(shipId = slot.shipId, sizeDp = 26)
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                  ) {
+                    Text(
+                      text = "[${slot.syndicateTag}] ${slot.callsign}",
+                      color = if (slot.isLeader) CitadelGold else Color.White,
+                      fontSize = 11.2.sp,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = Sans,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                      text = "${slot.resonance} RES",
+                      color = CitadelGold,
+                      fontSize = 9.0.sp,
+                      fontWeight = FontWeight.ExtraBold,
+                      fontFamily = Mono,
+                      maxLines = 1,
+                    )
+                  }
                   Text(
-                    text = "[${slot.syndicateTag}] ${slot.callsign}",
-                    color = if (slot.isLeader) CitadelGold else Color.White,
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = Sans,
-                  )
-                  Text(
-                    text = if (slot.isLeader) "WING COMMANDER" else "WINGMAN ACTIVE",
-                    color = CitadelTeal,
-                    fontSize = 9.6.sp,
+                    text =
+                      "${if (slot.isLeader) "LEADER" else "MEMBER"} • ${slot.activityLabel.uppercase(Locale.US)}",
+                    color = if (slot.isOnline) CitadelTeal else Color(0xFF64748B),
+                    fontSize = 9.2.sp,
                     fontFamily = Mono,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                   )
                 }
               }
@@ -1893,7 +2048,7 @@ private fun ArmadaAndFriendsTabPane(
               .shadow(2.dp, RoundedCornerShape(8.dp))
               .testTag("leave_armada_solo_button"),
         ) {
-          Text("LEAVE STRIKE WING", fontSize = 9.8.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+          Text("LEAVE SQUADRON", fontSize = 9.8.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
         }
       }
     }
@@ -1917,7 +2072,7 @@ private fun ArmadaAndFriendsTabPane(
             if (isCompactPhone) {
               "SWORN PILOTS (${visibleFriends.count { it.isOnline }} ONLINE)"
             } else {
-              "VERIFIED SWORN PILOTS & STRIKE WING LINK (${visibleFriends.count { it.isOnline }} ONLINE)"
+              "VERIFIED SWORN PILOTS & SQUADRON LINK (${visibleFriends.count { it.isOnline }} ONLINE)"
             },
           color = Color.White,
           fontSize = if (isCompactPhone) 11.5.sp else 13.sp,
@@ -2046,13 +2201,25 @@ private fun ArmadaAndFriendsTabPane(
                   val badge =
                     if (friend.currentArmadaName.isNotEmpty()) "[${friend.currentArmadaName}]"
                     else "[SOLO]"
-                  Text(
-                    text = "$badge [${friend.syndicateTag}] ${friend.callsign}",
-                    color = Color.White,
-                    fontSize = if (isCompactPhone) 11.8.sp else 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = Sans,
-                  )
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    Text(
+                      text = "$badge [${friend.syndicateTag}] ${friend.callsign}",
+                      color = Color.White,
+                      fontSize = if (isCompactPhone) 11.8.sp else 13.sp,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = Sans,
+                    )
+                    Text(
+                      text = "${friend.bounty} RES",
+                      color = CitadelGold,
+                      fontSize = 9.6.sp,
+                      fontWeight = FontWeight.ExtraBold,
+                      fontFamily = Mono,
+                    )
+                  }
                   Text(
                     text = friend.statusText.uppercase(Locale.US),
                     color = if (friend.isOnline) Color(0xFF94A3B8) else Color(0xFF64748B),

@@ -3,6 +3,7 @@ package com.example.data
 import androidx.annotation.Keep
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.PropertyName
 import com.google.firebase.firestore.ServerTimestamp
@@ -99,6 +100,7 @@ data class LivePilotState(
   val lastPingY: Double = 0.0,
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null,
+  @get:Exclude val localSyncSeq: Long = 0L,
 )
 
 data class CloudSyncHealth(
@@ -251,6 +253,36 @@ data class ArmadaMemberSlot(
   val syndicateTag: String,
   val shipId: Int,
   val isLeader: Boolean = false,
+  val resonance: Int = 0,
+  val isOnline: Boolean = true,
+  val activityLabel: String = "ONLINE",
+)
+
+@Keep
+@IgnoreExtraProperties
+data class CloudCustomGameRoom(
+  @DocumentId val id: String = "",
+  val roomCode: String = "",
+  val instanceId: String = "",
+  val hostUid: String = "",
+  val hostCallsign: String = "PILOT",
+  val title: String = "",
+  val visibility: String = "public",
+  @get:PropertyName("privateRoom") @PropertyName("privateRoom") val privateRoom: Boolean = false,
+  val baseMode: String = "SECTOR_CONVERGENCE",
+  val teamSizeBracket: Int = 5,
+  val matchDurationMinutes: Int = 10,
+  val allowArmadasInFfa: Boolean = true,
+  val botsEnabled: Boolean = true,
+  val bulletSizeMult: Double = 1.0,
+  val damageMult: Double = 1.0,
+  val speedMult: Double = 1.0,
+  val healthMult: Double = 1.0,
+  val rechargeMult: Double = 1.0,
+  val crateSpawnMult: Double = 1.0,
+  val createdAtMs: Long = 0L,
+  @ServerTimestamp val createdAt: Timestamp? = null,
+  @ServerTimestamp val updatedAt: Timestamp? = null,
 )
 
 @Keep
