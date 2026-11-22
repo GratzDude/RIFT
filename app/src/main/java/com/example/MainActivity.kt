@@ -1,7 +1,9 @@
 package com.example
 
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.os.Bundle
+import android.util.Log
 import android.view.KeyEvent
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
@@ -157,6 +159,8 @@ import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.install.InstallStateUpdatedListener
 import com.google.android.play.core.install.model.InstallStatus
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
@@ -448,10 +452,67 @@ private fun restoreActiveMatchSnapshot(
   engine.reattachRemotePilotsToRoster()
 }
 
+private const val RIFT_STARTUP_LOG_TAG = "RiftStartup"
+
+private fun ensureSafeFirebaseInitialized(context: Context) {
+  try {
+    val appCtx = context.applicationContext ?: context
+    if (FirebaseApp.getApps(appCtx).isEmpty()) {
+      FirebaseApp.initializeApp(appCtx)
+    }
+    if (FirebaseApp.getApps(appCtx).isEmpty()) {
+      val fallbackOptions =
+        FirebaseOptions.Builder()
+          .setApplicationId("1:000000000000:android:0000000000000000000000")
+          .setApiKey("offline-local-fallback-client")
+          .setProjectId("rift-offline-fallback")
+          .build()
+      FirebaseApp.initializeApp(appCtx, fallbackOptions)
+      Log.w(RIFT_STARTUP_LOG_TAG, "Initialized offline-safe fallback FirebaseApp instance.")
+    }
+  } catch (t: Throwable) {
+    Log.e(RIFT_STARTUP_LOG_TAG, "Firebase initialization fallback caught error", t)
+  }
+}
+
+private fun safeDefaultFirebaseAuth(context: Context? = null): FirebaseAuth {
+  if (context != null) {
+    ensureSafeFirebaseInitialized(context)
+  }
+  return try {
+    Firebase.auth
+  } catch (t: Throwable) {
+    val appCtx =
+      runCatching {
+          val atClass = Class.forName("android.app.ActivityThread")
+          atClass.getMethod("currentApplication").invoke(null) as? Context
+        }
+        .getOrNull()
+    if (appCtx != null) {
+      ensureSafeFirebaseInitialized(appCtx)
+    }
+    FirebaseAuth.getInstance()
+  }
+}
+
 internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
-  val listener = FirebaseAuth.AuthStateListener { auth -> trySend(auth.currentUser) }
-  addAuthStateListener(listener)
-  awaitClose { removeAuthStateListener(listener) }
+  val listener = FirebaseAuth.AuthStateListener { auth ->
+    runCatching { trySend(auth.currentUser) }
+  }
+  val registered =
+    try {
+      addAuthStateListener(listener)
+      true
+    } catch (t: Throwable) {
+      Log.w(RIFT_STARTUP_LOG_TAG, "AuthStateListener registration skipped; using local state", t)
+      trySend(runCatching { currentUser }.getOrNull())
+      false
+    }
+  awaitClose {
+    if (registered) {
+      runCatching { removeAuthStateListener(listener) }
+    }
+  }
 }
 
 /**
@@ -503,49 +564,61 @@ fun DeviceAwareModalAutoScaler(
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
-    enableEdgeToEdge()
+    runCatching { enableEdgeToEdge() }
+      .onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "enableEdgeToEdge skipped", it) }
     super.onCreate(savedInstanceState)
-    configureAppCheck(this, intent)
-    if (requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
-      requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-    }
-    window.decorView.post { hideSystemBars() }
+    ensureSafeFirebaseInitialized(this)
+    runCatching { configureAppCheck(this, intent) }
+      .onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "configureAppCheck skipped", it) }
+    runCatching {
+      if (requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+      }
+    }.onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "Landscape orientation lock skipped on restricted window", it) }
+    runCatching { window?.decorView?.post { hideSystemBars() } }
 
     setContent {
       MyApplicationTheme {
-        AppNavigation()
+        val ctx = LocalContext.current
+        val resolvedAuth = remember(ctx) { safeDefaultFirebaseAuth(ctx) }
+        AppNavigation(auth = resolvedAuth)
       }
     }
   }
 
   override fun onResume() {
     super.onResume()
-    RiftSoundSynthesizer.notifyAppForegroundState(true)
-    window.decorView.post { hideSystemBars() }
+    runCatching { RiftSoundSynthesizer.notifyAppForegroundState(true) }
+    runCatching { window?.decorView?.post { hideSystemBars() } }
   }
 
   override fun onPause() {
-    RiftSoundSynthesizer.notifyAppForegroundState(false)
+    runCatching { RiftSoundSynthesizer.notifyAppForegroundState(false) }
     super.onPause()
   }
 
   override fun onStop() {
-    RiftSoundSynthesizer.notifyAppForegroundState(false)
+    runCatching { RiftSoundSynthesizer.notifyAppForegroundState(false) }
     super.onStop()
   }
 
   override fun onWindowFocusChanged(hasFocus: Boolean) {
     super.onWindowFocusChanged(hasFocus)
     if (hasFocus) {
-      window.decorView.post { hideSystemBars() }
+      runCatching { window?.decorView?.post { hideSystemBars() } }
     }
   }
 
   private fun hideSystemBars() {
-    val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-    windowInsetsController.systemBarsBehavior =
-      WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-    windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+    try {
+      val decor = window?.decorView ?: return
+      val windowInsetsController = WindowCompat.getInsetsController(window, decor)
+      windowInsetsController.systemBarsBehavior =
+        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+      windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+    } catch (t: Throwable) {
+      Log.w(RIFT_STARTUP_LOG_TAG, "hideSystemBars skipped", t)
+    }
   }
 }
 
@@ -755,23 +828,37 @@ private fun RiftUpdateAvailableBanner(
 
 @Composable
 fun AppNavigation(
-  auth: FirebaseAuth = Firebase.auth,
+  auth: FirebaseAuth = safeDefaultFirebaseAuth(),
 ) {
   val context = LocalContext.current
+  remember(context) {
+    ensureSafeFirebaseInitialized(context)
+    true
+  }
   val navScope = rememberCoroutineScope()
-  val navCredentialManager = remember { CredentialManager.create(context) }
-  val localPrefs = remember { LocalPilotPrefs(context) }
-  val permanentDeviceUid = remember { localPrefs.getOrCreatePermanentDeviceUid() }
+  val navCredentialManager = remember(context) { runCatching { CredentialManager.create(context) }.getOrNull() }
+  val localPrefs = remember(context) { LocalPilotPrefs(context) }
+  val permanentDeviceUid =
+    remember(localPrefs) {
+      runCatching { localPrefs.getOrCreatePermanentDeviceUid() }
+        .getOrElse { "drifter_${System.currentTimeMillis()}" }
+    }
 
-  val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
-  var isGuestMode by remember { mutableStateOf(localPrefs.isGuestBypassEnabled()) }
+  val initialAuthUser = remember(auth) { runCatching { auth.currentUser }.getOrNull() }
+  val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = initialAuthUser)
+  var isGuestMode by remember {
+    mutableStateOf(runCatching { localPrefs.isGuestBypassEnabled() }.getOrDefault(false))
+  }
   var drifterSessionEpoch by remember { mutableIntStateOf(0) }
   var showPreAuthChangelog by remember { mutableStateOf(false) }
   var isStartupAssetsReady by remember { mutableStateOf(false) }
   var startupProgress by remember { mutableFloatStateOf(0.16f) }
   var startupStatusText by remember { mutableStateOf("Loading RIFT Pilot Profile...") }
 
-  val isPlayStoreInstall = remember(context) { RiftUpdateManager.isInstalledFromGooglePlay(context) }
+  val isPlayStoreInstall =
+    remember(context) {
+      runCatching { RiftUpdateManager.isInstalledFromGooglePlay(context) }.getOrDefault(false)
+    }
   val appUpdateManager =
     remember(context, isPlayStoreInstall) {
       if (isPlayStoreInstall && !RiftUpdateManager.isHeadlessOrTestRuntime()) {
@@ -792,17 +879,19 @@ fun AppNavigation(
       onDispose { }
     } else {
       val listener = InstallStateUpdatedListener { state ->
-        if (state.installStatus() == InstallStatus.DOWNLOADED) {
-          availableUpdate =
-            RiftAvailableUpdate(
-              versionLabel = "Google Play Update",
-              headline = "Update downloaded. Tap Restart & Update to finish installing.",
-              downloadUrl = "",
-              isPlayStoreInstall = true,
-              isPlayUpdateDownloaded = true,
-            )
-          updateStatusLabel = "PLAY UPDATE READY TO INSTALL"
-          updateBannerDismissed = false
+        runCatching {
+          if (state.installStatus() == InstallStatus.DOWNLOADED) {
+            availableUpdate =
+              RiftAvailableUpdate(
+                versionLabel = "Google Play Update",
+                headline = "Update downloaded. Tap Restart & Update to finish installing.",
+                downloadUrl = "",
+                isPlayStoreInstall = true,
+                isPlayUpdateDownloaded = true,
+              )
+            updateStatusLabel = "PLAY UPDATE READY TO INSTALL"
+            updateBannerDismissed = false
+          }
         }
       }
       runCatching { appUpdateManager.registerListener(listener) }
@@ -812,23 +901,28 @@ fun AppNavigation(
 
   val executeUpdateCheck: (Boolean, Boolean) -> Unit = { autoPromptPlay, resetDismiss ->
     navScope.launch {
-      updateStatusLabel = "CHECKING FOR UPDATES..."
-      val (foundUpdate, statusMsg) =
-        if (isPlayStoreInstall && appUpdateManager != null) {
-          RiftUpdateManager.checkAndPromptPlayStoreUpdate(
-            appUpdateManager = appUpdateManager,
-            launcher = playUpdateLauncher,
-            autoLaunchPrompt = autoPromptPlay,
-          )
-        } else if (!isPlayStoreInstall) {
-          RiftUpdateManager.checkDirectReleaseUpdate()
-        } else {
-          null to "v${BuildConfig.VERSION_NAME} UP TO DATE"
+      try {
+        updateStatusLabel = "CHECKING FOR UPDATES..."
+        val (foundUpdate, statusMsg) =
+          if (isPlayStoreInstall && appUpdateManager != null) {
+            RiftUpdateManager.checkAndPromptPlayStoreUpdate(
+              appUpdateManager = appUpdateManager,
+              launcher = playUpdateLauncher,
+              autoLaunchPrompt = autoPromptPlay,
+            )
+          } else if (!isPlayStoreInstall) {
+            RiftUpdateManager.checkDirectReleaseUpdate()
+          } else {
+            null to "v${BuildConfig.VERSION_NAME} UP TO DATE"
+          }
+        availableUpdate = foundUpdate
+        updateStatusLabel = statusMsg
+        if (foundUpdate != null && resetDismiss) {
+          updateBannerDismissed = false
         }
-      availableUpdate = foundUpdate
-      updateStatusLabel = statusMsg
-      if (foundUpdate != null && resetDismiss) {
-        updateBannerDismissed = false
+      } catch (t: Throwable) {
+        Log.w(RIFT_STARTUP_LOG_TAG, "Startup update check skipped", t)
+        updateStatusLabel = "v${BuildConfig.VERSION_NAME} UP TO DATE"
       }
     }
   }
@@ -844,64 +938,84 @@ fun AppNavigation(
         executeUpdateCheck(true, true)
       }
       upd.downloadUrl.isNotBlank() -> {
-        RiftUpdateManager.openExternalUpdateUrl(context, upd.downloadUrl)
+        runCatching { RiftUpdateManager.openExternalUpdateUrl(context, upd.downloadUrl) }
       }
     }
   }
 
   val handleSwitchAccount: () -> Unit = {
-    localPrefs.clearUnscopedCallsignOnAccountSwitch()
-    localPrefs.setGuestBypassEnabled(false)
+    runCatching {
+      localPrefs.clearUnscopedCallsignOnAccountSwitch()
+      localPrefs.setGuestBypassEnabled(false)
+    }
     isGuestMode = false
-    signOut(
-      credentialManager = navCredentialManager,
-      scope = navScope,
-      onSignOutComplete = {
-        localPrefs.clearUnscopedCallsignOnAccountSwitch()
-        localPrefs.setGuestBypassEnabled(false)
-        isGuestMode = false
-      },
-    )
+    val cm = navCredentialManager
+    if (cm != null) {
+      signOut(
+        credentialManager = cm,
+        scope = navScope,
+        onSignOutComplete = {
+          runCatching {
+            localPrefs.clearUnscopedCallsignOnAccountSwitch()
+            localPrefs.setGuestBypassEnabled(false)
+          }
+          isGuestMode = false
+        },
+      )
+    } else {
+      runCatching { auth.signOut() }
+    }
   }
 
   val user = currentUser
 
   LaunchedEffect(Unit) {
-    // Allow ViewRootImpl to immediately commit initial frames to satisfy WMS SurfaceSyncGroup (<30ms)
-    withFrameNanos { }
-    withFrameNanos { }
-    // Fire non-blocking automatic on-open update check in parallel
-    executeUpdateCheck(true, false)
+    try {
+      // Allow ViewRootImpl to immediately commit initial frames to satisfy WMS SurfaceSyncGroup (<30ms)
+      runCatching {
+        withFrameNanos { }
+        withFrameNanos { }
+      }
+      // Fire non-blocking automatic on-open update check in parallel
+      executeUpdateCheck(true, false)
 
-    val isHeadless = RiftUpdateManager.isHeadlessOrTestRuntime()
-    startupProgress = 0.34f
-    startupStatusText = "Preparing 2.5D Starfighters & Rift Station..."
-    val prewarmUid = auth.currentUser?.uid ?: permanentDeviceUid
-    withContext(Dispatchers.Default) {
-      val preferredShip = localPrefs.getPreferredShipId().coerceIn(1, 10)
-      val equippedTrim = localPrefs.getEquippedCosmeticId("HULL_TRIM", prewarmUid).coerceIn(0, 3)
-      val activeSlotId = localPrefs.getActiveCustomSlotId(prewarmUid)
-      val loadedSlot = localPrefs.getCustomShipSlot(activeSlotId, prewarmUid)
-      val savedTag = localPrefs.getSyndicateTag(prewarmUid)
-      RiftSpriteBaker.activeHullTrimStyle = equippedTrim
-      RiftCodex.updateActiveCustomShipSlot(loadedSlot)
-      RiftSpriteBaker.prewarmStartupAssets(
-        activeShipId = preferredShip,
-        trimStyle = equippedTrim,
-        syndicateTag = savedTag,
-      )
+      val isHeadless = runCatching { RiftUpdateManager.isHeadlessOrTestRuntime() }.getOrDefault(false)
+      startupProgress = 0.34f
+      startupStatusText = "Preparing 2.5D Starfighters & Rift Station..."
+      val prewarmUid = runCatching { auth.currentUser?.uid }.getOrNull() ?: permanentDeviceUid
+      withContext(Dispatchers.Default) {
+        try {
+          val preferredShip = localPrefs.getPreferredShipId().coerceIn(1, 10)
+          val equippedTrim = localPrefs.getEquippedCosmeticId("HULL_TRIM", prewarmUid).coerceIn(0, 3)
+          val activeSlotId = localPrefs.getActiveCustomSlotId(prewarmUid)
+          val loadedSlot = localPrefs.getCustomShipSlot(activeSlotId, prewarmUid)
+          val savedTag = localPrefs.getSyndicateTag(prewarmUid)
+          RiftSpriteBaker.activeHullTrimStyle = equippedTrim
+          RiftCodex.updateActiveCustomShipSlot(loadedSlot)
+          RiftSpriteBaker.prewarmStartupAssets(
+            activeShipId = preferredShip,
+            trimStyle = equippedTrim,
+            syndicateTag = savedTag,
+          )
+        } catch (t: Throwable) {
+          Log.e(RIFT_STARTUP_LOG_TAG, "Startup sprite prewarm fallback triggered", t)
+        }
+      }
+      startupProgress = 0.88f
+      startupStatusText = "Calibrating Sector Shaders & Audio..."
+      if (!isHeadless) {
+        delay(420L)
+      }
+      startupProgress = 1.0f
+      startupStatusText = "Ready to Rift In"
+      if (!isHeadless) {
+        delay(180L)
+      }
+    } catch (t: Throwable) {
+      Log.e(RIFT_STARTUP_LOG_TAG, "Startup sequence recovered via safe fallback", t)
+    } finally {
+      isStartupAssetsReady = true
     }
-    startupProgress = 0.88f
-    startupStatusText = "Calibrating Sector Shaders & Audio..."
-    if (!isHeadless) {
-      delay(420L)
-    }
-    startupProgress = 1.0f
-    startupStatusText = "Ready to Rift In"
-    if (!isHeadless) {
-      delay(180L)
-    }
-    isStartupAssetsReady = true
   }
 
   Box(modifier = Modifier.fillMaxSize().background(Color(0xFF060D1A))) {
@@ -983,9 +1097,13 @@ fun RiftArenaScreen(
   onCheckOrApplyUpdate: () -> Unit = {},
 ) {
   val context = LocalContext.current
+  remember(context) {
+    ensureSafeFirebaseInitialized(context)
+    true
+  }
   val configuration = LocalConfiguration.current
   val scope = rememberCoroutineScope()
-  val credentialManager = remember { CredentialManager.create(context) }
+  val credentialManager = remember(context) { runCatching { CredentialManager.create(context) }.getOrNull() }
 
   val viewModel: RiftViewModel =
     viewModel(
@@ -994,9 +1112,10 @@ fun RiftArenaScreen(
         viewModelFactory {
           initializer {
             val app =
-              checkNotNull(this[APPLICATION_KEY]) {
-                "APPLICATION_KEY missing from CreationExtras"
-              }
+              (this[APPLICATION_KEY]
+                ?: (context.applicationContext as? android.app.Application)
+                ?: error("Application context unavailable"))
+            ensureSafeFirebaseInitialized(app)
             RiftViewModel(
               repository = RiftRepository(app),
               currentUserId = currentUserId,
@@ -1020,7 +1139,7 @@ fun RiftArenaScreen(
   val publicCustomRoomsState by viewModel.publicCustomGamesState.collectAsStateWithLifecycle()
   val cloudPublicCustomConfigs =
     remember(publicCustomRoomsState) {
-      publicCustomRoomsState.map { it.toCustomGameConfig() }
+      publicCustomRoomsState.mapNotNull { runCatching { it.toCustomGameConfig() }.getOrNull() }
     }
 
   val nexusViewModel: NexusAiViewModel = viewModel(key = "nexus_$currentUserId")
@@ -1032,26 +1151,33 @@ fun RiftArenaScreen(
     viewModel(key = "matchmaking_${currentUserId}_$isGoogleAuthenticated")
   val matchmakingQueueState by matchmakingQueueViewModel.uiState.collectAsStateWithLifecycle()
   val isDeviceOnline by
-    remember(context) { com.example.data.NetworkConnectivityMonitor.observeOnlineState(context) }
+    remember(context) {
+        runCatching { com.example.data.NetworkConnectivityMonitor.observeOnlineState(context) }
+          .getOrElse { kotlinx.coroutines.flow.flowOf(true) }
+      }
       .collectAsStateWithLifecycle(
-        initialValue = com.example.data.NetworkConnectivityMonitor.isCurrentlyOnline(context)
+        initialValue =
+          runCatching { com.example.data.NetworkConnectivityMonitor.isCurrentlyOnline(context) }
+            .getOrDefault(true)
       )
 
   val lifecycleOwner = LocalLifecycleOwner.current
   val sfx = remember {
     RiftSoundSynthesizer(context.cacheDir).apply {
-      enabled = localPrefs.getSfxEnabled()
-      setSfxVolumeLive(localPrefs.getSfxVolume())
-      setMusicVolumeLive(localPrefs.getMusicVolume())
-      val savedBpm = localPrefs.getMusicBpm()
-      val savedPrompt = localPrefs.getMusicForgePrompt()
-      val savedArchetype = MusicSynthArchetype.fromId(localPrefs.getMusicArchetypeId())
-      if (savedPrompt.isNotBlank()) {
-        forgeMusicFromPrompt(savedPrompt, savedBpm)
-      } else {
-        applyMusicArchetype(savedArchetype, overrideBpm = savedBpm)
-      }
-      setMusicEnabled(localPrefs.getMusicEnabled())
+      runCatching {
+        enabled = localPrefs.getSfxEnabled()
+        setSfxVolumeLive(localPrefs.getSfxVolume())
+        setMusicVolumeLive(localPrefs.getMusicVolume())
+        val savedBpm = localPrefs.getMusicBpm()
+        val savedPrompt = localPrefs.getMusicForgePrompt()
+        val savedArchetype = MusicSynthArchetype.fromId(localPrefs.getMusicArchetypeId())
+        if (savedPrompt.isNotBlank()) {
+          forgeMusicFromPrompt(savedPrompt, savedBpm)
+        } else {
+          applyMusicArchetype(savedArchetype, overrideBpm = savedBpm)
+        }
+        setMusicEnabled(localPrefs.getMusicEnabled())
+      }.onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "Audio synthesizer startup fallback applied", it) }
     }
   }
   var sfxEnabled by remember { mutableStateOf(localPrefs.getSfxEnabled()) }
@@ -1233,46 +1359,54 @@ fun RiftArenaScreen(
         localPrefs.recordArmadaTierStat(tierSize, 1L, bounty)
       },
     ).apply {
-      pvpKills = localPrefs.getPvpKills()
-      pvpDeaths = localPrefs.getPvpDeaths()
-      pvpBountyPeak = localPrefs.getPvpBountyPeak()
-      allTimeKills = localPrefs.getAllTimeKills()
-      allTimeDeaths = localPrefs.getAllTimeDeaths()
-      allTimeBountyPeak = localPrefs.getAllTimeBountyPeak()
-      convergencesWon = localPrefs.getConvergencesWon()
-      hvtEliminations = localPrefs.getHvtEliminations()
-      greensCollected = localPrefs.getGreensCollected()
-      xpFromBuffs = localPrefs.getXpFromBuffs(currentUserId).toFloat()
-      xpFromDamage = localPrefs.getXpFromDamage(currentUserId).toFloat()
-      xpFromAccuracy = localPrefs.getXpFromAccuracy(currentUserId).toFloat()
-      xpFromBountyEarned = localPrefs.getXpFromBountyEarned(currentUserId).toFloat()
-      xpFromBountyKilled = localPrefs.getXpFromBountyKilled(currentUserId).toFloat()
-      pilotLevel = localPrefs.getPilotLevel(currentUserId)
-      riftShards = RiftBillingManager.effectiveShardBalance(localPrefs.getRiftShards(currentUserId))
-      localPrefs.setRiftShards(riftShards, currentUserId)
-      liveResonance = localPrefs.getLiveResonance(currentUserId)
-      peakResonance = localPrefs.getPeakResonance(currentUserId)
-      loadShipResonances(localPrefs.getAllShipResonances(currentUserId), liveResonance)
-      highestMilestoneLevelClaimed = localPrefs.getHighestMilestoneLevelClaimed(currentUserId)
-      spentCustomizationPoints = localPrefs.getSpentCustomizationPoints(currentUserId)
-      unlockedExtraSlots = localPrefs.getUnlockedExtraSlots(currentUserId)
-      aiShipDesignTokens = localPrefs.getAiShipDesignTokens(currentUserId)
-      this.cameraZoom = localPrefs.getCameraZoom()
-      this.playfieldTextScale = localPrefs.getPlayfieldTextScale().coerceIn(0.75f, 1.75f)
+      try {
+        pvpKills = localPrefs.getPvpKills()
+        pvpDeaths = localPrefs.getPvpDeaths()
+        pvpBountyPeak = localPrefs.getPvpBountyPeak()
+        allTimeKills = localPrefs.getAllTimeKills()
+        allTimeDeaths = localPrefs.getAllTimeDeaths()
+        allTimeBountyPeak = localPrefs.getAllTimeBountyPeak()
+        convergencesWon = localPrefs.getConvergencesWon()
+        hvtEliminations = localPrefs.getHvtEliminations()
+        greensCollected = localPrefs.getGreensCollected()
+        xpFromBuffs = localPrefs.getXpFromBuffs(currentUserId).toFloat()
+        xpFromDamage = localPrefs.getXpFromDamage(currentUserId).toFloat()
+        xpFromAccuracy = localPrefs.getXpFromAccuracy(currentUserId).toFloat()
+        xpFromBountyEarned = localPrefs.getXpFromBountyEarned(currentUserId).toFloat()
+        xpFromBountyKilled = localPrefs.getXpFromBountyKilled(currentUserId).toFloat()
+        pilotLevel = localPrefs.getPilotLevel(currentUserId)
+        riftShards = RiftBillingManager.effectiveShardBalance(localPrefs.getRiftShards(currentUserId))
+        localPrefs.setRiftShards(riftShards, currentUserId)
+        liveResonance = localPrefs.getLiveResonance(currentUserId)
+        peakResonance = localPrefs.getPeakResonance(currentUserId)
+        loadShipResonances(localPrefs.getAllShipResonances(currentUserId), liveResonance)
+        highestMilestoneLevelClaimed = localPrefs.getHighestMilestoneLevelClaimed(currentUserId)
+        spentCustomizationPoints = localPrefs.getSpentCustomizationPoints(currentUserId)
+        unlockedExtraSlots = localPrefs.getUnlockedExtraSlots(currentUserId)
+        aiShipDesignTokens = localPrefs.getAiShipDesignTokens(currentUserId)
+        this.cameraZoom = localPrefs.getCameraZoom()
+        this.playfieldTextScale = localPrefs.getPlayfieldTextScale().coerceIn(0.75f, 1.75f)
 
-      localPlayer.callsign = callsign
-      localPlayer.syndicateTag = syndicateTag
-      val savedArmada = localPrefs.getActiveArmadaName()
-      if (savedArmada.isNotEmpty()) {
-        formOrJoinArmada(savedArmada, localPrefs.getFriendsList().take(2))
-      }
-      switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
-      syncEquippedCosmeticsToEngine(this)
-      localPlayer.bounty = getLocalStartingBounty()
-      if (initialStartInPracticeRift) {
-        enterEphemeralPracticeRift(startTutorial = true)
-      } else {
-        leaveActiveMatchToNexusOrbit()
+        localPlayer.callsign = callsign
+        localPlayer.syndicateTag = syndicateTag
+        val savedArmada = localPrefs.getActiveArmadaName()
+        if (savedArmada.isNotEmpty()) {
+          runCatching { formOrJoinArmada(savedArmada, localPrefs.getFriendsList().take(2)) }
+        }
+        switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
+        syncEquippedCosmeticsToEngine(this)
+        localPlayer.bounty = getLocalStartingBounty()
+        if (initialStartInPracticeRift) {
+          enterEphemeralPracticeRift(startTutorial = true)
+        } else {
+          leaveActiveMatchToNexusOrbit()
+        }
+      } catch (t: Throwable) {
+        Log.e(RIFT_STARTUP_LOG_TAG, "Engine startup state hydration fallback triggered", t)
+        runCatching {
+          switchLocalPlayerShip(1, forceFromHangar = true)
+          leaveActiveMatchToNexusOrbit()
+        }
       }
     }
   }
@@ -1504,8 +1638,9 @@ fun RiftArenaScreen(
   }
 
   LaunchedEffect(Unit) {
-    RiftCalibrationState.loadPersistedLayout(context, engine)
-    val savedLocalCrest = localPrefs.getSyndicateCrestJson(syndicateTag).orEmpty()
+    runCatching { RiftCalibrationState.loadPersistedLayout(context, engine) }
+      .onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "Persisted layout load skipped", it) }
+    val savedLocalCrest = runCatching { localPrefs.getSyndicateCrestJson(syndicateTag) }.getOrNull().orEmpty()
     if (savedLocalCrest.isNotBlank()) {
       runCatching {
         val parsed = SyndicateCrestRecipe.fromJson(JSONObject(savedLocalCrest))
@@ -1516,7 +1651,7 @@ fun RiftArenaScreen(
     musicBpm = sfx.musicBpm
     activeMusicArchetypeId = sfx.currentMusicRecipe.archetype.id
     activeMusicSummary = sfx.currentMusicRecipe.customPromptSummary
-    RiftCalibrationState.applyCalibrationChangesLive(engine, null)
+    runCatching { RiftCalibrationState.applyCalibrationChangesLive(engine, null) }
   }
 
   LaunchedEffect(isNexusShellOpen, activeNexusNode) {
@@ -4251,13 +4386,19 @@ fun RiftArenaScreen(
                             localPrefs.setPlayfieldTextScale(clamped); frameTick++
                           },
                           onRequestGoogleSignIn = {
-                            onGoogleSignInClicked(
-                              context = context,
-                              credentialManager = credentialManager,
-                              onAuthSuccess = { toastMessage = "GOOGLE CLOUD ACCOUNT LINKED"; toastVersion++ },
-                              onAuthError = { msg -> toastMessage = "SIGN-IN: $msg"; toastVersion++ },
-                              scope = scope,
-                            )
+                            val cm = credentialManager
+                            if (cm != null) {
+                              onGoogleSignInClicked(
+                                context = context,
+                                credentialManager = cm,
+                                onAuthSuccess = { toastMessage = "GOOGLE CLOUD ACCOUNT LINKED"; toastVersion++ },
+                                onAuthError = { msg -> toastMessage = "SIGN-IN: $msg"; toastVersion++ },
+                                scope = scope,
+                              )
+                            } else {
+                              toastMessage = "GOOGLE SIGN-IN UNAVAILABLE ON THIS DEVICE"
+                              toastVersion++
+                            }
                           },
                           onRequestSignOut = {
                             pendingStagedLaunch = null
@@ -4268,7 +4409,12 @@ fun RiftArenaScreen(
                             localPrefs.clearUnscopedCallsignOnAccountSwitch()
                             localPrefs.setGuestBypassEnabled(false)
                             onSwitchAccount()
-                            signOut(credentialManager = credentialManager, scope = scope)
+                            val cm = credentialManager
+                            if (cm != null) {
+                              signOut(credentialManager = cm, scope = scope)
+                            } else {
+                              runCatching { safeDefaultFirebaseAuth(context).signOut() }
+                            }
                           },
                           onSwitchAccount = {
                             pendingStagedLaunch = null
@@ -4280,7 +4426,12 @@ fun RiftArenaScreen(
                             localPrefs.setGuestBypassEnabled(false)
                             onSwitchAccount()
                             if (isGoogleAuthenticated) {
-                              signOut(credentialManager = credentialManager, scope = scope)
+                              val cm = credentialManager
+                              if (cm != null) {
+                                signOut(credentialManager = cm, scope = scope)
+                              } else {
+                                runCatching { safeDefaultFirebaseAuth(context).signOut() }
+                              }
                             }
                           },
                           updateStatusLabel = updateStatusLabel,
@@ -5144,7 +5295,12 @@ fun RiftArenaScreen(
                 localPrefs.setGuestBypassEnabled(false)
                 onSwitchAccount()
                 if (isGoogleAuthenticated) {
-                  signOut(credentialManager = credentialManager, scope = scope)
+                  val cm = credentialManager
+                  if (cm != null) {
+                    signOut(credentialManager = cm, scope = scope)
+                  } else {
+                    runCatching { safeDefaultFirebaseAuth(context).signOut() }
+                  }
                 }
               },
               requestedSideBayKey = hubRequestedSideBay,

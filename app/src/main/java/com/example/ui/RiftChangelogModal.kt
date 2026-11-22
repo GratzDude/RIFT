@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 103
+const val CURRENT_RIFT_BUILD_VERSION = 104
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,20 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 104,
+      versionTag = "v1.0.104 // BUILD #104",
+      releaseDate = "Nov 22, 2026",
+      headline = "Play Console Version Code 104 Sync & Defensive First-Launch Crash Protection",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Play Console Version Code 104 Build Pipeline Fix: Removed the release workflow override that replaced app/build.gradle.kts versionCode and versionName with the workflow run number (73), ensuring RIFT-release.aab and RIFT.apk retain versionCode 104 (v1.0.104) for clean Google Play Console uploads.",
+          "Release Package Firebase Resource Alignment: Aligned the release package identifier in CI Google Services processing so Play Store and direct APK builds bundle matching Firebase initialization resources without duplicate string conflicts.",
+          "Defensive Startup & First-Launch Crash Protection: Guarded MainActivity window setup, Firebase Auth / App Check initialization, Credential Manager, audio synthesizer boot, sprite prewarming, and saved profile hydration with safe try/catch fallbacks so device-specific runtime errors on first launch never close the app.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 103,
       versionTag = "v1.0.103 // BUILD #103",
