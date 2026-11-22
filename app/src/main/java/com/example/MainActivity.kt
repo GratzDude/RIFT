@@ -159,8 +159,6 @@ import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.install.InstallStateUpdatedListener
 import com.google.android.play.core.install.model.InstallStatus
 import com.google.firebase.Firebase
-import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
@@ -455,41 +453,28 @@ private fun restoreActiveMatchSnapshot(
 private const val RIFT_STARTUP_LOG_TAG = "RiftStartup"
 
 private fun ensureSafeFirebaseInitialized(context: Context) {
-  try {
-    val appCtx = context.applicationContext ?: context
-    if (FirebaseApp.getApps(appCtx).isEmpty()) {
-      FirebaseApp.initializeApp(appCtx)
-    }
-    if (FirebaseApp.getApps(appCtx).isEmpty()) {
-      val fallbackOptions =
-        FirebaseOptions.Builder()
-          .setApplicationId("1:000000000000:android:0000000000000000000000")
-          .setApiKey("offline-local-fallback-client")
-          .setProjectId("rift-offline-fallback")
-          .build()
-      FirebaseApp.initializeApp(appCtx, fallbackOptions)
-      Log.w(RIFT_STARTUP_LOG_TAG, "Initialized offline-safe fallback FirebaseApp instance.")
-    }
-  } catch (t: Throwable) {
-    Log.e(RIFT_STARTUP_LOG_TAG, "Firebase initialization fallback caught error", t)
-  }
+  RiftApplication.installUncaughtExceptionGuard()
+  RiftApplication.ensureSafeFirebaseInitialized(context)
 }
 
 private fun safeDefaultFirebaseAuth(context: Context? = null): FirebaseAuth {
+  RiftApplication.installUncaughtExceptionGuard()
   if (context != null) {
-    ensureSafeFirebaseInitialized(context)
+    RiftApplication.ensureSafeFirebaseInitialized(context)
   }
   return try {
     Firebase.auth
   } catch (t: Throwable) {
     val appCtx =
-      runCatching {
-          val atClass = Class.forName("android.app.ActivityThread")
-          atClass.getMethod("currentApplication").invoke(null) as? Context
-        }
-        .getOrNull()
+      context?.applicationContext
+        ?: context
+        ?: runCatching {
+            val atClass = Class.forName("android.app.ActivityThread")
+            atClass.getMethod("currentApplication").invoke(null) as? Context
+          }
+          .getOrNull()
     if (appCtx != null) {
-      ensureSafeFirebaseInitialized(appCtx)
+      RiftApplication.ensureSafeFirebaseInitialized(appCtx)
     }
     FirebaseAuth.getInstance()
   }
@@ -564,12 +549,18 @@ fun DeviceAwareModalAutoScaler(
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    RiftApplication.installUncaughtExceptionGuard()
+    ensureSafeFirebaseInitialized(this)
     runCatching { enableEdgeToEdge() }
       .onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "enableEdgeToEdge skipped", it) }
     super.onCreate(savedInstanceState)
     ensureSafeFirebaseInitialized(this)
-    runCatching { configureAppCheck(this, intent) }
-      .onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "configureAppCheck skipped", it) }
+    if (!RiftApplication.isUsingFallbackFirebase) {
+      runCatching { configureAppCheck(this, intent) }
+        .onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "configureAppCheck skipped", it) }
+    } else {
+      Log.i(RIFT_STARTUP_LOG_TAG, "Skipping App Check setup while using offline fallback FirebaseOptions.")
+    }
     runCatching {
       if (requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -577,12 +568,42 @@ class MainActivity : ComponentActivity() {
     }.onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "Landscape orientation lock skipped on restricted window", it) }
     runCatching { window?.decorView?.post { hideSystemBars() } }
 
-    setContent {
-      MyApplicationTheme {
-        val ctx = LocalContext.current
-        val resolvedAuth = remember(ctx) { safeDefaultFirebaseAuth(ctx) }
-        AppNavigation(auth = resolvedAuth)
+    try {
+      setContent {
+        MyApplicationTheme {
+          val ctx = LocalContext.current
+          var offlineFallbackActive by remember { mutableStateOf(false) }
+          val resolvedAuth =
+            remember(ctx) {
+              runCatching { safeDefaultFirebaseAuth(ctx) }
+                .onFailure { RiftApplication.recordNonFatalStartupError("Auth init fallback", it) }
+                .getOrNull()
+            }
+          if (resolvedAuth != null && !offlineFallbackActive) {
+            AppNavigation(auth = resolvedAuth)
+          } else {
+            val fallbackPrefs = remember(ctx) { LocalPilotPrefs(ctx) }
+            val fallbackUid =
+              remember(fallbackPrefs) {
+                runCatching { fallbackPrefs.getOrCreatePermanentDeviceUid() }
+                  .getOrElse { "drifter_${System.currentTimeMillis()}" }
+              }
+            val fallbackCallsign =
+              remember(fallbackPrefs) {
+                runCatching { fallbackPrefs.getCallsign() }.getOrDefault("DRIFTER")
+              }
+            RiftArenaScreen(
+              currentUserId = fallbackUid,
+              initialCallsign = fallbackCallsign,
+              isGoogleAuthenticated = false,
+              localPrefs = fallbackPrefs,
+              onSwitchAccount = { offlineFallbackActive = false },
+            )
+          }
+        }
       }
+    } catch (t: Throwable) {
+      RiftApplication.recordNonFatalStartupError("MainActivity.setContent failed", t)
     }
   }
 
@@ -835,7 +856,7 @@ fun AppNavigation(
     ensureSafeFirebaseInitialized(context)
     true
   }
-  val navScope = rememberCoroutineScope()
+  val navScope = rememberCoroutineScope { RiftApplication.safeCoroutineExceptionHandler }
   val navCredentialManager = remember(context) { runCatching { CredentialManager.create(context) }.getOrNull() }
   val localPrefs = remember(context) { LocalPilotPrefs(context) }
   val permanentDeviceUid =
@@ -1029,11 +1050,13 @@ fun AppNavigation(
     if (user == null && !isGuestMode) {
       AuthScreen(
         onAuthSuccess = {
-          localPrefs.setBootToNexusHub(true)
+          runCatching { localPrefs.setBootToNexusHub(true) }
         },
         onPlayAsGuest = {
-          localPrefs.startFreshDrifterSession()
-          localPrefs.setBootToNexusHub(true)
+          runCatching {
+            localPrefs.startFreshDrifterSession()
+            localPrefs.setBootToNexusHub(true)
+          }
           drifterSessionEpoch++
           isGuestMode = true
         },
@@ -1042,9 +1065,9 @@ fun AppNavigation(
       if (showPreAuthChangelog) {
         DeviceAwareModalAutoScaler {
           RiftChangelogModal(
-            lastSeenBuild = localPrefs.getLastSeenChangelogBuild(),
+            lastSeenBuild = runCatching { localPrefs.getLastSeenChangelogBuild() }.getOrDefault(0),
             onAcknowledgeAndContinue = {
-              localPrefs.setLastSeenChangelogBuild(CURRENT_RIFT_BUILD_VERSION)
+              runCatching { localPrefs.setLastSeenChangelogBuild(CURRENT_RIFT_BUILD_VERSION) }
               showPreAuthChangelog = false
             },
           )
@@ -1052,11 +1075,14 @@ fun AppNavigation(
       }
     } else {
       if (user != null) {
-        localPrefs.setGuestBypassEnabled(false)
+        runCatching { localPrefs.setGuestBypassEnabled(false) }
       }
       val uid = user?.uid ?: permanentDeviceUid
       val initialCallsign =
-        if (user != null) localPrefs.getCallsign(user.uid) else localPrefs.getCallsign()
+        runCatching {
+            if (user != null) localPrefs.getCallsign(user.uid) else localPrefs.getCallsign()
+          }
+          .getOrDefault("DRIFTER")
 
       key("$uid-${user != null}-$drifterSessionEpoch") {
         RiftArenaScreen(
@@ -1102,7 +1128,7 @@ fun RiftArenaScreen(
     true
   }
   val configuration = LocalConfiguration.current
-  val scope = rememberCoroutineScope()
+  val scope = rememberCoroutineScope { RiftApplication.safeCoroutineExceptionHandler }
   val credentialManager = remember(context) { runCatching { CredentialManager.create(context) }.getOrNull() }
 
   val viewModel: RiftViewModel =
@@ -1111,13 +1137,10 @@ fun RiftArenaScreen(
       factory =
         viewModelFactory {
           initializer {
-            val app =
-              (this[APPLICATION_KEY]
-                ?: (context.applicationContext as? android.app.Application)
-                ?: error("Application context unavailable"))
-            ensureSafeFirebaseInitialized(app)
+            val repoContext = this[APPLICATION_KEY] ?: context.applicationContext ?: context
+            ensureSafeFirebaseInitialized(repoContext)
             RiftViewModel(
-              repository = RiftRepository(app),
+              repository = RiftRepository(repoContext),
               currentUserId = currentUserId,
               initialCallsign = initialCallsign,
               isGoogleAuthenticated = isGoogleAuthenticated,

@@ -42,28 +42,35 @@ jobs:
           cp debug.keystore my-upload-key.jks || true
           cp debug.keystore app/my-upload-key.jks || true
 
-          if [ -f "app/google-services.json" ]; then
-            sed -i 's/"package_name": "com.aistudio.riftarena.vxpqzm"/"package_name": "com.game.rift"/g' app/google-services.json
-          else
+          if [ ! -f "app/google-services.json" ]; then
             mkdir -p app/src/main/res/values
             printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="default_web_client_id" translatable="false">000000000000-placeholder.apps.googleusercontent.com</string>\n</resources>\n' > app/src/main/res/values/auth_fallback.xml
           fi
+          if [ ! -f "app/src/main/res/values/firebase_applet_config.xml" ]; then
+            mkdir -p app/src/main/res/values
+            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="firestore_database_id" translatable="false">(default)</string>\n</resources>\n' > app/src/main/res/values/firebase_applet_config.xml
+          fi
 
-      - name: Set Package ID to com.game.rift, Preserve versionCode >= 104 & Point Release Signing to Keystore
+      - name: Preserve applicationId com.aistudio.riftarena.vxpqzm, Verify versionCode >= 105 & Point Release Signing to Keystore
         run: |
-          sed -i 's/applicationId = "[^"]*"/applicationId = "com.game.rift"/g' app/build.gradle.kts
           sed -i 's/signingConfigs.getByName("release")/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
           sed -i 's/signingConfigs.findByName("release")/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
           sed -i 's/signingConfigs\["release"\]/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
+          APP_ID=$(sed -n 's/.*applicationId *= *"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
           APP_VERSION_CODE=$(sed -n 's/.*versionCode *= *\([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -n 1)
           APP_VERSION_NAME=$(sed -n 's/.*versionName *= *"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
-          if [ -z "$APP_VERSION_CODE" ] || [ "$APP_VERSION_CODE" -lt 104 ]; then
-            echo "ERROR: Expected versionCode >= 104 in app/build.gradle.kts, got '$APP_VERSION_CODE'"
+          if [ "$APP_ID" != "com.aistudio.riftarena.vxpqzm" ]; then
+            echo "ERROR: Expected applicationId com.aistudio.riftarena.vxpqzm in app/build.gradle.kts, got '$APP_ID'"
             exit 1
           fi
+          if [ -z "$APP_VERSION_CODE" ] || [ "$APP_VERSION_CODE" -lt 105 ]; then
+            echo "ERROR: Expected versionCode >= 105 in app/build.gradle.kts, got '$APP_VERSION_CODE'"
+            exit 1
+          fi
+          echo "RIFT_APP_ID=$APP_ID" >> "$GITHUB_ENV"
           echo "RIFT_VERSION_CODE=$APP_VERSION_CODE" >> "$GITHUB_ENV"
           echo "RIFT_VERSION_NAME=$APP_VERSION_NAME" >> "$GITHUB_ENV"
-          echo "Verified RIFT release versionCode=$APP_VERSION_CODE versionName=$APP_VERSION_NAME"
+          echo "Verified RIFT release applicationId=$APP_ID versionCode=$APP_VERSION_CODE versionName=$APP_VERSION_NAME"
 
       - name: Build Debug APK & Signed Release AAB
         env:
@@ -122,10 +129,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "RIFT — Build #${{ env.RIFT_VERSION_CODE }} (v${{ env.RIFT_VERSION_NAME }} • com.game.rift)"
+          name: "RIFT — Build #${{ env.RIFT_VERSION_CODE }} (v${{ env.RIFT_VERSION_NAME }} • com.aistudio.riftarena.vxpqzm)"
           body: |
             - **Direct Phone Install:** Tap **RIFT.apk** below.
-            - **Google Play Console Upload:** Download **RIFT-release.aab** (`com.game.rift`, Version Code `${{ env.RIFT_VERSION_CODE }}`, Version Name `${{ env.RIFT_VERSION_NAME }}`).
+            - **Google Play Console Upload:** Download **RIFT-release.aab** (`com.aistudio.riftarena.vxpqzm`, Version Code `${{ env.RIFT_VERSION_CODE }}`, Version Name `${{ env.RIFT_VERSION_NAME }}`).
             - **Full Codebase Bundle for Gemini:** `RIFT-codebase.md`
           files: |
             RIFT.apk

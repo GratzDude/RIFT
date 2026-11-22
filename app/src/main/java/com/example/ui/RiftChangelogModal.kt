@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 104
+const val CURRENT_RIFT_BUILD_VERSION = 105
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,20 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 105,
+      versionTag = "v1.0.105 // BUILD #105",
+      releaseDate = "Nov 22, 2026",
+      headline = "GitHub Firebase Startup Crash Fix, Preserved Package Identity & Optional Landscape Feature Flag",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Early Safe Firebase & Uncaught Exception Guard: Added RiftApplication registered in AndroidManifest.xml so FirebaseApp initializes early with format-valid fallback FirebaseOptions (applicationId, apiKey, projectId, and gcmSenderId) before any FirebaseAuth, FirebaseFirestore, RiftRepository, or RiftViewModel call runs on builds without google-services.json, paired with process-wide uncaught exception and coroutine startup guards in RiftApplication and MainActivity.",
+          "Preserved Package Identity Across GitHub Releases: Stopped overwriting applicationId to com.game.rift in .github/workflows/build-apk.yml so GitHub APK and Play Store AAB builds preserve applicationId = com.aistudio.riftarena.vxpqzm and match Google Play Console and Firebase resources cleanly.",
+          "Optional Landscape Hardware Feature Declaration: Added android.hardware.screen.landscape with android:required=false in AndroidManifest.xml so Google Play Console does not treat landscape sensor orientation as a restrictive hardware requirement.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 104,
       versionTag = "v1.0.104 // BUILD #104",
