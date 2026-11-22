@@ -280,6 +280,8 @@ data class CloudCustomGameRoom(
   val healthMult: Double = 1.0,
   val rechargeMult: Double = 1.0,
   val crateSpawnMult: Double = 1.0,
+  val damageTakenScalePct: Int = 100,
+  val weaponFluxCostScalePct: Int = 100,
   val createdAtMs: Long = 0L,
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null,
@@ -640,3 +642,106 @@ data class SyndicateWarRecord(
       )
   }
 }
+
+fun snapCustomFivePercentScale(pct: Int): Int =
+  (((pct.coerceIn(0, 100)) + 2) / 5 * 5).coerceIn(0, 100)
+
+fun formatSurvivalDurationSec(sec: Float): String {
+  if (sec <= 0.01f) return "0.0s"
+  return if (sec < 60f) {
+    String.format(Locale.US, "%.1fs", sec)
+  } else {
+    val mins = (sec / 60f).toInt()
+    val rem = sec - mins * 60f
+    String.format(Locale.US, "%dm %04.1fs", mins, rem)
+  }
+}
+
+data class CompletedShipLifeRecord(
+  val timestampMs: Long = System.currentTimeMillis(),
+  val shipId: Int = 1,
+  val shipName: String = "Viper",
+  val isLocalPilot: Boolean = true,
+  val isHuman: Boolean = true,
+  val callsign: String = "PILOT",
+  val modeId: String = "SECTOR_CONVERGENCE",
+  val isCustomGame: Boolean = false,
+  val damageTakenScalePct: Int = 100,
+  val weaponFluxCostScalePct: Int = 100,
+  val aliveDurationSec: Float = 0f,
+  val endReason: String = "ELIMINATED",
+  val killsInLife: Int = 0,
+  val damageDealtInLife: Float = 0f,
+  val damageTakenInLife: Float = 0f,
+) {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
+      put("ts", timestampMs)
+      put("shipId", shipId.coerceIn(1, 10))
+      put("shipName", shipName)
+      put("isLocalPilot", isLocalPilot)
+      put("isHuman", isHuman)
+      put("callsign", callsign)
+      put("modeId", modeId)
+      put("isCustomGame", isCustomGame)
+      put("damageTakenScalePct", snapCustomFivePercentScale(damageTakenScalePct))
+      put("weaponFluxCostScalePct", snapCustomFivePercentScale(weaponFluxCostScalePct))
+      put("aliveDurationSec", aliveDurationSec.toDouble())
+      put("endReason", endReason)
+      put("killsInLife", killsInLife)
+      put("damageDealtInLife", damageDealtInLife.toDouble())
+      put("damageTakenInLife", damageTakenInLife.toDouble())
+    }
+
+  companion object {
+    fun fromJson(obj: JSONObject): CompletedShipLifeRecord =
+      CompletedShipLifeRecord(
+        timestampMs = obj.optLong("ts", System.currentTimeMillis()),
+        shipId = obj.optInt("shipId", 1).coerceIn(1, 10),
+        shipName = stripShipNumberPrefix(obj.optString("shipName", "Viper")).ifEmpty { "Viper" },
+        isLocalPilot = obj.optBoolean("isLocalPilot", true),
+        isHuman = obj.optBoolean("isHuman", true),
+        callsign = obj.optString("callsign", "PILOT"),
+        modeId = obj.optString("modeId", "SECTOR_CONVERGENCE"),
+        isCustomGame = obj.optBoolean("isCustomGame", false),
+        damageTakenScalePct = snapCustomFivePercentScale(obj.optInt("damageTakenScalePct", 100)),
+        weaponFluxCostScalePct = snapCustomFivePercentScale(obj.optInt("weaponFluxCostScalePct", 100)),
+        aliveDurationSec = obj.optDouble("aliveDurationSec", 0.0).toFloat().coerceAtLeast(0f),
+        endReason = obj.optString("endReason", "ELIMINATED"),
+        killsInLife = obj.optInt("killsInLife", 0).coerceAtLeast(0),
+        damageDealtInLife = obj.optDouble("damageDealtInLife", 0.0).toFloat().coerceAtLeast(0f),
+        damageTakenInLife = obj.optDouble("damageTakenInLife", 0.0).toFloat().coerceAtLeast(0f),
+      )
+  }
+}
+
+data class ShipSurvivalTelemetryEntry(
+  val shipId: Int,
+  val shipName: String,
+  val completedLives: Int = 0,
+  val totalAliveSec: Float = 0f,
+  val avgSurvivalSec: Float = 0f,
+  val lastSurvivalSec: Float = 0f,
+  val maxSurvivalSec: Float = 0f,
+  val minSurvivalSec: Float = 0f,
+  val botCompletedLives: Int = 0,
+  val botTotalAliveSec: Float = 0f,
+  val botAvgSurvivalSec: Float = 0f,
+  val botLastSurvivalSec: Float = 0f,
+  val botMaxSurvivalSec: Float = 0f,
+)
+
+data class PilotSurvivalTelemetrySummary(
+  val pilotCompletedLives: Int = 0,
+  val pilotTotalAliveSec: Float = 0f,
+  val pilotAvgSurvivalSec: Float = 0f,
+  val pilotLastSurvivalSec: Float = 0f,
+  val pilotMaxSurvivalSec: Float = 0f,
+  val botCompletedLives: Int = 0,
+  val botTotalAliveSec: Float = 0f,
+  val botAvgSurvivalSec: Float = 0f,
+  val botMaxSurvivalSec: Float = 0f,
+  val perShip: List<ShipSurvivalTelemetryEntry> = emptyList(),
+  val recentLives: List<CompletedShipLifeRecord> = emptyList(),
+)
+

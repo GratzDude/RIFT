@@ -2403,6 +2403,7 @@ class LocalPilotPrefs(context: Context) {
       slotsObj.put(slotId, getCustomShipSlot(slotId, uid).toJsonString())
     }
     obj.put("slots", slotsObj)
+    obj.put("shipSurvival", exportShipSurvivalJsonObject(uid))
     obj.put("updatedAtMs", System.currentTimeMillis())
     return obj.toString()
   }
@@ -2490,10 +2491,468 @@ class LocalPilotPrefs(context: Context) {
           }
         }
       }
+      obj.optJSONObject("shipSurvival")?.let { survObj ->
+        mergeShipSurvivalJsonObject(uid, survObj)
+      }
       true
     } catch (_: Exception) {
       false
     }
+  }
+
+  private fun survivalKey(suffix: String, shipId: Int, uid: String?): String =
+    uidKey("${KEY_SHIP_SURVIVAL_PREFIX}${shipId.coerceIn(1, 10)}_$suffix", uid)
+
+  fun recordCompletedShipLife(record: CompletedShipLifeRecord, uid: String? = null) {
+    val cleanDuration = record.aliveDurationSec.coerceIn(0f, 86_400f)
+    if (cleanDuration < 0.25f) return
+    val sid = record.shipId.coerceIn(1, 10)
+    val ed = prefs.edit()
+    if (record.isLocalPilot) {
+      val prevLives = prefs.getInt(survivalKey("pilot_lives", sid, uid), 0).coerceAtLeast(0)
+      val prevTotal = prefs.getFloat(survivalKey("pilot_total", sid, uid), 0f).coerceAtLeast(0f)
+      val prevMax = prefs.getFloat(survivalKey("pilot_max", sid, uid), 0f).coerceAtLeast(0f)
+      val prevMin = prefs.getFloat(survivalKey("pilot_min", sid, uid), 0f).coerceAtLeast(0f)
+      val nextLives = prevLives + 1
+      val nextTotal = prevTotal + cleanDuration
+      val nextMax = kotlin.math.max(prevMax, cleanDuration)
+      val nextMin = if (prevLives == 0 || prevMin <= 0f) cleanDuration else kotlin.math.min(prevMin, cleanDuration)
+      ed.putInt(survivalKey("pilot_lives", sid, uid), nextLives)
+      ed.putFloat(survivalKey("pilot_total", sid, uid), nextTotal)
+      ed.putFloat(survivalKey("pilot_last", sid, uid), cleanDuration)
+      ed.putFloat(survivalKey("pilot_max", sid, uid), nextMax)
+      ed.putFloat(survivalKey("pilot_min", sid, uid), nextMin)
+
+      val overallKeyPrefix = uidKey("${KEY_SHIP_SURVIVAL_PREFIX}overall", uid)
+      val prevOverallLives = prefs.getInt("${overallKeyPrefix}_lives", 0).coerceAtLeast(0)
+      val prevOverallTotal = prefs.getFloat("${overallKeyPrefix}_total", 0f).coerceAtLeast(0f)
+      val prevOverallMax = prefs.getFloat("${overallKeyPrefix}_max", 0f).coerceAtLeast(0f)
+      ed.putInt("${overallKeyPrefix}_lives", prevOverallLives + 1)
+      ed.putFloat("${overallKeyPrefix}_total", prevOverallTotal + cleanDuration)
+      ed.putFloat("${overallKeyPrefix}_last", cleanDuration)
+      ed.putFloat("${overallKeyPrefix}_max", kotlin.math.max(prevOverallMax, cleanDuration))
+    } else if (!record.isHuman) {
+      val prevBotLives = prefs.getInt(survivalKey("bot_lives", sid, uid), 0).coerceAtLeast(0)
+      val prevBotTotal = prefs.getFloat(survivalKey("bot_total", sid, uid), 0f).coerceAtLeast(0f)
+      val prevBotMax = prefs.getFloat(survivalKey("bot_max", sid, uid), 0f).coerceAtLeast(0f)
+      ed.putInt(survivalKey("bot_lives", sid, uid), prevBotLives + 1)
+      ed.putFloat(survivalKey("bot_total", sid, uid), prevBotTotal + cleanDuration)
+      ed.putFloat(survivalKey("bot_last", sid, uid), cleanDuration)
+      ed.putFloat(survivalKey("bot_max", sid, uid), kotlin.math.max(prevBotMax, cleanDuration))
+    }
+
+    val recentKey = uidKey(KEY_RECENT_SHIP_LIVES_JSON, uid)
+    val existingRecent = getRecentCompletedShipLives(uid).toMutableList()
+    existingRecent.add(0, record.copy(shipId = sid, shipName = cleanShipNameForId(sid), aliveDurationSec = cleanDuration))
+    val trimmed = existingRecent.take(60)
+    val arr = JSONArray()
+    trimmed.forEach { arr.put(it.toJson()) }
+    ed.putString(recentKey, arr.toString())
+    ed.apply()
+  }
+
+  fun getRecentCompletedShipLives(uid: String? = null): List<CompletedShipLifeRecord> {
+    val raw = prefs.getString(uidKey(KEY_RECENT_SHIP_LIVES_JSON, uid), "[]") ?: "[]"
+    return try {
+      val arr = JSONArray(raw)
+      buildList {
+        for (i in 0 until arr.length()) {
+          val obj = arr.optJSONObject(i) ?: continue
+          add(CompletedShipLifeRecord.fromJson(obj))
+        }
+      }
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  fun getShipSurvivalEntry(shipId: Int, uid: String? = null): ShipSurvivalTelemetryEntry {
+    val sid = shipId.coerceIn(1, 10)
+    val pLives = prefs.getInt(survivalKey("pilot_lives", sid, uid), 0).coerceAtLeast(0)
+    val pTotal = prefs.getFloat(survivalKey("pilot_total", sid, uid), 0f).coerceAtLeast(0f)
+    val pLast = prefs.getFloat(survivalKey("pilot_last", sid, uid), 0f).coerceAtLeast(0f)
+    val pMax = prefs.getFloat(survivalKey("pilot_max", sid, uid), 0f).coerceAtLeast(0f)
+    val pMin = prefs.getFloat(survivalKey("pilot_min", sid, uid), 0f).coerceAtLeast(0f)
+    val bLives = prefs.getInt(survivalKey("bot_lives", sid, uid), 0).coerceAtLeast(0)
+    val bTotal = prefs.getFloat(survivalKey("bot_total", sid, uid), 0f).coerceAtLeast(0f)
+    val bLast = prefs.getFloat(survivalKey("bot_last", sid, uid), 0f).coerceAtLeast(0f)
+    val bMax = prefs.getFloat(survivalKey("bot_max", sid, uid), 0f).coerceAtLeast(0f)
+    return ShipSurvivalTelemetryEntry(
+      shipId = sid,
+      shipName = cleanShipNameForId(sid),
+      completedLives = pLives,
+      totalAliveSec = pTotal,
+      avgSurvivalSec = if (pLives > 0) pTotal / pLives.toFloat() else 0f,
+      lastSurvivalSec = pLast,
+      maxSurvivalSec = pMax,
+      minSurvivalSec = pMin,
+      botCompletedLives = bLives,
+      botTotalAliveSec = bTotal,
+      botAvgSurvivalSec = if (bLives > 0) bTotal / bLives.toFloat() else 0f,
+      botLastSurvivalSec = bLast,
+      botMaxSurvivalSec = bMax,
+    )
+  }
+
+  fun getPilotSurvivalTelemetrySummary(uid: String? = null): PilotSurvivalTelemetrySummary {
+    val entries = (1..10).map { getShipSurvivalEntry(it, uid) }
+    val pLives = entries.sumOf { it.completedLives }
+    val pTotal = entries.map { it.totalAliveSec }.sum()
+    val overallPrefix = uidKey("${KEY_SHIP_SURVIVAL_PREFIX}overall", uid)
+    val pLast = prefs.getFloat("${overallPrefix}_last", entries.maxOfOrNull { it.lastSurvivalSec } ?: 0f).coerceAtLeast(0f)
+    val pMax = kotlin.math.max(
+      prefs.getFloat("${overallPrefix}_max", 0f).coerceAtLeast(0f),
+      entries.maxOfOrNull { it.maxSurvivalSec } ?: 0f,
+    )
+    val bLives = entries.sumOf { it.botCompletedLives }
+    val bTotal = entries.map { it.botTotalAliveSec }.sum()
+    val bMax = entries.maxOfOrNull { it.botMaxSurvivalSec } ?: 0f
+    return PilotSurvivalTelemetrySummary(
+      pilotCompletedLives = pLives,
+      pilotTotalAliveSec = pTotal,
+      pilotAvgSurvivalSec = if (pLives > 0) pTotal / pLives.toFloat() else 0f,
+      pilotLastSurvivalSec = pLast,
+      pilotMaxSurvivalSec = pMax,
+      botCompletedLives = bLives,
+      botTotalAliveSec = bTotal,
+      botAvgSurvivalSec = if (bLives > 0) bTotal / bLives.toFloat() else 0f,
+      botMaxSurvivalSec = bMax,
+      perShip = entries,
+      recentLives = getRecentCompletedShipLives(uid),
+    )
+  }
+
+  private fun exportShipSurvivalJsonObject(uid: String): JSONObject {
+    val summary = getPilotSurvivalTelemetrySummary(uid)
+    val root = JSONObject()
+    root.put("pilotLives", summary.pilotCompletedLives)
+    root.put("pilotTotalSec", summary.pilotTotalAliveSec.toDouble())
+    root.put("pilotAvgSec", summary.pilotAvgSurvivalSec.toDouble())
+    root.put("pilotLastSec", summary.pilotLastSurvivalSec.toDouble())
+    root.put("pilotMaxSec", summary.pilotMaxSurvivalSec.toDouble())
+    root.put("botLives", summary.botCompletedLives)
+    root.put("botTotalSec", summary.botTotalAliveSec.toDouble())
+    root.put("botAvgSec", summary.botAvgSurvivalSec.toDouble())
+    val shipsObj = JSONObject()
+    for (entry in summary.perShip) {
+      if (entry.completedLives > 0 || entry.botCompletedLives > 0) {
+        shipsObj.put(
+          entry.shipId.toString(),
+          JSONObject().apply {
+            put("pLives", entry.completedLives)
+            put("pTotal", entry.totalAliveSec.toDouble())
+            put("pLast", entry.lastSurvivalSec.toDouble())
+            put("pMax", entry.maxSurvivalSec.toDouble())
+            put("pMin", entry.minSurvivalSec.toDouble())
+            put("bLives", entry.botCompletedLives)
+            put("bTotal", entry.botTotalAliveSec.toDouble())
+            put("bMax", entry.botMaxSurvivalSec.toDouble())
+          },
+        )
+      }
+    }
+    root.put("ships", shipsObj)
+    return root
+  }
+
+  private fun mergeShipSurvivalJsonObject(uid: String, survObj: JSONObject) {
+    val shipsObj = survObj.optJSONObject("ships") ?: return
+    val ed = prefs.edit()
+    var totalPilotLives = 0
+    var totalPilotSec = 0f
+    var bestPilotMax = 0f
+    for (sid in 1..10) {
+      val sObj = shipsObj.optJSONObject(sid.toString())
+      val cur = getShipSurvivalEntry(sid, uid)
+      if (sObj != null) {
+        val cLives = sObj.optInt("pLives", 0).coerceAtLeast(0)
+        val cTotal = sObj.optDouble("pTotal", 0.0).toFloat().coerceAtLeast(0f)
+        val cLast = sObj.optDouble("pLast", 0.0).toFloat().coerceAtLeast(0f)
+        val cMax = sObj.optDouble("pMax", 0.0).toFloat().coerceAtLeast(0f)
+        val cMin = sObj.optDouble("pMin", 0.0).toFloat().coerceAtLeast(0f)
+        if (cLives > cur.completedLives) {
+          ed.putInt(survivalKey("pilot_lives", sid, uid), cLives)
+          ed.putFloat(survivalKey("pilot_total", sid, uid), kotlin.math.max(cur.totalAliveSec, cTotal))
+          if (cur.lastSurvivalSec <= 0f && cLast > 0f) {
+            ed.putFloat(survivalKey("pilot_last", sid, uid), cLast)
+          }
+        }
+        val mergedMax = kotlin.math.max(cur.maxSurvivalSec, cMax)
+        if (mergedMax > 0f) ed.putFloat(survivalKey("pilot_max", sid, uid), mergedMax)
+        val mergedMin =
+          when {
+            cur.minSurvivalSec > 0f && cMin > 0f -> kotlin.math.min(cur.minSurvivalSec, cMin)
+            cur.minSurvivalSec > 0f -> cur.minSurvivalSec
+            else -> cMin
+          }
+        if (mergedMin > 0f) ed.putFloat(survivalKey("pilot_min", sid, uid), mergedMin)
+
+        val bLives = sObj.optInt("bLives", 0).coerceAtLeast(0)
+        val bTotal = sObj.optDouble("bTotal", 0.0).toFloat().coerceAtLeast(0f)
+        val bMax = sObj.optDouble("bMax", 0.0).toFloat().coerceAtLeast(0f)
+        if (bLives > cur.botCompletedLives) {
+          ed.putInt(survivalKey("bot_lives", sid, uid), bLives)
+          ed.putFloat(survivalKey("bot_total", sid, uid), kotlin.math.max(cur.botTotalAliveSec, bTotal))
+        }
+        if (bMax > cur.botMaxSurvivalSec) {
+          ed.putFloat(survivalKey("bot_max", sid, uid), bMax)
+        }
+        totalPilotLives += kotlin.math.max(cur.completedLives, cLives)
+        totalPilotSec += kotlin.math.max(cur.totalAliveSec, cTotal)
+        bestPilotMax = kotlin.math.max(bestPilotMax, mergedMax)
+      } else {
+        totalPilotLives += cur.completedLives
+        totalPilotSec += cur.totalAliveSec
+        bestPilotMax = kotlin.math.max(bestPilotMax, cur.maxSurvivalSec)
+      }
+    }
+    val overallPrefix = uidKey("${KEY_SHIP_SURVIVAL_PREFIX}overall", uid)
+    if (totalPilotLives > prefs.getInt("${overallPrefix}_lives", 0)) {
+      ed.putInt("${overallPrefix}_lives", totalPilotLives)
+      ed.putFloat("${overallPrefix}_total", totalPilotSec)
+    }
+    if (bestPilotMax > prefs.getFloat("${overallPrefix}_max", 0f)) {
+      ed.putFloat("${overallPrefix}_max", bestPilotMax)
+    }
+    ed.apply()
+  }
+
+  fun exportSurvivalTelemetryCsv(
+    callsign: String,
+    liveResonance: Int,
+    uid: String? = null,
+  ): String {
+    val summary = getPilotSurvivalTelemetrySummary(uid)
+    val sb = StringBuilder()
+    sb.appendLine("# RIFT SHIP SURVIVAL & COMBAT TELEMETRY EXPORT (BUILD #103)")
+    sb.appendLine("# Pilot,${callsign.replace(",", " ")},LiveResonance,$liveResonance,PilotLives,${summary.pilotCompletedLives},PilotAvgSec,${String.format(java.util.Locale.US, "%.2f", summary.pilotAvgSurvivalSec)},BotLives,${summary.botCompletedLives},BotAvgSec,${String.format(java.util.Locale.US, "%.2f", summary.botAvgSurvivalSec)}")
+    sb.appendLine()
+    sb.appendLine("Section,ShipId,ShipName,PilotLives,PilotAvgSec,PilotLastSec,PilotMaxSec,PilotMinSec,PilotTotalSec,BotLives,BotAvgSec,BotMaxSec,ShipResonance")
+    for (entry in summary.perShip) {
+      val res = getShipResonance(entry.shipId, uid)
+      sb.appendLine(
+        java.lang.String.format(
+          java.util.Locale.US,
+          "PER_SHIP,%d,%s,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%.2f,%.2f,%d",
+          entry.shipId,
+          entry.shipName,
+          entry.completedLives,
+          entry.avgSurvivalSec,
+          entry.lastSurvivalSec,
+          entry.maxSurvivalSec,
+          entry.minSurvivalSec,
+          entry.totalAliveSec,
+          entry.botCompletedLives,
+          entry.botAvgSurvivalSec,
+          entry.botMaxSurvivalSec,
+          res,
+        )
+      )
+    }
+    sb.appendLine()
+    sb.appendLine("RecentLifeTimestampMs,Actor,Callsign,ShipId,ShipName,Mode,CustomGame,DamageTakenScalePct,WeaponFluxCostScalePct,AliveSec,EndReason,Elims,DamageDealt,DamageTaken")
+    for (rec in summary.recentLives) {
+      val actor = when {
+        rec.isLocalPilot -> "PILOT"
+        rec.isHuman -> "REMOTE_PILOT"
+        else -> "AI_BOT"
+      }
+      sb.appendLine(
+        java.lang.String.format(
+          java.util.Locale.US,
+          "%d,%s,%s,%d,%s,%s,%s,%d,%d,%.2f,%s,%d,%.1f,%.1f",
+          rec.timestampMs,
+          actor,
+          rec.callsign.replace(",", " "),
+          rec.shipId,
+          rec.shipName,
+          rec.modeId,
+          if (rec.isCustomGame) "YES" else "NO",
+          rec.damageTakenScalePct,
+          rec.weaponFluxCostScalePct,
+          rec.aliveDurationSec,
+          rec.endReason,
+          rec.killsInLife,
+          rec.damageDealtInLife,
+          rec.damageTakenInLife,
+        )
+      )
+    }
+    return sb.toString()
+  }
+
+  fun exportSurvivalTelemetryJson(
+    callsign: String,
+    liveResonance: Int,
+    uid: String? = null,
+  ): String {
+    val summary = getPilotSurvivalTelemetrySummary(uid)
+    val root = JSONObject()
+    root.put("schemaVersion", 103)
+    root.put("exportedAtMs", System.currentTimeMillis())
+    root.put("callsign", callsign)
+    root.put("liveResonance", liveResonance)
+    root.put("pilotCompletedLives", summary.pilotCompletedLives)
+    root.put("pilotTotalAliveSec", summary.pilotTotalAliveSec.toDouble())
+    root.put("pilotAvgSurvivalSec", summary.pilotAvgSurvivalSec.toDouble())
+    root.put("pilotLastSurvivalSec", summary.pilotLastSurvivalSec.toDouble())
+    root.put("pilotMaxSurvivalSec", summary.pilotMaxSurvivalSec.toDouble())
+    root.put("botCompletedLives", summary.botCompletedLives)
+    root.put("botTotalAliveSec", summary.botTotalAliveSec.toDouble())
+    root.put("botAvgSurvivalSec", summary.botAvgSurvivalSec.toDouble())
+    root.put("botMaxSurvivalSec", summary.botMaxSurvivalSec.toDouble())
+    val shipsArr = JSONArray()
+    for (entry in summary.perShip) {
+      shipsArr.put(
+        JSONObject().apply {
+          put("shipId", entry.shipId)
+          put("shipName", entry.shipName)
+          put("shipResonance", getShipResonance(entry.shipId, uid))
+          put("completedLives", entry.completedLives)
+          put("avgSurvivalSec", entry.avgSurvivalSec.toDouble())
+          put("lastSurvivalSec", entry.lastSurvivalSec.toDouble())
+          put("maxSurvivalSec", entry.maxSurvivalSec.toDouble())
+          put("minSurvivalSec", entry.minSurvivalSec.toDouble())
+          put("totalAliveSec", entry.totalAliveSec.toDouble())
+          put("botCompletedLives", entry.botCompletedLives)
+          put("botAvgSurvivalSec", entry.botAvgSurvivalSec.toDouble())
+          put("botMaxSurvivalSec", entry.botMaxSurvivalSec.toDouble())
+        }
+      )
+    }
+    root.put("perShip", shipsArr)
+    val recentArr = JSONArray()
+    summary.recentLives.forEach { recentArr.put(it.toJson()) }
+    root.put("recentCompletedLives", recentArr)
+    return root.toString(2)
+  }
+
+  fun exportSurvivalTelemetryHtmlSpreadsheet(
+    callsign: String,
+    liveResonance: Int,
+    uid: String? = null,
+  ): String {
+    val summary = getPilotSurvivalTelemetrySummary(uid)
+    fun esc(raw: String): String =
+      raw
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+    val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+    val nowStr = fmt.format(java.util.Date())
+    val sb = StringBuilder()
+    sb.appendLine("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"/>")
+    sb.appendLine("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/>")
+    sb.appendLine("<title>Rift Ship Survival Telemetry - ${esc(callsign)}</title>")
+    sb.appendLine("<style>")
+    sb.appendLine("body{background:#02050B;color:#E2E8F0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:0;padding:16px;}")
+    sb.appendLine("h1{color:#00F5D4;font-size:17px;margin:0 0 4px 0;letter-spacing:1px;}")
+    sb.appendLine("h2{color:#38BDF8;font-size:13px;margin:16px 0 8px 0;letter-spacing:0.8px;}")
+    sb.appendLine(".sub{color:#94A3B8;font-size:11px;margin-bottom:12px;}")
+    sb.appendLine(".kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;margin-bottom:14px;}")
+    sb.appendLine(".kpi{background:#091528;border:1px solid #1E3A5F;border-radius:8px;padding:9px;}")
+    sb.appendLine(".kpi .lbl{color:#94A3B8;font-size:10px;}")
+    sb.appendLine(".kpi .val{color:#FFD700;font-size:15px;font-weight:800;margin-top:3px;}")
+    sb.appendLine(".filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:#081426;border:1px solid #284B73;border-radius:8px;padding:9px 10px;margin-bottom:14px;}")
+    sb.appendLine(".filters label{color:#94A3B8;font-size:10px;font-weight:700;display:flex;align-items:center;gap:5px;}")
+    sb.appendLine(".filters select,.filters input,.filters button{background:#040A16;color:#E2E8F0;border:1px solid #38BDF8;border-radius:6px;padding:5px 8px;font-family:inherit;font-size:11px;}")
+    sb.appendLine(".filters button{background:#0B253A;color:#00F5D4;font-weight:800;cursor:pointer;}")
+    sb.appendLine(".count{color:#00F5D4;font-size:11px;font-weight:700;margin-left:auto;}")
+    sb.appendLine("table{width:100%;border-collapse:collapse;background:#060D1A;border:1px solid #1E3A5F;font-size:11px;}")
+    sb.appendLine("th{background:#0D1F38;color:#00F5D4;text-align:left;padding:7px 8px;border-bottom:1px solid #38BDF8;position:sticky;top:0;}")
+    sb.appendLine("td{padding:6px 8px;border-bottom:1px solid #13233A;color:#E2E8F0;}")
+    sb.appendLine("tr:nth-child(even) td{background:#081224;}")
+    sb.appendLine(".num{text-align:right;font-variant-numeric:tabular-nums;}")
+    sb.appendLine(".warn{color:#FB7185;font-weight:700;}")
+    sb.appendLine(".good{color:#34D399;font-weight:700;}")
+    sb.appendLine("</style></head><body>")
+    sb.appendLine("<h1>SHIP SURVIVAL &amp; FLUX COST TELEMETRY SPREADSHEET</h1>")
+    sb.appendLine("<div class=\"sub\">PILOT: ${esc(callsign)} &bull; LIVE RESONANCE: $liveResonance RES &bull; GENERATED: ${esc(nowStr)}</div>")
+    sb.appendLine("<div class=\"kpis\">")
+    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">PILOT AVG SURVIVAL</div><div class=\"val\">${formatSurvivalDurationSec(summary.pilotAvgSurvivalSec)}</div></div>")
+    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">LATEST COMPLETED LIFE</div><div class=\"val\">${formatSurvivalDurationSec(summary.pilotLastSurvivalSec)}</div></div>")
+    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">LONGEST PILOT LIFE</div><div class=\"val\">${formatSurvivalDurationSec(summary.pilotMaxSurvivalSec)}</div></div>")
+    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">PILOT COMPLETED LIVES</div><div class=\"val\">${summary.pilotCompletedLives}</div></div>")
+    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">AI BOT AVG SURVIVAL</div><div class=\"val\">${formatSurvivalDurationSec(summary.botAvgSurvivalSec)} (${summary.botCompletedLives})</div></div>")
+    sb.appendLine("</div>")
+    sb.appendLine("<div class=\"filters\">")
+    sb.appendLine("<label>HULL <select id=\"fHull\" onchange=\"applyFilters()\"><option value=\"ALL\">ALL HULLS</option>")
+    for (entry in summary.perShip) {
+      sb.appendLine("<option value=\"${esc(entry.shipName.uppercase(java.util.Locale.US))}\">${esc(entry.shipName)}</option>")
+    }
+    sb.appendLine("</select></label>")
+    sb.appendLine("<label>ACTOR <select id=\"fActor\" onchange=\"applyFilters()\"><option value=\"ALL\">ALL ACTORS</option><option value=\"PILOT\">LOCAL PILOT</option><option value=\"BOT\">AI BOTS</option><option value=\"REMOTE\">REMOTE PILOTS</option></select></label>")
+    sb.appendLine("<label>SESSION <select id=\"fSession\" onchange=\"applyFilters()\"><option value=\"ALL\">ALL SESSIONS</option><option value=\"PUBLIC\">PUBLIC RIFTS</option><option value=\"CUSTOM\">CUSTOM SANDBOX</option></select></label>")
+    sb.appendLine("<label>SEARCH <input id=\"fSearch\" type=\"text\" placeholder=\"Mode, callsign, reason...\" oninput=\"applyFilters()\"/></label>")
+    sb.appendLine("<button type=\"button\" onclick=\"resetFilters()\">RESET</button>")
+    sb.appendLine("<span id=\"fCount\" class=\"count\">SHOWING ${summary.perShip.size} HULLS &bull; ${summary.recentLives.size} LIVES</span>")
+    sb.appendLine("</div>")
+    sb.appendLine("<h2>PER-SHIP SURVIVAL BREAKDOWN (10 HULLS)</h2>")
+    sb.appendLine("<table id=\"hullTable\"><thead><tr><th>HULL</th><th class=\"num\">RES</th><th class=\"num\">PILOT LIVES</th><th class=\"num\">AVG ALIVE</th><th class=\"num\">LAST LIFE</th><th class=\"num\">MAX LIFE</th><th class=\"num\">MIN LIFE</th><th class=\"num\">BOT LIVES</th><th class=\"num\">BOT AVG</th></tr></thead><tbody>")
+    for (entry in summary.perShip) {
+      val res = getShipResonance(entry.shipId, uid)
+      val avgClass = when {
+        entry.completedLives == 0 -> ""
+        entry.avgSurvivalSec < 12f -> " warn"
+        entry.avgSurvivalSec >= 30f -> " good"
+        else -> ""
+      }
+      val hullKey = esc(entry.shipName.uppercase(java.util.Locale.US))
+      sb.appendLine(
+        "<tr data-hull=\"$hullKey\"><td>${esc(entry.shipName)}</td>" +
+          "<td class=\"num\">$res</td>" +
+          "<td class=\"num\">${entry.completedLives}</td>" +
+          "<td class=\"num$avgClass\">${formatSurvivalDurationSec(entry.avgSurvivalSec)}</td>" +
+          "<td class=\"num\">${formatSurvivalDurationSec(entry.lastSurvivalSec)}</td>" +
+          "<td class=\"num\">${formatSurvivalDurationSec(entry.maxSurvivalSec)}</td>" +
+          "<td class=\"num\">${formatSurvivalDurationSec(entry.minSurvivalSec)}</td>" +
+          "<td class=\"num\">${entry.botCompletedLives}</td>" +
+          "<td class=\"num\">${formatSurvivalDurationSec(entry.botAvgSurvivalSec)}</td></tr>"
+      )
+    }
+    sb.appendLine("</tbody></table>")
+    sb.appendLine("<h2>RECENT COMPLETED LIVES LOG (LATEST ${summary.recentLives.size})</h2>")
+    sb.appendLine("<table id=\"lifeTable\"><thead><tr><th>TIME</th><th>ACTOR</th><th>HULL</th><th>MODE</th><th class=\"num\">DMG TAKEN %</th><th class=\"num\">FLUX COST %</th><th class=\"num\">ALIVE</th><th>END REASON</th><th class=\"num\">ELIMS</th><th class=\"num\">DMG DEALT</th><th class=\"num\">DMG TAKEN</th></tr></thead><tbody>")
+    for (rec in summary.recentLives) {
+      val actor = when {
+        rec.isLocalPilot -> "PILOT"
+        rec.isHuman -> "REMOTE"
+        else -> "BOT"
+      }
+      val sess = if (rec.isCustomGame) "CUSTOM" else "PUBLIC"
+      val hullKey = esc(rec.shipName.uppercase(java.util.Locale.US))
+      val tStr = fmt.format(java.util.Date(rec.timestampMs))
+      val aliveCls = if (rec.aliveDurationSec < 12f) " warn" else if (rec.aliveDurationSec >= 30f) " good" else ""
+      sb.appendLine(
+        "<tr data-hull=\"$hullKey\" data-actor=\"$actor\" data-session=\"$sess\"><td>${esc(tStr)}</td><td>$actor (${esc(rec.callsign)})</td><td>${esc(rec.shipName)}</td>" +
+          "<td>${esc(rec.modeId)}${if (rec.isCustomGame) " [CUSTOM]" else ""}</td>" +
+          "<td class=\"num\">${rec.damageTakenScalePct}%</td>" +
+          "<td class=\"num\">${rec.weaponFluxCostScalePct}%</td>" +
+          "<td class=\"num$aliveCls\">${formatSurvivalDurationSec(rec.aliveDurationSec)}</td>" +
+          "<td>${esc(rec.endReason)}</td>" +
+          "<td class=\"num\">${rec.killsInLife}</td>" +
+          "<td class=\"num\">${rec.damageDealtInLife.toInt()}</td>" +
+          "<td class=\"num\">${rec.damageTakenInLife.toInt()}</td></tr>"
+      )
+    }
+    sb.appendLine("</tbody></table>")
+    sb.appendLine("<script>")
+    sb.appendLine("function applyFilters(){")
+    sb.appendLine("var hull=document.getElementById('fHull').value;")
+    sb.appendLine("var actor=document.getElementById('fActor').value;")
+    sb.appendLine("var sess=document.getElementById('fSession').value;")
+    sb.appendLine("var q=(document.getElementById('fSearch').value||'').toUpperCase();")
+    sb.appendLine("var hc=0,lc=0;")
+    sb.appendLine("var hRows=document.querySelectorAll('#hullTable tbody tr');")
+    sb.appendLine("for(var i=0;i<hRows.length;i++){var r=hRows[i];var ok=(hull==='ALL'||r.getAttribute('data-hull')===hull)&&(q===''||r.textContent.toUpperCase().indexOf(q)>=0);r.style.display=ok?'':'none';if(ok)hc++;}")
+    sb.appendLine("var lRows=document.querySelectorAll('#lifeTable tbody tr');")
+    sb.appendLine("for(var j=0;j<lRows.length;j++){var lr=lRows[j];var okL=(hull==='ALL'||lr.getAttribute('data-hull')===hull)&&(actor==='ALL'||lr.getAttribute('data-actor')===actor)&&(sess==='ALL'||lr.getAttribute('data-session')===sess)&&(q===''||lr.textContent.toUpperCase().indexOf(q)>=0);lr.style.display=okL?'':'none';if(okL)lc++;}")
+    sb.appendLine("document.getElementById('fCount').textContent='SHOWING '+hc+' HULLS \\u2022 '+lc+' LIVES';")
+    sb.appendLine("}")
+    sb.appendLine("function resetFilters(){document.getElementById('fHull').value='ALL';document.getElementById('fActor').value='ALL';document.getElementById('fSession').value='ALL';document.getElementById('fSearch').value='';applyFilters();}")
+    sb.appendLine("</script></body></html>")
+    return sb.toString()
   }
 
   fun getPersistedCommsMessages(): List<SyndicateChatMessage> {
@@ -2714,6 +3173,8 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_DAILY_DIRECTIVE_REROLL_USED = "daily_directive_reroll_used"
     private const val KEY_DAILY_SWEEP_CLAIMED = "daily_directive_sweep_claimed"
     private const val KEY_SWORN_PRACTICE_TUTORIAL_DONE = "sworn_practice_tutorial_done_v79"
+    private const val KEY_SHIP_SURVIVAL_PREFIX = "ship_survival_v103_"
+    private const val KEY_RECENT_SHIP_LIVES_JSON = "recent_ship_lives_v103_json"
 
     const val FIFTEEN_DAYS_MS = 15L * 24L * 3600L * 1000L
 

@@ -1585,7 +1585,7 @@ object RiftCalibrationState {
     return forgedArr.toString()
   }
 
-  fun exportGameplaySyncPayloadJson(): String {
+  fun exportGameplaySyncPayloadJson(engine: RiftGameEngine? = null): String {
     ensureBaselineCaptured()
     val slidersObj = JSONObject()
     val allowedTab0Keys = setOf("shipScale", "projectileScale", "anomalyScale")
@@ -1594,10 +1594,15 @@ object RiftCalibrationState {
         slidersObj.put(desc.key, desc.getter().toDouble())
       }
     }
+    val customCfg = engine?.currentCustomGame
     return JSONObject().apply {
       put("botsEnabled", botsEnabled)
       put("forgedBuffsJson", exportForgedBuffsJson())
       put("sliders", slidersObj)
+      if (customCfg != null) {
+        put("damageTakenScalePct", com.example.data.snapCustomFivePercentScale(customCfg.damageTakenScalePct))
+        put("weaponFluxCostScalePct", com.example.data.snapCustomFivePercentScale(customCfg.weaponFluxCostScalePct))
+      }
     }.toString()
   }
 
@@ -1606,12 +1611,26 @@ object RiftCalibrationState {
     engine: RiftGameEngine?,
     context: Context? = null,
   ): Boolean {
-    if (engine?.currentCustomGame == null) return false
+    val activeCustom = engine?.currentCustomGame ?: return false
     ensureBaselineCaptured()
     return try {
       val root = JSONObject(payloadJson)
       if (root.has("botsEnabled")) {
         botsEnabled = root.optBoolean("botsEnabled", true)
+      }
+      if (root.has("damageTakenScalePct")) {
+        val snappedDt = com.example.data.snapCustomFivePercentScale(root.optInt("damageTakenScalePct", activeCustom.damageTakenScalePct))
+        activeCustom.damageTakenScalePct = snappedDt
+        engine.activeCustomGames
+          .filter { it.instanceId.equals(activeCustom.instanceId, ignoreCase = true) }
+          .forEach { it.damageTakenScalePct = snappedDt }
+      }
+      if (root.has("weaponFluxCostScalePct")) {
+        val snappedFc = com.example.data.snapCustomFivePercentScale(root.optInt("weaponFluxCostScalePct", activeCustom.weaponFluxCostScalePct))
+        activeCustom.weaponFluxCostScalePct = snappedFc
+        engine.activeCustomGames
+          .filter { it.instanceId.equals(activeCustom.instanceId, ignoreCase = true) }
+          .forEach { it.weaponFluxCostScalePct = snappedFc }
       }
       val forgedRaw = root.optString("forgedBuffsJson", "")
       if (forgedRaw.isNotBlank()) {

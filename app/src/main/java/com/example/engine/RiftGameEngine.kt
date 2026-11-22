@@ -166,11 +166,19 @@ data class CustomGameConfig(
   val healthMult: Float = 1.0f, // 0.5f..2.5f
   val rechargeMult: Float = 1.0f, // 0.5f..2.5f
   val crateSpawnMult: Float = 1.0f, // 0.0f..2.5f
+  var damageTakenScalePct: Int = 100, // 0..100 in 5% increments (100% = normal damage taken)
+  var weaponFluxCostScalePct: Int = 100, // 0..100 in 5% increments (100% = normal weapon Flux cost)
   val roomCode: String = "",
   val privateRoom: Boolean = false,
 ) {
   val projectileSizeMult: Float
     get() = bulletSizeMult
+
+  val damageTakenScale: Float
+    get() = (com.example.data.snapCustomFivePercentScale(damageTakenScalePct) / 100f).coerceIn(0f, 1f)
+
+  val weaponFluxCostScale: Float
+    get() = (com.example.data.snapCustomFivePercentScale(weaponFluxCostScalePct) / 100f).coerceIn(0f, 1f)
 }
 
 data class FluxCoreOrbState(
@@ -304,6 +312,10 @@ data class ShipEntity(
   var netRespawnHoldSec: Float = 0f,
   var lastNetUpdateElapsedMs: Long = 0L,
   var hasNetTarget: Boolean = false,
+  var currentLifeAliveSec: Float = 0f,
+  var currentLifeKills: Int = 0,
+  var currentLifeDamageDealt: Float = 0f,
+  var currentLifeDamageTaken: Float = 0f,
 ) {
   var empDisableTimer: Float
     get() = empTimer
@@ -1600,11 +1612,105 @@ class RiftGameEngine(
       localPlayer.phaseShieldTimer = RiftCalibrationState.exitPhaseShieldSec
     }
     localPlayer.bounty = getLocalStartingBounty()
+    localPlayer.currentLifeAliveSec = 0f
+    localPlayer.currentLifeKills = 0
+    localPlayer.currentLifeDamageDealt = 0f
+    localPlayer.currentLifeDamageTaken = 0f
     resetCurrentLifeStats()
     if (!isEphemeralPracticeRift) {
       onDailyDirectiveEvent(DailyDirectiveMetric.BOUNTY_PEAK_IN_LIFE, localPlayer.bounty, true)
       notifyLocalLifecycleSync()
     }
+  }
+
+  var onShipLifeCompleted: (com.example.data.CompletedShipLifeRecord) -> Unit = {}
+  var sessionPilotLivesCompleted: Int = 0
+  var sessionPilotTotalAliveSec: Float = 0f
+  var sessionBotLivesCompleted: Int = 0
+  var sessionBotTotalAliveSec: Float = 0f
+
+  fun customDamageTakenScaleMultiplier(): Float =
+    currentCustomGame?.damageTakenScale ?: 1.0f
+
+  fun customWeaponFluxCostScaleMultiplier(): Float =
+    currentCustomGame?.weaponFluxCostScale ?: 1.0f
+
+  private fun resetShipLifeTelemetryCounters(ship: ShipEntity) {
+    ship.currentLifeAliveSec = 0f
+    ship.currentLifeKills = 0
+    ship.currentLifeDamageDealt = 0f
+    ship.currentLifeDamageTaken = 0f
+  }
+
+  private fun recordAndResetShipLife(
+    ship: ShipEntity,
+    endReason: String,
+    minDurationSec: Float = 0.5f,
+  ) {
+    val aliveSec = ship.currentLifeAliveSec
+    val kills = ship.currentLifeKills
+    val dealt = ship.currentLifeDamageDealt
+    val taken = ship.currentLifeDamageTaken
+    resetShipLifeTelemetryCounters(ship)
+
+    if (!hasJoinedMatch || isHubOverwatchActive || isInLobbyStaging || isEphemeralPracticeRift) {
+      return
+    }
+    if (aliveSec < minDurationSec) {
+      return
+    }
+    val customCfg = currentCustomGame
+    val dtPct = customCfg?.let { com.example.data.snapCustomFivePercentScale(it.damageTakenScalePct) } ?: 100
+    val fcPct = customCfg?.let { com.example.data.snapCustomFivePercentScale(it.weaponFluxCostScalePct) } ?: 100
+    val record =
+      com.example.data.CompletedShipLifeRecord(
+        timestampMs = System.currentTimeMillis(),
+        shipId = ship.spec.id.coerceIn(1, 10),
+        shipName = formatShipLabel(ship),
+        isLocalPilot = ship.isLocalPlayer,
+        isHuman = ship.isHuman,
+        callsign = ship.callsign,
+        modeId = activeRankedMode.id,
+        isCustomGame = customCfg != null,
+        damageTakenScalePct = dtPct,
+        weaponFluxCostScalePct = fcPct,
+        aliveDurationSec = aliveSec,
+        endReason = endReason,
+        killsInLife = kills,
+        damageDealtInLife = dealt,
+        damageTakenInLife = taken,
+      )
+    if (ship.isLocalPlayer) {
+      sessionPilotLivesCompleted++
+      sessionPilotTotalAliveSec += aliveSec
+      val pAvg = sessionPilotTotalAliveSec / sessionPilotLivesCompleted.coerceAtLeast(1)
+      val bAvg = if (sessionBotLivesCompleted > 0) sessionBotTotalAliveSec / sessionBotLivesCompleted else 0f
+      try {
+        android.util.Log.i(
+          "RiftSurvivalTelemetry",
+          String.format(
+            java.util.Locale.US,
+            "PILOT_LIFE_END ship=%s(%d) alive=%.2fs reason=%s mode=%s custom=%s dmgTakenPct=%d%% fluxCostPct=%d%% sessionPilotAvg=%.2fs(%d) sessionBotAvg=%.2fs(%d)",
+            record.shipName,
+            record.shipId,
+            aliveSec,
+            endReason,
+            record.modeId,
+            record.isCustomGame,
+            dtPct,
+            fcPct,
+            pAvg,
+            sessionPilotLivesCompleted,
+            bAvg,
+            sessionBotLivesCompleted,
+          ),
+        )
+      } catch (_: Throwable) {}
+    } else if (!ship.isHuman) {
+      sessionBotLivesCompleted++
+      sessionBotTotalAliveSec += aliveSec
+    }
+    onShipLifeCompleted(record)
   }
 
   fun getEffectiveProjectileScale(): Float =
@@ -1970,6 +2076,13 @@ class RiftGameEngine(
     }
 
     // Finalize current life telemetry as SURVIVED TO SECTOR CONVERGENCE if player is alive at cycle end
+    for (s in ships) {
+      if (s.respawnTimer <= 0f) {
+        recordAndResetShipLife(s, endReason = "MATCH_END", minDurationSec = 1.0f)
+      } else {
+        resetShipLifeTelemetryCounters(s)
+      }
+    }
     if (localPlayer.respawnTimer <= 0f) {
       currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, localPlayer.bounty)
       currentLifeStats.shipId = localPlayer.spec.id
@@ -2686,6 +2799,16 @@ class RiftGameEngine(
    * Cleanly leaves the active combat instance and returns the pilot to peaceful unjoined NEXUS orbit.
    */
   fun leaveActiveMatchToNexusOrbit() {
+    if (hasJoinedMatch && !isHubOverwatchActive && !isInLobbyStaging && !isEphemeralPracticeRift) {
+      for (s in ships) {
+        if (s.respawnTimer <= 0f) {
+          recordAndResetShipLife(s, endReason = "LEFT_MATCH", minDurationSec = 1.0f)
+        } else {
+          resetShipLifeTelemetryCounters(s)
+        }
+      }
+    }
+    resetShipLifeTelemetryCounters(localPlayer)
     isHubOverwatchActive = false
     currentOverwatchKey = ""
     isEphemeralPracticeRift = false
@@ -4332,6 +4455,15 @@ class RiftGameEngine(
       return false
     }
     val spec = RiftCodex.getShipById(newShipId)
+    if (
+      hasJoinedMatch &&
+        !isHubOverwatchActive &&
+        !isInLobbyStaging &&
+        localPlayer.respawnTimer <= 0f &&
+        localPlayer.spec.id != spec.id
+    ) {
+      recordAndResetShipLife(localPlayer, endReason = "SHIP_SWITCH", minDurationSec = 1.0f)
+    }
     val customHealthMult = currentCustomGame?.healthMult ?: 1.0f
     localPlayer.shipId = spec.id
     localPlayer.spec = spec
@@ -4524,10 +4656,14 @@ class RiftGameEngine(
     }
 
     val spec = ship.spec
-    val cost = spec.primaryCost
-    if (ship.flux <= cost + 1f) return
+    val wCostMult = customWeaponFluxCostScaleMultiplier()
+    val cost = spec.primaryCost * wCostMult
+    if (ship.flux <= 0f) return
+    if (cost > 0.01f && ship.flux <= cost + 1f) return
 
-    selfDrainFlux(ship, cost)
+    if (cost > 0f) {
+      selfDrainFlux(ship, cost)
+    }
     ship.gunTimer = spec.primaryCooldown
 
     if (ship.isLocalPlayer) {
@@ -4886,22 +5022,28 @@ class RiftGameEngine(
       return
     }
 
+    val wCostMult = customWeaponFluxCostScaleMultiplier()
+
     // 1. Disruptor Combined Tactical Cloak + 360° AoE EMP Pulse System (No Bomb Projectile; 0-Flux Decloak EMP)
     if (spec.bombType == "CLOAK_EMP") {
       if (!ship.isCloaked) {
-        if (ship.flux <= 180f) {
-          if (ship.isLocalPlayer) onPrizeToast("INSUFFICIENT FLUX FOR TACTICAL CLOAK (MIN 180 FLUX)")
+        val minCloakGate = 180f * wCostMult
+        if (ship.flux <= 0f || (minCloakGate > 0.5f && ship.flux <= minCloakGate)) {
+          if (ship.isLocalPlayer) onPrizeToast("INSUFFICIENT FLUX FOR TACTICAL CLOAK (MIN ${minCloakGate.toInt()} FLUX)")
           return
         }
         ship.isCloaked = true
         ship.bombTimer = 0.35f
-        selfDrainFlux(ship, 20f)
+        val cloakInitCost = 20f * wCostMult
+        if (cloakInitCost > 0f) {
+          selfDrainFlux(ship, cloakInitCost)
+        }
         if (ship.isLocalPlayer) {
           localSecondaryFireSeq++
           buffVersion++
           sfx.playWarp()
           spawnPooledFct("STEALTH CLOAK ENGAGED", ship.x, ship.y - 28f, Color.parseColor("#B388FF"))
-          onPrizeToast("STEALTH CLOAK ACTIVE (${RiftCalibrationState.cloakDrainPerSec.toInt()} FLUX/S) — TAP EMP PULSE OR FIRE TO UNLEASH 360° EMP!")
+          onPrizeToast("STEALTH CLOAK ACTIVE (${(RiftCalibrationState.cloakDrainPerSec * wCostMult).toInt()} FLUX/S) — TAP EMP PULSE OR FIRE TO UNLEASH 360° EMP!")
         }
         return
       } else {
@@ -4922,8 +5064,8 @@ class RiftGameEngine(
       ship.phaseShieldTimer = 0f
     }
 
-    val cost = spec.bombCost
-    if (ship.flux <= cost + 1f) {
+    val cost = spec.bombCost * wCostMult
+    if (ship.flux <= 0f || (cost > 0.01f && ship.flux <= cost + 1f)) {
       if (ship.isLocalPlayer) {
         onPrizeToast("INSUFFICIENT FLUX (${cost.toInt()} FLUX REQUIRED)")
       }
@@ -4941,7 +5083,7 @@ class RiftGameEngine(
         }
         return
       }
-      selfDrainFlux(ship, cost)
+      if (cost > 0f) selfDrainFlux(ship, cost)
       ship.bombTimer = spec.bombCooldown
       interdictorBubbles.removeAll { it.ownerId == ship.id }
       val dur = RiftCalibrationState.interdictorBubbleDuration
@@ -4980,12 +5122,13 @@ class RiftGameEngine(
     }
 
     if (spec.bombType == "TRACTOR_BEAM") {
-      if (ship.flux <= 90f) {
+      val beamGate = 90f * wCostMult
+      if (ship.flux <= 0f || (beamGate > 0.5f && ship.flux <= beamGate)) {
         if (ship.isLocalPlayer) onPrizeToast("INSUFFICIENT FLUX FOR TRACTOR BEAM")
         return
       }
       clearShipToggleBuffs(ship, clearSlotIfActive = false)
-      selfDrainFlux(ship, cost)
+      if (cost > 0f) selfDrainFlux(ship, cost)
       ship.bombTimer = 0.25f
       ship.tractorBeamActive = true
       ship.tractorFromSecondary = true
@@ -5001,12 +5144,13 @@ class RiftGameEngine(
     }
 
     if (spec.bombType == "LANCE_BEAM") {
-      if (ship.flux <= 90f) {
+      val beamGate = 90f * wCostMult
+      if (ship.flux <= 0f || (beamGate > 0.5f && ship.flux <= beamGate)) {
         if (ship.isLocalPlayer) onPrizeToast("INSUFFICIENT FLUX FOR LANCE BEAM")
         return
       }
       clearShipToggleBuffs(ship, clearSlotIfActive = false)
-      selfDrainFlux(ship, cost)
+      if (cost > 0f) selfDrainFlux(ship, cost)
       ship.bombTimer = 0.25f
       ship.lanceBeamActive = true
       ship.lanceFromSecondary = true
@@ -5023,7 +5167,7 @@ class RiftGameEngine(
       return
     }
 
-    selfDrainFlux(ship, cost)
+    if (cost > 0f) selfDrainFlux(ship, cost)
     ship.bombTimer = spec.bombCooldown
     if (ship.isLocalPlayer) {
       localSecondaryFireSeq++
@@ -6026,8 +6170,10 @@ class RiftGameEngine(
         ship.angle
       }
 
+    val wCostMult = customWeaponFluxCostScaleMultiplier()
     if (activeType == "TRACTOR_BEAM") {
-      if (ship.flux <= 60f) {
+      val gate = 60f * wCostMult
+      if (ship.flux <= 0f || (gate > 0.5f && ship.flux <= gate)) {
         if (ship.isLocalPlayer) {
           onPrizeToast("INSUFFICIENT FLUX FOR TRACTOR BEAM")
         }
@@ -6048,7 +6194,8 @@ class RiftGameEngine(
     }
 
     if (activeType == "LANCE_BEAM") {
-      if (ship.flux <= 60f) {
+      val gate = 60f * wCostMult
+      if (ship.flux <= 0f || (gate > 0.5f && ship.flux <= gate)) {
         if (ship.isLocalPlayer) {
           onPrizeToast("INSUFFICIENT FLUX FOR LANCE BEAM")
         }
@@ -7396,10 +7543,16 @@ class RiftGameEngine(
     val shieldAbsorbed = !forceUnstableRiftInstaKill && target.phaseShieldTimer > 0f
     // Disruptor (#6) EMP Cap: calibrated % of target maxFlux (default 25%), capped at 850 Flux, calibrated recharge lock (default 2.0s)
     val empFluxDrain = if (isEmp) min(850f, target.maxFlux * RiftCalibrationState.empFluxDrainPct) else 0f
-    val baseCombined = max(rawDamage, empFluxDrain)
+    val customIncomingScale = customDamageTakenScaleMultiplier()
+    val baseCombined = max(rawDamage, empFluxDrain) * customIncomingScale
     val effectiveDamage =
       when {
-        forceUnstableRiftInstaKill -> max(rawDamage, target.flux + target.maxFlux + 9999f)
+        forceUnstableRiftInstaKill ->
+          if (currentCustomGame != null && customIncomingScale < 1.0f) {
+            (target.maxFlux * 1.15f) * customIncomingScale
+          } else {
+            max(rawDamage, target.flux + target.maxFlux + 9999f)
+          }
         phaseDodged -> 0f
         shieldAbsorbed -> baseCombined * 0.25f
         else -> baseCombined
@@ -7425,6 +7578,18 @@ class RiftGameEngine(
       return
     }
 
+    if (effectiveDamage <= 0.001f && !isEmp) {
+      shieldRipples.add(
+        ShieldRippleEntity(
+          shipId = target.id,
+          impactAngle = impactAngle,
+          intensity = 0.45f,
+          life = 0.20f,
+        )
+      )
+      return
+    }
+
     if (isEmp) {
       val freezeDur = RiftCalibrationState.empFreezeSec
       target.empTimer = max(target.empTimer, freezeDur)
@@ -7432,6 +7597,12 @@ class RiftGameEngine(
         onPrizeToast("HIT BY EMP PULSE! -${effectiveDamage.toInt()} FLUX & ${String.format(java.util.Locale.US, "%.1fs", freezeDur)} RECHARGE LOCK")
       }
     }
+
+    val attackerEntityForLife = ships.firstOrNull { it.id == attackerId }
+    if (attackerEntityForLife != null && attackerEntityForLife.id != target.id) {
+      attackerEntityForLife.currentLifeDamageDealt += effectiveDamage
+    }
+    target.currentLifeDamageTaken += effectiveDamage
 
     // Track live CurrentLifeStats damage, accuracy & per-ship Resonance combat milestones
     if (attackerId == localPlayer.id && !target.isLocalPlayer) {
@@ -7544,8 +7715,14 @@ class RiftGameEngine(
 
       if (attacker != null) {
         attacker.kills++
+        attacker.currentLifeKills++
         attacker.bounty += bountyAward
       }
+      recordAndResetShipLife(
+        ship = target,
+        endReason = if (isUnstableRiftKill) "UNSTABLE_RIFT" else "ELIMINATED",
+        minDurationSec = 0.35f,
+      )
 
       // Station Counter-Attack Trigger Credit: 10% of normal kill Bounty & Live Resonance
       val triggerShip =
@@ -7928,6 +8105,11 @@ class RiftGameEngine(
     reattachRemotePilotsToRoster()
     // Stage & heal all ships at their West/East Horizon Warp Gates for the 10-second Ready-Up countdown
     for (s in ships) {
+      if (s.respawnTimer <= 0f) {
+        recordAndResetShipLife(s, endReason = "ROUND_END", minDurationSec = 1.0f)
+      } else {
+        resetShipLifeTelemetryCounters(s)
+      }
       clearShipToggleBuffs(s, clearSlotIfActive = true)
       s.respawnTimer = 0f
       s.deathLingerTimer = 0f
@@ -8077,6 +8259,11 @@ class RiftGameEngine(
     localStasisCaptures = 0
     reattachRemotePilotsToRoster()
     for (s in ships) {
+      if (s.respawnTimer <= 0f) {
+        recordAndResetShipLife(s, endReason = "MATCH_END", minDurationSec = 1.0f)
+      } else {
+        resetShipLifeTelemetryCounters(s)
+      }
       s.isInStasisBrig = false
       s.deathLingerTimer = 0f
       s.warpInAnimTimer = 0.65f
@@ -8293,6 +8480,7 @@ class RiftGameEngine(
   private fun destroyShipFromIdleDrain(target: ShipEntity) {
     if (target.respawnTimer > 0f) return
     val victimPreDeathBounty = target.bounty
+    recordAndResetShipLife(target, endReason = "IDLE_OVERLOAD", minDurationSec = 0.5f)
     target.flux = 0f
     target.deathX = target.x
     target.deathY = target.y
@@ -8371,6 +8559,7 @@ class RiftGameEngine(
   private fun destroyShipFromPlasmaRift(target: ShipEntity) {
     if (target.respawnTimer > 0f) return
     val victimPreDeathBounty = target.bounty
+    recordAndResetShipLife(target, endReason = "PLASMA_RIFT", minDurationSec = 0.35f)
     target.flux = 0f
     target.deathX = target.x
     target.deathY = target.y
@@ -8623,26 +8812,27 @@ class RiftGameEngine(
     bot.weaponAngle = aimAngle
     bot.independentAimActive = true
 
+    val wCostMult = customWeaponFluxCostScaleMultiplier()
     if (bot.spec.bombType == "CLOAK_EMP") {
       val pulseR = RiftCalibrationState.empPulseRadius
-      if (!bot.isCloaked && dist in (pulseR * 1.15f)..980f && bot.flux > bot.maxFlux * 0.55f && bot.bombTimer <= 0f) {
+      if (!bot.isCloaked && dist in (pulseR * 1.15f)..980f && bot.flux > bot.maxFlux * (0.55f * wCostMult) && bot.bombTimer <= 0f) {
         fireSecondaryBomb(bot, aimAngle)
       } else if (bot.isCloaked && dist <= pulseR * 0.92f && bot.bombTimer <= 0f) {
         fireSecondaryBomb(bot, aimAngle)
       }
     } else if (bot.spec.bombType == "INTERDICTOR_DOME") {
-      if (dist < 245f && bot.flux > 620f && bot.bombTimer <= 0f) {
+      if (dist < 245f && bot.flux > 620f * wCostMult && bot.bombTimer <= 0f) {
         fireSecondaryBomb(bot, aimAngle)
       }
     } else if (bot.spec.bombType == "PHASE_DASH") {
-      if (dist in 450f..900f && bot.flux > bot.maxFlux * 0.55f && bot.bombTimer <= 0f) {
+      if (dist in 450f..900f && bot.flux > bot.maxFlux * (0.55f * wCostMult) && bot.bombTimer <= 0f) {
         fireSecondaryBomb(bot, aimAngle)
       }
-    } else if (bot.spec.hasBomb && dist in 240f..860f && bot.flux > bot.maxFlux * 0.48f && bot.bombTimer <= 0f) {
+    } else if (bot.spec.hasBomb && dist in 240f..860f && bot.flux > bot.maxFlux * (0.48f * wCostMult) && bot.bombTimer <= 0f) {
       fireSecondaryBomb(bot, aimAngle)
     }
 
-    if (!bot.isCloaked && dist < RiftCalibrationState.botGunFireRange && bot.flux > bot.maxFlux * minFluxRatio) {
+    if (!bot.isCloaked && dist < RiftCalibrationState.botGunFireRange && bot.flux > bot.maxFlux * (minFluxRatio * wCostMult)) {
       firePrimaryGun(bot)
     }
   }
@@ -9413,11 +9603,16 @@ class RiftGameEngine(
         ship.angle
       }
 
+    val wCostMult = customWeaponFluxCostScaleMultiplier()
+
     // 1. Toggleable Tractor Beam: laser web slows and pulls caught ship toward user while draining Flux
     if (ship.tractorBeamActive) {
-      val drain = 112f * dt
-      selfDrainFlux(ship, drain)
-      if (ship.flux <= 45f) {
+      val drain = 112f * wCostMult * dt
+      if (drain > 0f) {
+        selfDrainFlux(ship, drain)
+      }
+      val beamFloor = 45f * wCostMult
+      if (beamFloor > 0.5f && ship.flux <= beamFloor) {
         clearShipToggleBuffs(ship, clearSlotIfActive = true)
         if (ship.isLocalPlayer) {
           sfx.playMutedClick()
@@ -9481,9 +9676,12 @@ class RiftGameEngine(
     // 2. Toggleable Continuous Lance Beam: stops on FIRST ship/obstacle hit (no penetration), ticks damage every 0.5s, scales wider/longer with stacks
     if (ship.lanceBeamActive) {
       val stacks = ship.lanceActiveStacks.coerceIn(1, 6)
-      val drain = (132f + (stacks - 1) * 22f) * dt
-      selfDrainFlux(ship, drain)
-      if (ship.flux <= 45f) {
+      val drain = (132f + (stacks - 1) * 22f) * wCostMult * dt
+      if (drain > 0f) {
+        selfDrainFlux(ship, drain)
+      }
+      val beamFloor = 45f * wCostMult
+      if (beamFloor > 0.5f && ship.flux <= beamFloor) {
         clearShipToggleBuffs(ship, clearSlotIfActive = true)
         if (ship.isLocalPlayer) {
           sfx.playMutedClick()
@@ -10204,6 +10402,7 @@ class RiftGameEngine(
           s.safeZoneLockoutTimer = 0f
           s.playfieldIdleTimer = 0f
           s.isIdleDraining = false
+          resetShipLifeTelemetryCounters(s)
           if (s.isLocalPlayer) {
             spectatingTargetShipId = ""
             buffVersion++
@@ -10227,6 +10426,10 @@ class RiftGameEngine(
         s.flux = s.maxFlux
         s.phaseShieldTimer = 3.0f
         continue
+      }
+
+      if (hasJoinedMatch && !isHubOverwatchActive && !(isInLobbyStaging && s.isLocalPlayer)) {
+        s.currentLifeAliveSec += rawDt
       }
 
       if (!s.isHuman) {
@@ -10264,15 +10467,20 @@ class RiftGameEngine(
 
       // Step Disruptor Stealth Cloak continuous drain
       if (s.isCloaked) {
-        selfDrainFlux(s, RiftCalibrationState.cloakDrainPerSec * dt)
-        if (s.flux <= 150f || isInsideSafeZone(s.x, s.y)) {
+        val cloakCostMult = customWeaponFluxCostScaleMultiplier()
+        val cloakDrain = RiftCalibrationState.cloakDrainPerSec * cloakCostMult * dt
+        if (cloakDrain > 0f) {
+          selfDrainFlux(s, cloakDrain)
+        }
+        val cloakSafetyFloor = 150f * cloakCostMult
+        if ((cloakSafetyFloor > 0.5f && s.flux <= cloakSafetyFloor) || isInsideSafeZone(s.x, s.y)) {
           s.isCloaked = false
           if (s.spec.bombType == "CLOAK_EMP") {
             s.bombTimer = max(s.bombTimer, 2.0f)
           }
           if (s.isLocalPlayer) {
             buffVersion++
-            onPrizeToast("STEALTH CLOAK DEACTIVATED (FLUX AT 150 SAFETY FLOOR)")
+            onPrizeToast("STEALTH CLOAK DEACTIVATED (FLUX SAFETY FLOOR)")
           }
         }
       }
@@ -12370,6 +12578,11 @@ class RiftGameEngine(
       resetRiftControlZones()
       reattachRemotePilotsToRoster()
       for (s in ships) {
+        if (s.respawnTimer <= 0f) {
+          recordAndResetShipLife(s, endReason = "MATCH_END", minDurationSec = 1.0f)
+        } else {
+          resetShipLifeTelemetryCounters(s)
+        }
         s.deathLingerTimer = 0f
         s.warpInAnimTimer = 0.65f
         s.maxFlux = s.spec.maxFlux * (currentCustomGame?.healthMult ?: 1.0f)
@@ -12797,8 +13010,11 @@ class RiftGameEngine(
           }
           if (dist < shearR + s.radius * 0.4f && s.plasmaRiftTickTimer <= 0f) {
             s.plasmaRiftTickTimer = 0.55f
-            val dmg = s.maxFlux * 0.12f
-            s.flux -= dmg
+            val dmg = s.maxFlux * 0.12f * customDamageTakenScaleMultiplier()
+            if (dmg > 0f) {
+              s.flux -= dmg
+              s.currentLifeDamageTaken += dmg
+            }
             anom.recordBoundaryIngress(atan2(s.y - anom.y, s.x - anom.x), 0.55f)
             spawnDropletReactionBurst(
               originX = s.x,
@@ -12813,11 +13029,11 @@ class RiftGameEngine(
               coreColor = Color.rgb(250, 204, 21),
               baseCrystalRadius = 6.0f,
             )
-            if (s.isLocalPlayer) {
+            if (s.isLocalPlayer && dmg > 0f) {
               currentLifeStats.damageTaken += dmg
               addTrauma(0.20f)
             }
-            if (s.flux <= 0f) {
+            if (dmg > 0f && s.flux <= 0f) {
               destroyShipFromPlasmaRift(s)
             }
           }
@@ -13013,8 +13229,11 @@ class RiftGameEngine(
             val dist = hypot(s.x - anom.x, s.y - anom.y)
             if (dist < tearRadius + s.radius * 0.4f && s.plasmaRiftTickTimer <= 0f) {
               s.plasmaRiftTickTimer = 0.60f
-              val dmg = s.maxFlux * dmgPct
-              s.flux -= dmg
+              val dmg = s.maxFlux * dmgPct * customDamageTakenScaleMultiplier()
+              if (dmg > 0f) {
+                s.flux -= dmg
+                s.currentLifeDamageTaken += dmg
+              }
               shieldRipples.add(
                 ShieldRippleEntity(
                   shipId = s.id,
@@ -13037,18 +13256,18 @@ class RiftGameEngine(
                 coreColor = Color.rgb(250, 204, 21),
                 baseCrystalRadius = 5.8f,
               )
-              if (s.isLocalPlayer) {
+              if (s.isLocalPlayer && dmg > 0f) {
                 currentLifeStats.damageTaken += dmg
                 sfx.playBounce()
                 addTrauma(0.24f)
                 spawnPooledFct(
-                  text = "PLASMA RIFT -${dmg.toInt()} FLUX (${(dmgPct * 100f).toInt()}%)",
+                  text = "PLASMA RIFT -${dmg.toInt()} FLUX (${(dmgPct * customDamageTakenScaleMultiplier() * 100f).toInt()}%)",
                   x = s.x,
                   y = s.y - 28f,
                   color = Color.parseColor("#EF4444"),
                 )
               }
-              if (s.flux <= 0f) {
+              if (dmg > 0f && s.flux <= 0f) {
                 destroyShipFromPlasmaRift(s)
               }
             }

@@ -23,7 +23,51 @@ class ExampleRobolectricTest {
   fun `read string from context`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val appName = context.getString(R.string.app_name)
-    assertEquals("NEXUS", appName)
+    assertEquals("RIFT", appName)
+  }
+
+  @Test
+  fun `build103 custom 5pct scale adjusters survival spreadsheet and gaussian splat state work`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val prefs = com.example.data.LocalPilotPrefs(context)
+    prefs.recordCompletedShipLife(
+      record =
+        com.example.data.CompletedShipLifeRecord(
+          shipId = 1,
+          shipName = "VIPER",
+          aliveDurationSec = 42.5f,
+          isLocalPilot = true,
+          isHuman = true,
+          modeId = "CUSTOM_RIFT",
+          isCustomGame = true,
+          damageTakenScalePct = 65,
+          weaponFluxCostScalePct = 40,
+          endReason = "ELIMINATED",
+        ),
+      uid = "test_u103",
+    )
+    val summary = prefs.getPilotSurvivalTelemetrySummary("test_u103")
+    assertTrue(summary.perShip.first { it.shipId == 1 }.completedLives >= 1)
+    val html = prefs.exportSurvivalTelemetryHtmlSpreadsheet("PILOT103", 120, "test_u103")
+    assertTrue(html.contains("VIPER") && html.contains("applyFilters"))
+
+    val customCfg =
+      com.example.engine.CustomGameConfig(
+        instanceId = "pub_test103",
+        title = "TEST CUSTOM RIFT",
+        hostCallsign = "PILOT103",
+        baseMode = com.example.engine.RankedGameMode.SECTOR_CONVERGENCE,
+        damageTakenScalePct = 65,
+        weaponFluxCostScalePct = 40,
+      )
+    assertEquals(65, customCfg.damageTakenScalePct)
+    assertEquals(40, customCfg.weaponFluxCostScalePct)
+
+    val splatRecipe =
+      com.example.engine.VisualElementRecipe.defaultFor(com.example.engine.ForgeElementTarget.RIFT_PLASMA)
+        .copy(splatSoftness = 1.35f, splatRadiusMult = 1.25f)
+    assertEquals(1.35f, splatRecipe.splatSoftness, 0.01f)
+    RiftVisualForgeState.resetAllVisualTargetsToDefault()
   }
 
   @Test

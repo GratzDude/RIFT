@@ -1467,6 +1467,15 @@ fun RiftArenaScreen(
         pvpPeakSnapshot = localPrefs.getPvpPeakBountySnapshot(currentUserId)
       }
     }
+    engine.onShipLifeCompleted = { completedRecord ->
+      if (!engine.isEphemeralPracticeRift) {
+        localPrefs.recordCompletedShipLife(
+          record = completedRecord,
+          uid = if (isGoogleAuthenticated) currentUserId else null,
+        )
+        frameTick++
+      }
+    }
     engine.onSyndicateContribution = { killsDelta, currentBounty, winsDelta ->
       if (!engine.isEphemeralPracticeRift) {
         localPrefs.recordSyndicateContribution(
@@ -1488,6 +1497,7 @@ fun RiftArenaScreen(
       }
     }
     onDispose {
+      engine.onShipLifeCompleted = {}
       engine.onOutboundCombatEvent = {}
       sfx.release()
     }
@@ -2158,7 +2168,7 @@ fun RiftArenaScreen(
 
       val list = mutableListOf<OverwatchRiftInstance>()
 
-      // 1. Always-running public Sector Convergence #01 (1-hour reset)
+      // 1. Always-running public Sector Convergence (1-hour reset)
       val (pCount1Raw, cRes1, avgRes1) = humanStatsForSector("SECTOR_CONVERGENCE", 1420)
       val pCount1 =
         maxOf(
@@ -2169,7 +2179,7 @@ fun RiftArenaScreen(
         OverwatchRiftInstance(
           key = "SECTOR_CONVERGENCE",
           modeTitle = RankedGameMode.SECTOR_CONVERGENCE.title.uppercase(Locale.US),
-          riftLabel = "RIFT #01",
+          riftLabel = "",
           rankedMode = RankedGameMode.SECTOR_CONVERGENCE,
           customConfig = null,
           pilotCount = pCount1,
@@ -2180,29 +2190,7 @@ fun RiftArenaScreen(
         )
       )
 
-      // 2. Always-running public Sector Convergence #02 (1-hour reset)
-      val (pCount2Raw, cRes2, avgRes2) = humanStatsForSector("SECTOR_CONVERGENCE_2", 980)
-      val pCount2 =
-        maxOf(
-          pCount2Raw,
-          engine.getHumanPilotCountForSectorKey("SECTOR_CONVERGENCE_2", RankedGameMode.SECTOR_CONVERGENCE),
-        )
-      list.add(
-        OverwatchRiftInstance(
-          key = "SECTOR_CONVERGENCE_2",
-          modeTitle = RankedGameMode.SECTOR_CONVERGENCE.title.uppercase(Locale.US),
-          riftLabel = "RIFT #02",
-          rankedMode = RankedGameMode.SECTOR_CONVERGENCE,
-          customConfig = null,
-          pilotCount = pCount2,
-          combinedResonance = cRes2,
-          seedSalt = 707,
-          avgResonance = avgRes2,
-          remainingSeconds = publicHourResetSec,
-        )
-      )
-
-      // 3. Always-running public Flux Core #03 (1-hour reset)
+      // 2. Always-running public Flux Core (1-hour reset)
       val (pCount3Raw, cRes3, avgRes3) = humanStatsForSector("FLUX_CORE", 1080)
       val pCount3 =
         maxOf(
@@ -2213,7 +2201,7 @@ fun RiftArenaScreen(
         OverwatchRiftInstance(
           key = "FLUX_CORE",
           modeTitle = RankedGameMode.FLUX_CORE.title.uppercase(Locale.US),
-          riftLabel = "RIFT #03",
+          riftLabel = "",
           rankedMode = RankedGameMode.FLUX_CORE,
           customConfig = null,
           pilotCount = pCount3,
@@ -2224,7 +2212,7 @@ fun RiftArenaScreen(
         )
       )
 
-      // 4. Strictly your own active Custom Game ONLY if baseMode is SECTOR_CONVERGENCE (FFA) or FLUX_CORE
+      // 3. Strictly your own active Custom Game ONLY if baseMode is SECTOR_CONVERGENCE (FFA) or FLUX_CORE
       val ownEligibleCustoms =
         buildList {
           val seen = hashSetOf<String>()
@@ -2258,8 +2246,8 @@ fun RiftArenaScreen(
         list.add(
           OverwatchRiftInstance(
             key = sectorKey,
-            modeTitle = "CUSTOM • ${cfg.baseMode.title.uppercase(Locale.US)}",
-            riftLabel = "CUSTOM",
+            modeTitle = cfg.title.ifBlank { "CUSTOM • ${cfg.baseMode.title}" }.uppercase(Locale.US),
+            riftLabel = "",
             rankedMode = cfg.baseMode,
             customConfig = cfg,
             pilotCount = pCount,
@@ -4187,6 +4175,10 @@ fun RiftArenaScreen(
                               engine.switchLocalPlayerShip(1, forceFromHangar = true)
                               syncEquippedCosmeticsToEngine(engine)
                               engine.resetCurrentLifeStats()
+                              engine.sessionPilotLivesCompleted = 0
+                              engine.sessionPilotTotalAliveSec = 0f
+                              engine.sessionBotLivesCompleted = 0
+                              engine.sessionBotTotalAliveSec = 0f
                               allTimePeakSnapshot = null
                               pvpPeakSnapshot = null
                               syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
@@ -4301,6 +4293,11 @@ fun RiftArenaScreen(
                             isForgeFullScreenStage = false
                             openNexusNode(NexusCoreNode.STAR_FORGE)
                           },
+                          onOpenStarForge = {
+                            forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+                            isForgeFullScreenStage = true
+                            openNexusNode(NexusCoreNode.STAR_FORGE)
+                          },
                           currentUserId = currentUserId,
                           activeSectorTag = engine.activeMatchSectorTag(),
                           cloudSyncHealth = cloudSyncHealth,
@@ -4384,7 +4381,7 @@ fun RiftArenaScreen(
                           },
                           onSyncCalibrationToTesters = {
                             val customGameId = engine.currentCustomGame?.instanceId ?: "global_custom"
-                            val json = RiftCalibrationState.exportGameplaySyncPayloadJson()
+                            val json = RiftCalibrationState.exportGameplaySyncPayloadJson(engine)
                             viewModel.broadcastCalibrationToCustomGame(customGameId, callsign, json)
                             toastMessage = "CUSTOM GAME CALIBRATION SYNCED TO ALL TESTERS"
                             toastVersion++
@@ -4605,12 +4602,12 @@ fun RiftArenaScreen(
                 engine.onStatsUpdated()
                 if (changedSelection) {
                   val shipTitle =
-                    RiftCodex.getAllNineShips()
+                    RiftCodex.getAllTenShips()
                       .find { it.id == clamped }
                       ?.name
                       ?.replace(Regex("^[0-9]+-"), "")
                       ?.uppercase(Locale.US) ?: "RIFT FRAME"
-                  toastMessage = "CHARGED $shipTitle ACROSS ALL MODES"
+                  toastMessage = "CHARGED $shipTitle ACROSS ACTIVE RIFTS"
                   toastVersion++
                 }
               },
@@ -4988,7 +4985,7 @@ fun RiftArenaScreen(
                 ) {
                   isNexusShellOpen = false
                   sfx.playPrize()
-                  toastMessage = "RETURNED TO ACTIVE MATCH // ${inst.riftLabel}"
+                  toastMessage = "RETURNED TO ACTIVE MATCH // ${inst.modeTitle}"
                   toastVersion++
                   frameTick++
                   return@NexusAiConsoleModal
@@ -5039,18 +5036,12 @@ fun RiftArenaScreen(
                       selectedMode = customCfg.baseMode.id
                       localPrefs.setPreferredMode(customCfg.baseMode.id)
                     } else {
-                      val sectorOverride =
-                        if (inst.key.equals("SECTOR_CONVERGENCE_2", ignoreCase = true)) {
-                          "SECTOR_CONVERGENCE_2"
-                        } else {
-                          null
-                        }
                       selectedMode = inst.rankedMode.id
                       localPrefs.setPreferredMode(inst.rankedMode.id)
                       engine.deployToRankedMode(
                         inst.rankedMode,
                         targetBracket,
-                        sectorInstanceOverride = sectorOverride,
+                        sectorInstanceOverride = null,
                       )
                     }
                     syncEquippedCosmeticsToEngine(engine)
@@ -5060,7 +5051,7 @@ fun RiftArenaScreen(
                     pushLivePilotHeartbeatNow()
                     isNexusShellOpen = false
                     sfx.playPrize()
-                    toastMessage = "RIFTED INTO ${inst.modeTitle} // ${inst.riftLabel}"
+                    toastMessage = "RIFTED INTO ${inst.modeTitle}"
                     toastVersion++
                     frameTick++
                   }
@@ -5308,13 +5299,15 @@ fun RiftArenaScreen(
                     "REQUIRES ${item.freeAtResonance} PEAK RESONANCE (FREE) OR ${item.shardCost} RIFT SHARDS"
                 }
               },
-              onUnlockOrSelectFrameSlotId = { slotId ->
-                val gate = RiftProgressionCatalog.getFrameSlotGate(slotId)
+              onUnlockOrSelectFrameSlotId = { rawSlotId ->
+                val normSlotId = CustomShipLoadoutSlot.normalizeSlotId(rawSlotId)
+                val gate = RiftProgressionCatalog.getFrameSlotGate(normSlotId)
                 val unlockedNow =
-                  slotId.equals("Frame A", ignoreCase = true) ||
-                    localPrefs.isCustomSlotUnlocked(slotId, currentUserId)
+                  normSlotId.equals("Frame A", ignoreCase = true) ||
+                    engine.peakResonance >= gate.freeAtResonance ||
+                    localPrefs.isCustomSlotUnlocked(normSlotId, currentUserId)
                 if (unlockedNow) {
-                  switchCustomSlotShared(slotId)
+                  switchCustomSlotShared(normSlotId)
                   selectedShipId = 10
                   hasExplicitHangarLock = true
                   localPrefs.setPreferredShipId(10)
@@ -5329,9 +5322,8 @@ fun RiftArenaScreen(
                   }
                   syncEquippedCosmeticsToEngine(engine)
                   engine.onStatsUpdated()
-                  openNexusNode(NexusCoreNode.HANGAR_DECK)
-                  true to "SELECTED ${slotId.uppercase(Locale.US)} // OPENING HANGAR BAY"
-                } else if (unlockCustomSlotShared(slotId)) {
+                  true to "SELECTED ${normSlotId.uppercase(Locale.US)} ON RIFT FRAME"
+                } else if (unlockCustomSlotShared(normSlotId)) {
                   selectedShipId = 10
                   hasExplicitHangarLock = true
                   localPrefs.setPreferredShipId(10)
@@ -5352,13 +5344,18 @@ fun RiftArenaScreen(
                       RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE -> "TESTER 0 SHARDS DEPLETED"
                       else -> "-${gate.shardCost} RIFT SHARDS"
                     }
-                  true to "UNLOCKED ${slotId.uppercase(Locale.US)} ($freeNote)"
+                  true to "UNLOCKED ${normSlotId.uppercase(Locale.US)} ($freeNote)"
                 } else {
                   false to
                     "REQUIRES ${gate.freeAtResonance} PEAK RESONANCE (FREE) OR ${gate.shardCost} RIFT SHARDS"
                 }
               },
               activeCustomSlotId = activeCustomSlotId,
+              activeCustomSlot = activeCustomSlot,
+              onSaveCustomSlot = saveCustomSlotShared,
+              updateStatusLabel = updateStatusLabel,
+              hasUpdateAvailable = hasUpdateAvailable,
+              onCheckOrApplyUpdate = onCheckOrApplyUpdate,
               cloudLeaderboardEntries = realSwornCloudLeaderboard,
               onRenamePilotCallsign = applyUnifiedCallsignRename,
               onResetLocalPilotTelemetry = {
@@ -5416,6 +5413,10 @@ fun RiftArenaScreen(
                 }
                 syncEquippedCosmeticsToEngine(engine)
                 engine.resetCurrentLifeStats()
+                engine.sessionPilotLivesCompleted = 0
+                engine.sessionPilotTotalAliveSec = 0f
+                engine.sessionBotLivesCompleted = 0
+                engine.sessionBotTotalAliveSec = 0f
                 allTimePeakSnapshot = null
                 pvpPeakSnapshot = null
                 syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
@@ -5486,7 +5487,7 @@ fun RiftArenaScreen(
                 },
                 onSyncToAllTesters = {
                   val customGameId = engine.currentCustomGame?.instanceId ?: "global_custom"
-                  val json = RiftCalibrationState.exportGameplaySyncPayloadJson()
+                  val json = RiftCalibrationState.exportGameplaySyncPayloadJson(engine)
                   viewModel.broadcastCalibrationToCustomGame(customGameId, callsign, json)
                   toastMessage = "CUSTOM GAME CALIBRATION SYNCED TO ALL TESTERS"
                   toastVersion++
@@ -5914,6 +5915,8 @@ private fun CloudCustomGameRoom.toCustomGameConfig(): CustomGameConfig {
     healthMult = healthMult.toFloat().coerceIn(0.5f, 4.0f),
     rechargeMult = rechargeMult.toFloat().coerceIn(0.4f, 4.0f),
     crateSpawnMult = crateSpawnMult.toFloat().coerceIn(0.2f, 4.0f),
+    damageTakenScalePct = com.example.data.snapCustomFivePercentScale(damageTakenScalePct),
+    weaponFluxCostScalePct = com.example.data.snapCustomFivePercentScale(weaponFluxCostScalePct),
   )
 }
 
@@ -5946,6 +5949,8 @@ private fun CustomGameConfig.toCloudCustomGameRoom(hostUid: String): CloudCustom
     healthMult = healthMult.toDouble(),
     rechargeMult = rechargeMult.toDouble(),
     crateSpawnMult = crateSpawnMult.toDouble(),
+    damageTakenScalePct = com.example.data.snapCustomFivePercentScale(damageTakenScalePct),
+    weaponFluxCostScalePct = com.example.data.snapCustomFivePercentScale(weaponFluxCostScalePct),
     createdAtMs = System.currentTimeMillis(),
   )
 }

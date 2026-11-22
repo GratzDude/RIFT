@@ -1551,6 +1551,8 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     return if (clean in allowed) clean else "SECTOR_CONVERGENCE"
   }
 
+  private val customScaleSuffixRegex = Regex("""\s*\{DT(\d{1,3})FC(\d{1,3})\}\s*$""", RegexOption.IGNORE_CASE)
+
   private fun DocumentSnapshot.toCloudCustomGameRoomSafe(): CloudCustomGameRoom? {
     if (!exists()) return null
     val code = sanitizeCustomRoomCode(getString("roomCode") ?: id)
@@ -1561,13 +1563,23 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       (getString("instanceId")?.trim()?.replace(Regex("[^a-zA-Z0-9_\\-]"), "")?.take(23))
         ?.takeIf { it.length >= 4 }
         ?: defaultInst
+    val rawTitle = (getString("title")?.trim()?.take(48))?.takeIf { it.length >= 2 } ?: "CUSTOM RIFT [$code]"
+    val scaleMatch = customScaleSuffixRegex.find(rawTitle)
+    val parsedDtPct =
+      scaleMatch?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { snapCustomFivePercentScale(it) }
+        ?: ((get("damageTakenScalePct") as? Number)?.toInt()?.let { snapCustomFivePercentScale(it) } ?: 100)
+    val parsedFcPct =
+      scaleMatch?.groupValues?.getOrNull(2)?.toIntOrNull()?.let { snapCustomFivePercentScale(it) }
+        ?: ((get("weaponFluxCostScalePct") as? Number)?.toInt()?.let { snapCustomFivePercentScale(it) } ?: 100)
+    val displayTitle =
+      rawTitle.replace(customScaleSuffixRegex, "").trim().ifBlank { "CUSTOM RIFT [$code]" }
     return CloudCustomGameRoom(
       id = id,
       roomCode = code,
       instanceId = inst,
       hostUid = getString("hostUid") ?: "",
       hostCallsign = sanitizeCallsign(getString("hostCallsign") ?: "PILOT"),
-      title = (getString("title")?.trim()?.take(48))?.takeIf { it.length >= 2 } ?: "CUSTOM RIFT [$code]",
+      title = displayTitle,
       visibility = if (priv) "private" else "public",
       privateRoom = priv,
       baseMode = sanitizeCustomBaseMode(getString("baseMode") ?: "SECTOR_CONVERGENCE"),
@@ -1581,6 +1593,8 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       healthMult = ((get("healthMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.25, 4.0),
       rechargeMult = ((get("rechargeMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.25, 4.0),
       crateSpawnMult = ((get("crateSpawnMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.0, 4.0),
+      damageTakenScalePct = parsedDtPct,
+      weaponFluxCostScalePct = parsedFcPct,
       createdAtMs = (get("createdAtMs") as? Number)?.toLong() ?: 0L,
       createdAt = getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE),
       updatedAt = getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE),
@@ -1603,11 +1617,15 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         .take(23)
         .let { if (it.length >= 4) it else fallbackInst }
     val safeCallsign = sanitizeCallsign(room.hostCallsign)
-    val safeTitle =
-      UgcModeration.sanitizeUgcText(room.title)
+    val dtPct = snapCustomFivePercentScale(room.damageTakenScalePct)
+    val fcPct = snapCustomFivePercentScale(room.weaponFluxCostScalePct)
+    val scaleTag = if (dtPct != 100 || fcPct != 100) " {DT${dtPct}FC${fcPct}}" else ""
+    val strippedTitle =
+      UgcModeration.sanitizeUgcText(room.title.replace(customScaleSuffixRegex, ""))
         .trim()
-        .take(48)
-        .let { if (it.length >= 2) it else "$safeCallsign RIFT [$cleanCode]".take(48) }
+        .let { if (it.length >= 2) it else "$safeCallsign RIFT [$cleanCode]" }
+    val maxBaseTitleLen = (48 - scaleTag.length).coerceAtLeast(12)
+    val safeTitle = (strippedTitle.take(maxBaseTitleLen).trimEnd() + scaleTag).take(48)
     val safeBaseMode = sanitizeCustomBaseMode(room.baseMode)
     val nowMs = room.createdAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()
     val docRef = db.collection("custom_games").document(cleanCode)

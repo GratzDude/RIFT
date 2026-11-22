@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 102
+const val CURRENT_RIFT_BUILD_VERSION = 103
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,21 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 103,
+      versionTag = "v1.0.103 // BUILD #103",
+      releaseDate = "Nov 22, 2026",
+      headline = "4-Card Rift Hub, Tall Clickable Info Pills, Scrollable Side-Bays, Rift Frame, Star Forge Shader/Splat Lab in Helm Systems, Option #1 Overwatch Inspector, Custom 5% Adjusters & Survival Telemetry",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "4-Card Rift Hub, ~2x Taller Clickable Info Pills & Vertically Scrollable Side-Bays: Streamlined Rift Hub peripheral hardware cards from 6 to 4 (Hangar Deck and Rift Frame on the left wing; Subspace Comms and Active Rifts on the right wing), doubled the height of the top and bottom info pills with direct click-through triggers (Callsign to Pilot Dossier, Resonance to Rift Conduit Rank & Daily Directives, Rift Shards to Shard Store, and Syndicate / Squadron to Syndicate & Squadron with Resonance/Activity sorting), made flanking side-bays vertically scrollable beside the 1.0x to 6.0x Overwatch viewport, renamed All Modes to Active Rifts, kept Subspace Comms full-screen with the old multi-tab top bar stripped out, and kept CHARGE [Flux icon] locking ships without auto-launching.",
+          "Clean Hangar Ship Names, Dedicated Rift Frame Bay & Star Forge Shader/Splat Lab in Helm Systems: Stripped numeric prefixes from ship names across Hangar, Overwatch prompts, and Dossier (displaying VIPER, BASTION, and RIFT FRAME cleanly), wired Rift Frame from both the left-wing Hub card and Ship #10 in Hangar to the Frame A-E 100-Point loadout and Resonance-unlocked cosmetic buff bays, relocated Developer Star Forge 1:1 into Helm Systems alongside audio/display controls, cloud sync health, update check, account switcher, and Tactical Codex, and expanded Star Forge with AGSL shader and soft Gaussian/splat tuning controls on the 1:1 playfield (180px safe-zone core) with single-tap clean exit back to Rift Hub.",
+          "Option #1 Overwatch Readout & Tappable Match Inspector: Removed RIFT-01, RIFT #01/#02/#03, and [FAV] tags from Overwatch, cycling strictly between public Sector Convergence, public Flux Core, and your own eligible Custom Game via top-left up/down chevrons with Line 1 match name and Line 2 MM:SS LEFT, Resonance crest value, and real human pilot count; tapping the Overwatch readout opens scrollable match intel on the left and every real human pilot in that Rift on the right with tap-to-inspect circular Overwatch dossiers and Squad Up.",
+          "Custom Game 5% Damage Taken & Weapon Flux Cost Adjusters + Filterable Browser HTML Survival Spreadsheet: Added 5%-increment Damage Taken and Weapon Flux Cost sandbox scale adjusters (0% to 100%, default 100%) strictly inside Custom Games, tracked per-ship and session alive durations from spawn to elimination or match end across all 10 hulls and AI bots, and added an interactive filterable HTML telemetry spreadsheet plus 1-click CSV/JSON export in Pilot Dossier.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 102,
       versionTag = "v1.0.102 // BUILD #102",

@@ -264,6 +264,10 @@ data class VisualElementRecipe(
  val rimLightDepth: Float = 0.70f,
  val detailDensity: Float = 0.70f,
  val shaderTurbulence: Float = 0.75f,
+ val splatSoftness: Float = 0.68f,
+ val splatRadiusMult: Float = 1.0f,
+ val splatIntensity: Float = 0.60f,
+ val splatAnisotropy: Float = 0.0f,
  val promptUsed: String = "Factory Default",
 ) {
  val primaryColorInt: Int get() = parseHexColorSafe(primaryHex, 0xFF040914.toInt())
@@ -284,7 +288,11 @@ data class VisualElementRecipe(
     abs(surfaceOpacity - def.surfaceOpacity) < 0.005f &&
     abs(rimLightDepth - def.rimLightDepth) < 0.005f &&
     abs(detailDensity - def.detailDensity) < 0.005f &&
-    abs(shaderTurbulence - def.shaderTurbulence) < 0.005f
+    abs(shaderTurbulence - def.shaderTurbulence) < 0.005f &&
+    abs(splatSoftness - def.splatSoftness) < 0.005f &&
+    abs(splatRadiusMult - def.splatRadiusMult) < 0.005f &&
+    abs(splatIntensity - def.splatIntensity) < 0.005f &&
+    abs(splatAnisotropy - def.splatAnisotropy) < 0.005f
   }
 
  fun toJson(): JSONObject = JSONObject().apply {
@@ -300,6 +308,10 @@ data class VisualElementRecipe(
   put("rimLightDepth", ((rimLightDepth.coerceIn(0.00f, 1.50f) * 100f).roundToInt() / 100.0))
   put("detailDensity", ((detailDensity.coerceIn(0.00f, 1.50f) * 100f).roundToInt() / 100.0))
   put("shaderTurbulence", ((shaderTurbulence.coerceIn(0.00f, 2.00f) * 100f).roundToInt() / 100.0))
+  put("splatSoftness", ((splatSoftness.coerceIn(0.10f, 1.80f) * 100f).roundToInt() / 100.0))
+  put("splatRadiusMult", ((splatRadiusMult.coerceIn(0.40f, 2.40f) * 100f).roundToInt() / 100.0))
+  put("splatIntensity", ((splatIntensity.coerceIn(0.00f, 2.20f) * 100f).roundToInt() / 100.0))
+  put("splatAnisotropy", ((splatAnisotropy.coerceIn(-0.75f, 0.75f) * 100f).roundToInt() / 100.0))
   put("promptUsed", promptUsed.take(120))
  }
 
@@ -366,6 +378,10 @@ data class VisualElementRecipe(
     rimLightDepth = obj.optDouble("rimLightDepth", def.rimLightDepth.toDouble()).toFloat().coerceIn(0.00f, 1.50f),
     detailDensity = obj.optDouble("detailDensity", def.detailDensity.toDouble()).toFloat().coerceIn(0.00f, 1.50f),
     shaderTurbulence = obj.optDouble("shaderTurbulence", def.shaderTurbulence.toDouble()).toFloat().coerceIn(0.00f, 2.00f),
+    splatSoftness = obj.optDouble("splatSoftness", def.splatSoftness.toDouble()).toFloat().coerceIn(0.10f, 1.80f),
+    splatRadiusMult = obj.optDouble("splatRadiusMult", def.splatRadiusMult.toDouble()).toFloat().coerceIn(0.40f, 2.40f),
+    splatIntensity = obj.optDouble("splatIntensity", def.splatIntensity.toDouble()).toFloat().coerceIn(0.00f, 2.20f),
+    splatAnisotropy = obj.optDouble("splatAnisotropy", def.splatAnisotropy.toDouble()).toFloat().coerceIn(-0.75f, 0.75f),
     promptUsed = obj.optString("promptUsed", def.promptUsed).ifBlank { def.promptUsed }.take(120),
    )
   }
@@ -455,12 +471,36 @@ data class VisualElementRecipe(
     variationSalt > 0 -> 0.45f + ((hash % 110) / 100f)
     else -> def.shaderTurbulence
    }
+   val splatSoft = when {
+    hasAny("gaussian", "splat", "nebula", "cloud", "diffuse", "halo", "vapor") -> 0.88f
+    hasAny("crisp", "sharp", "razor", "hard", "faceted", "edge") -> 0.24f
+    else -> def.splatSoftness
+   }
+   val splatRad = when {
+    hasAny("corona", "giant", "supernova", "wide", "bloom", "aura") -> 1.55f
+    hasAny("tight", "compact", "focused", "narrow") -> 0.78f
+    else -> def.splatRadiusMult
+   }
+   val splatGain = when {
+    hasAny("radiant", "blazing", "intense", "corona", "bloom", "splat") -> 1.25f
+    hasAny("stealth", "dark", "obsidian", "muted") -> 0.35f
+    else -> def.splatIntensity
+   }
+   val splatAniso = when {
+    hasAny("streak", "flare", "anisotropic", "beam", "blade") -> 0.42f
+    hasAny("vertical", "pillar", "spire") -> -0.36f
+    else -> def.splatAnisotropy
+   }
    return VisualElementRecipe(
     targetKey = target.key, primaryHex = primary, trimHex = trim, glowHex = glow, geometryStyle = style,
     pixelScale = scale.coerceIn(0.50f, 2.00f), borderWeight = border.coerceIn(0.40f, 2.50f),
     glowIntensity = glowAmt.coerceIn(0.00f, 2.50f), surfaceOpacity = opacity.coerceIn(0.15f, 1.00f),
     rimLightDepth = rimDepth.coerceIn(0.00f, 1.50f), detailDensity = density.coerceIn(0.00f, 1.50f),
     shaderTurbulence = turbulence.coerceIn(0.00f, 2.00f),
+    splatSoftness = splatSoft.coerceIn(0.00f, 1.00f),
+    splatRadiusMult = splatRad.coerceIn(0.50f, 2.20f),
+    splatIntensity = splatGain.coerceIn(0.00f, 2.00f),
+    splatAnisotropy = splatAniso.coerceIn(-0.65f, 0.65f),
     promptUsed = cleaned.take(120),
    )
   }
@@ -556,6 +596,7 @@ object RiftVisualForgeState {
  var dynamicLightIntensity by mutableFloatStateOf(1.0f)
  var projectileLightRadius by mutableFloatStateOf(1.0f)
  var ambientSpaceDarkness by mutableFloatStateOf(0.0f)
+ var gaussianSplatMasterGain by mutableFloatStateOf(1.0f)
  var activeSyndicateCrestRecipe by mutableStateOf(SyndicateCrestRecipe())
  val activeRecipes = mutableStateMapOf<String, VisualElementRecipe>()
 
@@ -708,6 +749,12 @@ object RiftVisualForgeState {
    0.0f, 0.85f, 0.05f, 2, { ambientSpaceDarkness },
    { ambientSpaceDarkness = it.coerceIn(0.0f, 0.85f); visualRevision++ },
   ),
+  CalibrationParamDescriptor(
+   "forge_gaussianSplatMasterGain", 0, 0, "Gaussian Splat Halo Gain", "x",
+   "Scales soft Gaussian splat volumetric corona intensity across 1:1 Star Forge specimens.",
+   0.0f, 2.2f, 0.05f, 2, { gaussianSplatMasterGain },
+   { gaussianSplatMasterGain = it.coerceIn(0.0f, 2.2f); visualRevision++ },
+  ),
  )
 
  fun getCombatSandboxDescriptors(shipIdFilter: Int = 0): List<CalibrationParamDescriptor> {
@@ -754,6 +801,7 @@ object RiftVisualForgeState {
    dynamicLightIntensity = 1.0f
    projectileLightRadius = 1.0f
    ambientSpaceDarkness = 0.0f
+   gaussianSplatMasterGain = 1.0f
    pointLightEnabled = true
   }
   val boundDescriptors = getCalibrationDescriptorsForTarget(target).filter { !it.key.startsWith("forge_") }
@@ -774,6 +822,7 @@ object RiftVisualForgeState {
   dynamicLightIntensity = 1.0f
   projectileLightRadius = 1.0f
   ambientSpaceDarkness = 0.0f
+  gaussianSplatMasterGain = 1.0f
   activeSyndicateCrestRecipe = SyndicateCrestRecipe()
   undoStacks.clear()
   if (hadCustomRecipes) {
@@ -793,6 +842,7 @@ object RiftVisualForgeState {
    put("dynamicLightIntensity", ((dynamicLightIntensity * 100f).roundToInt() / 100.0))
    put("projectileLightRadius", ((projectileLightRadius * 100f).roundToInt() / 100.0))
    put("ambientSpaceDarkness", ((ambientSpaceDarkness * 100f).roundToInt() / 100.0))
+   put("gaussianSplatMasterGain", ((gaussianSplatMasterGain * 100f).roundToInt() / 100.0))
    put("recipes", recipesObj)
   }
  }
@@ -806,6 +856,7 @@ object RiftVisualForgeState {
    dynamicLightIntensity = obj.optDouble("dynamicLightIntensity", 1.0).toFloat().coerceIn(0.0f, 2.5f)
    projectileLightRadius = obj.optDouble("projectileLightRadius", 1.0).toFloat().coerceIn(0.3f, 2.5f)
    ambientSpaceDarkness = obj.optDouble("ambientSpaceDarkness", 0.0).toFloat().coerceIn(0.0f, 0.85f)
+   gaussianSplatMasterGain = obj.optDouble("gaussianSplatMasterGain", 1.0).toFloat().coerceIn(0.0f, 2.2f)
    val recipesObj = obj.optJSONObject("recipes")
    if (recipesObj != null) {
     val keys = recipesObj.keys()

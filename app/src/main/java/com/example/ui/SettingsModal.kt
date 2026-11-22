@@ -308,6 +308,7 @@ fun SettingsModal(
   onCloseModal: () -> Unit = {},
   onOpenChangelog: () -> Unit = {},
   onOpenAudioForge: () -> Unit = {},
+  onOpenStarForge: () -> Unit = {},
   initialSubDeck: Int = 0,
   onSubDeckChanged: (Int) -> Unit = {},
   isNexusStreaming: Boolean = false,
@@ -468,17 +469,35 @@ fun SettingsModal(
         }
       }
 
-      SettingsBeveledButton(
-        label = "[VERSION LOG]",
-        topColor = Color(0xFF0C223B),
-        bottomColor = TabletShellBg,
-        borderColor = TabletTealBorder,
-        textColor = TabletTealBorder,
-        isCompactPhone = isCompactPhone,
-        heightOverride = 30.dp,
-        testTag = "settings_btn_open_changelog",
-        onClick = onOpenChangelog,
-      )
+      Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        if (RiftVisualForgeState.SHOW_DEV_FORGE) {
+          SettingsBeveledButton(
+            label = "[STAR FORGE 1:1]",
+            topColor = Color(0xFF2E1250),
+            bottomColor = Color(0xFF140826),
+            borderColor = Color(0xFFC084FC),
+            textColor = Color(0xFFE9D5FF),
+            isCompactPhone = isCompactPhone,
+            heightOverride = 30.dp,
+            testTag = "settings_btn_open_star_forge",
+            onClick = onOpenStarForge,
+          )
+        }
+        SettingsBeveledButton(
+          label = "[VERSION LOG]",
+          topColor = Color(0xFF0C223B),
+          bottomColor = TabletShellBg,
+          borderColor = TabletTealBorder,
+          textColor = TabletTealBorder,
+          isCompactPhone = isCompactPhone,
+          heightOverride = 30.dp,
+          testTag = "settings_btn_open_changelog",
+          onClick = onOpenChangelog,
+        )
+      }
     }
 
     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {

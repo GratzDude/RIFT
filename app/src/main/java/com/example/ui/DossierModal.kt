@@ -1,10 +1,18 @@
 package com.example.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.util.Base64
+import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -51,15 +60,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.LeaderboardEntry
 import com.example.data.LocalPilotPrefs
 import com.example.data.PeakBountyRunSnapshot
+import com.example.data.PilotSurvivalTelemetrySummary
 import com.example.data.RiftBillingManager
 import com.example.data.SyndicateInfo
 import com.example.data.SyndicateServiceEntry
 import com.example.data.SyndicateWarRecord
+import com.example.data.formatSurvivalDurationSec
 import com.example.engine.RiftCodex
 import com.example.engine.RiftProgressionCatalog
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -116,16 +129,19 @@ fun DossierModal(
   onRenameCallsign: ((String) -> Pair<Boolean, String>)? = null,
 ) {
   var showResetPilotConfirmDialog by remember { mutableStateOf(false) }
+  var showHtmlSpreadsheetOverlay by remember { mutableStateOf(false) }
+  var telemetryExportStatusMsg by remember { mutableStateOf<String?>(null) }
   BackHandler {
-    if (showResetPilotConfirmDialog) {
-      showResetPilotConfirmDialog = false
-    } else {
-      onCloseModal()
+    when {
+      showHtmlSpreadsheetOverlay -> showHtmlSpreadsheetOverlay = false
+      showResetPilotConfirmDialog -> showResetPilotConfirmDialog = false
+      else -> onCloseModal()
     }
   }
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
   val context = LocalContext.current
   val localPrefs = remember(context) { LocalPilotPrefs(context) }
+  val uidOrNull = permanentUid.ifBlank { null }
   val isDrifter = remember(permanentUid, syndicateTag) { localPrefs.isGuestBypassEnabled() }
   val shortTag = remember(permanentUid) { localPrefs.getShortPilotTag(permanentUid) }
   val isTesterInfiniteShards = RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE
@@ -164,6 +180,10 @@ fun DossierModal(
   var activeTab by remember { mutableIntStateOf(1) }
   var selectedArmadaTier by remember { mutableIntStateOf(0) }
   var sortMode by remember { mutableIntStateOf(0) }
+  val survivalSummary =
+    remember(permanentUid, allTimeKills, allTimeDeaths, convergencesWon, effectiveLiveRes, dossierSection) {
+      localPrefs.getPilotSurvivalTelemetrySummary(uidOrNull)
+    }
 
   val unifiedLeaderboard =
     remember(
@@ -671,7 +691,10 @@ fun DossierModal(
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+      Row(
+        modifier = Modifier.weight(1f, fill = false).horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+      ) {
         DossierSectionButton(
           label = if (isCompactPhone) "LEADERBOARDS" else "SWORN LEADERBOARDS",
           selected = dossierSection == 0,
@@ -698,8 +721,18 @@ fun DossierModal(
         ) {
           dossierSection = 2
         }
+        DossierSectionButton(
+          label =
+            if (isCompactPhone) "SURVIVAL (${survivalSummary.pilotCompletedLives})"
+            else "SHIP SURVIVAL & EXPORT (${survivalSummary.pilotCompletedLives})",
+          selected = dossierSection == 3,
+          accentColor = DossierCyan,
+          testTag = "dossier_tab_survival_telemetry",
+        ) {
+          dossierSection = 3
+        }
       }
-      if (dossierSection != 2) {
+      if (dossierSection == 0 || dossierSection == 1) {
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
           DossierTabChip("ALL-TIME", activeTab == 1) { activeTab = 1 }
           DossierTabChip("PVP ONLY", activeTab == 0) { activeTab = 0 }
@@ -752,6 +785,15 @@ fun DossierModal(
               "SOLO >"
             },
             Color(0xFF34D399),
+            isCompactPhone,
+          )
+          DossierStatBox(
+            Modifier.weight(1f).clickable { dossierSection = 3 },
+            if (isCompactPhone) "AVG ALIVE >" else "AVG SHIP ALIVE >",
+            if (survivalSummary.pilotCompletedLives > 0)
+              "${formatSurvivalDurationSec(survivalSummary.pilotAvgSurvivalSec)} (${survivalSummary.pilotCompletedLives})"
+            else "0.0s (0)",
+            DossierCyan,
             isCompactPhone,
           )
         }
@@ -923,7 +965,30 @@ fun DossierModal(
           syndicateTag,
           syndicateServiceHistory,
         )
+
+      3 ->
+        ShipSurvivalTelemetrySection(
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          summary = survivalSummary,
+          localPrefs = localPrefs,
+          uidOrNull = uidOrNull,
+          callsign = callsign,
+          liveResonance = effectiveLiveRes,
+          statusBanner = telemetryExportStatusMsg,
+          onUpdateStatusBanner = { telemetryExportStatusMsg = it },
+          onOpenHtmlSpreadsheetModal = { showHtmlSpreadsheetOverlay = true },
+        )
     }
+  }
+
+  if (showHtmlSpreadsheetOverlay) {
+    SurvivalTelemetrySpreadsheetModal(
+      callsign = callsign,
+      liveResonance = effectiveLiveRes,
+      uidOrNull = uidOrNull,
+      localPrefs = localPrefs,
+      onClose = { showHtmlSpreadsheetOverlay = false },
+    )
   }
 
   if (showResetPilotConfirmDialog && onResetLocalPilotData != null) {
@@ -1639,5 +1704,517 @@ private fun DossierTabChip(label: String, selected: Boolean, onClick: () -> Unit
       fontFamily = FontFamily.Monospace,
       maxLines = 1,
     )
+  }
+}
+
+fun copySurvivalPayloadToClipboard(context: Context, label: String, payload: String) {
+  runCatching {
+    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    cm?.setPrimaryClip(ClipData.newPlainText(label, payload))
+  }
+}
+
+fun shareOrOpenSurvivalExport(
+  context: Context,
+  fileName: String,
+  mimeType: String,
+  payload: String,
+  preferBrowserView: Boolean = false,
+): String {
+  copySurvivalPayloadToClipboard(context, fileName, payload)
+  val writtenFile =
+    runCatching {
+      val f = File(context.cacheDir, fileName)
+      f.writeText(payload, Charsets.UTF_8)
+      f
+    }.getOrNull()
+
+  if (preferBrowserView) {
+    val openedBrowser =
+      runCatching {
+        val b64 = Base64.encodeToString(payload.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val viewIntent =
+          Intent(Intent.ACTION_VIEW, Uri.parse("data:text/html;charset=utf-8;base64,$b64")).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          }
+        context.startActivity(viewIntent)
+        true
+      }.getOrDefault(false)
+    if (openedBrowser) {
+      return "OPENED HTML SPREADSHEET IN BROWSER (AND COPIED TO CLIPBOARD)"
+    }
+  }
+
+  runCatching {
+    val shareIntent =
+      Intent(Intent.ACTION_SEND).apply {
+        type = mimeType
+        putExtra(Intent.EXTRA_SUBJECT, fileName)
+        putExtra(Intent.EXTRA_TEXT, payload)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+    val chooser =
+      Intent.createChooser(shareIntent, "Export $fileName").apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+    context.startActivity(chooser)
+  }
+  val pathHint = writtenFile?.name ?: fileName
+  return "COPIED $pathHint TO CLIPBOARD & READY TO SHARE"
+}
+
+@Composable
+private fun ShipSurvivalTelemetrySection(
+  modifier: Modifier = Modifier,
+  summary: PilotSurvivalTelemetrySummary,
+  localPrefs: LocalPilotPrefs,
+  uidOrNull: String?,
+  callsign: String,
+  liveResonance: Int,
+  statusBanner: String?,
+  onUpdateStatusBanner: (String) -> Unit,
+  onOpenHtmlSpreadsheetModal: () -> Unit,
+) {
+  val context = LocalContext.current
+  val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
+  val dateFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
+
+  Column(
+    modifier =
+      modifier
+        .background(DossierCardBg, RoundedCornerShape(10.dp))
+        .border(1.dp, DossierCyan.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+        .padding(if (isCompactPhone) 7.dp else 10.dp)
+        .testTag("dossier_survival_telemetry_section"),
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+        Text(
+          text = "SHIP ALIVE DURATION & TELEMETRY EXPORT",
+          color = DossierTeal,
+          fontSize = if (isCompactPhone) 10.8.sp else 12.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text =
+            "Tracks seconds alive from spawn or respawn until elimination, round end, match end, ship switch, or Rift Out.",
+          color = Color(0xFF94A3B8),
+          fontSize = if (isCompactPhone) 8.6.sp else 9.4.sp,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+
+      Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        SurvivalExportActionButton(
+          label = "HTML SPREADSHEET",
+          accent = DossierTeal,
+          testTag = "dossier_open_html_telemetry_btn",
+        ) {
+          val html = localPrefs.exportSurvivalTelemetryHtmlSpreadsheet(callsign, liveResonance, uidOrNull)
+          runCatching { File(context.cacheDir, "rift_ship_survival_telemetry.html").writeText(html, Charsets.UTF_8) }
+          onOpenHtmlSpreadsheetModal()
+        }
+        SurvivalExportActionButton(
+          label = "EXPORT CSV",
+          accent = DossierGold,
+          testTag = "dossier_export_csv_btn",
+        ) {
+          val csv = localPrefs.exportSurvivalTelemetryCsv(callsign, liveResonance, uidOrNull)
+          onUpdateStatusBanner(
+            shareOrOpenSurvivalExport(
+              context = context,
+              fileName = "rift_ship_survival_telemetry.csv",
+              mimeType = "text/csv",
+              payload = csv,
+            )
+          )
+        }
+        SurvivalExportActionButton(
+          label = "EXPORT JSON",
+          accent = DossierCyan,
+          testTag = "dossier_export_json_btn",
+        ) {
+          val json = localPrefs.exportSurvivalTelemetryJson(callsign, liveResonance, uidOrNull)
+          onUpdateStatusBanner(
+            shareOrOpenSurvivalExport(
+              context = context,
+              fileName = "rift_ship_survival_telemetry.json",
+              mimeType = "application/json",
+              payload = json,
+            )
+          )
+        }
+      }
+    }
+
+    if (!statusBanner.isNullOrBlank()) {
+      Text(
+        text = statusBanner,
+        color = DossierGold,
+        fontSize = 9.5.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        modifier = Modifier.testTag("dossier_telemetry_export_status"),
+      )
+    }
+
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+      DossierStatBox(
+        Modifier.weight(1f),
+        "PILOT AVG ALIVE",
+        formatSurvivalDurationSec(summary.pilotAvgSurvivalSec),
+        DossierTeal,
+        isCompactPhone,
+      )
+      DossierStatBox(
+        Modifier.weight(1f),
+        "LAST LIFE ALIVE",
+        formatSurvivalDurationSec(summary.pilotLastSurvivalSec),
+        DossierCyan,
+        isCompactPhone,
+      )
+      DossierStatBox(
+        Modifier.weight(1f),
+        "LONGEST LIFE",
+        formatSurvivalDurationSec(summary.pilotMaxSurvivalSec),
+        DossierGold,
+        isCompactPhone,
+      )
+      DossierStatBox(
+        Modifier.weight(1f),
+        "COMPLETED LIVES",
+        "${summary.pilotCompletedLives}",
+        Color(0xFF00E676),
+        isCompactPhone,
+      )
+      DossierStatBox(
+        Modifier.weight(1f),
+        "AI BOT AVG ALIVE",
+        "${formatSurvivalDurationSec(summary.botAvgSurvivalSec)} (${summary.botCompletedLives})",
+        Color(0xFFC084FC),
+        isCompactPhone,
+      )
+    }
+
+    LazyColumn(
+      modifier =
+        Modifier.weight(1f)
+          .fillMaxWidth()
+          .background(DossierTabletBg, RoundedCornerShape(8.dp))
+          .border(1.dp, DossierCyan.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+          .padding(6.dp)
+          .testTag("dossier_survival_per_ship_list"),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+      itemsIndexed(summary.perShip, key = { _, item -> "ship_surv_${item.shipId}" }) { _, entry ->
+        val shipRes = localPrefs.getShipResonance(entry.shipId, uidOrNull)
+        Row(
+          modifier =
+            Modifier.fillMaxWidth()
+              .background(DossierRowBg, RoundedCornerShape(7.dp))
+              .border(
+                1.dp,
+                if (entry.completedLives > 0) DossierTeal.copy(alpha = 0.45f) else DossierCyan.copy(alpha = 0.22f),
+                RoundedCornerShape(7.dp),
+              )
+              .padding(horizontal = 10.dp, vertical = 6.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1.2f),
+          ) {
+            ShipSpritePreview(shipId = entry.shipId.coerceIn(1, 10), sizeDp = 26)
+            Column {
+              Text(
+                text = entry.shipName,
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = FontFamily.Monospace,
+              )
+              Text(
+                text = "RESONANCE: $shipRes RES • PILOT LIVES: ${entry.completedLives}",
+                color = Color(0xFF94A3B8),
+                fontSize = 9.2.sp,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            MetricRightColumn("AVG ALIVE", formatSurvivalDurationSec(entry.avgSurvivalSec), DossierTeal)
+            MetricRightColumn("LAST", formatSurvivalDurationSec(entry.lastSurvivalSec), DossierCyan)
+            MetricRightColumn("MAX", formatSurvivalDurationSec(entry.maxSurvivalSec), DossierGold)
+            MetricRightColumn(
+              "BOT AVG",
+              if (entry.botCompletedLives > 0)
+                "${formatSurvivalDurationSec(entry.botAvgSurvivalSec)} (${entry.botCompletedLives})"
+              else "--",
+              Color(0xFFC084FC),
+            )
+          }
+        }
+      }
+
+      if (summary.recentLives.isNotEmpty()) {
+        item(key = "recent_lives_header") {
+          Text(
+            text = "RECENT COMPLETED LIVES (${summary.recentLives.size})",
+            color = DossierGold,
+            fontSize = 9.8.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+          )
+        }
+        itemsIndexed(
+          summary.recentLives.take(16),
+          key = { idx, rec -> "recent_life_${rec.timestampMs}_$idx" },
+        ) { _, rec ->
+          val actorTag =
+            when {
+              rec.isLocalPilot -> "YOU"
+              rec.isHuman -> "PILOT"
+              else -> "BOT"
+            }
+          val customScaleNote =
+            if (rec.isCustomGame) " • DMG TAKEN ${rec.damageTakenScalePct}% • FLUX COST ${rec.weaponFluxCostScalePct}%"
+            else ""
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .background(Color(0xFF071120), RoundedCornerShape(6.dp))
+                .border(0.8.dp, Color(0xFF1E3A5F), RoundedCornerShape(6.dp))
+                .padding(horizontal = 8.dp, vertical = 4.5.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text =
+                "${dateFormatter.format(Date(rec.timestampMs))} [$actorTag] ${rec.callsign} • ${rec.shipName} • ${rec.modeId}$customScaleNote",
+              color = Color(0xFFCBD5E1),
+              fontSize = 9.0.sp,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f).padding(end = 8.dp),
+            )
+            Text(
+              text = "${formatSurvivalDurationSec(rec.aliveDurationSec)} (${rec.endReason})",
+              color = if (rec.isLocalPilot) DossierTeal else Color(0xFFC084FC),
+              fontSize = 9.2.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun SurvivalExportActionButton(
+  label: String,
+  accent: Color,
+  testTag: String,
+  onClick: () -> Unit,
+) {
+  Box(
+    modifier =
+      Modifier.minimumInteractiveComponentSize()
+        .heightIn(min = 48.dp)
+        .clickable { onClick() }
+        .padding(vertical = 5.dp)
+        .testTag(testTag),
+    contentAlignment = Alignment.Center,
+  ) {
+    Box(
+      modifier =
+        Modifier.clip(RoundedCornerShape(7.dp))
+          .background(accent.copy(alpha = 0.16f))
+          .border(1.1.dp, accent, RoundedCornerShape(7.dp))
+          .padding(horizontal = 10.dp, vertical = 6.dp),
+      contentAlignment = Alignment.Center,
+    ) {
+      Text(
+        text = label,
+        color = Color.White,
+        fontSize = 9.2.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+      )
+    }
+  }
+}
+
+@Composable
+fun SurvivalTelemetrySpreadsheetModal(
+  callsign: String,
+  liveResonance: Int,
+  uidOrNull: String?,
+  localPrefs: LocalPilotPrefs,
+  onClose: () -> Unit,
+) {
+  val context = LocalContext.current
+  var exportBanner by remember { mutableStateOf<String?>(null) }
+  val htmlSpreadsheet =
+    remember(callsign, liveResonance, uidOrNull) {
+      localPrefs.exportSurvivalTelemetryHtmlSpreadsheet(callsign, liveResonance, uidOrNull)
+    }
+
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .background(Color(0xEB02050B))
+        .clickable(onClick = onClose)
+        .padding(10.dp)
+        .testTag("dossier_html_spreadsheet_modal"),
+    contentAlignment = Alignment.Center,
+  ) {
+    Surface(
+      modifier =
+        Modifier.fillMaxSize()
+          .clickable(enabled = false) {}
+          .border(
+            1.4.dp,
+            Brush.linearGradient(listOf(DossierTeal, DossierCyan, DossierGold)),
+            RoundedCornerShape(12.dp),
+          ),
+      color = DossierTabletBg,
+      shape = RoundedCornerShape(12.dp),
+    ) {
+      Column(
+        modifier = Modifier.fillMaxSize().padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(
+              text = "HTML TELEMETRY SPREADSHEET // SHIP SURVIVAL & COMBAT LOG",
+              color = DossierTeal,
+              fontSize = 11.5.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            if (!exportBanner.isNullOrBlank()) {
+              Text(
+                text = exportBanner!!,
+                color = DossierGold,
+                fontSize = 9.2.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            SurvivalExportActionButton(
+              label = "OPEN BROWSER / SHARE",
+              accent = DossierTeal,
+              testTag = "survival_modal_browser_btn",
+            ) {
+              exportBanner =
+                shareOrOpenSurvivalExport(
+                  context = context,
+                  fileName = "rift_ship_survival_telemetry.html",
+                  mimeType = "text/html",
+                  payload = htmlSpreadsheet,
+                  preferBrowserView = true,
+                )
+            }
+            SurvivalExportActionButton(
+              label = "COPY CSV",
+              accent = DossierGold,
+              testTag = "survival_modal_copy_csv_btn",
+            ) {
+              val csv = localPrefs.exportSurvivalTelemetryCsv(callsign, liveResonance, uidOrNull)
+              copySurvivalPayloadToClipboard(context, "rift_ship_survival_telemetry.csv", csv)
+              exportBanner = "CSV TELEMETRY COPIED TO CLIPBOARD (${csv.lines().size} LINES)"
+            }
+            SurvivalExportActionButton(
+              label = "COPY JSON",
+              accent = DossierCyan,
+              testTag = "survival_modal_copy_json_btn",
+            ) {
+              val json = localPrefs.exportSurvivalTelemetryJson(callsign, liveResonance, uidOrNull)
+              copySurvivalPayloadToClipboard(context, "rift_ship_survival_telemetry.json", json)
+              exportBanner = "JSON TELEMETRY COPIED TO CLIPBOARD"
+            }
+            SurvivalExportActionButton(
+              label = "CLOSE",
+              accent = Color(0xFFFB7185),
+              testTag = "survival_modal_close_btn",
+            ) {
+              onClose()
+            }
+          }
+        }
+
+        Box(
+          modifier =
+            Modifier.weight(1f)
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(8.dp))
+              .background(Color(0xFF02050B))
+              .border(1.dp, DossierCyan.copy(alpha = 0.45f), RoundedCornerShape(8.dp)),
+        ) {
+          AndroidView(
+            modifier = Modifier.fillMaxSize().testTag("survival_html_webview"),
+            factory = { ctx ->
+              WebView(ctx).apply {
+                setBackgroundColor(android.graphics.Color.parseColor("#02050B"))
+                settings.javaScriptEnabled = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                settings.builtInZoomControls = true
+                settings.displayZoomControls = false
+                settings.useWideViewPort = true
+                settings.loadWithOverviewMode = true
+              }
+            },
+            update = { webView ->
+              webView.loadDataWithBaseURL(
+                null,
+                htmlSpreadsheet,
+                "text/html",
+                "UTF-8",
+                null,
+              )
+            },
+          )
+        }
+      }
+    }
   }
 }

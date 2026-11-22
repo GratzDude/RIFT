@@ -206,6 +206,9 @@ private const val FORGE_VORTEX_AGSL =
   uniform float uTurbulence;
   uniform float uGlow;
   uniform float uOpacity;
+  uniform float uSplatSoftness;
+  uniform float uSplatGain;
+  uniform float uSplatAniso;
   uniform float uMode;
   uniform float3 uPrimary;
   uniform float3 uTrim;
@@ -241,15 +244,22 @@ private const val FORGE_VORTEX_AGSL =
 
   half4 main(float2 fragCoord) {
     float2 d = fragCoord - uCenter;
+    float anisoX = 1.0 - clamp(uSplatAniso, -0.75, 0.75) * 0.42;
+    float anisoY = 1.0 + clamp(uSplatAniso, -0.75, 0.75) * 0.42;
+    float2 dAniso = float2(d.x * anisoX, d.y * anisoY);
     float dist = length(d);
+    float anisoDist = length(dAniso);
     float normR = dist / max(uRadius, 1.0);
-    if (uMode < 1.5 && normR > 1.24) return half4(0.0);
+    float splatNormR = anisoDist / max(uRadius, 1.0);
+    if (uMode < 1.5 && normR > 1.42) return half4(0.0);
 
     float ang = atan(d.y, d.x);
     float turb = clamp(uTurbulence, 0.05, 2.2);
+    float sigma = max(0.18, uSplatSoftness * 0.58);
+    float gaussLobe = exp(-(splatNormR * splatNormR) / (2.0 * sigma * sigma)) * clamp(uSplatGain, 0.0, 2.4);
 
     if (uMode < 0.5) {
-      // Safe Zone Nexus Aperture looking down into Ring-Space & Nexus Hub
+      // Safe Zone Aperture & Soft Gaussian Splat Corona
       float swirl = ang + (1.25 - normR) * 2.8 * turb - uTime * 0.85;
       float2 q = float2(cos(swirl), sin(swirl)) * normR * (2.6 + turb * 1.4);
       float n = fbm(q + float2(uTime * 0.24, -uTime * 0.19));
@@ -258,33 +268,34 @@ private const val FORGE_VORTEX_AGSL =
       float hubCore = exp(-9.5 * normR * normR);
       float hubRing = exp(-48.0 * abs(normR - 0.26));
       half3 col = mix(half3(uPrimary), half3(uTrim), half(clamp(n * 0.85 + caustics * 0.35, 0.0, 1.0)));
-      col += half3(uAura) * half((rim * 1.15 + hubRing * 0.85 + caustics * 0.22) * uGlow);
-      col += half3(0.95, 0.98, 1.0) * half(hubCore * 0.9);
-      float edgeMask = 1.0 - smoothstep(0.96, 1.20, normR);
-      half alpha = half(clamp(edgeMask * (uOpacity * 0.82 + rim * 0.55), 0.0, 1.0));
+      col += half3(uAura) * half((rim * 1.15 + hubRing * 0.85 + caustics * 0.22 + gaussLobe * 0.52) * uGlow);
+      col += half3(0.95, 0.98, 1.0) * half(hubCore * 0.9 + gaussLobe * 0.18);
+      float edgeMask = 1.0 - smoothstep(0.96, 1.38, normR);
+      half alpha = half(clamp(edgeMask * (uOpacity * 0.82 + rim * 0.55 + gaussLobe * 0.36), 0.0, 1.0));
       return half4(col * alpha, alpha);
     } else if (uMode < 1.5) {
-      // Eclipse Stasis 2-Way Gravimetric Containment Field
+      // Eclipse Stasis 2-Way Gravimetric Containment Field + Gaussian Splat Lobe
       float hexWave = 0.5 + 0.5 * sin(ang * 12.0 + uTime * 2.4) * cos(normR * 16.0 - uTime * 1.8);
       float n = fbm(d / max(uRadius * 0.32, 1.0) + float2(uTime * 0.35 * turb, -uTime * 0.28 * turb));
-      float shell = smoothstep(0.52, 0.98, normR) * (1.0 - smoothstep(0.98, 1.14, normR));
+      float shell = smoothstep(0.52, 0.98, normR) * (1.0 - smoothstep(0.98, 1.28, normR));
       float rim = exp(-34.0 * abs(normR - 0.96));
       float innerRim = exp(-30.0 * abs(normR - 0.84));
       half3 col = mix(half3(uPrimary), half3(uTrim), half(clamp(n * turb * 0.7 + hexWave * 0.35, 0.0, 1.0)));
-      col += half3(uAura) * half((rim * 1.25 + innerRim * 0.75) * uGlow);
-      float fillAlpha = (1.0 - smoothstep(0.98, 1.14, normR)) * (0.26 + 0.32 * shell + 0.14 * hexWave) * uOpacity;
+      col += half3(uAura) * half((rim * 1.25 + innerRim * 0.75 + gaussLobe * 0.48) * uGlow);
+      float fillAlpha = (1.0 - smoothstep(0.98, 1.30, normR)) * (0.26 + 0.32 * shell + 0.14 * hexWave + gaussLobe * 0.28) * uOpacity;
       half alpha = half(clamp(fillAlpha + rim * 0.85, 0.0, 1.0));
       return half4(col * alpha, alpha);
     } else {
-      // Outer Playfield Rift Storm Cloud Wall
+      // Outer Playfield Rift Storm Cloud Wall + Soft Splat Mist
       float band = (normR - 1.0) * uRadius;
       if (band < -180.0 || band > 190.0) return half4(0.0);
       float2 stormUv = float2(ang * 9.0, band * 0.022) + float2(uTime * 0.32 * turb, -uTime * 0.18);
       float cloud = fbm(stormUv * (1.0 + 0.45 * turb));
       float arc = pow(clamp(1.0 - abs(sin(ang * 22.0 + cloud * 6.2 - uTime * 5.4)), 0.0, 1.0), 8.0);
-      float wallFalloff = exp(-abs(band) / 72.0);
+      float sigmaPx = max(28.0, 72.0 * max(0.35, uSplatSoftness));
+      float wallFalloff = exp(-abs(band) / sigmaPx);
       half3 col = mix(half3(uPrimary), half3(uTrim), half(clamp(cloud * 1.15, 0.0, 1.0)));
-      col += half3(uAura) * half((arc * 1.35 + exp(-abs(band) / 18.0) * 0.65) * uGlow);
+      col += half3(uAura) * half((arc * 1.35 + exp(-abs(band) / 18.0) * (0.65 + 0.35 * clamp(uSplatGain, 0.0, 2.0))) * uGlow);
       half alpha = half(clamp(wallFalloff * (0.35 + 0.65 * cloud) * uOpacity + arc * wallFalloff * 0.65, 0.0, 1.0));
       return half4(col * alpha, alpha);
     }
@@ -515,7 +526,7 @@ fun NexusForgeModal(
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (activeTab == NexusForgeTab.DEV_STUDIO_STAGE) {
           ForgeChip(
-            text = if (isFullScreenStage) "[< NEXUS HUB]" else "[FULL 1:1 STAGE]",
+            text = if (isFullScreenStage) "[< RIFT HUB]" else "[FULL 1:1 STAGE]",
             bg = if (isFullScreenStage) Color(0xFF0B253A) else Color(0xFF0E1D34),
             border = if (isFullScreenStage) Color(0xFF00F5D4) else Color(0xFFC084FC),
             textColor = if (isFullScreenStage) Color(0xFFE0F2FE) else Color(0xFFE9D5FF),
@@ -2225,7 +2236,7 @@ private fun DevPlayfieldAndHudStudioBay(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         ForgeChip(
-          text = "[< NEXUS HUB]",
+          text = "[< RIFT HUB]",
           bg = Color(0xFF0B253A),
           border = Color(0xFF00F5D4),
           textColor = Color(0xFFE0F2FE),
@@ -2458,6 +2469,12 @@ private fun DevPlayfieldAndHudStudioBay(
               strokeWidth = 2.1.dp.toPx(),
             )
           }
+          drawSoftGaussianSplatHalo(
+            center = Offset(szCx, szCy),
+            baseRadiusPx = dysonScreenR * 1.32f,
+            recipe = padRec,
+            timeSec = timeSec,
+          )
           dysonHoloBannerRect =
             drawShiftingMulticoloredDysonSunWithHoloLetters(
               center = Offset(szCx, szCy),
@@ -2961,7 +2978,7 @@ private fun DevPlayfieldAndHudStudioBay(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         ForgeChip(
-          text = "[< NEXUS HUB]",
+          text = "[< RIFT HUB]",
           bg = Color(0xFF0B253A),
           border = Color(0xFF00F5D4),
           textColor = Color(0xFFE0F2FE),
@@ -4115,6 +4132,95 @@ private fun ElementReforgeGlassModal(
                 { v -> RiftVisualForgeState.updateRecipe(target, recipe.copy(shaderTurbulence = v), recordUndo = false) },
                 saveLayout,
               )
+
+              // Soft Gaussian / Splat Visual Workbench Controls
+              Column(
+                modifier =
+                  Modifier.fillMaxWidth()
+                    .background(Color(0xFF061122), RoundedCornerShape(8.dp))
+                    .border(1.dp, Color(0x8838BDF8), RoundedCornerShape(8.dp))
+                    .padding(8.dp)
+                    .testTag("forge_gaussian_splat_workbench"),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Text(
+                    "SOFT GAUSSIAN / SPLAT TUNING",
+                    color = Color(0xFF00F5D4),
+                    fontSize = 8.4.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(
+                      "CRISP" to Triple(0.32f, 0.82f, 0.35f),
+                      "NEBULA" to Triple(1.18f, 1.38f, 1.15f),
+                      "CORONA" to Triple(0.92f, 1.65f, 1.45f),
+                    ).forEach { (presetLbl, vals) ->
+                      ForgeChip(
+                        presetLbl,
+                        Color(0xFF0E2944),
+                        Color(0xFF38BDF8),
+                        fontSize = 7.2.sp,
+                        radius = 5.dp,
+                        px = 6.dp,
+                        py = 2.5.dp,
+                      ) {
+                        RiftVisualForgeState.updateRecipe(
+                          target,
+                          recipe.copy(
+                            splatSoftness = vals.first,
+                            splatRadiusMult = vals.second,
+                            splatIntensity = vals.third,
+                          ),
+                          recordUndo = true,
+                          context = context,
+                        )
+                      }
+                    }
+                  }
+                }
+                CompactForgeSliderRow(
+                  "Gaussian Softness (Sigma)",
+                  recipe.splatSoftness,
+                  0.10f..1.80f,
+                  String.format(Locale.US, "%.2fx", recipe.splatSoftness),
+                  Color(0xFF00F5D4),
+                  { v -> RiftVisualForgeState.updateRecipe(target, recipe.copy(splatSoftness = v), recordUndo = false) },
+                  saveLayout,
+                )
+                CompactForgeSliderRow(
+                  "Splat Corona Radius",
+                  recipe.splatRadiusMult,
+                  0.40f..2.40f,
+                  String.format(Locale.US, "%.2fx", recipe.splatRadiusMult),
+                  Color(0xFF38BDF8),
+                  { v -> RiftVisualForgeState.updateRecipe(target, recipe.copy(splatRadiusMult = v), recordUndo = false) },
+                  saveLayout,
+                )
+                CompactForgeSliderRow(
+                  "Splat Bloom Gain",
+                  recipe.splatIntensity,
+                  0.00f..2.20f,
+                  String.format(Locale.US, "%.2fx", recipe.splatIntensity),
+                  Color(0xFFC084FC),
+                  { v -> RiftVisualForgeState.updateRecipe(target, recipe.copy(splatIntensity = v), recordUndo = false) },
+                  saveLayout,
+                )
+                CompactForgeSliderRow(
+                  "Splat Anisotropy (Streak / Disc)",
+                  recipe.splatAnisotropy,
+                  -0.75f..0.75f,
+                  String.format(Locale.US, "%+.2f", recipe.splatAnisotropy),
+                  Color(0xFFFACC15),
+                  { v -> RiftVisualForgeState.updateRecipe(target, recipe.copy(splatAnisotropy = v), recordUndo = false) },
+                  saveLayout,
+                )
+              }
             } else {
               val hudOff = RiftVisualForgeState.getHudOffsetForTarget(target)
               if (hudOff != null) {
@@ -4218,18 +4324,22 @@ private fun DrawScope.drawShaderOrFallbackVortex(
   if (Build.VERSION.SDK_INT >= 33 && shader != null) {
     drewAgsl =
       runCatching {
+        val effGain = (recipe.splatIntensity * RiftVisualForgeState.gaussianSplatMasterGain).coerceIn(0f, 2.4f)
         shader.setFloatUniform("uRes", size.width, size.height)
         shader.setFloatUniform("uCenter", center.x, center.y)
-        shader.setFloatUniform("uRadius", radiusPx.coerceAtLeast(8f))
+        shader.setFloatUniform("uRadius", (radiusPx * recipe.splatRadiusMult.coerceIn(0.65f, 1.45f)).coerceAtLeast(8f))
         shader.setFloatUniform("uTime", timeSec)
         shader.setFloatUniform("uTurbulence", recipe.shaderTurbulence.coerceIn(0.05f, 2.0f))
         shader.setFloatUniform("uGlow", recipe.glowIntensity.coerceIn(0.0f, 2.5f))
         shader.setFloatUniform("uOpacity", recipe.surfaceOpacity.coerceIn(0.15f, 1.0f))
+        shader.setFloatUniform("uSplatSoftness", recipe.splatSoftness.coerceIn(0.10f, 1.80f))
+        shader.setFloatUniform("uSplatGain", effGain)
+        shader.setFloatUniform("uSplatAniso", recipe.splatAnisotropy.coerceIn(-0.75f, 0.75f))
         shader.setFloatUniform("uMode", mode)
         shader.setFloatUniform("uPrimary", pCol.red, pCol.green, pCol.blue)
         shader.setFloatUniform("uTrim", tCol.red, tCol.green, tCol.blue)
         shader.setFloatUniform("uAura", gCol.red, gCol.green, gCol.blue)
-        val boundR = if (mode > 1.5f) radiusPx + 190f else radiusPx * 1.24f
+        val boundR = if (mode > 1.5f) radiusPx + 190f else radiusPx * 1.44f
         val left = (center.x - boundR).coerceAtLeast(0f)
         val top = (center.y - boundR).coerceAtLeast(0f)
         val right = (center.x + boundR).coerceAtMost(size.width)
@@ -4314,6 +4424,42 @@ private fun DrawScope.drawShaderOrFallbackVortex(
   }
 }
 
+private fun DrawScope.drawSoftGaussianSplatHalo(
+  center: Offset,
+  baseRadiusPx: Float,
+  recipe: VisualElementRecipe,
+  timeSec: Float,
+) {
+  val effGain = (recipe.splatIntensity * RiftVisualForgeState.gaussianSplatMasterGain).coerceIn(0f, 2.2f)
+  if (effGain <= 0.02f || baseRadiusPx <= 4f) return
+  val softness = recipe.splatSoftness.coerceIn(0.10f, 1.80f)
+  val outerR = (baseRadiusPx * recipe.splatRadiusMult.coerceIn(0.40f, 2.40f) * (0.88f + 0.36f * softness)).coerceAtLeast(8f)
+  val aniso = recipe.splatAnisotropy.coerceIn(-0.75f, 0.75f)
+  val rx = outerR * (1f + aniso * 0.42f)
+  val ry = outerR * (1f - aniso * 0.42f)
+  val glowCol = Color(recipe.glowColorInt)
+  val trimCol = Color(recipe.trimColorInt)
+  val breathe = 0.92f + 0.08f * sin(timeSec * 2.1f)
+  val coreAlpha = (0.28f * effGain * recipe.surfaceOpacity * breathe).coerceIn(0f, 0.72f)
+  val midAlpha = (0.16f * effGain * softness.coerceIn(0.4f, 1.4f) * breathe).coerceIn(0f, 0.52f)
+  for (lobe in 0 until 3) {
+    val scale = 1f - lobe * 0.24f
+    val lw = (rx * 2f * scale).coerceAtLeast(4f)
+    val lh = (ry * 2f * scale).coerceAtLeast(4f)
+    val lobeCol = if (lobe == 0) glowCol.copy(alpha = midAlpha * 0.65f) else if (lobe == 1) trimCol.copy(alpha = midAlpha) else Color.White.copy(alpha = coreAlpha * 0.55f)
+    drawOval(
+      brush =
+        Brush.radialGradient(
+          colors = listOf(lobeCol, glowCol.copy(alpha = midAlpha * 0.32f), Color.Transparent),
+          center = center,
+          radius = max(lw, lh) * 0.52f,
+        ),
+      topLeft = Offset(center.x - lw * 0.5f, center.y - lh * 0.5f),
+      size = Size(lw, lh),
+    )
+  }
+}
+
 private fun DrawScope.drawIsolatedTargetSpecimen(
   target: ForgeElementTarget,
   recipe: VisualElementRecipe,
@@ -4326,6 +4472,12 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
 ) {
   val span = (baseSpan * recipe.pixelScale).coerceAtLeast(18f)
   val spin = timeSec * (0.9f + 0.8f * recipe.shaderTurbulence)
+  drawSoftGaussianSplatHalo(
+    center = Offset(cx, cy),
+    baseRadiusPx = span * 1.18f,
+    recipe = recipe,
+    timeSec = timeSec,
+  )
   when (target) {
     ForgeElementTarget.SAFE_ZONE_PAD -> {
       drawCircle(Color(0xFF030917), span * 1.04f, Offset(cx, cy))
