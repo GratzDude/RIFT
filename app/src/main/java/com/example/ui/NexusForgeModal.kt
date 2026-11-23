@@ -2590,7 +2590,19 @@ private fun DevPlayfieldAndHudStudioBay(
               val sx = w2sX(wx)
               val sy = w2sY(wy)
               val sr = (baseRiftR * rec.pixelScale * worldScale).coerceAtLeast(16f)
-              RiftSpriteBaker.draw3dPlayfieldRift(nc, anomType, sx, sy, sr, spinAngle * (0.7f + 0.5f * rec.shaderTurbulence))
+              val orbPhase = timeSec * 0.85f + (wx * 0.0031f + wy * 0.0023f)
+              val px = ((w * 0.5f - sx) * 0.062f).coerceIn(-sr * 0.15f, sr * 0.15f) + cos(orbPhase) * (sr * 0.020f)
+              val py = ((h * 0.5f - sy) * 0.062f).coerceIn(-sr * 0.15f, sr * 0.15f) + sin(orbPhase) * (sr * 0.020f)
+              RiftSpriteBaker.draw3dPlayfieldRift(
+                canvas = nc,
+                type = anomType,
+                cx = sx,
+                cy = sy,
+                radius = sr,
+                spinAngle = spinAngle * (0.7f + 0.5f * rec.shaderTurbulence),
+                parallaxOffsetX = px,
+                parallaxOffsetY = py,
+              )
               hitEntriesState += StageHitEntry(target, sx, sy, max(sr * 0.85f, 30.dp.toPx()))
             }
             drawRift1To1(ForgeElementTarget.RIFT_PLASMA, AnomalyType.PLASMA_RIFT, 4640f, 3340f)
@@ -2602,8 +2614,30 @@ private fun DevPlayfieldAndHudStudioBay(
             val pAy = w2sY(3720f)
             val pBx = w2sX(5260f)
             val pBy = w2sY(3820f)
-            RiftSpriteBaker.draw3dPlayfieldRift(nc, AnomalyType.PHASE_RIFT_A, pAx, pAy, pR, spinAngle)
-            RiftSpriteBaker.draw3dPlayfieldRift(nc, AnomalyType.PHASE_RIFT_B, pBx, pBy, pR, -spinAngle)
+            val pPxA = ((w * 0.5f - pAx) * 0.062f).coerceIn(-pR * 0.15f, pR * 0.15f) + cos(timeSec * 0.9f) * (pR * 0.020f)
+            val pPyA = ((h * 0.5f - pAy) * 0.062f).coerceIn(-pR * 0.15f, pR * 0.15f) + sin(timeSec * 0.9f) * (pR * 0.020f)
+            val pPxB = ((w * 0.5f - pBx) * 0.062f).coerceIn(-pR * 0.15f, pR * 0.15f) + cos(-timeSec * 0.9f) * (pR * 0.020f)
+            val pPyB = ((h * 0.5f - pBy) * 0.062f).coerceIn(-pR * 0.15f, pR * 0.15f) + sin(-timeSec * 0.9f) * (pR * 0.020f)
+            RiftSpriteBaker.draw3dPlayfieldRift(
+              canvas = nc,
+              type = AnomalyType.PHASE_RIFT_A,
+              cx = pAx,
+              cy = pAy,
+              radius = pR,
+              spinAngle = spinAngle,
+              parallaxOffsetX = pPxA,
+              parallaxOffsetY = pPyA,
+            )
+            RiftSpriteBaker.draw3dPlayfieldRift(
+              canvas = nc,
+              type = AnomalyType.PHASE_RIFT_B,
+              cx = pBx,
+              cy = pBy,
+              radius = pR,
+              spinAngle = -spinAngle,
+              parallaxOffsetX = pPxB,
+              parallaxOffsetY = pPyB,
+            )
             hitEntriesState += StageHitEntry(ForgeElementTarget.RIFT_PHASE_PAIR, (pAx + pBx) * 0.5f, (pAy + pBy) * 0.5f, max(pR * 1.5f, 36.dp.toPx()))
 
             val shipAuraRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SHIP_AURA_LABELS)
@@ -4542,15 +4576,65 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
     ForgeElementTarget.RIFT_REPULSOR,
     ForgeElementTarget.RIFT_GRAVITY,
     ForgeElementTarget.RIFT_PHASE_PAIR -> {
+      val prevPx = cos(timeSec * 1.15f) * (span * 0.085f)
+      val prevPy = sin(timeSec * 1.15f) * (span * 0.085f)
       drawIntoCanvas { c ->
         val nc = c.nativeCanvas
         when (target) {
-          ForgeElementTarget.RIFT_PLASMA -> RiftSpriteBaker.draw3dPlayfieldRift(nc, AnomalyType.PLASMA_RIFT, cx, cy, span, spin)
-          ForgeElementTarget.RIFT_REPULSOR -> RiftSpriteBaker.draw3dPlayfieldRift(nc, AnomalyType.REPULSOR_RIFT, cx, cy, span, spin)
-          ForgeElementTarget.RIFT_GRAVITY -> RiftSpriteBaker.draw3dPlayfieldRift(nc, AnomalyType.GRAVITY_RIFT, cx, cy, span, spin)
+          ForgeElementTarget.RIFT_PLASMA ->
+            RiftSpriteBaker.draw3dPlayfieldRift(
+              canvas = nc,
+              type = AnomalyType.PLASMA_RIFT,
+              cx = cx,
+              cy = cy,
+              radius = span,
+              spinAngle = spin,
+              parallaxOffsetX = prevPx,
+              parallaxOffsetY = prevPy,
+            )
+          ForgeElementTarget.RIFT_REPULSOR ->
+            RiftSpriteBaker.draw3dPlayfieldRift(
+              canvas = nc,
+              type = AnomalyType.REPULSOR_RIFT,
+              cx = cx,
+              cy = cy,
+              radius = span,
+              spinAngle = spin,
+              parallaxOffsetX = prevPx,
+              parallaxOffsetY = prevPy,
+            )
+          ForgeElementTarget.RIFT_GRAVITY ->
+            RiftSpriteBaker.draw3dPlayfieldRift(
+              canvas = nc,
+              type = AnomalyType.GRAVITY_RIFT,
+              cx = cx,
+              cy = cy,
+              radius = span,
+              spinAngle = spin,
+              parallaxOffsetX = prevPx,
+              parallaxOffsetY = prevPy,
+            )
           else -> {
-            RiftSpriteBaker.draw3dPlayfieldRift(nc, AnomalyType.PHASE_RIFT_A, cx - span * 0.55f, cy, span * 0.62f, spin)
-            RiftSpriteBaker.draw3dPlayfieldRift(nc, AnomalyType.PHASE_RIFT_B, cx + span * 0.55f, cy, span * 0.62f, -spin)
+            RiftSpriteBaker.draw3dPlayfieldRift(
+              canvas = nc,
+              type = AnomalyType.PHASE_RIFT_A,
+              cx = cx - span * 0.55f,
+              cy = cy,
+              radius = span * 0.62f,
+              spinAngle = spin,
+              parallaxOffsetX = prevPx * 0.62f,
+              parallaxOffsetY = prevPy * 0.62f,
+            )
+            RiftSpriteBaker.draw3dPlayfieldRift(
+              canvas = nc,
+              type = AnomalyType.PHASE_RIFT_B,
+              cx = cx + span * 0.55f,
+              cy = cy,
+              radius = span * 0.62f,
+              spinAngle = -spin,
+              parallaxOffsetX = -prevPx * 0.62f,
+              parallaxOffsetY = -prevPy * 0.62f,
+            )
           }
         }
       }

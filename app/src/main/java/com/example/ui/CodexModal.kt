@@ -201,7 +201,7 @@ fun CodexModal(
           )
           if (!isCompactPhone) {
             Text(
-              text = "SUPPLY BUFFS • PLAYFIELD RIFTS & 5X NEXUS STATION • 10-HULL 0-RESONANCE PARITY",
+              text = "SUPPLY BUFFS • PLAYFIELD RIFTS & 5X RIFT STATION • 10-HULL 0-RESONANCE PARITY",
               color = Color(0xFF00F5D4),
               fontSize = 9.8.sp,
               fontWeight = FontWeight.Bold,
@@ -535,8 +535,8 @@ fun CodexModal(
 }
 
 /**
- * Dedicated Safe-Zone `Nexus Station` & Sector Obstacles reference card inside the Playfield Rifts tab.
- * Renders the live `RiftSpriteBaker.safeZoneStationBitmap` (`5x` ship-scale `180px` Nexus Station)
+ * Dedicated Safe-Zone `Rift Station` & Sector Obstacles reference card inside the Playfield Rifts tab.
+ * Renders the live `RiftSpriteBaker.safeZoneStationBitmap` (`5x` ship-scale `180px` Rift Station)
  * + revolving Ops Holo-Ring alongside exact Safe Harbor, `2,400` Flux Crystal Asteroid, and `10`-Hit Station Nova rules.
  */
 @Composable
@@ -643,7 +643,7 @@ private fun SafeZoneAndSectorObstaclesCard(
           modifier = Modifier.weight(1f, fill = false),
         ) {
           Text(
-            text = "NEXUS STATION SAFE HARBOR & SECTOR OBSTACLES",
+            text = "RIFT STATION SAFE HARBOR & SECTOR OBSTACLES",
             color = Color(0xFF00F5D4),
             fontSize = if (isCompactPhone) 11.8.sp else 13.5.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -683,7 +683,7 @@ private fun SafeZoneAndSectorObstaclesCard(
 
       Text(
         text =
-          "SAFE HARBOR (SECTOR CONVERGENCE & FLUX CORE ONLY): Anchored by a 5x ship-scale (180px radius) Nexus Station with a revolving cyan/gold Ops Holo-Ring & radial stabilizer beams (editable in STAR FORGE). Weapons are locked inside; exceeding the 15s max stay or firing in combat triggers a 15s Safe-Zone lockout (ejects Flux Core at 1,650 px/s).",
+          "SAFE HARBOR (SECTOR CONVERGENCE & FLUX CORE ONLY): Anchored by a 5x ship-scale (180px radius) Rift Station with a revolving cyan/gold Ops Holo-Ring & radial stabilizer beams (editable in STAR FORGE). Weapons are locked inside; exceeding the 15s max stay or firing in combat triggers a 15s Safe-Zone lockout (ejects Flux Core at 1,650 px/s).",
         color = Color.White,
         fontSize = if (isCompactPhone) 10.0.sp else 11.2.sp,
         lineHeight = if (isCompactPhone) 13.2.sp else 14.8.sp,
@@ -1147,63 +1147,73 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
         )
       }
 
+      val baseRiftR = minDim * 0.38f
+      val orbParallaxX = cos(spinAngle * 0.85f) * (baseRiftR * 0.11f)
+      val orbParallaxY = sin(spinAngle * 0.85f) * (baseRiftR * 0.11f)
+
       drawIntoCanvas { composeCanvas ->
         val nc = composeCanvas.nativeCanvas
         when (riftId) {
           "plasma_rift" ->
             RiftSpriteBaker.draw3dPlayfieldRift(
-              nc,
-              cx,
-              cy,
-              minDim * 0.38f,
-              spinAngle,
-              android.graphics.Color.rgb(239, 68, 68),
-              android.graphics.Color.rgb(217, 70, 239),
-              android.graphics.Color.rgb(255, 228, 230),
-              darkVoidCenter = false,
+              canvas = nc,
+              cx = cx,
+              cy = cy,
+              r = baseRiftR,
+              spinAngle = spinAngle,
+              outerColor = android.graphics.Color.rgb(239, 68, 68),
+              midColor = android.graphics.Color.rgb(217, 70, 239),
+              coreColor = android.graphics.Color.rgb(255, 228, 230),
+              darkVoidCenter = true,
               inwardSpiral = false,
               pulsePhaseOverride = pulsePhase,
+              parallaxOffsetX = orbParallaxX,
+              parallaxOffsetY = orbParallaxY,
             )
           "repulsor_rift" ->
             RiftSpriteBaker.draw3dPlayfieldRift(
-              nc,
-              cx,
-              cy,
-              minDim * 0.38f,
-              -spinAngle * 1.15f,
-              android.graphics.Color.rgb(56, 189, 248),
-              android.graphics.Color.rgb(186, 230, 253),
-              android.graphics.Color.rgb(255, 255, 255),
-              darkVoidCenter = false,
+              canvas = nc,
+              cx = cx,
+              cy = cy,
+              r = baseRiftR,
+              spinAngle = -spinAngle * 1.15f,
+              outerColor = android.graphics.Color.rgb(56, 189, 248),
+              midColor = android.graphics.Color.rgb(0, 245, 212),
+              coreColor = android.graphics.Color.rgb(224, 242, 254),
+              darkVoidCenter = true,
               inwardSpiral = false,
               pulsePhaseOverride = pulsePhase,
+              parallaxOffsetX = orbParallaxX,
+              parallaxOffsetY = orbParallaxY,
             )
           "gravity_rift" -> {
-            val gravR = minDim * 0.38f
+            val gravR = baseRiftR
             RiftSpriteBaker.draw3dPlayfieldRift(
-              nc,
-              cx,
-              cy,
-              gravR,
-              spinAngle * 1.35f,
-              android.graphics.Color.rgb(168, 85, 247),
-              android.graphics.Color.rgb(99, 102, 241),
-              android.graphics.Color.rgb(233, 213, 255),
+              canvas = nc,
+              cx = cx,
+              cy = cy,
+              r = gravR,
+              spinAngle = spinAngle * 1.35f,
+              outerColor = android.graphics.Color.rgb(168, 85, 247),
+              midColor = android.graphics.Color.rgb(99, 102, 241),
+              coreColor = android.graphics.Color.rgb(233, 213, 255),
               darkVoidCenter = true,
               inwardSpiral = true,
               pulsePhaseOverride = pulsePhase,
+              parallaxOffsetX = orbParallaxX,
+              parallaxOffsetY = orbParallaxY,
             )
             for (cIdx in 0 until 3) {
               val ang = -spinAngle * 1.4f + cIdx * (2f * PI.toFloat() / 3f)
-              val dist = gravR * (0.48f + 0.24f * (1f - pulsePhase))
-              val px = cx + kotlin.math.cos(ang) * dist
-              val py = cy + kotlin.math.sin(ang) * dist
+              val dist = gravR * (0.46f + 0.22f * (1f - pulsePhase))
+              val px = (cx + orbParallaxX * 0.72f) + kotlin.math.cos(ang) * dist
+              val py = (cy + orbParallaxY * 0.72f) + kotlin.math.sin(ang) * dist
               RiftSpriteBaker.drawReactiveFilamentStrand(
                 canvas = nc,
                 x0 = cx + kotlin.math.cos(ang - 0.35f) * (gravR * 0.84f),
                 y0 = cy + kotlin.math.sin(ang - 0.35f) * (gravR * 0.84f),
-                ctrlX = cx + kotlin.math.cos(ang - 0.16f) * (gravR * 0.66f),
-                ctrlY = cy + kotlin.math.sin(ang - 0.16f) * (gravR * 0.66f),
+                ctrlX = (cx + orbParallaxX * 0.38f) + kotlin.math.cos(ang - 0.16f) * (gravR * 0.66f),
+                ctrlY = (cy + orbParallaxY * 0.38f) + kotlin.math.sin(ang - 0.16f) * (gravR * 0.66f),
                 x1 = px,
                 y1 = py,
                 thickness = (gravR * 0.055f).coerceAtLeast(1.1f),
@@ -1227,40 +1237,48 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
           }
           "unstable_rift" ->
             RiftSpriteBaker.drawUnstableMergedRiftOnCanvas(
-              nc,
-              cx,
-              cy,
-              minDim * 0.39f,
-              spinAngle * 0.45f,
-              pulsePhase,
+              canvas = nc,
+              cx = cx,
+              cy = cy,
+              r = minDim * 0.39f,
+              spinAngle = spinAngle * 0.45f,
+              pulsePhase = pulsePhase,
+              parallaxOffsetX = orbParallaxX,
+              parallaxOffsetY = orbParallaxY,
             )
           else -> {
             val nodeR = minDim * 0.22f
+            val nodePx = orbParallaxX * 0.58f
+            val nodePy = orbParallaxY * 0.58f
             RiftSpriteBaker.draw3dPlayfieldRift(
-              nc,
-              w * 0.33f,
-              h * 0.35f,
-              nodeR,
-              spinAngle,
-              android.graphics.Color.rgb(45, 212, 191),
-              android.graphics.Color.rgb(56, 189, 248),
-              android.graphics.Color.rgb(240, 253, 250),
+              canvas = nc,
+              cx = w * 0.33f,
+              cy = h * 0.35f,
+              r = nodeR,
+              spinAngle = spinAngle,
+              outerColor = android.graphics.Color.rgb(45, 212, 191),
+              midColor = android.graphics.Color.rgb(56, 189, 248),
+              coreColor = android.graphics.Color.rgb(240, 253, 250),
               darkVoidCenter = true,
               inwardSpiral = false,
               pulsePhaseOverride = pulsePhase,
+              parallaxOffsetX = nodePx,
+              parallaxOffsetY = nodePy,
             )
             RiftSpriteBaker.draw3dPlayfieldRift(
-              nc,
-              w * 0.68f,
-              h * 0.66f,
-              nodeR,
-              -spinAngle,
-              android.graphics.Color.rgb(56, 189, 248),
-              android.graphics.Color.rgb(168, 85, 247),
-              android.graphics.Color.rgb(240, 253, 250),
+              canvas = nc,
+              cx = w * 0.68f,
+              cy = h * 0.66f,
+              r = nodeR,
+              spinAngle = -spinAngle,
+              outerColor = android.graphics.Color.rgb(56, 189, 248),
+              midColor = android.graphics.Color.rgb(168, 85, 247),
+              coreColor = android.graphics.Color.rgb(240, 253, 250),
               darkVoidCenter = true,
               inwardSpiral = false,
               pulsePhaseOverride = pulsePhase,
+              parallaxOffsetX = -nodePx,
+              parallaxOffsetY = -nodePy,
             )
           }
         }

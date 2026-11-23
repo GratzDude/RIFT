@@ -203,6 +203,8 @@ class RiftArenaView(
   var overwatchPanWorldY: Float = 0f
     private set
   private var currentRenderWorldScale: Float = 1.0f
+  private var currentRenderCamX: Float = 4000f
+  private var currentRenderCamY: Float = 4000f
   private var overwatchLabelAlphaFactor: Float = 1.0f
   private val overwatchClipPath = Path()
 
@@ -1022,6 +1024,8 @@ class RiftArenaView(
       if (isHubOverwatchMode) engine.arenaCenterX + overwatchPanWorldX else camX + shakeOffsetX
     val effectiveCamY =
       if (isHubOverwatchMode) engine.arenaCenterY + overwatchPanWorldY else camY + shakeOffsetY
+    currentRenderCamX = effectiveCamX
+    currentRenderCamY = effectiveCamY
 
     val clippedToOverwatchCircle = isHubOverwatchMode
     if (clippedToOverwatchCircle) {
@@ -1364,6 +1368,13 @@ class RiftArenaView(
         continue
       }
       val safeScale = worldScale.coerceAtLeast(0.15f)
+      val orbPhase = tSec * 0.85f + (anom.x * 0.0031f + anom.y * 0.0023f)
+      val riftParallaxX =
+        ((effectiveCamX - anom.x) * 0.058f).coerceIn(-r * 0.15f, r * 0.15f) +
+          cos(orbPhase) * (r * 0.018f)
+      val riftParallaxY =
+        ((effectiveCamY - anom.y) * 0.058f).coerceIn(-r * 0.15f, r * 0.15f) +
+          sin(orbPhase) * (r * 0.018f)
       if (anom.isUnstableMergedRift) {
         val lifeFrac = (anom.life / anom.maxLife.coerceAtLeast(1f)).coerceIn(0f, 1f)
         if (anom.life <= 4.0f) {
@@ -1380,6 +1391,8 @@ class RiftArenaView(
           r = r,
           spinAngle = anom.spinAngle,
           fadeAlpha = 1.0f,
+          parallaxOffsetX = riftParallaxX,
+          parallaxOffsetY = riftParallaxY,
         )
         if (anom.lastIngressTimer > 0.01f) {
           RiftSpriteBaker.drawContactIngressBurstPlume(
@@ -1449,6 +1462,8 @@ class RiftArenaView(
             radius = r,
             spinAngle = anom.spinAngle,
             fadeAlpha = fadeAlpha,
+            parallaxOffsetX = riftParallaxX,
+            parallaxOffsetY = riftParallaxY,
           )
           drawWorldOverheadBanner(
             canvas = canvas,
@@ -1471,6 +1486,8 @@ class RiftArenaView(
             radius = r,
             spinAngle = anom.spinAngle,
             fadeAlpha = fadeAlpha,
+            parallaxOffsetX = riftParallaxX,
+            parallaxOffsetY = riftParallaxY,
           )
           drawWorldOverheadBanner(
             canvas = canvas,
@@ -1494,6 +1511,8 @@ class RiftArenaView(
             spinAngle = anom.spinAngle,
             absorbedCount = anom.absorbedWeaponCount,
             fadeAlpha = fadeAlpha,
+            parallaxOffsetX = riftParallaxX,
+            parallaxOffsetY = riftParallaxY,
           )
           val baseOffset = 18f / safeScale
           drawWorldOverheadBanner(
@@ -1532,6 +1551,8 @@ class RiftArenaView(
             radius = r * 0.85f,
             spinAngle = anom.spinAngle,
             fadeAlpha = fadeAlpha,
+            parallaxOffsetX = riftParallaxX * 0.85f,
+            parallaxOffsetY = riftParallaxY * 0.85f,
           )
           drawWorldOverheadBanner(
             canvas = canvas,
@@ -3515,6 +3536,8 @@ class RiftArenaView(
     darkVoidCenter: Boolean,
     inwardSpiral: Boolean,
   ) {
+    val px = ((currentRenderCamX - cx) * 0.055f).coerceIn(-r * 0.15f, r * 0.15f)
+    val py = ((currentRenderCamY - cy) * 0.055f).coerceIn(-r * 0.15f, r * 0.15f)
     RiftSpriteBaker.draw3dPlayfieldRiftColors(
       canvas = canvas,
       cx = cx,
@@ -3527,6 +3550,8 @@ class RiftArenaView(
       coreColor = coreColor,
       darkVoidCenter = darkVoidCenter,
       inwardSpiral = inwardSpiral,
+      parallaxOffsetX = px,
+      parallaxOffsetY = py,
     )
   }
 

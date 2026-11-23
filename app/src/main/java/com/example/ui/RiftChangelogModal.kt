@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 108
+const val CURRENT_RIFT_BUILD_VERSION = 109
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,20 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 109,
+      versionTag = "v1.0.109 // BUILD #109",
+      releaseDate = "Nov 23, 2026",
+      headline = "Abyssal Dark-Core Contrast & Stepped Multi-Layer Parallax on Playfield Rifts",
+      badgeLabel = "ABYSSAL RIFTS & PARALLAX",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Abyssal Dark-Core Event-Horizon Contrast: Deepened the interior funnel and central singularity throat across Gravity, Repulsor, Phase, Plasma, and Unstable Merged Rifts to a multi-stop abyssal void (#02040A trench to #000000 core) so containment rims, electric rim arcs, and glowing plasma filaments stand out with sharp contrast and zero washed-out centers or white ship hit-flashes.",
+          "Stepped Multi-Layer Camera Parallax & Distinct Swirl Depth: Added zero-allocation stepped parallax offsets across outer containment collars, upper sub-collar shear trenches, mid-depth swirl and ingress plume bands, and deep abyssal throats driven smoothly by viewport/camera position and distinct rotational rates across the 2.5D arena, Overwatch, Star Forge, and Tactical Codex.",
+          "Zero-Impact Physics Separation: Kept all stepped Rift depth offsets strictly visual with zero changes to physical collision radii, 0.92x swept weapon absorption, >= 260px Gravity Rift tidal crush (950/s), or 10.0s Unstable Rift convergence.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 108,
       versionTag = "v1.0.108 // BUILD #108",
