@@ -29,6 +29,8 @@ jobs:
           gradle-version: '9.3.1'
 
       - name: Ensure Persistent Upload Keystore & Web Client ID
+        env:
+          RIFT_WEB_CLIENT_ID: ${{ secrets.RIFT_WEB_CLIENT_ID }}
         run: |
           if [ ! -f "debug.keystore" ]; then
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=RIFT Game,O=Syndicate Studios,C=US"
@@ -42,14 +44,19 @@ jobs:
           cp debug.keystore my-upload-key.jks || true
           cp debug.keystore app/my-upload-key.jks || true
 
+          WEB_CLIENT_ID="${RIFT_WEB_CLIENT_ID}"
+          if [ -z "$WEB_CLIENT_ID" ]; then
+            WEB_CLIENT_ID="000000000000-placeholder.apps.googleusercontent.com"
+          fi
+
           if [ -f "app/google-services.json" ]; then
             sed -i 's/"package_name": *"[^"]*"/"package_name": "com.game.rift"/g' app/google-services.json
-          else
-            mkdir -p app/src/main/res/values
-            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="default_web_client_id" translatable="false">000000000000-placeholder.apps.googleusercontent.com</string>\n</resources>\n' > app/src/main/res/values/auth_fallback.xml
           fi
+
+          mkdir -p app/src/main/res/values
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="default_web_client_id" translatable="false">%s</string>\n</resources>\n' "$WEB_CLIENT_ID" > app/src/main/res/values/auth_fallback.xml
+
           if [ ! -f "app/src/main/res/values/firebase_applet_config.xml" ]; then
-            mkdir -p app/src/main/res/values
             printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="firestore_database_id" translatable="false">(default)</string>\n</resources>\n' > app/src/main/res/values/firebase_applet_config.xml
           fi
 
@@ -58,7 +65,7 @@ jobs:
           sed -i 's/applicationId = "[^"]*"/applicationId = "com.game.rift"/g' app/build.gradle.kts
           sed -i 's/signingConfigs.getByName("release")/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
           sed -i 's/signingConfigs.findByName("release")/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
-          sed -i 's/signingConfigs\["release"\]/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
+          sed -i 's/signingConfigs["release"]/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
           APP_ID=$(sed -n 's/.*applicationId *= *"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
           APP_VERSION_CODE=$(sed -n 's/.*versionCode *= *\([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -n 1)
           APP_VERSION_NAME=$(sed -n 's/.*versionName *= *"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
@@ -66,7 +73,7 @@ jobs:
             echo "ERROR: Expected applicationId com.game.rift for Play Console build, got '$APP_ID'"
             exit 1
           fi
-          if [ -z "$APP_VERSION_CODE" ] || [ "$APP_VERSION_CODE" -lt 106 ]; then
+          if [ -z "$APP_VERSION_CODE" ] \vert{}\vert{} [ "$APP_VERSION_CODE" -lt 106 ]; then
             echo "ERROR: Expected versionCode >= 106 in app/build.gradle.kts, got '$APP_VERSION_CODE'"
             exit 1
           fi
