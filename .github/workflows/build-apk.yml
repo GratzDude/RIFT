@@ -28,7 +28,7 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Ensure Persistent Upload Keystore, Firebase Config & Web Client ID
+      - name: Ensure Persistent Upload Keystore, Export upload_certificate.pem, Firebase Config & Web Client ID
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
           RIFT_GOOGLE_SERVICES_JSON: ${{ secrets.RIFT_GOOGLE_SERVICES_JSON }}
@@ -48,6 +48,23 @@ jobs:
           cp debug.keystore app/debug.keystore || true
           cp debug.keystore my-upload-key.jks || true
           cp debug.keystore app/my-upload-key.jks || true
+
+          rm -f upload_certificate.pem
+          if keytool -exportcert -rfc -keystore debug.keystore -alias androiddebugkey -storepass android -file upload_certificate.pem 2>/dev/null; then
+            echo "Exported PEM public certificate upload_certificate.pem from debug.keystore (alias: androiddebugkey)."
+          elif [ -f "my-upload-key.jks" ] && keytool -exportcert -rfc -keystore my-upload-key.jks -alias upload -storepass "${STORE_PASSWORD:-android}" -file upload_certificate.pem 2>/dev/null; then
+            echo "Exported PEM public certificate upload_certificate.pem from my-upload-key.jks (alias: upload)."
+          else
+            DETECTED_ALIAS=$(keytool -list -keystore debug.keystore -storepass android | sed -n 's/^\([^,]*\),.*/\1/p' | head -n 1)
+            keytool -exportcert -rfc -keystore debug.keystore -alias "${DETECTED_ALIAS:-androiddebugkey}" -storepass android -file upload_certificate.pem
+            echo "Exported PEM public certificate upload_certificate.pem from debug.keystore (alias: ${DETECTED_ALIAS:-androiddebugkey})."
+          fi
+          if [ ! -s "upload_certificate.pem" ]; then
+            echo "ERROR: upload_certificate.pem was not generated or is empty."
+            exit 1
+          fi
+          echo "=== upload_certificate.pem Public Certificate Fingerprints (Google Play Upload Key Reset) ==="
+          keytool -printcert -file upload_certificate.pem | grep -E "Owner:|Issuer:|Serial number:|Valid from:|SHA1:|SHA256:" || true
 
           python3 - <<'PY'
           import base64
@@ -226,13 +243,14 @@ jobs:
           git commit -m "chore: update RIFT-codebase.md snapshot (Build #${{ github.run_number }})" || true
           git push -f origin HEAD:refs/heads/snapshot
 
-      - name: Collect APK and Play Store AAB
+      - name: Collect APK, Play Store AAB & Public Upload Certificate
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk RIFT.apk
           AAB_PATH=$(find app/build/outputs/bundle/release -name "*.aab" | head -n 1)
           cp "$AAB_PATH" RIFT-release.aab
+          ls -lh RIFT.apk RIFT-release.aab upload_certificate.pem
 
-      - name: Upload APK, AAB & Codebase Snapshot to Artifacts
+      - name: Upload APK, AAB, Upload Certificate & Codebase Snapshot to Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: RIFT-Builds
@@ -240,6 +258,7 @@ jobs:
             RIFT.apk
             RIFT-release.aab
             RIFT-codebase.md
+            upload_certificate.pem
 
       - name: Publish APK, Play Store AAB & Codebase Snapshot to GitHub Releases
         uses: softprops/action-gh-release@v2
