@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 106
+const val CURRENT_RIFT_BUILD_VERSION = 107
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,19 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 107,
+      versionTag = "v1.0.107 // BUILD #107",
+      releaseDate = "Nov 22, 2026",
+      headline = "RIFT_WEB_CLIENT_ID Workflow Injection & Explicit Google Sign-In Status Feedback",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "RIFT_WEB_CLIENT_ID Build Workflow Fallback Injection: Bound RIFT_WEB_CLIENT_ID from repository secrets in .github/workflows/build-apk.yml and wrote default_web_client_id into app/src/main/res/values/auth_fallback.xml (falling back to 000000000000-placeholder.apps.googleusercontent.com only when RIFT_WEB_CLIENT_ID is empty) while enforcing versionCode >= 107.",
+          "Clear Plain-English Google Sign-In Feedback on Cancel or Failure: Updated onGoogleSignInClicked and AuthScreen so cancelled, dismissed, unconfigured, or failed Google Sign-In attempts always reset isLoading to false and display an explicit plain-English status message in auth_error_text instead of failing silently.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 106,
       versionTag = "v1.0.106 // BUILD #106",

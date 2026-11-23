@@ -86,6 +86,8 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import com.example.R
 import com.example.data.NetworkConnectivityMonitor
 import com.example.engine.RiftSpriteBaker
@@ -102,6 +104,7 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -115,7 +118,7 @@ fun attemptAutoSignIn(
   onUnauthenticated: () -> Unit,
   scope: CoroutineScope,
 ) {
-  if (Firebase.auth.currentUser != null) {
+  if (runCatching { Firebase.auth.currentUser }.getOrNull() != null) {
     onAuthSuccess()
     return
   }
@@ -125,20 +128,29 @@ fun attemptAutoSignIn(
   }
   val clientId =
     try {
-      context.getString(R.string.default_web_client_id)
+      context.getString(R.string.default_web_client_id).trim()
     } catch (e: Exception) {
       onUnauthenticated()
       return
     }
+  if (clientId.isBlank() || clientId.startsWith("000000000000-placeholder")) {
+    onUnauthenticated()
+    return
+  }
 
-  val googleIdOption =
-    GetGoogleIdOption.Builder()
-      .setFilterByAuthorizedAccounts(true)
-      .setServerClientId(clientId)
-      .setAutoSelectEnabled(true)
-      .build()
-
-  val request = GetCredentialRequest.Builder().addCredentialOption(googleIdOption).build()
+  val request =
+    try {
+      val googleIdOption =
+        GetGoogleIdOption.Builder()
+          .setFilterByAuthorizedAccounts(true)
+          .setServerClientId(clientId)
+          .setAutoSelectEnabled(true)
+          .build()
+      GetCredentialRequest.Builder().addCredentialOption(googleIdOption).build()
+    } catch (t: Throwable) {
+      onUnauthenticated()
+      return
+    }
 
   scope.launch {
     try {
@@ -152,7 +164,10 @@ fun attemptAutoSignIn(
       } else {
         onUnauthenticated()
       }
-    } catch (e: Exception) {
+    } catch (t: CancellationException) {
+      onUnauthenticated()
+      throw t
+    } catch (t: Throwable) {
       onUnauthenticated()
     }
   }
@@ -167,7 +182,7 @@ fun onGoogleSignInClicked(
   onAuthCancelled: () -> Unit = {},
 ) {
   if (!NetworkConnectivityMonitor.isCurrentlyOnline(context)) {
-    if (Firebase.auth.currentUser != null) {
+    if (runCatching { Firebase.auth.currentUser }.getOrNull() != null) {
       onAuthSuccess()
     } else {
       onAuthError(
@@ -178,14 +193,32 @@ fun onGoogleSignInClicked(
   }
   val clientId =
     try {
-      context.getString(R.string.default_web_client_id)
+      context.getString(R.string.default_web_client_id).trim()
     } catch (e: Exception) {
-      onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
+      onAuthError(
+        "Google Sign-In configuration missing: default_web_client_id was not found in this build. Tap Play as Drifter below to play right away."
+      )
       return
     }
 
-  val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
-  val request = GetCredentialRequest.Builder().addCredentialOption(signInOption).build()
+  if (clientId.isBlank() || clientId.startsWith("000000000000-placeholder")) {
+    onAuthError(
+      "Google Sign-In is not configured on this build yet (missing Web Client ID). Set RIFT_WEB_CLIENT_ID in build secrets, or tap Play as Drifter below to play right away."
+    )
+    return
+  }
+
+  val request =
+    try {
+      val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
+      GetCredentialRequest.Builder().addCredentialOption(signInOption).build()
+    } catch (t: Throwable) {
+      Log.e("Auth", "Failed to build Google Sign-In request", t)
+      onAuthError(
+        "Could not start Google Sign-In (${t.localizedMessage ?: "invalid client configuration"}). Tap Play as Drifter below to play right away."
+      )
+      return
+    }
 
   scope.launch {
     try {
@@ -197,14 +230,52 @@ fun onGoogleSignInClicked(
         Firebase.auth.signInWithCredential(authCredential).await()
         onAuthSuccess()
       } else {
-        onAuthError("Unexpected credential type")
+        onAuthError(
+          "Google Sign-In returned an unrecognized credential type (${credential.type}). Tap Sign In with Google to retry, or tap Play as Drifter below."
+        )
       }
     } catch (e: GetCredentialCancellationException) {
-      Log.w("Auth", "Google Sign-In cancelled or dismissed: ${e.message}", e)
+      val detail = e.localizedMessage?.trim().orEmpty()
+      Log.w("Auth", "Google Sign-In cancelled or dismissed: $detail", e)
+      val cancelFeedback =
+        if (
+          detail.isNotBlank() &&
+            !detail.contains("cancelled by the user", ignoreCase = true) &&
+            !detail.contains("canceled", ignoreCase = true)
+        ) {
+          "Google Sign-In was cancelled ($detail). Tap Sign In with Google to retry, or tap Play as Drifter below."
+        } else {
+          "Google Sign-In was cancelled or could not verify this build's Google OAuth setup. Tap Sign In with Google to retry, or tap Play as Drifter below."
+        }
       onAuthCancelled()
-    } catch (e: Exception) {
-      Log.e("Auth", "Google Sign-In failed", e)
-      onAuthError(e.localizedMessage ?: "Sign in failed")
+      onAuthError(cancelFeedback)
+    } catch (e: NoCredentialException) {
+      Log.w("Auth", "No Google credentials available: ${e.message}", e)
+      onAuthError(
+        "No authorized Google account was available on this device (or OAuth SHA-1 / Web Client ID is not linked yet). Add a Google account in Android Settings, or tap Play as Drifter below."
+      )
+    } catch (e: GetCredentialException) {
+      val detail = e.localizedMessage?.trim().orEmpty()
+      Log.e("Auth", "Google Credential Manager error (${e.type}): $detail", e)
+      onAuthError(
+        "Google Sign-In could not complete (${detail.ifBlank { e.type }}). Tap Sign In with Google to retry, or tap Play as Drifter below."
+      )
+    } catch (e: CancellationException) {
+      onAuthCancelled()
+      throw e
+    } catch (t: Throwable) {
+      val detail = t.localizedMessage?.trim().orEmpty()
+      Log.e("Auth", "Google Sign-In failed", t)
+      val friendlyMsg =
+        if (
+          detail.contains("API key not valid", ignoreCase = true) ||
+            detail.contains("rift-offline-fallback", ignoreCase = true)
+        ) {
+          "Google account selected, but cloud Firebase credentials (google-services.json) are not bundled in this build. Tap Play as Drifter below to play."
+        } else {
+          "Google Sign-In failed: ${detail.ifBlank { t::class.java.simpleName }}. Tap Sign In with Google to retry, or tap Play as Drifter below."
+        }
+      onAuthError(friendlyMsg)
     }
   }
 }
@@ -236,7 +307,8 @@ fun AuthScreen(
 ) {
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
-  val credentialManager = remember { CredentialManager.create(context) }
+  val credentialManager =
+    remember(context) { runCatching { CredentialManager.create(context) }.getOrNull() }
   var isLoading by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
   val scrollState = rememberScrollState()
@@ -244,8 +316,41 @@ fun AuthScreen(
     remember(context) { NetworkConnectivityMonitor.observeOnlineState(context) }
       .collectAsState(initial = NetworkConnectivityMonitor.isCurrentlyOnline(context))
 
+  val startGoogleSignIn: () -> Unit = {
+    val cm = credentialManager
+    if (cm == null) {
+      isLoading = false
+      errorMessage =
+        "Google Credential Manager is unavailable on this device. Tap Play as Drifter below to play right away."
+    } else {
+      errorMessage = null
+      isLoading = true
+      onGoogleSignInClicked(
+        context = context,
+        credentialManager = cm,
+        onAuthSuccess = {
+          isLoading = false
+          errorMessage = null
+          onAuthSuccess()
+        },
+        onAuthError = { msg ->
+          isLoading = false
+          errorMessage = msg
+        },
+        scope = coroutineScope,
+        onAuthCancelled = {
+          isLoading = false
+          if (errorMessage.isNullOrBlank()) {
+            errorMessage =
+              "Google Sign-In was cancelled or dismissed. Tap Sign In with Google to retry, or tap Play as Drifter below."
+          }
+        },
+      )
+    }
+  }
+
   LaunchedEffect(Unit) {
-    if (Firebase.auth.currentUser != null) {
+    if (runCatching { Firebase.auth.currentUser }.getOrNull() != null) {
       onAuthSuccess()
     }
   }
@@ -494,24 +599,7 @@ fun AuthScreen(
                   isOnline = isOnline,
                   isLoading = isLoading,
                   errorMessage = errorMessage,
-                  onSignInGoogle = {
-                    errorMessage = null
-                    isLoading = true
-                    onGoogleSignInClicked(
-                      context = context,
-                      credentialManager = credentialManager,
-                      onAuthSuccess = {
-                        isLoading = false
-                        onAuthSuccess()
-                      },
-                      onAuthError = { msg ->
-                        isLoading = false
-                        errorMessage = msg
-                      },
-                      scope = coroutineScope,
-                      onAuthCancelled = { isLoading = false },
-                    )
-                  },
+                  onSignInGoogle = startGoogleSignIn,
                   onEnterDrifter = onPlayAsGuest,
                 )
               }
@@ -527,24 +615,7 @@ fun AuthScreen(
                 isOnline = isOnline,
                 isLoading = isLoading,
                 errorMessage = errorMessage,
-                onSignInGoogle = {
-                  errorMessage = null
-                  isLoading = true
-                  onGoogleSignInClicked(
-                    context = context,
-                    credentialManager = credentialManager,
-                    onAuthSuccess = {
-                      isLoading = false
-                      onAuthSuccess()
-                    },
-                    onAuthError = { msg ->
-                      isLoading = false
-                      errorMessage = msg
-                    },
-                    scope = coroutineScope,
-                    onAuthCancelled = { isLoading = false },
-                  )
-                },
+                onSignInGoogle = startGoogleSignIn,
                 onEnterDrifter = onPlayAsGuest,
               )
             }
