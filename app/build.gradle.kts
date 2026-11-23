@@ -14,11 +14,11 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.riftarena.vxpqzm"
+    applicationId = "com.game.rift"
     minSdk = 24
     targetSdk = 36
-    versionCode = 107
-    versionName = "1.0.107"
+    versionCode = 108
+    versionName = "1.0.108"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

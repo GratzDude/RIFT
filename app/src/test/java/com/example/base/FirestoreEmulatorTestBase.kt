@@ -43,7 +43,7 @@ abstract class FirestoreEmulatorTestBase {
           FirebaseApp.initializeApp(
             context,
             FirebaseOptions.Builder()
-              .setApplicationId("com.aistudio.riftarena.vxpqzm")
+              .setApplicationId("com.game.rift")
               .setProjectId(PROJECT_ID)
               .setApiKey("fake-api-key-for-emulator")
               .build(),

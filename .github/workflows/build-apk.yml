@@ -28,8 +28,11 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Ensure Persistent Upload Keystore & Web Client ID
+      - name: Ensure Persistent Upload Keystore, Firebase Config & Web Client ID
         env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          RIFT_GOOGLE_SERVICES_JSON: ${{ secrets.RIFT_GOOGLE_SERVICES_JSON }}
+          RIFT_FIREBASE_API_KEY: ${{ secrets.RIFT_FIREBASE_API_KEY }}
           RIFT_WEB_CLIENT_ID: ${{ secrets.RIFT_WEB_CLIENT_ID }}
         run: |
           if [ ! -f "debug.keystore" ]; then
@@ -40,51 +43,130 @@ jobs:
             git commit -m "chore: save persistent Android keystore [skip ci]" || true
             git push origin HEAD:main || true
           fi
+          echo "Active signing keystore fingerprints:"
+          keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -E "SHA1:|SHA256:" || true
           cp debug.keystore app/debug.keystore || true
           cp debug.keystore my-upload-key.jks || true
           cp debug.keystore app/my-upload-key.jks || true
 
-          EFFECTIVE_WEB_CLIENT_ID="$(printf '%s' "${RIFT_WEB_CLIENT_ID:-}" | tr -d '[:space:]')"
-          if [ -z "$EFFECTIVE_WEB_CLIENT_ID" ]; then
-            EFFECTIVE_WEB_CLIENT_ID="000000000000-placeholder.apps.googleusercontent.com"
-          fi
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import pathlib
 
-          if [ -f "app/google-services.json" ]; then
-            sed -i 's/"package_name": *"[^"]*"/"package_name": "com.game.rift"/g' app/google-services.json
-            if grep -q '"client_type": *3' app/google-services.json; then
-              if [ -n "${RIFT_WEB_CLIENT_ID:-}" ]; then
-                python3 -c '
-          import json, os
-          p = "app/google-services.json"
-          cid = os.environ["RIFT_WEB_CLIENT_ID"].strip()
-          with open(p, "r", encoding="utf-8") as f:
-              data = json.load(f)
-          for client in data.get("client", []):
-              for oc in client.get("oauth_client", []):
-                  if oc.get("client_type") == 3 and cid:
-                      oc["client_id"] = cid
-              for oc in client.get("services", {}).get("appinvite_service", {}).get("other_platform_oauth_client", []):
-                  if oc.get("client_type") == 3 and cid:
-                      oc["client_id"] = cid
-          with open(p, "w", encoding="utf-8") as f:
-              json.dump(data, f, indent=2)
-          '
-              fi
-              rm -f app/src/main/res/values/auth_fallback.xml
-            else
-              mkdir -p app/src/main/res/values
-              printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="default_web_client_id" translatable="false">%s</string>\n</resources>\n' "$EFFECTIVE_WEB_CLIENT_ID" > app/src/main/res/values/auth_fallback.xml
-            fi
-          else
-            mkdir -p app/src/main/res/values
-            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="default_web_client_id" translatable="false">%s</string>\n</resources>\n' "$EFFECTIVE_WEB_CLIENT_ID" > app/src/main/res/values/auth_fallback.xml
-          fi
+          gs_path = pathlib.Path("app/google-services.json")
+          raw_secret = (
+              os.environ.get("GOOGLE_SERVICES_JSON", "").strip()
+              or os.environ.get("RIFT_GOOGLE_SERVICES_JSON", "").strip()
+          )
+          web_cid = os.environ.get("RIFT_WEB_CLIENT_ID", "").strip()
+          api_key = os.environ.get("RIFT_FIREBASE_API_KEY", "").strip()
+
+          if raw_secret:
+              decoded = raw_secret
+              if not raw_secret.startswith("{"):
+                  try:
+                      decoded = base64.b64decode(raw_secret).decode("utf-8")
+                  except Exception:
+                      decoded = raw_secret
+              parsed = json.loads(decoded)
+              gs_path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+              print("Materialized app/google-services.json from repository secret.")
+          elif not gs_path.exists() and api_key:
+              effective_cid = web_cid or ("000000000000-placeholder." + "apps.googleusercontent.com")
+              synthesized = {
+                  "project_info": {
+                      "project_number": "65019105126",
+                      "project_id": "gen-lang-client-0921275231",
+                      "storage_bucket": "gen-lang-client-0921275231.firebasestorage.app",
+                  },
+                  "client": [
+                      {
+                          "client_info": {
+                              "mobilesdk_app_id": "1:65019105126:android:25130544cd475e527cc2a7",
+                              "android_client_info": {"package_name": "com.game.rift"},
+                          },
+                          "oauth_client": [
+                              {
+                                  "client_id": effective_cid,
+                                  "client_type": 3,
+                              }
+                          ],
+                          "api_key": [{"current_key": api_key}],
+                          "services": {
+                              "appinvite_service": {
+                                  "other_platform_oauth_client": [
+                                      {"client_id": effective_cid, "client_type": 3}
+                                  ]
+                              }
+                          },
+                      }
+                  ],
+                  "configuration_version": "1",
+              }
+              gs_path.write_text(json.dumps(synthesized, indent=2), encoding="utf-8")
+              print("Synthesized app/google-services.json for com.game.rift from RIFT_FIREBASE_API_KEY.")
+
+          if gs_path.exists():
+              data = json.loads(gs_path.read_text(encoding="utf-8"))
+              clients = data.get("client", [])
+              has_rift_pkg = any(
+                  c.get("client_info", {}).get("android_client_info", {}).get("package_name") == "com.game.rift"
+                  for c in clients
+              )
+              if not has_rift_pkg and clients:
+                  clients[0].setdefault("client_info", {}).setdefault("android_client_info", {})["package_name"] = "com.game.rift"
+                  for oc in clients[0].get("oauth_client", []):
+                      if "android_info" in oc:
+                          oc["android_info"]["package_name"] = "com.game.rift"
+              has_type_3 = False
+              for c in clients:
+                  if c.get("client_info", {}).get("android_client_info", {}).get("package_name") == "com.game.rift":
+                      for oc in c.get("oauth_client", []):
+                          if oc.get("client_type") == 3:
+                              has_type_3 = True
+                              if web_cid:
+                                  oc["client_id"] = web_cid
+                      if not has_type_3 and web_cid:
+                          c.setdefault("oauth_client", []).append({"client_id": web_cid, "client_type": 3})
+                          has_type_3 = True
+                      for oc in c.get("services", {}).get("appinvite_service", {}).get("other_platform_oauth_client", []):
+                          if oc.get("client_type") == 3 and web_cid:
+                              oc["client_id"] = web_cid
+              gs_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+              fallback_xml = pathlib.Path("app/src/main/res/values/auth_fallback.xml")
+              if has_type_3:
+                  if fallback_xml.exists():
+                      fallback_xml.unlink()
+              else:
+                  fallback_cid = web_cid or ("000000000000-placeholder." + "apps.googleusercontent.com")
+                  fallback_xml.parent.mkdir(parents=True, exist_ok=True)
+                  fallback_xml.write_text(
+                      '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+                      f'    <string name="default_web_client_id" translatable="false">{fallback_cid}</string>\n'
+                      '</resources>\n',
+                      encoding="utf-8",
+                  )
+          else:
+              fallback_cid = web_cid or ("000000000000-placeholder." + "apps.googleusercontent.com")
+              fallback_xml = pathlib.Path("app/src/main/res/values/auth_fallback.xml")
+              fallback_xml.parent.mkdir(parents=True, exist_ok=True)
+              fallback_xml.write_text(
+                  '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+                  f'    <string name="default_web_client_id" translatable="false">{fallback_cid}</string>\n'
+                  '</resources>\n',
+                  encoding="utf-8",
+              )
+              print("WARNING: app/google-services.json not present; set GOOGLE_SERVICES_JSON secret in GitHub for cloud Google Sign-In.")
+          PY
+
           if [ ! -f "app/src/main/res/values/firebase_applet_config.xml" ]; then
             mkdir -p app/src/main/res/values
-            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="firestore_database_id" translatable="false">(default)</string>\n</resources>\n' > app/src/main/res/values/firebase_applet_config.xml
+            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="firestore_database_id" translatable="false">ai-studio-android-e89169ef-97d3-4e29-8d52-8ef180c62ff3</string>\n</resources>\n' > app/src/main/res/values/firebase_applet_config.xml
           fi
 
-      - name: Set Package ID to com.game.rift, Verify versionCode >= 107 & Point Release Signing to Keystore
+      - name: Set Package ID to com.game.rift, Verify versionCode >= 108 & Point Release Signing to Keystore
         run: |
           sed -i 's/applicationId = "[^"]*"/applicationId = "com.game.rift"/g' app/build.gradle.kts
           sed -i 's/signingConfigs.getByName("release")/signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")/g' app/build.gradle.kts
@@ -97,8 +179,8 @@ jobs:
             echo "ERROR: Expected applicationId com.game.rift for Play Console build, got '$APP_ID'"
             exit 1
           fi
-          if [ -z "$APP_VERSION_CODE" ] || [ "$APP_VERSION_CODE" -lt 107 ]; then
-            echo "ERROR: Expected versionCode >= 107 in app/build.gradle.kts, got '$APP_VERSION_CODE'"
+          if [ -z "$APP_VERSION_CODE" ] || [ "$APP_VERSION_CODE" -lt 108 ]; then
+            echo "ERROR: Expected versionCode >= 108 in app/build.gradle.kts, got '$APP_VERSION_CODE'"
             exit 1
           fi
           echo "RIFT_APP_ID=$APP_ID" >> "$GITHUB_ENV"
@@ -124,12 +206,12 @@ jobs:
             echo '```'
             echo "## 1. Directory Tree"
             echo '```text'
-            find app public index.html build.gradle.kts settings.gradle.kts -maxdepth 6 -not -path "*/build/*" 2>/dev/null | sort
+            find app public index.html build.gradle.kts settings.gradle.kts -maxdepth 6 -not -path "*/build/*" -not -name "google-services.json" 2>/dev/null | sort
             echo '```'
             echo "## 2. Source Code Files"
             find app public index.html build.gradle.kts settings.gradle.kts -type f \
               \( -name "*.kt" -o -name "*.html" -o -name "*.js" -o -name "*.css" -o -name "*.kts" -o -name "*.xml" -o -name "*.json" \) \
-              -not -path "*/build/*" 2>/dev/null | sort | while read -r f; do
+              -not -path "*/build/*" -not -name "google-services.json" 2>/dev/null | sort | while read -r f; do
                 echo ""
                 echo "### FILE: $f"
                 echo '```'

@@ -268,10 +268,11 @@ fun onGoogleSignInClicked(
       Log.e("Auth", "Google Sign-In failed", t)
       val friendlyMsg =
         if (
-          detail.contains("API key not valid", ignoreCase = true) ||
+          com.example.RiftApplication.isUsingFallbackFirebase ||
+            detail.contains("API key not valid", ignoreCase = true) ||
             detail.contains("rift-offline-fallback", ignoreCase = true)
         ) {
-          "Google account selected, but cloud Firebase credentials (google-services.json) are not bundled in this build. Tap Play as Drifter below to play."
+          "Google account selected, but cloud Firebase credentials (google-services.json) are not bundled in this build. Set GOOGLE_SERVICES_JSON in GitHub Secrets, or tap Play as Drifter below to play."
         } else {
           "Google Sign-In failed: ${detail.ifBlank { t::class.java.simpleName }}. Tap Sign In with Google to retry, or tap Play as Drifter below."
         }

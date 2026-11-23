@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 107
+const val CURRENT_RIFT_BUILD_VERSION = 108
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,20 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 108,
+      versionTag = "v1.0.108 // BUILD #108",
+      releaseDate = "Nov 22, 2026",
+      headline = "Unified com.game.rift Package Identity, Firebase App Provisioning & CI Google Sign-In Pipeline",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Unified com.game.rift Package Identity & Version Code 108: Updated defaultConfig.applicationId directly to com.game.rift with versionCode = 108 and versionName = 1.0.108 in app/build.gradle.kts (synced 1:1 with CURRENT_RIFT_BUILD_VERSION = 108), privacy.html, and FirestoreEmulatorTestBase while keeping Kotlin namespace = com.example intact.",
+          "Firebase & Google Cloud OAuth Provisioning for com.game.rift: Provisioned the com.game.rift Android client (1:65019105126:android:25130544cd475e527cc2a7) and Web OAuth Client (client_type 3) in Firebase project gen-lang-client-0921275231 alongside named Firestore Enterprise database ai-studio-android-e89169ef-97d3-4e29-8d52-8ef180c62ff3.",
+          "GitHub Actions Cloud Auth & Multi-Client Config Support: Updated .github/workflows/build-apk.yml to materialize app/google-services.json from GOOGLE_SERVICES_JSON (or RIFT_FIREBASE_API_KEY + RIFT_WEB_CLIENT_ID), preserve multi-client google-services.json entries without corrupting mobilesdk_app_id, bind the provisioned Firestore database ID instead of (default), and keep google-services.json excluded from public codebase snapshots.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 107,
       versionTag = "v1.0.107 // BUILD #107",
