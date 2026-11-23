@@ -24,6 +24,11 @@ import kotlinx.coroutines.CoroutineExceptionHandler
  */
 class RiftApplication : Application() {
 
+  override fun attachBaseContext(base: Context?) {
+    super.attachBaseContext(base)
+    runCatching { installUncaughtExceptionGuard() }
+  }
+
   override fun onCreate() {
     super.onCreate()
     installUncaughtExceptionGuard()

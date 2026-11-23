@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 105
+const val CURRENT_RIFT_BUILD_VERSION = 106
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,20 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 106,
+      versionTag = "v1.0.106 // BUILD #106",
+      releaseDate = "Nov 22, 2026",
+      headline = "Google Play Console com.game.rift Package Alignment, Version Code 106 & Startup Crash Guard",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Google Play Console com.game.rift Package Alignment: Restored applicationId = com.game.rift and aligned all google-services.json package_name entries to com.game.rift during the GitHub release build step so RIFT-release.aab and RIFT.apk match the active Google Play Console listing without package-name or content-provider-authority conflicts.",
+          "Version Code 106 Synchronization: Incremented versionCode to 106 and versionName to 1.0.106 in app/build.gradle.kts synced 1:1 with CURRENT_RIFT_BUILD_VERSION = 106 and enforced versionCode >= 106 in CI.",
+          "Preserved Safe Firebase & First-Launch Crash Guard: Kept RiftApplication registered in AndroidManifest.xml with early fallback FirebaseOptions initialization, uncaught exception and coroutine startup guards across RiftApplication and MainActivity, and android.hardware.screen.landscape marked optional (android:required=false) so launching on tester phones never closes immediately.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 105,
       versionTag = "v1.0.105 // BUILD #105",
