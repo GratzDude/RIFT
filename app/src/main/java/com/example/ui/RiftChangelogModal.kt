@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 109
+const val CURRENT_RIFT_BUILD_VERSION = 110
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,21 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 110,
+      versionTag = "v1.0.110 // BUILD #110",
+      releaseDate = "Nov 23, 2026",
+      headline = "Spacetime-Tear Playfield Rifts, Full-Width Side-Bay Selectors, Overwatch Info Stage, Complete Tactical Codex, Shard Store & Merged Tutorial",
+      badgeLabel = "SPACETIME RIFTS, OVERWATCH INFO STAGE & CODEX",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Spacetime-Tear Playfield Rifts & Stepped Multi-Layer Parallax: Upgraded Gravity, Repulsor, Phase, Plasma, and Unstable Merged Rifts into volatile spacetime tears with deep #02040A-to-#000000 abyssal event horizons, counter-drifting billowing storm turbulence shelves across 0.14x/0.36x/0.68x/1.00x parallax planes, jagged spacetime fracture rim teeth paired with segmented 5-stop metallic collars, forked rim-to-throat lightning bolts, and crisp optical meniscus highlights matching the arena boundary storm and Star Forge core.",
+          "Full-Width Side-Bay Selectors, Scaled Typography & Single Action Controls: Expanded left and right flanking side-bay decks across 100% of available horizontal width from safe-drawing screen edges to the central Overwatch bezel, scaled selector and readout typography up for clear mobile legibility, replaced text badges with Resonance crest icons across arena ship labels, HUD kill feeds, matchmaking, and modals, and eliminated duplicate exit, launch, and Flux charge buttons.",
+          "Overwatch Information Stage, Complete 5-Section Tactical Codex & Full Shard Store: Wired side-bay selectors across Hangar, Rift Frame, Game Modes, Rift Conduit, Shard Store, and Helm Systems so selecting ships, modules, modes, supply buffs, rifts, Rift Station obstacles, cosmetics, or codex entries renders rich visual and plain-English inspection cards inside the central Overwatch stage, expanded the Tactical Codex to cover all gameplay systems, and exposed the full Shard Store from the top Shard readout.",
+          "Merged Solo Tutorial With Accidental-Exit Confirmation Guard: Unified legacy guide and practice triggers into a single Tutorial launch action across the Rift Hub and Helm Systems, and added an explicit Exit Tutorial confirmation prompt on controller B, system Back, and HUD exit taps so accidental button presses never drop pilots out of flight training.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 109,
       versionTag = "v1.0.109 // BUILD #109",

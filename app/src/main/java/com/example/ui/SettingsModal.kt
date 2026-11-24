@@ -227,7 +227,7 @@ private fun SettingsBeveledButton(
     Text(
       text = label,
       color = textColor,
-      fontSize = if (isCompactPhone) 9.6.sp else 10.5.sp,
+      fontSize = if (isCompactPhone) 10.2.sp else 11.2.sp,
       fontWeight = FontWeight.ExtraBold,
       fontFamily = Mono,
       maxLines = 1,
@@ -271,7 +271,7 @@ private fun HelmSubDeckPill(
       Text(
         text = label,
         color = if (selected) Color.White else Color(0xFFCBD5E1),
-        fontSize = 9.8.sp,
+        fontSize = if (selected) 10.6.sp else 10.2.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = Mono,
         maxLines = 1,
@@ -309,6 +309,7 @@ fun SettingsModal(
   onOpenChangelog: () -> Unit = {},
   onOpenAudioForge: () -> Unit = {},
   onOpenStarForge: () -> Unit = {},
+  onStartTutorial: () -> Unit = {},
   initialSubDeck: Int = 0,
   onSubDeckChanged: (Int) -> Unit = {},
   isNexusStreaming: Boolean = false,
@@ -473,6 +474,17 @@ fun SettingsModal(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
+        SettingsBeveledButton(
+          label = "[TUTORIAL]",
+          topColor = Color(0xFF0A2E2B),
+          bottomColor = TabletShellBg,
+          borderColor = Color(0xFFFACC15),
+          textColor = Color(0xFFFEF08A),
+          isCompactPhone = isCompactPhone,
+          heightOverride = 32.dp,
+          testTag = "settings_btn_start_tutorial",
+          onClick = onStartTutorial,
+        )
         if (RiftVisualForgeState.SHOW_DEV_FORGE) {
           SettingsBeveledButton(
             label = "[STAR FORGE 1:1]",
@@ -481,7 +493,7 @@ fun SettingsModal(
             borderColor = Color(0xFFC084FC),
             textColor = Color(0xFFE9D5FF),
             isCompactPhone = isCompactPhone,
-            heightOverride = 30.dp,
+            heightOverride = 32.dp,
             testTag = "settings_btn_open_star_forge",
             onClick = onOpenStarForge,
           )
@@ -493,7 +505,7 @@ fun SettingsModal(
           borderColor = TabletTealBorder,
           textColor = TabletTealBorder,
           isCompactPhone = isCompactPhone,
-          heightOverride = 30.dp,
+          heightOverride = 32.dp,
           testTag = "settings_btn_open_changelog",
           onClick = onOpenChangelog,
         )
@@ -659,7 +671,7 @@ fun SettingsModal(
                       if (isGoogleAuthenticated) "UPLINK: ${cloudSyncHealth.statusLabel} • ${activeSectorTag.take(18)}"
                       else "UPLINK: LOCAL GUEST MODE (SIGN IN FOR LIVE PVP)",
                     color = diagColor,
-                    fontSize = if (isCompactPhone) 8.2.sp else 8.8.sp,
+                    fontSize = if (isCompactPhone) 9.6.sp else 10.2.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = Mono,
                     maxLines = 1,
@@ -675,7 +687,7 @@ fun SettingsModal(
                   Text(
                     text = diagDetail,
                     color = Color(0xFF94A3B8),
-                    fontSize = if (isCompactPhone) 7.6.sp else 8.2.sp,
+                    fontSize = if (isCompactPhone) 9.0.sp else 9.6.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = Mono,
                     maxLines = 1,
@@ -1321,20 +1333,35 @@ fun SettingsModal(
                   Text(
                     text = "LIVE ARENA CALLSIGN PREVIEW",
                     color = Color(0xFF94A3B8),
-                    fontSize = 9.5.sp,
+                    fontSize = 10.2.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = Mono,
                   )
                   Spacer(modifier = Modifier.height(3.dp))
-                  Text(
-                    text = "[SYN] VIPER_ACE • 350 RES",
-                    color = TabletCyanBorder,
-                    fontSize = (12.5f * playfieldTextScale.coerceIn(0.75f, 1.75f)).sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = Mono,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                  )
+                  val previewScale = playfieldTextScale.coerceIn(0.75f, 1.75f)
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                  ) {
+                    Text(
+                      text = "[SYN] VIPER_ACE •",
+                      color = TabletCyanBorder,
+                      fontSize = (12.5f * previewScale).sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = Mono,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                    )
+                    ResonanceCrestIcon(sizeDp = (14f * previewScale).dp)
+                    Text(
+                      text = "350",
+                      color = Color(0xFFFFD700),
+                      fontSize = (12.5f * previewScale).sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = Mono,
+                      maxLines = 1,
+                    )
+                  }
                 }
               }
             }

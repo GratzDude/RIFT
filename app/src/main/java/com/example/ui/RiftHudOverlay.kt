@@ -297,6 +297,7 @@ fun RiftHudOverlay(
  isNexusStreaming: Boolean = false,
  isModalOpen: Boolean = false,
  onOpenNexus: () -> Unit = {},
+ onRequestExitTutorial: () -> Unit = onOpenNexus,
  onOpenModes: () -> Unit = onOpenNexus,
  onEngageBrake: () -> Unit,
  onToggleMultifire: () -> Unit,
@@ -419,9 +420,9 @@ fun RiftHudOverlay(
      horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
      Text(
-      text = "PRACTICE RIFT",
+      text = "TUTORIAL",
       color = Color(0xFF00F5D4),
-      fontSize = (8.4f * textScale).sp,
+      fontSize = (9.2f * textScale).sp,
       fontWeight = FontWeight.Black,
       fontFamily = FontFamily.Monospace,
       style = WingTelemetryTextStyle,
@@ -449,7 +450,7 @@ fun RiftHudOverlay(
        Text(
         text = "$hullId",
         color = if (isActiveHull) Color.White else Color(0xFF94A3B8),
-        fontSize = (8.0f * textScale).sp,
+        fontSize = (8.6f * textScale).sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
        )
@@ -470,15 +471,15 @@ fun RiftHudOverlay(
          if (highlightExitBtn) Color(0xFFFFD700) else Color(0xFF38BDF8),
          RoundedCornerShape(6.dp),
         )
-        .clickable { onOpenNexus() }
+        .clickable { onRequestExitTutorial() }
         .padding(horizontal = 8.dp, vertical = 3.dp)
         .testTag("practice_rift_exit_btn"),
       contentAlignment = Alignment.Center,
      ) {
       Text(
-       text = "[EXIT TO NEXUS]",
+       text = "[EXIT TUTORIAL]",
        color = if (highlightExitBtn) Color(0xFFFEF08A) else Color(0xFF38BDF8),
-       fontSize = (8.0f * textScale).sp,
+       fontSize = (8.6f * textScale).sp,
        fontWeight = FontWeight.Black,
        fontFamily = FontFamily.Monospace,
       )
@@ -1780,11 +1781,26 @@ private fun SymmetricBottomConsoleLayout(
    horizontalArrangement = if (fillEqualSpace) Arrangement.SpaceBetween else Arrangement.spacedBy((5.5f * textScale).dp),
   ) {
    Column(verticalArrangement = Arrangement.spacedBy(lineGap)) {
-    Text(
-     "SHIP ${engine.getShipResonance(player.shipId)} RES • K/D ${engine.allTimeKills}/${engine.allTimeDeaths}",
-     color = Color(0xFFFFD700), fontSize = (8.0f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1,
+    Row(
+     verticalAlignment = Alignment.CenterVertically,
+     horizontalArrangement = Arrangement.spacedBy((2.5f * textScale).dp),
      modifier = Modifier.clickable(enabled = !uiUnlocked) { onOpenNexus() }.testTag("hud_bounty_kd_readout"),
-    )
+    ) {
+     Text(
+      "SHIP",
+      color = Color(0xFFFFD700), fontSize = (8.0f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1,
+     )
+     Image(
+      bitmap = resonanceIcon,
+      contentDescription = "Ship Resonance",
+      filterQuality = FilterQuality.High,
+      modifier = Modifier.size((10.0f * textScale).dp),
+     )
+     Text(
+      "${engine.getShipResonance(player.shipId)} • K/D ${engine.allTimeKills}/${engine.allTimeDeaths}",
+      color = Color(0xFFFFD700), fontSize = (8.0f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1,
+     )
+    }
     Row(
      verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy((3.0f * textScale).dp),
      modifier = Modifier.clickable(enabled = !uiUnlocked) { onOpenProgression() }.testTag("hud_console_progression_link"),
@@ -1795,7 +1811,7 @@ private fun SymmetricBottomConsoleLayout(
       filterQuality = FilterQuality.High,
       modifier = Modifier.size((10.5f * textScale).dp),
      )
-     Text("${engine.liveResonance} RES", color = Color(0xFFFFD700), fontSize = (7.4f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
+     Text("${engine.liveResonance}", color = Color(0xFFFFD700), fontSize = (7.6f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
      Text("•", color = Color(0xFF64748B), fontSize = (7.0f * textScale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
      Image(
       bitmap = riftShardIcon,
@@ -2244,8 +2260,15 @@ private fun KillFeedRow(entry: KillFeedEntry, alpha: Float) {
  Row(modifier = Modifier.fillMaxWidth().padding(top = 1.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
   Text(killerDisplay, color = killerColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
   Text(">>", color = (if (isHighBountyShutdown) Color(0xFFF59E0B) else Color(0xFFCBD5E1)).copy(alpha = 0.85f * alpha), fontSize = 6.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, style = rowTextStyle)
-  Text(victimDisplay, color = victimColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-  Text("${entry.victimBounty} RES", color = bountyColor, fontSize = 7.2.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = rowTextStyle, maxLines = 1)
+  Text(victimDisplay, color = victimColor, fontSize = 7.6.sp, fontWeight = FontWeight.ExtraBold, style = rowTextStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+  val feedResonanceBmp = remember(RiftVisualForgeState.visualRevision) { RiftSpriteBaker.resonanceIconBitmap.asImageBitmap() }
+  Image(
+   bitmap = feedResonanceBmp,
+   contentDescription = "Resonance",
+   filterQuality = FilterQuality.High,
+   modifier = Modifier.size(9.5.dp).graphicsLayer { this.alpha = alpha },
+  )
+  Text("${entry.victimBounty}", color = bountyColor, fontSize = 7.6.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = rowTextStyle, maxLines = 1)
  }
 }
 

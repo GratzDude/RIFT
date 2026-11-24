@@ -201,9 +201,9 @@ fun CodexModal(
           )
           if (!isCompactPhone) {
             Text(
-              text = "SUPPLY BUFFS • PLAYFIELD RIFTS & 5X RIFT STATION • 10-HULL 0-RESONANCE PARITY",
+              text = "FLIGHT MANUAL • 6 COMPETITIVE MODES • SUPPLY BUFFS • SPACETIME RIFTS & RIFT STATION • 10 HULLS",
               color = Color(0xFF00F5D4),
-              fontSize = 9.8.sp,
+              fontSize = 10.4.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = CodexMono,
               maxLines = 1,
@@ -219,41 +219,73 @@ fun CodexModal(
             .border(1.dp, Color(0xFF1E3A5F), RoundedCornerShape(8.dp))
             .padding(2.dp)
             .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         CodexTabPill(
-          label = "[SUPPLY BUFFS]",
+          label = "[HOW TO PLAY]",
           glyphMode = 0,
           selected = selectedTab == 0,
-          accentColor = Color(0xFF38BDF8),
-          testTag = "codex_tab_buffs",
+          accentColor = Color(0xFF34D399),
+          testTag = "codex_tab_howto",
         ) {
           selectedTab = 0
         }
         CodexTabPill(
-          label = "[PLAYFIELD RIFTS]",
+          label = "[GAME MODES]",
           glyphMode = 1,
           selected = selectedTab == 1,
-          accentColor = Color(0xFFA855F7),
-          testTag = "codex_tab_rifts",
+          accentColor = Color(0xFFFACC15),
+          testTag = "codex_tab_modes",
         ) {
           selectedTab = 1
         }
         CodexTabPill(
-          label = "[10-HULL MATRIX]",
-          glyphMode = 2,
+          label = "[SUPPLY BUFFS]",
+          glyphMode = 0,
           selected = selectedTab == 2,
+          accentColor = Color(0xFF38BDF8),
+          testTag = "codex_tab_buffs",
+        ) {
+          selectedTab = 2
+        }
+        CodexTabPill(
+          label = "[RIFTS & OBSTACLES]",
+          glyphMode = 1,
+          selected = selectedTab == 3,
+          accentColor = Color(0xFFA855F7),
+          testTag = "codex_tab_rifts",
+        ) {
+          selectedTab = 3
+        }
+        CodexTabPill(
+          label = "[SHIPS & MODULES]",
+          glyphMode = 2,
+          selected = selectedTab == 4,
           accentColor = Color(0xFF00F5D4),
           testTag = "codex_tab_ships",
         ) {
-          selectedTab = 2
+          selectedTab = 4
         }
       }
     }
 
     when (selectedTab) {
       0 -> {
+        CodexHowToPlaySection(
+          isCompactPhone = isCompactPhone,
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+        )
+      }
+
+      1 -> {
+        CodexGameModesSection(
+          isCompactPhone = isCompactPhone,
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+        )
+      }
+
+      2 -> {
         LazyColumn(
           modifier =
             Modifier.weight(1f)
@@ -321,7 +353,7 @@ fun CodexModal(
         }
       }
 
-      1 -> {
+      3 -> {
         LazyColumn(
           modifier =
             Modifier.weight(1f)
@@ -339,9 +371,9 @@ fun CodexModal(
             ) {
               CodexHighlightCard(
                 modifier = Modifier.weight(1f),
-                title = "45S RIFT CYCLES",
+                title = "45S SPACETIME RIFT CYCLES",
                 body =
-                  "Playfield Rifts relocate every 45s outside the Safe Zone and never spawn inside Stasis Breach Jails or Rift Control rings.",
+                  "Spacetime-Tear Playfield Rifts relocate every 45s outside the Safe Zone and never spawn inside Stasis Breach Jails or Rift Control rings.",
                 bgColor = Color(0xFF1B102E),
                 borderColor = Color(0xFFA855F7),
                 bodyColor = Color(0xFFE9D5FF),
@@ -351,7 +383,7 @@ fun CodexModal(
                 modifier = Modifier.weight(1f),
                 title = "MAX GRAVITY & UNSTABLE RIFT",
                 body =
-                  "0.92x swept weapon absorption swells Gravity Rifts up to 440px; at >= 260px they drag & implode Asteroids/Stations (950/s crush + 360° Nova). Any 2 overlapping Rifts (incl. Phase Rifts) fuse into a calm 10.0s Unstable Rift that insta-kills outside Safe Zone (-25 RES).",
+                  "0.92x swept weapon absorption swells Gravity Rifts up to 440px; at >= 260px they drag & implode Asteroids/Stations (950/s crush + 360° Nova). Any 2 overlapping Rifts fuse into a 10.0s Unstable Rift (-25 Resonance outside Safe Zone).",
                 bgColor = Color(0xFF0A2229),
                 borderColor = Color(0xFF2DD4BF),
                 bodyColor = Color(0xFFCCFBF1),
@@ -529,6 +561,252 @@ fun CodexModal(
             }
           }
         }
+      }
+    }
+  }
+}
+
+private data class CodexGuideTopic(
+  val badge: String,
+  val title: String,
+  val summary: String,
+  val detail: String,
+  val accent: Color,
+)
+
+@Composable
+private fun CodexHowToPlaySection(
+  isCompactPhone: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val topics =
+    remember {
+      listOf(
+        CodexGuideTopic(
+          badge = "FLIGHT & SHARED FLUX",
+          title = "Inertial Twin-Stick Flight & Shared Flux Reactor",
+          summary =
+            "Left stick controls thrust and heading; right stick or touch controls primary fire, secondary ordnance, brake, and Special Crate buffs. Your ship's Flux ring around the circular radar powers BOTH your shields and your weapons.",
+          detail =
+            "Firing non-stop drains your Flux shield pool and leaves your hull exposed. Feather your shots, collect emerald ambient energy motes, or disengage briefly so your reactor recharges before re-entering a dogfight.",
+          accent = Color(0xFF00F5D4),
+        ),
+        CodexGuideTopic(
+          badge = "RESONANCE & HULLS",
+          title = "Per-Ship Resonance, Best Ship & 100-Point Hull Parity",
+          summary =
+            "Every hull (#1 Viper through #10 modular Rift Frame) is unlocked immediately at 0 Resonance on an identical 100-Point stat and weapon budget. Each hull tracks its own Resonance, feeding into your overall Pilot Resonance.",
+          detail =
+            "Your highest-Resonance hull is highlighted in gold as your Best Ship in the Hangar, while your actively charged hull uses a cyan lock border. Eliminate rivals, survive skirmishes, and complete Daily Directives in the Rift Conduit to climb tiers.",
+          accent = Color(0xFFFACC15),
+        ),
+        CodexGuideTopic(
+          badge = "SAFE HARBOR & CRATES",
+          title = "5x Rift Station Safe Harbor & Supply Crate Tech",
+          summary =
+            "Sector Convergence and Flux Core feature a central 5x ship-scale Rift Station Safe Zone. Weapons lock inside, and staying beyond 15 seconds (or firing just before entry) triggers a 15-second Safe-Zone lockout.",
+          detail =
+            "Shatter 2,400-Flux Crystal Asteroids or collapse swollen Gravity Rifts (>= 260px) to spawn metallic Supply Crates containing 0-Flux Special weapons (Chakram, Nova Ring, Swarm, Barrier, Lance) and permanent Hull Overcharge stacks.",
+          accent = Color(0xFF38BDF8),
+        ),
+        CodexGuideTopic(
+          badge = "SYNDICATES & SHARDS",
+          title = "Syndicates, Strike Wings, Matchmaking & Shard Store",
+          summary =
+            "Found or join player-chartered Syndicates, form up to 5-pilot Strike Wings, and queue into Resonance-matched battles that launch within 15 seconds.",
+          detail =
+            "Open the Shard Store from the top Rift Shards readout (999,999 tester Shards active) to unlock hull trim styles, engine trails, warp effects, and modular Rift Frame slots A through E.",
+          accent = Color(0xFFC084FC),
+        ),
+      )
+    }
+
+  LazyColumn(
+    modifier =
+      modifier
+        .background(Color(0xFF081426), RoundedCornerShape(10.dp))
+        .border(1.dp, Color(0xFF1B3454), RoundedCornerShape(10.dp))
+        .padding(if (isCompactPhone) 7.dp else 10.dp)
+        .testTag("codex_howto_list"),
+    verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 7.dp else 9.dp),
+  ) {
+    items(topics, key = { it.title }) { topic ->
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .background(Color(0xFF0E1F38), RoundedCornerShape(9.dp))
+            .border(1.dp, topic.accent.copy(alpha = 0.62f), RoundedCornerShape(9.dp))
+            .padding(if (isCompactPhone) 9.dp else 11.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = topic.title,
+            color = Color.White,
+            fontSize = if (isCompactPhone) 12.2.sp else 13.8.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = CodexSans,
+            modifier = Modifier.weight(1f).padding(end = 8.dp),
+          )
+          Box(
+            modifier =
+              Modifier.background(topic.accent.copy(alpha = 0.18f), RoundedCornerShape(5.dp))
+                .border(1.dp, topic.accent, RoundedCornerShape(5.dp))
+                .padding(horizontal = 7.dp, vertical = 2.dp),
+          ) {
+            Text(
+              text = topic.badge,
+              color = topic.accent,
+              fontSize = 9.6.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = CodexMono,
+            )
+          }
+        }
+        Text(
+          text = topic.summary,
+          color = Color(0xFFE2E8F0),
+          fontSize = if (isCompactPhone) 10.6.sp else 11.6.sp,
+          lineHeight = if (isCompactPhone) 14.0.sp else 15.4.sp,
+        )
+        Text(
+          text = "TIP: ${topic.detail}",
+          color = topic.accent.copy(alpha = 0.92f),
+          fontSize = if (isCompactPhone) 10.0.sp else 10.8.sp,
+          lineHeight = if (isCompactPhone) 13.2.sp else 14.4.sp,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun CodexGameModesSection(
+  isCompactPhone: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val modes =
+    remember {
+      listOf(
+        CodexGuideTopic(
+          badge = "OPEN SECTOR • 60M CYCLE",
+          title = "1. Sector Convergence",
+          summary =
+            "Always-live open sector combat anchored by the central Rift Station Safe Harbor. Drop in solo or with your Strike Wing, harvest Supply Crates, outmaneuver Spacetime-Tear Rifts, and build per-ship and overall Resonance.",
+          detail =
+            "Anti-AFK Flux bleed applies outside combat if idle; dock inside Rift Station for up to 15 seconds to regroup safely.",
+          accent = Color(0xFF00F5D4),
+        ),
+        CodexGuideTopic(
+          badge = "OBJECTIVE • ORB CONTROL",
+          title = "2. Flux Core",
+          summary =
+            "Capture and hold the golden Flux Core Singularity Orb at the center of the sector to generate continuous Resonance while broadcasting a high-visibility radar beacon to every rival pilot.",
+          detail =
+            "Entering the Rift Station Safe Zone or activating Cloak immediately ejects the Flux Core at 1,650 px/s—rely on escort teammates, Anti-Bleed Barriers, and Repulsor Rifts to survive.",
+          accent = Color(0xFFFACC15),
+        ),
+        CodexGuideTopic(
+          badge = "TEAM PVP • <= 15S QUEUE",
+          title = "3. Rift Skirmish",
+          summary =
+            "Coordinated 5v5 Strike Wing dogfights matched against the closest-Resonance opponent squad within a strict 15-second matchmaking window.",
+          detail =
+            "Combine frontline brawlers (Aegis, Titan), flankers (Viper, Phantom), and Eclipse Stasis bubbles to control Supply Crate spawns and win on team score.",
+          accent = Color(0xFF38BDF8),
+        ),
+        CodexGuideTopic(
+          badge = "TERRITORY • DUAL RINGS",
+          title = "4. Rift Control",
+          summary =
+            "Contest and lock down the Alpha and Omega Rift Control rings to accumulate team dominance points. No central Safe Zone is active—commitment and rotation timing decide victory.",
+          detail =
+            "Playfield Rifts never spawn inside Alpha or Omega rings; use Proximity Locks, Stacked Barriers, and Shatter Cones to hold contested perimeter edges.",
+          accent = Color(0xFFA855F7),
+        ),
+        CodexGuideTopic(
+          badge = "RESCUE & LOCKDOWN",
+          title = "5. Stasis Breach",
+          summary =
+            "Eliminated pilots are detained inside the rival team's West or East Brig Reactor. Crack the enemy Brig shield to trigger a prison break for all captured allies, or capture the entire opposing wing for an instant sweep.",
+          detail =
+            "Assign a fast striker to harass the enemy Brig Reactor whenever two or more wingmates are detained.",
+          accent = Color(0xFFF43F5E),
+        ),
+        CodexGuideTopic(
+          badge = "SURVIVAL & CUSTOM LAB",
+          title = "6. Arena Elimination, Custom Games & Solo Tutorial",
+          summary =
+            "High-intensity round-based elimination inside the Storm Wall, plus full Custom Games (custom physics speed multipliers, crate rates, bot counts, and Rift toggles) and the interactive Solo Tutorial.",
+          detail =
+            "Launch Tutorial anytime from the Rift Hub or Helm Systems to test all 10 hulls at max Flux and practice combat maneuvers with +ADD BOT.",
+          accent = Color(0xFF34D399),
+        ),
+      )
+    }
+
+  LazyColumn(
+    modifier =
+      modifier
+        .background(Color(0xFF081426), RoundedCornerShape(10.dp))
+        .border(1.dp, Color(0xFF1B3454), RoundedCornerShape(10.dp))
+        .padding(if (isCompactPhone) 7.dp else 10.dp)
+        .testTag("codex_modes_list"),
+    verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 7.dp else 9.dp),
+  ) {
+    items(modes, key = { it.title }) { mode ->
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .background(Color(0xFF0E1F38), RoundedCornerShape(9.dp))
+            .border(1.dp, mode.accent.copy(alpha = 0.62f), RoundedCornerShape(9.dp))
+            .padding(if (isCompactPhone) 9.dp else 11.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = mode.title,
+            color = Color.White,
+            fontSize = if (isCompactPhone) 12.2.sp else 13.8.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = CodexSans,
+            modifier = Modifier.weight(1f).padding(end = 8.dp),
+          )
+          Box(
+            modifier =
+              Modifier.background(mode.accent.copy(alpha = 0.18f), RoundedCornerShape(5.dp))
+                .border(1.dp, mode.accent, RoundedCornerShape(5.dp))
+                .padding(horizontal = 7.dp, vertical = 2.dp),
+          ) {
+            Text(
+              text = mode.badge,
+              color = mode.accent,
+              fontSize = 9.6.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = CodexMono,
+            )
+          }
+        }
+        Text(
+          text = mode.summary,
+          color = Color(0xFFE2E8F0),
+          fontSize = if (isCompactPhone) 10.6.sp else 11.6.sp,
+          lineHeight = if (isCompactPhone) 14.0.sp else 15.4.sp,
+        )
+        Text(
+          text = "TACTICAL: ${mode.detail}",
+          color = mode.accent.copy(alpha = 0.92f),
+          fontSize = if (isCompactPhone) 10.0.sp else 10.8.sp,
+          lineHeight = if (isCompactPhone) 13.2.sp else 14.4.sp,
+        )
       }
     }
   }
@@ -880,16 +1158,19 @@ private fun CodexHullReferenceCard(
           )
         }
       }
-      Box(
+      Row(
         modifier =
           Modifier.background(Color(0xFF06281E), RoundedCornerShape(5.dp))
             .border(1.dp, Color(0xFF10B981), RoundedCornerShape(5.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .padding(horizontal = 6.dp, vertical = 2.5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
       ) {
+        ResonanceCrestIcon(sizeDp = 11.dp)
         Text(
-          text = "0 RES • 100 PTS",
+          text = "0 • 100 PTS",
           color = Color(0xFF34D399),
-          fontSize = 8.6.sp,
+          fontSize = 9.4.sp,
           fontWeight = FontWeight.Black,
           fontFamily = CodexMono,
         )
@@ -1011,7 +1292,7 @@ private fun CodexTabPill(
       Text(
         text = label,
         color = if (selected) Color.White else Color(0xFF94A3B8),
-        fontSize = 9.8.sp,
+        fontSize = 10.4.sp,
         fontWeight = FontWeight.ExtraBold,
         fontFamily = CodexMono,
         maxLines = 1,

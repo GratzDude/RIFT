@@ -137,7 +137,7 @@ enum class NexusForgeTab(val label: String, val accent: Color) {
   DEV_STUDIO_STAGE("1:1 PLAYFIELD STUDIO", Color(0xFFC084FC)),
 }
 
-private enum class DysonCreationTab(val label: String, val accent: Color) {
+private enum class StarForgeCreationTab(val label: String, val accent: Color) {
   SHIPS_RIFT_FRAME("SHIPS & RIFT FRAME", Color(0xFF38BDF8)),
   CUSTOM_BUFF_LAB("CUSTOM BUFF LAB", Color(0xFF34D399)),
   AUDIO_SFX_LAB("TRACK A-C AUDIO & SFX", Color(0xFF00F5D4)),
@@ -173,7 +173,7 @@ private data class StageCrateBuffHitEntry(
 
 private val STUDIO_BOOKMARKS =
   listOf(
-    StudioBookmark("1: NEXUS RIFT", 4000f, 4000f, 1.00f),
+    StudioBookmark("1: RIFT STATION", 4000f, 4000f, 1.00f),
     StudioBookmark("2: OBSTACLES", 3160f, 3520f, 1.00f),
     StudioBookmark("3: RIFTS", 4840f, 3520f, 1.00f),
     StudioBookmark("4: ORDNANCE & STASIS", 4000f, 4720f, 1.00f),
@@ -414,9 +414,9 @@ fun NexusForgeModal(
 
   val shardReadoutText =
     if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) {
-      "INF • RES ${engine.liveResonance}"
+      "999,999"
     } else {
-      "$riftShards • RES ${engine.liveResonance}"
+      "$riftShards"
     }
 
   if (activeTab == NexusForgeTab.DEV_STUDIO_STAGE && isFullScreenStage) {
@@ -556,7 +556,16 @@ fun NexusForgeModal(
           Text(
             text = shardReadoutText,
             color = Color(0xFFE9D5FF),
-            fontSize = 9.sp,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          Text("•", color = Color(0xFF64748B), fontSize = 9.sp)
+          ResonanceCrestIcon(sizeDp = 13.dp)
+          Text(
+            text = "${engine.liveResonance}",
+            color = Color(0xFFFFD700),
+            fontSize = 10.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -2087,8 +2096,8 @@ private fun DevPlayfieldAndHudStudioBay(
   var layerFilter by remember { mutableStateOf<ForgeElementLayer?>(null) }
   var selectedTarget by remember { mutableStateOf(ForgeElementTarget.SAFE_ZONE_PAD) }
   var editingModalTarget by remember { mutableStateOf<ForgeElementTarget?>(null) }
-  var showDysonCreationOverlay by remember { mutableStateOf(false) }
-  var activeDysonTab by remember { mutableStateOf(DysonCreationTab.SHIPS_RIFT_FRAME) }
+  var showStarForgeCreationOverlay by remember { mutableStateOf(false) }
+  var activeStarForgeTab by remember { mutableStateOf(StarForgeCreationTab.SHIPS_RIFT_FRAME) }
   var editingCrateBuffSelection by remember { mutableStateOf<Pair<PowerUpCodexEntry?, SpecialBuffRegistryEntry?>?>(null) }
   var customBuffRosterTick by remember { mutableIntStateOf(0) }
   var showCombatSandboxModal by remember { mutableStateOf(false) }
@@ -2145,7 +2154,7 @@ private fun DevPlayfieldAndHudStudioBay(
     }
 
   fun closeAllForgeGlassOverlays() {
-    showDysonCreationOverlay = false
+    showStarForgeCreationOverlay = false
     editingCrateBuffSelection = null
     editingModalTarget = null
     showCombatSandboxModal = false
@@ -2172,7 +2181,7 @@ private fun DevPlayfieldAndHudStudioBay(
     when {
       editingCrateBuffSelection != null -> editingCrateBuffSelection = null
       editingModalTarget != null -> editingModalTarget = null
-      showDysonCreationOverlay -> showDysonCreationOverlay = false
+      showStarForgeCreationOverlay -> showStarForgeCreationOverlay = false
       showCombatSandboxModal -> showCombatSandboxModal = false
       showImportJsonDialog -> showImportJsonDialog = false
       isTestFlightMode -> exitTestFlightCleanly()
@@ -2274,9 +2283,9 @@ private fun DevPlayfieldAndHudStudioBay(
     } else {
       val hitEntriesState = remember { mutableListOf<StageHitEntry>() }
       val crateBuffHitsState = remember { mutableListOf<StageCrateBuffHitEntry>() }
-      var dysonSunScreenCenter by remember { mutableStateOf(Offset.Zero) }
-      var dysonSunHitRadiusPx by remember { mutableFloatStateOf(0f) }
-      var dysonHoloBannerRect by remember { mutableStateOf(Rect.Zero) }
+      var starForgeCoreScreenCenter by remember { mutableStateOf(Offset.Zero) }
+      var starForgeCoreHitRadiusPx by remember { mutableFloatStateOf(0f) }
+      var starForgeHoloBannerRect by remember { mutableStateOf(Rect.Zero) }
 
       Canvas(
         modifier =
@@ -2304,16 +2313,16 @@ private fun DevPlayfieldAndHudStudioBay(
             }
             .pointerInput(layerFilter, visualRev, calibRev, camWorldX, camWorldY, studioZoom, customBuffRosterTick) {
               detectTapGestures { tapOffset ->
-                // 1. Check 180px Shifting Multicolored Dyson Sun & Holographic "STAR FORGE" Letters tap first
-                val hitDysonCore =
-                  dysonSunHitRadiusPx > 4f &&
-                    hypot(tapOffset.x - dysonSunScreenCenter.x, tapOffset.y - dysonSunScreenCenter.y) <= dysonSunHitRadiusPx
-                val hitDysonHoloLetters =
-                  !dysonHoloBannerRect.isEmpty && dysonHoloBannerRect.contains(tapOffset)
-                if (layerFilter != ForgeElementLayer.HUD && (hitDysonCore || hitDysonHoloLetters)) {
+                // 1. Check 180px Shifting Multicolored Star Core & Holographic "STAR FORGE" Letters tap first
+                val hitStarCore =
+                  starForgeCoreHitRadiusPx > 4f &&
+                    hypot(tapOffset.x - starForgeCoreScreenCenter.x, tapOffset.y - starForgeCoreScreenCenter.y) <= starForgeCoreHitRadiusPx
+                val hitStarHoloLetters =
+                  !starForgeHoloBannerRect.isEmpty && starForgeHoloBannerRect.contains(tapOffset)
+                if (layerFilter != ForgeElementLayer.HUD && (hitStarCore || hitStarHoloLetters)) {
                   editingModalTarget = null
                   editingCrateBuffSelection = null
-                  showDysonCreationOverlay = true
+                  showStarForgeCreationOverlay = true
                   sfx.playPrize()
                   return@detectTapGestures
                 }
@@ -2326,7 +2335,7 @@ private fun DevPlayfieldAndHudStudioBay(
                       .minByOrNull { hypot(tapOffset.x - it.screenX, tapOffset.y - it.screenY) }
                   if (crateHit != null) {
                     editingModalTarget = null
-                    showDysonCreationOverlay = false
+                    showStarForgeCreationOverlay = false
                     editingCrateBuffSelection = Pair(crateHit.codexEntry, crateHit.customBuff)
                     sfx.playMutedClick()
                     return@detectTapGestures
@@ -2342,7 +2351,7 @@ private fun DevPlayfieldAndHudStudioBay(
                 if (hit != null) {
                   selectedTarget = hit.target
                   editingCrateBuffSelection = null
-                  showDysonCreationOverlay = false
+                  showStarForgeCreationOverlay = false
                   editingModalTarget = hit.target
                   sfx.playMutedClick()
                 }
@@ -2362,8 +2371,8 @@ private fun DevPlayfieldAndHudStudioBay(
 
         hitEntriesState.clear()
         crateBuffHitsState.clear()
-        dysonSunHitRadiusPx = 0f
-        dysonHoloBannerRect = Rect.Zero
+        starForgeCoreHitRadiusPx = 0f
+        starForgeHoloBannerRect = Rect.Zero
 
         // 1. Deep-Space Nebula & Stars (1:1 backdrop)
         val bgRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.BACKGROUND_NEBULA)
@@ -2432,7 +2441,7 @@ private fun DevPlayfieldAndHudStudioBay(
             hitEntriesState += StageHitEntry(ForgeElementTarget.ARENA_PERIMETER_RING, scoutX, stormTopY + 18f, 64.dp.toPx())
           }
 
-          // 3. Center (4000, 4000): 180px Dyson Sun "STAR FORGE" Centerpiece + Safe-Zone Rift Rim + Clickable Nexus Station Specimen
+          // 3. Center (4000, 4000): 180px Star Forge Core Centerpiece + Safe-Zone Rift Rim + Clickable Rift Station Specimen
           val padRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SAFE_ZONE_PAD)
           val rimRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SAFE_ZONE_WALL)
           val szWorldR = 400f * RiftCalibrationState.safeZoneScale * padRec.pixelScale.coerceIn(0.65f, 1.35f)
@@ -2447,20 +2456,20 @@ private fun DevPlayfieldAndHudStudioBay(
             timeSec = timeSec,
             recipe = padRec,
           )
-          // 180px Shifting Multicolored Dyson Sun with rotating 5-stop metallic Dyson rings emitting upward holographic "STAR FORGE" letters
-          val dysonScreenR =
+          // 180px Shifting Multicolored Star Core with rotating 5-stop metallic orbital rings emitting upward holographic "STAR FORGE" letters
+          val starCoreScreenR =
             (180f * RiftCalibrationState.safeZoneScale * padRec.pixelScale.coerceIn(0.65f, 1.45f) * worldScale)
               .coerceAtLeast(18f)
-          val dysonLiveLeadCol = sampleDysonStellarSpectrum(timeSec * 0.16f)
+          val starCoreLiveLeadCol = sampleStarForgeStellarSpectrum(timeSec * 0.16f)
           for (bIdx in 0 until 8) {
             val ba = -timeSec * 0.14f + bIdx * (PI.toFloat() * 0.25f)
-            val beamCol = sampleDysonStellarSpectrum(timeSec * 0.16f + bIdx * 0.125f)
-            val bStart = Offset(szCx + cos(ba) * (dysonScreenR * 0.88f), szCy + sin(ba) * (dysonScreenR * 0.88f))
+            val beamCol = sampleStarForgeStellarSpectrum(timeSec * 0.16f + bIdx * 0.125f)
+            val bStart = Offset(szCx + cos(ba) * (starCoreScreenR * 0.88f), szCy + sin(ba) * (starCoreScreenR * 0.88f))
             val bEnd = Offset(szCx + cos(ba) * (szScreenR * 0.985f), szCy + sin(ba) * (szScreenR * 0.985f))
             drawLine(
               brush =
                 Brush.linearGradient(
-                  listOf(beamCol.copy(alpha = 0.84f), dysonLiveLeadCol.copy(alpha = 0.55f), Color(rimRec.glowColorInt).copy(alpha = 0.72f)),
+                  listOf(beamCol.copy(alpha = 0.84f), starCoreLiveLeadCol.copy(alpha = 0.55f), Color(rimRec.glowColorInt).copy(alpha = 0.72f)),
                   start = bStart,
                   end = bEnd,
                 ),
@@ -2471,47 +2480,47 @@ private fun DevPlayfieldAndHudStudioBay(
           }
           drawSoftGaussianSplatHalo(
             center = Offset(szCx, szCy),
-            baseRadiusPx = dysonScreenR * 1.32f,
+            baseRadiusPx = starCoreScreenR * 1.32f,
             recipe = padRec,
             timeSec = timeSec,
           )
-          dysonHoloBannerRect =
-            drawShiftingMulticoloredDysonSunWithHoloLetters(
+          starForgeHoloBannerRect =
+            drawShiftingMulticoloredStarForgeCoreWithHoloLetters(
               center = Offset(szCx, szCy),
-              dysonRadiusPx = dysonScreenR,
+              coreRadiusPx = starCoreScreenR,
               timeSec = timeSec,
-              isSelected = showDysonCreationOverlay,
+              isSelected = showStarForgeCreationOverlay,
             )
           drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
-            // Clickable Nexus Station Safe-Zone Specimen (north of Dyson Sun at 4000, 3420)
-            val nexusStationCx = w2sX(4000f)
-            val nexusStationCy = w2sY(3420f)
-            val nexusStationR = (118f * padRec.pixelScale.coerceIn(0.65f, 1.45f) * worldScale).coerceAtLeast(14f)
+            // Clickable Rift Station Safe-Zone Specimen (north of Star Core at 4000, 3420)
+            val riftStationCx = w2sX(4000f)
+            val riftStationCy = w2sY(3420f)
+            val riftStationR = (118f * padRec.pixelScale.coerceIn(0.65f, 1.45f) * worldScale).coerceAtLeast(14f)
             val bmp = RiftSpriteBaker.safeZoneStationBitmap
             nc.save()
-            nc.translate(nexusStationCx, nexusStationCy)
+            nc.translate(riftStationCx, riftStationCy)
             nc.rotate((timeSec * 8f) % 360f)
             nc.drawBitmap(
               bmp,
               null,
-              android.graphics.RectF(-nexusStationR, -nexusStationR, nexusStationR, nexusStationR),
+              android.graphics.RectF(-riftStationR, -riftStationR, riftStationR, riftStationR),
               null,
             )
             nc.restore()
             RiftSpriteBaker.drawSafeZoneStationHoloRing(
               c = nc,
-              cx = nexusStationCx,
-              cy = nexusStationCy,
-              stationRadius = nexusStationR,
+              cx = riftStationCx,
+              cy = riftStationCy,
+              stationRadius = riftStationR,
               timeSec = timeSec,
               isLockedOut = false,
               alphaScale = padRec.surfaceOpacity,
             )
-            hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_PAD, nexusStationCx, nexusStationCy, max(nexusStationR, 30.dp.toPx()))
+            hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_PAD, riftStationCx, riftStationCy, max(riftStationR, 30.dp.toPx()))
           }
-          dysonSunScreenCenter = Offset(szCx, szCy)
-          dysonSunHitRadiusPx = max(dysonScreenR * 1.08f, 40.dp.toPx())
+          starForgeCoreScreenCenter = Offset(szCx, szCy)
+          starForgeCoreHitRadiusPx = max(starCoreScreenR * 1.08f, 40.dp.toPx())
 
           drawCircle(
             color = Color(rimRec.glowColorInt).copy(alpha = (0.32f * rimRec.glowIntensity).coerceIn(0.08f, 0.85f)),
@@ -2532,7 +2541,7 @@ private fun DevPlayfieldAndHudStudioBay(
               cx = szCx,
               cy = szCy,
               outerRimR = szScreenR * 0.985f,
-              innerReachR = max(dysonScreenR * 1.16f, szScreenR * 0.62f),
+              innerReachR = max(starCoreScreenR * 1.16f, szScreenR * 0.62f),
               plumeCount = 6,
               phaseRad = -timeSec * 0.48f,
               outerColor = rimRec.primaryColorInt,
@@ -3025,16 +3034,16 @@ private fun DevPlayfieldAndHudStudioBay(
         }
         ForgeChip(
           text = "[STAR FORGE CORE]",
-          bg = if (showDysonCreationOverlay) Color(0xFF523504) else Color(0xFF281906),
+          bg = if (showStarForgeCreationOverlay) Color(0xFF523504) else Color(0xFF281906),
           border = Color(0xFFFFD700),
           textColor = Color(0xFFFEF08A),
           fontSize = 8.sp,
           px = 8.dp,
-          tag = "forge_btn_open_dyson_overlay",
+          tag = "forge_btn_open_star_core_overlay",
         ) {
           editingModalTarget = null
           editingCrateBuffSelection = null
-          showDysonCreationOverlay = !showDysonCreationOverlay
+          showStarForgeCreationOverlay = !showStarForgeCreationOverlay
           sfx.playPrize()
         }
         ForgeChip(
@@ -3064,7 +3073,7 @@ private fun DevPlayfieldAndHudStudioBay(
             sandboxFlightEngine.isInLobbyStaging = false
             editingModalTarget = null
             editingCrateBuffSelection = null
-            showDysonCreationOverlay = false
+            showStarForgeCreationOverlay = false
             isTestFlightMode = true
           }
         }
@@ -3203,7 +3212,10 @@ private fun DevPlayfieldAndHudStudioBay(
           horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
           Image(bitmap = shardBitmap, contentDescription = "Rift Shards", modifier = Modifier.size(12.dp))
-          Text(shardReadoutText, color = Color(0xFFE9D5FF), fontSize = 8.2.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+          Text(shardReadoutText, color = Color(0xFFE9D5FF), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+          Text("•", color = Color(0xFF64748B), fontSize = 8.sp)
+          ResonanceCrestIcon(sizeDp = 12.dp)
+          Text("${engine.liveResonance}", color = Color(0xFFFFD700), fontSize = 9.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
         }
       }
 
@@ -3229,16 +3241,16 @@ private fun DevPlayfieldAndHudStudioBay(
       }
     }
 
-    // 95% Obsidian-Glass Dyson Creation Overlay (opened by clicking the 180px Dyson Sun "STAR FORGE" centerpiece)
-    if (showDysonCreationOverlay) {
-      BackHandler { showDysonCreationOverlay = false }
+    // 95% Obsidian-Glass Star Forge Creation Overlay (opened by clicking the 180px Star Core "STAR FORGE" centerpiece)
+    if (showStarForgeCreationOverlay) {
+      BackHandler { showStarForgeCreationOverlay = false }
       Box(
         modifier =
           Modifier.fillMaxSize()
             .background(Color(0xD902050B))
-            .clickable { showDysonCreationOverlay = false }
+            .clickable { showStarForgeCreationOverlay = false }
             .zIndex(78f)
-            .testTag("forge_dyson_creation_overlay"),
+            .testTag("forge_star_core_overlay"),
         contentAlignment = Alignment.Center,
       ) {
         Column(
@@ -3273,18 +3285,18 @@ private fun DevPlayfieldAndHudStudioBay(
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
-              DysonCreationTab.entries.forEach { dTab ->
-                val isSel = activeDysonTab == dTab
+              StarForgeCreationTab.entries.forEach { sTab ->
+                val isSel = activeStarForgeTab == sTab
                 ForgeChip(
-                  text = dTab.label,
-                  bg = if (isSel) dTab.accent.copy(alpha = 0.25f) else Color(0xFF0B1528),
-                  border = if (isSel) dTab.accent else dTab.accent.copy(alpha = 0.45f),
-                  textColor = if (isSel) Color.White else dTab.accent,
+                  text = sTab.label,
+                  bg = if (isSel) sTab.accent.copy(alpha = 0.25f) else Color(0xFF0B1528),
+                  border = if (isSel) sTab.accent else sTab.accent.copy(alpha = 0.45f),
+                  textColor = if (isSel) Color.White else sTab.accent,
                   fontSize = 8.4.sp,
                   px = 9.dp,
                   py = 5.dp,
-                  tag = "dyson_tab_${dTab.name.lowercase(Locale.US)}",
-                ) { activeDysonTab = dTab }
+                  tag = "star_forge_tab_${sTab.name.lowercase(Locale.US)}",
+                ) { activeStarForgeTab = sTab }
               }
               ForgeChip(
                 text = "[RIFT STATION SHADER]",
@@ -3295,7 +3307,7 @@ private fun DevPlayfieldAndHudStudioBay(
                 px = 8.dp,
                 py = 5.dp,
               ) {
-                showDysonCreationOverlay = false
+                showStarForgeCreationOverlay = false
                 selectedTarget = ForgeElementTarget.SAFE_ZONE_PAD
                 editingModalTarget = ForgeElementTarget.SAFE_ZONE_PAD
               }
@@ -3309,13 +3321,13 @@ private fun DevPlayfieldAndHudStudioBay(
               fontSize = 8.4.sp,
               px = 10.dp,
               py = 5.5.dp,
-              tag = "dyson_overlay_close_btn",
-            ) { showDysonCreationOverlay = false }
+              tag = "star_forge_overlay_close_btn",
+            ) { showStarForgeCreationOverlay = false }
           }
 
           Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            when (activeDysonTab) {
-              DysonCreationTab.SHIPS_RIFT_FRAME ->
+            when (activeStarForgeTab) {
+              StarForgeCreationTab.SHIPS_RIFT_FRAME ->
                 ShipAndCosmeticTurntableBay(
                   localPrefs = localPrefs,
                   currentUserId = currentUserId,
@@ -3337,9 +3349,9 @@ private fun DevPlayfieldAndHudStudioBay(
                   onSpendRiftShards = onSpendRiftShards,
                   onShowToast = onShowToast,
                 )
-              DysonCreationTab.CUSTOM_BUFF_LAB ->
+              StarForgeCreationTab.CUSTOM_BUFF_LAB ->
                 CustomBuffForgeBay(context, engine, sfx, calibRev, onShowToast)
-              DysonCreationTab.AUDIO_SFX_LAB ->
+              StarForgeCreationTab.AUDIO_SFX_LAB ->
                 SoundtrackAndSfxForgeBay(
                   context = context,
                   sfx = sfx,
@@ -3358,7 +3370,7 @@ private fun DevPlayfieldAndHudStudioBay(
                   onForgeCustomMusicPrompt = onForgeCustomMusicPrompt,
                   onShowToast = onShowToast,
                 )
-              DysonCreationTab.SYNDICATE_CREST ->
+              StarForgeCreationTab.SYNDICATE_CREST ->
                 SyndicateCrestForgeBay(context, sfx, syndicateTag, callsign, visualRev, onShowToast)
             }
           }
@@ -3376,10 +3388,10 @@ private fun DevPlayfieldAndHudStudioBay(
         engine = engine,
         sfx = sfx,
         continuousNanos = continuousNanos,
-        onOpenDysonCustomBuffLab = {
+        onOpenStarForgeCustomBuffLab = {
           editingCrateBuffSelection = null
-          activeDysonTab = DysonCreationTab.CUSTOM_BUFF_LAB
-          showDysonCreationOverlay = true
+          activeStarForgeTab = StarForgeCreationTab.CUSTOM_BUFF_LAB
+          showStarForgeCreationOverlay = true
         },
         onOpenPodShaderModal = {
           editingCrateBuffSelection = null
@@ -3492,7 +3504,7 @@ private fun CrateBuffGlassInspectorModal(
   engine: RiftGameEngine,
   sfx: RiftSoundSynthesizer,
   continuousNanos: Long,
-  onOpenDysonCustomBuffLab: () -> Unit,
+  onOpenStarForgeCustomBuffLab: () -> Unit,
   onOpenPodShaderModal: () -> Unit,
   onBuffRosterChanged: () -> Unit,
   onDismiss: () -> Unit,
@@ -3722,7 +3734,7 @@ private fun CrateBuffGlassInspectorModal(
                 sfx.playPrize()
                 onShowToast("Cloned [${synth.officialName}] into Custom Crate Buff Roster")
               }
-              onOpenDysonCustomBuffLab()
+              onOpenStarForgeCustomBuffLab()
             }
           }
         }
@@ -4918,7 +4930,7 @@ private fun DrawScope.drawFluxCoreOrbSpecimen(
   }
 }
 
-private val DYSON_SPECTRUM_STOPS =
+private val STAR_FORGE_SPECTRUM_STOPS =
   listOf(
     Color(0xFFFFD700), // Solar Gold
     Color(0xFF00F5D4), // Electric Cyan
@@ -4928,16 +4940,16 @@ private val DYSON_SPECTRUM_STOPS =
     Color(0xFFFB923C), // Stellar Amber
   )
 
-private fun sampleDysonStellarSpectrum(phase: Float): Color {
+private fun sampleStarForgeStellarSpectrum(phase: Float): Color {
   val wrapped = ((phase % 1f) + 1f) % 1f
-  val scaled = wrapped * DYSON_SPECTRUM_STOPS.size
-  val idx0 = scaled.toInt() % DYSON_SPECTRUM_STOPS.size
-  val idx1 = (idx0 + 1) % DYSON_SPECTRUM_STOPS.size
+  val scaled = wrapped * STAR_FORGE_SPECTRUM_STOPS.size
+  val idx0 = scaled.toInt() % STAR_FORGE_SPECTRUM_STOPS.size
+  val idx1 = (idx0 + 1) % STAR_FORGE_SPECTRUM_STOPS.size
   val frac = (scaled - scaled.toInt()).coerceIn(0f, 1f)
-  return lerp(DYSON_SPECTRUM_STOPS[idx0], DYSON_SPECTRUM_STOPS[idx1], frac)
+  return lerp(STAR_FORGE_SPECTRUM_STOPS[idx0], STAR_FORGE_SPECTRUM_STOPS[idx1], frac)
 }
 
-private fun DrawScope.drawTiltedMetallicDysonRingHemisphere(
+private fun DrawScope.drawTiltedMetallicStarForgeRingHemisphere(
   center: Offset,
   rx: Float,
   ry: Float,
@@ -4979,7 +4991,7 @@ private fun DrawScope.drawTiltedMetallicDysonRingHemisphere(
     )
   val depthAlpha = if (frontHemisphere) 0.96f else 0.64f
 
-  // Outer energy conduit aura along the Dyson ring
+  // Outer energy conduit aura along the orbital ring
   drawPath(
     path = path,
     color = energyHue.copy(alpha = if (frontHemisphere) 0.30f else 0.16f),
@@ -4991,7 +5003,7 @@ private fun DrawScope.drawTiltedMetallicDysonRingHemisphere(
     color = Color(0xFF050A14).copy(alpha = depthAlpha),
     style = Stroke(width = thicknessPx * 1.24f, cap = StrokeCap.Butt, join = StrokeJoin.Round),
   )
-  // 5-stop metallic Dyson megastructure band
+  // 5-stop metallic Star Forge orbital ring band
   drawPath(
     path = path,
     brush = metallic5StopBrush,
@@ -5005,7 +5017,7 @@ private fun DrawScope.drawTiltedMetallicDysonRingHemisphere(
     style = Stroke(width = (thicknessPx * 0.22f).coerceAtLeast(1.1f), cap = StrokeCap.Round, join = StrokeJoin.Round),
   )
 
-  // Collector nodes orbiting along the tilted Dyson ring
+  // Collector nodes orbiting along the tilted orbital ring
   val nodeCount = 10
   for (n in 0 until nodeCount) {
     val orbAngle = ((spinPhaseRad + n * (PI.toFloat() * 2f / nodeCount)) % (PI.toFloat() * 2f) + PI.toFloat() * 2f) % (PI.toFloat() * 2f)
@@ -5016,7 +5028,7 @@ private fun DrawScope.drawTiltedMetallicDysonRingHemisphere(
     val nx = center.x + lx * cosTilt - ly * sinTilt
     val ny = center.y + lx * sinTilt + ly * cosTilt
     val nodeR = (thicknessPx * 0.56f).coerceAtLeast(2.2f)
-    val nodeHue = sampleDysonStellarSpectrum((orbAngle / (PI.toFloat() * 2f)) + spinPhaseRad * 0.08f)
+    val nodeHue = sampleStarForgeStellarSpectrum((orbAngle / (PI.toFloat() * 2f)) + spinPhaseRad * 0.08f)
     drawCircle(
       color = nodeHue.copy(alpha = if (frontHemisphere) 0.45f else 0.22f),
       radius = nodeR * 2.0f,
@@ -5131,17 +5143,17 @@ private fun buildStarForgeHoloGlyphPath(
   }
 }
 
-private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
+private fun DrawScope.drawShiftingMulticoloredStarForgeCoreWithHoloLetters(
   center: Offset,
-  dysonRadiusPx: Float,
+  coreRadiusPx: Float,
   timeSec: Float,
   isSelected: Boolean,
 ): Rect {
-  val r = dysonRadiusPx.coerceAtLeast(18f)
+  val r = coreRadiusPx.coerceAtLeast(18f)
   val basePhase = timeSec * 0.15f
-  val hueCore = sampleDysonStellarSpectrum(basePhase)
-  val hueMid = sampleDysonStellarSpectrum(basePhase + 0.31f)
-  val hueOuter = sampleDysonStellarSpectrum(basePhase + 0.63f)
+  val hueCore = sampleStarForgeStellarSpectrum(basePhase)
+  val hueMid = sampleStarForgeStellarSpectrum(basePhase + 0.31f)
+  val hueOuter = sampleStarForgeStellarSpectrum(basePhase + 0.63f)
 
   // 1. Deep outer shifting multicolored stellar corona halo
   val coronaR = r * 1.56f
@@ -5162,12 +5174,12 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     center = center,
   )
 
-  // 2. Back-hemisphere of 3 counter-rotating 5-stop metallic Dyson rings (3D occluded behind sun)
+  // 2. Back-hemisphere of 3 counter-rotating 5-stop metallic Star Forge rings (3D occluded behind core)
   val ringThickness = (r * 0.082f).coerceIn(2.6f, 16f)
   val tiltA = (-24f + sin(timeSec * 0.42f) * 6f) * (PI.toFloat() / 180f)
   val tiltB = (31f + cos(timeSec * 0.36f) * 7f) * (PI.toFloat() / 180f)
   val tiltC = (-63f + sin(timeSec * 0.29f + 1.2f) * 5f) * (PI.toFloat() / 180f)
-  drawTiltedMetallicDysonRingHemisphere(
+  drawTiltedMetallicStarForgeRingHemisphere(
     center = center,
     rx = r * 1.04f,
     ry = r * 0.40f,
@@ -5177,7 +5189,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     frontHemisphere = false,
     energyHue = hueOuter,
   )
-  drawTiltedMetallicDysonRingHemisphere(
+  drawTiltedMetallicStarForgeRingHemisphere(
     center = center,
     rx = r * 0.99f,
     ry = r * 0.46f,
@@ -5187,7 +5199,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     frontHemisphere = false,
     energyHue = hueMid,
   )
-  drawTiltedMetallicDysonRingHemisphere(
+  drawTiltedMetallicStarForgeRingHemisphere(
     center = center,
     rx = r * 0.94f,
     ry = r * 0.36f,
@@ -5198,7 +5210,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     energyHue = hueCore,
   )
 
-  // 3. Animated solar prominences / magnetic plasma loops around the Dyson Sun sphere
+  // 3. Animated solar prominences / magnetic plasma loops around the Star Forge sphere
   val sunCoreR = r * 0.72f
   val flareCount = 12
   for (fIdx in 0 until flareCount) {
@@ -5213,7 +5225,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
       moveTo(p0.x, p0.y)
       quadraticTo(ctrl.x, ctrl.y, p1.x, p1.y)
     }
-    val flareHue = sampleDysonStellarSpectrum(basePhase + fIdx * (1f / flareCount))
+    val flareHue = sampleStarForgeStellarSpectrum(basePhase + fIdx * (1f / flareCount))
     drawPath(
       path = flarePath,
       color = flareHue.copy(alpha = 0.56f),
@@ -5221,7 +5233,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     )
   }
 
-  // 4. Shifting Multicolored Dyson Sun Photosphere & Convective Plasma Core
+  // 4. Shifting Multicolored Star Forge Photosphere & Convective Plasma Core
   drawCircle(
     brush =
       Brush.radialGradient(
@@ -5245,7 +5257,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
   for (band in 0 until 8) {
     val startDeg = (timeSec * (44f + band * 5f) + band * 45f) % 360f
     val bandR = sunCoreR * (0.34f + (band % 4) * 0.15f)
-    val bandHue = sampleDysonStellarSpectrum(basePhase + 0.18f + band * 0.11f)
+    val bandHue = sampleStarForgeStellarSpectrum(basePhase + 0.18f + band * 0.11f)
     drawArc(
       color = lerp(Color.White, bandHue, 0.62f).copy(alpha = 0.44f),
       startAngle = startDeg,
@@ -5265,8 +5277,8 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     style = Stroke(width = (r * 0.018f).coerceAtLeast(1.1f)),
   )
 
-  // 5. Front-hemisphere of 3 counter-rotating 5-stop metallic Dyson rings (3D passing in front of sun)
-  drawTiltedMetallicDysonRingHemisphere(
+  // 5. Front-hemisphere of 3 counter-rotating 5-stop metallic Star Forge rings (3D passing in front of core)
+  drawTiltedMetallicStarForgeRingHemisphere(
     center = center,
     rx = r * 1.04f,
     ry = r * 0.40f,
@@ -5276,7 +5288,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     frontHemisphere = true,
     energyHue = hueOuter,
   )
-  drawTiltedMetallicDysonRingHemisphere(
+  drawTiltedMetallicStarForgeRingHemisphere(
     center = center,
     rx = r * 0.99f,
     ry = r * 0.46f,
@@ -5286,7 +5298,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     frontHemisphere = true,
     energyHue = hueMid,
   )
-  drawTiltedMetallicDysonRingHemisphere(
+  drawTiltedMetallicStarForgeRingHemisphere(
     center = center,
     rx = r * 0.94f,
     ry = r * 0.36f,
@@ -5324,7 +5336,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
   val bannerTop = bannerCy - glyphH * 0.5f
   val bannerLeft = center.x - totalBannerW * 0.5f
 
-  // Upward emitter cone rays fanning from the Dyson Sun's northern crown up into "STAR FORGE"
+  // Upward emitter cone rays fanning from the Star Forge northern crown up into "STAR FORGE"
   val rayCount = 7
   for (rayIdx in 0 until rayCount) {
     val frac = rayIdx.toFloat() / (rayCount - 1).toFloat()
@@ -5332,7 +5344,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     val emitterY = center.y - sunCoreR * 0.46f
     val targetX = bannerLeft + frac * totalBannerW
     val targetY = bannerTop + glyphH * 1.05f
-    val rayHue = sampleDysonStellarSpectrum(basePhase + frac * 0.45f)
+    val rayHue = sampleStarForgeStellarSpectrum(basePhase + frac * 0.45f)
     drawLine(
       brush =
         Brush.linearGradient(
@@ -5351,13 +5363,13 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     )
   }
 
-  // Upward-rising holographic plasma motes streaming from the Dyson Sun through the letters
+  // Upward-rising holographic plasma motes streaming from the Star Forge core through the letters
   for (mIdx in 0 until 10) {
     val prog = ((timeSec * 0.58f + mIdx * 0.103f) % 1f)
     val mx = bannerLeft + ((mIdx * 0.108f + sin(timeSec * 1.3f + mIdx) * 0.04f).coerceIn(0.03f, 0.97f)) * totalBannerW
     val my = (center.y - sunCoreR * 0.40f) - prog * (r * 0.78f)
     val moteAlpha = sin(prog * PI.toFloat()).coerceIn(0f, 1f) * 0.78f
-    val moteCol = sampleDysonStellarSpectrum(basePhase + mIdx * 0.09f)
+    val moteCol = sampleStarForgeStellarSpectrum(basePhase + mIdx * 0.09f)
     drawCircle(
       color = moteCol.copy(alpha = moteAlpha),
       radius = (r * 0.019f).coerceAtLeast(1.3f),
@@ -5408,7 +5420,7 @@ private fun DrawScope.drawShiftingMulticoloredDysonSunWithHoloLetters(
     } else {
       val letterWaveY = sin(timeSec * 3.4f - idx * 0.48f) * (glyphH * 0.065f)
       val letterTop = bannerTop + letterWaveY
-      val letterHue = sampleDysonStellarSpectrum(basePhase + idx * 0.075f)
+      val letterHue = sampleStarForgeStellarSpectrum(basePhase + idx * 0.075f)
       val shadowPath =
         buildStarForgeHoloGlyphPath(
           ch = ch,

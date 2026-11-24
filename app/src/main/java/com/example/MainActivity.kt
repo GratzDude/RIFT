@@ -141,6 +141,7 @@ import com.example.ui.NexusForgeTab
 import com.example.ui.NexusHubLayoutMode
 import com.example.ui.NexusStreamState
 import com.example.ui.OverwatchRiftInstance
+import com.example.ui.ResonanceCrestIcon
 import com.example.ui.RiftCalibrationDialog
 import com.example.ui.RiftChangelogModal
 import com.example.ui.RiftHudOverlay
@@ -1265,6 +1266,7 @@ fun RiftArenaScreen(
   var forgeInitialTab by remember { mutableStateOf(NexusForgeTab.DEV_STUDIO_STAGE) }
   var isForgeFullScreenStage by remember { mutableStateOf(false) }
   var showFullChangelogModal by remember { mutableStateOf(false) }
+  var showExitTutorialConfirmModal by remember { mutableStateOf(false) }
   var pendingStagedLaunch by remember { mutableStateOf<StagedRiftLaunch?>(null) }
   var suspendedActiveMatch by remember { mutableStateOf<SuspendedActiveMatchSnapshot?>(null) }
   var favoriteOverwatchKey by remember {
@@ -2261,13 +2263,15 @@ fun RiftArenaScreen(
       RiftCalibrationState.isCalibrationModalOpen = false
     } else if (showFullChangelogModal) {
       showFullChangelogModal = false
+    } else if (showExitTutorialConfirmModal) {
+      showExitTutorialConfirmModal = false
     } else if (isNexusShellOpen && activeNexusNode == NexusCoreNode.STAR_FORGE) {
       RiftCalibrationState.isDraggingAnySlider = false
       isForgeFullScreenStage = false
       forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
       activeNexusNode = NexusCoreNode.ORBITAL_HUB
     } else if (!isNexusShellOpen && engine.isEphemeralPracticeRift) {
-      openNexusNode(NexusCoreNode.ORBITAL_HUB)
+      showExitTutorialConfirmModal = true
     } else if (isNexusShellOpen && activeNexusNode != NexusCoreNode.ORBITAL_HUB) {
       activeNexusNode = NexusCoreNode.ORBITAL_HUB
     } else if (isNexusShellOpen && activeNexusNode == NexusCoreNode.ORBITAL_HUB) {
@@ -2285,6 +2289,7 @@ fun RiftArenaScreen(
   val isAnyModalCoveringArena =
     (isNexusShellOpen ||
       showFullChangelogModal ||
+      showExitTutorialConfirmModal ||
       needsInitialSwornCallsign) && !isLiveHudDragPillOpen
 
   val isHubOverwatchVisible =
@@ -2575,6 +2580,17 @@ fun RiftArenaScreen(
                 }
               }
 
+              KeyEvent.KEYCODE_BUTTON_B,
+              KeyEvent.KEYCODE_ESCAPE -> {
+                if (!isNexusShellOpen && engine.isEphemeralPracticeRift) {
+                  showExitTutorialConfirmModal = !showExitTutorialConfirmModal
+                  sfx.playMutedClick()
+                  true
+                } else {
+                  false
+                }
+              }
+
               else -> false
             }
           } else {
@@ -2702,6 +2718,10 @@ fun RiftArenaScreen(
         nexusInitialLayoutMode = NexusHubLayoutMode.SPLIT_COMMAND
         openNexusNode(NexusCoreNode.ORBITAL_HUB)
       },
+      onRequestExitTutorial = {
+        showExitTutorialConfirmModal = true
+        sfx.playMutedClick()
+      },
       onOpenModes = {
         nexusInitialLayoutMode = NexusHubLayoutMode.DECK_ONLY
         openNexusNode(NexusCoreNode.CONVERGENCE_GATE)
@@ -2720,6 +2740,7 @@ fun RiftArenaScreen(
     val hasAnyModalVisible =
       isNexusShellOpen ||
         showFullChangelogModal ||
+        showExitTutorialConfirmModal ||
         isLiveHudDragPillOpen ||
         needsInitialSwornCallsign ||
         matchmakingQueueState.isQueueActive ||
@@ -4107,7 +4128,7 @@ fun RiftArenaScreen(
                                   description = "Eliminate an above-average Resonance rival (Resonance >= 250).",
                                   unlocked =
                                     engine.hvtEliminations >= 1L || engine.allTimeBountyPeak >= 250L,
-                                  progressText = "${engine.hvtEliminations} TOP-RES KILLS",
+                                  progressText = "${engine.hvtEliminations} LEADER KILLS",
                                 ),
                                 PilotAchievement(
                                   id = "trench_runner",
@@ -4122,7 +4143,7 @@ fun RiftArenaScreen(
                                   title = "FIRST CONVERGENCE",
                                   description = "Reach 250+ Resonance in open Rift combat.",
                                   unlocked = engine.allTimeBountyPeak >= 250L,
-                                  progressText = "${engine.allTimeBountyPeak} / 250 RES",
+                                  progressText = "${engine.allTimeBountyPeak} / 250 PEAK",
                                 ),
                                 PilotAchievement(
                                   id = "flux_overlord",
@@ -4472,6 +4493,26 @@ fun RiftArenaScreen(
                             isForgeFullScreenStage = true
                             openNexusNode(NexusCoreNode.STAR_FORGE)
                           },
+                          onStartTutorial = {
+                            if (
+                              engine.hasJoinedMatch &&
+                                !engine.isEphemeralPracticeRift &&
+                                suspendedActiveMatch == null
+                            ) {
+                              suspendedActiveMatch =
+                                captureActiveMatchSnapshot(engine, hangarCardShipId, selectedMode)
+                            }
+                            pendingStagedLaunch = null
+                            showExitTutorialConfirmModal = false
+                            engine.isShipLockedForMatch = false
+                            engine.switchLocalPlayerShip(hangarCardShipId, forceFromHangar = true)
+                            syncEquippedCosmeticsToEngine(engine)
+                            engine.enterEphemeralPracticeRift(startTutorial = true)
+                            isNexusShellOpen = false
+                            toastMessage = "TUTORIAL INITIALIZED // SOLO FLIGHT BRIEFING"
+                            toastVersion++
+                            frameTick++
+                          },
                           currentUserId = currentUserId,
                           activeSectorTag = engine.activeMatchSectorTag(),
                           cloudSyncHealth = cloudSyncHealth,
@@ -4635,12 +4676,13 @@ fun RiftArenaScreen(
                     captureActiveMatchSnapshot(engine, hangarCardShipId, selectedMode)
                 }
                 pendingStagedLaunch = null
+                showExitTutorialConfirmModal = false
                 engine.isShipLockedForMatch = false
                 engine.switchLocalPlayerShip(hangarCardShipId, forceFromHangar = true)
                 syncEquippedCosmeticsToEngine(engine)
                 engine.enterEphemeralPracticeRift(startTutorial = true)
                 isNexusShellOpen = false
-                toastMessage = "PRACTICE RIFT INITIALIZED // SOLO FLIGHT BRIEFING"
+                toastMessage = "TUTORIAL INITIALIZED // SOLO FLIGHT BRIEFING"
                 toastVersion++
                 frameTick++
               },
@@ -4654,12 +4696,13 @@ fun RiftArenaScreen(
                     captureActiveMatchSnapshot(engine, hangarCardShipId, selectedMode)
                 }
                 pendingStagedLaunch = null
+                showExitTutorialConfirmModal = false
                 engine.isShipLockedForMatch = false
                 engine.switchLocalPlayerShip(hangarCardShipId, forceFromHangar = true)
                 syncEquippedCosmeticsToEngine(engine)
                 engine.enterEphemeralPracticeRift(startTutorial = true)
                 isNexusShellOpen = false
-                toastMessage = "HOW TO PLAY // INTERACTIVE PRACTICE RIFT TUTORIAL"
+                toastMessage = "TUTORIAL INITIALIZED // SOLO FLIGHT BRIEFING"
                 toastVersion++
                 frameTick++
               },
@@ -5837,14 +5880,26 @@ fun RiftArenaScreen(
                       fontFamily = FontFamily.Monospace,
                     )
                   }
-                  Text(
-                    text =
-                      "${matchmakingQueueState.riftLabel} • TEAM AVG ${matchmakingQueueState.teamAvgResonance} RES",
-                    color = Color(0xFFE2E8F0),
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                  )
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                  ) {
+                    Text(
+                      text = "${matchmakingQueueState.riftLabel} • TEAM AVG",
+                      color = Color(0xFFE2E8F0),
+                      fontSize = 11.0.sp,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = FontFamily.Monospace,
+                    )
+                    ResonanceCrestIcon(sizeDp = 13.dp)
+                    Text(
+                      text = "${matchmakingQueueState.teamAvgResonance}",
+                      color = Color(0xFFFFD700),
+                      fontSize = 11.0.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                    )
+                  }
                   Column(
                     modifier =
                       Modifier.fillMaxWidth()
@@ -5863,14 +5918,14 @@ fun RiftArenaScreen(
                       Text(
                         text = "PILOTS IN LOBBY: ${matchmakingQueueState.lobbyPilots.size}",
                         color = Color(0xFF34D399),
-                        fontSize = 9.5.sp,
+                        fontSize = 9.8.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                       )
                       Text(
                         text = "OPPONENTS READY: ${matchmakingQueueState.eligibleOpponentCount}",
                         color = Color(0xFF38BDF8),
-                        fontSize = 9.5.sp,
+                        fontSize = 9.8.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                       )
@@ -5888,18 +5943,28 @@ fun RiftArenaScreen(
                           }
                         val synPrefix =
                           if (pilot.syndicateTag.isNotBlank()) "[${pilot.syndicateTag}] " else ""
-                        Box(
+                        Row(
                           modifier =
                             Modifier.clip(RoundedCornerShape(6.dp))
                               .background(Color(0xFF091426))
                               .border(1.dp, chipBorder.copy(alpha = 0.75f), RoundedCornerShape(6.dp))
                               .padding(horizontal = 8.dp, vertical = 4.dp),
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                           Text(
-                            text = "$synPrefix${pilot.callsign} • ${pilot.resonance} RES",
+                            text = "$synPrefix${pilot.callsign} •",
                             color = Color.White,
-                            fontSize = 8.8.sp,
+                            fontSize = 9.2.sp,
                             fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                          )
+                          ResonanceCrestIcon(sizeDp = 11.dp)
+                          Text(
+                            text = "${pilot.resonance}",
+                            color = Color(0xFFFFD700),
+                            fontSize = 9.2.sp,
+                            fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
                           )
                         }
@@ -6044,6 +6109,113 @@ fun RiftArenaScreen(
                       fontWeight = FontWeight.Black,
                       fontFamily = FontFamily.Monospace,
                     )
+                  }
+                }
+              }
+            }
+          }
+          if (showExitTutorialConfirmModal) {
+            Box(
+              modifier =
+                Modifier.fillMaxSize()
+                  .zIndex(48f)
+                  .background(Color(0xCC02050B))
+                  .clickable { showExitTutorialConfirmModal = false }
+                  .padding(20.dp)
+                  .testTag("exit_tutorial_confirm_modal"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Surface(
+                modifier =
+                  Modifier.widthIn(min = 300.dp, max = 440.dp)
+                    .fillMaxWidth(0.78f)
+                    .clickable(enabled = false) {}
+                    .border(
+                      1.5.dp,
+                      Brush.linearGradient(
+                        listOf(Color(0xFFFACC15), Color(0xFF00F5D4), Color(0xFF38BDF8))
+                      ),
+                      RoundedCornerShape(14.dp),
+                    ),
+                color = Color(0xF8060D1A),
+                shape = RoundedCornerShape(14.dp),
+              ) {
+                Column(
+                  modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                  verticalArrangement = Arrangement.spacedBy(12.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                  Text(
+                    text = "EXIT TUTORIAL?",
+                    color = Color(0xFFFACC15),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                  Text(
+                    text =
+                      if (suspendedActiveMatch != null)
+                        "Leave the solo flight tutorial and return to the Rift Hub? Your active sector match will remain ready."
+                      else
+                        "Leave the solo flight tutorial and return to the Rift Hub?",
+                    color = Color(0xFFE2E8F0),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                  )
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                  ) {
+                    Button(
+                      onClick = {
+                        showExitTutorialConfirmModal = false
+                        sfx.playMutedClick()
+                      },
+                      colors =
+                        ButtonDefaults.buttonColors(
+                          containerColor = Color(0xFF0F1F36),
+                          contentColor = Color(0xFF00F5D4),
+                        ),
+                      border = BorderStroke(1.dp, Color(0xFF00F5D4)),
+                      shape = RoundedCornerShape(10.dp),
+                      modifier =
+                        Modifier.weight(1f)
+                          .height(48.dp)
+                          .testTag("exit_tutorial_stay_button"),
+                    ) {
+                      Text(
+                        text = "KEEP FLYING",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                      )
+                    }
+                    Button(
+                      onClick = {
+                        showExitTutorialConfirmModal = false
+                        sfx.playMutedClick()
+                        openNexusNode(NexusCoreNode.ORBITAL_HUB)
+                      },
+                      colors =
+                        ButtonDefaults.buttonColors(
+                          containerColor = Color(0xFF2B121E),
+                          contentColor = Color(0xFFFDA4AF),
+                        ),
+                      border = BorderStroke(1.dp, Color(0xFFFB7185)),
+                      shape = RoundedCornerShape(10.dp),
+                      modifier =
+                        Modifier.weight(1f)
+                          .height(48.dp)
+                          .testTag("exit_tutorial_confirm_button"),
+                    ) {
+                      Text(
+                        text = "EXIT TUTORIAL",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                      )
+                    }
                   }
                 }
               }

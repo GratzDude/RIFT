@@ -38,6 +38,9 @@ object RiftSpriteBaker {
   private val sharedPlumePath = Path()
   private val sharedCrystalPath = Path()
   private val sharedFilamentPath = Path()
+  private val sharedFractureRimPath = Path()
+  private val sharedBoltPath = Path()
+  private val sharedStormCloudPath = Path()
   private val sharedCollarStops = IntArray(5)
   private val sharedCollarPositions = floatArrayOf(0f, 0.28f, 0.48f, 0.74f, 1f)
 
@@ -2133,7 +2136,7 @@ object RiftSpriteBaker {
 
   /**
    * Pre-bakes high-definition item-specific graphical buff icons with glowing halos (0..10):
-   * Bucket A (Special Buff Slot Pickups — 0❖ Cost):
+   * Bucket A (Special Buff Slot Pickups — 0 Flux Cost):
    * 0 = Burst (Orange 8-Point Shrapnel Starburst)
    * 1 = Shotgun (Coral-Rose 60° Cone 3-Wave Pellet Blast)
    * 2 = Lock-On Bouncing Missile (Crimson Homing Missile & Target Reticle)
@@ -3117,8 +3120,9 @@ object RiftSpriteBaker {
    * - Plane 2 (Mid Funnel Wall, `0.68x` parallax): `#010206` abyssal shelf + 6 perspective-warped logarithmic plasma
    *   filaments & inward-blooming plumes separated by dark abyssal void lanes, plus storm-cohesive electric rim arcs.
    * - Plane 3 (Deep Singularity Throat, `1.00x` parallax): Rich `#02040A` -> `#000000` abyssal void core with crisp
-   *   photon lensing arcs and counter-rotating throat filaments (zero center washout).
-   * - Plane 4 (Containment Collar): 5-stop brushed gunmetal/titanium collar (`0.88r..0.99r`) + optical meniscus rim.
+   *   photon lensing arcs, forked rim-to-throat lightning bolts, and counter-rotating throat filaments (zero center washout).
+   * - Plane 4 (Fractured Spacetime Rim & Segmented 5-Stop Containment Collar): Jagged angular spacetime tear teeth +
+   *   segmented 5-stop brushed gunmetal/titanium collar plates (`0.88r..0.99r`) + optical meniscus rim.
    */
   fun draw3dPlayfieldRiftColors(
     canvas: Canvas,
@@ -3151,6 +3155,7 @@ object RiftSpriteBaker {
     val ringPaint = sharedRiftStrokePaint
     val ribbonPath = sharedRiftRibbonPath
     val spinePath = sharedRiftSpinePath
+    val fracturePath = sharedFractureRimPath
     val arcRect = sharedRiftArcRect
     fillPaint.shader = null
     ringPaint.shader = null
@@ -3159,9 +3164,9 @@ object RiftSpriteBaker {
     val twoPi = PI.toFloat() * 2f
     val breath = sin(pulsePhase * twoPi)
 
-    // Bounded camera-driven parallax offsets across stepped interior depth planes
+    // Stepped camera-driven parallax offsets across interior spacetime depth shelves (0.14x, 0.36x, 0.68x, 1.00x)
     val rawMag = kotlin.math.hypot(parallaxOffsetX, parallaxOffsetY)
-    val maxParallaxPx = r * 0.16f
+    val maxParallaxPx = r * 0.17f
     val pScale = if (rawMag > maxParallaxPx && rawMag > 0.001f) maxParallaxPx / rawMag else 1f
     val px = parallaxOffsetX * pScale
     val py = parallaxOffsetY * pScale
@@ -3174,6 +3179,8 @@ object RiftSpriteBaker {
     val coreShiftX = px
     val coreShiftY = py
 
+    val rimCx = cx + rimShiftX
+    val rimCy = cy + rimShiftY
     val upperCx = cx + upperShiftX
     val upperCy = cy + upperShiftY
     val midCx = cx + midShiftX
@@ -3181,62 +3188,100 @@ object RiftSpriteBaker {
     val coreCx = cx + coreShiftX
     val coreCy = cy + coreShiftY
 
-    // Plane 0: Restrained Circular Plasma Halo & Deep #02040A Outer Event-Horizon Lip
-    fillPaint.color = Color.argb((26 * fadeAlpha).roundToInt().coerceIn(0, 255), oR, oG, oB)
-    canvas.drawCircle(cx, cy, r * (1.18f + 0.022f * breath), fillPaint)
-    fillPaint.color = Color.argb((54 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
-    canvas.drawCircle(cx, cy, r * (1.04f + 0.014f * breath), fillPaint)
+    // Plane 0: Storm-Cohesive Outer Corona & Abyssal #02040A Spacetime Breach Lip
+    fillPaint.color = Color.argb((30 * fadeAlpha).roundToInt().coerceIn(0, 255), oR, oG, oB)
+    canvas.drawCircle(cx, cy, r * (1.20f + 0.025f * breath), fillPaint)
+    fillPaint.color = Color.argb((62 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
+    canvas.drawCircle(cx, cy, r * (1.05f + 0.016f * breath), fillPaint)
 
-    val wellR = r * 0.892f
-    fillPaint.color = Color.argb((253 * fadeAlpha).roundToInt().coerceIn(0, 255), 2, 4, 10)
+    val wellR = r * 0.90f
+    fillPaint.color = Color.argb((254 * fadeAlpha).roundToInt().coerceIn(0, 255), 2, 4, 10)
     canvas.drawCircle(cx, cy, wellR, fillPaint)
 
-    // Plane 1: Upper Sub-Collar Stepped Abyssal Trench (#010308) + Counter-Drifting Shear Arcs
-    val upperWellR = r * 0.73f
-    fillPaint.color = Color.argb((250 * fadeAlpha).roundToInt().coerceIn(0, 255), 1, 3, 8)
+    // Outer Rim Shelf (0.14x Parallax): Billowing Boundary-Storm Plasma Cloud Bank Under the Breach Lip
+    drawBillowingStormTurbulenceShelf(
+      canvas = canvas,
+      cx = rimCx,
+      cy = rimCy,
+      outerR = r * 0.885f,
+      innerR = r * 0.69f,
+      lobeCount = 9,
+      phaseRad = spinAngle * 0.48f + pulsePhase * twoPi * 0.25f,
+      primaryColor = outerColor,
+      secondaryColor = midColor,
+      alphaFrac = 0.42f * fadeAlpha,
+      jagAmplitude = 0.065f,
+    )
+
+    // Plane 1 (0.36x Parallax): Upper Sub-Collar Abyssal Trench (#010308) + Counter-Drifting Storm Shelf
+    val upperWellR = r * 0.74f
+    fillPaint.color = Color.argb((251 * fadeAlpha).roundToInt().coerceIn(0, 255), 1, 3, 8)
     canvas.drawCircle(upperCx, upperCy, upperWellR, fillPaint)
-    ringPaint.strokeWidth = (r * 0.015f).coerceAtLeast(0.95f)
-    ringPaint.color = Color.argb((74 * fadeAlpha).roundToInt().coerceIn(0, 255), oR, oG, oB)
-    canvas.drawCircle(upperCx, upperCy, upperWellR, ringPaint)
+
+    drawBillowingStormTurbulenceShelf(
+      canvas = canvas,
+      cx = upperCx,
+      cy = upperCy,
+      outerR = upperWellR * 0.99f,
+      innerR = r * 0.51f,
+      lobeCount = 7,
+      phaseRad = -spinAngle * 0.76f - pulsePhase * twoPi * 0.35f,
+      primaryColor = midColor,
+      secondaryColor = coreColor,
+      alphaFrac = 0.48f * fadeAlpha,
+      jagAmplitude = 0.082f,
+    )
 
     arcRect.set(upperCx - upperWellR, upperCy - upperWellR, upperCx + upperWellR, upperCy + upperWellR)
-    val upperShearDeg = (-spinAngle * 0.62f) * (180f / PI.toFloat())
-    ringPaint.strokeWidth = (r * 0.019f).coerceAtLeast(1.0f)
-    ringPaint.color = Color.argb((122 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
-    for (sIdx in 0 until 4) {
-      canvas.drawArc(arcRect, upperShearDeg + sIdx * 90f, 34f, false, ringPaint)
+    val upperShearDeg = (-spinAngle * 0.66f) * (180f / PI.toFloat())
+    ringPaint.strokeWidth = (r * 0.020f).coerceAtLeast(1.0f)
+    ringPaint.color = Color.argb((138 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
+    for (sIdx in 0 until 5) {
+      canvas.drawArc(arcRect, upperShearDeg + sIdx * 72f, 28f, false, ringPaint)
     }
 
-    // Plane 2: Mid-Depth Abyssal Funnel Shelf (#010206) + 6 Perspective-Warped Logarithmic Plasma Filaments
+    // Plane 2 (0.68x Parallax): Mid-Depth Abyssal Funnel (#010206) + Asymmetric Spacetime Shear Streams
     val midWellR = r * 0.54f
-    fillPaint.color = Color.argb((252 * fadeAlpha).roundToInt().coerceIn(0, 255), 1, 2, 6)
+    fillPaint.color = Color.argb((253 * fadeAlpha).roundToInt().coerceIn(0, 255), 1, 2, 6)
     canvas.drawCircle(midCx, midCy, midWellR, fillPaint)
-    ringPaint.strokeWidth = (r * 0.014f).coerceAtLeast(0.9f)
-    ringPaint.color = Color.argb((66 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
-    canvas.drawCircle(midCx, midCy, midWellR, ringPaint)
+
+    drawBillowingStormTurbulenceShelf(
+      canvas = canvas,
+      cx = midCx,
+      cy = midCy,
+      outerR = midWellR * 0.98f,
+      innerR = r * 0.31f,
+      lobeCount = 6,
+      phaseRad = spinAngle * 1.18f + pulsePhase * twoPi * 0.5f,
+      primaryColor = outerColor,
+      secondaryColor = coreColor,
+      alphaFrac = 0.52f * fadeAlpha,
+      jagAmplitude = 0.095f,
+    )
 
     val twistSign = if (inwardSpiral) -1f else 1f
-    val rOuterBlade = r * 0.865f
-    val rMidBladeA = r * 0.66f
+    val rOuterBlade = r * 0.875f
+    val rMidBladeA = r * 0.67f
     val rMidBladeB = r * 0.46f
-    val rInnerThroat = r * 0.295f
-    val stepRad = twoPi / 6f
-    val anchorOutX = cx + rimShiftX * 0.5f
-    val anchorOutY = cy + rimShiftY * 0.5f
+    val rInnerThroat = r * 0.285f
+    val streamCount = 5
+    val stepRad = twoPi / streamCount.toFloat()
 
-    for (arm in 0 until 6) {
-      val baseA = spinAngle + arm * stepRad
+    for (arm in 0 until streamCount) {
+      val asymJitter = sin(arm * 2.17f + pulsePhase * twoPi) * 0.11f
+      val baseA = spinAngle * (if (inwardSpiral) 1.08f else 0.92f) + arm * stepRad + asymJitter
+      val widthScale = if (arm % 2 == 0) 1.0f else 0.72f
       val aOutLead = baseA
-      val aOutTrail = aOutLead - twistSign * 0.36f
-      val aMidALead = baseA + twistSign * 0.46f
-      val aMidATrail = aMidALead - twistSign * 0.25f
-      val aMidBLead = baseA + twistSign * 0.94f
-      val aMidBTrail = aMidBLead - twistSign * 0.15f
-      val aInLead = baseA + twistSign * 1.42f
-      val aInTrail = aInLead - twistSign * 0.07f
+      val aOutTrail = aOutLead - twistSign * (0.30f * widthScale)
+      val aMidALead = baseA + twistSign * 0.52f
+      val aMidATrail = aMidALead - twistSign * (0.21f * widthScale)
+      val aMidBLead = baseA + twistSign * 1.06f
+      val aMidBTrail = aMidBLead - twistSign * (0.12f * widthScale)
+      val aInLead = baseA + twistSign * 1.58f
+      val aInTrail = aInLead - twistSign * 0.05f
 
-      val oxL = anchorOutX + cos(aOutLead) * rOuterBlade
-      val oyL = anchorOutY + sin(aOutLead) * rOuterBlade
+      val oxL = rimCx + cos(aOutLead) * rOuterBlade
+      val oyL = rimCy + sin(aOutLead) * rOuterBlade
       val mAxL = upperCx + cos(aMidALead) * rMidBladeA
       val mAyL = upperCy + sin(aMidALead) * rMidBladeA
       val mBxL = midCx + cos(aMidBLead) * rMidBladeB
@@ -3250,8 +3295,8 @@ object RiftSpriteBaker {
       val mByT = midCy + sin(aMidBTrail) * rMidBladeB
       val mAxT = upperCx + cos(aMidATrail) * rMidBladeA
       val mAyT = upperCy + sin(aMidATrail) * rMidBladeA
-      val oxT = anchorOutX + cos(aOutTrail) * rOuterBlade
-      val oyT = anchorOutY + sin(aOutTrail) * rOuterBlade
+      val oxT = rimCx + cos(aOutTrail) * rOuterBlade
+      val oyT = rimCy + sin(aOutTrail) * rOuterBlade
 
       ribbonPath.reset()
       ribbonPath.moveTo(oxL, oyL)
@@ -3260,47 +3305,27 @@ object RiftSpriteBaker {
       ribbonPath.cubicTo(mBxT, mByT, mAxT, mAyT, oxT, oyT)
       ribbonPath.close()
 
-      fillPaint.color = Color.argb((136 * fadeAlpha).roundToInt().coerceIn(0, 255), oR, oG, oB)
-      canvas.drawPath(ribbonPath, fillPaint)
-
-      val aOutMid = aOutLead - twistSign * 0.18f
-      val aMidAMid = aMidALead - twistSign * 0.13f
-      val aMidBMid = aMidBLead - twistSign * 0.08f
-      val aInMid = aInLead - twistSign * 0.04f
-      ribbonPath.reset()
-      ribbonPath.moveTo(oxL, oyL)
-      ribbonPath.cubicTo(mAxL, mAyL, mBxL, mByL, ixL, iyL)
-      ribbonPath.lineTo(coreCx + cos(aInMid) * rInnerThroat, coreCy + sin(aInMid) * rInnerThroat)
-      ribbonPath.cubicTo(
-        midCx + cos(aMidBMid) * rMidBladeB,
-        midCy + sin(aMidBMid) * rMidBladeB,
-        upperCx + cos(aMidAMid) * rMidBladeA,
-        upperCy + sin(aMidAMid) * rMidBladeA,
-        anchorOutX + cos(aOutMid) * rOuterBlade,
-        anchorOutY + sin(aOutMid) * rOuterBlade,
-      )
-      ribbonPath.close()
-      fillPaint.color = Color.argb((198 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
+      fillPaint.color = Color.argb((122 * fadeAlpha).roundToInt().coerceIn(0, 255), oR, oG, oB)
       canvas.drawPath(ribbonPath, fillPaint)
 
       spinePath.reset()
       spinePath.moveTo(oxL, oyL)
       spinePath.cubicTo(mAxL, mAyL, mBxL, mByL, ixL, iyL)
-      ringPaint.strokeWidth = (r * 0.023f).coerceAtLeast(1.05f)
-      ringPaint.color = Color.argb((236 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+      ringPaint.strokeWidth = (r * (0.022f * widthScale)).coerceAtLeast(1.0f)
+      ringPaint.color = Color.argb((232 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
       canvas.drawPath(spinePath, ringPaint)
     }
 
-    // Parallax-interpolated concentric harmonic wave ring outside the abyssal core
+    // Parallax-interpolated Stasis-cohesive harmonic compression wave outside the abyssal core
     val waveFrac = if (inwardSpiral) (1f - pulsePhase) else pulsePhase
-    val waveR = r * (0.33f + waveFrac * 0.50f)
+    val waveR = r * (0.32f + waveFrac * 0.51f)
     val waveCenterLerp = 1f - waveFrac
-    val waveCx = cx + px * (0.20f + 0.72f * waveCenterLerp)
-    val waveCy = cy + py * (0.20f + 0.72f * waveCenterLerp)
-    ringPaint.strokeWidth = (r * 0.020f).coerceAtLeast(1.0f)
+    val waveCx = cx + px * (0.18f + 0.76f * waveCenterLerp)
+    val waveCy = cy + py * (0.18f + 0.76f * waveCenterLerp)
+    ringPaint.strokeWidth = (r * 0.018f).coerceAtLeast(1.0f)
     ringPaint.color =
       Color.argb(
-        ((1f - kotlin.math.abs(waveFrac - 0.5f) * 1.65f).coerceIn(0.10f, 1f) * 124f * fadeAlpha)
+        ((1f - kotlin.math.abs(waveFrac - 0.5f) * 1.65f).coerceIn(0.10f, 1f) * 118f * fadeAlpha)
           .roundToInt()
           .coerceIn(0, 255),
         cR,
@@ -3309,101 +3334,131 @@ object RiftSpriteBaker {
       )
     canvas.drawCircle(waveCx, waveCy, waveR, ringPaint)
 
-    // Localized Inward-Blooming Plasma Ingress Plumes on the Upper-to-Mid Parallax Shelf
+    // Localized Inward-Blooming Plasma Ingress Plumes Bridging Rim to Mid-Funnel
     drawLocalizedIngressPlumes(
       canvas = canvas,
-      cx = cx + upperShiftX * 0.42f,
-      cy = cy + upperShiftY * 0.42f,
-      outerRimR = r * 0.868f,
-      innerReachR = if (inwardSpiral) r * 0.39f else r * 0.46f,
-      plumeCount = 5,
-      phaseRad = spinAngle * (if (inwardSpiral) -0.82f else 0.74f) + pulsePhase * twoPi * 0.5f,
+      cx = cx + upperShiftX * 0.45f,
+      cy = cy + upperShiftY * 0.45f,
+      outerRimR = r * 0.874f,
+      innerReachR = if (inwardSpiral) r * 0.37f else r * 0.45f,
+      plumeCount = 6,
+      phaseRad = spinAngle * (if (inwardSpiral) -0.84f else 0.76f) + pulsePhase * twoPi * 0.5f,
       outerColor = outerColor,
       midColor = midColor,
       coreColor = coreColor,
       fadeAlpha = fadeAlpha,
-      swirlBias = twistSign * 0.22f,
+      swirlBias = twistSign * 0.24f,
     )
 
-    // High-contrast storm-cohesive electric containment rim arcs skimming inside the collar lip
-    val elecRimR = r * 0.848f
-    arcRect.set(
-      cx + rimShiftX - elecRimR,
-      cy + rimShiftY - elecRimR,
-      cx + rimShiftX + elecRimR,
-      cy + rimShiftY + elecRimR,
-    )
-    val elecBaseDeg = (-spinAngle * 1.38f) * (180f / PI.toFloat())
-    ringPaint.strokeWidth = (r * 0.024f).coerceAtLeast(1.15f)
-    ringPaint.color = Color.argb((156 * fadeAlpha).roundToInt().coerceIn(0, 255), oR, oG, oB)
-    for (eIdx in 0 until 6) {
-      canvas.drawArc(arcRect, elecBaseDeg + eIdx * 60f, 22f, false, ringPaint)
-    }
-    ringPaint.strokeWidth = (r * 0.012f).coerceAtLeast(0.85f)
-    ringPaint.color = Color.argb((232 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
-    for (eIdx in 0 until 6) {
-      canvas.drawArc(arcRect, elecBaseDeg + eIdx * 60f + 3f, 15f, false, ringPaint)
-    }
-
-    // Plane 3: Deep Abyssal Event-Horizon Singularity Core (#02040A -> #000000) with Crisp Photon Rim
-    val abyssOuterR = r * 0.325f
-    val throatR = r * 0.245f
+    // Plane 3 (1.00x Parallax): Deep Abyssal Event-Horizon Singularity Core (#02040A -> #010206 -> #000000)
+    val abyssOuterR = r * 0.335f
+    val abyssMidR = r * 0.285f
+    val throatR = r * 0.242f
     fillPaint.color = Color.argb((254 * fadeAlpha).roundToInt().coerceIn(0, 255), 2, 4, 10)
     canvas.drawCircle(coreCx, coreCy, abyssOuterR, fillPaint)
+    fillPaint.color = Color.argb((255 * fadeAlpha).roundToInt().coerceIn(0, 255), 1, 2, 6)
+    canvas.drawCircle(coreCx, coreCy, abyssMidR, fillPaint)
     fillPaint.color = Color.argb((255 * fadeAlpha).roundToInt().coerceIn(0, 255), 0, 0, 0)
     canvas.drawCircle(coreCx, coreCy, throatR, fillPaint)
 
-    // 3 Counter-Rotating Deep-Throat Plasma Filaments Skimming the Abyssal Rim
-    val throatSpin = spinAngle * (if (inwardSpiral) 1.62f else -1.48f)
+    // Forked Multi-Segment Rim-to-Throat Spacetime Lightning Bolts (zero per-frame allocations)
+    drawSpacetimeForkedLightningBolts(
+      canvas = canvas,
+      rimCx = rimCx,
+      rimCy = rimCy,
+      coreCx = coreCx,
+      coreCy = coreCy,
+      outerBoltR = r * 0.865f,
+      innerBoltR = throatR * 1.08f,
+      boltCount = 4,
+      spinAngle = spinAngle,
+      pulsePhase = pulsePhase,
+      haloColor = outerColor,
+      midColor = midColor,
+      coreColor = coreColor,
+      fadeAlpha = fadeAlpha,
+    )
+
+    // Counter-Rotating Deep-Throat Shear Filaments Skimming the Pitch-Black Horizon
+    val throatSpin = spinAngle * (if (inwardSpiral) 1.68f else -1.52f)
     ringPaint.strokeWidth = (r * 0.016f).coerceAtLeast(0.95f)
     for (fIdx in 0 until 3) {
       val fa0 = throatSpin + fIdx * (twoPi / 3f)
-      val fa1 = fa0 + twistSign * 0.52f
+      val fa1 = fa0 + twistSign * 0.56f
       spinePath.reset()
-      spinePath.moveTo(coreCx + cos(fa0) * (abyssOuterR * 1.05f), coreCy + sin(fa0) * (abyssOuterR * 1.05f))
+      spinePath.moveTo(coreCx + cos(fa0) * (abyssOuterR * 1.04f), coreCy + sin(fa0) * (abyssOuterR * 1.04f))
       spinePath.quadTo(
-        coreCx + cos((fa0 + fa1) * 0.5f) * (throatR * 1.16f),
-        coreCy + sin((fa0 + fa1) * 0.5f) * (throatR * 1.16f),
-        coreCx + cos(fa1) * (throatR * 1.03f),
-        coreCy + sin(fa1) * (throatR * 1.03f),
+        coreCx + cos((fa0 + fa1) * 0.5f) * (throatR * 1.15f),
+        coreCy + sin((fa0 + fa1) * 0.5f) * (throatR * 1.15f),
+        coreCx + cos(fa1) * (throatR * 1.02f),
+        coreCy + sin(fa1) * (throatR * 1.02f),
       )
-      ringPaint.color = Color.argb((196 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
+      ringPaint.color = Color.argb((204 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
       canvas.drawPath(spinePath, ringPaint)
     }
 
     val degBase = (spinAngle * 180f / PI.toFloat())
     if (darkVoidCenter) {
       ringPaint.strokeWidth = (r * 0.036f).coerceAtLeast(1.35f)
-      ringPaint.color = Color.argb((198 * fadeAlpha).roundToInt().coerceIn(0, 255), oR, oG, oB)
-      canvas.drawCircle(coreCx, coreCy, throatR * 1.09f, ringPaint)
+      ringPaint.color = Color.argb((206 * fadeAlpha).roundToInt().coerceIn(0, 255), oR, oG, oB)
+      canvas.drawCircle(coreCx, coreCy, throatR * 1.08f, ringPaint)
 
       ringPaint.strokeWidth = (r * 0.020f).coerceAtLeast(1.0f)
-      ringPaint.color = Color.argb((244 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+      ringPaint.color = Color.argb((246 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
       arcRect.set(coreCx - throatR, coreCy - throatR, coreCx + throatR, coreCy + throatR)
-      canvas.drawArc(arcRect, degBase, 134f, false, ringPaint)
-      canvas.drawArc(arcRect, degBase + 180f, 118f, false, ringPaint)
+      canvas.drawArc(arcRect, degBase, 128f, false, ringPaint)
+      canvas.drawArc(arcRect, degBase + 180f, 114f, false, ringPaint)
     } else {
-      // Outward-surge shockwave rim framing the same #000000 abyssal core (zero center washout)
       ringPaint.strokeWidth = (r * 0.042f).coerceAtLeast(1.45f)
-      ringPaint.color = Color.argb((210 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
-      canvas.drawCircle(coreCx, coreCy, throatR * 1.15f, ringPaint)
+      ringPaint.color = Color.argb((214 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
+      canvas.drawCircle(coreCx, coreCy, throatR * 1.14f, ringPaint)
 
       ringPaint.strokeWidth = (r * 0.022f).coerceAtLeast(1.05f)
       ringPaint.color = Color.argb((248 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
       arcRect.set(coreCx - throatR * 1.04f, coreCy - throatR * 1.04f, coreCx + throatR * 1.04f, coreCy + throatR * 1.04f)
       for (seg in 0 until 4) {
-        canvas.drawArc(arcRect, -degBase * 1.25f + seg * 90f, 54f, false, ringPaint)
+        canvas.drawArc(arcRect, -degBase * 1.25f + seg * 90f, 52f, false, ringPaint)
       }
     }
 
-    // Plane 4: Precision Circular 5-Stop Metallic Containment Collar (0.88r..0.99r) Anchored on Playfield Plane
+    // Plane 4: Jagged Angular Spacetime Fracture Rim Teeth + Segmented 5-Stop Metallic Containment Collar
     val collarInnerR = r * 0.88f
     val collarOuterR = r * 0.99f
     val collarMidR = (collarInnerR + collarOuterR) * 0.5f
     val collarThickness = (collarOuterR - collarInnerR).coerceAtLeast(2.2f)
 
+    // Jagged spacetime fracture teeth jutting inward across the containment breach lip
+    val toothCount = 18
+    fracturePath.reset()
+    for (tIdx in 0 until toothCount) {
+      val baseAng = tIdx * (twoPi / toothCount.toFloat()) - spinAngle * 0.22f
+      val halfSpan = (twoPi / toothCount.toFloat()) * 0.44f
+      val spikeDepth =
+        collarInnerR -
+          r * (0.048f + 0.036f * kotlin.math.abs(sin(tIdx * 1.91f + pulsePhase * twoPi)))
+      val a0 = baseAng - halfSpan
+      val aTip = baseAng + sin(tIdx * 2.7f) * halfSpan * 0.32f
+      val a1 = baseAng + halfSpan
+      val x0 = rimCx + cos(a0) * collarInnerR
+      val y0 = rimCy + sin(a0) * collarInnerR
+      val xTip = rimCx + cos(aTip) * spikeDepth
+      val yTip = rimCy + sin(aTip) * spikeDepth
+      val x1 = rimCx + cos(a1) * collarInnerR
+      val y1 = rimCy + sin(a1) * collarInnerR
+      if (tIdx == 0) fracturePath.moveTo(x0, y0) else fracturePath.lineTo(x0, y0)
+      fracturePath.lineTo(xTip, yTip)
+      fracturePath.lineTo(x1, y1)
+    }
+    fracturePath.close()
+    fillPaint.color = Color.argb((118 * fadeAlpha).roundToInt().coerceIn(0, 255), 4, 9, 20)
+    canvas.drawPath(fracturePath, fillPaint)
+    ringPaint.strokeWidth = (r * 0.017f).coerceAtLeast(0.95f)
+    ringPaint.color = Color.argb((218 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+    canvas.drawPath(fracturePath, ringPaint)
+
+    // Glowing plasma breach ring visible through the 6 fracture gaps between segmented collar plates
     ringPaint.strokeWidth = (r * 0.034f).coerceAtLeast(1.35f)
-    ringPaint.color = Color.argb((192 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
+    ringPaint.color = Color.argb((205 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
     canvas.drawCircle(cx, cy, collarInnerR, ringPaint)
 
     val a255 = (255 * fadeAlpha).roundToInt().coerceIn(0, 255)
@@ -3413,6 +3468,13 @@ object RiftSpriteBaker {
     sharedCollarStops[3] = blendStationRgb(Color.rgb(71, 85, 105), outerColor, 0.20f, alpha = a255)
     sharedCollarStops[4] = blendStationRgb(Color.rgb(11, 18, 32), outerColor, 0.28f, alpha = a255)
 
+    val collarRotDeg = (spinAngle * 0.18f) * (180f / PI.toFloat())
+    val plateCount = 6
+    val plateSweepDeg = 47f
+    val plateStepDeg = 360f / plateCount.toFloat()
+
+    arcRect.set(cx - collarMidR, cy - collarMidR, cx + collarMidR, cy + collarMidR)
+    ringPaint.strokeCap = Paint.Cap.BUTT
     ringPaint.strokeWidth = collarThickness
     ringPaint.shader =
       LinearGradient(
@@ -3424,44 +3486,68 @@ object RiftSpriteBaker {
         sharedCollarPositions,
         Shader.TileMode.CLAMP,
       )
-    canvas.drawCircle(cx, cy, collarMidR, ringPaint)
+    for (pIdx in 0 until plateCount) {
+      canvas.drawArc(arcRect, collarRotDeg + pIdx * plateStepDeg, plateSweepDeg, false, ringPaint)
+    }
     ringPaint.shader = null
 
-    ringPaint.strokeWidth = (r * 0.018f).coerceAtLeast(1.0f)
-    ringPaint.color = Color.argb((238 * fadeAlpha).roundToInt().coerceIn(0, 255), 2, 6, 23)
-    canvas.drawCircle(cx, cy, collarOuterR, ringPaint)
-    canvas.drawCircle(cx, cy, collarInnerR, ringPaint)
+    // Dark #020617 armor outlines on segmented collar plates + fracture breach sparks in the 13° gaps
+    ringPaint.strokeWidth = (r * 0.017f).coerceAtLeast(0.95f)
+    ringPaint.color = Color.argb((240 * fadeAlpha).roundToInt().coerceIn(0, 255), 2, 6, 23)
+    arcRect.set(cx - collarOuterR, cy - collarOuterR, cx + collarOuterR, cy + collarOuterR)
+    for (pIdx in 0 until plateCount) {
+      canvas.drawArc(arcRect, collarRotDeg + pIdx * plateStepDeg, plateSweepDeg, false, ringPaint)
+    }
+    arcRect.set(cx - collarInnerR, cy - collarInnerR, cx + collarInnerR, cy + collarInnerR)
+    for (pIdx in 0 until plateCount) {
+      canvas.drawArc(arcRect, collarRotDeg + pIdx * plateStepDeg, plateSweepDeg, false, ringPaint)
+    }
+    ringPaint.strokeCap = Paint.Cap.ROUND
 
+    // Outward spacetime fissure flare in each inter-plate breach gap
+    ringPaint.strokeWidth = (r * 0.018f).coerceAtLeast(1.0f)
+    for (pIdx in 0 until plateCount) {
+      val gapCenterDeg = collarRotDeg + pIdx * plateStepDeg + plateSweepDeg + (plateStepDeg - plateSweepDeg) * 0.5f
+      val gapRad = (gapCenterDeg * PI.toFloat()) / 180f
+      val gx0 = cx + cos(gapRad) * (collarInnerR * 0.94f)
+      val gy0 = cy + sin(gapRad) * (collarInnerR * 0.94f)
+      val gx1 = cx + cos(gapRad) * (collarOuterR * (1.03f + 0.03f * sin(pulsePhase * twoPi + pIdx)))
+      val gy1 = cy + sin(gapRad) * (collarOuterR * (1.03f + 0.03f * sin(pulsePhase * twoPi + pIdx)))
+      ringPaint.color = Color.argb((215 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+      canvas.drawLine(gx0, gy0, gx1, gy1, ringPaint)
+    }
+
+    // Sunlit top-left specular bevel across upper collar plates
     arcRect.set(cx - collarOuterR, cy - collarOuterR, cx + collarOuterR, cy + collarOuterR)
     ringPaint.strokeWidth = (r * 0.016f).coerceAtLeast(0.95f)
-    ringPaint.color = Color.argb((208 * fadeAlpha).roundToInt().coerceIn(0, 255), 248, 250, 252)
-    canvas.drawArc(arcRect, 196f, 98f, false, ringPaint)
+    ringPaint.color = Color.argb((212 * fadeAlpha).roundToInt().coerceIn(0, 255), 248, 250, 252)
+    canvas.drawArc(arcRect, 198f, 94f, false, ringPaint)
 
     val tickCount = 24
-    ringPaint.strokeWidth = (r * 0.015f).coerceAtLeast(0.9f)
+    ringPaint.strokeWidth = (r * 0.014f).coerceAtLeast(0.88f)
     for (t in 0 until tickCount) {
       val ta = t * (twoPi / tickCount.toFloat()) + spinAngle * 0.18f
       val ca = cos(ta)
       val sa = sin(ta)
       val major = (t % 4 == 0)
-      val tIn = if (major) collarInnerR + collarThickness * 0.14f else collarInnerR + collarThickness * 0.28f
-      val tOut = collarOuterR - collarThickness * 0.14f
+      val tIn = if (major) collarInnerR + collarThickness * 0.16f else collarInnerR + collarThickness * 0.30f
+      val tOut = collarOuterR - collarThickness * 0.16f
       ringPaint.color =
         if (major) {
           Color.argb((235 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
         } else {
-          Color.argb((145 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
+          Color.argb((142 * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
         }
       canvas.drawLine(cx + ca * tIn, cy + sa * tIn, cx + ca * tOut, cy + sa * tOut, ringPaint)
     }
 
-    for (nIdx in 0 until 6) {
-      val na = nIdx * (twoPi / 6f) - spinAngle * 0.25f
+    for (nIdx in 0 until plateCount) {
+      val na = ((collarRotDeg + nIdx * plateStepDeg + plateSweepDeg * 0.5f) * PI.toFloat()) / 180f
       val nx = cx + cos(na) * collarMidR
       val ny = cy + sin(na) * collarMidR
-      fillPaint.color = Color.argb((215 * fadeAlpha).roundToInt().coerceIn(0, 255), 9, 14, 28)
+      fillPaint.color = Color.argb((222 * fadeAlpha).roundToInt().coerceIn(0, 255), 9, 14, 28)
       canvas.drawCircle(nx, ny, (collarThickness * 0.36f).coerceAtLeast(1.4f), fillPaint)
-      fillPaint.color = Color.argb((245 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+      fillPaint.color = Color.argb((248 * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
       canvas.drawCircle(nx, ny, (collarThickness * 0.20f).coerceAtLeast(0.9f), fillPaint)
     }
 
@@ -3480,6 +3566,156 @@ object RiftSpriteBaker {
       throatOffsetX = coreShiftX,
       throatOffsetY = coreShiftY,
     )
+  }
+
+  /**
+   * Renders an organic multi-lobe billowing storm turbulence cloud shelf (matching `STORM_BOUNDARY_AGSL`)
+   * between `outerR` and `innerR` on a stepped parallax plane with zero heap allocations.
+   */
+  private fun drawBillowingStormTurbulenceShelf(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    outerR: Float,
+    innerR: Float,
+    lobeCount: Int,
+    phaseRad: Float,
+    primaryColor: Int,
+    secondaryColor: Int,
+    alphaFrac: Float,
+    jagAmplitude: Float,
+  ) {
+    if (outerR <= 2f || alphaFrac <= 0.01f || lobeCount < 3) return
+    val cloudPath = sharedStormCloudPath
+    val fillPaint = sharedRiftFillPaint
+    val strokePaint = sharedRiftStrokePaint
+    fillPaint.shader = null
+    strokePaint.shader = null
+
+    val twoPi = PI.toFloat() * 2f
+    val step = twoPi / lobeCount.toFloat()
+    cloudPath.reset()
+    for (i in 0 until lobeCount) {
+      val a0 = phaseRad + i * step
+      val aMid = a0 + step * 0.5f
+      val a1 = a0 + step
+      val rStart = innerR + (outerR - innerR) * (0.48f + 0.24f * sin(i * 1.73f + phaseRad))
+      val rCrest = outerR * (0.94f + jagAmplitude * sin(i * 2.31f - phaseRad * 1.4f))
+      val rEnd = innerR + (outerR - innerR) * (0.48f + 0.24f * sin((i + 1) * 1.73f + phaseRad))
+      val sx = cx + cos(a0) * rStart
+      val sy = cy + sin(a0) * rStart
+      val ctrlX = cx + cos(aMid) * rCrest
+      val ctrlY = cy + sin(aMid) * rCrest
+      val ex = cx + cos(a1) * rEnd
+      val ey = cy + sin(a1) * rEnd
+      if (i == 0) cloudPath.moveTo(sx, sy)
+      cloudPath.quadTo(ctrlX, ctrlY, ex, ey)
+    }
+    cloudPath.close()
+
+    val pR = Color.red(primaryColor)
+    val pG = Color.green(primaryColor)
+    val pB = Color.blue(primaryColor)
+    val sR = Color.red(secondaryColor)
+    val sG = Color.green(secondaryColor)
+    val sB = Color.blue(secondaryColor)
+
+    fillPaint.color = Color.argb((88f * alphaFrac).roundToInt().coerceIn(0, 255), pR, pG, pB)
+    canvas.drawPath(cloudPath, fillPaint)
+    strokePaint.strokeWidth = ((outerR - innerR) * 0.11f).coerceAtLeast(1.0f)
+    strokePaint.color = Color.argb((158f * alphaFrac).roundToInt().coerceIn(0, 255), sR, sG, sB)
+    canvas.drawPath(cloudPath, strokePaint)
+  }
+
+  /**
+   * Renders forked multi-segment lightning bolts crackling from the fractured outer rim (`rimCx`, `rimCy`)
+   * into the parallax-displaced abyssal throat (`coreCx`, `coreCy`) with zero per-frame allocations.
+   */
+  private fun drawSpacetimeForkedLightningBolts(
+    canvas: Canvas,
+    rimCx: Float,
+    rimCy: Float,
+    coreCx: Float,
+    coreCy: Float,
+    outerBoltR: Float,
+    innerBoltR: Float,
+    boltCount: Int,
+    spinAngle: Float,
+    pulsePhase: Float,
+    haloColor: Int,
+    midColor: Int,
+    coreColor: Int,
+    fadeAlpha: Float,
+  ) {
+    if (outerBoltR <= innerBoltR || fadeAlpha <= 0.01f) return
+    val boltPath = sharedBoltPath
+    val strokePaint = sharedRiftStrokePaint
+    strokePaint.shader = null
+    val twoPi = PI.toFloat() * 2f
+
+    val hR = Color.red(haloColor)
+    val hG = Color.green(haloColor)
+    val hB = Color.blue(haloColor)
+    val mR = Color.red(midColor)
+    val mG = Color.green(midColor)
+    val mB = Color.blue(midColor)
+    val cR = Color.red(coreColor)
+    val cG = Color.green(coreColor)
+    val cB = Color.blue(coreColor)
+
+    for (bIdx in 0 until boltCount) {
+      val flicker = 0.55f + 0.45f * sin(pulsePhase * twoPi * 2f + bIdx * 1.85f)
+      if (flicker < 0.24f) continue
+      val baseAng = -spinAngle * 1.12f + bIdx * (twoPi / boltCount.toFloat()) + sin(pulsePhase * twoPi + bIdx) * 0.14f
+
+      val x0 = rimCx + cos(baseAng) * outerBoltR
+      val y0 = rimCy + sin(baseAng) * outerBoltR
+
+      val a1 = baseAng + 0.16f * sin(bIdx * 3.1f + pulsePhase * twoPi)
+      val r1 = innerBoltR + (outerBoltR - innerBoltR) * 0.68f
+      val c1x = rimCx * 0.68f + coreCx * 0.32f
+      val c1y = rimCy * 0.68f + coreCy * 0.32f
+      val x1 = c1x + cos(a1) * r1
+      val y1 = c1y + sin(a1) * r1
+
+      val a2 = baseAng - 0.19f * cos(bIdx * 2.3f - pulsePhase * twoPi)
+      val r2 = innerBoltR + (outerBoltR - innerBoltR) * 0.36f
+      val c2x = rimCx * 0.34f + coreCx * 0.66f
+      val c2y = rimCy * 0.34f + coreCy * 0.66f
+      val x2 = c2x + cos(a2) * r2
+      val y2 = c2y + sin(a2) * r2
+
+      val a3 = baseAng + 0.09f * sin(bIdx * 1.7f + spinAngle)
+      val x3 = coreCx + cos(a3) * innerBoltR
+      val y3 = coreCy + sin(a3) * innerBoltR
+
+      // Lateral fork branch splitting off from segment 1
+      val forkAng = a1 + (if (bIdx % 2 == 0) 0.34f else -0.34f)
+      val forkR = innerBoltR + (outerBoltR - innerBoltR) * 0.44f
+      val fx = c2x + cos(forkAng) * forkR
+      val fy = c2y + sin(forkAng) * forkR
+
+      boltPath.reset()
+      boltPath.moveTo(x0, y0)
+      boltPath.lineTo(x1, y1)
+      boltPath.lineTo(x2, y2)
+      boltPath.lineTo(x3, y3)
+      boltPath.moveTo(x1, y1)
+      boltPath.lineTo(fx, fy)
+
+      val boltAlpha = fadeAlpha * flicker
+      strokePaint.strokeWidth = (outerBoltR * 0.036f).coerceAtLeast(1.6f)
+      strokePaint.color = Color.argb((118f * boltAlpha).roundToInt().coerceIn(0, 255), hR, hG, hB)
+      canvas.drawPath(boltPath, strokePaint)
+
+      strokePaint.strokeWidth = (outerBoltR * 0.019f).coerceAtLeast(1.05f)
+      strokePaint.color = Color.argb((205f * boltAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
+      canvas.drawPath(boltPath, strokePaint)
+
+      strokePaint.strokeWidth = (outerBoltR * 0.010f).coerceAtLeast(0.75f)
+      strokePaint.color = Color.argb((248f * boltAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+      canvas.drawPath(boltPath, strokePaint)
+    }
   }
 
   /**
@@ -4013,7 +4249,21 @@ object RiftSpriteBaker {
       canvas.drawPath(spinePath, arcPaint)
     }
 
-    // Cross-collar multicolored inward-blooming ingress plumes on upper parallax plane
+    // Cross-collar multicolored storm turbulence & forked lightning bolts across the merged spacetime breach
+    drawBillowingStormTurbulenceShelf(
+      canvas = canvas,
+      cx = midCx,
+      cy = midCy,
+      outerR = r * 0.76f,
+      innerR = r * 0.34f,
+      lobeCount = 8,
+      phaseRad = calmCounterSpin * 1.15f + pulsePhase * twoPi * 0.5f,
+      primaryColor = Color.rgb(0, 245, 212),
+      secondaryColor = Color.rgb(244, 63, 94),
+      alphaFrac = 0.46f * fadeAlpha,
+      jagAmplitude = 0.09f,
+    )
+
     drawLocalizedIngressPlumes(
       canvas = canvas,
       cx = cx + px * 0.30f,
@@ -4046,13 +4296,32 @@ object RiftSpriteBaker {
       )
     }
 
-    // Re-anchor deep abyssal #02040A -> #000000 singularity core so center stays rich pitch-black
-    val abyssTrenchR = r * 0.32f
+    // Re-anchor deep abyssal #02040A -> #010206 -> #000000 singularity core so center stays rich pitch-black
+    val abyssTrenchR = r * 0.33f
     val abyssCoreR = r * 0.245f
     fillPaint.color = Color.argb((254 * fadeAlpha).roundToInt().coerceIn(0, 255), 2, 4, 10)
     canvas.drawCircle(coreCx, coreCy, abyssTrenchR, fillPaint)
+    fillPaint.color = Color.argb((255 * fadeAlpha).roundToInt().coerceIn(0, 255), 1, 2, 6)
+    canvas.drawCircle(coreCx, coreCy, r * 0.285f, fillPaint)
     fillPaint.color = Color.argb((255 * fadeAlpha).roundToInt().coerceIn(0, 255), 0, 0, 0)
     canvas.drawCircle(coreCx, coreCy, abyssCoreR, fillPaint)
+
+    drawSpacetimeForkedLightningBolts(
+      canvas = canvas,
+      rimCx = cx + px * 0.14f,
+      rimCy = cy + py * 0.14f,
+      coreCx = coreCx,
+      coreCy = coreCy,
+      outerBoltR = r * 0.87f,
+      innerBoltR = abyssCoreR * 1.08f,
+      boltCount = 5,
+      spinAngle = -calmPrimarySpin * 1.4f,
+      pulsePhase = pulsePhase,
+      haloColor = Color.rgb(0, 245, 212),
+      midColor = Color.rgb(250, 204, 21),
+      coreColor = Color.WHITE,
+      fadeAlpha = fadeAlpha,
+    )
 
     arcRect.set(coreCx - abyssCoreR * 1.05f, coreCy - abyssCoreR * 1.05f, coreCx + abyssCoreR * 1.05f, coreCy + abyssCoreR * 1.05f)
     val coreDeg = (calmPrimarySpin * 180f / PI.toFloat())
@@ -5581,7 +5850,7 @@ object RiftSpriteBaker {
   }
 
   /**
-   * Bakes the 5x Ship-Size (`180px` world radius / `360px` diameter) `Nexus Station`
+   * Bakes the 5x Ship-Size (`180px` world radius / `360px` diameter) `Rift Station`
    * Metallic Safe-Zone Station Sprite using the exact 5-stop steel/titanium armor shading,
    * dark readability outlines, sunlit specular bevels, and lit viewport craft of `drawMetallicShipOnCanvas`,
    * dynamically driven by `ForgeElementTarget.SAFE_ZONE_PAD` in `STAR FORGE`.
@@ -5834,7 +6103,7 @@ object RiftSpriteBaker {
       c.drawCircle(wx, wy, r * 0.012f, beaconPaint)
     }
 
-    // 4. 6 Swept Nexus Station Curved Docking Pylons (3 Upper-Swept + 3 Lower-Swept Symmetric Pylons)
+    // 4. 6 Swept Rift Station Curved Docking Pylons (3 Upper-Swept + 3 Lower-Swept Symmetric Pylons)
     // Arcing inward from the Outer Docking Ring (0.93r) over the Promenade gap with glowing clamps!
     for (pIdx in 0 until 6) {
       val baseAng = pIdx * (PI.toFloat() / 3f) + (PI.toFloat() / 6f)
@@ -5970,7 +6239,7 @@ object RiftSpriteBaker {
 
   /**
    * Draws the crisp 3D-tilted revolving cyan/gold holographic ring orbiting at
-   * `stationRadius * 0.34f` around the central Ops spire of the `5x` `Nexus Station`
+   * `stationRadius * 0.34f` around the central Ops spire of the `5x` `Rift Station`
    * (turning high-alert crimson when `isLockedOut` is true).
    */
   fun drawSafeZoneStationHoloRing(
@@ -6075,8 +6344,8 @@ object RiftSpriteBaker {
   }
 
   /**
-   * Draws the 1:1 `STAR FORGE` Central Multicolored Shifting **Dyson Sun** (`stationRadius` = `180px`
-   * matching the `Nexus Station` footprint), encircled by rotating 5-stop metallic Dyson harvester
+   * Draws the 1:1 `STAR FORGE` Central Multicolored Shifting **Star Forge Core** (`stationRadius` = `180px`
+   * matching the `Rift Station` footprint), encircled by rotating 5-stop metallic harvester
    * rings and orbiting holographic letters reading `"STAR FORGE"`.
    */
   fun drawDysonSunStarForgeCenterpiece(
@@ -6144,7 +6413,7 @@ object RiftSpriteBaker {
       c.drawArc(arcRect, (pa * 180f / PI.toFloat()), 26f, false, stroke)
     }
 
-    // 2. Convecting Multicolored Dyson Star Sphere
+    // 2. Convecting Multicolored Star Forge Sphere
     fill.shader =
       RadialGradient(
         cx - coreR * 0.20f,
@@ -6171,8 +6440,8 @@ object RiftSpriteBaker {
       c.drawArc(arcRect, (timeSec * 36f + s * 72f) % 360f, 38f, false, stroke)
     }
 
-    // 3. Inner Tilted 5-Stop Metallic Gimbaled Dyson Harvester Ring
-    val innerDysonR = stationRadius * 0.78f
+    // 3. Inner Tilted 5-Stop Metallic Gimbaled Harvester Ring
+    val innerForgeRingR = stationRadius * 0.78f
     c.save()
     c.translate(cx, cy)
     c.rotate((timeSec * 22f) % 360f)
@@ -6180,10 +6449,10 @@ object RiftSpriteBaker {
     stroke.strokeWidth = (stationRadius * 0.068f).coerceAtLeast(3.2f)
     stroke.shader =
       LinearGradient(
-        -innerDysonR,
-        -innerDysonR,
-        innerDysonR,
-        innerDysonR,
+        -innerForgeRingR,
+        -innerForgeRingR,
+        innerForgeRingR,
+        innerForgeRingR,
         intArrayOf(
           Color.rgb(15, 23, 42),
           Color.rgb(71, 85, 105),
@@ -6194,35 +6463,35 @@ object RiftSpriteBaker {
         floatArrayOf(0f, 0.28f, 0.50f, 0.74f, 1f),
         Shader.TileMode.CLAMP,
       )
-    c.drawCircle(0f, 0f, innerDysonR, stroke)
+    c.drawCircle(0f, 0f, innerForgeRingR, stroke)
     stroke.shader = null
     stroke.strokeWidth = (stationRadius * 0.016f).coerceAtLeast(1.0f)
     stroke.color = Color.argb(230, 2, 6, 23)
-    c.drawCircle(0f, 0f, innerDysonR + stationRadius * 0.034f, stroke)
-    c.drawCircle(0f, 0f, innerDysonR - stationRadius * 0.034f, stroke)
+    c.drawCircle(0f, 0f, innerForgeRingR + stationRadius * 0.034f, stroke)
+    c.drawCircle(0f, 0f, innerForgeRingR - stationRadius * 0.034f, stroke)
     stroke.color = sunPrimary
     for (v in 0 until 8) {
       val va = v * (twoPi / 8f)
       c.drawLine(
-        cos(va) * (innerDysonR - stationRadius * 0.03f),
-        sin(va) * (innerDysonR - stationRadius * 0.03f),
-        cos(va) * (innerDysonR + stationRadius * 0.03f),
-        sin(va) * (innerDysonR + stationRadius * 0.03f),
+        cos(va) * (innerForgeRingR - stationRadius * 0.03f),
+        sin(va) * (innerForgeRingR - stationRadius * 0.03f),
+        cos(va) * (innerForgeRingR + stationRadius * 0.03f),
+        sin(va) * (innerForgeRingR + stationRadius * 0.03f),
         stroke,
       )
     }
     c.restore()
 
-    // 4. Outer Primary 5-Stop Metallic Dyson Megastructure Ring (`0.94f * stationRadius`)
-    val outerDysonR = stationRadius * 0.94f
+    // 4. Outer Primary 5-Stop Metallic Containment Ring (`0.94f * stationRadius`)
+    val outerForgeRingR = stationRadius * 0.94f
     val bandW = (stationRadius * 0.088f).coerceAtLeast(4.0f)
     stroke.strokeWidth = bandW
     stroke.shader =
       LinearGradient(
-        cx - outerDysonR,
-        cy - outerDysonR,
-        cx + outerDysonR,
-        cy + outerDysonR,
+        cx - outerForgeRingR,
+        cy - outerForgeRingR,
+        cx + outerForgeRingR,
+        cy + outerForgeRingR,
         intArrayOf(
           blendStationRgb(Color.rgb(15, 23, 42), sunPrimary, 0.20f),
           Color.rgb(51, 65, 85),
@@ -6233,26 +6502,26 @@ object RiftSpriteBaker {
         floatArrayOf(0f, 0.28f, 0.48f, 0.74f, 1f),
         Shader.TileMode.CLAMP,
       )
-    c.drawCircle(cx, cy, outerDysonR, stroke)
+    c.drawCircle(cx, cy, outerForgeRingR, stroke)
     stroke.shader = null
 
     stroke.strokeWidth = (stationRadius * 0.018f).coerceAtLeast(1.1f)
     stroke.color = Color.argb(235, 2, 6, 23)
-    c.drawCircle(cx, cy, outerDysonR + bandW * 0.5f, stroke)
-    c.drawCircle(cx, cy, outerDysonR - bandW * 0.5f, stroke)
+    c.drawCircle(cx, cy, outerForgeRingR + bandW * 0.5f, stroke)
+    c.drawCircle(cx, cy, outerForgeRingR - bandW * 0.5f, stroke)
 
-    // 12 Dyson Collector Pylons & Glowing Energy Conduits around the Megastructure Ring
+    // 12 Collector Pylons & Glowing Energy Conduits around the Containment Ring
     for (node in 0 until 12) {
       val na = -timeSec * 0.28f + node * (twoPi / 12f)
       val ca = cos(na)
       val sa = sin(na)
-      val rIn = outerDysonR - bandW * 0.62f
-      val rOut = outerDysonR + bandW * 0.46f
+      val rIn = outerForgeRingR - bandW * 0.62f
+      val rOut = outerForgeRingR + bandW * 0.46f
       stroke.strokeWidth = (stationRadius * 0.024f).coerceAtLeast(1.3f)
       stroke.color = Color.rgb(30, 41, 59)
       c.drawLine(cx + ca * rIn, cy + sa * rIn, cx + ca * rOut, cy + sa * rOut, stroke)
       fill.color = if (node % 2 == 0) sunPrimary else sunSecondary
-      c.drawCircle(cx + ca * outerDysonR, cy + sa * outerDysonR, (bandW * 0.22f).coerceAtLeast(1.5f), fill)
+      c.drawCircle(cx + ca * outerForgeRingR, cy + sa * outerForgeRingR, (bandW * 0.22f).coerceAtLeast(1.5f), fill)
     }
 
     // 4b. Inward-Blooming Stellar Ingress Plumes & Refractive Meniscus Lens Highlights on the Star Forge Core
@@ -6260,7 +6529,7 @@ object RiftSpriteBaker {
       canvas = c,
       cx = cx,
       cy = cy,
-      outerRimR = outerDysonR - bandW * 0.52f,
+      outerRimR = outerForgeRingR - bandW * 0.52f,
       innerReachR = coreR * 0.92f,
       plumeCount = 6,
       phaseRad = -timeSec * 0.56f,
@@ -6274,7 +6543,7 @@ object RiftSpriteBaker {
       canvas = c,
       cx = cx,
       cy = cy,
-      rimRadius = outerDysonR - bandW * 0.48f,
+      rimRadius = outerForgeRingR - bandW * 0.48f,
       throatRadius = coreR * 0.82f,
       lightAngleRad = -2.28f + 0.08f * sin(timeSec * 0.7f),
       rimTintColor = sunPrimary,
@@ -6371,8 +6640,8 @@ object RiftSpriteBaker {
    * and 3D-tilted glowing holographic rings:
    * - `"HANGAR"` (`SHIPS & BUILDS`): Armored octagonal orbital docking gantry + 4 clamp pylons + 3D cyan scanner arc cradling live equipped ship sprite.
    * - `"CONDUIT"` (`RANKS & QUESTS`): Brushed titanium & solar-gold Harmonic Resonance Citadel Spire + 3-tier wings + 3D holo-ring + glowing `RiftShardGemIcon` heart.
-   * - `"FORGE"` (`SKINS & AUDIO`): Gunmetal & violet Orbital Foundry Crucible + 4 curved Nexus Station manipulator claws + 3D blueprint ring + equalizer light bars.
-   * - `"COMMS"` (`CHAT & NEXUS AI`): Armored Subspace Transponder Dish & `NEXUS` AI Citadel Core + twin sensor spires + 3D holographic comm-wave arcs.
+   * - `"FORGE"` (`SKINS & AUDIO`): Gunmetal & violet Orbital Foundry Crucible + 4 curved Rift Station manipulator claws + 3D blueprint ring + equalizer light bars.
+   * - `"COMMS"` (`SUBSPACE COMMS`): Armored Subspace Transponder Dish & Comms Relay Core + twin sensor spires + 3D holographic comm-wave arcs.
    * - `"CITADEL"` (`SYNDICATES & SQUADS`): Heavy titanium & solar-gold Syndicate Bastion Ring + 4 armored war pylons framing `bakeSyndicateCrestBitmap`.
    * - `"ARCHIVE"` (`STATS & CODEX`): Gunmetal & emerald Black-Box Holocron Vault + beveled octagonal armor plates + dual counter-rotating 3D astrolabe holo-rings.
    */
@@ -6785,7 +7054,7 @@ object RiftSpriteBaker {
           fill = armorPaint,
         )
 
-        // 4 Curved Nexus Station Manipulator Claws Arcing Inward (0°, 90°, 180°, 270°)
+        // 4 Curved Rift Station Manipulator Claws Arcing Inward (0°, 90°, 180°, 270°)
         for (i in 0 until 4) {
           c.save()
           c.translate(cx, cy)
@@ -6867,7 +7136,7 @@ object RiftSpriteBaker {
         c.drawPath(keelPath, darkOutlinePaint)
         c.drawPath(keelPath, bevelPaint)
 
-        // Twin Vertical Armored Sensor Spires Flanking NEXUS AI Core
+        // Twin Vertical Armored Sensor Spires Flanking Comms Relay Core
         for (dir in intArrayOf(-1, 1)) {
           val sx = cx + dir * r * 0.50f
           val towerPath =
@@ -6895,7 +7164,7 @@ object RiftSpriteBaker {
           c.drawCircle(wx, wy, 2.1f * u, windowPaint)
         }
 
-        // Central NEXUS AI Citadel Neural Core Sphere
+        // Central Subspace Comms Citadel Core Sphere
         c.drawCircle(cx, cy - r * 0.08f, r * 0.26f, recessPaint)
         glowFillPaint.shader =
           RadialGradient(

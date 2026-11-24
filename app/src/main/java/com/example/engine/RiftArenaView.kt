@@ -646,7 +646,7 @@ class RiftArenaView(
       pathEffect = DashPathEffect(floatArrayOf(12f, 6f), 0f)
     }
 
-  // Split World Ship Label Paints (Bounty above hull, Callsign below hull)
+  // Split World Ship Label Paints (Resonance above hull, Callsign below hull)
   private val shipLabelStrokePaint =
     Paint(Paint.ANTI_ALIAS_FLAG).apply {
       typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
@@ -2863,13 +2863,13 @@ class RiftArenaView(
               (s.kills * 16 + kotlin.math.max(0, s.bounty - 100) / 4 - s.deaths * 4).coerceAtLeast(0),
             )
         }
-      val bountyText = "$displayedResonance RES"
+      val resonanceValueText = "$displayedResonance"
       val teamColor =
         when {
           isFriendly -> Color.parseColor("#60A5FA")
           else -> Color.parseColor("#F87171")
         }
-      val bountyColor = if (isHvt) Color.parseColor("#FFD700") else Color.parseColor("#FACC15")
+      val resonanceColor = if (isHvt) Color.parseColor("#FFD700") else Color.parseColor("#FACC15")
 
       val radialDist = (44f * RiftCalibrationState.shipScale + 12f) * RiftCalibrationState.labelDistanceOffset
       val topRadialDist = radialDist + alliedFluxBarTopShift
@@ -2886,34 +2886,56 @@ class RiftArenaView(
           RiftCalibrationState.tagPlacement == LabelPlacement.CONSOLIDATED_TOP ||
           RiftCalibrationState.namePlacement == LabelPlacement.CONSOLIDATED_TOP)
         val textY = if (isTop) s.y - topRadialDist else s.y + radialDist + callsignTextSize * 0.85f
-        val lineText = "$badgePrefix ${s.callsign} • $bountyText"
+        val prefixText = "$badgePrefix ${s.callsign} • "
 
         shipLabelStrokePaint.strokeWidth = (1.7f * dpDensity * baseTextScale) / safeWorldScale
         shipLabelStrokePaint.textSize = callsignTextSize
         shipLabelStrokePaint.alpha = labelAlpha
-        shipLabelStrokePaint.textAlign = Paint.Align.CENTER
+        shipLabelStrokePaint.textAlign = Paint.Align.LEFT
 
         shipLabelFillPaint.textSize = callsignTextSize
         shipLabelFillPaint.alpha = labelAlpha
-        shipLabelFillPaint.textAlign = Paint.Align.CENTER
-        shipLabelFillPaint.color = teamColor
+        shipLabelFillPaint.textAlign = Paint.Align.LEFT
 
-        canvas.drawText(lineText, s.x, textY, shipLabelStrokePaint)
-        canvas.drawText(lineText, s.x, textY, shipLabelFillPaint)
+        val prefixW = shipLabelFillPaint.measureText(prefixText)
+        val resW = shipLabelFillPaint.measureText(resonanceValueText)
+        val iconSizeW = callsignTextSize * 1.06f
+        val iconGapW = callsignTextSize * 0.22f
+        val totalW = prefixW + iconSizeW + iconGapW + resW
+        val startX = s.x - totalW * 0.5f
+
+        shipLabelFillPaint.color = teamColor
+        canvas.drawText(prefixText, startX, textY, shipLabelStrokePaint)
+        canvas.drawText(prefixText, startX, textY, shipLabelFillPaint)
+
+        val iconLeft = startX + prefixW
+        val iconCenterY = textY - callsignTextSize * 0.35f
+        nebulaDstRect.set(
+          iconLeft,
+          iconCenterY - iconSizeW * 0.5f,
+          iconLeft + iconSizeW,
+          iconCenterY + iconSizeW * 0.5f,
+        )
+        shipLabelFillPaint.color = Color.argb(labelAlpha, 255, 255, 255)
+        canvas.drawBitmap(RiftSpriteBaker.resonanceIconBitmap, null, nebulaDstRect, shipLabelFillPaint)
+
+        val resX = iconLeft + iconSizeW + iconGapW
+        shipLabelFillPaint.color = resonanceColor
+        canvas.drawText(resonanceValueText, resX, textY, shipLabelStrokePaint)
+        canvas.drawText(resonanceValueText, resX, textY, shipLabelFillPaint)
       } else {
         // Render each preset clock position (TOP, BOTTOM, LEFT, RIGHT)
         val clockPositions = arrayOf(LabelPlacement.TOP, LabelPlacement.BOTTOM, LabelPlacement.LEFT, LabelPlacement.RIGHT)
         for (pos in clockPositions) {
-          // Gather items at this clock position
-          var hasBounty = (RiftCalibrationState.bountyPlacement == pos)
-          var hasTag = (RiftCalibrationState.tagPlacement == pos)
-          var hasName = (RiftCalibrationState.namePlacement == pos)
+          val hasResonance = (RiftCalibrationState.bountyPlacement == pos)
+          val hasTag = (RiftCalibrationState.tagPlacement == pos)
+          val hasName = (RiftCalibrationState.namePlacement == pos)
 
-          if (!hasBounty && !hasTag && !hasName) continue
+          if (!hasResonance && !hasTag && !hasName) continue
 
           val items = mutableListOf<Triple<String, Float, Int>>() // text, size, color
-          if (hasBounty) {
-            items.add(Triple(bountyText, bountyTextSize, bountyColor))
+          if (hasResonance) {
+            items.add(Triple(resonanceValueText, bountyTextSize, resonanceColor))
           }
           if (hasTag && hasName) {
             items.add(Triple("$badgePrefix ${s.callsign}", callsignTextSize, teamColor))
@@ -2929,8 +2951,6 @@ class RiftArenaView(
             else -> Paint.Align.CENTER
           }
 
-          shipLabelStrokePaint.textAlign = align
-          shipLabelFillPaint.textAlign = align
           shipLabelStrokePaint.strokeWidth = (1.7f * dpDensity * baseTextScale) / safeWorldScale
           shipLabelStrokePaint.alpha = labelAlpha
           shipLabelFillPaint.alpha = labelAlpha
@@ -2960,19 +2980,53 @@ class RiftArenaView(
               else -> {}
             }
 
-            // HVT glow behind bounty number
-            if (hasBounty && items[i].first == bountyText && isHvt && !inSafe) {
-              val glowHalfW = 68f * baseTextScale
-              nebulaDstRect.set(itemX - glowHalfW, itemY - 22f * baseTextScale, itemX + glowHalfW, itemY + 12f * baseTextScale)
-              canvas.drawBitmap(RiftSpriteBaker.amberGlowStamp, null, nebulaDstRect, null)
+            val isResonanceRow = hasResonance && i == 0
+            if (isResonanceRow) {
+              if (isHvt && !inSafe) {
+                val glowHalfW = 68f * baseTextScale
+                nebulaDstRect.set(itemX - glowHalfW, itemY - 22f * baseTextScale, itemX + glowHalfW, itemY + 12f * baseTextScale)
+                canvas.drawBitmap(RiftSpriteBaker.amberGlowStamp, null, nebulaDstRect, null)
+              }
+
+              shipLabelStrokePaint.textSize = size
+              shipLabelFillPaint.textSize = size
+              shipLabelStrokePaint.textAlign = Paint.Align.LEFT
+              shipLabelFillPaint.textAlign = Paint.Align.LEFT
+
+              val valW = shipLabelFillPaint.measureText(text)
+              val iconSizeW = size * 1.08f
+              val iconGapW = size * 0.22f
+              val groupW = iconSizeW + iconGapW + valW
+              val groupLeft =
+                when (align) {
+                  Paint.Align.LEFT -> itemX
+                  Paint.Align.RIGHT -> itemX - groupW
+                  else -> itemX - groupW * 0.5f
+                }
+              val iconCenterY = itemY - size * 0.35f
+              nebulaDstRect.set(
+                groupLeft,
+                iconCenterY - iconSizeW * 0.5f,
+                groupLeft + iconSizeW,
+                iconCenterY + iconSizeW * 0.5f,
+              )
+              shipLabelFillPaint.color = Color.argb(labelAlpha, 255, 255, 255)
+              canvas.drawBitmap(RiftSpriteBaker.resonanceIconBitmap, null, nebulaDstRect, shipLabelFillPaint)
+
+              val numX = groupLeft + iconSizeW + iconGapW
+              shipLabelFillPaint.color = color
+              canvas.drawText(text, numX, itemY, shipLabelStrokePaint)
+              canvas.drawText(text, numX, itemY, shipLabelFillPaint)
+            } else {
+              shipLabelStrokePaint.textAlign = align
+              shipLabelFillPaint.textAlign = align
+              shipLabelStrokePaint.textSize = size
+              shipLabelFillPaint.textSize = size
+              shipLabelFillPaint.color = color
+
+              canvas.drawText(text, itemX, itemY, shipLabelStrokePaint)
+              canvas.drawText(text, itemX, itemY, shipLabelFillPaint)
             }
-
-            shipLabelStrokePaint.textSize = size
-            shipLabelFillPaint.textSize = size
-            shipLabelFillPaint.color = color
-
-            canvas.drawText(text, itemX, itemY, shipLabelStrokePaint)
-            canvas.drawText(text, itemX, itemY, shipLabelFillPaint)
           }
         }
       }
@@ -3653,7 +3707,7 @@ class RiftArenaView(
       if (orb.ejectDecelTimerSec > 0f) {
         "FLUX CORE EJECTED (${orb.ejectDecelTimerSec.toInt()}s)"
       } else {
-        "FLUX CORE SINGULARITY (+15 RES/S)"
+        "FLUX CORE SINGULARITY (+15/S)"
       }
     drawWorldOverheadBanner(
       canvas = canvas,
@@ -3838,14 +3892,14 @@ class RiftArenaView(
     anomalyRingPaint.color = Color.argb((42 * opScale).toInt().coerceIn(18, 72), Color.red(hubSecondary), Color.green(hubSecondary), Color.blue(hubSecondary))
     canvas.drawCircle(szCX, szCY, szR * 0.72f, anomalyRingPaint)
 
-    // Layer 2: 5x Ship-Size (180px base world radius) Nexus Station Metallic Safe-Zone Station Sprite
+    // Layer 2: 5x Ship-Size (180px base world radius) Rift Station Metallic Safe-Zone Station Sprite
     // + Revolving Ops Holographic Ring + 8 Golden-Cyan Stabilizer Beams Bracing szR
     val stationR =
       (180f * RiftCalibrationState.safeZoneScale * szPadRec.pixelScale.coerceIn(0.65f, 1.45f))
         .coerceAtMost(szR * 0.86f)
         .coerceAtLeast(48f)
 
-    // 8 Golden-Cyan Stabilizer Beams projecting from the Nexus Station Outer Docking Ring outward to brace the szR Containment Ring + 8 Outward Emitter Chevrons
+    // 8 Golden-Cyan Stabilizer Beams projecting from the Rift Station Outer Docking Ring outward to brace the szR Containment Ring + 8 Outward Emitter Chevrons
     for (i in 0 until 8) {
       val ang = i * (PI.toFloat() * 0.25f) + sin(tSec * 0.4f) * 0.02f
       val ca = cos(ang)
@@ -3887,13 +3941,13 @@ class RiftArenaView(
       canvas.drawCircle(chevTipX, chevTipY, 2.6f, obstacleBeaconPaint)
     }
 
-    // Smoothly Rotating 5x Metallic Nexus Station Sprite (diameter = stationR * 2f)
+    // Smoothly Rotating 5x Metallic Rift Station Sprite (diameter = stationR * 2f)
     val stationBmp = RiftSpriteBaker.safeZoneStationBitmap
     val halfBmp = stationBmp.width * 0.5f
     val stationScale = (stationR * 2f) / stationBmp.width.toFloat().coerceAtLeast(1f)
     val stationSpinDeg = (tSec * 7.5f) % 360f
 
-    // Subtle deep-space under-shadow beneath the 5x Nexus Station
+    // Subtle deep-space under-shadow beneath the 5x Rift Station
     shadowMatrix.reset()
     shadowMatrix.postTranslate(-halfBmp, -halfBmp)
     shadowMatrix.postScale(stationScale * 0.98f, stationScale * 0.98f)
