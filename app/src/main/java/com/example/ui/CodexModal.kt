@@ -371,9 +371,9 @@ fun CodexModal(
             ) {
               CodexHighlightCard(
                 modifier = Modifier.weight(1f),
-                title = "45S SPACETIME RIFT CYCLES",
+                title = "45S VOLUMETRIC RIFT CYCLES",
                 body =
-                  "Spacetime-Tear Playfield Rifts relocate every 45s outside the Safe Zone and never spawn inside Stasis Breach Jails or Rift Control rings.",
+                  "Volumetric storm-cloud Playfield Rifts with jagged fracture rims and branching lightning relocate every 45s outside the Safe Zone and never spawn inside Stasis Breach Jails or Rift Control rings.",
                 bgColor = Color(0xFF1B102E),
                 borderColor = Color(0xFFA855F7),
                 bodyColor = Color(0xFFE9D5FF),
@@ -823,20 +823,19 @@ private fun SafeZoneAndSectorObstaclesCard(
   visualRev: Int,
 ) {
   val headless = remember { isHeadlessGlEnvironment() }
-  val spinPhase =
-    if (headless) {
-      0.6f
-    } else {
-      val transition = rememberInfiniteTransition(label = "codex_nexus_station_spin")
-      val p by
-        transition.animateFloat(
-          initialValue = 0f,
-          targetValue = 1f,
-          animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Restart),
-          label = "nexus_station_spin_frac",
-        )
-      p
+  var continuousNanos by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+  val startEpochNs = remember { System.nanoTime() }
+  if (!headless) {
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+      while (true) {
+        androidx.compose.runtime.withFrameNanos { frameNs ->
+          continuousNanos = frameNs
+        }
+      }
     }
+  }
+  val continuousSec =
+    if (headless || continuousNanos == 0L) 5.4f else ((continuousNanos - startEpochNs) * 1e-9f)
   val stationBmp = remember(visualRev) { RiftSpriteBaker.safeZoneStationBitmap }
   val stationRect = remember { RectF() }
   val previewSizeDp = if (isCompactPhone) 62 else 74
@@ -868,7 +867,7 @@ private fun SafeZoneAndSectorObstaclesCard(
         val cy = size.height * 0.5f
         val shieldR = size.minDimension * 0.47f
         val stationR = size.minDimension * 0.38f
-        val timeSec = spinPhase * 9.0f
+        val timeSec = continuousSec
 
         for (b in 0 until 8) {
           val ang = (b * PI * 0.25).toFloat()
@@ -889,7 +888,7 @@ private fun SafeZoneAndSectorObstaclesCard(
           val nc = composeCanvas.nativeCanvas
           nc.save()
           nc.translate(cx, cy)
-          nc.rotate(spinPhase * 360f)
+          nc.rotate((timeSec * 40f) % 360f)
           stationRect.set(-stationR, -stationR, stationR, stationR)
           nc.drawBitmap(stationBmp, null, stationRect, null)
           nc.restore()
@@ -1367,21 +1366,22 @@ fun BuffIconPreview(buffType: Int, sizeDp: Int, accentColor: Color) {
 
 @Composable
 fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
-  val infiniteTransition = rememberInfiniteTransition(label = "codex_rift_preview_$riftId")
-  val spinAngle by
-    infiniteTransition.animateFloat(
-      initialValue = 0f,
-      targetValue = (2.0 * PI).toFloat(),
-      animationSpec = infiniteRepeatable(tween(3600, easing = LinearEasing), RepeatMode.Restart),
-      label = "rift_spin_angle",
-    )
-  val pulsePhase by
-    infiniteTransition.animateFloat(
-      initialValue = 0f,
-      targetValue = 1f,
-      animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart),
-      label = "rift_pulse_phase",
-    )
+  val headless = remember { isHeadlessGlEnvironment() }
+  var continuousNanos by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+  val startEpochNs = remember { System.nanoTime() }
+  if (!headless) {
+    androidx.compose.runtime.LaunchedEffect(riftId) {
+      while (true) {
+        androidx.compose.runtime.withFrameNanos { frameNs ->
+          continuousNanos = frameNs
+        }
+      }
+    }
+  }
+  val timeSec =
+    if (headless || continuousNanos == 0L) 1.45f else ((continuousNanos - startEpochNs) * 1e-9f)
+  val spinAngle = timeSec * 1.65f
+  val pulsePhase = timeSec * 0.55f
   val linkPath = remember { Path() }
 
   Box(
@@ -1485,34 +1485,24 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
               parallaxOffsetY = orbParallaxY,
             )
             for (cIdx in 0 until 3) {
-              val ang = -spinAngle * 1.4f + cIdx * (2f * PI.toFloat() / 3f)
-              val dist = gravR * (0.46f + 0.22f * (1f - pulsePhase))
+              val ang = -spinAngle * 1.25f + cIdx * (2f * PI.toFloat() / 3f)
+              val breathePull = 0.5f + 0.5f * sin(timeSec * 2.4f + cIdx * 2.09f)
+              val dist = gravR * (0.48f + 0.20f * breathePull)
               val px = (cx + orbParallaxX * 0.72f) + kotlin.math.cos(ang) * dist
               val py = (cy + orbParallaxY * 0.72f) + kotlin.math.sin(ang) * dist
               RiftSpriteBaker.drawReactiveFilamentStrand(
                 canvas = nc,
-                x0 = cx + kotlin.math.cos(ang - 0.35f) * (gravR * 0.84f),
-                y0 = cy + kotlin.math.sin(ang - 0.35f) * (gravR * 0.84f),
-                ctrlX = (cx + orbParallaxX * 0.38f) + kotlin.math.cos(ang - 0.16f) * (gravR * 0.66f),
-                ctrlY = (cy + orbParallaxY * 0.38f) + kotlin.math.sin(ang - 0.16f) * (gravR * 0.66f),
+                x0 = cx + kotlin.math.cos(ang - 0.35f) * (gravR * 0.88f),
+                y0 = cy + kotlin.math.sin(ang - 0.35f) * (gravR * 0.88f),
+                ctrlX = (cx + orbParallaxX * 0.38f) + kotlin.math.cos(ang - 0.16f) * (gravR * 0.68f),
+                ctrlY = (cy + orbParallaxY * 0.38f) + kotlin.math.sin(ang - 0.16f) * (gravR * 0.68f),
                 x1 = px,
                 y1 = py,
-                thickness = (gravR * 0.055f).coerceAtLeast(1.1f),
+                thickness = (gravR * 0.052f).coerceAtLeast(1.1f),
                 outerColor = android.graphics.Color.rgb(168, 85, 247),
                 midColor = android.graphics.Color.rgb(0, 245, 212),
                 coreColor = android.graphics.Color.rgb(250, 204, 21),
                 alphaFrac = 0.82f,
-              )
-              RiftSpriteBaker.drawPrecipitateCrystalCluster(
-                canvas = nc,
-                cx = px,
-                cy = py,
-                radius = (gravR * 0.085f).coerceAtLeast(1.6f),
-                angleRad = ang * 1.8f,
-                primaryColor = android.graphics.Color.rgb(0, 245, 212),
-                coreColor = android.graphics.Color.WHITE,
-                alphaFrac = 0.88f,
-                facetSeed = cIdx,
               )
             }
           }

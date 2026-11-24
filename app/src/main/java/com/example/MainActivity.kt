@@ -1051,7 +1051,11 @@ fun AppNavigation(
     if (user == null && !isGuestMode) {
       AuthScreen(
         onAuthSuccess = {
-          runCatching { localPrefs.setBootToNexusHub(true) }
+          isGuestMode = false
+          runCatching {
+            localPrefs.setGuestBypassEnabled(false)
+            localPrefs.setBootToNexusHub(true)
+          }
         },
         onPlayAsGuest = {
           runCatching {
@@ -1075,8 +1079,11 @@ fun AppNavigation(
         }
       }
     } else {
-      if (user != null) {
-        runCatching { localPrefs.setGuestBypassEnabled(false) }
+      LaunchedEffect(user?.uid) {
+        if (user != null) {
+          isGuestMode = false
+          runCatching { localPrefs.setGuestBypassEnabled(false) }
+        }
       }
       val uid = user?.uid ?: permanentDeviceUid
       val initialCallsign =

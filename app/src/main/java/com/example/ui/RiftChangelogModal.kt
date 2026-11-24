@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 110
+const val CURRENT_RIFT_BUILD_VERSION = 112
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,34 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 112,
+      versionTag = "v1.0.112 // BUILD #112",
+      releaseDate = "Nov 24, 2026",
+      headline = "Google Sign-In OAuth Registration, Firestore Named Database Provisioning & Credential Manager Reliability",
+      badgeLabel = "GOOGLE SIGN-IN & CLOUD SYNC",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Registered com.game.rift Signing Fingerprints & Web Client ID: Provisioned Firebase Auth Google Sign-In and the named Firestore database for com.game.rift with both the AI Studio debug certificate and Google Play App Signing certificate plus default_web_client_id.",
+          "Reliable Credential Manager Activity Context & Non-Blocking Sign-In: Unwrapped host Activity context for CredentialManager.getCredential across AuthScreen and Helm Systems account linking, removed premature pre-flight connectivity blocks on virtualized networks, and cleared Drifter guest state automatically upon Google login.",
+          "Guarded Debug App Check & Deployed Firestore Security Rules: Restricted DebugAppCheckProviderFactory installation strictly to runs with an injected debug token so unattested debug builds never reject Auth or Firestore requests, and deployed verified Firestore security rules.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 111,
+      versionTag = "v1.0.111 // BUILD #111",
+      releaseDate = "Nov 24, 2026",
+      headline = "Unified Volumetric Storm-Cloud Rifts, Fracture Lightning & Zero Central or Spinning Balls Anywhere",
+      badgeLabel = "VOLUMETRIC RIFTS & ZERO CENTER BALLS",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Zero Central or Orbiting Balls & Collarless Rift Tears: Removed all central balls, orbs, cores, emitter node dots, circular droplet beads, flat curved pinwheel blades, and segmented metallic Rift collars across Plasma, Repulsor, Gravity, Phase, and Unstable Merged Rifts, Safe Zone, Stasis bubbles and jails, Star Forge previews, Tactical Codex icons, and the Outer Rift Wall while keeping 2.5D metallic and basalt hull detail on starfighters, Rift Station, Supply Pods, and 224x224 sector obstacles.",
+          "Unified Volumetric Storm-Cloud Turbulence & Fracture Lightning: Unified Playfield Rifts, Unstable Merged Rifts, Stasis containment rims, Safe Zone storm rims, and the Outer Rift Wall around multi-octave volumetric storm-cloud turbulence, jagged spacetime fracture rims, and branching plasma lightning veins using GPU AGSL shaders on API 33+ and zero-allocation multi-octave volumetric Canvas rendering on API 24-32.",
+          "Continuous Non-Snapping Monotonic Motion: Replaced modular wraparound timers and angular discontinuity seams with continuous monotonic elapsed-time phases and seamless 2D directional coordinates so approaching the Outer Rift Wall or inspecting any Rift, Stasis dome, or Star Forge preview animates smoothly with zero periodic snapping or resets.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 110,
       versionTag = "v1.0.110 // BUILD #110",

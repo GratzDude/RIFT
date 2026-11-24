@@ -1,6 +1,8 @@
 package com.example.ui
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Matrix
 import android.graphics.RectF
 import android.util.Log
@@ -111,6 +113,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
+private tailrec fun Context.findActivity(): Activity? =
+  when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+  }
+
 fun attemptAutoSignIn(
   context: Context,
   credentialManager: CredentialManager,
@@ -122,10 +131,7 @@ fun attemptAutoSignIn(
     onAuthSuccess()
     return
   }
-  if (!NetworkConnectivityMonitor.isCurrentlyOnline(context)) {
-    onUnauthenticated()
-    return
-  }
+  val activityContext = context.findActivity() ?: context
   val clientId =
     try {
       context.getString(R.string.default_web_client_id).trim()
@@ -154,7 +160,7 @@ fun attemptAutoSignIn(
 
   scope.launch {
     try {
-      val result = credentialManager.getCredential(context, request)
+      val result = credentialManager.getCredential(activityContext, request)
       val credential = result.credential
       if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
         val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
@@ -181,16 +187,14 @@ fun onGoogleSignInClicked(
   scope: CoroutineScope,
   onAuthCancelled: () -> Unit = {},
 ) {
-  if (!NetworkConnectivityMonitor.isCurrentlyOnline(context)) {
-    if (runCatching { Firebase.auth.currentUser }.getOrNull() != null) {
-      onAuthSuccess()
-    } else {
-      onAuthError(
-        "Device is currently offline. Tap Play as Drifter below for instant offline play, or connect to the internet to sign in with Google."
-      )
-    }
+  if (
+    !NetworkConnectivityMonitor.isCurrentlyOnline(context) &&
+      runCatching { Firebase.auth.currentUser }.getOrNull() != null
+  ) {
+    onAuthSuccess()
     return
   }
+  val activityContext = context.findActivity() ?: context
   val clientId =
     try {
       context.getString(R.string.default_web_client_id).trim()
@@ -222,7 +226,7 @@ fun onGoogleSignInClicked(
 
   scope.launch {
     try {
-      val result = credentialManager.getCredential(context, request)
+      val result = credentialManager.getCredential(activityContext, request)
       val credential = result.credential
       if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
         val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
@@ -257,9 +261,13 @@ fun onGoogleSignInClicked(
     } catch (e: GetCredentialException) {
       val detail = e.localizedMessage?.trim().orEmpty()
       Log.e("Auth", "Google Credential Manager error (${e.type}): $detail", e)
-      onAuthError(
-        "Google Sign-In could not complete (${detail.ifBlank { e.type }}). Tap Sign In with Google to retry, or tap Play as Drifter below."
-      )
+      val offlineHint =
+        if (!NetworkConnectivityMonitor.isCurrentlyOnline(context)) {
+          "Device appears offline. Connect to the internet to sign in with Google, or tap Play as Drifter below."
+        } else {
+          "Google Sign-In could not complete (${detail.ifBlank { e.type }}). Tap Sign In with Google to retry, or tap Play as Drifter below."
+        }
+      onAuthError(offlineHint)
     } catch (e: CancellationException) {
       onAuthCancelled()
       throw e
@@ -267,14 +275,15 @@ fun onGoogleSignInClicked(
       val detail = t.localizedMessage?.trim().orEmpty()
       Log.e("Auth", "Google Sign-In failed", t)
       val friendlyMsg =
-        if (
+        when {
           com.example.RiftApplication.isUsingFallbackFirebase ||
             detail.contains("API key not valid", ignoreCase = true) ||
-            detail.contains("rift-offline-fallback", ignoreCase = true)
-        ) {
-          "Google account selected, but cloud Firebase credentials (google-services.json) are not bundled in this build. Set GOOGLE_SERVICES_JSON in GitHub Secrets, or tap Play as Drifter below to play."
-        } else {
-          "Google Sign-In failed: ${detail.ifBlank { t::class.java.simpleName }}. Tap Sign In with Google to retry, or tap Play as Drifter below."
+            detail.contains("rift-offline-fallback", ignoreCase = true) ->
+            "Google account selected, but cloud Firebase credentials (google-services.json) are not bundled in this build. Set GOOGLE_SERVICES_JSON in GitHub Secrets, or tap Play as Drifter below to play."
+          !NetworkConnectivityMonitor.isCurrentlyOnline(context) ->
+            "Device is currently offline. Connect to the internet to complete Google Sign-In, or tap Play as Drifter below."
+          else ->
+            "Google Sign-In failed: ${detail.ifBlank { t::class.java.simpleName }}. Tap Sign In with Google to retry, or tap Play as Drifter below."
         }
       onAuthError(friendlyMsg)
     }
