@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 117
+const val CURRENT_RIFT_BUILD_VERSION = 118
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,20 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 118,
+      versionTag = "v1.0.118 // BUILD #118",
+      releaseDate = "Nov 25, 2026",
+      headline = "Instant Dossier Reset Refresh, Canonical Bot Skill Tiers, Unified Side-Bay Custom Rift Rules, Zero-Warning Build, Rift AI Ground-Truth Sync & Exact Snapshot Version Stamp",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Instant Dossier Reset Refresh: Added live refresh nonces across both Pilot Dossier side bays so confirming Reset Pilot Record clears Pilot Level, all 5 XP progression bars, match records, survival duration metrics, and hub tap telemetry immediately on screen without closing the Dossier bay.",
+          "Canonical Bot Skill Labels & Unified Side-Bay Custom Rift Rules: Corrected Custom Rifts bot difficulty labels to Cadet, Regular, Veteran, and Ace to match live match rules; removed the legacy Full Gate escape button so all custom matches stay inside the Orbital Hub side bays; and added Ship Speed, Weapon Damage, Flux Regen, Supply Pod Rate, and Allow Squadrons in FFA controls directly to Create Rift.",
+          "Zero-Warning Exhaustive Handling, Rift AI Ground-Truth Sync & Exact Snapshot Stamp: Cleaned up redundant ranked-mode fallback logic for a zero-warning release Kotlin compile; updated Rift AI system instructions and live telemetry snapshots with the dynamic build number, 4-card Rift Hub layout, pure Ice-Blue Repulsor Rift, and volumetric storm-cloud Rift rules; and stamped exact app versionCode and versionName values into the CI codebase snapshot header and commit message.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 117,
       versionTag = "v1.0.117 // BUILD #117",

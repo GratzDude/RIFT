@@ -153,6 +153,7 @@ internal fun DossierLeftIdentityBay(
   peakResonance: Int,
   localPrefs: LocalPilotPrefs,
   currentUserId: String,
+  dossierRefreshNonce: Int = 0,
   onBackToHub: () -> Unit,
   onOpenRenamePrompt: () -> Unit,
   onOpenResetPrompt: () -> Unit,
@@ -160,8 +161,14 @@ internal fun DossierLeftIdentityBay(
   onOpenSurvivalSpreadsheet: () -> Unit,
 ) {
   val uidOrNull = currentUserId.ifBlank { null }
-  val career = remember(currentUserId, liveResonance) { localPrefs.getPilotCareerStatsSummary(uidOrNull) }
-  val callsignChangeCount = remember(currentUserId, callsign) { localPrefs.getCallsignChangeCount(uidOrNull) }
+  val career =
+    remember(currentUserId, liveResonance, dossierRefreshNonce) {
+      localPrefs.getPilotCareerStatsSummary(uidOrNull)
+    }
+  val callsignChangeCount =
+    remember(currentUserId, liveResonance, dossierRefreshNonce, callsign) {
+      localPrefs.getCallsignChangeCount(uidOrNull)
+    }
   val isFirstRenameFree = callsignChangeCount == 0
   val maxXpTrack =
     maxOf(
@@ -498,14 +505,25 @@ internal fun DossierRightCareerBay(
   shipResonanceFor: (Int) -> Int,
   localPrefs: LocalPilotPrefs,
   currentUserId: String,
+  liveResonance: Int,
+  dossierRefreshNonce: Int = 0,
   cloudLeaderboardEntries: List<LeaderboardEntry>,
   onInspectShip: (Int) -> Unit,
 ) {
   val context = LocalContext.current
   val uidOrNull = currentUserId.ifBlank { null }
-  val career = remember(currentUserId) { localPrefs.getPilotCareerStatsSummary(uidOrNull) }
-  val survival = remember(currentUserId) { localPrefs.getPilotSurvivalTelemetrySummary(uidOrNull) }
-  val hubTapCount = remember(currentUserId) { localPrefs.getHubTapTelemetryHistory().size }
+  val career =
+    remember(currentUserId, liveResonance, dossierRefreshNonce) {
+      localPrefs.getPilotCareerStatsSummary(uidOrNull)
+    }
+  val survival =
+    remember(currentUserId, liveResonance, dossierRefreshNonce) {
+      localPrefs.getPilotSurvivalTelemetrySummary(uidOrNull)
+    }
+  val hubTapCount =
+    remember(currentUserId, liveResonance, dossierRefreshNonce) {
+      localPrefs.getHubTapTelemetryHistory().size
+    }
   val allShips = remember(RiftSpriteBaker.customShip9Version) { RiftCodex.getAllTenShips() }
   val hallOfFame = remember(cloudLeaderboardEntries) { cloudLeaderboardEntries.take(5) }
   var exportBanner by remember { mutableStateOf<String?>(null) }
@@ -2306,9 +2324,18 @@ internal fun GameModesRightCustomBay(
   onSelectCustomScoreCap: (Int) -> Unit,
   customBulletSizeMult: Float,
   onSelectCustomBulletSizeMult: (Float) -> Unit,
+  customSpeedMult: Float,
+  onSelectCustomSpeedMult: (Float) -> Unit,
+  customDamageMult: Float,
+  onSelectCustomDamageMult: (Float) -> Unit,
+  customRechargeMult: Float,
+  onSelectCustomRechargeMult: (Float) -> Unit,
+  customCrateSpawnMult: Float,
+  onSelectCustomCrateSpawnMult: (Float) -> Unit,
+  customAllowArmadasInFfa: Boolean,
+  onToggleAllowArmadasInFfa: (Boolean) -> Unit,
   onJoinCustomInstance: (String) -> Unit,
   onQuickCreateCustomGame: () -> Unit,
-  onOpenFullCustomGate: () -> Unit,
 ) {
   var rightTab by remember { mutableIntStateOf(0) } // 0 = PUBLIC BROWSER, 1 = CREATE RIFT
   val publicVisibleRooms =
@@ -2320,10 +2347,10 @@ internal fun GameModesRightCustomBay(
     }
   val botSkillLabel =
     when (customBotSkillLevel.coerceIn(0, 3)) {
-      0 -> "RECRUIT"
-      1 -> "ACE"
+      0 -> "CADET"
+      1 -> "REGULAR"
       2 -> "VETERAN"
-      else -> "APEX"
+      else -> "ACE"
     }
 
   Column(
@@ -2336,9 +2363,6 @@ internal fun GameModesRightCustomBay(
       isTabletDeck = isTabletDeck,
       sectionTitle = "CUSTOM RIFTS",
       accent = Color(0xFF00F5D4),
-      trailingLabel = "FULL GATE >",
-      trailingTag = "game_modes_open_full_gate",
-      onTrailingClick = onOpenFullCustomGate,
     )
 
     // Tab Switcher: PUBLIC BROWSER | CREATE RIFT
@@ -2650,6 +2674,88 @@ internal fun GameModesRightCustomBay(
           onMinus = { onSelectCustomBulletSizeMult((customBulletSizeMult - 0.15f).coerceIn(0.70f, 1.75f)) },
           onPlus = { onSelectCustomBulletSizeMult((customBulletSizeMult + 0.15f).coerceIn(0.70f, 1.75f)) },
         )
+        HelmStepperControlRow(
+          label = "SHIP SPEED",
+          valueText = String.format(Locale.US, "%.2fx", customSpeedMult),
+          onMinus = {
+            val next = (((customSpeedMult - 0.25f) * 100f).roundToInt() / 100f).coerceIn(0.75f, 1.75f)
+            onSelectCustomSpeedMult(next)
+          },
+          onPlus = {
+            val next = (((customSpeedMult + 0.25f) * 100f).roundToInt() / 100f).coerceIn(0.75f, 1.75f)
+            onSelectCustomSpeedMult(next)
+          },
+        )
+        HelmStepperControlRow(
+          label = "WEAPON DAMAGE",
+          valueText = String.format(Locale.US, "%.2fx", customDamageMult),
+          onMinus = {
+            val next = (((customDamageMult - 0.25f) * 100f).roundToInt() / 100f).coerceIn(0.50f, 2.00f)
+            onSelectCustomDamageMult(next)
+          },
+          onPlus = {
+            val next = (((customDamageMult + 0.25f) * 100f).roundToInt() / 100f).coerceIn(0.50f, 2.00f)
+            onSelectCustomDamageMult(next)
+          },
+        )
+        HelmStepperControlRow(
+          label = "FLUX REGEN",
+          valueText = String.format(Locale.US, "%.2fx", customRechargeMult),
+          onMinus = {
+            val next = (((customRechargeMult - 0.25f) * 100f).roundToInt() / 100f).coerceIn(0.75f, 2.00f)
+            onSelectCustomRechargeMult(next)
+          },
+          onPlus = {
+            val next = (((customRechargeMult + 0.25f) * 100f).roundToInt() / 100f).coerceIn(0.75f, 2.00f)
+            onSelectCustomRechargeMult(next)
+          },
+        )
+        HelmStepperControlRow(
+          label = "SUPPLY POD RATE",
+          valueText = String.format(Locale.US, "%.2fx", customCrateSpawnMult),
+          onMinus = {
+            val next = (((customCrateSpawnMult - 0.50f) * 100f).roundToInt() / 100f).coerceIn(0.50f, 2.50f)
+            onSelectCustomCrateSpawnMult(next)
+          },
+          onPlus = {
+            val next = (((customCrateSpawnMult + 0.50f) * 100f).roundToInt() / 100f).coerceIn(0.50f, 2.50f)
+            onSelectCustomCrateSpawnMult(next)
+          },
+        )
+        Row(
+          modifier =
+            Modifier.fillMaxWidth()
+              .minimumInteractiveComponentSize()
+              .heightIn(min = 48.dp)
+              .chamferedSciFiPodSurface(
+                isRightSide = true,
+                primaryBorder = if (customAllowArmadasInFfa) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+                secondaryBorder = Color(0xFF091528),
+              )
+              .clickable { onToggleAllowArmadasInFfa(!customAllowArmadasInFfa) }
+              .padding(horizontal = 8.dp)
+              .testTag("custom_toggle_allow_squadrons_ffa"),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = "ALLOW SQUADRONS IN FFA",
+            color = Color(0xFFE2E8F0),
+            fontSize = 7.8.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(end = 6.dp),
+          )
+          Text(
+            text = if (customAllowArmadasInFfa) "ON" else "OFF",
+            color = if (customAllowArmadasInFfa) Color(0xFF00F5D4) else Color(0xFFFB7185),
+            fontSize = 8.4.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
 
         Box(
           modifier =

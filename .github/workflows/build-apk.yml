@@ -223,7 +223,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "# RIFT — Full Codebase Snapshot (Build #${{ github.run_number }})"
+            echo "# RIFT — Full Codebase Snapshot (Build #${{ env.RIFT_VERSION_CODE }} • v${{ env.RIFT_VERSION_NAME }} • CI Run #${{ github.run_number }})"
             echo "## 0. Latest Gradle Build Output (Tail)"
             echo '```text'
             tail -n 120 gradle-build.log 2>/dev/null || echo "No gradle log found"
@@ -247,7 +247,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -f RIFT-codebase.md
-          git commit -m "chore: update RIFT-codebase.md snapshot (Build #${{ github.run_number }})" || true
+          git commit -m "chore: update RIFT-codebase.md snapshot (Build #${{ env.RIFT_VERSION_CODE }} • v${{ env.RIFT_VERSION_NAME }} • CI Run #${{ github.run_number }})" || true
           git push -f origin HEAD:refs/heads/snapshot
 
       - name: Collect APK, Play Store AAB & Public Upload Certificate

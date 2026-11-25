@@ -2304,12 +2304,17 @@ private fun NexusOrbitalHubStageHost(
       onSelectCustomBulletSizeMult = {
         uiState.customBulletSizeMult = it.coerceIn(0.70f, 1.75f)
       },
+      customSpeedMult = uiState.customSpeedMult,
+      onSelectCustomSpeedMult = { uiState.customSpeedMult = it },
+      customDamageMult = uiState.customDamageMult,
+      onSelectCustomDamageMult = { uiState.customDamageMult = it },
+      customRechargeMult = uiState.customRechargeMult,
+      onSelectCustomRechargeMult = { uiState.customRechargeMult = it },
+      customCrateSpawnMult = uiState.customCrateSpawnMult,
+      onSelectCustomCrateSpawnMult = { uiState.customCrateSpawnMult = it },
+      customAllowArmadasInFfa = uiState.customAllowArmadasInFfa,
+      onToggleAllowArmadasInFfa = { uiState.customAllowArmadasInFfa = it },
       onOpenSurvivalSpreadsheet = { uiState.showHubSurvivalSpreadsheetModal = true },
-      onOpenFullCustomGate = {
-        uiState.overwatchPrompt = OverwatchCircularPrompt.None
-        uiState.gateTab = ConvergenceGateTab.CUSTOM_RIFT_GATE
-        params.onSelectNode(NexusCoreNode.CONVERGENCE_GATE)
-      },
       onOpenShipwrightStudio = { params.onOpenForge() },
       onOpenFullSquadronModal = {
         uiState.overwatchPrompt = OverwatchCircularPrompt.None
@@ -3307,8 +3312,17 @@ private fun OrbitalHubSpatialStage(
   onSelectCustomScoreCap: (Int) -> Unit = {},
   customBulletSizeMult: Float = 1.0f,
   onSelectCustomBulletSizeMult: (Float) -> Unit = {},
+  customSpeedMult: Float = 1.0f,
+  onSelectCustomSpeedMult: (Float) -> Unit = {},
+  customDamageMult: Float = 1.0f,
+  onSelectCustomDamageMult: (Float) -> Unit = {},
+  customRechargeMult: Float = 1.0f,
+  onSelectCustomRechargeMult: (Float) -> Unit = {},
+  customCrateSpawnMult: Float = 1.0f,
+  onSelectCustomCrateSpawnMult: (Float) -> Unit = {},
+  customAllowArmadasInFfa: Boolean = true,
+  onToggleAllowArmadasInFfa: (Boolean) -> Unit = {},
   onOpenSurvivalSpreadsheet: () -> Unit = {},
-  onOpenFullCustomGate: () -> Unit = {},
   onOpenShipwrightStudio: () -> Unit = {},
   onOpenFullSquadronModal: () -> Unit = {},
   @Suppress("UNUSED_PARAMETER") syndicateWarRecord: SyndicateWarRecord,
@@ -3396,6 +3410,7 @@ private fun OrbitalHubSpatialStage(
   var renameDraftState by remember(callsign) { mutableStateOf(callsign) }
   var storePurchaseBanner by remember { mutableStateOf<String?>(null) }
   var liveShardsBonus by remember(riftShards) { mutableStateOf(0L) }
+  var dossierRefreshNonce by remember { mutableIntStateOf(0) }
 
   // Live 1-second ticker for the 1-hour public match reset / active match countdown
   val nowEpochMs by
@@ -4060,8 +4075,6 @@ private fun OrbitalHubSpatialStage(
                         "Eliminated pilots are detained in the rival Brig Reactor. Crack the enemy Brig shield to trigger a team-wide prison break or sweep all opposing pilots."
                       RankedGameMode.SYNDICATE_WARS ->
                         "${bracket}v${bracket} chartered Syndicate warfare for official war record standings and sector dominance."
-                      else ->
-                        "High-intensity competitive 2.5D space combat inside the Storm Wall. Outlast rival pilots, control Supply Crates, and master Playfield Rifts."
                     }
                   onChangeOverwatchPrompt(
                     OverwatchCircularPrompt.InfoStageInspect(
@@ -4172,6 +4185,7 @@ private fun OrbitalHubSpatialStage(
                 peakResonance = peakResonance,
                 localPrefs = localPrefs,
                 currentUserId = currentUserId,
+                dossierRefreshNonce = dossierRefreshNonce,
                 onBackToHub = {
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
@@ -4188,7 +4202,10 @@ private fun OrbitalHubSpatialStage(
                       subtitle = "Clears local match telemetry and career counters on this device.",
                       confirmLabel = "RESET",
                       accentHex = 0xFFFB7185L,
-                      onConfirm = onResetLocalPilotTelemetry,
+                      onConfirm = {
+                        onResetLocalPilotTelemetry()
+                        dossierRefreshNonce++
+                      },
                     )
                   )
                 },
@@ -4536,9 +4553,18 @@ private fun OrbitalHubSpatialStage(
                 onSelectCustomScoreCap = onSelectCustomScoreCap,
                 customBulletSizeMult = customBulletSizeMult,
                 onSelectCustomBulletSizeMult = onSelectCustomBulletSizeMult,
+                customSpeedMult = customSpeedMult,
+                onSelectCustomSpeedMult = onSelectCustomSpeedMult,
+                customDamageMult = customDamageMult,
+                onSelectCustomDamageMult = onSelectCustomDamageMult,
+                customRechargeMult = customRechargeMult,
+                onSelectCustomRechargeMult = onSelectCustomRechargeMult,
+                customCrateSpawnMult = customCrateSpawnMult,
+                onSelectCustomCrateSpawnMult = onSelectCustomCrateSpawnMult,
+                customAllowArmadasInFfa = customAllowArmadasInFfa,
+                onToggleAllowArmadasInFfa = onToggleAllowArmadasInFfa,
                 onJoinCustomInstance = onJoinCustomInstance,
                 onQuickCreateCustomGame = onQuickCreateCustomGame,
-                onOpenFullCustomGate = onOpenFullCustomGate,
               )
             }
             RiftHubSideBayMode.CONDUIT_BAY -> {
@@ -4603,6 +4629,8 @@ private fun OrbitalHubSpatialStage(
                 shipResonanceFor = { resolveLocalShipResonance(it) },
                 localPrefs = localPrefs,
                 currentUserId = currentUserId,
+                liveResonance = liveResonance,
+                dossierRefreshNonce = dossierRefreshNonce,
                 cloudLeaderboardEntries = cloudLeaderboardEntries,
                 onInspectShip = { shipId ->
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId))
