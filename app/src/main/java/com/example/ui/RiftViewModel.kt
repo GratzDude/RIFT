@@ -471,6 +471,8 @@ class RiftViewModel(
     crestJson: String,
     channels: List<String>,
     invitedGuests: Set<String>,
+    inviteOnly: Boolean = false,
+    officerCallsigns: Set<String> = emptySet(),
   ) {
     val cleanTag = tag.trim().uppercase(Locale.US)
     if (!isCloudSessionReady() || cleanTag.isEmpty() || cleanTag in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) {
@@ -485,6 +487,8 @@ class RiftViewModel(
             crestJson = crestJson,
             customChannels = channels,
             invitedGuests = invitedGuests,
+            inviteOnly = inviteOnly,
+            officerCallsigns = officerCallsigns,
             updatedAtMs = System.currentTimeMillis(),
           )
         )

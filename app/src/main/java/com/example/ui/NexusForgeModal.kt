@@ -3135,7 +3135,7 @@ private fun DevPlayfieldAndHudStudioBay(
           layerFilter = ForgeElementLayer.WORLD
           camWorldX = 4000f
           camWorldY = 5140f
-          studioZoom = 1.05f
+          studioZoom = 1.00f
           sfx.playMutedClick()
         }
         listOf(null to "ALL (36)", ForgeElementLayer.WORLD to "WORLD (20)", ForgeElementLayer.HUD to "HUD (16)").forEach { (flt, lbl) ->
@@ -3808,7 +3808,7 @@ private fun ElementReforgeGlassModal(
   var inspectorTab by remember { mutableStateOf(InspectorSubTab.SHADER_PALETTE) }
   var customReforgePrompt by remember(target) { mutableStateOf("") }
   var variationSalt by remember { mutableIntStateOf(0) }
-  var previewZoom by remember(target) { mutableFloatStateOf(1.15f) }
+  var previewZoom by remember(target) { mutableFloatStateOf(1.00f) }
   var showNebulaGridBackdrop by remember { mutableStateOf(true) }
 
   val recipe = remember(target, visualRev) { RiftVisualForgeState.getRecipe(target) }
@@ -3968,7 +3968,15 @@ private fun ElementReforgeGlassModal(
                 fontSize = 7.4.sp,
                 px = 6.dp,
                 py = 2.5.dp,
-              ) { previewZoom = if (previewZoom >= 1.75f) 0.85f else previewZoom + 0.30f }
+              ) {
+                previewZoom =
+                  when {
+                    previewZoom < 0.99f -> 1.00f
+                    previewZoom < 1.29f -> 1.30f
+                    previewZoom < 1.59f -> 1.60f
+                    else -> 0.85f
+                  }
+              }
             }
           }
 

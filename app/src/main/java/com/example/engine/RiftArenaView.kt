@@ -793,18 +793,45 @@ class RiftArenaView(
       pathEffect = DashPathEffect(floatArrayOf(10f, 6f), 0f)
     }
 
-  private fun effLeftBaseX(): Float = leftStickBaseX + RiftCalibrationState.leftStickOffset.x
+  private fun effLeftBaseX(): Float {
+    val mirroredBase =
+      if (RiftCalibrationState.swapLeftRightControls && width > 0) {
+        width.toFloat() - leftStickBaseX
+      } else {
+        leftStickBaseX
+      }
+    return mirroredBase + RiftCalibrationState.leftStickOffset.x
+  }
+
   private fun effLeftBaseY(): Float = leftStickBaseY + RiftCalibrationState.leftStickOffset.y
   private fun effLeftRadius(): Float = leftStickRadius * RiftCalibrationState.leftStickScale
 
-  private fun effFireBtnX(): Float =
-    fireBtnX + RiftCalibrationState.combatArcOffset.x + RiftCalibrationState.fireStickOffset.x
+  private fun effFireBtnX(): Float {
+    val mirroredBase =
+      if (RiftCalibrationState.swapLeftRightControls && width > 0) {
+        width.toFloat() - fireBtnX
+      } else {
+        fireBtnX
+      }
+    return mirroredBase + RiftCalibrationState.combatArcOffset.x + RiftCalibrationState.fireStickOffset.x
+  }
+
   private fun effFireBtnY(): Float =
     fireBtnY + RiftCalibrationState.combatArcOffset.y + RiftCalibrationState.fireStickOffset.y
   private fun effFireRadius(): Float = fireBtnRadius * RiftCalibrationState.combatArcScale
 
-  private fun effBombBtnX(): Float =
-    bombBtnX + RiftCalibrationState.combatArcOffset.x + RiftCalibrationState.bombBtnOffset.x
+  private fun effBombBtnX(): Float {
+    val angle188 = (188.0 * PI / 180.0).toFloat()
+    val xDir = if (RiftCalibrationState.swapLeftRightControls) -cos(angle188) else cos(angle188)
+    val baseFire =
+      if (RiftCalibrationState.swapLeftRightControls && width > 0) {
+        width.toFloat() - fireBtnX
+      } else {
+        fireBtnX
+      }
+    return baseFire + xDir * arcDistBomb + RiftCalibrationState.combatArcOffset.x + RiftCalibrationState.bombBtnOffset.x
+  }
+
   private fun effBombBtnY(): Float =
     bombBtnY + RiftCalibrationState.combatArcOffset.y + RiftCalibrationState.bombBtnOffset.y
   private fun effBombRadius(): Float = bombBtnRadius * RiftCalibrationState.combatArcScale
@@ -849,22 +876,26 @@ class RiftArenaView(
   }
 
   /**
-   * Computes the fixed-angle muscle-memory utility button slots for the Right-Hand Combat Cluster:
-   * - 188°: Secondary Ability / Bomb (handled by bombBtnX/Y)
-   * - 227°: Special Crate Attack Button (permanently locked at 227°; never shifts when charges == 0)
-   * - 265°: Repel Shockwave Button (permanently locked at 265°; never shifts down to 227°)
+   * Computes the fixed-angle muscle-memory utility button slots for the Combat Cluster
+   * (automatically mirrored across X when Swap Left/Right Controls is enabled):
+   * - 188°: Secondary Ability / Bomb (handled by effBombBtnX/Y)
+   * - 227°: Special Crate Attack Button (permanently locked; never shifts when charges == 0)
+   * - 265°: Repel Shockwave Button (permanently locked; never shifts down)
    */
   private fun rebuildActiveUtilitySlots(p: ShipEntity) {
     activeUtilitySlots.clear()
     val showAll = RiftCalibrationState.forceAllButtonsVisible || RiftCalibrationState.isUiUnlockedForDragging
     val arcScale = RiftCalibrationState.combatArcScale
-    val baseArcX = fireBtnX + RiftCalibrationState.combatArcOffset.x
+    val swapped = RiftCalibrationState.swapLeftRightControls
+    val rawFireBaseX = if (swapped && width > 0) width.toFloat() - fireBtnX else fireBtnX
+    val baseArcX = rawFireBaseX + RiftCalibrationState.combatArcOffset.x
     val baseArcY = fireBtnY + RiftCalibrationState.combatArcOffset.y
     val scaledDist = arcDistUtil * arcScale
     val scaledR = utilBtnRadius * arcScale
 
     // Slot 1: Permanently locked at 227.0° -> SPECIAL CRATE ATTACK (or Active Toggle Off for Tractor / Lance)
     val radSpecial = (227.0 * PI / 180.0).toFloat()
+    val specCos = if (swapped) -cos(radSpecial) else cos(radSpecial)
     val isToggleActive = p.tractorBeamActive || p.lanceBeamActive
     val hasSpecialCharges = p.specialWeaponCharges > 0 || isToggleActive
     val specialCount = if (p.specialWeaponCharges > 0) p.specialWeaponCharges else if (showAll) 1 else 0
@@ -901,7 +932,7 @@ class RiftArenaView(
         type = "SPECIAL",
         title = specialTitle,
         sub = specialSub,
-        cx = baseArcX + cos(radSpecial) * scaledDist + RiftCalibrationState.burstBtnOffset.x,
+        cx = baseArcX + specCos * scaledDist + RiftCalibrationState.burstBtnOffset.x,
         cy = baseArcY + sin(radSpecial) * scaledDist + RiftCalibrationState.burstBtnOffset.y,
         r = scaledR,
         strokeColor =
@@ -923,6 +954,7 @@ class RiftArenaView(
 
     // Slot 2: Permanently locked at 265.0° -> REPEL SHOCKWAVE
     val radRepel = (265.0 * PI / 180.0).toFloat()
+    val repelCos = if (swapped) -cos(radRepel) else cos(radRepel)
     val repelCount = if (p.repels > 0) p.repels else if (showAll) 3 else 0
     val rCost = RiftCalibrationState.repelCost
     activeUtilitySlots.add(
@@ -930,7 +962,7 @@ class RiftArenaView(
         type = "REPEL",
         title = "REPEL [$repelCount]",
         sub = "${rCost.toInt()}",
-        cx = baseArcX + cos(radRepel) * scaledDist + RiftCalibrationState.repelBtnOffset.x,
+        cx = baseArcX + repelCos * scaledDist + RiftCalibrationState.repelBtnOffset.x,
         cy = baseArcY + sin(radRepel) * scaledDist + RiftCalibrationState.repelBtnOffset.y,
         r = scaledR,
         strokeColor = Color.parseColor("#38BDF8"),
@@ -1393,8 +1425,8 @@ class RiftArenaView(
       val (ingOuter, ingMid, ingCore) =
         when (anom.type) {
           AnomalyType.PLASMA_RIFT -> Triple(Color.rgb(239, 68, 68), Color.rgb(217, 70, 239), Color.rgb(255, 228, 230))
-          AnomalyType.REPULSOR_RIFT -> Triple(Color.rgb(56, 189, 248), Color.rgb(0, 245, 212), Color.WHITE)
-          AnomalyType.GRAVITY_RIFT -> Triple(Color.rgb(168, 85, 247), Color.rgb(0, 245, 212), Color.rgb(250, 204, 21))
+          AnomalyType.REPULSOR_RIFT -> Triple(Color.rgb(14, 165, 233), Color.rgb(125, 211, 252), Color.rgb(240, 249, 255))
+          AnomalyType.GRAVITY_RIFT -> Triple(Color.rgb(168, 85, 247), Color.rgb(124, 58, 237), Color.rgb(243, 232, 255))
           else -> Triple(Color.rgb(45, 212, 191), Color.rgb(56, 189, 248), Color.rgb(240, 253, 250))
         }
       val effRimR = if (anom.type == AnomalyType.PHASE_RIFT_A || anom.type == AnomalyType.PHASE_RIFT_B) r * 0.85f * 0.88f else r * 0.88f
@@ -1441,7 +1473,7 @@ class RiftArenaView(
             text = "REPULSOR RIFT • ${anom.life.toInt()}s",
             worldX = anom.x,
             worldY = anom.y - r - 18f,
-            fillColor = Color.parseColor("#38BDF8"),
+            fillColor = Color.parseColor("#7DD3FC"),
             worldScale = worldScale,
             sizeMultiplier = 1.15f,
             alpha = baseAlphaInt,
@@ -3097,9 +3129,26 @@ class RiftArenaView(
       }
     }
 
-    // Schedule next 60+ FPS frame only while window is visible and app is foregrounded
+    // Schedule next frame only while window is visible and app is foregrounded (60Hz cap vs Max Hz)
     if (isWindowVisibleForRender && RiftSoundSynthesizer.isAppCurrentlyForeground()) {
-      postInvalidateOnAnimation()
+      if (RiftCalibrationState.preferMaxRefreshRate) {
+        postInvalidateOnAnimation()
+      } else {
+        val elapsedDrawMs = ((System.nanoTime() - nowNs) / 1_000_000L).coerceAtLeast(0L)
+        val waitMs = (16L - elapsedDrawMs).coerceIn(0L, 16L)
+        if (waitMs <= 1L) {
+          postInvalidateOnAnimation()
+        } else {
+          postDelayed(
+            {
+              if (isWindowVisibleForRender && RiftSoundSynthesizer.isAppCurrentlyForeground()) {
+                postInvalidateOnAnimation()
+              }
+            },
+            waitMs,
+          )
+        }
+      }
     }
   }
 
@@ -4269,7 +4318,7 @@ class RiftArenaView(
         bestColor =
           when (anom.type) {
             AnomalyType.PLASMA_RIFT -> Color.parseColor("#FB7185")
-            AnomalyType.REPULSOR_RIFT -> Color.parseColor("#38BDF8")
+            AnomalyType.REPULSOR_RIFT -> Color.parseColor("#7DD3FC")
             AnomalyType.GRAVITY_RIFT -> Color.parseColor("#C084FC")
             AnomalyType.PHASE_RIFT_A, AnomalyType.PHASE_RIFT_B -> Color.parseColor("#2DD4BF")
           }
@@ -5265,10 +5314,17 @@ class RiftArenaView(
           return true
         }
 
-        // 3. Check Primary [FIRE] 360-Degree Aiming Stick
+        // 3. Check Primary [FIRE] 360-Degree Aiming Stick (supports Swap Left/Right Controls)
+        val swappedControls = RiftCalibrationState.swapLeftRightControls
+        val inFireCornerZone =
+          if (swappedControls) {
+            x < width * 0.28f && y > height * 0.56f
+          } else {
+            x > width * 0.72f && y > height * 0.56f
+          }
         if (
           hypot(x - fX, y - fY) <= fR * 1.32f ||
-            (x > width * 0.72f && y > height * 0.56f && firePointerId == MotionEvent.INVALID_POINTER_ID)
+            (inFireCornerZone && firePointerId == MotionEvent.INVALID_POINTER_ID)
         ) {
           firePointerId = pointerId
           fireHasExitedDeadzone = false
@@ -5298,15 +5354,34 @@ class RiftArenaView(
           return true
         }
 
-        // 4. Left-Screen Dynamic Floating Movement Stick (x in 0..width*0.45 or within effLeftRadius * 1.4)
-        if ((x < width * 0.45f || hypot(x - lX, y - lY) <= lR * 1.4f) && leftPointerId == MotionEvent.INVALID_POINTER_ID) {
+        // 4. Movement Stick (Floating vs Fixed anchor + Deadzone & Sensitivity + Swap Left/Right Controls)
+        val inMoveHalfZone = if (swappedControls) x > width * 0.55f else x < width * 0.45f
+        if ((inMoveHalfZone || hypot(x - lX, y - lY) <= lR * 1.4f) && leftPointerId == MotionEvent.INVALID_POINTER_ID) {
           leftPointerId = pointerId
-          leftOriginX = x
-          leftOriginY = y
-          leftCurX = x
-          leftCurY = y
-          engine.leftStickActive = true
-          engine.leftStickMag = 0f
+          val isFloating = RiftCalibrationState.touchFloatingJoystick
+          leftOriginX = if (isFloating) x else lX
+          leftOriginY = if (isFloating) y else lY
+          val dx0 = x - leftOriginX
+          val dy0 = y - leftOriginY
+          val dist0 = hypot(dx0, dy0)
+          val deadzone0 = RiftCalibrationState.touchJoystickDeadzone.coerceIn(0.02f, 0.28f)
+          val sens0 = RiftCalibrationState.touchJoystickSensitivity.coerceIn(0.50f, 1.80f)
+          if (!isFloating && dist0 > lR * deadzone0) {
+            val clamped0 = min(dist0, lR)
+            val ang0 = atan2(dy0, dx0)
+            leftCurX = leftOriginX + cos(ang0) * clamped0
+            leftCurY = leftOriginY + sin(ang0) * clamped0
+            val rawNorm = (dist0 / lR).coerceIn(0f, 1f)
+            val adjMag = (((rawNorm - deadzone0) / (1f - deadzone0).coerceAtLeast(0.1f)) * sens0).coerceIn(0f, 1f)
+            engine.leftStickActive = true
+            engine.leftStickAngle = ang0
+            engine.leftStickMag = adjMag
+          } else {
+            leftCurX = leftOriginX
+            leftCurY = leftOriginY
+            engine.leftStickActive = true
+            engine.leftStickMag = 0f
+          }
           engine.autoBraking = false
           return true
         }
@@ -5326,9 +5401,18 @@ class RiftArenaView(
             val angle = atan2(dy, dx)
             leftCurX = leftOriginX + cos(angle) * clampedDist
             leftCurY = leftOriginY + sin(angle) * clampedDist
+            val deadzone = RiftCalibrationState.touchJoystickDeadzone.coerceIn(0.02f, 0.28f)
+            val sens = RiftCalibrationState.touchJoystickSensitivity.coerceIn(0.50f, 1.80f)
+            val rawNorm = (dist / lR).coerceIn(0f, 1f)
+            val adjMag =
+              if (rawNorm <= deadzone) {
+                0f
+              } else {
+                (((rawNorm - deadzone) / (1f - deadzone).coerceAtLeast(0.1f)) * sens).coerceIn(0f, 1f)
+              }
             engine.leftStickActive = true
             engine.leftStickAngle = angle
-            engine.leftStickMag = (dist / lR).coerceIn(0f, 1f)
+            engine.leftStickMag = adjMag
           } else if (pid == firePointerId) {
             val dx = px - fX
             val dy = py - fY

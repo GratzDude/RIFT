@@ -612,9 +612,9 @@ private fun CodexHowToPlaySection(
         ),
         CodexGuideTopic(
           badge = "SYNDICATES & SHARDS",
-          title = "Syndicates, Strike Wings, Matchmaking & Shard Store",
+          title = "Syndicates, Squadrons, Matchmaking & Shard Store",
           summary =
-            "Found or join player-chartered Syndicates, form up to 5-pilot Strike Wings, and queue into Resonance-matched battles that launch within 15 seconds.",
+            "Found or join player-chartered Syndicates, form up to 5-pilot Squadrons, and queue into Resonance-matched battles that launch within 15 seconds.",
           detail =
             "Open the Shard Store from the top Rift Shards readout (999,999 tester Shards active) to unlock hull trim styles, engine trails, warp effects, and modular Rift Frame slots A through E.",
           accent = Color(0xFFC084FC),
@@ -697,7 +697,7 @@ private fun CodexGameModesSection(
           badge = "OPEN SECTOR • 60M CYCLE",
           title = "1. Sector Convergence",
           summary =
-            "Always-live open sector combat anchored by the central Rift Station Safe Harbor. Drop in solo or with your Strike Wing, harvest Supply Crates, outmaneuver Spacetime-Tear Rifts, and build per-ship and overall Resonance.",
+            "Always-live open sector combat anchored by the central Rift Station Safe Harbor. Drop in solo or with your Squadron, harvest Supply Crates, outmaneuver Playfield Rifts, and build per-ship and overall Resonance.",
           detail =
             "Anti-AFK Flux bleed applies outside combat if idle; dock inside Rift Station for up to 15 seconds to regroup safely.",
           accent = Color(0xFF00F5D4),
@@ -715,9 +715,9 @@ private fun CodexGameModesSection(
           badge = "TEAM PVP • <= 15S QUEUE",
           title = "3. Rift Skirmish",
           summary =
-            "Coordinated 5v5 Strike Wing dogfights matched against the closest-Resonance opponent squad within a strict 15-second matchmaking window.",
+            "Coordinated 5v5 Squadron dogfights matched against the closest-Resonance opponent squad within a strict 15-second matchmaking window.",
           detail =
-            "Combine frontline brawlers (Aegis, Titan), flankers (Viper, Phantom), and Eclipse Stasis bubbles to control Supply Crate spawns and win on team score.",
+            "Combine frontline brawlers (Goliath, Manta), flankers (Viper, Disruptor), and Eclipse Stasis bubbles to control Supply Crate spawns and win on team score.",
           accent = Color(0xFF38BDF8),
         ),
         CodexGuideTopic(

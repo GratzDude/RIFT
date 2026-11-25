@@ -1271,13 +1271,27 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val cleanTag = sanitizeSyndicateTag(meta.tag)
     if (cleanTag.isEmpty() || cleanTag in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) return false
     val uid = auth.currentUser?.uid?.trim().orEmpty()
+    val packedTokens = mutableListOf<String>()
+    if (meta.inviteOnly) {
+      packedTokens.add("__INVITE_ONLY__")
+    }
+    meta.officerCallsigns
+      .map { it.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(14) }
+      .filter { it.isNotEmpty() }
+      .take(10)
+      .forEach { packedTokens.add("__OFF_$it") }
+    meta.invitedGuests
+      .map { it.trim().take(20) }
+      .filter { it.isNotEmpty() && !it.startsWith("__") }
+      .take(18)
+      .forEach { packedTokens.add(it) }
     val payload =
       mapOf(
         "tag" to cleanTag,
         "ownerId" to meta.ownerId.ifBlank { uid },
         "crestJson" to meta.crestJson.take(4096),
         "customChannelsJson" to JSONArray(meta.customChannels.take(5)).toString(),
-        "invitedGuestsCsv" to meta.invitedGuests.take(25).joinToString(","),
+        "invitedGuestsCsv" to packedTokens.joinToString(",").take(1024),
         "updatedAtMs" to System.currentTimeMillis(),
       )
     return try {
@@ -1319,12 +1333,15 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
               }
             } catch (_: Exception) {}
             val guestsCsv = snapshot.getString("invitedGuestsCsv") ?: ""
-            val guests =
-              guestsCsv
-                .split(",")
-                .map { it.trim() }
+            val rawTokens = guestsCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            val isInviteOnly = rawTokens.any { it.equals("__INVITE_ONLY__", ignoreCase = true) }
+            val officers =
+              rawTokens
+                .filter { it.startsWith("__OFF_", ignoreCase = true) }
+                .map { it.substring(6).trim().uppercase(Locale.US) }
                 .filter { it.isNotEmpty() }
                 .toSet()
+            val guests = rawTokens.filterNot { it.startsWith("__") }.toSet()
             trySend(
               CloudSyndicateMeta(
                 tag = snapshot.getString("tag") ?: cleanTag,
@@ -1332,9 +1349,60 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
                 crestJson = snapshot.getString("crestJson") ?: "",
                 customChannels = parsedChannels.ifEmpty { listOf("#general") },
                 invitedGuests = guests,
+                inviteOnly = isInviteOnly,
+                officerCallsigns = officers,
                 updatedAtMs = snapshot.getLong("updatedAtMs") ?: 0L,
               )
             )
+          } else {
+            trySend(null)
+          }
+        }
+    awaitClose { reg.remove() }
+  }
+
+  suspend fun saveCloudPilotProgression(payloadJson: String): Boolean {
+    if (!isAuthenticatedNonGuest()) return false
+    val fs = firestore ?: return false
+    val uid = auth.currentUser?.uid?.trim().orEmpty()
+    if (uid.isEmpty() || payloadJson.length < 2) return false
+    val payload =
+      mapOf(
+        "ownerId" to uid,
+        "payloadJson" to payloadJson.take(16384),
+        "updatedAtMs" to System.currentTimeMillis(),
+      )
+    return try {
+      fs.collection("global_state")
+        .document("pilot_prog_$uid")
+        .set(payload)
+        .await()
+      markHeartbeatSuccess()
+      true
+    } catch (e: CancellationException) {
+      throw e
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  fun observeCloudPilotProgression(uid: String): Flow<String?> = callbackFlow {
+    val cleanUid = uid.trim()
+    val fs = firestore
+    if (fs == null || cleanUid.isEmpty() || cleanUid.startsWith("dev_") || cleanUid.startsWith("drifter_")) {
+      trySend(null)
+      close()
+      return@callbackFlow
+    }
+    val reg =
+      fs.collection("global_state")
+        .document("pilot_prog_$cleanUid")
+        .addSnapshotListener { snapshot, error ->
+          if (error != null) {
+            return@addSnapshotListener
+          }
+          if (snapshot != null && snapshot.exists()) {
+            trySend(snapshot.getString("payloadJson"))
           } else {
             trySend(null)
           }
@@ -1551,7 +1619,11 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     return if (clean in allowed) clean else "SECTOR_CONVERGENCE"
   }
 
-  private val customScaleSuffixRegex = Regex("""\s*\{DT(\d{1,3})FC(\d{1,3})\}\s*$""", RegexOption.IGNORE_CASE)
+  private val customScaleSuffixRegex =
+    Regex(
+      """\s*\{DT(\d{1,3})FC(\d{1,3})(?:BC(\d{1,2}))?(?:BS(\d))?(?:SC(\d{1,3}))?\}\s*$""",
+      RegexOption.IGNORE_CASE,
+    )
 
   private fun DocumentSnapshot.toCloudCustomGameRoomSafe(): CloudCustomGameRoom? {
     if (!exists()) return null
@@ -1565,12 +1637,20 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
         ?: defaultInst
     val rawTitle = (getString("title")?.trim()?.take(48))?.takeIf { it.length >= 2 } ?: "CUSTOM RIFT [$code]"
     val scaleMatch = customScaleSuffixRegex.find(rawTitle)
+    val botsOn = getBoolean("botsEnabled") ?: true
     val parsedDtPct =
       scaleMatch?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { snapCustomFivePercentScale(it) }
         ?: ((get("damageTakenScalePct") as? Number)?.toInt()?.let { snapCustomFivePercentScale(it) } ?: 100)
     val parsedFcPct =
       scaleMatch?.groupValues?.getOrNull(2)?.toIntOrNull()?.let { snapCustomFivePercentScale(it) }
         ?: ((get("weaponFluxCostScalePct") as? Number)?.toInt()?.let { snapCustomFivePercentScale(it) } ?: 100)
+    val parsedBotCount =
+      scaleMatch?.groupValues?.getOrNull(3)?.takeIf { it.isNotEmpty() }?.toIntOrNull()?.coerceIn(0, 19)
+        ?: (if (botsOn) 12 else 0)
+    val parsedBotSkill =
+      scaleMatch?.groupValues?.getOrNull(4)?.takeIf { it.isNotEmpty() }?.toIntOrNull()?.coerceIn(0, 3) ?: 1
+    val parsedScoreCap =
+      scaleMatch?.groupValues?.getOrNull(5)?.takeIf { it.isNotEmpty() }?.toIntOrNull()?.coerceIn(5, 500) ?: 50
     val displayTitle =
       rawTitle.replace(customScaleSuffixRegex, "").trim().ifBlank { "CUSTOM RIFT [$code]" }
     return CloudCustomGameRoom(
@@ -1586,7 +1666,7 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       teamSizeBracket = ((get("teamSizeBracket") as? Number)?.toInt() ?: 5).coerceIn(1, 20),
       matchDurationMinutes = ((get("matchDurationMinutes") as? Number)?.toInt() ?: 10).coerceIn(0, 120),
       allowArmadasInFfa = getBoolean("allowArmadasInFfa") ?: true,
-      botsEnabled = getBoolean("botsEnabled") ?: true,
+      botsEnabled = botsOn && parsedBotCount > 0,
       bulletSizeMult = ((get("bulletSizeMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.25, 4.0),
       damageMult = ((get("damageMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.25, 4.0),
       speedMult = ((get("speedMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.25, 3.0),
@@ -1595,6 +1675,9 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
       crateSpawnMult = ((get("crateSpawnMult") as? Number)?.toDouble() ?: 1.0).coerceIn(0.0, 4.0),
       damageTakenScalePct = parsedDtPct,
       weaponFluxCostScalePct = parsedFcPct,
+      botCount = parsedBotCount,
+      botSkillLevel = parsedBotSkill,
+      scoreCap = parsedScoreCap,
       createdAtMs = (get("createdAtMs") as? Number)?.toLong() ?: 0L,
       createdAt = getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE),
       updatedAt = getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE),
@@ -1619,12 +1702,22 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val safeCallsign = sanitizeCallsign(room.hostCallsign)
     val dtPct = snapCustomFivePercentScale(room.damageTakenScalePct)
     val fcPct = snapCustomFivePercentScale(room.weaponFluxCostScalePct)
-    val scaleTag = if (dtPct != 100 || fcPct != 100) " {DT${dtPct}FC${fcPct}}" else ""
+    val cleanBotCount = if (!room.botsEnabled) 0 else room.botCount.coerceIn(0, 19)
+    val cleanBotSkill = room.botSkillLevel.coerceIn(0, 3)
+    val cleanScoreCap = room.scoreCap.coerceIn(5, 500)
+    val hasNonDefaultRules =
+      dtPct != 100 || fcPct != 100 || cleanBotCount != 12 || cleanBotSkill != 1 || cleanScoreCap != 50
+    val scaleTag =
+      if (hasNonDefaultRules) {
+        " {DT${dtPct}FC${fcPct}BC${cleanBotCount}BS${cleanBotSkill}SC${cleanScoreCap}}"
+      } else {
+        ""
+      }
     val strippedTitle =
       UgcModeration.sanitizeUgcText(room.title.replace(customScaleSuffixRegex, ""))
         .trim()
         .let { if (it.length >= 2) it else "$safeCallsign RIFT [$cleanCode]" }
-    val maxBaseTitleLen = (48 - scaleTag.length).coerceAtLeast(12)
+    val maxBaseTitleLen = (48 - scaleTag.length).coerceAtLeast(8)
     val safeTitle = (strippedTitle.take(maxBaseTitleLen).trimEnd() + scaleTag).take(48)
     val safeBaseMode = sanitizeCustomBaseMode(room.baseMode)
     val nowMs = room.createdAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()

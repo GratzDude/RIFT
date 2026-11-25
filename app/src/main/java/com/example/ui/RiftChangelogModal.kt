@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 113
+const val CURRENT_RIFT_BUILD_VERSION = 115
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,39 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 115,
+      versionTag = "v1.0.115 // BUILD #115",
+      releaseDate = "Nov 25, 2026",
+      headline = "Pilot Dossier 5-XP & Career Stats, Syndicates & 5-Slot Squadron Overhaul, Live Public Custom Rifts Browser, Split Helm Controls & Display, Full 10-Ship Codex, Star Forge 1:1 Default & Pure Ice-Blue Repulsor Rift",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Pilot Dossier 5-XP Progression, Full Career Stats & Hub Tap Telemetry: Added Pilot Level 1 to 100 progression with all 5 dedicated XP tracks (Combat XP, Survival XP, Objective XP, Support & Crates XP, and Daily Directives XP) synced monotonically across local and cloud storage, surfaced Matches Played, Wins, Losses, Win Percentage, Eliminations, Deaths, Assists, Accuracy, Ship Survival Duration, Crate Pickups, and Rift Captures, updated Rename Callsign to show 1ST FREE or 250 Rift Shards with the crystal icon, and added non-text Rift Hub tap coordinates to filterable HTML, CSV, and JSON telemetry exports.",
+          "Syndicates, 5-Slot Squadron Formation & Subspace Comms Voice Controls: Upgraded Syndicates with live search, Leader/Officer/Pilot roster roles, online status dots, Resonance contributions, Open vs Invite-Only recruitment toggles, War Standings, and an inline Overwatch Crest editor restricted to player-founded Syndicates; rebuilt Squadron around a 5-Slot Vertical Card formation with Average Resonance, Squadron Voice toggle, Friend Search, Pending Invites, and Overwatch pilot inspection; and added unread message badges plus Team Voice mute and push-to-talk controls.",
+          "Live Public Custom Rifts Browser, Helm Controls vs Display Split, Star Forge 1:1 Default, Clean Codex & Pure Ice-Blue Repulsor Rift: Removed duplicate per-card launch buttons in Active Rifts, added a live Public Custom Rifts browser alongside 6-character room codes and 5%-stepped Damage Taken, Weapon Flux Cost, Bot Count, Bot Skill, Time Limit, and Score Cap rules, split Helm Systems into live Controls (Fixed/Floating stick, Deadzone, Sensitivity, Swap Left/Right) and System & Display (Graphics tier, 60Hz vs Max Hz), defaulted Star Forge to the 1:1 Playfield Studio, added Clear Bots and Rift Hub controls in Tutorial, and locked Repulsor Rifts strictly to pure Ice and Sky Blue.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 114,
+      versionTag = "v1.0.114 // BUILD #114",
+      releaseDate = "Nov 25, 2026",
+      headline = "Vertical Card Standard Across Rift Hub, Duplicate Button Purge, 6-Stat Hangar Inspect, 100-Point Rift Frame Weapon-Switch Parity & Real-Money Shard Store",
+      badgeLabel = "HUB, RIFT FRAME & SHARD STORE",
+      accentColorHex = "#38BDF8",
+      highlights =
+        listOf(
+          "Vertical Card Standard & Rift Hub De-Duplication: Standardized Rift Hub modules, Hangar ships, Rift Frame cosmetics, Squadron slots, and Codex cards to a clean top-visual, full-title, short plain-English subtitle layout; removed duplicate Active Rifts and outer corner Cancel/Confirm buttons; displayed the active Charged or Best 2.5D starfighter beside Rift In; and restored full untruncated Syndicate and Squadron uplink labels.",
+          "6-Stat Hangar Ship Inspect & Non-Closing Flux Charge Lock: Removed numeric prefixes from all 10 starfighter names (Viper through Rift Frame), styled Best Ship cards in Solar Gold and Selected/Charged cards in Electric Cyan, surfaced all 6 core performance bars (Firepower, Flux Pool, Flux Regen, Top Speed, Thrust, and Turn Rate) inside Overwatch Ship Inspect, and updated Charge to lock your active ship with orbiting Flux icons without closing the Hangar.",
+          "100-Point Rift Frame Weapon-Switch Fix & Dedicated Real-Money Shard Store: Fixed Rift Frame weapon switching so selecting costlier Primary or Secondary weapons automatically clamps hull stat allocations within the 100-point budget instead of failing when 100/100 points are in use, added Frame Rename and Reset controls plus Rift Shard crystal icons on all prices, kept Rift Conduit focused strictly on Conduit Rank rewards and Daily Directives, and restored real-money Rift Shard packs and Frame Bay B-E unlocks in the Shard Store.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 113,
       versionTag = "v1.0.113 // BUILD #113",
       releaseDate = "Nov 24, 2026",
       headline = "Volumetric Storm-Cloud & Color-Shifting Branching Lightning Rifts, True Centered Rift Cores, Smooth Box-Free Outer Storm Wall, Line-Free Deep Space & GitHub APK SHA-1 Readout",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "VOLUMETRIC RIFTS",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

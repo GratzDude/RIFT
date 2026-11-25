@@ -112,7 +112,7 @@ enum class RankedGameMode(
   FLUX_CORE(
     "FLUX_CORE",
     "Flux Core",
-    "Hold the Core for +15 RES/s & Overcharge",
+    "Hold the Core for +15 Resonance/s & Overcharge",
     "20 PILOTS • BALL",
   ),
   STASIS_BREACH(
@@ -168,6 +168,9 @@ data class CustomGameConfig(
   val crateSpawnMult: Float = 1.0f, // 0.0f..2.5f
   var damageTakenScalePct: Int = 100, // 0..100 in 5% increments (100% = normal damage taken)
   var weaponFluxCostScalePct: Int = 100, // 0..100 in 5% increments (100% = normal weapon Flux cost)
+  val botCount: Int = 12, // 0..20 custom bot count
+  val botSkillLevel: Int = 1, // 0 = Cadet, 1 = Regular, 2 = Veteran, 3 = Ace
+  val scoreCap: Int = 50, // Custom match score / kill cap
   val roomCode: String = "",
   val privateRoom: Boolean = false,
 ) {
@@ -1287,6 +1290,24 @@ class RiftGameEngine(
     return bot
   }
 
+  fun clearPracticeBots(): Int {
+    if (!isEphemeralPracticeRift) return 0
+    val removedCount = ships.count { !it.isLocalPlayer && !it.isHuman }
+    if (removedCount <= 0) {
+      onPrizeToast("NO PRACTICE BOTS ACTIVE IN SECTOR")
+      return 0
+    }
+    ships.removeAll { !it.isLocalPlayer && !it.isHuman }
+    bullets.removeAll { it.ownerId != localPlayer.id }
+    bombs.removeAll { it.ownerId != localPlayer.id }
+    swarmDrones.removeAll { it.ownerId != localPlayer.id }
+    decoys.removeAll { it.ownerId != localPlayer.id }
+    sfx.playMutedClick()
+    onPrizeToast("CLEARED $removedCount PRACTICE BOT${if (removedCount == 1) "" else "S"}")
+    onStatsUpdated()
+    return removedCount
+  }
+
   // True when the NEXUS Hub circular Overwatch aperture is observing an active match without the local pilot joined
   var isHubOverwatchActive: Boolean = false
   private var currentOverwatchKey: String = ""
@@ -1752,6 +1773,9 @@ class RiftGameEngine(
   var peakResonance: Int = 0
   var onDailyDirectiveEvent: (DailyDirectiveMetric, Int, Boolean) -> Unit = { _, _, _ -> }
   var onShipResonanceChanged: (Int, Int, Int) -> Unit = { _, _, _ -> }
+  var onExtraCareerStatsDelta: (Long, Long, Long, Long, Long, Long) -> Unit = { _, _, _, _, _, _ -> }
+  private val lastLocalDamageTimeByVictimId = mutableMapOf<String, Long>()
+  private var survivalXpTickAccumSec: Float = 0f
 
   fun getShipResonance(shipId: Int): Int =
     shipResonanceById[shipId.coerceIn(1, 10)].coerceAtLeast(0)
@@ -1808,7 +1832,7 @@ class RiftGameEngine(
       val sign = if (shipApplied > 0) "+" else ""
       val suffix = if (reasonLabel.isNotBlank()) " ($reasonLabel)" else ""
       spawnPooledFct(
-        text = "${sign}${shipApplied} RES$suffix",
+        text = "${sign}${shipApplied} Resonance$suffix",
         x = localPlayer.x,
         y = localPlayer.y - 42f,
         color = if (shipApplied > 0) Color.parseColor("#FFD700") else Color.parseColor("#F59E0B"),
@@ -2115,14 +2139,17 @@ class RiftGameEngine(
         convergencesWon++
         riftShards += 100L
         adjustLocalResonance(30, "CONVERGENCE WIN")
+        awardPilotXp(bountyKilledXp = 120f, notifyChange = false)
+        onExtraCareerStatsDelta(1L, 0L, 0L, 0L, 0L, 0L)
         onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
         sfx.playPrize()
         val bannerMsg =
-          "SECTOR CONVERGENCE VICTORY! #1 RESONANCE (${localPlayer.liveResonanceRating} RES • $presencePct% PRESENCE) — +100 RIFT SHARDS & NEW FFA MAP!"
+          "SECTOR CONVERGENCE VICTORY! #1 RESONANCE (${localPlayer.liveResonanceRating} Resonance • $presencePct% PRESENCE) — +100 RIFT SHARDS & NEW FFA MAP!"
         highBountyShutdownBanner = bannerMsg
         highBountyShutdownTimer = 5.5f
         onPrizeToast(bannerMsg)
       } else {
+        onExtraCareerStatsDelta(1L, 0L, 0L, 0L, 0L, 0L)
         val bannerMsg =
           "SECTOR CONVERGENCE: #1 RESONANCE ACHIEVED, BUT PRESENCE ($presencePct%) <= 50% — NEW FFA MAP GENERATED!"
         highBountyShutdownBanner = bannerMsg
@@ -2130,10 +2157,11 @@ class RiftGameEngine(
         onPrizeToast(bannerMsg)
       }
     } else {
+      onExtraCareerStatsDelta(1L, 1L, 0L, 0L, 0L, 0L)
       val winnerName = topShip?.callsign ?: "SECTOR ACE"
       val winnerRes = topShip?.liveResonanceRating?.takeIf { it > 0 } ?: (topShip?.bounty ?: 100)
       val bannerMsg =
-        "SECTOR CONVERGENCE: WINNER $winnerName ($winnerRes RES) — PROCEDURAL NEW FFA MAP ONLINE!"
+        "SECTOR CONVERGENCE: WINNER $winnerName ($winnerRes Resonance) — PROCEDURAL NEW FFA MAP ONLINE!"
       highBountyShutdownBanner = bannerMsg
       highBountyShutdownTimer = 4.5f
       onPrizeToast(bannerMsg)
@@ -3665,10 +3693,19 @@ class RiftGameEngine(
         else -> 20
       }
     teamSize = if (isTeamMode) perTeamTarget else 20
-    val botsAllowedForSizing = currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled
+    val customBotCap = currentCustomGame?.botCount?.coerceIn(0, 20)
+    val botsAllowedForSizing =
+      (currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled) &&
+        (customBotCap == null || customBotCap > 0)
     val expectedTotalShips =
       if (botsAllowedForSizing) {
-        if (isTeamMode) perTeamTarget * 2 else 20
+        if (customBotCap != null) {
+          (1 + remotePilots.size + customBotCap).coerceIn(2, 24)
+        } else if (isTeamMode) {
+          perTeamTarget * 2
+        } else {
+          20
+        }
       } else {
         (1 + remotePilots.size).coerceAtLeast(2)
       }
@@ -3791,11 +3828,14 @@ class RiftGameEngine(
       }
     }
 
-    val botsAllowed = currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled
+    val botsAllowed =
+      (currentCustomGame?.botsEnabled ?: RiftCalibrationState.botsEnabled) &&
+        (customBotCap == null || customBotCap > 0)
+    val maxBotsAllowed = customBotCap ?: 24
     var botIdx = 0
     if (botsAllowed) {
       if (isTeamMode) {
-        while (friendlyCount < perTeamTarget) {
+        while (friendlyCount < perTeamTarget && botIdx < maxBotsAllowed) {
           val shipId = ((botIdx * 3) % 9) + 1
           val spec = RiftCodex.getShipById(shipId)
           val pos = getSkirmishGateSpawnPosition(0)
@@ -3823,7 +3863,7 @@ class RiftGameEngine(
           botIdx++
         }
 
-        while (rivalCount < perTeamTarget) {
+        while (rivalCount < perTeamTarget && botIdx < maxBotsAllowed) {
           val shipId = ((botIdx * 5 + 1) % 9) + 1
           val spec = RiftCodex.getShipById(shipId)
           val pos = getSkirmishGateSpawnPosition(1)
@@ -3851,8 +3891,13 @@ class RiftGameEngine(
           botIdx++
         }
       } else {
-        val maxTotalPlayers = 20
-        while (updated.size < maxTotalPlayers) {
+        val maxTotalPlayers =
+          if (customBotCap != null) {
+            (updated.size + customBotCap).coerceIn(1, 21)
+          } else {
+            20
+          }
+        while (updated.size < maxTotalPlayers && botIdx < maxBotsAllowed) {
           val shipId = ((botIdx * 5 + 1) % 9) + 1
           val spec = RiftCodex.getShipById(shipId)
           val pos = getOuterGateSpawnPosition(1)
@@ -3924,7 +3969,7 @@ class RiftGameEngine(
     )
     if (victimBounty > 1000 && triggerAnnouncement) {
       highBountyShutdownBanner =
-        "HIGH RESONANCE SHUTDOWN: $killerName ELIMINATED $victimName ($victimBounty RES)"
+        "HIGH RESONANCE SHUTDOWN: $killerName ELIMINATED $victimName ($victimBounty Resonance)"
       highBountyShutdownTimer = 4.2f
     }
     while (killFeed.size > 8) {
@@ -4668,6 +4713,9 @@ class RiftGameEngine(
 
     if (ship.isLocalPlayer) {
       currentLifeStats.shotsFired++
+      if (!isEphemeralPracticeRift && hasJoinedMatch && !isInLobbyStaging) {
+        onExtraCareerStatsDelta(0L, 0L, 0L, 1L, 0L, 0L)
+      }
       sfx.playLaser()
     }
 
@@ -7608,6 +7656,10 @@ class RiftGameEngine(
     if (attackerId == localPlayer.id && !target.isLocalPlayer) {
       currentLifeStats.shotsHit++
       currentLifeStats.damageDealt += effectiveDamage
+      lastLocalDamageTimeByVictimId[target.id] = android.os.SystemClock.elapsedRealtime()
+      if (!isEphemeralPracticeRift && hasJoinedMatch && !isInLobbyStaging) {
+        onExtraCareerStatsDelta(0L, 0L, 0L, 0L, 1L, 0L)
+      }
       if (effectiveDamage >= 1f) {
         onDailyDirectiveEvent(DailyDirectiveMetric.DAMAGE_DEALT, effectiveDamage.roundToInt().coerceAtLeast(1), false)
         if (!isEphemeralPracticeRift && currentCustomGame == null) {
@@ -7664,8 +7716,7 @@ class RiftGameEngine(
 
     if (attackerId == localPlayer.id && !target.isLocalPlayer) {
       awardPilotXp(
-        damageXp = effectiveDamage * 0.10f,
-        accuracyXp = 8f,
+        damageXp = effectiveDamage * 0.10f + 8f,
         notifyChange = false,
       )
     }
@@ -7757,7 +7808,7 @@ class RiftGameEngine(
       when {
         isUnstableRiftKill ->
           spawnPooledFct(
-            text = "UNSTABLE RIFT // -25 RES",
+            text = "UNSTABLE RIFT // -25 Resonance",
             x = target.x,
             y = target.y - 26f,
             color = Color.parseColor("#FACC15"),
@@ -7765,7 +7816,7 @@ class RiftGameEngine(
           )
         isSelfStationTriggerDeath ->
           spawnPooledFct(
-            text = "-${selfStationBountyPenalty} RES // STATION BACKFIRE",
+            text = "-${selfStationBountyPenalty} Resonance // STATION BACKFIRE",
             x = target.x,
             y = target.y - 26f,
             color = Color.parseColor("#EF4444"),
@@ -7773,7 +7824,7 @@ class RiftGameEngine(
           )
         isEnemyStationTriggerKill && stationAssistBounty > 0 ->
           spawnPooledFct(
-            text = "+$stationAssistBounty RES (10% STATION)",
+            text = "+$stationAssistBounty Resonance (10% STATION)",
             x = target.x,
             y = target.y - 26f,
             color = Color.parseColor("#38BDF8"),
@@ -7781,7 +7832,7 @@ class RiftGameEngine(
           )
         else ->
           spawnPooledFct(
-            text = if (wasHvt) "+$bountyAward TOP RES!" else "+$bountyAward RES",
+            text = if (wasHvt) "+$bountyAward TOP RESONANCE!" else "+$bountyAward Resonance",
             x = target.x,
             y = target.y - 26f,
             color = if (wasHvt) Color.parseColor("#F59E0B") else Color.parseColor("#10B981"),
@@ -7844,9 +7895,32 @@ class RiftGameEngine(
           notifyChange = false,
         )
         onPrizeToast(
-          "STATION TRIGGER KILL CREDIT (10%) // +$stationAssistBounty RES (+$stationResCredit LIVE RES)"
+          "STATION TRIGGER KILL CREDIT (10%) // +$stationAssistBounty Resonance (+$stationResCredit LIVE RESONANCE)"
         )
         onStatsUpdated()
+      }
+
+      if (
+        !isEphemeralPracticeRift &&
+          hasJoinedMatch &&
+          attackerId != localPlayer.id &&
+          !target.isLocalPlayer &&
+          !areAllied(localPlayer, target)
+      ) {
+        val lastHitMs = lastLocalDamageTimeByVictimId.remove(target.id)
+        if (lastHitMs != null && android.os.SystemClock.elapsedRealtime() - lastHitMs <= 8_500L) {
+          onExtraCareerStatsDelta(0L, 0L, 1L, 0L, 0L, 0L)
+          awardPilotXp(buffXp = 25f, notifyChange = true)
+          spawnPooledFct(
+            text = "+ASSIST",
+            x = target.x,
+            y = target.y - 44f,
+            color = Color.parseColor("#38BDF8"),
+            maxLife = 1.05f,
+          )
+        }
+      } else {
+        lastLocalDamageTimeByVictimId.remove(target.id)
       }
 
       if (!isEphemeralPracticeRift && attackerId == localPlayer.id) {
@@ -7865,7 +7939,7 @@ class RiftGameEngine(
           currentLifeStats.pvpKills++
           currentLifeHadPvp = true
           pvpBountyPeak = max(pvpBountyPeak, localPlayer.bounty.toLong())
-          adjustLocalResonance(if (wasHvt) 28 else 18, if (wasHvt) "HIGH RES SHUTDOWN" else "PVP KILL")
+          adjustLocalResonance(if (wasHvt) 28 else 18, if (wasHvt) "HIGH RESONANCE SHUTDOWN" else "PVP KILL")
         } else {
           currentLifeStats.botKills++
           val botResGain =
@@ -7877,8 +7951,9 @@ class RiftGameEngine(
           adjustLocalResonance(botResGain, "COMBAT KILL")
         }
         awardPilotXp(
-          bountyEarnedXp = bountyAward * 2f,
-          bountyKilledXp = victimPreDeathBounty * 0.15f,
+          damageXp = bountyAward * 1.5f,
+          bountyEarnedXp = bountyAward * 0.8f,
+          bountyKilledXp = if (wasHvt) victimPreDeathBounty * 0.18f else victimPreDeathBounty * 0.08f,
           notifyChange = false,
         )
         onArmadaTierKill(getCurrentArmadaSize(), localPlayer.bounty.toLong())
@@ -7903,7 +7978,7 @@ class RiftGameEngine(
               liveResonance = (liveResonance - 15).coerceAtLeast(0)
             }
             onPrizeToast(
-              "SELF-TRIGGERED STATION DEATH // -${selfStationBountyPenalty} RES & -15 LIVE RESONANCE"
+              "SELF-TRIGGERED STATION DEATH // -${selfStationBountyPenalty} Resonance & -15 LIVE RESONANCE"
             )
           }
           else -> {
@@ -8039,7 +8114,9 @@ class RiftGameEngine(
       }
       val westAlive = ships.count { it.freq == 0 && it.respawnTimer <= 0f }
       val eastAlive = ships.count { it.freq == 1 && it.respawnTimer <= 0f }
-      val killTarget = RiftCalibrationState.skirmishKillTargetPerRound.coerceAtLeast(1)
+      val killTarget =
+        currentCustomGame?.scoreCap?.coerceIn(3, 500)
+          ?: RiftCalibrationState.skirmishKillTargetPerRound.coerceAtLeast(1)
       if (eastAlive == 0 || skirmishWestKills >= killTarget) {
         resolveSkirmishRoundWon(winningFreq = 0)
       } else if (westAlive == 0 || skirmishEastKills >= killTarget) {
@@ -8073,6 +8150,10 @@ class RiftGameEngine(
         }
         if (attacker?.isLocalPlayer == true && victim.freq != localPlayer.freq) {
           localStasisCaptures++
+          if (!isEphemeralPracticeRift && hasJoinedMatch) {
+            onExtraCareerStatsDelta(0L, 0L, 0L, 0L, 0L, 1L)
+            awardPilotXp(bountyKilledXp = 45f, notifyChange = true)
+          }
           spawnPooledFct(
             text = "STASIS CAPTURE #${localStasisCaptures}!",
             x = victim.deathX,
@@ -8085,7 +8166,15 @@ class RiftGameEngine(
       if (victim.isLocalPlayer) {
         onPrizeToast("Captured in Enemy Stasis Jail! Shoot the center Core to break out!")
       }
-      checkStasisLockdownVictory()
+      val customBreachCap = currentCustomGame?.scoreCap?.takeIf { it in 5..200 }
+      if (customBreachCap != null && (stasisWestCaptures >= customBreachCap || stasisEastCaptures >= customBreachCap)) {
+        finishStasisBreachMatch(
+          winningFreq = if (stasisWestCaptures >= stasisEastCaptures) 0 else 1,
+          isTotalLockdown = false,
+        )
+      } else {
+        checkStasisLockdownVictory()
+      }
     }
   }
 
@@ -8187,6 +8276,8 @@ class RiftGameEngine(
         riftShards += 75L
         convergencesWon++
         adjustLocalResonance(30, if (isClanWar) "SYNDICATE WAR WIN" else "SKIRMISH WIN")
+        awardPilotXp(bountyKilledXp = 120f, notifyChange = false)
+        onExtraCareerStatsDelta(1L, 0L, 0L, 0L, 0L, 0L)
         onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
         if (isClanWar) {
           onSyndicateWarFinished(true, 25)
@@ -8202,6 +8293,7 @@ class RiftGameEngine(
         sfx.playPrize()
         onPrizeToast(matchTitle)
       } else {
+        onExtraCareerStatsDelta(1L, 1L, 0L, 0L, 0L, 0L)
         if (liveResonance >= 200) {
           adjustLocalResonance(-12, "MATCH LOSS")
         }
@@ -8315,6 +8407,8 @@ class RiftGameEngine(
       riftShards += shardReward
       convergencesWon++
       adjustLocalResonance(30, "STASIS BREACH WIN")
+      awardPilotXp(bountyKilledXp = 120f, notifyChange = false)
+      onExtraCareerStatsDelta(1L, 0L, 0L, 0L, 0L, 0L)
       onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
       if (isClanWar) {
         onSyndicateWarFinished(true, 35)
@@ -8331,6 +8425,7 @@ class RiftGameEngine(
       onPrizeToast(msg)
       onStatsUpdated()
     } else {
+      onExtraCareerStatsDelta(1L, 1L, 0L, 0L, 0L, 0L)
       if (liveResonance >= 200) {
         adjustLocalResonance(-12, "MATCH LOSS")
       }
@@ -8805,14 +8900,42 @@ class RiftGameEngine(
     dist: Float,
     minFluxRatio: Float = 0.26f,
   ) {
-    val leadT = min(0.75f, dist / bot.spec.primarySpeed.coerceAtLeast(120f))
+    val botSkill = currentCustomGame?.botSkillLevel?.coerceIn(0, 3) ?: 1
+    val leadScale =
+      when (botSkill) {
+        0 -> 0.35f // Cadet
+        1 -> 0.85f // Regular
+        2 -> 1.00f // Veteran
+        else -> 1.12f // Ace
+      }
+    val jitterAmp =
+      when (botSkill) {
+        0 -> 0.20f
+        1 -> 0.06f
+        2 -> 0.02f
+        else -> 0.0f
+      }
+    val leadT = min(0.75f, dist / bot.spec.primarySpeed.coerceAtLeast(120f)) * leadScale
     val tx = target.x + target.vx * leadT
     val ty = target.y + target.vy * leadT
-    val aimAngle = atan2(ty - bot.y, tx - bot.x)
+    val jitter =
+      if (jitterAmp > 0.001f) {
+        sin((System.currentTimeMillis() % 4000L) * 0.0045f + bot.aiSeed) * jitterAmp
+      } else {
+        0f
+      }
+    val aimAngle = atan2(ty - bot.y, tx - bot.x) + jitter
     bot.weaponAngle = aimAngle
     bot.independentAimActive = true
 
     val wCostMult = customWeaponFluxCostScaleMultiplier()
+    val rangeScale =
+      when (botSkill) {
+        0 -> 0.78f
+        1 -> 1.00f
+        2 -> 1.08f
+        else -> 1.16f
+      }
     if (bot.spec.bombType == "CLOAK_EMP") {
       val pulseR = RiftCalibrationState.empPulseRadius
       if (!bot.isCloaked && dist in (pulseR * 1.15f)..980f && bot.flux > bot.maxFlux * (0.55f * wCostMult) && bot.bombTimer <= 0f) {
@@ -8828,12 +8951,17 @@ class RiftGameEngine(
       if (dist in 450f..900f && bot.flux > bot.maxFlux * (0.55f * wCostMult) && bot.bombTimer <= 0f) {
         fireSecondaryBomb(bot, aimAngle)
       }
-    } else if (bot.spec.hasBomb && dist in 240f..860f && bot.flux > bot.maxFlux * (0.48f * wCostMult) && bot.bombTimer <= 0f) {
+    } else if (bot.spec.hasBomb && botSkill >= 1 && dist in 240f..860f && bot.flux > bot.maxFlux * (0.48f * wCostMult) && bot.bombTimer <= 0f) {
       fireSecondaryBomb(bot, aimAngle)
     }
 
-    if (!bot.isCloaked && dist < RiftCalibrationState.botGunFireRange && bot.flux > bot.maxFlux * (minFluxRatio * wCostMult)) {
+    if (!bot.isCloaked && dist < RiftCalibrationState.botGunFireRange * rangeScale && bot.flux > bot.maxFlux * (minFluxRatio * wCostMult)) {
       firePrimaryGun(bot)
+      if (botSkill == 0) {
+        bot.gunTimer *= 1.45f
+      } else if (botSkill >= 3) {
+        bot.gunTimer *= 0.92f
+      }
     }
   }
 
@@ -10430,6 +10558,13 @@ class RiftGameEngine(
 
       if (hasJoinedMatch && !isHubOverwatchActive && !(isInLobbyStaging && s.isLocalPlayer)) {
         s.currentLifeAliveSec += rawDt
+        if (s.isLocalPlayer && !isEphemeralPracticeRift && !isInsideSafeZone(s.x, s.y)) {
+          survivalXpTickAccumSec += rawDt
+          if (survivalXpTickAccumSec >= 5.0f) {
+            survivalXpTickAccumSec -= 5.0f
+            awardPilotXp(bountyEarnedXp = 20f, notifyChange = false)
+          }
+        }
       }
 
       if (!s.isHuman) {
@@ -11053,7 +11188,7 @@ class RiftGameEngine(
                   "SPECIAL BUFF: CHAKRAM (+2 CHARGES • ${s.specialWeaponCharges} TOTAL • 8-SLICE BOUNCING SAW DISC)"
                 }
                 gr.buffType == 6 -> {
-                  spawnPooledFct("FULL FLUX +$pickupBty RES", s.x, s.y - 24f, Color.parseColor("#10B981"))
+                  spawnPooledFct("FULL FLUX +$pickupBty Resonance", s.x, s.y - 24f, Color.parseColor("#10B981"))
                   "INSTANT BUFF: 100% FULL FLUX CHARGE +$pickupBty RESONANCE"
                 }
                 gr.buffType == 7 -> {
@@ -12469,6 +12604,10 @@ class RiftGameEngine(
           sfx.playPrize()
           if (hasJoinedMatch && localPlayer.freq == 0) {
             adjustLocalResonance(6, "RIFT CAPTURE")
+            if (!isEphemeralPracticeRift) {
+              onExtraCareerStatsDelta(0L, 0L, 0L, 0L, 0L, 1L)
+              awardPilotXp(bountyKilledXp = 45f, notifyChange = true)
+            }
           }
           onPrizeToast("$zoneLabel CAPTURED BY WEST HORIZON!")
         }
@@ -12487,6 +12626,10 @@ class RiftGameEngine(
           sfx.playWarp()
           if (hasJoinedMatch && localPlayer.freq == 1) {
             adjustLocalResonance(6, "RIFT CAPTURE")
+            if (!isEphemeralPracticeRift) {
+              onExtraCareerStatsDelta(0L, 0L, 0L, 0L, 0L, 1L)
+              awardPilotXp(bountyKilledXp = 45f, notifyChange = true)
+            }
           }
           onPrizeToast("$zoneLabel CAPTURED BY EAST HORIZON!")
         }
@@ -12526,15 +12669,17 @@ class RiftGameEngine(
         1 -> 4.0f
         else -> 0f
       }
-    riftControlWestScore = (riftControlWestScore + westRate * rawDt).coerceAtMost(1000f)
-    riftControlEastScore = (riftControlEastScore + eastRate * rawDt).coerceAtMost(1000f)
+    val controlTargetScore =
+      currentCustomGame?.scoreCap?.takeIf { it >= 100 }?.toFloat()?.coerceIn(100f, 5000f) ?: 1000f
+    riftControlWestScore = (riftControlWestScore + westRate * rawDt).coerceAtMost(controlTargetScore)
+    riftControlEastScore = (riftControlEastScore + eastRate * rawDt).coerceAtMost(controlTargetScore)
 
-    if (riftControlWestScore >= 1000f || riftControlEastScore >= 1000f || riftControlMatchTimerSec <= 0f) {
+    if (riftControlWestScore >= controlTargetScore || riftControlEastScore >= controlTargetScore || riftControlMatchTimerSec <= 0f) {
       if (hasJoinedMatch) {
         val westWon =
           when {
-            riftControlWestScore >= 1000f && riftControlWestScore >= riftControlEastScore -> true
-            riftControlEastScore >= 1000f -> false
+            riftControlWestScore >= controlTargetScore && riftControlWestScore >= riftControlEastScore -> true
+            riftControlEastScore >= controlTargetScore -> false
             riftControlWestScore > riftControlEastScore + 0.5f -> true
             riftControlEastScore > riftControlWestScore + 0.5f -> false
             westLocks > eastLocks -> true
@@ -12548,6 +12693,8 @@ class RiftGameEngine(
           riftShards += 85L
           convergencesWon++
           adjustLocalResonance(30, "RIFT CONTROL WIN")
+          awardPilotXp(bountyKilledXp = 120f, notifyChange = false)
+          onExtraCareerStatsDelta(1L, 0L, 0L, 0L, 0L, 0L)
           onSyndicateContribution(0L, localPlayer.bounty.toLong(), 1L)
           val msg =
             "RIFT CONTROL VICTORY! $winTeamLabel ${riftControlWestScore.toInt()}-${riftControlEastScore.toInt()} (+85 RIFT SHARDS)"
@@ -12557,6 +12704,7 @@ class RiftGameEngine(
           onPrizeToast(msg)
           onStatsUpdated()
         } else {
+          onExtraCareerStatsDelta(1L, 1L, 0L, 0L, 0L, 0L)
           if (liveResonance >= 200) {
             adjustLocalResonance(-12, "MATCH LOSS")
           }
@@ -12778,7 +12926,8 @@ class RiftGameEngine(
               shockwaves.add(ShockwaveEntity(s.x, s.y, 20f, 260f, Color.parseColor("#FACC15")))
               if (s.isLocalPlayer) {
                 sfx.playPrize()
-                onPrizeToast("FLUX CORE ACQUIRED! +15 RES/S & OVERCHARGE TIER SCALING ACTIVE!")
+                awardPilotXp(bountyKilledXp = 35f, notifyChange = false)
+                onPrizeToast("FLUX CORE ACQUIRED! +15 RESONANCE/S & OVERCHARGE TIER SCALING ACTIVE!")
               } else if (!isHubOverwatchActive || hasJoinedMatch) {
                 onPrizeToast("${s.callsign} CLAIMED THE FLUX CORE!")
               }
@@ -13180,7 +13329,7 @@ class RiftGameEngine(
         val pDist = anom.physicalRadius * (0.35f + Random.nextFloat() * 0.75f)
         val pColor = when (anom.type) {
           AnomalyType.PLASMA_RIFT -> if (Random.nextBoolean()) Color.parseColor("#EF4444") else Color.parseColor("#D946EF")
-          AnomalyType.REPULSOR_RIFT -> if (Random.nextBoolean()) Color.WHITE else Color.parseColor("#38BDF8")
+          AnomalyType.REPULSOR_RIFT -> if (Random.nextBoolean()) Color.parseColor("#7DD3FC") else Color.parseColor("#0EA5E9")
           AnomalyType.GRAVITY_RIFT -> if (Random.nextBoolean()) Color.parseColor("#C084FC") else Color.parseColor("#6366F1")
           else -> if (Random.nextBoolean()) Color.parseColor("#2DD4BF") else Color.parseColor("#38BDF8")
         }
@@ -13204,7 +13353,7 @@ class RiftGameEngine(
       if (anom.life <= 0f) {
         spawnExplosion(anom.x, anom.y, when (anom.type) {
           AnomalyType.PLASMA_RIFT -> Color.parseColor("#EF4444")
-          AnomalyType.REPULSOR_RIFT -> Color.WHITE
+          AnomalyType.REPULSOR_RIFT -> Color.parseColor("#7DD3FC")
           AnomalyType.GRAVITY_RIFT -> Color.parseColor("#818CF8")
           else -> Color.parseColor("#2DD4BF")
         })

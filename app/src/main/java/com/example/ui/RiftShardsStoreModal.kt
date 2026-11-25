@@ -283,7 +283,7 @@ fun RiftShardsStoreModal(
         }
         ConduitMetricInline("LIVE RESONANCE", "$effectiveLiveRes", ConduitNexusTeal)
         ConduitMetricInline("PEAK RESONANCE", "$effectivePeakRes", Color(0xFFC084FC))
-        ConduitMetricInline("START RESONANCE", "$effectiveStartBounty RES", ConduitSolarGold)
+        ConduitMetricInline("START RESONANCE", "$effectiveStartBounty", ConduitSolarGold)
         if (!isCompactPhone) {
           Column(modifier = Modifier.width(138.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
@@ -1302,7 +1302,7 @@ private fun ConduitHoloPreviewStage(
     ) {
       Column {
         Text(
-          text = "STARTING RESONANCE: $startingBounty RES (SCALES 100->500)",
+          text = "STARTING RESONANCE: $startingBounty (SCALES 100->500)",
           color = ConduitSolarGold,
           fontSize = 9.5.sp,
           fontWeight = FontWeight.ExtraBold,
@@ -1683,7 +1683,7 @@ private fun DailyDirectivesDeck(
                   fontFamily = FontFamily.Monospace,
                 )
                 Text(
-                  text = "${tier.minResonance}+ RES • ${tier.startingBounty} START RES",
+                  text = "${tier.minResonance}+ Resonance • ${tier.startingBounty} Start",
                   color = Color.White,
                   fontSize = 9.5.sp,
                   fontWeight = FontWeight.Bold,

@@ -498,6 +498,18 @@ class LocalPilotPrefs(context: Context) {
     if (tag.uppercase(Locale.US) in NON_PLAYER_SYNDICATE_TAGS) {
       return emptyList()
     }
+    val officers = getSyndicateOfficers(tag)
+    val isFounder =
+      getAllSyndicates().any {
+        it.tag.equals(tag, ignoreCase = true) &&
+          (it.ownerId.isBlank() || it.ownerId == currentUid)
+      } || getSyndicateServiceHistory().lastOrNull { it.isActive }?.role?.contains("Founder", ignoreCase = true) == true
+    val localRole =
+      when {
+        isFounder -> "Leader"
+        officers.any { it.equals(callsign, ignoreCase = true) } -> "Officer"
+        else -> "Pilot"
+      }
     val localEntry =
       SyndicateMemberEntry(
         uid = currentUid,
@@ -505,26 +517,36 @@ class LocalPilotPrefs(context: Context) {
         tag = tag,
         shipId = shipId,
         shipName = cleanShipNameForId(shipId),
-        role = "SYNDICATE COMMANDER (YOU)",
+        role = localRole,
         bountyContribution = bounty.coerceAtLeast(getAllTimeBountyPeak()),
         kills = kills,
         isOnline = true,
         isLocalPlayer = true,
       )
+    val ownerUid =
+      getAllSyndicates().firstOrNull { it.tag.equals(tag, ignoreCase = true) }?.ownerId.orEmpty()
+    val kickedMembers = getKickedSyndicateMembers(tag)
     val realSyndicateFriends =
       getFriendsList()
         .filter {
           it.syndicateTag.equals(tag, ignoreCase = true) &&
-            !it.callsign.equals(callsign, ignoreCase = true)
+            !it.callsign.equals(callsign, ignoreCase = true) &&
+            kickedMembers.none { kicked -> kicked.equals(it.callsign, ignoreCase = true) }
         }
         .map { friend ->
+          val friendRole =
+            when {
+              ownerUid.isNotBlank() && friend.uid == ownerUid -> "Leader"
+              officers.any { it.equals(friend.callsign, ignoreCase = true) } -> "Officer"
+              else -> "Pilot"
+            }
           SyndicateMemberEntry(
             uid = friend.uid,
             callsign = friend.callsign,
             tag = tag,
             shipId = friend.shipId,
             shipName = cleanShipNameForId(friend.shipId),
-            role = "SYNDICATE WINGMAN",
+            role = friendRole,
             bountyContribution = friend.bounty.toLong(),
             kills = 0L,
             isOnline = friend.isOnline,
@@ -715,6 +737,117 @@ class LocalPilotPrefs(context: Context) {
 
   fun getXpFromBountyKilled(uid: String? = null): Long =
     prefs.getLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_XP_BOUNTY_KILLED, 0L) else 0L)
+
+  fun getCombatXp(uid: String? = null): Long = getXpFromDamage(uid)
+
+  fun getSurvivalXp(uid: String? = null): Long = getXpFromBountyEarned(uid)
+
+  fun getObjectiveXp(uid: String? = null): Long = getXpFromBountyKilled(uid)
+
+  fun getSupportCratesXp(uid: String? = null): Long = getXpFromBuffs(uid)
+
+  fun getDailyDirectivesXp(uid: String? = null): Long = getXpFromAccuracy(uid)
+
+  fun awardDailyDirectivesXp(amount: Long, uid: String? = null) {
+    if (amount <= 0L) return
+    val next = getXpFromAccuracy(uid) + amount
+    val ed = prefs.edit().putLong(uidKey(KEY_XP_ACCURACY, uid), next)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putLong(KEY_XP_ACCURACY, next)
+    }
+    ed.apply()
+  }
+
+  fun getMatchesPlayed(uid: String? = null): Long {
+    val raw = prefs.getLong(uidKey(KEY_MATCHES_PLAYED, uid), 0L).coerceAtLeast(0L)
+    val wins = getConvergencesWon(uid)
+    val losses = prefs.getLong(uidKey(KEY_MATCHES_LOST, uid), 0L).coerceAtLeast(0L)
+    return kotlin.math.max(raw, wins + losses)
+  }
+
+  fun getMatchesLost(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_MATCHES_LOST, uid), 0L).coerceAtLeast(0L)
+
+  fun getCareerAssists(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_CAREER_ASSISTS, uid), 0L).coerceAtLeast(0L)
+
+  fun getCareerShotsFired(uid: String? = null): Long {
+    val raw = prefs.getLong(uidKey(KEY_CAREER_SHOTS_FIRED, uid), 0L).coerceAtLeast(0L)
+    val snapFired = (getAllTimePeakBountySnapshot(uid)?.shotsFired ?: 0).toLong().coerceAtLeast(0L)
+    return kotlin.math.max(raw, snapFired)
+  }
+
+  fun getCareerShotsHit(uid: String? = null): Long {
+    val raw = prefs.getLong(uidKey(KEY_CAREER_SHOTS_HIT, uid), 0L).coerceAtLeast(0L)
+    val snapHit = (getAllTimePeakBountySnapshot(uid)?.shotsHit ?: 0).toLong().coerceAtLeast(0L)
+    return kotlin.math.max(raw, snapHit).coerceAtMost(getCareerShotsFired(uid))
+  }
+
+  fun getRiftCaptures(uid: String? = null): Long =
+    prefs.getLong(uidKey(KEY_RIFT_CAPTURES, uid), 0L).coerceAtLeast(0L)
+
+  fun recordExtraCareerCounters(
+    addMatchesPlayed: Long = 0L,
+    addMatchesLost: Long = 0L,
+    addAssists: Long = 0L,
+    addShotsFired: Long = 0L,
+    addShotsHit: Long = 0L,
+    addRiftCaptures: Long = 0L,
+    uid: String? = null,
+  ) {
+    val nextPlayed = (getMatchesPlayed(uid) + addMatchesPlayed.coerceAtLeast(0L)).coerceAtLeast(0L)
+    val nextLost = (getMatchesLost(uid) + addMatchesLost.coerceAtLeast(0L)).coerceAtLeast(0L)
+    val nextAssists = (getCareerAssists(uid) + addAssists.coerceAtLeast(0L)).coerceAtLeast(0L)
+    val nextFired = (getCareerShotsFired(uid) + addShotsFired.coerceAtLeast(0L)).coerceAtLeast(0L)
+    val nextHit = (getCareerShotsHit(uid) + addShotsHit.coerceAtLeast(0L)).coerceIn(0L, nextFired)
+    val nextCaps = (getRiftCaptures(uid) + addRiftCaptures.coerceAtLeast(0L)).coerceAtLeast(0L)
+    prefs
+      .edit()
+      .putLong(uidKey(KEY_MATCHES_PLAYED, uid), kotlin.math.max(nextPlayed, getConvergencesWon(uid) + nextLost))
+      .putLong(uidKey(KEY_MATCHES_LOST, uid), nextLost)
+      .putLong(uidKey(KEY_CAREER_ASSISTS, uid), nextAssists)
+      .putLong(uidKey(KEY_CAREER_SHOTS_FIRED, uid), nextFired)
+      .putLong(uidKey(KEY_CAREER_SHOTS_HIT, uid), nextHit)
+      .putLong(uidKey(KEY_RIFT_CAPTURES, uid), nextCaps)
+      .apply()
+  }
+
+  fun getPilotCareerStatsSummary(uid: String? = null): PilotCareerStatsSummary {
+    val totalXp = getTotalXp(uid)
+    val level = computeLevelFromTotalXp(totalXp)
+    val (intoLvl, spanLvl, fracLvl) = getXpProgressInLevel(totalXp)
+    val wins = getConvergencesWon(uid)
+    val losses = getMatchesLost(uid)
+    val played = kotlin.math.max(getMatchesPlayed(uid), wins + losses)
+    val winPct = if (played > 0L) ((wins.toDouble() / played.toDouble()) * 100.0).toInt().coerceIn(0, 100) else 0
+    val fired = getCareerShotsFired(uid)
+    val hit = getCareerShotsHit(uid)
+    val accPct = if (fired > 0L) ((hit.toDouble() / fired.toDouble()) * 100.0).toInt().coerceIn(0, 100) else 0
+    return PilotCareerStatsSummary(
+      pilotLevel = level,
+      totalXp = totalXp,
+      xpIntoLevel = intoLvl,
+      xpSpanForLevel = spanLvl,
+      levelProgressFraction = fracLvl,
+      combatXp = getCombatXp(uid),
+      survivalXp = getSurvivalXp(uid),
+      objectiveXp = getObjectiveXp(uid),
+      supportCratesXp = getSupportCratesXp(uid),
+      dailyDirectivesXp = getDailyDirectivesXp(uid),
+      matchesPlayed = played,
+      wins = wins,
+      losses = losses,
+      winPercent = winPct,
+      eliminations = getAllTimeKills(uid),
+      deaths = getAllTimeDeaths(uid),
+      assists = getCareerAssists(uid),
+      shotsFired = fired,
+      shotsHit = hit,
+      accuracyPercent = accPct,
+      cratePickups = getGreensCollected(uid),
+      riftCaptures = getRiftCaptures(uid),
+    )
+  }
 
   fun getTotalXp(uid: String? = null): Long =
     getXpFromBuffs(uid) +
@@ -1306,6 +1439,7 @@ class LocalPilotPrefs(context: Context) {
     val nextShards = getRiftShards(uid) + dir.shardReward
     setRiftShards(nextShards, uid)
     applyResonanceDelta(dir.resonanceReward, uid)
+    awardDailyDirectivesXp(120L, uid)
     prefs
       .edit()
       .putBoolean(uidKey("${KEY_DAILY_DIRECTIVE_CLAIMED_PREFIX}$slotIndex", uid), true)
@@ -1325,6 +1459,7 @@ class LocalPilotPrefs(context: Context) {
     val sweepRes = 25
     setRiftShards(getRiftShards(uid) + sweepShards, uid)
     applyResonanceDelta(sweepRes, uid)
+    awardDailyDirectivesXp(240L, uid)
     prefs.edit().putBoolean(uidKey(KEY_DAILY_SWEEP_CLAIMED, uid), true).apply()
     return sweepShards to sweepRes
   }
@@ -1715,6 +1850,63 @@ class LocalPilotPrefs(context: Context) {
     prefs.edit().putString("${KEY_SYNDICATE_CREST_PREFIX}$cleanTag", crestJson.trim()).apply()
   }
 
+  fun isSyndicateInviteOnly(tag: String = getSyndicateTag()): Boolean {
+    val cleanTag = sanitizeSyndicateTag(tag)
+    if (cleanTag.isEmpty() || cleanTag in NON_PLAYER_SYNDICATE_TAGS) return false
+    return prefs.getBoolean("${KEY_SYNDICATE_INVITE_ONLY_PREFIX}$cleanTag", false)
+  }
+
+  fun setSyndicateInviteOnly(tag: String, inviteOnly: Boolean) {
+    val cleanTag = sanitizeSyndicateTag(tag)
+    if (cleanTag.isEmpty() || cleanTag in NON_PLAYER_SYNDICATE_TAGS) return
+    prefs.edit().putBoolean("${KEY_SYNDICATE_INVITE_ONLY_PREFIX}$cleanTag", inviteOnly).apply()
+  }
+
+  fun getSyndicateOfficers(tag: String = getSyndicateTag()): Set<String> {
+    val cleanTag = sanitizeSyndicateTag(tag)
+    if (cleanTag.isEmpty() || cleanTag in NON_PLAYER_SYNDICATE_TAGS) return emptySet()
+    val raw = prefs.getString("${KEY_SYNDICATE_OFFICERS_PREFIX}$cleanTag", "") ?: ""
+    return raw.split(",").map { it.trim().uppercase(Locale.US) }.filter { it.isNotEmpty() }.toSet()
+  }
+
+  fun toggleSyndicateOfficer(tag: String, callsign: String): Boolean {
+    val cleanTag = sanitizeSyndicateTag(tag)
+    val cleanCallsign = callsign.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(14)
+    if (cleanTag.isEmpty() || cleanCallsign.isEmpty()) return false
+    val current = getSyndicateOfficers(cleanTag).toMutableSet()
+    val nowOfficer =
+      if (current.any { it.equals(cleanCallsign, ignoreCase = true) }) {
+        current.removeAll { it.equals(cleanCallsign, ignoreCase = true) }
+        false
+      } else {
+        current.add(cleanCallsign)
+        true
+      }
+    prefs.edit().putString("${KEY_SYNDICATE_OFFICERS_PREFIX}$cleanTag", current.take(10).joinToString(",")).apply()
+    return nowOfficer
+  }
+
+  fun getKickedSyndicateMembers(tag: String = getSyndicateTag()): Set<String> {
+    val cleanTag = sanitizeSyndicateTag(tag)
+    if (cleanTag.isEmpty() || cleanTag in NON_PLAYER_SYNDICATE_TAGS) return emptySet()
+    val raw = prefs.getString("syndicate_kicked_members_$cleanTag", "") ?: ""
+    return raw.split(",").map { it.trim().uppercase(Locale.US) }.filter { it.isNotEmpty() }.toSet()
+  }
+
+  fun kickSyndicateMember(tag: String, callsign: String) {
+    val cleanTag = sanitizeSyndicateTag(tag)
+    val cleanCallsign = callsign.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(14)
+    if (cleanTag.isEmpty() || cleanCallsign.isEmpty()) return
+    val officers = getSyndicateOfficers(cleanTag).filterNot { it.equals(cleanCallsign, ignoreCase = true) }
+    val kicked = (getKickedSyndicateMembers(cleanTag) + cleanCallsign).take(30)
+    prefs
+      .edit()
+      .putString("${KEY_SYNDICATE_OFFICERS_PREFIX}$cleanTag", officers.joinToString(","))
+      .putString("syndicate_kicked_members_$cleanTag", kicked.joinToString(","))
+      .apply()
+    revokeGuestFromSyndicateChannels(cleanTag, cleanCallsign)
+  }
+
   fun mergeCloudSyndicateMeta(meta: CloudSyndicateMeta) {
     val cleanTag = sanitizeSyndicateTag(meta.tag)
     if (cleanTag.isEmpty() || cleanTag in NON_PLAYER_SYNDICATE_TAGS) return
@@ -1724,10 +1916,16 @@ class LocalPilotPrefs(context: Context) {
     val sanitizedGuests =
       meta.invitedGuests
         .map { it.trim().take(20) }
+        .filter { it.isNotEmpty() && !it.startsWith("__") }
+    val sanitizedOfficers =
+      meta.officerCallsigns
+        .map { it.trim().uppercase(Locale.US).take(14) }
         .filter { it.isNotEmpty() }
     prefs
       .edit()
       .putString("${KEY_SYNDICATE_GUESTS_PREFIX}$cleanTag", sanitizedGuests.joinToString(","))
+      .putBoolean("${KEY_SYNDICATE_INVITE_ONLY_PREFIX}$cleanTag", meta.inviteOnly)
+      .putString("${KEY_SYNDICATE_OFFICERS_PREFIX}$cleanTag", sanitizedOfficers.joinToString(","))
       .apply()
     if (meta.crestJson.isNotBlank()) {
       setSyndicateCrestJson(cleanTag, meta.crestJson)
@@ -2031,7 +2229,7 @@ class LocalPilotPrefs(context: Context) {
     val cleanTag = syndicateTag.trim().uppercase(Locale.US)
     if (cleanTag.isEmpty() || cleanTag == "SOLO") return emptySet()
     val raw = prefs.getString("${KEY_SYNDICATE_GUESTS_PREFIX}$cleanTag", "") ?: ""
-    return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("__") }.toSet()
   }
 
   fun inviteGuestToSyndicateChannels(syndicateTag: String, guestCallsign: String) {
@@ -2149,6 +2347,12 @@ class LocalPilotPrefs(context: Context) {
       .putLong(KEY_CONVERGENCES_WON, 0L)
       .putLong(KEY_HVT_ELIMINATIONS, 0L)
       .putLong(KEY_GREENS_COLLECTED, 0L)
+      .putLong(uidKey(KEY_MATCHES_PLAYED, uid), 0L)
+      .putLong(uidKey(KEY_MATCHES_LOST, uid), 0L)
+      .putLong(uidKey(KEY_CAREER_ASSISTS, uid), 0L)
+      .putLong(uidKey(KEY_CAREER_SHOTS_FIRED, uid), 0L)
+      .putLong(uidKey(KEY_CAREER_SHOTS_HIT, uid), 0L)
+      .putLong(uidKey(KEY_RIFT_CAPTURES, uid), 0L)
 
     // 5 XP sources + progression + Rift Shards (150)
     editor
@@ -2393,6 +2597,12 @@ class LocalPilotPrefs(context: Context) {
     obj.put("wins", getConvergencesWon(uid))
     obj.put("hvts", getHvtEliminations(uid))
     obj.put("greens", getGreensCollected(uid))
+    obj.put("matchesPlayed", getMatchesPlayed(uid))
+    obj.put("matchesLost", getMatchesLost(uid))
+    obj.put("assists", getCareerAssists(uid))
+    obj.put("shotsFired", getCareerShotsFired(uid))
+    obj.put("shotsHit", getCareerShotsHit(uid))
+    obj.put("riftCaptures", getRiftCaptures(uid))
     val shipResObj = JSONObject()
     for (id in 1..10) {
       shipResObj.put(id.toString(), getShipResonance(id, uid))
@@ -2474,6 +2684,21 @@ class LocalPilotPrefs(context: Context) {
         greensCollected = kotlin.math.max(getGreensCollected(uid), obj.optLong("greens", 0L)),
         uid = uid,
       )
+      val mergedPlayed = kotlin.math.max(getMatchesPlayed(uid), obj.optLong("matchesPlayed", 0L))
+      val mergedLost = kotlin.math.max(getMatchesLost(uid), obj.optLong("matchesLost", 0L))
+      val mergedAssists = kotlin.math.max(getCareerAssists(uid), obj.optLong("assists", 0L))
+      val mergedFired = kotlin.math.max(getCareerShotsFired(uid), obj.optLong("shotsFired", 0L))
+      val mergedHit = kotlin.math.max(getCareerShotsHit(uid), obj.optLong("shotsHit", 0L)).coerceAtMost(mergedFired)
+      val mergedCaps = kotlin.math.max(getRiftCaptures(uid), obj.optLong("riftCaptures", 0L))
+      prefs
+        .edit()
+        .putLong(uidKey(KEY_MATCHES_PLAYED, uid), kotlin.math.max(mergedPlayed, getConvergencesWon(uid) + mergedLost))
+        .putLong(uidKey(KEY_MATCHES_LOST, uid), mergedLost)
+        .putLong(uidKey(KEY_CAREER_ASSISTS, uid), mergedAssists)
+        .putLong(uidKey(KEY_CAREER_SHOTS_FIRED, uid), mergedFired)
+        .putLong(uidKey(KEY_CAREER_SHOTS_HIT, uid), mergedHit)
+        .putLong(uidKey(KEY_RIFT_CAPTURES, uid), mergedCaps)
+        .apply()
 
       val cloudShipId = obj.optInt("shipId", 0)
       if (cloudShipId in 1..10 && !prefs.contains(uidKey(KEY_SHIP_ID, uid))) {
@@ -2778,6 +3003,22 @@ class LocalPilotPrefs(context: Context) {
         )
       )
     }
+    val hubTaps = getHubTapTelemetryHistory()
+    sb.appendLine()
+    sb.appendLine("HubTapTimestampMs,TapXNorm,TapYNorm,ActiveHubView,TargetControlTag")
+    for (tap in hubTaps) {
+      sb.appendLine(
+        java.lang.String.format(
+          java.util.Locale.US,
+          "%d,%.3f,%.3f,%s,%s",
+          tap.timestampMs,
+          tap.tapXNorm,
+          tap.tapYNorm,
+          tap.activeHubView.replace(",", " "),
+          tap.targetControlTag.replace(",", " "),
+        )
+      )
+    }
     return sb.toString()
   }
 
@@ -2787,11 +3028,30 @@ class LocalPilotPrefs(context: Context) {
     uid: String? = null,
   ): String {
     val summary = getPilotSurvivalTelemetrySummary(uid)
+    val career = getPilotCareerStatsSummary(uid)
+    val hubTaps = getHubTapTelemetryHistory()
     val root = JSONObject()
-    root.put("schemaVersion", 103)
+    root.put("schemaVersion", 115)
     root.put("exportedAtMs", System.currentTimeMillis())
     root.put("callsign", callsign)
     root.put("liveResonance", liveResonance)
+    root.put("pilotLevel", career.pilotLevel)
+    root.put("totalXp", career.totalXp)
+    root.put("combatXp", career.combatXp)
+    root.put("survivalXp", career.survivalXp)
+    root.put("objectiveXp", career.objectiveXp)
+    root.put("supportCratesXp", career.supportCratesXp)
+    root.put("dailyDirectivesXp", career.dailyDirectivesXp)
+    root.put("matchesPlayed", career.matchesPlayed)
+    root.put("wins", career.wins)
+    root.put("losses", career.losses)
+    root.put("winPercent", career.winPercent)
+    root.put("eliminations", career.eliminations)
+    root.put("deaths", career.deaths)
+    root.put("assists", career.assists)
+    root.put("accuracyPercent", career.accuracyPercent)
+    root.put("cratePickups", career.cratePickups)
+    root.put("riftCaptures", career.riftCaptures)
     root.put("pilotCompletedLives", summary.pilotCompletedLives)
     root.put("pilotTotalAliveSec", summary.pilotTotalAliveSec.toDouble())
     root.put("pilotAvgSurvivalSec", summary.pilotAvgSurvivalSec.toDouble())
@@ -2824,6 +3084,9 @@ class LocalPilotPrefs(context: Context) {
     val recentArr = JSONArray()
     summary.recentLives.forEach { recentArr.put(it.toJson()) }
     root.put("recentCompletedLives", recentArr)
+    val tapsArr = JSONArray()
+    hubTaps.forEach { tapsArr.put(it.toJson()) }
+    root.put("hubTapTelemetry", tapsArr)
     return root.toString(2)
   }
 
@@ -2833,6 +3096,8 @@ class LocalPilotPrefs(context: Context) {
     uid: String? = null,
   ): String {
     val summary = getPilotSurvivalTelemetrySummary(uid)
+    val career = getPilotCareerStatsSummary(uid)
+    val hubTaps = getHubTapTelemetryHistory()
     fun esc(raw: String): String =
       raw
         .replace("&", "&amp;")
@@ -2844,7 +3109,7 @@ class LocalPilotPrefs(context: Context) {
     val sb = StringBuilder()
     sb.appendLine("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"/>")
     sb.appendLine("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/>")
-    sb.appendLine("<title>Rift Ship Survival Telemetry - ${esc(callsign)}</title>")
+    sb.appendLine("<title>Rift Full Telemetry Sheet - ${esc(callsign)}</title>")
     sb.appendLine("<style>")
     sb.appendLine("body{background:#02050B;color:#E2E8F0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:0;padding:16px;}")
     sb.appendLine("h1{color:#00F5D4;font-size:17px;margin:0 0 4px 0;letter-spacing:1px;}")
@@ -2867,14 +3132,15 @@ class LocalPilotPrefs(context: Context) {
     sb.appendLine(".warn{color:#FB7185;font-weight:700;}")
     sb.appendLine(".good{color:#34D399;font-weight:700;}")
     sb.appendLine("</style></head><body>")
-    sb.appendLine("<h1>SHIP SURVIVAL &amp; FLUX COST TELEMETRY SPREADSHEET</h1>")
-    sb.appendLine("<div class=\"sub\">PILOT: ${esc(callsign)} &bull; LIVE RESONANCE: $liveResonance RES &bull; GENERATED: ${esc(nowStr)}</div>")
+    sb.appendLine("<h1>RIFT FULL PILOT, SURVIVAL &amp; HUB TAP TELEMETRY SHEET</h1>")
+    sb.appendLine("<div class=\"sub\">PILOT: ${esc(callsign)} &bull; LEVEL ${career.pilotLevel} (${career.totalXp} XP) &bull; LIVE RESONANCE: $liveResonance &bull; GENERATED: ${esc(nowStr)}</div>")
     sb.appendLine("<div class=\"kpis\">")
     sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">PILOT AVG SURVIVAL</div><div class=\"val\">${formatSurvivalDurationSec(summary.pilotAvgSurvivalSec)}</div></div>")
     sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">LATEST COMPLETED LIFE</div><div class=\"val\">${formatSurvivalDurationSec(summary.pilotLastSurvivalSec)}</div></div>")
     sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">LONGEST PILOT LIFE</div><div class=\"val\">${formatSurvivalDurationSec(summary.pilotMaxSurvivalSec)}</div></div>")
-    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">PILOT COMPLETED LIVES</div><div class=\"val\">${summary.pilotCompletedLives}</div></div>")
-    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">AI BOT AVG SURVIVAL</div><div class=\"val\">${formatSurvivalDurationSec(summary.botAvgSurvivalSec)} (${summary.botCompletedLives})</div></div>")
+    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">MATCHES / WIN %</div><div class=\"val\">${career.matchesPlayed} (${career.winPercent}%)</div></div>")
+    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">ELIMS / DEATHS / ASSISTS</div><div class=\"val\">${career.eliminations} / ${career.deaths} / ${career.assists}</div></div>")
+    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">ACCURACY / CRATES / CAPS</div><div class=\"val\">${career.accuracyPercent}% &bull; ${career.cratePickups} &bull; ${career.riftCaptures}</div></div>")
     sb.appendLine("</div>")
     sb.appendLine("<div class=\"filters\">")
     sb.appendLine("<label>HULL <select id=\"fHull\" onchange=\"applyFilters()\"><option value=\"ALL\">ALL HULLS</option>")
@@ -2884,12 +3150,17 @@ class LocalPilotPrefs(context: Context) {
     sb.appendLine("</select></label>")
     sb.appendLine("<label>ACTOR <select id=\"fActor\" onchange=\"applyFilters()\"><option value=\"ALL\">ALL ACTORS</option><option value=\"PILOT\">LOCAL PILOT</option><option value=\"BOT\">AI BOTS</option><option value=\"REMOTE\">REMOTE PILOTS</option></select></label>")
     sb.appendLine("<label>SESSION <select id=\"fSession\" onchange=\"applyFilters()\"><option value=\"ALL\">ALL SESSIONS</option><option value=\"PUBLIC\">PUBLIC RIFTS</option><option value=\"CUSTOM\">CUSTOM SANDBOX</option></select></label>")
-    sb.appendLine("<label>SEARCH <input id=\"fSearch\" type=\"text\" placeholder=\"Mode, callsign, reason...\" oninput=\"applyFilters()\"/></label>")
+    sb.appendLine("<label>HUB VIEW <select id=\"fHubView\" onchange=\"applyFilters()\"><option value=\"ALL\">ALL HUB VIEWS</option>")
+    hubTaps.map { it.activeHubView.uppercase(java.util.Locale.US) }.distinct().sorted().forEach { v ->
+      sb.appendLine("<option value=\"${esc(v)}\">${esc(v)}</option>")
+    }
+    sb.appendLine("</select></label>")
+    sb.appendLine("<label>SEARCH <input id=\"fSearch\" type=\"text\" placeholder=\"Mode, callsign, control tag...\" oninput=\"applyFilters()\"/></label>")
     sb.appendLine("<button type=\"button\" onclick=\"resetFilters()\">RESET</button>")
-    sb.appendLine("<span id=\"fCount\" class=\"count\">SHOWING ${summary.perShip.size} HULLS &bull; ${summary.recentLives.size} LIVES</span>")
+    sb.appendLine("<span id=\"fCount\" class=\"count\">SHOWING ${summary.perShip.size} HULLS &bull; ${summary.recentLives.size} LIVES &bull; ${hubTaps.size} HUB TAPS</span>")
     sb.appendLine("</div>")
     sb.appendLine("<h2>PER-SHIP SURVIVAL BREAKDOWN (10 HULLS)</h2>")
-    sb.appendLine("<table id=\"hullTable\"><thead><tr><th>HULL</th><th class=\"num\">RES</th><th class=\"num\">PILOT LIVES</th><th class=\"num\">AVG ALIVE</th><th class=\"num\">LAST LIFE</th><th class=\"num\">MAX LIFE</th><th class=\"num\">MIN LIFE</th><th class=\"num\">BOT LIVES</th><th class=\"num\">BOT AVG</th></tr></thead><tbody>")
+    sb.appendLine("<table id=\"hullTable\"><thead><tr><th>HULL</th><th class=\"num\">RESONANCE</th><th class=\"num\">PILOT LIVES</th><th class=\"num\">AVG ALIVE</th><th class=\"num\">LAST LIFE</th><th class=\"num\">MAX LIFE</th><th class=\"num\">MIN LIFE</th><th class=\"num\">BOT LIVES</th><th class=\"num\">BOT AVG</th></tr></thead><tbody>")
     for (entry in summary.perShip) {
       val res = getShipResonance(entry.shipId, uid)
       val avgClass = when {
@@ -2937,20 +3208,35 @@ class LocalPilotPrefs(context: Context) {
       )
     }
     sb.appendLine("</tbody></table>")
+    sb.appendLine("<h2>RIFT HUB NON-TEXT TAP TELEMETRY (LATEST ${hubTaps.size})</h2>")
+    sb.appendLine("<table id=\"tapTable\"><thead><tr><th>TIME</th><th>ACTIVE HUB VIEW</th><th>TARGET CONTROL TAG</th><th class=\"num\">TAP X (0..1)</th><th class=\"num\">TAP Y (0..1)</th></tr></thead><tbody>")
+    for (tap in hubTaps) {
+      val tStr = fmt.format(java.util.Date(tap.timestampMs))
+      val vKey = esc(tap.activeHubView.uppercase(java.util.Locale.US))
+      sb.appendLine(
+        "<tr data-hubview=\"$vKey\"><td>${esc(tStr)}</td><td>${esc(tap.activeHubView)}</td><td>${esc(tap.targetControlTag)}</td>" +
+          "<td class=\"num\">${String.format(java.util.Locale.US, "%.3f", tap.tapXNorm)}</td>" +
+          "<td class=\"num\">${String.format(java.util.Locale.US, "%.3f", tap.tapYNorm)}</td></tr>"
+      )
+    }
+    sb.appendLine("</tbody></table>")
     sb.appendLine("<script>")
     sb.appendLine("function applyFilters(){")
     sb.appendLine("var hull=document.getElementById('fHull').value;")
     sb.appendLine("var actor=document.getElementById('fActor').value;")
     sb.appendLine("var sess=document.getElementById('fSession').value;")
+    sb.appendLine("var hv=document.getElementById('fHubView').value;")
     sb.appendLine("var q=(document.getElementById('fSearch').value||'').toUpperCase();")
-    sb.appendLine("var hc=0,lc=0;")
+    sb.appendLine("var hc=0,lc=0,tc=0;")
     sb.appendLine("var hRows=document.querySelectorAll('#hullTable tbody tr');")
     sb.appendLine("for(var i=0;i<hRows.length;i++){var r=hRows[i];var ok=(hull==='ALL'||r.getAttribute('data-hull')===hull)&&(q===''||r.textContent.toUpperCase().indexOf(q)>=0);r.style.display=ok?'':'none';if(ok)hc++;}")
     sb.appendLine("var lRows=document.querySelectorAll('#lifeTable tbody tr');")
     sb.appendLine("for(var j=0;j<lRows.length;j++){var lr=lRows[j];var okL=(hull==='ALL'||lr.getAttribute('data-hull')===hull)&&(actor==='ALL'||lr.getAttribute('data-actor')===actor)&&(sess==='ALL'||lr.getAttribute('data-session')===sess)&&(q===''||lr.textContent.toUpperCase().indexOf(q)>=0);lr.style.display=okL?'':'none';if(okL)lc++;}")
-    sb.appendLine("document.getElementById('fCount').textContent='SHOWING '+hc+' HULLS \\u2022 '+lc+' LIVES';")
+    sb.appendLine("var tRows=document.querySelectorAll('#tapTable tbody tr');")
+    sb.appendLine("for(var k=0;k<tRows.length;k++){var tr=tRows[k];var okT=(hv==='ALL'||tr.getAttribute('data-hubview')===hv)&&(q===''||tr.textContent.toUpperCase().indexOf(q)>=0);tr.style.display=okT?'':'none';if(okT)tc++;}")
+    sb.appendLine("document.getElementById('fCount').textContent='SHOWING '+hc+' HULLS \\u2022 '+lc+' LIVES \\u2022 '+tc+' HUB TAPS';")
     sb.appendLine("}")
-    sb.appendLine("function resetFilters(){document.getElementById('fHull').value='ALL';document.getElementById('fActor').value='ALL';document.getElementById('fSession').value='ALL';document.getElementById('fSearch').value='';applyFilters();}")
+    sb.appendLine("function resetFilters(){document.getElementById('fHull').value='ALL';document.getElementById('fActor').value='ALL';document.getElementById('fSession').value='ALL';document.getElementById('fHubView').value='ALL';document.getElementById('fSearch').value='';applyFilters();}")
     sb.appendLine("</script></body></html>")
     return sb.toString()
   }
@@ -3020,7 +3306,61 @@ class LocalPilotPrefs(context: Context) {
     userSettingsPrefs.edit().putString(KEY_PERSISTED_COMMS_JSON, arr.toString()).apply()
   }
 
-  fun recordRiftHubTap(xNorm: Float, yNorm: Float, nodeName: String) {
+  fun getLastReadCommsTimestampMs(): Long =
+    userSettingsPrefs.getLong(KEY_LAST_READ_COMMS_MS, 0L).coerceAtLeast(0L)
+
+  fun setLastReadCommsTimestampMs(timestampMs: Long = System.currentTimeMillis()) {
+    userSettingsPrefs.edit().putLong(KEY_LAST_READ_COMMS_MS, timestampMs.coerceAtLeast(0L)).apply()
+  }
+
+  fun recordHubTapTelemetry(
+    tapXNorm: Float,
+    tapYNorm: Float,
+    activeHubView: String,
+    targetControlTag: String,
+  ) {
+    val cleanRecord =
+      HubTapTelemetryRecord(
+        timestampMs = System.currentTimeMillis(),
+        tapXNorm = tapXNorm.coerceIn(0f, 1f),
+        tapYNorm = tapYNorm.coerceIn(0f, 1f),
+        activeHubView = activeHubView.trim().take(32).ifEmpty { "HUB_MAIN" },
+        targetControlTag = targetControlTag.trim().take(40).ifEmpty { "BACKGROUND" },
+      )
+    val existing = getHubTapTelemetryHistory().toMutableList()
+    existing.add(0, cleanRecord)
+    val capped = existing.take(120)
+    val arr = JSONArray()
+    capped.forEach { arr.put(it.toJson()) }
+    userSettingsPrefs.edit().putString(KEY_HUB_TAP_HISTORY_JSON, arr.toString()).apply()
+  }
+
+  fun getHubTapTelemetryHistory(): List<HubTapTelemetryRecord> {
+    val raw = userSettingsPrefs.getString(KEY_HUB_TAP_HISTORY_JSON, "[]") ?: "[]"
+    return try {
+      val arr = JSONArray(raw)
+      buildList {
+        for (i in 0 until arr.length()) {
+          val obj = arr.optJSONObject(i) ?: continue
+          add(HubTapTelemetryRecord.fromJson(obj))
+        }
+      }
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  fun clearHubTapTelemetryHistory() {
+    userSettingsPrefs.edit().putString(KEY_HUB_TAP_HISTORY_JSON, "[]").apply()
+  }
+
+  fun recordRiftHubTap(xNorm: Float, yNorm: Float, nodeName: String, activeHubView: String = "HUB_MAIN") {
+    recordHubTapTelemetry(
+      tapXNorm = xNorm,
+      tapYNorm = yNorm,
+      activeHubView = activeHubView,
+      targetControlTag = nodeName,
+    )
     val entry =
       String.format(
         Locale.US,
@@ -3175,6 +3515,16 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_SWORN_PRACTICE_TUTORIAL_DONE = "sworn_practice_tutorial_done_v79"
     private const val KEY_SHIP_SURVIVAL_PREFIX = "ship_survival_v103_"
     private const val KEY_RECENT_SHIP_LIVES_JSON = "recent_ship_lives_v103_json"
+    private const val KEY_HUB_TAP_HISTORY_JSON = "rift_hub_tap_history_v115_json"
+    private const val KEY_LAST_READ_COMMS_MS = "last_read_subspace_comms_ms_v115"
+    private const val KEY_SYNDICATE_INVITE_ONLY_PREFIX = "syndicate_invite_only_v115_"
+    private const val KEY_SYNDICATE_OFFICERS_PREFIX = "syndicate_officers_v115_"
+    private const val KEY_MATCHES_PLAYED = "career_matches_played_v115"
+    private const val KEY_MATCHES_LOST = "career_matches_lost_v115"
+    private const val KEY_CAREER_ASSISTS = "career_assists_v115"
+    private const val KEY_CAREER_SHOTS_FIRED = "career_shots_fired_v115"
+    private const val KEY_CAREER_SHOTS_HIT = "career_shots_hit_v115"
+    private const val KEY_RIFT_CAPTURES = "career_rift_captures_v115"
 
     const val FIFTEEN_DAYS_MS = 15L * 24L * 3600L * 1000L
 

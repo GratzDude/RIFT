@@ -1133,6 +1133,9 @@ fun NexusAiConsoleModal(
   var customTeamBracket by remember { mutableIntStateOf(5) }
   var customAllowArmadasInFfa by remember { mutableStateOf(true) }
   var customBotsEnabled by remember { mutableStateOf(true) }
+  var customBotCount by remember { mutableIntStateOf(engine?.currentCustomGame?.botCount ?: 12) }
+  var customBotSkillLevel by remember { mutableIntStateOf(engine?.currentCustomGame?.botSkillLevel ?: 1) }
+  var customScoreCap by remember { mutableIntStateOf(engine?.currentCustomGame?.scoreCap ?: 50) }
   var customBulletSizeMult by remember { mutableFloatStateOf(1.0f) }
   var customSpeedMult by remember { mutableFloatStateOf(1.0f) }
   var customRechargeMult by remember { mutableFloatStateOf(1.0f) }
@@ -1167,6 +1170,9 @@ fun NexusAiConsoleModal(
     engine?.currentCustomGame?.let { activeCfg ->
       customDamageTakenScalePct = snapCustomFivePercentScale(activeCfg.damageTakenScalePct)
       customWeaponFluxCostScalePct = snapCustomFivePercentScale(activeCfg.weaponFluxCostScalePct)
+      customBotCount = activeCfg.botCount.coerceIn(0, 19)
+      customBotSkillLevel = activeCfg.botSkillLevel.coerceIn(0, 3)
+      customScoreCap = activeCfg.scoreCap.coerceIn(5, 500)
     }
   }
 
@@ -1443,6 +1449,9 @@ fun NexusAiConsoleModal(
           crateSpawnMult = customCrateSpawnMult,
           damageTakenScalePct = customDamageTakenScalePct,
           weaponFluxCostScalePct = customWeaponFluxCostScalePct,
+          botCount = if (customBotsEnabled) customBotCount else 0,
+          botSkillLevel = customBotSkillLevel,
+          scoreCap = customScoreCap,
         )
       roomCodeBanner = "ENTERING PRIVATE RIFT [$cleanCode]"
       deployOrStageNewCustomConfig(created)
@@ -1900,6 +1909,9 @@ fun NexusAiConsoleModal(
                     crateSpawnMult = customCrateSpawnMult,
                     damageTakenScalePct = customDamageTakenScalePct,
                     weaponFluxCostScalePct = customWeaponFluxCostScalePct,
+                    botCount = if (customBotsEnabled) customBotCount else 0,
+                    botSkillLevel = customBotSkillLevel,
+                    scoreCap = customScoreCap,
                   )
                 generatedRoomCode = generateSixCharRoomCode(System.currentTimeMillis() + 7919L)
                 deployOrStageNewCustomConfig(cfg)
@@ -2279,7 +2291,19 @@ fun NexusAiConsoleModal(
                         customAllowArmadasInFfa = customAllowArmadasInFfa,
                         onToggleAllowArmadasInFfa = { customAllowArmadasInFfa = it },
                         customBotsEnabled = customBotsEnabled,
-                        onToggleBotsEnabled = { customBotsEnabled = it },
+                        onToggleBotsEnabled = {
+                          customBotsEnabled = it
+                          if (it && customBotCount <= 0) customBotCount = 12
+                        },
+                        customBotCount = customBotCount,
+                        onSelectCustomBotCount = { count ->
+                          customBotCount = count.coerceIn(0, 19)
+                          customBotsEnabled = count > 0
+                        },
+                        customBotSkillLevel = customBotSkillLevel,
+                        onSelectCustomBotSkillLevel = { customBotSkillLevel = it.coerceIn(0, 3) },
+                        customScoreCap = customScoreCap,
+                        onSelectCustomScoreCap = { customScoreCap = it.coerceIn(5, 500) },
                         customBulletSizeMult = customBulletSizeMult,
                         onSelectBulletSizeMult = { customBulletSizeMult = it },
                         customSpeedMult = customSpeedMult,
@@ -2337,6 +2361,9 @@ fun NexusAiConsoleModal(
                               crateSpawnMult = customCrateSpawnMult,
                               damageTakenScalePct = customDamageTakenScalePct,
                               weaponFluxCostScalePct = customWeaponFluxCostScalePct,
+                              botCount = if (customBotsEnabled) customBotCount else 0,
+                              botSkillLevel = customBotSkillLevel,
+                              scoreCap = customScoreCap,
                             )
                           generatedRoomCode = generateSixCharRoomCode(System.currentTimeMillis() + 7919L)
                           deployOrStageNewCustomConfig(cfg)
@@ -3362,7 +3389,7 @@ private fun OrbitalHubSpatialStage(
                       RankedGameMode.FLUX_CORE ->
                         "Capture and hold the golden Flux Core Singularity Orb in the center of the sector to earn continuous Resonance while defending against rival teams."
                       RankedGameMode.RIFT_SKIRMISH ->
-                        "${bracket}v${bracket} Strike Wing team battles matched against the closest-Resonance opponent squad within a strict 15-second matchmaking window."
+                        "${bracket}v${bracket} Squadron team battles matched against the closest-Resonance opponent squad within a strict 15-second matchmaking window."
                       RankedGameMode.RIFT_CONTROL ->
                         "${bracket}v${bracket} dual-ring territory control over Alpha and Omega beacons. No Safe Zone is active—rotations and stacked Barriers decide victory."
                       RankedGameMode.STASIS_BREACH ->
@@ -3370,7 +3397,7 @@ private fun OrbitalHubSpatialStage(
                       RankedGameMode.SYNDICATE_WARS ->
                         "${bracket}v${bracket} chartered Syndicate warfare for official war record standings and sector dominance."
                       else ->
-                        "High-intensity competitive 2.5D space combat inside the Storm Wall. Outlast rival pilots, control Supply Crates, and master Spacetime-Tear Rifts."
+                        "High-intensity competitive 2.5D space combat inside the Storm Wall. Outlast rival pilots, control Supply Crates, and master Playfield Rifts."
                     }
                   onChangeOverwatchPrompt(
                     OverwatchCircularPrompt.InfoStageInspect(
@@ -6447,8 +6474,10 @@ private fun GameModesRightCustomBay(
                   if (game.damageTakenScalePct != 100 || game.weaponFluxCostScalePct != 100)
                     " • DMG ${game.damageTakenScalePct}% • FLUX ${game.weaponFluxCostScalePct}%"
                   else ""
+                val botLabel =
+                  if (game.botsEnabled && game.botCount > 0) " • ${game.botCount}B" else " • 0B"
                 Text(
-                  text = "${game.baseMode.title} • CODE $code$scaleSuffix",
+                  text = "${game.baseMode.title} • CODE $code$botLabel$scaleSuffix",
                   color = Color(0xFF38BDF8),
                   fontSize = 7.2.sp,
                   fontFamily = FontFamily.Monospace,
@@ -11064,7 +11093,7 @@ private fun HelmRightCodexBay(
   var selectedCategory by remember { mutableIntStateOf(0) }
   val categories = remember {
     listOf(
-      "HOW TO" to Color(0xFF00F5D4),
+      "BASICS" to Color(0xFF00F5D4),
       "MODES" to Color(0xFFFACC15),
       "BUFFS" to Color(0xFF34D399),
       "RIFTS" to Color(0xFFA855F7),
@@ -11092,7 +11121,7 @@ private fun HelmRightCodexBay(
       Triple(
         "SYNDICATES, SQUADRONS & SHARD STORE",
         "SOCIAL",
-        "Found or join human-chartered Syndicates, form up to 5-pilot Strike Wings, queue into <=15s Resonance matchmaking, and unlock hull cosmetics & Frame bays in the Shard Store.",
+        "Found or join human-chartered Syndicates, form up to 5-pilot Squadrons, queue into <=15s Resonance matchmaking, and unlock hull cosmetics & Frame bays in the Shard Store.",
       ),
     )
   }
@@ -11102,7 +11131,7 @@ private fun HelmRightCodexBay(
       Triple(
         "1. SECTOR CONVERGENCE",
         "OPEN 60M",
-        "Always-running open sector dogfighting around the central Rift Station Safe Harbor. Harvest Supply Crates, ride Spacetime-Tear Rifts, and build per-ship Resonance.",
+        "Always-running open sector dogfighting around the central Rift Station Safe Harbor. Harvest Supply Crates, ride Playfield Rifts, and build per-ship Resonance.",
       ),
       Triple(
         "2. FLUX CORE",
@@ -11112,7 +11141,7 @@ private fun HelmRightCodexBay(
       Triple(
         "3. RIFT SKIRMISH",
         "TEAM PVP",
-        "Coordinated 2v2 to 5v5 Strike Wing battles matched against the closest-Resonance opponent squad within 15 seconds.",
+        "Coordinated 2v2 to 5v5 Squadron battles matched against the closest-Resonance opponent squad within 15 seconds.",
       ),
       Triple(
         "4. RIFT CONTROL",
@@ -11233,7 +11262,7 @@ private fun HelmRightCodexBay(
                   .clickable {
                     onInspectCodexStage(
                       OverwatchCircularPrompt.InfoStageInspect(
-                        kicker = "CODEX • HOW TO PLAY",
+                        kicker = "CODEX • FLIGHT BASICS",
                         title = heading,
                         badge = badge,
                         summary = body,
@@ -12076,6 +12105,12 @@ private fun ConvergenceGateZeroScrollDeck(
   onToggleAllowArmadasInFfa: (Boolean) -> Unit,
   customBotsEnabled: Boolean,
   onToggleBotsEnabled: (Boolean) -> Unit,
+  customBotCount: Int = 12,
+  onSelectCustomBotCount: (Int) -> Unit = {},
+  customBotSkillLevel: Int = 1,
+  onSelectCustomBotSkillLevel: (Int) -> Unit = {},
+  customScoreCap: Int = 50,
+  onSelectCustomScoreCap: (Int) -> Unit = {},
   customBulletSizeMult: Float,
   onSelectBulletSizeMult: (Float) -> Unit,
   customSpeedMult: Float,
@@ -12556,9 +12591,20 @@ private fun ConvergenceGateZeroScrollDeck(
                     if (game.damageTakenScalePct != 100 || game.weaponFluxCostScalePct != 100)
                       " • DMG TAKEN ${game.damageTakenScalePct}% • FLUX COST ${game.weaponFluxCostScalePct}%"
                     else ""
+                  val botInfo =
+                    if (game.botsEnabled && game.botCount > 0) {
+                      val skillLbl =
+                        when (game.botSkillLevel) {
+                          0 -> "CADET"
+                          2 -> "VET"
+                          3 -> "ACE"
+                          else -> "REG"
+                        }
+                      "${game.botCount} ($skillLbl)"
+                    } else "OFF"
                   Text(
                     text =
-                      "${game.baseMode.title} • HOST: ${game.hostCallsign} • CODE: $code • BOTS: ${if (game.botsEnabled) "ON" else "OFF"}$customScaleTag",
+                      "${game.baseMode.title} • HOST: ${game.hostCallsign} • CODE: $code • BOTS: $botInfo • CAP: ${game.scoreCap}$customScaleTag",
                     color = Color(0xFF94A3B8),
                     fontSize = 7.4.sp,
                     fontFamily = FontFamily.Monospace,
@@ -12689,6 +12735,24 @@ private fun ConvergenceGateZeroScrollDeck(
               listOf(true to "Backfill [BOT]", false to "Humans Only"),
               customBotsEnabled,
               onToggleBotsEnabled,
+            )
+            CustomRuleChipRow(
+              "BOT COUNT:",
+              listOf(0 to "0 Bots", 4 to "4 Bots", 8 to "8 Bots", 12 to "12 Bots", 19 to "19 Bots"),
+              if (customBotsEnabled) customBotCount else 0,
+              onSelectCustomBotCount,
+            )
+            CustomRuleChipRow(
+              "BOT SKILL:",
+              listOf(0 to "Cadet", 1 to "Regular", 2 to "Veteran", 3 to "Ace"),
+              customBotSkillLevel,
+              onSelectCustomBotSkillLevel,
+            )
+            CustomRuleChipRow(
+              "SCORE CAP:",
+              listOf(25 to "25 Pts", 50 to "50 Pts", 100 to "100 Pts", 200 to "200 Pts"),
+              customScoreCap,
+              onSelectCustomScoreCap,
             )
             CustomRuleChipRow(
               "BULLET SIZE:",

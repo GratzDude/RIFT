@@ -321,7 +321,7 @@ class NexusAiViewModel : ViewModel() {
           "- Round Rippling Dynamic-Lit Overwatch Aperture: Masks #060D1A tablet glass outside a circular viewport whose concentric polar voxel/matrix rings ripple inward into a live top-down match."
         )
         append(
-          "- Interactive 1.0x..6.0x Pinch-to-Zoom & Pan: Defaults to 1.0x full-playfield fit (hiding world text/nametags below 1.55x zoom for a clean radar view and fading them in smoothly as you zoom closer), auto-selects your [FAV] Rift or the active game with Highest Combined Pilot Resonance (Game Type • RIFT #XX • Combined RES), and supports < / > cycling, double-tap / [1.0x] reset, [RIFT IN], and [ALL MODES]."
+          "- Interactive 1.0x..6.0x Pinch-to-Zoom & Pan: Defaults to 1.0x full-playfield fit (hiding world text/nametags below 1.55x zoom for a clean radar view and fading them in smoothly as you zoom closer), auto-selects your [FAV] Rift or the active game with Highest Combined Pilot Resonance (Game Type • RIFT #XX • Combined Resonance), and supports < / > cycling, double-tap / [1.0x] reset, [RIFT IN], and [ALL MODES]."
         )
       }
     }
@@ -343,7 +343,7 @@ class NexusAiViewModel : ViewModel() {
         lower.contains("lightning")
     ) {
       return buildString {
-        appendLine("NEXUS SPATIAL ANOMALY & BOUNDARY TELEMETRY //")
+        appendLine("RIFT SPATIAL ANOMALY & BOUNDARY TELEMETRY //")
         appendLine(
           String.format(
             Locale.US,
@@ -409,11 +409,11 @@ class NexusAiViewModel : ViewModel() {
       val peakRes = engine?.peakResonance ?: 0
       val tier = RiftProgressionCatalog.getConduitTierForResonance(liveRes)
       return buildString {
-        appendLine("NEXUS RIFT CONDUIT TELEMETRY // PER-SHIP, LIVE & PEAK RESONANCE")
+        appendLine("RIFT CONDUIT TELEMETRY // PER-SHIP, LIVE & PEAK RESONANCE")
         appendLine(
           "- Active Resonance: Live $liveRes (${tier.title}) | Peak $peakRes | Shards: ${engine?.riftShards ?: 0L} SHARDS"
         )
-        appendLine("- Per-Ship Solar-Gold Resonance (Hulls 1-10): Each hull tracks its own combat Resonance earned from PvP eliminations (+18 RES, +28 on High-Resonance Target shutdown), assists, Flux damage milestones, and objective captures, driving your Best Ship Solar-Gold Harmonic Crown border in Hangar Deck.")
+        appendLine("- Per-Ship Solar-Gold Resonance (Hulls 1-10): Each hull tracks its own combat Resonance earned from PvP eliminations (+18 Resonance, +28 on High-Resonance Target shutdown), assists, Flux damage milestones, and objective captures, driving your Best Ship Solar-Gold Harmonic Crown border in Hangar Deck.")
         appendLine("- Ranked Matchmaking & Rewards: Team matchmaking pairs balanced Resonance wings first and caps queue wait at 15.0s max; Peak Resonance permanently unlocks cosmetics & Frame B-E. Tester Mode provides 999,999 non-depleting Rift Shards while commercial Play Billing is dormant.")
         append("- 3 Daily Directives: Earn 40 + 50 + 60 Shards plus the +100 Shards 3/3 Sweep Chest = 250 Shards/day (with 1 free directive reroll per UTC day).")
       }
@@ -428,7 +428,7 @@ class NexusAiViewModel : ViewModel() {
       val innerW = 2.8f * projScale
       val totalLen = shaftLen + outerW
       return buildString {
-        appendLine("NEXUS PIXEL TELEMETRY // SUPPRESSOR & PRIMARY BOLT GEOMETRY")
+        appendLine("RIFT PIXEL TELEMETRY // SUPPRESSOR & PRIMARY BOLT GEOMETRY")
         appendLine(
           String.format(
             Locale.US,
@@ -505,7 +505,7 @@ class NexusAiViewModel : ViewModel() {
           .take(5)
 
       return buildString {
-        appendLine("NEXUS SWORN PILOT LEADERBOARD TELEMETRY // (AI Bots & [RFT] Drifters Excluded)")
+        appendLine("RIFT SWORN PILOT LEADERBOARD TELEMETRY // (AI Bots & [RFT] Drifters Excluded)")
         if (engine != null) {
           val p = engine.localPlayer
           val isSworn =
@@ -517,7 +517,7 @@ class NexusAiViewModel : ViewModel() {
               "${p.kills}.00"
             }
           appendLine(
-            "- Your Live Status: [${p.syndicateTag}] ${p.callsign} (${if (isSworn) "Sworn Pilot" else "Drifter"}) | Hull: ${p.spec.name} | Ship Resonance: ${engine.getShipResonance(p.spec.id)} RES | Live Resonance: ${engine.liveResonance} RES | Session K/D: ${p.kills}K/${p.deaths}D ($kd) | Shards: ${engine.riftShards} SHARDS"
+            "- Your Live Status: [${p.syndicateTag}] ${p.callsign} (${if (isSworn) "Sworn Pilot" else "Drifter"}) | Hull: ${p.spec.name} | Ship Resonance: ${engine.getShipResonance(p.spec.id)} Resonance | Live Resonance: ${engine.liveResonance} Resonance | Session K/D: ${p.kills}K/${p.deaths}D ($kd) | Shards: ${engine.riftShards} SHARDS"
           )
         }
         if (swornAllTime.isNotEmpty()) {
@@ -525,7 +525,7 @@ class NexusAiViewModel : ViewModel() {
           swornAllTime.forEachIndexed { i, entry ->
             val tag = if (entry.syndicateTag.isNotBlank()) "[${entry.syndicateTag}] " else ""
             appendLine(
-              "  #${i + 1} $tag${entry.callsign} — Peak ${entry.allTimeBounty} RES (${entry.allTimeKills}K / ${entry.allTimeDeaths}D)"
+              "  #${i + 1} $tag${entry.callsign} — Peak ${entry.allTimeBounty} Resonance (${entry.allTimeKills}K / ${entry.allTimeDeaths}D)"
             )
           }
         } else if (swornPvp.isNotEmpty()) {
@@ -533,7 +533,7 @@ class NexusAiViewModel : ViewModel() {
           swornPvp.forEachIndexed { i, entry ->
             val tag = if (entry.syndicateTag.isNotBlank()) "[${entry.syndicateTag}] " else ""
             appendLine(
-              "  #${i + 1} $tag${entry.callsign} — PvP Peak ${entry.pvpBounty} RES (${entry.pvpKills}K / ${entry.pvpDeaths}D)"
+              "  #${i + 1} $tag${entry.callsign} — PvP Peak ${entry.pvpBounty} Resonance (${entry.pvpKills}K / ${entry.pvpDeaths}D)"
             )
           }
         } else if (liveTelemetrySnapshot.contains("Top Cloud Sworn Pilot")) {
@@ -562,7 +562,7 @@ class NexusAiViewModel : ViewModel() {
     ) {
       val budget = engine?.getCustomizationPointsTotal() ?: 100
       return buildString {
-        appendLine("NEXUS 100-POINT RIFT FRAME THEORYCRAFT // (Active Budget: $budget Pts | Open at 0 Resonance)")
+        appendLine("RIFT 100-POINT RIFT FRAME THEORYCRAFT // (Active Budget: $budget Pts | Open at 0 Resonance)")
         appendLine("1) 100-PT HYPER-RAIL PHASE SNIPER (Frame A):")
         appendLine("   - Hull Points (65P): Speed 25P | Thrust 8P | Turn 18P | Max Flux 0P (2,200 Flux) | Recharge 14P (352 Flux/s)")
         appendLine("   - Weapons (35P): 1-Bounce Rail-Laser (15P | 26 Flux | 225 Flux DMG @ 1,280 px/s) + Phase Dash (20P | 320 Flux | 0.65s CD | +35% Next-Shot Rail Overcharge)")
@@ -570,7 +570,7 @@ class NexusAiViewModel : ViewModel() {
         appendLine("   - Hull Points (66P): Speed 12P | Thrust 12P | Turn 11P | Max Flux 18P (3,640 Flux) | Recharge 13P (344 Flux/s)")
         appendLine("   - Weapons (34P): Ricochet Twin-Pulse (12P | 20 Flux | 2x92 Flux DMG) + Two-Way Stasis (22P | 320 Flux | 6.0s 275px two-way Stasis, 8.5s CD)")
         append(
-          "- Tip: All 10 hulls are open from 0 Resonance inside SHIPS & BUILDS (Hangar Deck). Tap any hull to ignite the Swirling NEXUS lock-in (tap again to deselect) and save up to 5 builds across Frame A through Frame E."
+          "- Tip: All 10 hulls are open from 0 Resonance inside Hangar Deck. Tap Charge on any hull to lock it across modes and save up to 5 builds across Frame A through Frame E."
         )
       }
     }
@@ -589,7 +589,7 @@ class NexusAiViewModel : ViewModel() {
           val parityPts =
             s.speedPts + s.thrustPts + s.turnPts + s.maxFluxPts + s.rechargePts + s.primaryPts + s.secondaryPts
           appendLine(
-            "NEXUS HULL DOSSIER // ${s.name.uppercase(Locale.US)} (${s.role} | ${parityPts}P Parity)"
+            "RIFT HULL DOSSIER // ${s.name.uppercase(Locale.US)} (${s.role} | ${parityPts}P Parity)"
           )
           appendLine(
             String.format(
@@ -712,7 +712,7 @@ class NexusAiViewModel : ViewModel() {
         lower.contains("overcharge")
     ) {
       return buildString {
-        appendLine("NEXUS 15-BUFF SUPPLY CRATE & SPECIAL ORDNANCE TELEMETRY //")
+        appendLine("RIFT 15-BUFF SUPPLY CRATE & SPECIAL ORDNANCE TELEMETRY //")
         appendLine("- Stackable Hull Stat Upgrades + Primary Ammo:")
         appendLine("  - SPD (+8% Top Speed/stack) | THR (+8% Thrust/stack) | RCH (+8% Flux Recharge/stack) | TURN (+12% Turn Rate/stack) | MAX FLUX (+10% Max Flux & instant +10% Flux heal/stack) | OVERCLOCK | FLUX SIPHON | PHASE AEGIS")
         appendLine("  - BNC (+30 Bouncing Primary Shots) & MULTI (+25 Multi-Shot Ammo).")
@@ -737,7 +737,7 @@ class NexusAiViewModel : ViewModel() {
         appendLine(
           String.format(
             Locale.US,
-            "- Active Hull: %s (%s) | Flux: %.0f / %.0f (%.0f Flux/s) | Ship Resonance: %d RES | Overall Resonance: %d RES (%s) | Shards: %d SHARDS",
+            "- Active Hull: %s (%s) | Flux: %.0f / %.0f (%.0f Flux/s) | Ship Resonance: %d Resonance | Overall Resonance: %d Resonance (%s) | Shards: %d SHARDS",
             shipSpec.name,
             shipSpec.role,
             p.flux,

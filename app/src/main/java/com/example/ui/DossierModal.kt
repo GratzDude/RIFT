@@ -64,6 +64,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.LeaderboardEntry
 import com.example.data.LocalPilotPrefs
 import com.example.data.PeakBountyRunSnapshot
+import com.example.data.PilotCareerStatsSummary
 import com.example.data.PilotSurvivalTelemetrySummary
 import com.example.data.RiftBillingManager
 import com.example.data.SyndicateInfo
@@ -183,6 +184,10 @@ fun DossierModal(
   val survivalSummary =
     remember(permanentUid, allTimeKills, allTimeDeaths, convergencesWon, effectiveLiveRes, dossierSection) {
       localPrefs.getPilotSurvivalTelemetrySummary(uidOrNull)
+    }
+  val careerSummary =
+    remember(permanentUid, allTimeKills, allTimeDeaths, convergencesWon, effectiveLiveRes, dossierSection) {
+      localPrefs.getPilotCareerStatsSummary(uidOrNull)
     }
 
   val unifiedLeaderboard =
@@ -647,7 +652,14 @@ fun DossierModal(
           horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           Text(
-            text = "START RESONANCE: $effectiveStartBounty RES",
+            text = "PILOT LVL ${careerSummary.pilotLevel} (${careerSummary.xpIntoLevel}/${careerSummary.xpSpanForLevel} XP)",
+            color = DossierCyan,
+            fontSize = if (isCompactPhone) 9.6.sp else 10.4.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+          )
+          Text(
+            text = "START RESONANCE: $effectiveStartBounty",
             color = DossierGold,
             fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -656,7 +668,7 @@ fun DossierModal(
           if (!isCompactPhone) {
             Text(
               text =
-                if (effectiveLiveRes >= 1500) "APEX TIER (500 MAX START RES)"
+                if (effectiveLiveRes >= 1500) "APEX TIER (500 MAX START)"
                 else "NEXT TIER AT $nextTierThreshold",
               color = DossierTeal,
               fontSize = 9.8.sp,
@@ -731,6 +743,16 @@ fun DossierModal(
         ) {
           dossierSection = 3
         }
+        DossierSectionButton(
+          label =
+            if (isCompactPhone) "CAREER LVL ${careerSummary.pilotLevel}"
+            else "CAREER & 5-XP (LVL ${careerSummary.pilotLevel})",
+          selected = dossierSection == 4,
+          accentColor = Color(0xFFC084FC),
+          testTag = "dossier_tab_career_xp",
+        ) {
+          dossierSection = 4
+        }
       }
       if (dossierSection == 0 || dossierSection == 1) {
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -762,15 +784,15 @@ fun DossierModal(
           DossierStatBox(
             Modifier.weight(1f).clickable { dossierSection = 1 },
             if (isCompactPhone) "PEAK RESONANCE >" else "PEAK RESONANCE (TAP FOR RUN)",
-            "$allTimeBountyPeak RES",
+            "$allTimeBountyPeak",
             DossierGold,
             isCompactPhone,
           )
           DossierStatBox(
-            Modifier.weight(1f),
-            if (isCompactPhone) "CONVERGENCE WINS" else "CONVERGENCES WON",
-            "$convergencesWon WINS",
-            Color(0xFF00E676),
+            Modifier.weight(1f).clickable { dossierSection = 4 },
+            if (isCompactPhone) "CAREER LVL >" else "PILOT LEVEL & 5-XP >",
+            "LVL ${careerSummary.pilotLevel} (${careerSummary.winPercent}% W)",
+            Color(0xFFC084FC),
             isCompactPhone,
           )
           DossierStatBox(
@@ -859,7 +881,7 @@ fun DossierModal(
               val deaths = if (activeTab == 0) entry.pvpDeaths else entry.allTimeDeaths
               val bounty = if (activeTab == 0) entry.pvpBounty else entry.allTimeBounty
               val tierBadge =
-                if (entry.armadaTierSize <= 1) "SOLO" else "${entry.armadaTierSize}P STRIKE WING"
+                if (entry.armadaTierSize <= 1) "SOLO" else "${entry.armadaTierSize}P SQUADRON"
               val rowRes =
                 if (isSelf) effectiveLiveRes.toLong()
                 else (entry.pvpKills * 18L + entry.convergencesWon * 30L + (bounty - 100L).coerceAtLeast(0L) / 4L)
@@ -938,7 +960,7 @@ fun DossierModal(
                     fontFamily = FontFamily.Monospace,
                   )
                   Text(
-                    text = "PEAK RES: $bounty",
+                    text = "PEAK: $bounty",
                     color = DossierGold,
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -977,6 +999,13 @@ fun DossierModal(
           statusBanner = telemetryExportStatusMsg,
           onUpdateStatusBanner = { telemetryExportStatusMsg = it },
           onOpenHtmlSpreadsheetModal = { showHtmlSpreadsheetOverlay = true },
+        )
+
+      4 ->
+        PilotCareerAndXpSection(
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          career = careerSummary,
+          isCompactPhone = isCompactPhone,
         )
     }
   }
@@ -1268,8 +1297,8 @@ private fun PeakBountyAndExecutionerSection(
                   )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                  MetricRightColumn("KILLER RESONANCE AT KILL", "${exec.killerBountyAtKill} RES", DossierGold)
-                  MetricRightColumn("RESONANCE EARNED FROM YOU", "+${exec.bountyEarnedFromYou} RES", Color(0xFFFF3B4E))
+                  MetricRightColumn("KILLER RESONANCE AT KILL", "${exec.killerBountyAtKill}", DossierGold)
+                  MetricRightColumn("RESONANCE EARNED FROM YOU", "+${exec.bountyEarnedFromYou}", Color(0xFFFF3B4E))
                 }
               }
             }
@@ -1470,13 +1499,19 @@ private fun SyndicateServiceRecordSection(
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.Monospace,
                 )
-                Text(
-                  text = "${syn.combinedBounty} RES (${syn.memberCount}P)",
-                  color = DossierCyan,
-                  fontSize = 9.8.sp,
-                  fontWeight = FontWeight.Bold,
-                  fontFamily = FontFamily.Monospace,
-                )
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                  ResonanceCrestIcon(sizeDp = 12.dp)
+                  Text(
+                    text = "${syn.combinedBounty} (${syn.memberCount}P)",
+                    color = DossierCyan,
+                    fontSize = 9.8.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
               }
             }
           }
@@ -1949,7 +1984,7 @@ private fun ShipSurvivalTelemetrySection(
                 fontFamily = FontFamily.Monospace,
               )
               Text(
-                text = "RESONANCE: $shipRes RES • PILOT LIVES: ${entry.completedLives}",
+                text = "RESONANCE: $shipRes • PILOT LIVES: ${entry.completedLives}",
                 color = Color(0xFF94A3B8),
                 fontSize = 9.2.sp,
                 fontFamily = FontFamily.Monospace,
@@ -2215,6 +2250,214 @@ fun SurvivalTelemetrySpreadsheetModal(
           )
         }
       }
+    }
+  }
+}
+
+@Composable
+private fun PilotCareerAndXpSection(
+  modifier: Modifier = Modifier,
+  career: PilotCareerStatsSummary,
+  isCompactPhone: Boolean = false,
+) {
+  Column(
+    modifier =
+      modifier
+        .verticalScroll(rememberScrollState())
+        .background(DossierCardBg, RoundedCornerShape(10.dp))
+        .border(1.dp, Color(0xFFC084FC).copy(alpha = 0.58f), RoundedCornerShape(10.dp))
+        .padding(if (isCompactPhone) 8.dp else 10.dp)
+        .testTag("dossier_career_xp_section"),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Column(
+      modifier =
+        Modifier.fillMaxWidth()
+          .background(DossierTabletBg, RoundedCornerShape(10.dp))
+          .border(1.2.dp, Color(0xFFC084FC), RoundedCornerShape(10.dp))
+          .padding(horizontal = 12.dp, vertical = 9.dp),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Box(
+            modifier =
+              Modifier.background(Color(0xFF2E1250), RoundedCornerShape(6.dp))
+                .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(6.dp))
+                .padding(horizontal = 9.dp, vertical = 3.dp)
+          ) {
+            Text(
+              text = "PILOT LEVEL ${career.pilotLevel}",
+              color = Color(0xFFF3E8FF),
+              fontSize = if (isCompactPhone) 11.sp else 12.5.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+          Text(
+            text = "TOTAL CAREER XP: ${career.totalXp}",
+            color = DossierTeal,
+            fontSize = if (isCompactPhone) 10.5.sp else 11.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+        Text(
+          text = "${career.xpIntoLevel} / ${career.xpSpanForLevel} XP TO LEVEL ${career.pilotLevel + 1}",
+          color = DossierGold,
+          fontSize = if (isCompactPhone) 9.8.sp else 10.8.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = FontFamily.Monospace,
+        )
+      }
+      Box(
+        modifier =
+          Modifier.fillMaxWidth()
+            .height(7.dp)
+            .clip(RoundedCornerShape(3.5.dp))
+            .background(Color(0xFF132642))
+      ) {
+        Box(
+          modifier =
+            Modifier.fillMaxWidth(career.levelProgressFraction.coerceIn(0f, 1f))
+              .fillMaxHeight()
+              .background(
+                Brush.horizontalGradient(listOf(DossierTeal, DossierCyan, Color(0xFFC084FC))),
+                RoundedCornerShape(3.5.dp),
+              )
+        )
+      }
+    }
+
+    Text(
+      text = "5-CHANNEL CAREER XP BREAKDOWN",
+      color = DossierCyan,
+      fontSize = if (isCompactPhone) 10.2.sp else 11.2.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+    )
+    val xpSources =
+      listOf(
+        Triple("COMBAT XP", career.combatXp, DossierTeal to "Eliminations & Leader shutdowns"),
+        Triple("SURVIVAL XP", career.survivalXp, DossierCyan to "Active arena survival endurance"),
+        Triple("OBJECTIVE XP", career.objectiveXp, DossierGold to "Rift captures, Flux Core & wins"),
+        Triple("SUPPORT & CRATES", career.supportCratesXp, Color(0xFF34D399) to "Assists, Brig rescues & Crates"),
+        Triple("DAILY DIRECTIVES", career.dailyDirectivesXp, Color(0xFFC084FC) to "Completed Conduit Directives"),
+      )
+    Row(
+      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      val safeTotalXp = career.totalXp.coerceAtLeast(1L)
+      xpSources.forEach { (label, xpVal, accentAndDesc) ->
+        val (accent, desc) = accentAndDesc
+        val sharePct = ((xpVal * 100L) / safeTotalXp).toInt().coerceIn(0, 100)
+        Column(
+          modifier =
+            Modifier.widthIn(min = 148.dp, max = 196.dp)
+              .background(DossierTabletBg, RoundedCornerShape(8.dp))
+              .border(1.dp, accent.copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+              .padding(horizontal = 9.dp, vertical = 7.dp),
+          verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text = label,
+              color = accent,
+              fontSize = 9.4.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
+            Text(
+              text = "$sharePct%",
+              color = Color(0xFF94A3B8),
+              fontSize = 9.0.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+          Text(
+            text = "$xpVal XP",
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+          )
+          Text(
+            text = desc,
+            color = Color(0xFFCBD5E1),
+            fontSize = 9.2.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+      }
+    }
+
+    Text(
+      text = "LIFETIME SORTIE & COMBAT TELEMETRY",
+      color = DossierGold,
+      fontSize = if (isCompactPhone) 10.2.sp else 11.2.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+    )
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+      DossierStatBox(
+        Modifier.weight(1f),
+        "MATCHES PLAYED",
+        "${career.matchesPlayed}",
+        DossierCyan,
+        isCompactPhone,
+      )
+      DossierStatBox(
+        Modifier.weight(1f),
+        "WINS / LOSSES (WIN%)",
+        "${career.wins}W - ${career.losses}L (${career.winPercent}%)",
+        Color(0xFF00E676),
+        isCompactPhone,
+      )
+      DossierStatBox(
+        Modifier.weight(1f),
+        "KILLS / DEATHS / ASSISTS",
+        "${career.eliminations} / ${career.deaths} / ${career.assists}",
+        DossierTeal,
+        isCompactPhone,
+      )
+    }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+      DossierStatBox(
+        Modifier.weight(1f),
+        "SHOTS HIT / FIRED (ACC%)",
+        "${career.shotsHit} / ${career.shotsFired} (${career.accuracyPercent}%)",
+        Color(0xFFC084FC),
+        isCompactPhone,
+      )
+      DossierStatBox(
+        Modifier.weight(1f),
+        "SUPPLY CRATES LOOTED",
+        "${career.cratePickups}",
+        Color(0xFF34D399),
+        isCompactPhone,
+      )
+      DossierStatBox(
+        Modifier.weight(1f),
+        "RIFT & BRIG CAPTURES",
+        "${career.riftCaptures}",
+        DossierGold,
+        isCompactPhone,
+      )
     }
   }
 }

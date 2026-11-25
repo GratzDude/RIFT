@@ -360,19 +360,18 @@ fun SettingsModal(
       "$riftShardsBalance"
     }
 
+  val calRev = RiftCalibrationState.calibrationRevision
   val activeGraphicsTier =
     remember(
+      calRev,
       visualRev,
-      RiftVisualForgeState.pointLightEnabled,
-      RiftVisualForgeState.dynamicLightIntensity,
+      RiftCalibrationState.graphicsQualityTier,
     ) {
-      when {
-        !RiftVisualForgeState.pointLightEnabled ||
-          RiftVisualForgeState.dynamicLightIntensity <= 0.15f -> 0
-        RiftVisualForgeState.dynamicLightIntensity >= 1.15f -> 2
-        else -> 1
-      }
+      RiftCalibrationState.graphicsQualityTier.coerceIn(0, 2)
     }
+  val preferMaxHz = remember(calRev, RiftCalibrationState.preferMaxRefreshRate) {
+    RiftCalibrationState.preferMaxRefreshRate
+  }
 
   var showSwitchAccountConfirmModal by remember { mutableStateOf(false) }
   BackHandler(enabled = showSwitchAccountConfirmModal) {
@@ -1157,25 +1156,61 @@ fun SettingsModal(
                   Modifier.fillMaxWidth()
                     .background(TabletShellBg, RoundedCornerShape(8.dp))
                     .border(1.dp, TabletCyanBorder.copy(alpha = 0.50f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
               ) {
-                Text(
-                  text = "GRAPHICS DETAIL // DYNAMIC POINT LIGHTING",
-                  color = TabletCyanBorder,
-                  fontSize = if (isCompactPhone) 10.sp else 11.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = Mono,
-                )
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Text(
+                    text = "FRAME RATE & QUALITY TIER",
+                    color = TabletCyanBorder,
+                    fontSize = if (isCompactPhone) 10.sp else 11.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = Mono,
+                  )
+                  Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    listOf(false to "60HZ LOCK", true to "MAX HZ").forEach { (isMax, label) ->
+                      val sel = preferMaxHz == isMax
+                      Box(
+                        modifier =
+                          Modifier.clip(RoundedCornerShape(6.dp))
+                            .background(if (sel) TabletTealBorder else TabletCardBg)
+                            .border(
+                              1.dp,
+                              if (sel) TabletTealBorder else TabletCyanBorder.copy(alpha = 0.40f),
+                              RoundedCornerShape(6.dp),
+                            )
+                            .clickable {
+                              RiftCalibrationState.preferMaxRefreshRate = isMax
+                              RiftCalibrationState.calibrationRevision++
+                              RiftCalibrationState.savePersistedLayout(context)
+                            }
+                            .padding(horizontal = 8.dp, vertical = 3.5.dp)
+                            .testTag(if (isMax) "settings_fps_max_hz" else "settings_fps_60hz"),
+                      ) {
+                        Text(
+                          text = label,
+                          color = if (sel) Color(0xFF040914) else Color.White,
+                          fontSize = 9.5.sp,
+                          fontWeight = FontWeight.Black,
+                          fontFamily = Mono,
+                        )
+                      }
+                    }
+                  }
+                }
                 Row(
                   modifier = Modifier.fillMaxWidth(),
                   horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                   val presets =
                     listOf(
-                      Triple(0, "LOW", "120HZ MAX FPS"),
-                      Triple(1, "MEDIUM", "BALANCED"),
-                      Triple(2, "HIGH", "FULL VOLUMETRIC"),
+                      Triple(0, "PERFORMANCE", "LOW LIGHT"),
+                      Triple(1, "BALANCED", "STANDARD"),
+                      Triple(2, "ULTRA", "FULL VOLUMETRIC"),
                     )
                   presets.forEach { (tierIdx, tierLabel, subText) ->
                     val selected = activeGraphicsTier == tierIdx
@@ -1198,6 +1233,7 @@ fun SettingsModal(
                             RoundedCornerShape(7.dp),
                           )
                           .clickable {
+                            RiftCalibrationState.graphicsQualityTier = tierIdx
                             when (tierIdx) {
                               0 -> {
                                 RiftVisualForgeState.pointLightEnabled = false
@@ -1214,24 +1250,26 @@ fun SettingsModal(
                                 RiftVisualForgeState.projectileLightRadius = 1.25f
                               }
                             }
+                            RiftCalibrationState.calibrationRevision++
                             RiftVisualForgeState.visualRevision++
                             RiftCalibrationState.savePersistedLayout(context)
                           }
-                          .padding(vertical = 6.dp, horizontal = 4.dp)
+                          .padding(vertical = 5.dp, horizontal = 4.dp)
                           .testTag("settings_gfx_${tierLabel.lowercase(Locale.US)}"),
                       horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                       Text(
                         text = tierLabel,
                         color = if (selected) Color.White else Color(0xFFE2E8F0),
-                        fontSize = 10.8.sp,
+                        fontSize = 10.2.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = Mono,
+                        maxLines = 1,
                       )
                       Text(
                         text = subText,
                         color = if (selected) accent else Color(0xFF94A3B8),
-                        fontSize = 9.5.sp,
+                        fontSize = 9.0.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = Mono,
                         maxLines = 1,
@@ -1368,9 +1406,26 @@ fun SettingsModal(
           }
         }
 
-        // SUB-DECK 2: TWIN-STICK & HUD (Full-Width Side-by-Side Controller Schematic + 6 Action Binds)
+        // SUB-DECK 2: TWIN-STICK & HUD (Touch HUD Calibration Strip + Controller Schematic & 6 Action Binds)
         2 -> {
-          ControllerDiagramAndMapperCard(context = context, modifier = Modifier.fillMaxSize())
+          Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(if (isCompactPhone) 5.dp else 7.dp),
+          ) {
+            TouchHudCalibrationBar(
+              context = context,
+              isCompactPhone = isCompactPhone,
+              onUnlockAndDragHud = {
+                RiftCalibrationState.isUiUnlockedForDragging = true
+                RiftCalibrationState.calibrationRevision++
+                onCloseModal()
+              },
+            )
+            ControllerDiagramAndMapperCard(
+              context = context,
+              modifier = Modifier.weight(1f).fillMaxWidth(),
+            )
+          }
         }
 
         // SUB-DECK 3: CODEX (Embedded Tactical Ship, Buff & Rift Field Manual inside HELM SYSTEMS)
@@ -2250,5 +2305,173 @@ private fun TwinStickControllerSchematicCanvas(
     drawCalloutLabel(bPos, 0.71f, 0.75f, 0.57f, "B: $bAction", "#EF4444", true)
     drawCalloutLabel(aPos, 0.71f, 0.75f, 0.68f, "A: $aAction", "#38BDF8", true)
     drawCalloutLabel(rStickCenter, 0.70f, 0.75f, 0.82f, "R-STICK: 360 AIM", "#C084FC", true)
+  }
+}
+
+@Composable
+private fun TouchHudCalibrationBar(
+  context: Context,
+  isCompactPhone: Boolean,
+  onUnlockAndDragHud: () -> Unit,
+) {
+  val rev = RiftCalibrationState.calibrationRevision
+  val floating = remember(rev, RiftCalibrationState.touchFloatingJoystick) {
+    RiftCalibrationState.touchFloatingJoystick
+  }
+  val swapped = remember(rev, RiftCalibrationState.swapLeftRightControls) {
+    RiftCalibrationState.swapLeftRightControls
+  }
+  val deadzone = remember(rev, RiftCalibrationState.touchJoystickDeadzone) {
+    RiftCalibrationState.touchJoystickDeadzone
+  }
+  val sensitivity = remember(rev, RiftCalibrationState.touchJoystickSensitivity) {
+    RiftCalibrationState.touchJoystickSensitivity
+  }
+
+  Column(
+    modifier =
+      Modifier.fillMaxWidth()
+        .background(TabletCardBg, RoundedCornerShape(10.dp))
+        .border(1.dp, Color(0xFFC084FC).copy(alpha = 0.60f), RoundedCornerShape(10.dp))
+        .padding(horizontal = if (isCompactPhone) 8.dp else 10.dp, vertical = if (isCompactPhone) 5.dp else 6.dp)
+        .testTag("settings_touch_hud_calibration_bar"),
+    verticalArrangement = Arrangement.spacedBy(4.dp),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(
+        text = "TOUCH TWIN-STICK:",
+        color = TabletTealBorder,
+        fontSize = 9.8.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = Mono,
+      )
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(6.dp))
+            .background(if (floating) TabletTealBorder else TabletShellBg)
+            .border(1.dp, TabletTealBorder, RoundedCornerShape(6.dp))
+            .clickable {
+              RiftCalibrationState.touchFloatingJoystick = !floating
+              RiftCalibrationState.calibrationRevision++
+              RiftCalibrationState.savePersistedLayout(context)
+            }
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .testTag("settings_btn_toggle_floating_stick"),
+      ) {
+        Text(
+          text = if (floating) "STICK: FLOATING" else "STICK: FIXED ANCHOR",
+          color = if (floating) Color(0xFF040914) else Color.White,
+          fontSize = 9.4.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = Mono,
+        )
+      }
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(6.dp))
+            .background(if (swapped) Color(0xFFC084FC) else TabletShellBg)
+            .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(6.dp))
+            .clickable {
+              RiftCalibrationState.swapLeftRightControls = !swapped
+              RiftCalibrationState.calibrationRevision++
+              RiftCalibrationState.savePersistedLayout(context)
+            }
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .testTag("settings_btn_swap_left_right"),
+      ) {
+        Text(
+          text = if (swapped) "HANDS: SWAPPED (R-MOVE / L-FIRE)" else "HANDS: STANDARD (L-MOVE / R-FIRE)",
+          color = if (swapped) Color(0xFF040914) else Color.White,
+          fontSize = 9.4.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = Mono,
+        )
+      }
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFF1F1606))
+            .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(6.dp))
+            .clickable { onUnlockAndDragHud() }
+            .padding(horizontal = 9.dp, vertical = 4.dp)
+            .testTag("settings_btn_unlock_drag_hud"),
+      ) {
+        Text(
+          text = "[UNLOCK & DRAG HUD]",
+          color = Color(0xFFFEF08A),
+          fontSize = 9.4.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = Mono,
+        )
+      }
+    }
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Row(
+        modifier = Modifier.weight(1f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        Text(
+          text = "DEADZONE ${(deadzone * 100f).roundToInt()}%",
+          color = TabletCyanBorder,
+          fontSize = 9.2.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = Mono,
+        )
+        Slider(
+          value = deadzone.coerceIn(0.02f, 0.30f),
+          onValueChange = {
+            RiftCalibrationState.touchJoystickDeadzone = it.coerceIn(0.02f, 0.30f)
+            RiftCalibrationState.calibrationRevision++
+            RiftCalibrationState.savePersistedLayout(context)
+          },
+          valueRange = 0.02f..0.30f,
+          colors =
+            SliderDefaults.colors(
+              thumbColor = TabletCyanBorder,
+              activeTrackColor = TabletCyanBorder,
+              inactiveTrackColor = Color(0xFF132642),
+            ),
+          modifier = Modifier.weight(1f).height(18.dp).testTag("settings_touch_deadzone_slider"),
+        )
+      }
+      Row(
+        modifier = Modifier.weight(1f),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        Text(
+          text = "SENS ${String.format(Locale.US, "%.2fx", sensitivity)}",
+          color = Color(0xFFC084FC),
+          fontSize = 9.2.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = Mono,
+        )
+        Slider(
+          value = sensitivity.coerceIn(0.60f, 1.80f),
+          onValueChange = {
+            RiftCalibrationState.touchJoystickSensitivity = it.coerceIn(0.60f, 1.80f)
+            RiftCalibrationState.calibrationRevision++
+            RiftCalibrationState.savePersistedLayout(context)
+          },
+          valueRange = 0.60f..1.80f,
+          colors =
+            SliderDefaults.colors(
+              thumbColor = Color(0xFFC084FC),
+              activeTrackColor = Color(0xFFC084FC),
+              inactiveTrackColor = Color(0xFF132642),
+            ),
+          modifier = Modifier.weight(1f).height(18.dp).testTag("settings_touch_sensitivity_slider"),
+        )
+      }
+    }
   }
 }

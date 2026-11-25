@@ -1553,6 +1553,19 @@ fun RiftArenaScreen(
         directivesRefreshKey++
       }
     }
+    engine.onExtraCareerStatsDelta = { matches, losses, assists, fired, hit, captures ->
+      if (!engine.isEphemeralPracticeRift) {
+        localPrefs.recordExtraCareerCounters(
+          addMatchesPlayed = matches,
+          addMatchesLost = losses,
+          addAssists = assists,
+          addShotsFired = fired,
+          addShotsHit = hit,
+          addRiftCaptures = captures,
+          uid = currentUserId,
+        )
+      }
+    }
     engine.onStatsUpdated = {
       if (engine.isEphemeralPracticeRift) {
         frameTick++
@@ -1742,6 +1755,8 @@ fun RiftArenaScreen(
         crestJson = crestJson,
         channels = localPrefs.getSyndicateCustomChannels(cleanSyn),
         invitedGuests = localPrefs.getSyndicateInvitedGuests(cleanSyn),
+        inviteOnly = localPrefs.isSyndicateInviteOnly(cleanSyn),
+        officerCallsigns = localPrefs.getSyndicateOfficers(cleanSyn),
       )
     }
   }
@@ -3709,6 +3724,9 @@ fun RiftArenaScreen(
                                   engine.riftShards + claimed.first
                                 )
                               localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                              engine.xpFromAccuracy =
+                                localPrefs.getXpFromAccuracy(currentUserId).toFloat()
+                              engine.pilotLevel = localPrefs.getPilotLevel(currentUserId)
                               engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
                               engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
                               if (!engine.hasJoinedMatch) {
@@ -3738,6 +3756,9 @@ fun RiftArenaScreen(
                                   engine.riftShards + sweep.first
                                 )
                               localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                              engine.xpFromAccuracy =
+                                localPrefs.getXpFromAccuracy(currentUserId).toFloat()
+                              engine.pilotLevel = localPrefs.getPilotLevel(currentUserId)
                               engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
                               engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
                               if (!engine.hasJoinedMatch) {
@@ -4117,7 +4138,14 @@ fun RiftArenaScreen(
                               localPrefs.getAllSyndicates()
                             }
                           val rosterMembers =
-                            remember(syndicateTag, callsign, selectedShipId, frameTick) {
+                            remember(
+                              syndicateTag,
+                              callsign,
+                              selectedShipId,
+                              frameTick,
+                              syndicateChannelsRefreshKey,
+                              friendsRefreshKey,
+                            ) {
                               localPrefs.getMySyndicateRoster(
                                 currentUid = currentUserId,
                                 callsign = callsign,
@@ -4125,6 +4153,62 @@ fun RiftArenaScreen(
                                 bounty = engine.localPlayer.bounty.toLong(),
                                 kills = engine.allTimeKills,
                               )
+                            }
+                          val dismissedSyndicateInviteIds = remember { mutableStateListOf<String>() }
+                          val pendingSyndicateInvites =
+                            remember(sectorCommsState, callsign, syndicateTag, dismissedSyndicateInviteIds.size) {
+                              val remoteComms =
+                                (sectorCommsState as? UiState.Success)?.data ?: emptyList()
+                              val byTag = linkedMapOf<String, com.example.ui.PendingSyndicateInvite>()
+                              for (msg in remoteComms) {
+                                if (!msg.armadaObjective.startsWith("SYNINV|", ignoreCase = true)) continue
+                                val parts = msg.armadaObjective.split("|")
+                                val invTag = parts.getOrNull(1)?.trim()?.uppercase(Locale.US).orEmpty()
+                                val invName = parts.getOrNull(2)?.trim().orEmpty().ifBlank { "Syndicate $invTag" }
+                                val targetCs = parts.getOrNull(3)?.trim()?.uppercase(Locale.US).orEmpty()
+                                val invId = msg.id.ifBlank { "${invTag}_${msg.senderCallsign}" }
+                                if (
+                                  invTag.length in 1..4 &&
+                                    !invTag.equals(syndicateTag, ignoreCase = true) &&
+                                    targetCs.equals(callsign.trim(), ignoreCase = true) &&
+                                    invId !in dismissedSyndicateInviteIds
+                                ) {
+                                  byTag[invTag] =
+                                    com.example.ui.PendingSyndicateInvite(
+                                      id = invId,
+                                      syndicateTag = invTag,
+                                      syndicateName = invName,
+                                      inviterCallsign = msg.senderCallsign,
+                                    )
+                                }
+                              }
+                              byTag.values.toList()
+                            }
+                          val activeSynOfficers =
+                            remember(syndicateTag, syndicateChannelsRefreshKey) {
+                              localPrefs.getSyndicateOfficers(syndicateTag)
+                            }
+                          val isInviteOnlySyn =
+                            remember(syndicateTag, syndicateChannelsRefreshKey) {
+                              localPrefs.isSyndicateInviteOnly(syndicateTag)
+                            }
+                          val isLocalSynFounder =
+                            remember(rosterMembers, directoryList, syndicateTag, currentUserId) {
+                              rosterMembers.any {
+                                it.isLocalPlayer &&
+                                  (it.role.contains("Leader", ignoreCase = true) ||
+                                    it.role.contains("Founder", ignoreCase = true))
+                              } ||
+                                directoryList.any {
+                                  it.tag.equals(syndicateTag, ignoreCase = true) &&
+                                    it.ownerId.isNotBlank() &&
+                                    it.ownerId == currentUserId
+                                }
+                            }
+                          val canManageSynRoster =
+                            remember(isLocalSynFounder, activeSynOfficers, callsign) {
+                              isLocalSynFounder ||
+                                activeSynOfficers.any { it.equals(callsign, ignoreCase = true) }
                             }
                           val achievements =
                             remember(frameTick, syndicateTag) {
@@ -4190,19 +4274,32 @@ fun RiftArenaScreen(
                             achievements = achievements,
                             statusBannerMessage = syndicateStatusBanner,
                             onJoinSyndicate = { info ->
-                              val joined = localPrefs.joinOfficialSyndicate(info.tag, info.name)
-                              if (joined) {
-                                syndicateTag = localPrefs.getSyndicateTag()
-                                syndicateName = localPrefs.getSyndicateName()
-                                syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
-                                engine.localPlayer.syndicateTag = syndicateTag
-                                engine.syncLocalArmadaSelfSlot()
+                              val invOnly = localPrefs.isSyndicateInviteOnly(info.tag)
+                              val hasPass =
+                                localPrefs.getSyndicateInvitedGuests(info.tag).any {
+                                  it.equals(callsign, ignoreCase = true)
+                                } ||
+                                  pendingSyndicateInvites.any {
+                                    it.syndicateTag.equals(info.tag, ignoreCase = true)
+                                  }
+                              if (invOnly && !hasPass && info.ownerId != currentUserId) {
                                 syndicateStatusBanner =
-                                  "JOINED [$syndicateTag] $syndicateName! 15-DAY LOCK COOLDOWN (15d 00h) ACTIVE."
-                                engine.onStatsUpdated()
+                                  "[${info.tag}] IS INVITE-ONLY. REQUEST AN INVITE FROM A SYNDICATE OFFICER."
                               } else {
-                                syndicateStatusBanner =
-                                  "CANNOT SWITCH SYNDICATES YET: ${localPrefs.getRemainingSyndicateLockFormatted()} REMAINING."
+                                val joined = localPrefs.joinOfficialSyndicate(info.tag, info.name)
+                                if (joined) {
+                                  syndicateTag = localPrefs.getSyndicateTag()
+                                  syndicateName = localPrefs.getSyndicateName()
+                                  syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+                                  engine.localPlayer.syndicateTag = syndicateTag
+                                  engine.syncLocalArmadaSelfSlot()
+                                  syndicateStatusBanner =
+                                    "JOINED [$syndicateTag] $syndicateName! 15-DAY LOCK COOLDOWN (15d 00h) ACTIVE."
+                                  engine.onStatsUpdated()
+                                } else {
+                                  syndicateStatusBanner =
+                                    "CANNOT SWITCH SYNDICATES YET: ${localPrefs.getRemainingSyndicateLockFormatted()} REMAINING."
+                                }
                               }
                             },
                             onLeaveSyndicate = {
@@ -4247,6 +4344,91 @@ fun RiftArenaScreen(
                                 .onFailure { err ->
                                   syndicateStatusBanner = err.message ?: "INVALID SYNDICATE CHARTER."
                                 }
+                            },
+                            pendingSyndicateInvites = pendingSyndicateInvites,
+                            isInviteOnlySyndicate = isInviteOnlySyn,
+                            officerCallsigns = activeSynOfficers,
+                            canManageSyndicateRoster = canManageSynRoster,
+                            isSyndicateFounder = isLocalSynFounder,
+                            onAcceptSyndicateInvite = { inv ->
+                              val joined =
+                                localPrefs.joinOfficialSyndicate(inv.syndicateTag, inv.syndicateName)
+                              if (joined) {
+                                dismissedSyndicateInviteIds.add(inv.id)
+                                syndicateTag = localPrefs.getSyndicateTag()
+                                syndicateName = localPrefs.getSyndicateName()
+                                syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
+                                engine.localPlayer.syndicateTag = syndicateTag
+                                engine.syncLocalArmadaSelfSlot()
+                                syndicateStatusBanner =
+                                  "ACCEPTED INVITE -> ENLISTED IN [$syndicateTag] $syndicateName!"
+                                engine.onStatsUpdated()
+                              } else {
+                                syndicateStatusBanner =
+                                  "CANNOT ACCEPT INVITE YET: ${localPrefs.getRemainingSyndicateLockFormatted()} REMAINING."
+                              }
+                            },
+                            onDeclineSyndicateInvite = { inv ->
+                              dismissedSyndicateInviteIds.add(inv.id)
+                              syndicateStatusBanner =
+                                "DECLINED INVITE FROM [${inv.syndicateTag}] ${inv.syndicateName}."
+                            },
+                            onInvitePilotToSyndicate = { rawTargetCallsign ->
+                              val cleanTarget =
+                                rawTargetCallsign
+                                  .trim()
+                                  .uppercase(Locale.US)
+                                  .replace(Regex("[^A-Z0-9_\\-]"), "")
+                                  .take(14)
+                              if (cleanTarget.length >= 2) {
+                                localPrefs.inviteGuestToSyndicateChannels(syndicateTag, cleanTarget)
+                                syndicateChannelsRefreshKey++
+                                if (isGoogleAuthenticated && isDeviceOnline) {
+                                  val cleanSynName =
+                                    syndicateName.replace("|", " ").trim().take(24).ifBlank { syndicateTag }
+                                  viewModel.sendSectorComm(
+                                    SyndicateChatMessage(
+                                      senderUid = currentUserId,
+                                      senderCallsign = callsign,
+                                      senderSyndicateTag = syndicateTag,
+                                      timestampLabel = "#SQUADRON-LFG",
+                                      messageText =
+                                        "SYNDICATE INVITE: [$syndicateTag] $cleanSynName invited $cleanTarget.",
+                                      isArmadaRecruitBanner = false,
+                                      armadaName = syndicateTag.take(16),
+                                      armadaCurrentSize = 1,
+                                      armadaMaxSize = 5,
+                                      armadaObjective =
+                                        "SYNINV|$syndicateTag|$cleanSynName|$cleanTarget".take(120),
+                                      requestSent = false,
+                                      createdAtMs = System.currentTimeMillis(),
+                                    )
+                                  )
+                                }
+                                syndicateStatusBanner =
+                                  "SYNDICATE INVITE DISPATCHED TO $cleanTarget FOR [$syndicateTag]."
+                              }
+                            },
+                            onToggleInviteOnlySyndicate = { inviteOnly ->
+                              localPrefs.setSyndicateInviteOnly(syndicateTag, inviteOnly)
+                              syndicateChannelsRefreshKey++
+                              syndicateStatusBanner =
+                                if (inviteOnly) "[$syndicateTag] SET TO INVITE-ONLY RECRUITMENT."
+                                else "[$syndicateTag] SET TO OPEN DIRECTORY ENLISTMENT."
+                            },
+                            onToggleSyndicateOfficer = { memberCallsign, _ ->
+                              val nowOfficer =
+                                localPrefs.toggleSyndicateOfficer(syndicateTag, memberCallsign)
+                              syndicateChannelsRefreshKey++
+                              syndicateStatusBanner =
+                                if (nowOfficer) "PROMOTED $memberCallsign TO [$syndicateTag] OFFICER."
+                                else "UPDATED $memberCallsign TO [$syndicateTag] MEMBER."
+                            },
+                            onKickSyndicateMember = { memberCallsign ->
+                              localPrefs.kickSyndicateMember(syndicateTag, memberCallsign)
+                              syndicateChannelsRefreshKey++
+                              syndicateStatusBanner =
+                                "REMOVED $memberCallsign FROM [$syndicateTag] ROSTER."
                             },
                             onCloseModal = closeEmbeddedModal,
                           )
@@ -5450,6 +5632,8 @@ fun RiftArenaScreen(
                   engine.riftShards =
                     RiftBillingManager.effectiveShardBalance(engine.riftShards + claimed.first)
                   localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                  engine.xpFromAccuracy = localPrefs.getXpFromAccuracy(currentUserId).toFloat()
+                  engine.pilotLevel = localPrefs.getPilotLevel(currentUserId)
                   engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
                   engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
                   if (!engine.hasJoinedMatch) {
@@ -5477,6 +5661,8 @@ fun RiftArenaScreen(
                   engine.riftShards =
                     RiftBillingManager.effectiveShardBalance(engine.riftShards + sweep.first)
                   localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                  engine.xpFromAccuracy = localPrefs.getXpFromAccuracy(currentUserId).toFloat()
+                  engine.pilotLevel = localPrefs.getPilotLevel(currentUserId)
                   engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
                   engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
                   if (!engine.hasJoinedMatch) {
@@ -6275,6 +6461,9 @@ private fun CloudCustomGameRoom.toCustomGameConfig(): CustomGameConfig {
     crateSpawnMult = crateSpawnMult.toFloat().coerceIn(0.2f, 4.0f),
     damageTakenScalePct = com.example.data.snapCustomFivePercentScale(damageTakenScalePct),
     weaponFluxCostScalePct = com.example.data.snapCustomFivePercentScale(weaponFluxCostScalePct),
+    botCount = if (!botsEnabled) 0 else botCount.coerceIn(0, 19),
+    botSkillLevel = botSkillLevel.coerceIn(0, 3),
+    scoreCap = scoreCap.coerceIn(5, 500),
   )
 }
 
@@ -6309,6 +6498,9 @@ private fun CustomGameConfig.toCloudCustomGameRoom(hostUid: String): CloudCustom
     crateSpawnMult = crateSpawnMult.toDouble(),
     damageTakenScalePct = com.example.data.snapCustomFivePercentScale(damageTakenScalePct),
     weaponFluxCostScalePct = com.example.data.snapCustomFivePercentScale(weaponFluxCostScalePct),
+    botCount = if (!botsEnabled) 0 else botCount.coerceIn(0, 19),
+    botSkillLevel = botSkillLevel.coerceIn(0, 3),
+    scoreCap = scoreCap.coerceIn(5, 500),
     createdAtMs = System.currentTimeMillis(),
   )
 }

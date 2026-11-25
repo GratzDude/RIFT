@@ -32,10 +32,10 @@ enum class ForgeElementTarget(
   "Cryo Horizon" to "Glacial ice-blue circular Rift rim with frost-white horizon shimmer",
   "Crimson Lockdown" to "High-energy crimson circular Rift containment rim with deep obsidian edge",
  )),
- SAFE_ZONE_PAD("safe_zone_pad", "Nexus Station", "5x ship-scale metallic Nexus Station & Ops holographic ring", ForgeElementLayer.WORLD, listOf(
-  "Sovereign Titanium" to "Brushed titanium steel Nexus Station docking ring and curved pylons with sky-cyan Ops holo-ring",
-  "Solar Gold" to "Gilded bronze-gold Nexus Station bastion armor with warm solar-amber Ops holo-ring",
-  "Obsidian Bastion" to "Pitch-black obsidian Nexus Station armor with electric teal clamps and Ops holo-ring",
+ SAFE_ZONE_PAD("safe_zone_pad", "Rift Station", "5x ship-scale metallic Rift Station & Ops holographic ring", ForgeElementLayer.WORLD, listOf(
+  "Sovereign Titanium" to "Brushed titanium steel Rift Station docking ring and curved pylons with sky-cyan Ops holo-ring",
+  "Solar Gold" to "Gilded bronze-gold Rift Station bastion armor with warm solar-amber Ops holo-ring",
+  "Obsidian Bastion" to "Pitch-black obsidian Rift Station armor with electric teal clamps and Ops holo-ring",
  )),
  PLACED_STASIS_BARRIER("placed_stasis_barrier", "Placed Stasis Barrier", "45.0s deployed tethered hard-light forcefield", ForgeElementLayer.WORLD, listOf(
   "Tethered Cyan" to "Tethered electric cyan hard-light forcefield beam with twin emitter nodes",
@@ -139,9 +139,9 @@ enum class ForgeElementTarget(
   "Violet Lockdown" to "High-energy amethyst prison dome with pulsing teal generator",
   "Glacier Cell" to "Frost-blue cryo containment ring with crystalline core",
  )),
- SHIP_AURA_LABELS("ship_aura_labels", "Ship Flux Ring & Nametags", "In-world ship Flux arc, HVT crown & callsign plates", ForgeElementLayer.WORLD, listOf(
+ SHIP_AURA_LABELS("ship_aura_labels", "Ship Flux Ring & Nametags", "In-world ship Flux arc, Rift Leader crown & callsign plates", ForgeElementLayer.WORLD, listOf(
   "Tactical Clean" to "Crisp cyan-emerald ship Flux arc with high-contrast callsign readout",
-  "Tournament Bold" to "Thick luminous Flux ring with bright gold HVT crown accents",
+  "Tournament Bold" to "Thick luminous Flux ring with bright gold Rift Leader crown accents",
   "Minimal Pro" to "Sleek thin Flux ring and compact low-glare callsign plates",
   "Neon Cyber" to "Vibrant electric-teal Flux gauge with glowing violet trim",
  )),
@@ -340,7 +340,7 @@ data class VisualElementRecipe(
     ForgeElementTarget.ARENA_PERIMETER_RING -> VisualElementRecipe(k, "#040914", "#38BDF8", "#00F5D4", surfaceOpacity = 0.90f, rimLightDepth = 0.70f, detailDensity = 0.70f)
     ForgeElementTarget.BACKGROUND_NEBULA -> VisualElementRecipe(k, "#02050B", "#0E7490", "#312E81", surfaceOpacity = 0.88f, rimLightDepth = 0.60f, detailDensity = 0.70f)
     ForgeElementTarget.RIFT_PLASMA -> VisualElementRecipe(k, "#EF4444", "#D946EF", "#FFE4E6", surfaceOpacity = 0.95f, rimLightDepth = 0.85f, detailDensity = 0.75f)
-    ForgeElementTarget.RIFT_REPULSOR -> VisualElementRecipe(k, "#38BDF8", "#BAE6FD", "#FFFFFF", surfaceOpacity = 0.95f, rimLightDepth = 0.85f, detailDensity = 0.75f)
+    ForgeElementTarget.RIFT_REPULSOR -> VisualElementRecipe(k, "#0369A1", "#0EA5E9", "#7DD3FC", surfaceOpacity = 0.95f, rimLightDepth = 0.85f, detailDensity = 0.75f)
     ForgeElementTarget.RIFT_GRAVITY -> VisualElementRecipe(k, "#A855F7", "#6366F1", "#E9D5FF", surfaceOpacity = 0.95f, rimLightDepth = 0.85f, detailDensity = 0.75f)
     ForgeElementTarget.RIFT_PHASE_PAIR -> VisualElementRecipe(k, "#2DD4BF", "#38BDF8", "#F0FDFA", surfaceOpacity = 0.95f, rimLightDepth = 0.85f, detailDensity = 0.75f)
     ForgeElementTarget.SUPPLY_CRATE -> VisualElementRecipe(k, "#081120", "#10B981", "#00F5D4", surfaceOpacity = 0.94f, rimLightDepth = 0.80f, detailDensity = 0.75f)

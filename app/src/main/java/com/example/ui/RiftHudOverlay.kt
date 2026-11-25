@@ -359,36 +359,37 @@ fun RiftHudOverlay(
   val tutorialPhaseRad =
    ((System.currentTimeMillis() % 6283L) / 1000f) + (tickRead * 0.0001f)
 
-  // Stationary, non-jumping Top-Left [+ ADD BOT] button in Practice Rift
+  // Stationary, non-jumping Top-Left [+ ADD BOT] & [CLEAR BOTS] buttons in Practice Rift
   if (engine.isEphemeralPracticeRift && !uiUnlocked) {
    val botCount = engine.activePracticeBotCount()
    val highlightAddBot = activeTutorialStep == PracticeTutorialStep.ADD_BOT_AND_NEXUS
-   Box(
+   Row(
     modifier =
      Modifier.align(Alignment.TopStart)
       .padding(start = 12.dp, top = 8.dp)
-      .zIndex(16f)
-      .goldenRiftTutorialHighlight(
-       active = highlightAddBot,
-       phaseRad = tutorialPhaseRad,
-       cornerRadius = 10.dp,
-      )
-      .heightIn(min = 38.dp)
-      .clip(RoundedCornerShape(10.dp))
-      .background(Color(0xEE060D1A))
-      .border(
-       width = 1.2.dp,
-       color = if (highlightAddBot) Color(0xFFFFD700) else Color(0xFF00F5D4),
-       shape = RoundedCornerShape(10.dp),
-      )
-      .clickable { engine.spawnPracticeBot() }
-      .padding(horizontal = 12.dp, vertical = 7.dp)
-      .testTag("practice_add_bot_btn"),
-    contentAlignment = Alignment.Center,
+      .zIndex(16f),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
    ) {
-    Row(
-     verticalAlignment = Alignment.CenterVertically,
-     horizontalArrangement = Arrangement.spacedBy(6.dp),
+    Box(
+     modifier =
+      Modifier.goldenRiftTutorialHighlight(
+        active = highlightAddBot,
+        phaseRad = tutorialPhaseRad,
+        cornerRadius = 10.dp,
+       )
+       .heightIn(min = 40.dp)
+       .clip(RoundedCornerShape(10.dp))
+       .background(Color(0xEE060D1A))
+       .border(
+        width = 1.2.dp,
+        color = if (highlightAddBot) Color(0xFFFFD700) else Color(0xFF00F5D4),
+        shape = RoundedCornerShape(10.dp),
+       )
+       .clickable { engine.spawnPracticeBot() }
+       .padding(horizontal = 12.dp, vertical = 7.dp)
+       .testTag("practice_add_bot_btn"),
+     contentAlignment = Alignment.Center,
     ) {
      Text(
       text = if (botCount > 0) "+ ADD BOT ($botCount)" else "+ ADD BOT",
@@ -398,6 +399,32 @@ fun RiftHudOverlay(
       fontFamily = FontFamily.Monospace,
       style = WingTelemetryTextStyle,
      )
+    }
+    if (botCount > 0) {
+     Box(
+      modifier =
+       Modifier.heightIn(min = 40.dp)
+        .clip(RoundedCornerShape(10.dp))
+        .background(Color(0xEE180812))
+        .border(
+         width = 1.2.dp,
+         color = Color(0xFFFB7185),
+         shape = RoundedCornerShape(10.dp),
+        )
+        .clickable { engine.clearPracticeBots() }
+        .padding(horizontal = 11.dp, vertical = 7.dp)
+        .testTag("practice_clear_bots_btn"),
+      contentAlignment = Alignment.Center,
+     ) {
+      Text(
+       text = "CLEAR BOTS",
+       color = Color(0xFFFB7185),
+       fontSize = (9.0f * textScale).sp,
+       fontWeight = FontWeight.Black,
+       fontFamily = FontFamily.Monospace,
+       style = WingTelemetryTextStyle,
+      )
+     }
     }
    }
   }
@@ -596,7 +623,7 @@ fun RiftHudOverlay(
           contentAlignment = Alignment.Center,
          ) {
           Text(
-           text = "ENTER NEXUS",
+           text = "RIFT HUB",
            color = Color(0xFF00F5D4),
            fontSize = (8.8f * textScale).sp,
            fontWeight = FontWeight.Black,
@@ -2019,7 +2046,7 @@ private fun CircularRadarMinimap(
     for (anom in engine.anomalies) {
      val aColor = when (anom.type) {
       AnomalyType.PLASMA_RIFT -> Color(0xFFEF4444)
-      AnomalyType.REPULSOR_RIFT -> Color.White
+      AnomalyType.REPULSOR_RIFT -> Color(0xFF7DD3FC)
       AnomalyType.GRAVITY_RIFT -> Color(0xFFA855F7)
       AnomalyType.PHASE_RIFT_A -> Color(0xFF2DD4BF)
       AnomalyType.PHASE_RIFT_B -> Color(0xFF38BDF8)

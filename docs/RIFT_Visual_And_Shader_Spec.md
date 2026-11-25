@@ -1,6 +1,6 @@
 # RIFT — Visual & Shader Architecture Specification
 **Studio:** Threshold Dynamics Studio, LLC  
-**Active Build Baseline:** Build #113 (`v1.0.113`)  
+**Active Build Baseline:** Build #115 (`v1.0.115`)  
 **Application ID / Namespace:** `com.game.rift` / `com.example`
 
 ---
@@ -31,7 +31,7 @@
    - **API 24–32 & Offscreen Bitmap Icon Fallback:** Multi-layer feathered `RadialGradient` anisotropic cloud puffs rendered over a feathered `#000000` -> `#02040A` abyssal throat using pre-allocated `Paint`, `Path`, `Matrix`, and `RadialGradient` instances (zero per-frame heap allocations; all shared objects declared above `init {}` in `RiftSpriteBaker.kt` for `<clinit>` safety).
 2. **Strict Fixed Color Palettes (Time-Shifting Strictly Within Range):**
    - `PLASMA_RIFT`: Deep Crimson `#991B1B` -> Hot Scarlet `#EF4444` -> Electric Magenta `#EC4899` -> Rose-White core `#FFE4E6`.
-   - `REPULSOR_RIFT`: Deep Cobalt `#0369A1` -> Electric Sky `#0EA5E9` -> Ice Blue `#7DD3FC` -> White-Blue core `#F0F9FF`.
+   - `REPULSOR_RIFT`: Pure Ice/Sky Blue ONLY — Deep Cobalt `#0369A1` -> Electric Sky `#0EA5E9` -> Ice Blue `#7DD3FC` -> White-Blue core `#F0F9FF` across sprite baker, arena world aura/particles, Star Forge, Codex, and radar blips (strictly zero `#00F5D4` mint/teal/green stops so `REPULSOR_RIFT` never looks like `PHASE_RIFT`).
    - `GRAVITY_RIFT`: Deep Indigo `#3730A3` -> Royal Violet `#7C3AED` -> Luminous Purple `#A855F7` -> Lavender-White core `#F3E8FF`.
    - `PHASE_RIFT_A` / `PHASE_RIFT_B`: Deep Teal `#0F766E` -> Turquoise `#06B6D4` -> Electric Mint-Cyan `#00F5D4` -> Pale Cyan-White core `#CCFBF1`.
    - `Unstable Merged Rift`: Swirling multi-color volumetric storm clouds (`#00F5D4`, `#38BDF8`, `#A855F7`, `#EC4899`) centered at `(cx, cy)` over an abyssal throat with multi-hue perimeter branching lightning.

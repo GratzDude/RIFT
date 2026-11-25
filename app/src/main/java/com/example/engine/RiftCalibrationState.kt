@@ -106,6 +106,17 @@ object RiftCalibrationState {
   var gamepadDeadzoneRight by mutableFloatStateOf(0.18f)
   var gamepadIdleTouchOpacity by mutableFloatStateOf(0.28f)
 
+  // Live Touch Controls, Display Frame Pacing & Voice Preferences (Helm Systems)
+  var touchFloatingJoystick by mutableStateOf(true)
+  var touchJoystickDeadzone by mutableFloatStateOf(0.08f)
+  var touchJoystickSensitivity by mutableFloatStateOf(1.0f)
+  var swapLeftRightControls by mutableStateOf(false)
+  var graphicsQualityTier by mutableIntStateOf(2) // 0 = Battery, 1 = Balanced, 2 = High Detail
+  var preferMaxRefreshRate by mutableStateOf(true) // false = 60Hz, true = Max Hz
+  var squadronVoiceEnabled by mutableStateOf(true)
+  var teamVoiceMuted by mutableStateOf(false)
+  var teamVoicePushToTalk by mutableStateOf(false)
+
   // Virtual Keycodes & Ergonomic Default Controller Bindings (Live Hardware Remapper)
   const val BIND_LT = 1001 // Left Trigger (AXIS_LTRIGGER / AXIS_BRAKE / KEYCODE_BUTTON_L2)
   const val BIND_RT = 1002 // Right Trigger (AXIS_RTRIGGER / AXIS_GAS / AXIS_THROTTLE / KEYCODE_BUTTON_R2)
@@ -1726,6 +1737,16 @@ object RiftCalibrationState {
     bindRepel = prefs.getInt("bindRepel", android.view.KeyEvent.KEYCODE_BUTTON_A)
     bindMultiToggle = prefs.getInt("bindMultiToggle", android.view.KeyEvent.KEYCODE_BUTTON_Y)
 
+    touchFloatingJoystick = prefs.getBoolean("touchFloatingJoystick", true)
+    touchJoystickDeadzone = prefs.getFloat("touchJoystickDeadzone", 0.08f).coerceIn(0.02f, 0.30f)
+    touchJoystickSensitivity = prefs.getFloat("touchJoystickSensitivity", 1.0f).coerceIn(0.50f, 2.00f)
+    swapLeftRightControls = prefs.getBoolean("swapLeftRightControls", false)
+    graphicsQualityTier = prefs.getInt("graphicsQualityTier", 2).coerceIn(0, 2)
+    preferMaxRefreshRate = prefs.getBoolean("preferMaxRefreshRate", true)
+    squadronVoiceEnabled = prefs.getBoolean("squadronVoiceEnabled", true)
+    teamVoiceMuted = prefs.getBoolean("teamVoiceMuted", false)
+    teamVoicePushToTalk = prefs.getBoolean("teamVoicePushToTalk", false)
+
     val hiddenCsv = prefs.getString(KEY_HIDDEN_SET, "") ?: ""
     hiddenCalibrationKeys =
       hiddenCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
@@ -1851,6 +1872,15 @@ object RiftCalibrationState {
     editor.putInt("bindSecondaryAbility", bindSecondaryAbility)
     editor.putInt("bindRepel", bindRepel)
     editor.putInt("bindMultiToggle", bindMultiToggle)
+    editor.putBoolean("touchFloatingJoystick", touchFloatingJoystick)
+    editor.putFloat("touchJoystickDeadzone", touchJoystickDeadzone.coerceIn(0.02f, 0.30f))
+    editor.putFloat("touchJoystickSensitivity", touchJoystickSensitivity.coerceIn(0.50f, 2.00f))
+    editor.putBoolean("swapLeftRightControls", swapLeftRightControls)
+    editor.putInt("graphicsQualityTier", graphicsQualityTier.coerceIn(0, 2))
+    editor.putBoolean("preferMaxRefreshRate", preferMaxRefreshRate)
+    editor.putBoolean("squadronVoiceEnabled", squadronVoiceEnabled)
+    editor.putBoolean("teamVoiceMuted", teamVoiceMuted)
+    editor.putBoolean("teamVoicePushToTalk", teamVoicePushToTalk)
     editor.putString(KEY_HIDDEN_SET, hiddenCalibrationKeys.joinToString(","))
 
     val forgedArr = JSONArray()

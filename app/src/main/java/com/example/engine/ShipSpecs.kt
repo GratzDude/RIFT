@@ -150,7 +150,7 @@ object RiftProgressionCatalog {
       DirectiveTemplate(
         id = "hvt_shutdown_1",
         title = "APEX LEADER HUNT",
-        subtitle = "Shut down 1 High-Resonance Target (250+ RES).",
+        subtitle = "Shut down 1 High-Resonance Target (250+ Resonance).",
         metric = DailyDirectiveMetric.HVT_SHUTDOWNS,
         target = 1,
       ),
@@ -186,7 +186,7 @@ object RiftProgressionCatalog {
 
   /**
    * Deterministically generates the 3 Daily Conduit Directives for [utcDay] (100% on-device).
-   * Slot rewards: Slot 0 = 40❖ + 10 RES, Slot 1 = 50❖ + 15 RES, Slot 2 = 60❖ + 20 RES (+100❖ & +25 RES 3/3 Sweep = 250❖/day).
+   * Slot rewards: Slot 0 = 40 Shards + 10 Resonance, Slot 1 = 50 Shards + 15 Resonance, Slot 2 = 60 Shards + 20 Resonance (+100 Shards & +25 Resonance Sweep).
    */
   fun generateDailyDirectivesForDay(
     utcDay: Long,
@@ -1033,6 +1033,59 @@ data class CustomShipLoadoutSlot(
 
   fun hullStatPoints(): Int = speedPts + thrustPts + turnPts + maxFluxPts + rechargePts
   fun totalAllocatedPoints(): Int = hullStatPoints() + primaryPointCost() + secondaryPointCost()
+  fun remainingPoints(maxBudget: Int = 100): Int = (maxBudget - totalAllocatedPoints()).coerceAtLeast(0)
+
+  /**
+   * Guarantees 100-Point Parity Compliance whenever a Primary or Secondary weapon is changed
+   * or a saved slot is loaded: keeps the newly chosen weapon(s) and trims excess hull stat
+   * points (1 point at a time from whichever hull stat currently has the highest allocation)
+   * until `totalAllocatedPoints() <= maxBudget`.
+   */
+  fun clampToPointBudget(maxBudget: Int = 100): CustomShipLoadoutSlot {
+    var sp = speedPts.coerceIn(0, 30)
+    var th = thrustPts.coerceIn(0, 30)
+    var tu = turnPts.coerceIn(0, 30)
+    var mf = maxFluxPts.coerceIn(0, 30)
+    var rc = rechargePts.coerceIn(0, 30)
+    val weaponPts = primaryPointCost() + secondaryPointCost()
+    val allowedHullPts = (maxBudget - weaponPts).coerceAtLeast(0)
+    while (sp + th + tu + mf + rc > allowedHullPts) {
+      val maxStat = maxOf(sp, th, tu, mf, rc)
+      if (maxStat <= 0) break
+      when {
+        mf == maxStat -> mf--
+        rc == maxStat -> rc--
+        sp == maxStat -> sp--
+        tu == maxStat -> tu--
+        else -> th--
+      }
+    }
+    return copy(
+      speedPts = sp,
+      thrustPts = th,
+      turnPts = tu,
+      maxFluxPts = mf,
+      rechargePts = rc,
+    )
+  }
+
+  /**
+   * Purges all hull stat points back to 0 and resets weapons to Light Pulse Repeater (6 Pts) + None (0 Pts)
+   * while preserving custom name, slot ID, and hull visual recipe if desired.
+   */
+  fun resetToZeroedFrame(resetVisuals: Boolean = false): CustomShipLoadoutSlot {
+    val def = defaultSlot(slotId)
+    return copy(
+      speedPts = 0,
+      thrustPts = 0,
+      turnPts = 0,
+      maxFluxPts = 0,
+      rechargePts = 0,
+      primaryArchetype = "LIGHT_PULSE",
+      secondaryType = "NONE",
+      visualRecipe = if (resetVisuals) def.visualRecipe else visualRecipe,
+    )
+  }
 
   fun toJsonString(): String {
     return JSONObject()
@@ -1571,7 +1624,7 @@ data class CustomShipLoadoutSlot(
               defaultSlot(cleanSlot).visualRecipe
             },
           aiGenerationsCount = aiCount,
-        )
+        ).clampToPointBudget(100)
       } catch (_: Exception) {
         defaultSlot(cleanFallback)
       }
@@ -1650,8 +1703,9 @@ object RiftCodex {
     get() = buildShipSpecFromCustomSlot(activeCustomShipSlot)
 
   fun updateActiveCustomShipSlot(slot: CustomShipLoadoutSlot) {
-    activeCustomShipSlot = slot
-    RiftSpriteBaker.updateCustomShip9Sprites(slot.visualRecipe)
+    val clamped = slot.clampToPointBudget(100)
+    activeCustomShipSlot = clamped
+    RiftSpriteBaker.updateCustomShip9Sprites(clamped.visualRecipe)
   }
 
   private fun createCoreBuffRegistry(): MutableMap<String, SpecialBuffRegistryEntry> =
@@ -2085,9 +2139,9 @@ object RiftCodex {
         title = "REPULSOR RIFT",
         classification = "KINETIC DEFLECTOR",
         specBadge = "180px • SUPERSONIC SLINGSHOT",
-        accentHex = "#38BDF8",
+        accentHex = "#7DD3FC",
         effectSummary = "Inverted gravimetric field that violently deflects ships outward and slingshots hulls grazing its inner core faster than Afterburner thrust.",
-        tacticalNote = "Dive across the inner cyan core to catapult across the sector at 1.45x Afterburner speed.",
+        tacticalNote = "Dive across the inner ice-blue core to catapult across the sector at 1.45x Afterburner speed.",
       ),
       RiftAnomalyCodexEntry(
         id = "gravity_rift",

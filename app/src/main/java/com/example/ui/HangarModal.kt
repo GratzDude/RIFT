@@ -372,8 +372,9 @@ private fun ShipResonanceGoldBadge(
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(2.5.dp),
   ) {
+    ResonanceCrestIcon(sizeDp = 10.dp)
     Text(
-      text = "$shipResonance RES",
+      text = "$shipResonance",
       color = Color(0xFFFFD700),
       fontSize = 8.4.sp,
       fontWeight = FontWeight.Black,
@@ -652,7 +653,7 @@ fun HangarModal(
         ) {
           ResonanceCrestIcon(sizeDp = 15.dp)
           Text(
-            text = "$liveResonance RES",
+            text = "$liveResonance",
             color = Color(0xFFFFD700),
             fontSize = if (isCompactPhone) 9.5.sp else 10.sp,
             fontWeight = FontWeight.Black,
@@ -1724,7 +1725,7 @@ private fun ShipComparisonInspectorPanel(
             horizontalArrangement = Arrangement.spacedBy(5.dp),
           ) {
             Text(
-              text = if (isInspectedLocked) "NEXUS LOCK // ACTIVE" else "HOLO-INSPECTOR // STANDBY",
+              text = if (isInspectedLocked) "RIFT LOCK // ACTIVE" else "HOLO-INSPECTOR // STANDBY",
               color = if (isInspectedLocked) HangarNexusTeal else Color(0xFF94A3B8),
               fontSize = 9.5.sp,
               fontWeight = FontWeight.Black,
@@ -2158,6 +2159,27 @@ private fun NinthShipModularForgePanel(
         }
         Row(
           modifier =
+            Modifier.testTag("btn_hangar_zero_points")
+              .clip(RoundedCornerShape(6.dp))
+              .background(HangarTabletAbyss)
+              .border(1.dp, HangarElectricCyan, RoundedCornerShape(6.dp))
+              .clickable {
+                onSaveSlot(activeSlot.resetToZeroedFrame())
+                onStatusBannerChange("PURGED FRAME TO 0/100 ALLOCATED POINTS")
+              }
+              .padding(horizontal = 8.dp, vertical = 4.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = "PURGE TO 0",
+            color = HangarElectricCyan,
+            fontSize = 9.5.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = Mono,
+          )
+        }
+        Row(
+          modifier =
             Modifier.testTag("btn_hangar_respec_points")
               .clip(RoundedCornerShape(6.dp))
               .background(HangarTabletAbyss)
@@ -2313,8 +2335,12 @@ private fun NinthShipModularForgePanel(
                       RoundedCornerShape(6.dp),
                     )
                     .clickable {
-                      if (canAfford || selected) onSaveSlot(candidateSlot)
-                      else onStatusBannerChange("NEED ${opt.pointCost} PTS FOR ${opt.title} (FREE SOME STAT POINTS FIRST).")
+                      if (canAfford || selected) {
+                        onSaveSlot(candidateSlot.clampToPointBudget(effectivePointBudget))
+                      } else {
+                        onSaveSlot(candidateSlot.clampToPointBudget(effectivePointBudget))
+                        onStatusBannerChange("EQUIPPED ${opt.title.uppercase(Locale.US)} — REBALANCED STATS TO FIT 100 PTS.")
+                      }
                     }
                     .padding(vertical = 5.dp, horizontal = 4.dp),
                 contentAlignment = Alignment.Center,
@@ -2374,8 +2400,12 @@ private fun NinthShipModularForgePanel(
                       RoundedCornerShape(6.dp),
                     )
                     .clickable {
-                      if (canAfford || isSelected) onSaveSlot(candidateSlot)
-                      else onStatusBannerChange("NEED ${secOpt.pointCost} PTS FOR ${secOpt.title} (FREE SOME STAT POINTS FIRST).")
+                      if (canAfford || isSelected) {
+                        onSaveSlot(candidateSlot.clampToPointBudget(effectivePointBudget))
+                      } else {
+                        onSaveSlot(candidateSlot.clampToPointBudget(effectivePointBudget))
+                        onStatusBannerChange("EQUIPPED ${secOpt.title.uppercase(Locale.US)} — REBALANCED STATS TO FIT 100 PTS.")
+                      }
                     }
                     .padding(vertical = 5.dp, horizontal = 5.dp),
                 contentAlignment = Alignment.Center,

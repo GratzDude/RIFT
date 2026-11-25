@@ -133,8 +133,8 @@ private fun SyndicateCrestBadge(
             normalizedTag.equals(currentPlayerTag.trim(), ignoreCase = true) -> activePlayerCrest
           else ->
             SyndicateCrestRecipe.synthesizeFromPrompt(
-              "Syndicate ${normalizedTag.ifEmpty { "NEXUS" }} crest",
-              variationSalt = normalizedTag.ifEmpty { "NEXUS" }.hashCode(),
+              "Syndicate ${normalizedTag.ifEmpty { "RIFT" }} crest",
+              variationSalt = normalizedTag.ifEmpty { "RIFT" }.hashCode(),
             )
         }
       RiftSpriteBaker.bakeSyndicateCrestBitmap(
@@ -274,6 +274,13 @@ private fun SyndicateInputBox(
   }
 }
 
+data class PendingSyndicateInvite(
+  val id: String,
+  val syndicateTag: String,
+  val syndicateName: String,
+  val inviterCallsign: String,
+)
+
 @Composable
 fun SyndicatesModal(
   currentSyndicateTag: String,
@@ -288,6 +295,17 @@ fun SyndicatesModal(
   onJoinSyndicate: (SyndicateInfo) -> Unit,
   onLeaveSyndicate: () -> Unit,
   onCreateCustomSyndicate: (tag: String, name: String, motto: String) -> Unit,
+  pendingSyndicateInvites: List<PendingSyndicateInvite> = emptyList(),
+  isInviteOnlySyndicate: Boolean = false,
+  officerCallsigns: Set<String> = emptySet(),
+  canManageSyndicateRoster: Boolean = false,
+  isSyndicateFounder: Boolean = false,
+  onAcceptSyndicateInvite: (PendingSyndicateInvite) -> Unit = {},
+  onDeclineSyndicateInvite: (PendingSyndicateInvite) -> Unit = {},
+  onInvitePilotToSyndicate: (String) -> Unit = {},
+  onToggleInviteOnlySyndicate: (Boolean) -> Unit = {},
+  onToggleSyndicateOfficer: (callsign: String, makeOfficer: Boolean) -> Unit = { _, _ -> },
+  onKickSyndicateMember: (callsign: String) -> Unit = {},
   onCloseModal: () -> Unit = {},
 ) {
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
@@ -500,6 +518,9 @@ fun SyndicatesModal(
             remainingLockDays = remainingLockDays,
             remainingLockFormatted = remainingLockFormatted,
             directoryList = directoryList,
+            pendingSyndicateInvites = pendingSyndicateInvites,
+            onAcceptSyndicateInvite = onAcceptSyndicateInvite,
+            onDeclineSyndicateInvite = onDeclineSyndicateInvite,
             onJoinSyndicate = onJoinSyndicate,
             onSelectCreateTab = { activeTab = 3 },
           )
@@ -513,7 +534,15 @@ fun SyndicatesModal(
             remainingLockDays = remainingLockDays,
             remainingLockFormatted = remainingLockFormatted,
             rosterMembers = rosterMembers,
+            isInviteOnlySyndicate = isInviteOnlySyndicate,
+            officerCallsigns = officerCallsigns,
+            canManageSyndicateRoster = canManageSyndicateRoster,
+            isSyndicateFounder = isSyndicateFounder,
             onLeaveSyndicate = onLeaveSyndicate,
+            onInvitePilotToSyndicate = onInvitePilotToSyndicate,
+            onToggleInviteOnlySyndicate = onToggleInviteOnlySyndicate,
+            onToggleSyndicateOfficer = onToggleSyndicateOfficer,
+            onKickSyndicateMember = onKickSyndicateMember,
             onOpenDirectoryTab = { activeTab = 0 },
             onOpenCharterTab = { activeTab = 3 },
           )
@@ -764,6 +793,9 @@ private fun DirectoryAndJoinPane(
   remainingLockDays: Int,
   remainingLockFormatted: String,
   directoryList: List<SyndicateInfo>,
+  pendingSyndicateInvites: List<PendingSyndicateInvite> = emptyList(),
+  onAcceptSyndicateInvite: (PendingSyndicateInvite) -> Unit = {},
+  onDeclineSyndicateInvite: (PendingSyndicateInvite) -> Unit = {},
   onJoinSyndicate: (SyndicateInfo) -> Unit,
   onSelectCreateTab: () -> Unit = {},
 ) {
@@ -873,6 +905,78 @@ private fun DirectoryAndJoinPane(
       }
     }
 
+    if (pendingSyndicateInvites.isNotEmpty()) {
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .background(Color(0xFF0A1E36), RoundedCornerShape(8.dp))
+            .border(1.dp, CitadelGold.copy(alpha = 0.72f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .testTag("syndicate_pending_invites_card"),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+      ) {
+        Text(
+          text = "INCOMING SYNDICATE INVITES (${pendingSyndicateInvites.size})",
+          color = CitadelGold,
+          fontSize = 10.2.sp,
+          fontWeight = FontWeight.ExtraBold,
+          fontFamily = Mono,
+        )
+        for (inv in pendingSyndicateInvites.take(3)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Text(
+              text = "[${inv.syndicateTag}] ${inv.syndicateName} // INVITED BY ${inv.inviterCallsign}",
+              color = Color.White,
+              fontSize = 10.8.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = Sans,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+              Button(
+                onClick = { onAcceptSyndicateInvite(inv) },
+                enabled = remainingLockDays <= 0 && !isDrifter,
+                colors =
+                  ButtonDefaults.buttonColors(
+                    containerColor = CitadelTeal,
+                    contentColor = Color(0xFF05080E),
+                    disabledContainerColor = Color(0xFF132238),
+                    disabledContentColor = Color(0xFF94A3B8),
+                  ),
+                shape = RoundedCornerShape(7.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                modifier =
+                  Modifier.heightIn(min = 48.dp).testTag("accept_syndicate_invite_${inv.syndicateTag}"),
+              ) {
+                Text("ACCEPT", fontSize = 9.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = Mono)
+              }
+              Button(
+                onClick = { onDeclineSyndicateInvite(inv) },
+                colors =
+                  ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF280E1A),
+                    contentColor = Color(0xFFFF3B4E),
+                  ),
+                border = BorderStroke(1.dp, Color(0xFFFF3B4E)),
+                shape = RoundedCornerShape(7.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                modifier =
+                  Modifier.heightIn(min = 48.dp).testTag("decline_syndicate_invite_${inv.syndicateTag}"),
+              ) {
+                Text("DECLINE", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+              }
+            }
+          }
+        }
+      }
+    }
+
     if (mergedDirectory.isEmpty()) {
       Box(
         modifier =
@@ -897,7 +1001,7 @@ private fun DirectoryAndJoinPane(
           )
           Text(
             text =
-              "Every Syndicate in NEXUS is 100% real-player-founded. Open Tab 4 to charter the first Syndicate!",
+              "Every Syndicate in RIFT is 100% real-player-founded. Open Tab 4 to charter the first Syndicate!",
             color = Color(0xFFCBD5E1),
             fontSize = 11.sp,
             fontFamily = Sans,
@@ -1066,11 +1170,22 @@ private fun MySyndicateRosterPane(
   remainingLockDays: Int,
   remainingLockFormatted: String,
   rosterMembers: List<SyndicateMemberEntry>,
+  isInviteOnlySyndicate: Boolean = false,
+  officerCallsigns: Set<String> = emptySet(),
+  canManageSyndicateRoster: Boolean = false,
+  isSyndicateFounder: Boolean = false,
   onLeaveSyndicate: () -> Unit,
+  onInvitePilotToSyndicate: (String) -> Unit = {},
+  onToggleInviteOnlySyndicate: (Boolean) -> Unit = {},
+  onToggleSyndicateOfficer: (callsign: String, makeOfficer: Boolean) -> Unit = { _, _ -> },
+  onKickSyndicateMember: (callsign: String) -> Unit = {},
   onOpenDirectoryTab: () -> Unit,
   onOpenCharterTab: () -> Unit,
 ) {
   val isCompactPhone = LocalConfiguration.current.screenHeightDp < 480
+  val focusManager = LocalFocusManager.current
+  val keyboardController = LocalSoftwareKeyboardController.current
+  var inviteCallsignInput by remember { mutableStateOf("") }
 
   if (!isRealEnlistedSyndicate) {
     Box(
@@ -1224,11 +1339,107 @@ private fun MySyndicateRosterPane(
       }
     }
 
+    if (canManageSyndicateRoster) {
+      Spacer(modifier = Modifier.height(6.dp))
+      Row(
+        modifier =
+          Modifier.fillMaxWidth()
+            .background(CitadelTabletBg, RoundedCornerShape(8.dp))
+            .border(1.dp, CitadelTeal.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .testTag("syndicate_command_invite_bar"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        SyndicateInputBox(
+          value = inviteCallsignInput,
+          onValueChange = {
+            inviteCallsignInput =
+              it.uppercase(Locale.US).replace(Regex("[^A-Z0-9_-]"), "").take(14)
+          },
+          placeholder = "INVITE SWORN PILOT CALLSIGN",
+          borderColor = CitadelTeal,
+          textColor = Color.White,
+          height = 48.dp,
+          modifier = Modifier.weight(1f),
+          fontFamily = Mono,
+          fontSizeSp = 10.5f,
+          testTag = "syndicate_invite_callsign_input",
+          onFocusChange = {},
+          onDone = {
+            keyboardController?.hide()
+            focusManager.clearFocus(force = true)
+          },
+        )
+        Button(
+          onClick = {
+            if (inviteCallsignInput.length >= 2) {
+              onInvitePilotToSyndicate(inviteCallsignInput)
+              inviteCallsignInput = ""
+            }
+            keyboardController?.hide()
+            focusManager.clearFocus(force = true)
+          },
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = CitadelTeal,
+              contentColor = Color(0xFF05080E),
+            ),
+          shape = RoundedCornerShape(8.dp),
+          contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+          modifier =
+            Modifier.heightIn(min = 48.dp)
+              .testTag("syndicate_invite_pilot_btn"),
+        ) {
+          Text("INVITE PILOT", fontSize = 9.8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = Mono)
+        }
+        if (isSyndicateFounder) {
+          Button(
+            onClick = { onToggleInviteOnlySyndicate(!isInviteOnlySyndicate) },
+            colors =
+              ButtonDefaults.buttonColors(
+                containerColor = if (isInviteOnlySyndicate) Color(0xFF422006) else Color(0xFF0D253B),
+                contentColor = if (isInviteOnlySyndicate) CitadelGold else CitadelCyan,
+              ),
+            border = BorderStroke(1.dp, if (isInviteOnlySyndicate) CitadelGold else CitadelCyan),
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            modifier =
+              Modifier.heightIn(min = 48.dp)
+                .testTag("syndicate_invite_only_toggle"),
+          ) {
+            Text(
+              text = if (isInviteOnlySyndicate) "INVITE ONLY" else "OPEN JOIN",
+              fontSize = 9.5.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = Mono,
+            )
+          }
+        }
+      }
+    }
+
     Spacer(modifier = Modifier.height(8.dp))
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    LazyColumn(
+      modifier = Modifier.weight(1f).fillMaxWidth(),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
       items(humanRoster, key = { it.uid }) { member ->
         val shipSpec = RiftCodex.getShipById(member.shipId)
+        val upperCallsign = member.callsign.trim().uppercase(Locale.US)
+        val isMemberFounder =
+          member.role.contains("FOUNDER", ignoreCase = true) ||
+            member.role.contains("LEADER", ignoreCase = true)
+        val isMemberOfficer =
+          !isMemberFounder &&
+            (upperCallsign in officerCallsigns || member.role.contains("OFFICER", ignoreCase = true))
+        val resolvedRoleLabel =
+          when {
+            isMemberFounder -> "FOUNDER"
+            isMemberOfficer -> "OFFICER"
+            else -> "MEMBER"
+          }
         Row(
           modifier =
             Modifier.fillMaxWidth()
@@ -1241,12 +1452,18 @@ private fun MySyndicateRosterPane(
           Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.weight(1f),
           ) {
             ShipSpritePreview(shipId = member.shipId, sizeDp = 30)
             Column {
               Text(
-                text = "[$currentSyndicateTag] ${member.callsign} • ${member.role}",
-                color = Color.White,
+                text = "[$currentSyndicateTag] ${member.callsign} • $resolvedRoleLabel",
+                color =
+                  when {
+                    isMemberFounder -> CitadelGold
+                    isMemberOfficer -> CitadelTeal
+                    else -> Color.White
+                  },
                 fontSize = 12.5.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = Sans,
@@ -1260,21 +1477,71 @@ private fun MySyndicateRosterPane(
               )
             }
           }
-          Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
             Text(
               text = "KILLS: ${member.kills}",
               color = CitadelTeal,
-              fontSize = 12.sp,
+              fontSize = 11.2.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = Mono,
             )
-            Text(
-              text = "RESONANCE: ${member.bountyContribution}",
-              color = CitadelGold,
-              fontSize = 12.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = Mono,
-            )
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+              ResonanceCrestIcon(sizeDp = 12.dp)
+              Text(
+                text = "${member.bountyContribution}",
+                color = CitadelGold,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = Mono,
+              )
+            }
+            if (!member.isLocalPlayer && !isMemberFounder) {
+              if (isSyndicateFounder) {
+                Button(
+                  onClick = { onToggleSyndicateOfficer(member.callsign, !isMemberOfficer) },
+                  colors =
+                    ButtonDefaults.buttonColors(
+                      containerColor = Color(0xFF0E203D),
+                      contentColor = if (isMemberOfficer) CitadelGold else CitadelCyan,
+                    ),
+                  border = BorderStroke(1.dp, if (isMemberOfficer) CitadelGold else CitadelCyan),
+                  shape = RoundedCornerShape(7.dp),
+                  contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                  modifier =
+                    Modifier.heightIn(min = 48.dp).testTag("syndicate_role_toggle_${member.callsign}"),
+                ) {
+                  Text(
+                    text = if (isMemberOfficer) "DEMOTE" else "OFFICER",
+                    fontSize = 9.0.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = Mono,
+                  )
+                }
+              }
+              if (isSyndicateFounder || (canManageSyndicateRoster && !isMemberOfficer)) {
+                Button(
+                  onClick = { onKickSyndicateMember(member.callsign) },
+                  colors =
+                    ButtonDefaults.buttonColors(
+                      containerColor = Color(0xFF280E1A),
+                      contentColor = Color(0xFFFF3B4E),
+                    ),
+                  border = BorderStroke(1.dp, Color(0xFFFF3B4E)),
+                  shape = RoundedCornerShape(7.dp),
+                  contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                  modifier =
+                    Modifier.heightIn(min = 48.dp).testTag("syndicate_kick_${member.callsign}"),
+                ) {
+                  Text("REMOVE", fontSize = 9.0.sp, fontWeight = FontWeight.Bold, fontFamily = Mono)
+                }
+              }
+            }
           }
         }
       }
@@ -1381,13 +1648,19 @@ private fun ResonanceTargetsAndAchievementsPane(
                   )
                 }
               }
-              Text(
-                text = "${targetShip.bounty} RES",
-                color = Color(0xFFFF3B4E),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = Mono,
-              )
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                ResonanceCrestIcon(sizeDp = 13.dp)
+                Text(
+                  text = "${targetShip.bounty}",
+                  color = Color(0xFFFF3B4E),
+                  fontSize = 13.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = Mono,
+                )
+              }
             }
           }
         }
@@ -1990,14 +2263,20 @@ private fun ArmadaAndFriendsTabPane(
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                      text = "${slot.resonance} RES",
-                      color = CitadelGold,
-                      fontSize = 9.0.sp,
-                      fontWeight = FontWeight.ExtraBold,
-                      fontFamily = Mono,
-                      maxLines = 1,
-                    )
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                      ResonanceCrestIcon(sizeDp = 11.dp)
+                      Text(
+                        text = "${slot.resonance}",
+                        color = CitadelGold,
+                        fontSize = 9.0.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = Mono,
+                        maxLines = 1,
+                      )
+                    }
                   }
                   Text(
                     text =
@@ -2212,13 +2491,19 @@ private fun ArmadaAndFriendsTabPane(
                       fontWeight = FontWeight.Bold,
                       fontFamily = Sans,
                     )
-                    Text(
-                      text = "${friend.bounty} RES",
-                      color = CitadelGold,
-                      fontSize = 9.6.sp,
-                      fontWeight = FontWeight.ExtraBold,
-                      fontFamily = Mono,
-                    )
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                      ResonanceCrestIcon(sizeDp = 11.dp)
+                      Text(
+                        text = "${friend.bounty}",
+                        color = CitadelGold,
+                        fontSize = 9.6.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = Mono,
+                      )
+                    }
                   }
                   Text(
                     text = friend.statusText.uppercase(Locale.US),
@@ -2262,7 +2547,7 @@ private fun ArmadaAndFriendsTabPane(
                           .testTag("request_join_friend_${friend.callsign}"),
                     ) {
                       Text(
-                        text = if (reqLocked) "SENT (${reqRem}s)" else "JOIN WING",
+                        text = if (reqLocked) "SENT (${reqRem}s)" else "JOIN SQD",
                         fontSize = 9.6.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = Mono,

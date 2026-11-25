@@ -65,7 +65,7 @@ data class MatchmakingQueueUiState(
   val statusTransitionLabel: String
     get() =
       when (status) {
-        MatchmakingQueueStatus.SEARCHING_BALANCED -> "BALANCED WINDOW (+/- 250 RES)"
+        MatchmakingQueueStatus.SEARCHING_BALANCED -> "BALANCED WINDOW (+/- 250 RESONANCE)"
         MatchmakingQueueStatus.EXPANDING_BRACKET -> "OPEN BRACKET (ACCEPTING ANY AVAILABLE TEAM)"
         MatchmakingQueueStatus.MATCH_FOUND -> "MATCH LOCKED // RIFTING IN"
         MatchmakingQueueStatus.CANCELLED -> "QUEUE CANCELLED"

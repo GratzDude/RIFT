@@ -196,6 +196,10 @@ data class SyndicateInfo(
           "BOT",
           "RFT",
           "GUEST",
+          "GUE",
+          "GUES",
+          "NOV",
+          "NOVA",
           "FREE",
           "SOLO",
           "UNAFFILIATED",
@@ -282,6 +286,9 @@ data class CloudCustomGameRoom(
   val crateSpawnMult: Double = 1.0,
   val damageTakenScalePct: Int = 100,
   val weaponFluxCostScalePct: Int = 100,
+  val botCount: Int = 12,
+  val botSkillLevel: Int = 1,
+  val scoreCap: Int = 50,
   val createdAtMs: Long = 0L,
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null,
@@ -384,6 +391,8 @@ data class CloudSyndicateMeta(
   val crestJson: String = "",
   val customChannels: List<String> = listOf("#general"),
   val invitedGuests: Set<String> = emptySet(),
+  val inviteOnly: Boolean = false,
+  val officerCallsigns: Set<String> = emptySet(),
   val updatedAtMs: Long = 0L,
 )
 
@@ -744,4 +753,58 @@ data class PilotSurvivalTelemetrySummary(
   val perShip: List<ShipSurvivalTelemetryEntry> = emptyList(),
   val recentLives: List<CompletedShipLifeRecord> = emptyList(),
 )
+
+data class HubTapTelemetryRecord(
+  val timestampMs: Long = System.currentTimeMillis(),
+  val tapXNorm: Float = 0.5f,
+  val tapYNorm: Float = 0.5f,
+  val activeHubView: String = "HUB_MAIN",
+  val targetControlTag: String = "BACKGROUND",
+) {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
+      put("ts", timestampMs)
+      put("x", ((tapXNorm.coerceIn(0f, 1f) * 1000f).toInt() / 1000.0))
+      put("y", ((tapYNorm.coerceIn(0f, 1f) * 1000f).toInt() / 1000.0))
+      put("view", activeHubView.take(32))
+      put("tag", targetControlTag.take(40))
+    }
+
+  companion object {
+    fun fromJson(obj: JSONObject): HubTapTelemetryRecord =
+      HubTapTelemetryRecord(
+        timestampMs = obj.optLong("ts", System.currentTimeMillis()),
+        tapXNorm = obj.optDouble("x", 0.5).toFloat().coerceIn(0f, 1f),
+        tapYNorm = obj.optDouble("y", 0.5).toFloat().coerceIn(0f, 1f),
+        activeHubView = obj.optString("view", "HUB_MAIN").take(32).ifEmpty { "HUB_MAIN" },
+        targetControlTag = obj.optString("tag", "BACKGROUND").take(40).ifEmpty { "BACKGROUND" },
+      )
+  }
+}
+
+data class PilotCareerStatsSummary(
+  val pilotLevel: Int = 1,
+  val totalXp: Long = 0L,
+  val xpIntoLevel: Long = 0L,
+  val xpSpanForLevel: Long = 250L,
+  val levelProgressFraction: Float = 0f,
+  val combatXp: Long = 0L,
+  val survivalXp: Long = 0L,
+  val objectiveXp: Long = 0L,
+  val supportCratesXp: Long = 0L,
+  val dailyDirectivesXp: Long = 0L,
+  val matchesPlayed: Long = 0L,
+  val wins: Long = 0L,
+  val losses: Long = 0L,
+  val winPercent: Int = 0,
+  val eliminations: Long = 0L,
+  val deaths: Long = 0L,
+  val assists: Long = 0L,
+  val shotsFired: Long = 0L,
+  val shotsHit: Long = 0L,
+  val accuracyPercent: Int = 0,
+  val cratePickups: Long = 0L,
+  val riftCaptures: Long = 0L,
+)
+
 
