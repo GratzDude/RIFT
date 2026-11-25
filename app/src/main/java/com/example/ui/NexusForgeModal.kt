@@ -216,7 +216,7 @@ private const val FORGE_VORTEX_AGSL =
   uniform float3 uAura;
 
   float hash21(float2 p) {
-    p = fract(p * float2(123.34, 456.21));
+    p = fract(p * float2(127.1, 311.7));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);
   }
@@ -224,7 +224,7 @@ private const val FORGE_VORTEX_AGSL =
   float noise2(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
-    float2 u = f * f * (3.0 - 2.0 * f);
+    float2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     float a = hash21(i);
     float b = hash21(i + float2(1.0, 0.0));
     float c = hash21(i + float2(0.0, 1.0));
@@ -234,11 +234,11 @@ private const val FORGE_VORTEX_AGSL =
 
   float fbm(float2 p) {
     float v = 0.0;
-    float amp = 0.5;
-    for (int i = 0; i < 4; i++) {
+    float amp = 0.52;
+    for (int i = 0; i < 3; i++) {
       v += amp * noise2(p);
-      p = p * 2.03 + float2(17.1, 31.7);
-      amp *= 0.5;
+      p = float2(p.x * 1.62 - p.y * 1.21, p.x * 1.21 + p.y * 1.62) + float2(13.7, 29.3);
+      amp *= 0.48;
     }
     return v;
   }
@@ -255,75 +255,79 @@ private const val FORGE_VORTEX_AGSL =
     float splatNormR = anisoDist / safeR;
     if (uMode < 1.5 && normR > 1.42) return half4(0.0);
 
-    // Seamless 2D directional coordinates (zero atan(y, x) seam jump and zero central white ball!)
-    float2 dir = d / max(dist, 1.0);
     float turb = clamp(uTurbulence, 0.05, 2.2);
     float sigma = max(0.18, uSplatSoftness * 0.58);
-    float gaussLobe = exp(-(splatNormR * splatNormR) / (2.0 * sigma * sigma)) * clamp(uSplatGain, 0.0, 2.4) * smoothstep(0.18, 0.92, normR);
+    float gaussLobe = exp(-(splatNormR * splatNormR) / (2.0 * sigma * sigma)) * clamp(uSplatGain, 0.0, 2.4) * smoothstep(0.22, 0.92, normR);
 
     if (uMode < 0.5) {
-      // Safe Zone Calm Sanctuary Inside + Inward-Pressing Volumetric Storm-Cloud & Fracture-Lightning Rim Outside
-      float twist = (1.22 - clamp(normR, 0.0, 1.35)) * 1.55 * turb - uTime * 0.55;
-      float ct = cos(twist);
-      float st = sin(twist);
-      float2 tDir = float2(dir.x * ct - dir.y * st, dir.x * st + dir.y * ct);
-      float2 stormUv = tDir * (2.9 + 0.9 * turb) + float2(normR * 4.2 + uTime * 0.38, -normR * 3.6 - uTime * 0.29);
-      float n1 = fbm(stormUv);
-      float n2 = fbm(stormUv * 1.85 + float2(-uTime * 0.34, uTime * 0.31));
-      float billow = clamp(n1 * 0.58 + n2 * 0.54, 0.0, 1.0);
-      float jagEdge = 0.97 + (n1 - 0.5) * 0.09;
-      float fractureLip = exp(-26.0 * abs(normR - jagEdge)) * (0.60 + 0.58 * billow);
-      float ridge = 1.0 - abs(n1 - n2) * 3.3;
-      float lightning = pow(clamp(ridge, 0.0, 1.0), 3.8) * (0.55 + 0.45 * sin(uTime * 6.4 + dot(dir, float2(6.9, -5.8)))) * smoothstep(0.76, 1.04, normR);
-      float outerShelf = smoothstep(0.76, 1.02, normR) * (1.0 - smoothstep(jagEdge, 1.38, normR));
-      half3 calmBase = half3(0.012, 0.039, 0.086);
+      // Safe Zone Calm Sanctuary Inside + Smooth Volumetric Storm-Cloud Rim Outside (zero jagged lines)
+      float swirl = (1.18 - clamp(normR, 0.0, 1.35)) * 0.85 * turb - uTime * 0.24;
+      float cs = cos(swirl);
+      float ss = sin(swirl);
+      float2 rotUv = float2(d.x * cs - d.y * ss, d.x * ss + d.y * cs) / safeR;
+      float2 baseUv = rotUv * (2.6 + 0.8 * turb);
+      float warpA = fbm(baseUv + float2(uTime * 0.19, -uTime * 0.15));
+      float warpB = fbm(baseUv * 1.75 + float2(-uTime * 0.22 + warpA * 1.15, uTime * 0.18));
+      float billow = clamp(warpA * 0.56 + warpB * 0.54, 0.0, 1.0);
+      float cloudEdge = 1.04 + (billow - 0.5) * 0.12;
+      float outerShelf = smoothstep(0.68, 0.95, normR) * (1.0 - smoothstep(cloudEdge, cloudEdge + 0.30, normR));
+      float ridge = 1.0 - abs(warpA - warpB) * 3.1;
+      float flash = 0.52 + 0.48 * sin(uTime * 5.2 + warpB * 6.0);
+      float lightning = pow(clamp(ridge, 0.0, 1.0), 3.6) * flash * outerShelf;
+      half3 calmBase = half3(0.010, 0.032, 0.076);
       half3 stormCol = mix(half3(uPrimary), half3(uTrim), half(billow));
       half3 col = mix(calmBase, stormCol, half(clamp(outerShelf * 1.15, 0.0, 1.0)));
-      col += half3(uAura) * half((fractureLip * 1.15 + lightning * 1.25 + gaussLobe * 0.42) * uGlow);
-      float calmAlpha = (1.0 - smoothstep(0.95, 1.02, normR)) * 0.44 * uOpacity;
-      float stormAlpha = (outerShelf * (0.36 + 0.58 * billow) + fractureLip * 0.58 + lightning * 0.45 + gaussLobe * 0.28) * uOpacity;
-      half alpha = half(clamp(max(calmAlpha, stormAlpha), 0.0, 0.96));
+      col += half3(uAura) * half((lightning * 1.35 + gaussLobe * 0.36) * uGlow);
+      float calmAlpha = (1.0 - smoothstep(0.88, 1.04, normR)) * 0.38 * uOpacity;
+      float stormAlpha = (outerShelf * (0.34 + 0.58 * billow) + lightning * 0.46 + gaussLobe * 0.24) * uOpacity;
+      half alpha = half(clamp(max(calmAlpha, stormAlpha), 0.0, 0.95));
       return half4(col * alpha, alpha);
     } else if (uMode < 1.5) {
-      // Volumetric Stasis Storm-Cloud Containment Field + Jagged Fracture Rim + Branching Lightning
-      float2 uvA = dir * (2.8 + 0.9 * turb) + float2(normR * 3.4 - uTime * 0.36, -normR * 2.9 + uTime * 0.28);
-      float2 uvB = dir * (4.7 + 1.1 * turb) + float2(uTime * 0.42, normR * 4.8 - uTime * 0.34);
-      float cA = fbm(uvA);
-      float cB = fbm(uvB + cA * 1.2);
-      float billow = clamp(cA * 0.58 + cB * 0.54, 0.0, 1.0);
-      float jagEdge = 0.97 + (cA - 0.5) * 0.10 + (cB - 0.5) * 0.06;
-      float outerFade = 1.0 - smoothstep(jagEdge, jagEdge + 0.26, normR);
-      float rimShelf = smoothstep(0.60, 0.96, normR) * outerFade;
-      float fractureLip = exp(-24.0 * abs(normR - jagEdge)) * (0.58 + 0.62 * billow);
-      float ridge = 1.0 - abs(cA - cB) * 3.3;
-      float flash = 0.55 + 0.45 * sin(uTime * 6.6 + dot(dir, float2(6.9, -6.1)) + cB * 5.2);
-      float lightning = pow(clamp(ridge, 0.0, 1.0), 3.9) * flash * smoothstep(0.58, 1.02, normR) * outerFade;
-      half3 interiorMist = mix(half3(0.012, 0.024, 0.052), half3(uPrimary) * half(0.48), half(billow * 0.65));
+      // Smooth Volumetric Stasis Storm-Cloud Containment Field (zero hard rim lines)
+      float swirl = -uTime * 0.22 + (1.10 - clamp(normR, 0.0, 1.30)) * 0.65 * turb;
+      float cs = cos(swirl);
+      float ss = sin(swirl);
+      float2 rotUv = float2(d.x * cs - d.y * ss, d.x * ss + d.y * cs) / safeR;
+      float2 baseUv = rotUv * (2.85 + 0.85 * turb);
+      float cA = fbm(baseUv + float2(-uTime * 0.21, uTime * 0.17));
+      float cB = fbm(baseUv * 1.82 + float2(uTime * 0.24, -uTime * 0.19) + cA * 1.18);
+      float billow = clamp(cA * 0.56 + cB * 0.54, 0.0, 1.0);
+      float cloudEdge = 1.02 + (billow - 0.5) * 0.14;
+      float outerFade = 1.0 - smoothstep(cloudEdge, cloudEdge + 0.28, normR);
+      float rimShelf = smoothstep(0.56, 0.92, normR) * outerFade;
+      float ridge = 1.0 - abs(cA - cB) * 3.2;
+      float flash = 0.52 + 0.48 * sin(uTime * 5.6 + cB * 5.8);
+      float lightning = pow(clamp(ridge, 0.0, 1.0), 3.7) * flash * rimShelf;
+      half3 interiorMist = mix(half3(0.010, 0.020, 0.048), half3(uPrimary) * half(0.45), half(billow * 0.62));
       half3 rimStorm = mix(half3(uPrimary), half3(uTrim), half(billow));
       half3 col = mix(interiorMist, rimStorm, half(clamp(rimShelf * 1.15, 0.0, 1.0)));
-      col += half3(uAura) * half((fractureLip * 1.10 + lightning * 1.30 + gaussLobe * 0.40) * uGlow);
-      float interiorAlpha = (1.0 - smoothstep(0.0, jagEdge, normR)) * (0.12 + 0.08 * billow);
-      float rimAlpha = rimShelf * (0.30 + 0.56 * billow) + fractureLip * 0.60 + lightning * 0.48 + gaussLobe * 0.24;
-      half alpha = half(clamp((interiorAlpha + rimAlpha) * uOpacity, 0.0, 0.96));
+      col += half3(uAura) * half((lightning * 1.35 + gaussLobe * 0.34) * uGlow);
+      float interiorAlpha = (1.0 - smoothstep(0.0, cloudEdge, normR)) * (0.10 + 0.08 * billow);
+      float rimAlpha = rimShelf * (0.32 + 0.56 * billow) + lightning * 0.48 + gaussLobe * 0.22;
+      half alpha = half(clamp((interiorAlpha + rimAlpha) * uOpacity, 0.0, 0.95));
       return half4(col * alpha, alpha);
     } else {
-      // Outer Playfield Rift Storm Cloud Wall + Branching Lightning (seamless 2D dir, zero atan seam)
+      // Smooth Box-Free Outer Playfield Volumetric Storm-Cloud Wall in Continuous 2D Cartesian Space
       float band = dist - safeR;
-      if (band < -210.0 || band > 195.0) return half4(0.0);
-      float ringScale = safeR * 0.0046 * (0.75 + 0.35 * turb);
-      float radialCoord = band * 0.015;
-      float2 baseUv = dir * ringScale;
-      float cloudA = fbm(baseUv * 1.45 + float2(uTime * 0.18, radialCoord - uTime * 0.25));
-      float cloudB = fbm(baseUv * 2.95 + float2(-uTime * 0.31, radialCoord * 1.8 + cloudA * 1.3));
-      float billow = clamp(cloudA * 0.62 + cloudB * 0.55, 0.0, 1.0);
-      float sigmaPx = max(32.0, 82.0 * max(0.35, uSplatSoftness));
-      float wallFalloff = exp(-abs(band - (cloudA - 0.5) * 44.0) / sigmaPx);
-      float ridge = 1.0 - abs(cloudA - cloudB) * 3.4;
-      float flash = 0.55 + 0.45 * sin(uTime * 7.2 + dot(dir, float2(7.3, -6.1)) + cloudB * 5.8);
-      float lightning = pow(clamp(ridge, 0.0, 1.0), 3.9) * flash * wallFalloff;
+      if (band < -220.0 || band > 210.0) return half4(0.0);
+      float cellScale = max(safeR * 0.085, 22.0) / (0.80 + 0.30 * turb);
+      float2 worldUv = d / cellScale;
+      float warpX = fbm(worldUv * 0.92 + float2(uTime * 0.14, -uTime * 0.11));
+      float warpY = fbm(worldUv * 0.92 + float2(-uTime * 0.12 + 7.4, uTime * 0.15 + 3.9));
+      float2 warpedUv = worldUv * 1.55 + float2(warpX - 0.5, warpY - 0.5) * 1.35;
+      float cloudA = fbm(warpedUv + float2(-uTime * 0.18, uTime * 0.14));
+      float cloudB = fbm(warpedUv * 1.85 + float2(uTime * 0.22, -uTime * 0.19) + cloudA * 0.85);
+      float billow = clamp(cloudA * 0.56 + cloudB * 0.54, 0.0, 1.0);
+      float halfBand = max(78.0, 138.0 * max(0.45, uSplatSoftness));
+      float shiftedBand = abs(band - (billow - 0.5) * 46.0);
+      float wallFalloff = 1.0 - smoothstep(0.0, halfBand, shiftedBand);
+      wallFalloff *= wallFalloff * (3.0 - 2.0 * wallFalloff);
+      float ridge = 1.0 - abs(cloudA - cloudB) * 3.2;
+      float flash = 0.50 + 0.50 * sin(uTime * 5.8 + warpX * 6.2 + cloudB * 4.8);
+      float lightning = pow(clamp(ridge, 0.0, 1.0), 3.8) * flash * wallFalloff;
       half3 col = mix(half3(uPrimary), half3(uTrim), half(billow));
-      col += half3(uAura) * half((lightning * 1.40 + exp(-abs(band) / 20.0) * (0.62 + 0.34 * clamp(uSplatGain, 0.0, 2.0))) * uGlow);
-      half alpha = half(clamp(wallFalloff * (0.34 + 0.64 * billow) * uOpacity + lightning * 0.55, 0.0, 0.96));
+      col += half3(uAura) * half((lightning * 1.45 + wallFalloff * 0.24 * clamp(uSplatGain, 0.0, 2.0)) * uGlow);
+      half alpha = half(clamp((wallFalloff * (0.34 + 0.62 * billow) + lightning * 0.52) * uOpacity, 0.0, 0.95));
       return half4(col * alpha, alpha);
     }
   }
@@ -2409,41 +2413,80 @@ private fun DevPlayfieldAndHudStudioBay(
         starForgeCoreHitRadiusPx = 0f
         starForgeHoloBannerRect = Rect.Zero
 
-        // 1. Deep-Space Nebula & Stars (1:1 backdrop)
+        // 1. Line-Free Deep-Space Backdrop, Feathered Volumetric Nebulae, Celestial Bodies & 3-Plane Pinpoint Stars
         val bgRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.BACKGROUND_NEBULA)
-        val bgBase = Color(bgRec.primaryColorInt)
-        val bgTrim = Color(bgRec.trimColorInt)
-        val bgGlow = Color(bgRec.glowColorInt)
-        drawRect(color = bgBase)
+        val darknessScale = (1f - RiftVisualForgeState.ambientSpaceDarkness).coerceIn(0.15f, 1f)
+        val topSpaceCol = if (bgRec.isFactoryDefault) Color(0xFF010308) else Color(bgRec.primaryColorInt)
+        val bottomSpaceCol = if (bgRec.isFactoryDefault) Color(0xFF040917) else lerp(Color(bgRec.primaryColorInt), Color(0xFF040917), 0.55f)
+        drawRect(
+          brush = Brush.verticalGradient(colors = listOf(topSpaceCol, bottomSpaceCol)),
+        )
+        val nebulaAlpha = (0.28f * bgRec.glowIntensity * darknessScale).coerceIn(0.05f, 0.55f)
         drawCircle(
           brush =
             Brush.radialGradient(
-              colors =
-                listOf(
-                  bgTrim.copy(alpha = (0.16f * bgRec.glowIntensity * (1f - RiftVisualForgeState.ambientSpaceDarkness)).coerceIn(0f, 0.55f)),
-                  bgGlow.copy(alpha = (0.10f * bgRec.glowIntensity).coerceIn(0f, 0.40f)),
-                  Color.Transparent,
-                ),
-              center = Offset(w * 0.35f, h * 0.38f),
-              radius = max(w, h) * 0.62f,
+              colors = listOf(Color(0xFF1E1B4B).copy(alpha = nebulaAlpha), Color(0xFF083344).copy(alpha = nebulaAlpha * 0.52f), Color.Transparent),
+              center = Offset(w * 0.28f - (camWorldX - 4000f) * 0.025f, h * 0.34f - (camWorldY - 4000f) * 0.025f),
+              radius = max(w, h) * 0.58f,
             ),
-          radius = max(w, h) * 0.62f,
-          center = Offset(w * 0.35f, h * 0.38f),
+          radius = max(w, h) * 0.58f,
+          center = Offset(w * 0.28f - (camWorldX - 4000f) * 0.025f, h * 0.34f - (camWorldY - 4000f) * 0.025f),
         )
-        val gridWorldStep = 250f * worldScale
-        if (gridWorldStep >= 18f) {
-          val startX = ((w * 0.5f - camWorldX * worldScale) % gridWorldStep + gridWorldStep) % gridWorldStep
-          var gx = startX
-          while (gx < w) {
-            drawLine(Color(0x1638BDF8), Offset(gx, 0f), Offset(gx, h), 1f)
-            gx += gridWorldStep
-          }
-          val startY = ((h * 0.5f - camWorldY * worldScale) % gridWorldStep + gridWorldStep) % gridWorldStep
-          var gy = startY
-          while (gy < h) {
-            drawLine(Color(0x1638BDF8), Offset(0f, gy), Offset(w, gy), 1f)
-            gy += gridWorldStep
-          }
+        drawCircle(
+          brush =
+            Brush.radialGradient(
+              colors = listOf(Color(0xFF3B0764).copy(alpha = nebulaAlpha * 0.85f), Color(bgRec.trimColorInt).copy(alpha = nebulaAlpha * 0.36f), Color.Transparent),
+              center = Offset(w * 0.74f - (camWorldX - 4000f) * 0.038f, h * 0.66f - (camWorldY - 4000f) * 0.038f),
+              radius = max(w, h) * 0.52f,
+            ),
+          radius = max(w, h) * 0.52f,
+          center = Offset(w * 0.74f - (camWorldX - 4000f) * 0.038f, h * 0.66f - (camWorldY - 4000f) * 0.038f),
+        )
+        drawIntoCanvas { bgCanvas ->
+          val bgNc = bgCanvas.nativeCanvas
+          val galR = max(w, h) * 0.14f
+          val galX = w * 0.80f - (camWorldX - 4000f) * 0.034f
+          val galY = h * 0.22f - (camWorldY - 4000f) * 0.034f
+          bgNc.drawBitmap(
+            RiftSpriteBaker.spiralGalaxyStamp,
+            null,
+            android.graphics.RectF(galX - galR, galY - galR, galX + galR, galY + galR),
+            null,
+          )
+          val moonR = max(w, h) * 0.055f
+          val moonX = w * 0.16f - (camWorldX - 4000f) * 0.042f
+          val moonY = h * 0.76f - (camWorldY - 4000f) * 0.042f
+          bgNc.drawBitmap(
+            RiftSpriteBaker.distantCelestialMoonStamp,
+            null,
+            android.graphics.RectF(moonX - moonR, moonY - moonR, moonX + moonR, moonY + moonR),
+            null,
+          )
+        }
+        val safeW = w.coerceAtLeast(64f)
+        val safeH = h.coerceAtLeast(64f)
+        for (sIdx in 0 until 72) {
+          val plane = sIdx % 3
+          val parallax = if (plane == 0) 0.04f else if (plane == 1) 0.09f else 0.16f
+          val seedX = ((sIdx * 733 + 109) % 997) / 997f
+          val seedY = ((sIdx * 461 + 317) % 991) / 991f
+          val rawX = seedX * safeW - (camWorldX - 4000f) * parallax
+          val rawY = seedY * safeH - (camWorldY - 4000f) * parallax
+          val sx = ((rawX % safeW) + safeW) % safeW
+          val sy = ((rawY % safeH) + safeH) % safeH
+          val twinkle = 0.62f + 0.38f * sin(timeSec * (1.2f + plane * 0.55f) + sIdx * 1.91f)
+          val starR = (if (plane == 0) 0.85f else if (plane == 1) 1.25f else 1.65f)
+          val starCol =
+            when (sIdx % 5) {
+              0, 1 -> Color(0xFFDBEAFE)
+              2, 3 -> Color(0xFFF8FAFC)
+              else -> Color(0xFFFEF08A)
+            }
+          drawCircle(
+            color = starCol.copy(alpha = (twinkle * (0.42f + plane * 0.22f) * darknessScale).coerceIn(0.08f, 0.92f)),
+            radius = starR,
+            center = Offset(sx, sy),
+          )
         }
         hitEntriesState += StageHitEntry(ForgeElementTarget.BACKGROUND_NEBULA, w * 0.08f, h * 0.20f, 44.dp.toPx())
 
@@ -2466,17 +2509,34 @@ private fun DevPlayfieldAndHudStudioBay(
           val scoutX = w2sX(4000f)
           val scoutY = w2sY(4000f - stormWorldR + 175f)
           if (stormTopY in -240f..(h + 240f)) {
+            val startX = scoutX - 26f * worldScale
+            val startY = stormTopY + 6f * worldScale
+            val spanY = scoutY - startY
             val boltPath = Path().apply {
-              moveTo(scoutX - 28f * worldScale, stormTopY + 8f * worldScale)
-              lineTo(scoutX - 10f * worldScale + sin(timeSec * 19f) * 9f, (stormTopY + scoutY) * 0.5f)
-              lineTo(scoutX, scoutY)
+              moveTo(startX, startY)
+              for (seg in 1..5) {
+                val t = seg / 5f
+                val envelope = sin(t * PI.toFloat())
+                val jitter = (sin(timeSec * 14f + seg * 2.3f) * 11f + cos(timeSec * 9.5f - seg * 1.7f) * 6f) * envelope
+                lineTo(startX + (scoutX - startX) * t + jitter, startY + spanY * t)
+              }
             }
-            drawPath(boltPath, Color(perimRec.glowColorInt).copy(alpha = 0.88f), style = Stroke(width = 2.4.dp.toPx() * perimRec.borderWeight, cap = StrokeCap.Round))
-            drawPath(boltPath, Color.White, style = Stroke(width = 1.0.dp.toPx(), cap = StrokeCap.Round))
+            val forkMidX = (startX + scoutX) * 0.5f + sin(timeSec * 14f + 4.6f) * 9f
+            val forkMidY = startY + spanY * 0.48f
+            val forkPath = Path().apply {
+              moveTo(forkMidX, forkMidY)
+              lineTo(forkMidX + 18f * worldScale + cos(timeSec * 12f) * 5f, forkMidY + spanY * 0.24f)
+              lineTo(forkMidX + 30f * worldScale, forkMidY + spanY * 0.42f)
+            }
+            val glowCol = Color(perimRec.glowColorInt)
+            drawPath(boltPath, glowCol.copy(alpha = 0.42f), style = Stroke(width = 5.2.dp.toPx() * perimRec.borderWeight, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(forkPath, glowCol.copy(alpha = 0.34f), style = Stroke(width = 3.4.dp.toPx() * perimRec.borderWeight, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(boltPath, Color(0xFFF0F9FF).copy(alpha = 0.94f), style = Stroke(width = 1.3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(forkPath, Color(0xFFE0F2FE).copy(alpha = 0.84f), style = Stroke(width = 0.9.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
             hitEntriesState += StageHitEntry(ForgeElementTarget.ARENA_PERIMETER_RING, scoutX, stormTopY + 18f, 64.dp.toPx())
           }
 
-          // 3. Center (4000, 4000): 180px Star Forge Core Centerpiece + Safe-Zone Rift Rim + Clickable Rift Station Specimen
+          // 3. Center (4000, 4000): 180px Star Forge Core Centerpiece + Volumetric Safe-Zone Storm Rim + Clickable Rift Station Specimen
           val padRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SAFE_ZONE_PAD)
           val rimRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SAFE_ZONE_WALL)
           val szWorldR = 400f * RiftCalibrationState.safeZoneScale * padRec.pixelScale.coerceIn(0.65f, 1.35f)
@@ -2495,24 +2555,6 @@ private fun DevPlayfieldAndHudStudioBay(
           val starCoreScreenR =
             (180f * RiftCalibrationState.safeZoneScale * padRec.pixelScale.coerceIn(0.65f, 1.45f) * worldScale)
               .coerceAtLeast(18f)
-          val starCoreLiveLeadCol = sampleStarForgeStellarSpectrum(timeSec * 0.16f)
-          for (bIdx in 0 until 8) {
-            val ba = -timeSec * 0.14f + bIdx * (PI.toFloat() * 0.25f)
-            val beamCol = sampleStarForgeStellarSpectrum(timeSec * 0.16f + bIdx * 0.125f)
-            val bStart = Offset(szCx + cos(ba) * (starCoreScreenR * 0.88f), szCy + sin(ba) * (starCoreScreenR * 0.88f))
-            val bEnd = Offset(szCx + cos(ba) * (szScreenR * 0.985f), szCy + sin(ba) * (szScreenR * 0.985f))
-            drawLine(
-              brush =
-                Brush.linearGradient(
-                  listOf(beamCol.copy(alpha = 0.84f), starCoreLiveLeadCol.copy(alpha = 0.55f), Color(rimRec.glowColorInt).copy(alpha = 0.72f)),
-                  start = bStart,
-                  end = bEnd,
-                ),
-              start = bStart,
-              end = bEnd,
-              strokeWidth = 2.1.dp.toPx(),
-            )
-          }
           drawSoftGaussianSplatHalo(
             center = Offset(szCx, szCy),
             baseRadiusPx = starCoreScreenR * 1.32f,
@@ -2557,18 +2599,7 @@ private fun DevPlayfieldAndHudStudioBay(
           starForgeCoreScreenCenter = Offset(szCx, szCy)
           starForgeCoreHitRadiusPx = max(starCoreScreenR * 1.08f, 40.dp.toPx())
 
-          drawCircle(
-            color = Color(rimRec.glowColorInt).copy(alpha = (0.32f * rimRec.glowIntensity).coerceIn(0.08f, 0.85f)),
-            radius = szScreenR,
-            center = Offset(szCx, szCy),
-            style = Stroke(width = 7.dp.toPx() * rimRec.borderWeight),
-          )
-          drawCircle(
-            color = Color(rimRec.trimColorInt).copy(alpha = rimRec.surfaceOpacity),
-            radius = szScreenR,
-            center = Offset(szCx, szCy),
-            style = Stroke(width = 2.2.dp.toPx() * rimRec.borderWeight),
-          )
+          // Volumetric Safe-Zone Storm Clouds + Fractal Branching Perimeter Lightning (zero wire circles, zero sawtooth polylines)
           drawIntoCanvas { c ->
             val nc = c.nativeCanvas
             RiftSpriteBaker.drawLocalizedIngressPlumes(
@@ -2582,42 +2613,29 @@ private fun DevPlayfieldAndHudStudioBay(
               outerColor = rimRec.primaryColorInt,
               midColor = rimRec.glowColorInt,
               coreColor = android.graphics.Color.WHITE,
-              fadeAlpha = (rimRec.surfaceOpacity * 0.78f).coerceIn(0.18f, 0.92f),
+              fadeAlpha = (rimRec.surfaceOpacity * 0.72f).coerceIn(0.18f, 0.88f),
               swirlBias = 0.20f,
             )
-            RiftSpriteBaker.drawRefractiveMeniscusRim(
+            RiftSpriteBaker.drawFractalPerimeterLightningArcs(
               canvas = nc,
               cx = szCx,
               cy = szCy,
-              rimRadius = szScreenR * 0.99f,
-              throatRadius = 0f,
-              lightAngleRad = -2.28f + 0.06f * sin(timeSec * 0.6f),
-              rimTintColor = rimRec.glowColorInt,
-              secondaryTintColor = rimRec.trimColorInt,
+              radius = szScreenR,
+              timeSec = timeSec,
+              spinRad = -timeSec * 0.32f,
+              arcCount = 7,
+              deepColor = rimRec.primaryColorInt,
+              midColor = rimRec.trimColorInt,
+              brightColor = rimRec.glowColorInt,
+              coreColor = android.graphics.Color.rgb(204, 251, 241),
               fadeAlpha = rimRec.surfaceOpacity.coerceIn(0.25f, 1f),
-              strokeScale = rimRec.borderWeight.coerceIn(0.6f, 1.8f),
+              strokeWeight = rimRec.borderWeight.coerceIn(0.6f, 1.8f),
+              seedOffset = 3.1f,
             )
           }
-          // Jagged spacetime fracture rim along szScreenR (zero mechanical degree ticks)
-          val szFracturePath = Path().apply {
-            val crags = 28
-            for (i in 0..crags) {
-              val a = (i.toFloat() / crags.toFloat()) * (PI.toFloat() * 2f)
-              val jag = 1f + (sin(a * 7f + timeSec * 1.6f) * 0.022f + cos(a * 15f - timeSec * 2.1f) * 0.014f) * rimRec.shaderTurbulence.coerceIn(0.4f, 1.8f)
-              val px = szCx + cos(a) * (szScreenR * jag)
-              val py = szCy + sin(a) * (szScreenR * jag)
-              if (i == 0) moveTo(px, py) else lineTo(px, py)
-            }
-            close()
-          }
-          drawPath(
-            path = szFracturePath,
-            color = Color(rimRec.glowColorInt).copy(alpha = (0.82f * rimRec.surfaceOpacity).coerceIn(0.18f, 0.96f)),
-            style = Stroke(width = 2.0.dp.toPx() * rimRec.borderWeight, cap = StrokeCap.Round, join = StrokeJoin.Round),
-          )
           hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_WALL, szCx + szScreenR, szCy, 44.dp.toPx())
 
-          // 4. True 1:1 Obstacles & Unified Volumetric Storm-Cloud Playfield Rifts
+          // 4. True 1:1 Obstacles & Unified True-Centered Volumetric Storm-Cloud Playfield Rifts
           drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
             fun drawObstacle1To1(target: ForgeElementTarget, type: SpaceObstacleType, wx: Float, wy: Float, worldRadius: Float) {
@@ -2640,9 +2658,6 @@ private fun DevPlayfieldAndHudStudioBay(
               val sx = w2sX(wx)
               val sy = w2sY(wy)
               val sr = (baseRiftR * rec.pixelScale * worldScale).coerceAtLeast(16f)
-              val orbPhase = timeSec * 0.85f + (wx * 0.0031f + wy * 0.0023f)
-              val px = ((w * 0.5f - sx) * 0.062f).coerceIn(-sr * 0.15f, sr * 0.15f) + cos(orbPhase) * (sr * 0.020f)
-              val py = ((h * 0.5f - sy) * 0.062f).coerceIn(-sr * 0.15f, sr * 0.15f) + sin(orbPhase) * (sr * 0.020f)
               RiftSpriteBaker.draw3dPlayfieldRift(
                 canvas = nc,
                 type = anomType,
@@ -2650,8 +2665,8 @@ private fun DevPlayfieldAndHudStudioBay(
                 cy = sy,
                 radius = sr,
                 spinAngle = spinAngle * (0.7f + 0.5f * rec.shaderTurbulence),
-                parallaxOffsetX = px,
-                parallaxOffsetY = py,
+                parallaxOffsetX = 0f,
+                parallaxOffsetY = 0f,
               )
               hitEntriesState += StageHitEntry(target, sx, sy, max(sr * 0.85f, 30.dp.toPx()))
             }
@@ -2664,10 +2679,6 @@ private fun DevPlayfieldAndHudStudioBay(
             val pAy = w2sY(3720f)
             val pBx = w2sX(5260f)
             val pBy = w2sY(3820f)
-            val pPxA = ((w * 0.5f - pAx) * 0.062f).coerceIn(-pR * 0.15f, pR * 0.15f) + cos(timeSec * 0.9f) * (pR * 0.020f)
-            val pPyA = ((h * 0.5f - pAy) * 0.062f).coerceIn(-pR * 0.15f, pR * 0.15f) + sin(timeSec * 0.9f) * (pR * 0.020f)
-            val pPxB = ((w * 0.5f - pBx) * 0.062f).coerceIn(-pR * 0.15f, pR * 0.15f) + cos(-timeSec * 0.9f) * (pR * 0.020f)
-            val pPyB = ((h * 0.5f - pBy) * 0.062f).coerceIn(-pR * 0.15f, pR * 0.15f) + sin(-timeSec * 0.9f) * (pR * 0.020f)
             RiftSpriteBaker.draw3dPlayfieldRift(
               canvas = nc,
               type = AnomalyType.PHASE_RIFT_A,
@@ -2675,8 +2686,8 @@ private fun DevPlayfieldAndHudStudioBay(
               cy = pAy,
               radius = pR,
               spinAngle = spinAngle,
-              parallaxOffsetX = pPxA,
-              parallaxOffsetY = pPyA,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
             RiftSpriteBaker.draw3dPlayfieldRift(
               canvas = nc,
@@ -2685,8 +2696,8 @@ private fun DevPlayfieldAndHudStudioBay(
               cy = pBy,
               radius = pR,
               spinAngle = -spinAngle,
-              parallaxOffsetX = pPxB,
-              parallaxOffsetY = pPyB,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
             hitEntriesState += StageHitEntry(ForgeElementTarget.RIFT_PHASE_PAIR, (pAx + pBx) * 0.5f, (pAy + pBy) * 0.5f, max(pR * 1.5f, 36.dp.toPx()))
 
@@ -2712,7 +2723,7 @@ private fun DevPlayfieldAndHudStudioBay(
             style = Stroke(width = 2.4.dp.toPx() * shipAuraRec.borderWeight, cap = StrokeCap.Round),
           )
 
-          // Placed Stasis Barrier (1:1 length)
+          // Placed Stasis Barrier (1:1 length — clean energy bulkhead beam with zero line-attached end orbs)
           val barRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.PLACED_STASIS_BARRIER)
           val barHalf = (RiftCalibrationState.stasisBarrierLength * 0.5f * barRec.pixelScale) * worldScale
           val barX = w2sX(3480f)
@@ -2731,8 +2742,6 @@ private fun DevPlayfieldAndHudStudioBay(
             3.6.dp.toPx() * barRec.borderWeight,
             StrokeCap.Round,
           )
-          drawCircle(Color.White, 4.5.dp.toPx(), Offset(barX, barY - barHalf))
-          drawCircle(Color.White, 4.5.dp.toPx(), Offset(barX, barY + barHalf))
           hitEntriesState += StageHitEntry(ForgeElementTarget.PLACED_STASIS_BARRIER, barX, barY, max(barHalf, 32.dp.toPx()))
 
           // 6. Sector 4 (South): Eclipse Stasis, Flux Core Orb, Stasis Brig Jail, Master Supply Crate Shader, Bolts, Proximity Mine & ALL Individual Supply Crate Buffs
@@ -2790,8 +2799,8 @@ private fun DevPlayfieldAndHudStudioBay(
               coreColor = android.graphics.Color.WHITE,
               darkVoidCenter = true,
               inwardSpiral = true,
-              parallaxOffsetX = ((w * 0.5f - brigCx) * 0.055f).coerceIn(-brigCoreR * 0.16f, brigCoreR * 0.16f),
-              parallaxOffsetY = ((h * 0.5f - brigCy) * 0.055f).coerceIn(-brigCoreR * 0.16f, brigCoreR * 0.16f),
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
               turbulence = brigRec.shaderTurbulence,
               glowIntensity = brigRec.glowIntensity,
               borderWeight = brigRec.borderWeight,
@@ -4438,90 +4447,106 @@ private fun DrawScope.drawShaderOrFallbackVortex(
   if (!drewAgsl) {
     val turb = recipe.shaderTurbulence.coerceIn(0.25f, 2.0f)
     if (mode > 1.5f) {
-      // Multi-octave jagged storm-cloud wall fallback (zero circular balls)
-      for (bandIdx in 0..2) {
-        val baseR = (radiusPx + (bandIdx - 1) * 26f * turb.coerceAtLeast(0.5f)).coerceAtLeast(8f)
-        val bandPath = Path().apply {
-          val steps = 40
-          for (i in 0..steps) {
-            val a = (i.toFloat() / steps.toFloat()) * (PI.toFloat() * 2f)
-            val jag = 1f + (sin(a * 9f + timeSec * 1.4f + bandIdx) * 0.032f + cos(a * 19f - timeSec * 1.9f) * 0.018f) * turb
-            val px = center.x + cos(a) * (baseR * jag)
-            val py = center.y + sin(a) * (baseR * jag)
-            if (i == 0) moveTo(px, py) else lineTo(px, py)
-          }
-          close()
-        }
-        drawPath(
-          path = bandPath,
-          color = if (bandIdx % 2 == 0) tCol.copy(alpha = 0.28f * recipe.surfaceOpacity) else gCol.copy(alpha = 0.34f * recipe.surfaceOpacity),
-          style = Stroke(width = (16f - bandIdx * 4f).dp.toPx() * recipe.borderWeight, cap = StrokeCap.Round, join = StrokeJoin.Round),
+      // Feathered RadialGradient volumetric storm-cloud wall fallback (zero jagged polylines or circular balls)
+      drawIntoCanvas { c ->
+        val nc = c.nativeCanvas
+        val bandPuffR = (42f * (0.75f + 0.35f * turb)).coerceAtLeast(12f)
+        RiftSpriteBaker.drawFeatheredStormRingClouds(
+          canvas = nc,
+          cx = center.x,
+          cy = center.y,
+          ringRadius = radiusPx,
+          puffBaseRadius = bandPuffR,
+          puffCount = 24,
+          timeSec = timeSec,
+          spinRad = timeSec * 0.14f,
+          colorA = recipe.primaryColorInt,
+          colorB = recipe.trimColorInt,
+          alphaScale = (0.78f * recipe.surfaceOpacity).coerceIn(0.15f, 0.95f),
+        )
+        RiftSpriteBaker.drawFeatheredStormRingClouds(
+          canvas = nc,
+          cx = center.x,
+          cy = center.y,
+          ringRadius = radiusPx + bandPuffR * 0.45f,
+          puffBaseRadius = bandPuffR * 0.82f,
+          puffCount = 20,
+          timeSec = timeSec * 1.18f,
+          spinRad = -timeSec * 0.19f,
+          colorA = recipe.trimColorInt,
+          colorB = recipe.glowColorInt,
+          alphaScale = (0.62f * recipe.surfaceOpacity).coerceIn(0.12f, 0.88f),
         )
       }
     } else {
-      // Feathered dark abyssal interior + jagged storm-cloud fracture rim (ZERO central white ball or mechanical collar arcs!)
+      // Feathered abyssal sanctuary/containment interior + billowing storm-cloud puffs (zero jagged polylines)
       drawCircle(
         brush =
           Brush.radialGradient(
             colorStops =
               arrayOf(
-                0.00f to Color(0xFF030814).copy(alpha = 0.62f * recipe.surfaceOpacity),
-                0.62f to pCol.copy(alpha = 0.36f * recipe.surfaceOpacity),
-                0.90f to tCol.copy(alpha = 0.56f * recipe.surfaceOpacity),
+                0.00f to Color(0xFF02040A).copy(alpha = 0.62f * recipe.surfaceOpacity),
+                0.62f to pCol.copy(alpha = 0.34f * recipe.surfaceOpacity),
+                0.88f to tCol.copy(alpha = 0.50f * recipe.surfaceOpacity),
                 1.00f to Color.Transparent,
               ),
             center = center,
-            radius = (radiusPx * 1.12f).coerceAtLeast(10f),
+            radius = (radiusPx * 1.16f).coerceAtLeast(10f),
           ),
-        radius = (radiusPx * 1.12f).coerceAtLeast(10f),
+        radius = (radiusPx * 1.16f).coerceAtLeast(10f),
         center = center,
       )
-      val fracturePath = Path().apply {
-        val crags = 28
-        for (i in 0..crags) {
-          val a = (i.toFloat() / crags.toFloat()) * (PI.toFloat() * 2f)
-          val jag = 1f + (sin(a * 7f + timeSec * 1.7f) * 0.034f + cos(a * 15f - timeSec * 2.2f) * 0.020f) * turb
-          val px = center.x + cos(a) * (radiusPx * jag)
-          val py = center.y + sin(a) * (radiusPx * jag)
-          if (i == 0) moveTo(px, py) else lineTo(px, py)
-        }
-        close()
+      drawIntoCanvas { c ->
+        RiftSpriteBaker.drawFeatheredStormRingClouds(
+          canvas = c.nativeCanvas,
+          cx = center.x,
+          cy = center.y,
+          ringRadius = radiusPx * 0.92f,
+          puffBaseRadius = (radiusPx * 0.28f).coerceAtLeast(8f),
+          puffCount = 14,
+          timeSec = timeSec,
+          spinRad = -timeSec * 0.28f,
+          colorA = recipe.primaryColorInt,
+          colorB = recipe.trimColorInt,
+          alphaScale = (0.76f * recipe.surfaceOpacity).coerceIn(0.18f, 0.95f),
+        )
       }
-      drawPath(
-        path = fracturePath,
-        color = gCol.copy(alpha = (0.76f * recipe.surfaceOpacity).coerceIn(0.18f, 0.95f)),
-        style = Stroke(width = 2.4.dp.toPx() * recipe.borderWeight, cap = StrokeCap.Round, join = StrokeJoin.Round),
-      )
     }
   }
-  if (mode < 1.5f && radiusPx > 10f) {
+  if (radiusPx > 10f) {
     drawIntoCanvas { c ->
       val nc = c.nativeCanvas
-      RiftSpriteBaker.drawLocalizedIngressPlumes(
+      if (mode < 1.5f) {
+        RiftSpriteBaker.drawLocalizedIngressPlumes(
+          canvas = nc,
+          cx = center.x,
+          cy = center.y,
+          outerRimR = radiusPx * 0.98f,
+          innerReachR = radiusPx * 0.56f,
+          plumeCount = 6,
+          phaseRad = -timeSec * (0.52f + 0.32f * recipe.shaderTurbulence.coerceIn(0.1f, 2.0f)),
+          outerColor = recipe.primaryColorInt,
+          midColor = recipe.glowColorInt,
+          coreColor = android.graphics.Color.WHITE,
+          fadeAlpha = (recipe.surfaceOpacity * 0.78f).coerceIn(0.18f, 0.92f),
+          swirlBias = 0.20f,
+        )
+      }
+      RiftSpriteBaker.drawFractalPerimeterLightningArcs(
         canvas = nc,
         cx = center.x,
         cy = center.y,
-        outerRimR = radiusPx * 0.98f,
-        innerReachR = radiusPx * 0.54f,
-        plumeCount = 6,
-        phaseRad = -timeSec * (0.55f + 0.35f * recipe.shaderTurbulence.coerceIn(0.1f, 2.0f)),
-        outerColor = recipe.primaryColorInt,
-        midColor = recipe.glowColorInt,
-        coreColor = android.graphics.Color.WHITE,
-        fadeAlpha = (recipe.surfaceOpacity * 0.84f).coerceIn(0.18f, 0.95f),
-        swirlBias = 0.20f,
-      )
-      RiftSpriteBaker.drawRefractiveMeniscusRim(
-        canvas = nc,
-        cx = center.x,
-        cy = center.y,
-        rimRadius = radiusPx * 0.99f,
-        throatRadius = 0f,
-        lightAngleRad = -2.28f + 0.07f * sin(timeSec * 0.8f),
-        rimTintColor = recipe.glowColorInt,
-        secondaryTintColor = recipe.trimColorInt,
+        radius = radiusPx,
+        timeSec = timeSec,
+        spinRad = if (mode > 1.5f) timeSec * 0.16f else -timeSec * 0.34f,
+        arcCount = if (mode > 1.5f) 8 else 6,
+        deepColor = recipe.primaryColorInt,
+        midColor = recipe.trimColorInt,
+        brightColor = recipe.glowColorInt,
+        coreColor = android.graphics.Color.rgb(240, 249, 255),
         fadeAlpha = recipe.surfaceOpacity.coerceIn(0.25f, 1f),
-        strokeScale = recipe.borderWeight.coerceIn(0.6f, 1.9f),
+        strokeWeight = recipe.borderWeight.coerceIn(0.6f, 1.85f),
+        seedOffset = mode * 2.3f,
       )
     }
   }
@@ -4583,12 +4608,15 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
   )
   when (target) {
     ForgeElementTarget.SAFE_ZONE_PAD -> {
-      drawCircle(Color(0xFF030917), span * 1.04f, Offset(cx, cy))
       drawCircle(
-        Color(recipe.glowColorInt).copy(alpha = 0.28f),
-        span * 1.04f,
-        Offset(cx, cy),
-        style = Stroke(2.0.dp.toPx() * recipe.borderWeight),
+        brush =
+          Brush.radialGradient(
+            colors = listOf(Color(0xFF030917), Color(recipe.glowColorInt).copy(alpha = 0.22f), Color.Transparent),
+            center = Offset(cx, cy),
+            radius = span * 1.12f,
+          ),
+        radius = span * 1.12f,
+        center = Offset(cx, cy),
       )
       val stationR = span * 0.88f
       drawIntoCanvas { c ->
@@ -4617,7 +4645,6 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
     }
     ForgeElementTarget.SAFE_ZONE_WALL -> {
       drawShaderOrFallbackVortex(vortexAgslShader, 0f, Offset(cx, cy), span, timeSec, recipe)
-      drawCircle(Color(recipe.trimColorInt), span, Offset(cx, cy), style = Stroke(2.6.dp.toPx() * recipe.borderWeight))
     }
     ForgeElementTarget.ARENA_PERIMETER_RING -> {
       drawShaderOrFallbackVortex(vortexAgslShader, 2f, Offset(cx, cy + span * 1.45f), span * 1.65f, timeSec, recipe)
@@ -4645,8 +4672,6 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
     ForgeElementTarget.RIFT_REPULSOR,
     ForgeElementTarget.RIFT_GRAVITY,
     ForgeElementTarget.RIFT_PHASE_PAIR -> {
-      val prevPx = cos(timeSec * 1.15f) * (span * 0.085f)
-      val prevPy = sin(timeSec * 1.15f) * (span * 0.085f)
       drawIntoCanvas { c ->
         val nc = c.nativeCanvas
         when (target) {
@@ -4658,8 +4683,8 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
               cy = cy,
               radius = span,
               spinAngle = spin,
-              parallaxOffsetX = prevPx,
-              parallaxOffsetY = prevPy,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
           ForgeElementTarget.RIFT_REPULSOR ->
             RiftSpriteBaker.draw3dPlayfieldRift(
@@ -4669,8 +4694,8 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
               cy = cy,
               radius = span,
               spinAngle = spin,
-              parallaxOffsetX = prevPx,
-              parallaxOffsetY = prevPy,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
           ForgeElementTarget.RIFT_GRAVITY ->
             RiftSpriteBaker.draw3dPlayfieldRift(
@@ -4680,8 +4705,8 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
               cy = cy,
               radius = span,
               spinAngle = spin,
-              parallaxOffsetX = prevPx,
-              parallaxOffsetY = prevPy,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
           else -> {
             RiftSpriteBaker.draw3dPlayfieldRift(
@@ -4691,8 +4716,8 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
               cy = cy,
               radius = span * 0.62f,
               spinAngle = spin,
-              parallaxOffsetX = prevPx * 0.62f,
-              parallaxOffsetY = prevPy * 0.62f,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
             RiftSpriteBaker.draw3dPlayfieldRift(
               canvas = nc,
@@ -4701,8 +4726,8 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
               cy = cy,
               radius = span * 0.62f,
               spinAngle = -spin,
-              parallaxOffsetX = -prevPx * 0.62f,
-              parallaxOffsetY = -prevPy * 0.62f,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
           }
         }
@@ -4721,8 +4746,6 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
     ForgeElementTarget.PLACED_STASIS_BARRIER -> {
       drawLine(Color(recipe.glowColorInt).copy(alpha = 0.38f), Offset(cx - span, cy), Offset(cx + span, cy), 14.dp.toPx() * recipe.borderWeight, StrokeCap.Round)
       drawLine(Color(recipe.trimColorInt), Offset(cx - span, cy), Offset(cx + span, cy), 4.dp.toPx() * recipe.borderWeight, StrokeCap.Round)
-      drawCircle(Color.White, 5.dp.toPx(), Offset(cx - span, cy))
-      drawCircle(Color.White, 5.dp.toPx(), Offset(cx + span, cy))
     }
     ForgeElementTarget.SHIP_AURA_LABELS -> {
       drawIntoCanvas { c ->
@@ -4782,8 +4805,8 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
           coreColor = android.graphics.Color.WHITE,
           darkVoidCenter = true,
           inwardSpiral = true,
-          parallaxOffsetX = cos(timeSec * 1.1f) * (span * 0.04f),
-          parallaxOffsetY = sin(timeSec * 1.1f) * (span * 0.04f),
+          parallaxOffsetX = 0f,
+          parallaxOffsetY = 0f,
           turbulence = recipe.shaderTurbulence,
           glowIntensity = recipe.glowIntensity,
           borderWeight = recipe.borderWeight,

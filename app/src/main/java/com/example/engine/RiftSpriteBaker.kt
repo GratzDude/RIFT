@@ -14,17 +14,21 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.RuntimeShader
 import android.graphics.Shader
+import android.graphics.Matrix
 import android.os.Build
 import android.os.SystemClock
 import kotlin.math.PI
+import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private const val VOLUMETRIC_RIFT_AGSL =
   """
   uniform float2 uCenter;
-  uniform float2 uParallax;
   uniform float uRadius;
   uniform float uTime;
   uniform float uSpin;
@@ -32,8 +36,9 @@ private const val VOLUMETRIC_RIFT_AGSL =
   uniform float uGlow;
   uniform float uOpacity;
   uniform float uInwardSign;
-  uniform float3 uOuterRGB;
+  uniform float3 uDeepRGB;
   uniform float3 uMidRGB;
+  uniform float3 uBrightRGB;
   uniform float3 uCoreRGB;
 
   float hash21r(float2 p) {
@@ -45,7 +50,7 @@ private const val VOLUMETRIC_RIFT_AGSL =
   float noise2dr(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
-    float2 u = f * f * (3.0 - 2.0 * f);
+    float2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     float a = hash21r(i);
     float b = hash21r(i + float2(1.0, 0.0));
     float c = hash21r(i + float2(0.0, 1.0));
@@ -53,12 +58,12 @@ private const val VOLUMETRIC_RIFT_AGSL =
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
   }
 
-  float fbmr(float2 p) {
+  float fbmr3(float2 p) {
     float v = 0.0;
-    float amp = 0.5;
-    for (int i = 0; i < 4; i++) {
+    float amp = 0.54;
+    for (int i = 0; i < 3; i++) {
       v += amp * noise2dr(p);
-      p = p * 2.05 + float2(-1.6, 1.8);
+      p = float2(p.x * 1.62 - p.y * 1.21, p.x * 1.21 + p.y * 1.62) + float2(-1.6, 1.8);
       amp *= 0.5;
     }
     return v;
@@ -66,57 +71,57 @@ private const val VOLUMETRIC_RIFT_AGSL =
 
   half4 main(float2 fragCoord) {
     float safeR = max(uRadius, 1.0);
-    float2 rawRel = (fragCoord - uCenter) / safeR;
-    float rawDist = length(rawRel);
-    if (rawDist > 1.30) {
+    float2 rel = (fragCoord - uCenter) / safeR;
+    float r = length(rel);
+    if (r > 1.22) {
       return half4(0.0);
     }
 
-    // Stepped depth parallax shift toward interior without creating any hard central orb
-    float depthWeight = 1.0 - smoothstep(0.10, 1.02, rawDist);
-    float2 parRel = (fragCoord - (uCenter + uParallax * depthWeight)) / safeR;
-    float r = length(parRel);
-    float2 dir = parRel / max(r, 1e-4);
+    float turb = clamp(uTurbulence, 0.20, 2.20);
+    float glow = clamp(uGlow, 0.25, 2.40);
 
-    // Seamless 2D rotated & spiraled coordinates (zero atan(y, x) seam jump!)
-    float twist = (1.12 - clamp(r, 0.0, 1.25)) * 1.65 * uInwardSign * clamp(uTurbulence, 0.2, 2.2) + uSpin * 0.42;
+    // Smooth vortex domain twist in 2D Cartesian Rift space (zero atan2 seam, true-centered at uCenter)
+    float twist = (1.08 - clamp(r, 0.0, 1.15)) * 1.35 * uInwardSign * turb + uSpin * 0.36;
     float ct = cos(twist);
     float st = sin(twist);
-    float2 twistedDir = float2(dir.x * ct - dir.y * st, dir.x * st + dir.y * ct);
+    float2 rotRel = float2(rel.x * ct - rel.y * st, rel.x * st + rel.y * ct);
 
-    float2 stormUvA = twistedDir * (2.5 + 0.8 * uTurbulence) + float2(r * 3.8 * uInwardSign + uTime * 0.34, -r * 3.1 - uTime * 0.27);
-    float2 stormUvB = dir * (4.1 + 1.1 * uTurbulence) + float2(-uTime * 0.41, r * 5.2 * uInwardSign + uTime * 0.33);
-    float cloudA = fbmr(stormUvA);
-    float cloudB = fbmr(stormUvB + cloudA * 1.25);
-    float billow = clamp(cloudA * 0.58 + cloudB * 0.54, 0.0, 1.0);
+    float2 warpUv = rotRel * (2.35 + 0.65 * turb) + float2(uTime * 0.22, -uTime * 0.19);
+    float warpA = fbmr3(warpUv);
+    float warpB = fbmr3(rotRel * (3.65 + 0.85 * turb) + float2(-uTime * 0.27 + warpA * 1.35, uTime * 0.24 - warpA * 1.15));
+    float cloudDensity = clamp(warpA * 0.56 + warpB * 0.58, 0.0, 1.0);
 
-    // Jagged fracture rim & billowing outer storm shelf (matching STORM_BOUNDARY_AGSL & SAFE_NEXUS_RIFT_AGSL)
-    float jagEdge = 0.94 + (cloudA - 0.5) * 0.18 + (cloudB - 0.5) * 0.10;
-    float outerFade = 1.0 - smoothstep(jagEdge, jagEdge + 0.30, rawDist);
-    // Feathered deep abyssal void interior (soft cloud-perturbed gradient, NEVER a solid central ball)
-    float voidEdge = 0.24 + (cloudB - 0.5) * 0.14;
-    float stormRingMask = smoothstep(voidEdge * 0.35, voidEdge + 0.38, r) * outerFade;
+    // Centered #000000 -> #02040A abyssal void throat (0.0r .. 0.42r) feathered smoothly into billowing storm clouds (0.30r .. 1.08r)
+    float perturbedInner = r + (warpB - 0.5) * 0.11;
+    float perturbedOuter = r + (warpA - 0.5) * 0.12 + (warpB - 0.5) * 0.06;
+    float innerCloudFeather = smoothstep(0.24, 0.46, perturbedInner);
+    float outerCloudFeather = 1.0 - smoothstep(0.80, 1.12, perturbedOuter);
+    float cloudBand = innerCloudFeather * outerCloudFeather;
 
-    float fractureLip = exp(-18.0 * abs(rawDist - jagEdge)) * (0.55 + 0.65 * billow);
-    float ridge = 1.0 - abs(cloudA - cloudB) * 3.3;
-    float flash = 0.55 + 0.45 * sin(uTime * 6.4 + dot(dir, float2(6.7, -5.9)) + cloudB * 5.5);
-    float lightningVein = pow(clamp(ridge, 0.0, 1.0), 3.8) * flash * smoothstep(0.18, 0.95, r) * outerFade;
+    // Smooth time-shifting palette modulation strictly within this Rift's fixed 4-stop range
+    float paletteShift = 0.5 + 0.5 * sin(uTime * 1.45 + warpA * 4.4 - r * 2.2);
+    float ridge = clamp(1.0 - abs(warpA - warpB) * 2.7, 0.0, 1.0);
+    float wispHighlight = pow(ridge, 2.4) * cloudBand;
 
-    float3 abyssVoid = float3(0.006, 0.012, 0.028);
-    float3 stormBody = mix(uOuterRGB * 0.72, uMidRGB, clamp(billow * 1.12, 0.0, 1.0));
-    float3 col = mix(abyssVoid, stormBody, clamp(stormRingMask * (0.42 + 0.78 * billow), 0.0, 1.0));
-    col += uMidRGB * (fractureLip * 0.95 * uGlow);
-    col += uCoreRGB * (lightningVein * 1.25 * uGlow + fractureLip * 0.32 * uGlow);
+    float3 abyssThroat = mix(float3(0.0, 0.0, 0.0), float3(0.008, 0.016, 0.039), smoothstep(0.0, 0.42, r));
+    float3 lowCloud = mix(uDeepRGB, uMidRGB, clamp(cloudDensity * 0.85 + paletteShift * 0.30, 0.0, 1.0));
+    float3 highCloud = mix(uMidRGB, uBrightRGB, clamp(paletteShift * 0.65 + cloudDensity * 0.45, 0.0, 1.0));
+    float3 stormRGB = mix(lowCloud, highCloud, smoothstep(0.28, 0.82, cloudDensity));
+    stormRGB = mix(stormRGB, uCoreRGB, clamp(wispHighlight * 0.52 * glow, 0.0, 0.82));
 
-    float voidCoreAlpha = (1.0 - smoothstep(0.0, 0.88, rawDist / max(jagEdge, 0.2))) * 0.92;
-    float stormAlpha = outerFade * (0.28 + 0.68 * billow) * stormRingMask + fractureLip * 0.52 + lightningVein * 0.44;
-    float alpha = clamp(max(voidCoreAlpha, stormAlpha) * uOpacity, 0.0, 0.97);
-    return half4(half3(col * alpha), half(alpha));
+    float cloudBlend = clamp(cloudBand * (0.38 + 0.76 * cloudDensity) * (0.82 + 0.24 * glow), 0.0, 1.0);
+    float3 finalRGB = mix(abyssThroat, stormRGB, cloudBlend);
+
+    float throatAlpha = (1.0 - smoothstep(0.26, 0.56, perturbedInner)) * 0.96;
+    float stormAlpha = cloudBand * (0.28 + 0.68 * cloudDensity + wispHighlight * 0.24);
+    float alpha = clamp(max(throatAlpha, stormAlpha) * uOpacity, 0.0, 0.97);
+    return half4(half3(finalRGB * alpha), half(alpha));
   }
   """
 
 object RiftSpriteBaker {
   private val cacheLock = Any()
+  private val bakerStartElapsedNanos: Long = SystemClock.elapsedRealtimeNanos()
   private val trimmedShipSpriteCache = mutableMapOf<Int, Bitmap>()
   private val spaceObstacleBitmapCache = mutableMapOf<Int, Bitmap>()
   private val nexusHubModuleEmblemCache = mutableMapOf<String, Bitmap>()
@@ -137,17 +142,63 @@ object RiftSpriteBaker {
       emptyArray()
     }
   private var volumetricRiftShaderCursor: Int = 0
+  private val sharedCloudMatrix = Matrix()
   private val sharedRiftRibbonPath = Path()
   private val sharedRiftSpinePath = Path()
   private val sharedRiftArcRect = RectF()
   private val sharedPlumePath = Path()
   private val sharedCrystalPath = Path()
   private val sharedFilamentPath = Path()
-  private val sharedFractureRimPath = Path()
   private val sharedBoltPath = Path()
+  private val sharedPrimaryLightningPath = Path()
+  private val sharedForkLightningPath = Path()
   private val sharedStormCloudPath = Path()
+  private val sharedLightningPtsX = FloatArray(16)
+  private val sharedLightningPtsY = FloatArray(16)
   private val sharedCollarStops = IntArray(5)
   private val sharedCollarPositions = floatArrayOf(0f, 0.28f, 0.48f, 0.74f, 1f)
+
+  private val unitAbyssalVoidShader =
+    RadialGradient(
+      0f,
+      0f,
+      1f,
+      intArrayOf(
+        Color.argb(252, 0, 0, 0),
+        Color.argb(242, 2, 4, 10),
+        Color.argb(136, 2, 4, 10),
+        Color.argb(0, 2, 4, 10),
+      ),
+      floatArrayOf(0f, 0.52f, 0.80f, 1f),
+      Shader.TileMode.CLAMP,
+    )
+  private val unitCloudPuffShaderCache = HashMap<Int, RadialGradient>(32)
+
+  private fun getUnitCloudPuffShader(rgbColor: Int): RadialGradient {
+    val key = rgbColor and 0x00FFFFFF
+    unitCloudPuffShaderCache[key]?.let { return it }
+    val r = (key shr 16) and 0xFF
+    val g = (key shr 8) and 0xFF
+    val b = key and 0xFF
+    val created =
+      RadialGradient(
+        0f,
+        0f,
+        1f,
+        intArrayOf(
+          Color.argb(224, r, g, b),
+          Color.argb(138, r, g, b),
+          Color.argb(42, r, g, b),
+          Color.argb(0, r, g, b),
+        ),
+        floatArrayOf(0f, 0.38f, 0.72f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    if (unitCloudPuffShaderCache.size < 64) {
+      unitCloudPuffShaderCache[key] = created
+    }
+    return created
+  }
 
   private val stationHoloArcRect = RectF()
   private val stationHoloBandPaint =
@@ -189,13 +240,16 @@ object RiftSpriteBaker {
     private set
   val hazardShader: BitmapShader
 
-  // Pre-rendered offscreen radial glow & volumetric nebula stamps (Zero shadowBlur in render loop)
+  // Pre-rendered offscreen radial glow & feathered deep-space stamps (Zero shadowBlur in render loop)
   val cyanGlowStamp: Bitmap
   val amberGlowStamp: Bitmap
   val crimsonGlowStamp: Bitmap
   val emeraldGlowStamp: Bitmap
   val nebulaCyanStamp: Bitmap
   val nebulaIndigoStamp: Bitmap
+  val nebulaVioletStamp: Bitmap
+  val spiralGalaxyStamp: Bitmap
+  val distantCelestialMoonStamp: Bitmap
 
   var customShip9AlliedBitmap: Bitmap
     private set
@@ -204,6 +258,15 @@ object RiftSpriteBaker {
   private var lastCustomShip9Recipe: CustomHullVisualRecipe? = null
 
   init {
+    // Pre-warm fixed Rift palette cloud-puff shaders before baking Rift icons
+    intArrayOf(
+      0x991B1B, 0xEF4444, 0xEC4899, 0xFFE4E6,
+      0x0369A1, 0x0EA5E9, 0x7DD3FC, 0xF0F9FF,
+      0x3730A3, 0x7C3AED, 0xA855F7, 0xF3E8FF,
+      0x0F766E, 0x06B6D4, 0x00F5D4, 0xCCFBF1,
+      0x38BDF8, 0xFACC15, 0xF43F5E,
+    ).forEach { getUnitCloudPuffShader(it) }
+
     fluxIconBitmap = bake3dFluxReactorIcon(64)
     resonanceIconBitmap = bake3dResonanceCrestIcon(64)
     riftShardIconBitmap = bake3dRiftShardIcon(64)
@@ -219,8 +282,11 @@ object RiftSpriteBaker {
     amberGlowStamp = createPreRenderedGlow(48, Color.parseColor("#F59E0B"))
     crimsonGlowStamp = createPreRenderedGlow(48, Color.parseColor("#EF4444"))
     emeraldGlowStamp = createPreRenderedGlow(48, Color.parseColor("#10B981"))
-    nebulaCyanStamp = createPreRenderedGlow(256, Color.argb(38, 14, 116, 144))
-    nebulaIndigoStamp = createPreRenderedGlow(256, Color.argb(42, 49, 46, 129))
+    nebulaCyanStamp = bakeFeatheredNebulaStamp(256, Color.rgb(8, 51, 68), Color.rgb(14, 116, 144), 52, seed = 1)
+    nebulaIndigoStamp = bakeFeatheredNebulaStamp(256, Color.rgb(30, 27, 75), Color.rgb(49, 46, 129), 58, seed = 2)
+    nebulaVioletStamp = bakeFeatheredNebulaStamp(256, Color.rgb(59, 7, 100), Color.rgb(107, 33, 168), 50, seed = 3)
+    spiralGalaxyStamp = bakeDistantSpiralGalaxyStamp(256)
+    distantCelestialMoonStamp = bakeDistantCelestialMoonStamp(192)
 
     val allied = mutableMapOf<Int, Bitmap>()
     val hostile = mutableMapOf<Int, Bitmap>()
@@ -320,7 +386,7 @@ object RiftSpriteBaker {
 
   /**
    * Prewarms heavy procedural sprites (all 224x224 Space Obstacle variants, active hull trim sprites,
-   * and all 6 192x192 NEXUS Hub metallic module emblems) on a background worker thread after Frame #1
+   * and all 6 192x192 Rift Hub metallic module emblems) on a background worker thread after Frame #1
    * commits, eliminating main-thread SurfaceSyncGroup stalls.
    */
   fun prewarmStartupAssets(
@@ -1954,17 +2020,197 @@ object RiftSpriteBaker {
           RadialGradient(
             r,
             r,
-            r,
+            r * 0.94f,
             intArrayOf(
               Color.argb(alpha, red, green, blue),
               Color.argb((alpha * 0.45f).toInt(), red, green, blue),
               Color.argb(0, red, green, blue),
             ),
-            floatArrayOf(0f, 0.45f, 1f),
+            floatArrayOf(0f, 0.44f, 1f),
             Shader.TileMode.CLAMP,
           )
       }
-    c.drawCircle(r, r, r, paint)
+    c.drawCircle(r, r, r * 0.94f, paint)
+    return bmp
+  }
+
+  private fun bakeFeatheredNebulaStamp(
+    size: Int,
+    deepColor: Int,
+    midColor: Int,
+    peakAlpha: Int,
+    seed: Int,
+  ): Bitmap {
+    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val cx = size * 0.5f
+    val cy = size * 0.5f
+    val baseR = size * 0.45f
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    val dR = Color.red(deepColor)
+    val dG = Color.green(deepColor)
+    val dB = Color.blue(deepColor)
+    val mR = Color.red(midColor)
+    val mG = Color.green(midColor)
+    val mB = Color.blue(midColor)
+
+    for (lobe in 0 until 7) {
+      val ang = seed * 1.37f + lobe * 0.92f
+      val dist = if (lobe == 0) 0f else baseR * (0.16f + (lobe % 3) * 0.11f)
+      val lx = cx + cos(ang) * dist
+      val ly = cy + sin(ang) * (dist * 0.82f)
+      val lr = baseR * (if (lobe == 0) 0.92f else 0.58f + (lobe % 2) * 0.14f)
+      val useMid = lobe % 2 == 1
+      val cR = if (useMid) mR else dR
+      val cG = if (useMid) mG else dG
+      val cB = if (useMid) mB else dB
+      val lobeAlpha = if (lobe == 0) peakAlpha else (peakAlpha * 0.68f).roundToInt()
+      paint.shader =
+        RadialGradient(
+          lx,
+          ly,
+          lr,
+          intArrayOf(
+            Color.argb(lobeAlpha, cR, cG, cB),
+            Color.argb((lobeAlpha * 0.52f).roundToInt(), cR, cG, cB),
+            Color.argb((lobeAlpha * 0.14f).roundToInt(), dR, dG, dB),
+            Color.argb(0, dR, dG, dB),
+          ),
+          floatArrayOf(0f, 0.38f, 0.72f, 1f),
+          Shader.TileMode.CLAMP,
+        )
+      c.save()
+      c.translate(lx, ly)
+      c.rotate((seed * 27f + lobe * 31f) % 360f)
+      c.scale(1.0f, 0.72f + (lobe % 3) * 0.10f)
+      c.translate(-lx, -ly)
+      c.drawCircle(lx, ly, lr, paint)
+      c.restore()
+    }
+    return bmp
+  }
+
+  private fun bakeDistantSpiralGalaxyStamp(size: Int): Bitmap {
+    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val cx = size * 0.5f
+    val cy = size * 0.5f
+    val maxR = size * 0.43f
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
+    c.save()
+    c.translate(cx, cy)
+    c.rotate(-24f)
+    c.scale(1.0f, 0.54f)
+
+    // Soft outer indigo-violet galactic dust envelope feathered to zero before bitmap edge
+    paint.shader =
+      RadialGradient(
+        0f,
+        0f,
+        maxR,
+        intArrayOf(
+          Color.argb(66, 224, 242, 254),
+          Color.argb(46, 124, 58, 237),
+          Color.argb(24, 30, 27, 75),
+          Color.argb(0, 15, 23, 42),
+        ),
+        floatArrayOf(0f, 0.30f, 0.68f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    c.drawCircle(0f, 0f, maxR, paint)
+
+    // Two soft logarithmic stardust cloud arms composed of feathered radial puffs (zero lines)
+    for (arm in 0..1) {
+      val armOffset = arm * PI.toFloat()
+      for (step in 1..14) {
+        val frac = step / 15f
+        val theta = armOffset + frac * 3.8f
+        val rad = maxR * (0.10f + frac * 0.74f)
+        val px = cos(theta) * rad
+        val py = sin(theta) * rad
+        val puffR = maxR * (0.20f - frac * 0.08f).coerceAtLeast(0.08f)
+        val armAlpha = ((1f - frac) * 38f).roundToInt().coerceIn(6, 42)
+        val useCyan = step % 2 == 0
+        val rCol = if (useCyan) 56 else 168
+        val gCol = if (useCyan) 189 else 85
+        val bCol = if (useCyan) 248 else 247
+        paint.shader =
+          RadialGradient(
+            px,
+            py,
+            puffR,
+            intArrayOf(
+              Color.argb(armAlpha, rCol, gCol, bCol),
+              Color.argb((armAlpha * 0.40f).roundToInt(), rCol, gCol, bCol),
+              Color.argb(0, rCol, gCol, bCol),
+            ),
+            floatArrayOf(0f, 0.48f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+        c.drawCircle(px, py, puffR, paint)
+      }
+    }
+
+    // Warm-white softly-lit galactic core glow
+    paint.shader =
+      RadialGradient(
+        0f,
+        0f,
+        maxR * 0.28f,
+        intArrayOf(
+          Color.argb(96, 254, 249, 195),
+          Color.argb(44, 186, 230, 253),
+          Color.argb(0, 56, 189, 248),
+        ),
+        floatArrayOf(0f, 0.45f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    c.drawCircle(0f, 0f, maxR * 0.28f, paint)
+    c.restore()
+    return bmp
+  }
+
+  private fun bakeDistantCelestialMoonStamp(size: Int): Bitmap {
+    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val cx = size * 0.5f
+    val cy = size * 0.5f
+    val moonR = size * 0.26f
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
+    // Feathered atmospheric scatter halo
+    paint.shader =
+      RadialGradient(
+        cx - moonR * 0.22f,
+        cy - moonR * 0.22f,
+        moonR * 1.65f,
+        intArrayOf(
+          Color.argb(38, 56, 189, 248),
+          Color.argb(16, 30, 58, 138),
+          Color.argb(0, 2, 6, 23),
+        ),
+        floatArrayOf(0f, 0.55f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    c.drawCircle(cx, cy, moonR * 1.55f, paint)
+
+    // Softly-lit crescent sphere shaded into deep-space shadow
+    paint.shader =
+      RadialGradient(
+        cx - moonR * 0.48f,
+        cy - moonR * 0.44f,
+        moonR * 1.52f,
+        intArrayOf(
+          Color.argb(92, 186, 230, 253),
+          Color.argb(64, 51, 65, 85),
+          Color.argb(46, 15, 23, 42),
+          Color.argb(18, 2, 6, 23),
+        ),
+        floatArrayOf(0f, 0.34f, 0.68f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    c.drawCircle(cx, cy, moonR, paint)
     return bmp
   }
 
@@ -3017,6 +3263,31 @@ object RiftSpriteBaker {
     }
   }
 
+  private fun lerpColorRgb(c1: Int, c2: Int, tRaw: Float, alphaInt: Int = 255): Int {
+    val t = tRaw.coerceIn(0f, 1f)
+    val inv = 1f - t
+    val r = (Color.red(c1) * inv + Color.red(c2) * t).roundToInt().coerceIn(0, 255)
+    val g = (Color.green(c1) * inv + Color.green(c2) * t).roundToInt().coerceIn(0, 255)
+    val b = (Color.blue(c1) * inv + Color.blue(c2) * t).roundToInt().coerceIn(0, 255)
+    return Color.argb(alphaInt.coerceIn(0, 255), r, g, b)
+  }
+
+  private fun samplePalette4(
+    deepCol: Int,
+    midCol: Int,
+    brightCol: Int,
+    coreCol: Int,
+    posRaw: Float,
+    alphaInt: Int = 255,
+  ): Int {
+    val p = posRaw.coerceIn(0f, 1f)
+    return when {
+      p < 0.36f -> lerpColorRgb(deepCol, midCol, p / 0.36f, alphaInt)
+      p < 0.74f -> lerpColorRgb(midCol, brightCol, (p - 0.36f) / 0.38f, alphaInt)
+      else -> lerpColorRgb(brightCol, coreCol, (p - 0.74f) / 0.26f, alphaInt)
+    }
+  }
+
   fun draw3dPlayfieldRift(
     canvas: Canvas,
     type: AnomalyType,
@@ -3028,8 +3299,8 @@ object RiftSpriteBaker {
     pulsePhaseOverride: Float? = null,
     fadeAlpha: Float = 1.0f,
     recipeOverride: VisualElementRecipe? = null,
-    parallaxOffsetX: Float = 0f,
-    parallaxOffsetY: Float = 0f,
+    @Suppress("UNUSED_PARAMETER") parallaxOffsetX: Float = 0f,
+    @Suppress("UNUSED_PARAMETER") parallaxOffsetY: Float = 0f,
   ) {
     val target =
       when (type) {
@@ -3043,160 +3314,117 @@ object RiftSpriteBaker {
     val useCustomColors = rec != null && !rec.isFactoryDefault
     val rScaled = radius * (rec?.pixelScale ?: 1f).coerceIn(0.65f, 1.55f)
     val effFade = (fadeAlpha * (rec?.surfaceOpacity ?: 1f).coerceIn(0.25f, 1f)).coerceIn(0.1f, 1f)
-    val preferRadiantShockRim = (rec != null && !rec.isFactoryDefault && rec.geometryStyle == 2)
     val turb = (rec?.shaderTurbulence ?: 1f).coerceIn(0.15f, 2.2f)
     val glowMult = (rec?.glowIntensity ?: 1f).coerceIn(0.25f, 2.4f)
     val borderW = (rec?.borderWeight ?: 1f).coerceIn(0.45f, 2.2f)
 
     when (type) {
       AnomalyType.PLASMA_RIFT -> {
-        draw3dPlayfieldRiftColors(
+        // Fixed Palette: Deep Crimson #991B1B -> Hot Scarlet #EF4444 -> Electric Magenta #EC4899 -> Rose-White #FFE4E6
+        val deepCol = if (useCustomColors) rec!!.primaryColorInt else Color.rgb(153, 27, 27)
+        val midCol = if (useCustomColors) rec!!.trimColorInt else Color.rgb(239, 68, 68)
+        val brightCol = if (useCustomColors) rec!!.glowColorInt else Color.rgb(236, 72, 153)
+        val coreCol = Color.rgb(255, 228, 230)
+        drawVolumetricPlayfieldRiftInternal(
           canvas = canvas,
           cx = cx,
           cy = cy,
           r = rScaled,
           spinAngle = spinAngle,
           fadeAlpha = effFade,
-          outerColor = if (useCustomColors) rec!!.trimColorInt else Color.rgb(239, 68, 68),
-          midColor = if (useCustomColors) rec!!.glowColorInt else Color.rgb(217, 70, 239),
-          coreColor = Color.rgb(255, 228, 230),
-          darkVoidCenter = !preferRadiantShockRim,
+          deepColor = deepCol,
+          midColor = midCol,
+          brightColor = brightCol,
+          coreColor = coreCol,
           inwardSpiral = false,
           pulsePhaseOverride = pulsePhaseOverride,
-          parallaxOffsetX = parallaxOffsetX,
-          parallaxOffsetY = parallaxOffsetY,
           turbulence = turb,
           glowIntensity = glowMult,
           borderWeight = borderW,
+          boltCount = 6,
+          seedOffset = 1.1f,
         )
       }
       AnomalyType.REPULSOR_RIFT -> {
-        draw3dPlayfieldRiftColors(
+        // Fixed Palette: Deep Cobalt #0369A1 -> Electric Sky #0EA5E9 -> Ice Blue #7DD3FC -> White-Blue #F0F9FF
+        val deepCol = if (useCustomColors) rec!!.primaryColorInt else Color.rgb(3, 105, 161)
+        val midCol = if (useCustomColors) rec!!.trimColorInt else Color.rgb(14, 165, 233)
+        val brightCol = if (useCustomColors) rec!!.glowColorInt else Color.rgb(125, 211, 252)
+        val coreCol = Color.rgb(240, 249, 255)
+        drawVolumetricPlayfieldRiftInternal(
           canvas = canvas,
           cx = cx,
           cy = cy,
           r = rScaled,
-          spinAngle = -spinAngle * 1.15f,
+          spinAngle = -spinAngle * 1.12f,
           fadeAlpha = effFade,
-          outerColor = if (useCustomColors) rec!!.trimColorInt else Color.rgb(56, 189, 248),
-          midColor = if (useCustomColors) rec!!.glowColorInt else Color.rgb(0, 245, 212),
-          coreColor = Color.rgb(224, 242, 254),
-          darkVoidCenter = !preferRadiantShockRim,
+          deepColor = deepCol,
+          midColor = midCol,
+          brightColor = brightCol,
+          coreColor = coreCol,
           inwardSpiral = false,
           pulsePhaseOverride = pulsePhaseOverride,
-          parallaxOffsetX = parallaxOffsetX,
-          parallaxOffsetY = parallaxOffsetY,
           turbulence = turb,
           glowIntensity = glowMult,
           borderWeight = borderW,
+          boltCount = 6,
+          seedOffset = 2.7f,
         )
       }
       AnomalyType.GRAVITY_RIFT -> {
-        draw3dPlayfieldRiftColors(
+        // Fixed Palette: Deep Indigo #3730A3 -> Royal Violet #7C3AED -> Luminous Purple #A855F7 -> Lavender-White #F3E8FF
+        val deepCol = if (useCustomColors) rec!!.primaryColorInt else Color.rgb(55, 48, 163)
+        val midCol = if (useCustomColors) rec!!.trimColorInt else Color.rgb(124, 58, 237)
+        val brightCol = if (useCustomColors) rec!!.glowColorInt else Color.rgb(168, 85, 247)
+        val coreCol = Color.rgb(243, 232, 255)
+        val extraBolts = min(2, absorbedCount.coerceAtLeast(0) / 2)
+        val massGlowBoost = (1f + min(6, absorbedCount.coerceAtLeast(0)) * 0.06f).coerceAtMost(1.45f)
+        drawVolumetricPlayfieldRiftInternal(
           canvas = canvas,
           cx = cx,
           cy = cy,
           r = rScaled,
-          spinAngle = spinAngle * 1.35f,
+          spinAngle = spinAngle * 1.25f,
           fadeAlpha = effFade,
-          outerColor = if (useCustomColors) rec!!.trimColorInt else Color.rgb(168, 85, 247),
-          midColor = if (useCustomColors) rec!!.glowColorInt else Color.rgb(99, 102, 241),
-          coreColor = Color.rgb(233, 213, 255),
-          darkVoidCenter = true,
+          deepColor = deepCol,
+          midColor = midCol,
+          brightColor = brightCol,
+          coreColor = coreCol,
           inwardSpiral = true,
           pulsePhaseOverride = pulsePhaseOverride,
-          parallaxOffsetX = parallaxOffsetX,
-          parallaxOffsetY = parallaxOffsetY,
-          turbulence = turb,
-          glowIntensity = glowMult,
+          turbulence = (turb * (1f + extraBolts * 0.08f)).coerceAtMost(2.2f),
+          glowIntensity = (glowMult * massGlowBoost).coerceAtMost(2.4f),
           borderWeight = borderW,
-        )
-        val arcCount = kotlin.math.min(8, absorbedCount.coerceAtLeast(0))
-        if (arcCount > 0 && rScaled > 8f) {
-          val rawMag = kotlin.math.hypot(parallaxOffsetX, parallaxOffsetY)
-          val maxPx = rScaled * 0.16f
-          val pScale = if (rawMag > maxPx && rawMag > 0.001f) maxPx / rawMag else 1f
-          val px = parallaxOffsetX * pScale
-          val py = parallaxOffsetY * pScale
-
-          val arcPaint = sharedRiftStrokePaint
-          arcPaint.shader = null
-          val outerArcCol = if (useCustomColors) rec!!.trimColorInt else Color.rgb(192, 132, 252)
-          val oaR = Color.red(outerArcCol)
-          val oaG = Color.green(outerArcCol)
-          val oaB = Color.blue(outerArcCol)
-          for (idx in 0 until arcCount) {
-            val baseAng =
-              -spinAngle * 1.85f + idx * (Math.PI.toFloat() * 2f / arcCount.toFloat())
-            val rOuterRim = rScaled * 0.96f
-            val rMidA = rScaled * 0.72f
-            val rMidB = rScaled * 0.48f
-            val rInnerThroat = rScaled * 0.24f
-            val jagA = 0.16f * kotlin.math.sin(spinAngle * 6.2f + idx * 2.1f)
-            val jagB = -0.18f * kotlin.math.cos(spinAngle * 5.4f - idx * 1.7f)
-            val x0 = cx + kotlin.math.cos(baseAng) * rOuterRim
-            val y0 = cy + kotlin.math.sin(baseAng) * rOuterRim
-            val x1 = (cx + px * 0.36f) + kotlin.math.cos(baseAng + jagA) * rMidA
-            val y1 = (cy + py * 0.36f) + kotlin.math.sin(baseAng + jagA) * rMidA
-            val x2 = (cx + px * 0.68f) + kotlin.math.cos(baseAng + jagB) * rMidB
-            val y2 = (cy + py * 0.68f) + kotlin.math.sin(baseAng + jagB) * rMidB
-            val x3 = (cx + px) + kotlin.math.cos(baseAng + jagA * 0.5f) * rInnerThroat
-            val y3 = (cy + py) + kotlin.math.sin(baseAng + jagA * 0.5f) * rInnerThroat
-
-            arcPaint.strokeWidth = (rScaled * 0.038f).coerceAtLeast(2.0f)
-            arcPaint.color = Color.argb((172 * effFade).toInt().coerceIn(0, 255), oaR, oaG, oaB)
-            canvas.drawLine(x0, y0, x1, y1, arcPaint)
-            canvas.drawLine(x1, y1, x2, y2, arcPaint)
-            canvas.drawLine(x2, y2, x3, y3, arcPaint)
-
-            arcPaint.strokeWidth = (rScaled * 0.016f).coerceAtLeast(1.0f)
-            arcPaint.color = Color.argb((242 * effFade).toInt().coerceIn(0, 255), 240, 249, 255)
-            canvas.drawLine(x0, y0, x1, y1, arcPaint)
-            canvas.drawLine(x1, y1, x2, y2, arcPaint)
-            canvas.drawLine(x2, y2, x3, y3, arcPaint)
-          }
-        }
-      }
-      AnomalyType.PHASE_RIFT_A -> {
-        draw3dPlayfieldRiftColors(
-          canvas = canvas,
-          cx = cx,
-          cy = cy,
-          r = rScaled,
-          spinAngle = spinAngle,
-          fadeAlpha = effFade,
-          outerColor = if (useCustomColors) rec!!.trimColorInt else Color.rgb(45, 212, 191),
-          midColor = if (useCustomColors) rec!!.glowColorInt else Color.rgb(56, 189, 248),
-          coreColor = Color.rgb(240, 253, 250),
-          darkVoidCenter = true,
-          inwardSpiral = false,
-          pulsePhaseOverride = pulsePhaseOverride,
-          parallaxOffsetX = parallaxOffsetX,
-          parallaxOffsetY = parallaxOffsetY,
-          turbulence = turb,
-          glowIntensity = glowMult,
-          borderWeight = borderW,
+          boltCount = 6 + extraBolts,
+          seedOffset = 4.3f,
         )
       }
+      AnomalyType.PHASE_RIFT_A,
       AnomalyType.PHASE_RIFT_B -> {
-        draw3dPlayfieldRiftColors(
+        // Fixed Palette: Deep Teal #0F766E -> Turquoise #06B6D4 -> Electric Mint-Cyan #00F5D4 -> Pale Cyan-White #CCFBF1
+        val isNodeB = type == AnomalyType.PHASE_RIFT_B
+        val deepCol = if (useCustomColors) rec!!.primaryColorInt else Color.rgb(15, 118, 110)
+        val midCol = if (useCustomColors) rec!!.trimColorInt else Color.rgb(6, 182, 212)
+        val brightCol = if (useCustomColors) rec!!.glowColorInt else Color.rgb(0, 245, 212)
+        val coreCol = Color.rgb(204, 251, 241)
+        drawVolumetricPlayfieldRiftInternal(
           canvas = canvas,
           cx = cx,
           cy = cy,
           r = rScaled,
-          spinAngle = -spinAngle,
+          spinAngle = if (isNodeB) -spinAngle else spinAngle,
           fadeAlpha = effFade,
-          outerColor = if (useCustomColors) rec!!.glowColorInt else Color.rgb(56, 189, 248),
-          midColor = if (useCustomColors) rec!!.trimColorInt else Color.rgb(168, 85, 247),
-          coreColor = Color.rgb(240, 253, 250),
-          darkVoidCenter = true,
+          deepColor = deepCol,
+          midColor = midCol,
+          brightColor = brightCol,
+          coreColor = coreCol,
           inwardSpiral = false,
           pulsePhaseOverride = pulsePhaseOverride,
-          parallaxOffsetX = parallaxOffsetX,
-          parallaxOffsetY = parallaxOffsetY,
           turbulence = turb,
           glowIntensity = glowMult,
           borderWeight = borderW,
+          boltCount = 5,
+          seedOffset = if (isNodeB) 6.9f else 5.6f,
         )
       }
     }
@@ -3237,13 +3465,14 @@ object RiftSpriteBaker {
   }
 
   /**
-   * Unified Collarless Volumetric Storm-Cloud & Fracture-Lightning Playfield Rift:
-   * - Hardware AGSL `VOLUMETRIC_RIFT_AGSL` on API 33+ (matching `SAFE_NEXUS_RIFT_AGSL` & `STORM_BOUNDARY_AGSL`)
-   *   with multi-octave volumetric storm-cloud Canvas fallback on API 24-32 and bitmap bakes.
-   * - Stepped camera-driven parallax shelves (`0.14x`, `0.36x`, `0.68x`, `1.00x`) with irregular
-   *   dark void cloud cavities (zero central/spinning balls, orbs, cores, emitter dots, pinwheel blades,
-   *   or metallic collars).
-   * - Jagged spacetime fracture rim + tapered plasma ingress wisps + branching plasma lightning bolts.
+   * Volumetric Storm-Cloud & Color-Shifting Fractal Branching Lightning Playfield Rift:
+   * - True-centered at `(cx, cy)` with at most `<= 0.025r` zero-mean organic breathing drift.
+   * - Centered `#000000` -> `#02040A` abyssal void throat (`0.0r .. 0.42r`) feathered into
+   *   multi-layered billowing storm clouds (`0.30r .. 1.08r`).
+   * - Hardware AGSL `VOLUMETRIC_RIFT_AGSL` (3-octave Quintic domain-warped FBM) on API 33+
+   *   and zero-allocation feathered `RadialGradient` cloud-puff Canvas renderer on API 24-32.
+   * - 5-8 midpoint-displaced fractal branching electric lightning arcs (`0.68r .. 1.06r`) with
+   *   2-3 thinner forked sub-branches shifting smoothly within the Rift's fixed palette.
    */
   fun draw3dPlayfieldRiftColors(
     canvas: Canvas,
@@ -3255,468 +3484,482 @@ object RiftSpriteBaker {
     outerColor: Int,
     midColor: Int,
     coreColor: Int,
-    darkVoidCenter: Boolean,
+    @Suppress("UNUSED_PARAMETER") darkVoidCenter: Boolean,
     inwardSpiral: Boolean,
     pulsePhaseOverride: Float? = null,
-    parallaxOffsetX: Float = 0f,
-    parallaxOffsetY: Float = 0f,
+    @Suppress("UNUSED_PARAMETER") parallaxOffsetX: Float = 0f,
+    @Suppress("UNUSED_PARAMETER") parallaxOffsetY: Float = 0f,
     turbulence: Float = 1.0f,
     glowIntensity: Float = 1.0f,
     borderWeight: Float = 1.0f,
   ) {
+    val deepColor =
+      Color.rgb(
+        (Color.red(outerColor) * 0.58f).roundToInt().coerceIn(0, 255),
+        (Color.green(outerColor) * 0.58f).roundToInt().coerceIn(0, 255),
+        (Color.blue(outerColor) * 0.58f).roundToInt().coerceIn(0, 255),
+      )
+    drawVolumetricPlayfieldRiftInternal(
+      canvas = canvas,
+      cx = cx,
+      cy = cy,
+      r = r,
+      spinAngle = spinAngle,
+      fadeAlpha = fadeAlpha,
+      deepColor = deepColor,
+      midColor = outerColor,
+      brightColor = midColor,
+      coreColor = coreColor,
+      inwardSpiral = inwardSpiral,
+      pulsePhaseOverride = pulsePhaseOverride,
+      turbulence = turbulence,
+      glowIntensity = glowIntensity,
+      borderWeight = borderWeight,
+      boltCount = 6,
+      seedOffset = ((outerColor shr 8) and 0xFF) * 0.031f,
+    )
+  }
+
+  private fun drawVolumetricPlayfieldRiftInternal(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    r: Float,
+    spinAngle: Float,
+    fadeAlpha: Float,
+    deepColor: Int,
+    midColor: Int,
+    brightColor: Int,
+    coreColor: Int,
+    inwardSpiral: Boolean,
+    pulsePhaseOverride: Float?,
+    turbulence: Float,
+    glowIntensity: Float,
+    borderWeight: Float,
+    boltCount: Int,
+    seedOffset: Float,
+  ) {
     if (r <= 1.2f || fadeAlpha <= 0.01f) return
-    val oR = Color.red(outerColor)
-    val oG = Color.green(outerColor)
-    val oB = Color.blue(outerColor)
-    val mR = Color.red(midColor)
-    val mG = Color.green(midColor)
-    val mB = Color.blue(midColor)
-    val cR = Color.red(coreColor)
-    val cG = Color.green(coreColor)
-    val cB = Color.blue(coreColor)
-
-    val fillPaint = sharedRiftFillPaint
-    val ringPaint = sharedRiftStrokePaint
-    val fracturePath = sharedFractureRimPath
-    fillPaint.shader = null
-    ringPaint.shader = null
-
-    val continuousSec = SystemClock.elapsedRealtime() * 0.001f
-    val twoPi = PI.toFloat() * 2f
-    val phaseVal = pulsePhaseOverride ?: (continuousSec * 0.55f)
-    val turbClamped = turbulence.coerceIn(0.15f, 2.2f)
+    val monoSec =
+      if (pulsePhaseOverride != null) {
+        pulsePhaseOverride * 3.2f
+      } else {
+        (SystemClock.elapsedRealtimeNanos() - bakerStartElapsedNanos) * 1e-9f
+      }
+    val turbClamped = turbulence.coerceIn(0.20f, 2.2f)
     val glowClamped = glowIntensity.coerceIn(0.25f, 2.4f)
     val borderClamped = borderWeight.coerceIn(0.45f, 2.2f)
     val inwardSign = if (inwardSpiral) -1f else 1f
 
-    // Stepped camera-driven parallax offsets across interior spacetime depth shelves (0.14x, 0.36x, 0.68x, 1.00x)
-    val rawMag = kotlin.math.hypot(parallaxOffsetX, parallaxOffsetY)
-    val maxParallaxPx = r * 0.17f
-    val pScale = if (rawMag > maxParallaxPx && rawMag > 0.001f) maxParallaxPx / rawMag else 1f
-    val px = parallaxOffsetX * pScale
-    val py = parallaxOffsetY * pScale
-    val rimCx = cx + px * 0.14f
-    val rimCy = cy + py * 0.14f
-    val upperCx = cx + px * 0.36f
-    val upperCy = cy + py * 0.36f
-    val midCx = cx + px * 0.68f
-    val midCy = cy + py * 0.68f
-    val coreCx = cx + px
-    val coreCy = cy + py
+    // True-centered Rift core with at most zero-mean organic breathing drift strictly <= 0.025f * r
+    val spatialSeed = seedOffset + cx * 0.0029f + cy * 0.0023f
+    val driftX = sin(monoSec * 1.1f + spatialSeed) * (0.017f * r)
+    val driftY = cos(monoSec * 0.85f + spatialSeed) * (0.017f * r)
+    val trueCx = cx + driftX
+    val trueCy = cy + driftY
 
-    // Layer 0: GPU AGSL Volumetric Storm-Cloud Rift Field on API 33+ Hardware Canvas
     var drewAgsl = false
     if (Build.VERSION.SDK_INT >= 33 && canvas.isHardwareAccelerated && volumetricRiftShaderPool.isNotEmpty()) {
       val slotIdx = (volumetricRiftShaderCursor++ and 0x7FFFFFFF) % volumetricRiftShaderPool.size
       val rt = volumetricRiftShaderPool[slotIdx] as? RuntimeShader
       if (rt != null) {
-        rt.setFloatUniform("uCenter", cx, cy)
-        rt.setFloatUniform("uParallax", px, py)
+        rt.setFloatUniform("uCenter", trueCx, trueCy)
         rt.setFloatUniform("uRadius", r)
-        rt.setFloatUniform("uTime", if (pulsePhaseOverride != null) phaseVal * 1.8f else continuousSec)
+        rt.setFloatUniform("uTime", monoSec)
         rt.setFloatUniform("uSpin", spinAngle)
         rt.setFloatUniform("uTurbulence", turbClamped)
         rt.setFloatUniform("uGlow", glowClamped)
         rt.setFloatUniform("uOpacity", fadeAlpha.coerceIn(0.05f, 1.0f))
         rt.setFloatUniform("uInwardSign", inwardSign)
-        rt.setFloatUniform("uOuterRGB", oR / 255f, oG / 255f, oB / 255f)
-        rt.setFloatUniform("uMidRGB", mR / 255f, mG / 255f, mB / 255f)
-        rt.setFloatUniform("uCoreRGB", cR / 255f, cG / 255f, cB / 255f)
+        rt.setFloatUniform("uDeepRGB", Color.red(deepColor) / 255f, Color.green(deepColor) / 255f, Color.blue(deepColor) / 255f)
+        rt.setFloatUniform("uMidRGB", Color.red(midColor) / 255f, Color.green(midColor) / 255f, Color.blue(midColor) / 255f)
+        rt.setFloatUniform("uBrightRGB", Color.red(brightColor) / 255f, Color.green(brightColor) / 255f, Color.blue(brightColor) / 255f)
+        rt.setFloatUniform("uCoreRGB", Color.red(coreColor) / 255f, Color.green(coreColor) / 255f, Color.blue(coreColor) / 255f)
         volumetricRiftShaderPaint.shader = rt
-        val boundR = r * 1.30f
-        canvas.drawRect(cx - boundR, cy - boundR, cx + boundR, cy + boundR, volumetricRiftShaderPaint)
+        val boundR = r * 1.24f
+        canvas.drawRect(trueCx - boundR, trueCy - boundR, trueCx + boundR, trueCy + boundR, volumetricRiftShaderPaint)
         volumetricRiftShaderPaint.shader = null
         drewAgsl = true
       }
     }
 
     if (!drewAgsl) {
-      // Multi-Octave Volumetric Storm-Cloud & Irregular Void Tear Fallback (API 24-32 & Software Bitmap Icon Bakes — ZERO circular balls!)
-      drawBillowingStormTurbulenceShelf(
+      drawFeatheredVolumetricRiftCloudsFallback(
         canvas = canvas,
-        cx = cx,
-        cy = cy,
-        outerR = r * 1.14f,
-        innerR = r * 0.72f,
-        lobeCount = 11,
-        phaseRad = spinAngle * 0.34f + phaseVal * twoPi * 0.25f,
-        primaryColor = outerColor,
-        secondaryColor = midColor,
-        alphaFrac = (0.34f * fadeAlpha * glowClamped).coerceIn(0.04f, 0.75f),
-        jagAmplitude = 0.085f * turbClamped.coerceIn(0.5f, 1.6f),
-      )
-      drawIrregularAbyssalVoidCavity(
-        canvas = canvas,
-        cx = rimCx,
-        cy = rimCy,
-        baseR = r * 0.94f,
-        lobeCount = 13,
-        phaseRad = -spinAngle * 0.28f + phaseVal * twoPi * 0.2f,
-        jagFrac = 0.075f,
-        darkR = 3,
-        darkG = 6,
-        darkB = 15,
-        alphaInt = (242 * fadeAlpha).roundToInt().coerceIn(0, 255),
-      )
-      drawBillowingStormTurbulenceShelf(
-        canvas = canvas,
-        cx = rimCx,
-        cy = rimCy,
-        outerR = r * 0.96f,
-        innerR = r * 0.64f,
-        lobeCount = 9,
-        phaseRad = spinAngle * 0.52f + phaseVal * twoPi * 0.35f,
-        primaryColor = outerColor,
-        secondaryColor = midColor,
-        alphaFrac = (0.54f * fadeAlpha).coerceIn(0.05f, 0.92f),
-        jagAmplitude = 0.092f * turbClamped.coerceIn(0.5f, 1.6f),
-      )
-      drawIrregularAbyssalVoidCavity(
-        canvas = canvas,
-        cx = upperCx,
-        cy = upperCy,
-        baseR = r * 0.72f,
-        lobeCount = 11,
-        phaseRad = spinAngle * 0.44f - phaseVal * twoPi * 0.3f,
-        jagFrac = 0.095f,
-        darkR = 2,
-        darkG = 4,
-        darkB = 10,
-        alphaInt = (248 * fadeAlpha).roundToInt().coerceIn(0, 255),
-      )
-      drawBillowingStormTurbulenceShelf(
-        canvas = canvas,
-        cx = upperCx,
-        cy = upperCy,
-        outerR = r * 0.76f,
-        innerR = r * 0.44f,
-        lobeCount = 8,
-        phaseRad = -spinAngle * 0.78f - phaseVal * twoPi * 0.45f,
-        primaryColor = midColor,
-        secondaryColor = coreColor,
-        alphaFrac = (0.52f * fadeAlpha).coerceIn(0.05f, 0.92f),
-        jagAmplitude = 0.105f * turbClamped.coerceIn(0.5f, 1.6f),
-      )
-      drawIrregularAbyssalVoidCavity(
-        canvas = canvas,
-        cx = midCx,
-        cy = midCy,
-        baseR = r * 0.48f,
-        lobeCount = 9,
-        phaseRad = -spinAngle * 0.62f + phaseVal * twoPi * 0.4f,
-        jagFrac = 0.115f,
-        darkR = if (darkVoidCenter) 0 else 4,
-        darkG = if (darkVoidCenter) 1 else 6,
-        darkB = if (darkVoidCenter) 3 else 14,
-        alphaInt = (252 * fadeAlpha).roundToInt().coerceIn(0, 255),
+        cx = trueCx,
+        cy = trueCy,
+        r = r,
+        timeSec = monoSec,
+        spinAngle = spinAngle,
+        fadeAlpha = fadeAlpha,
+        deepColor = deepColor,
+        midColor = midColor,
+        brightColor = brightColor,
+        coreColor = coreColor,
+        inwardSign = inwardSign,
+        glowClamped = glowClamped,
       )
     } else {
-      // Subtle stepped parallax storm cloud shelves reinforcing depth over hardware AGSL
-      drawBillowingStormTurbulenceShelf(
+      // Subtle foreground volumetric cloud wisps reinforcing 3D depth over the hardware shader
+      drawFeatheredStormRingClouds(
         canvas = canvas,
-        cx = upperCx,
-        cy = upperCy,
-        outerR = r * 0.84f,
-        innerR = r * 0.50f,
-        lobeCount = 8,
-        phaseRad = -spinAngle * 0.68f - phaseVal * twoPi * 0.35f,
-        primaryColor = midColor,
-        secondaryColor = coreColor,
-        alphaFrac = (0.32f * fadeAlpha).coerceIn(0.04f, 0.68f),
-        jagAmplitude = 0.088f * turbClamped.coerceIn(0.5f, 1.6f),
+        cx = trueCx,
+        cy = trueCy,
+        ringRadius = r * 0.72f,
+        puffBaseRadius = r * 0.34f,
+        puffCount = 7,
+        timeSec = monoSec,
+        spinRad = spinAngle * 0.42f * inwardSign,
+        colorA = midColor,
+        colorB = brightColor,
+        alphaScale = (0.28f * fadeAlpha * glowClamped.coerceAtMost(1.5f)).coerceIn(0.04f, 0.46f),
       )
     }
 
-    // Layer 1: Tapered Volumetric Storm Ingress Wisps (zero droplet balls or rim beads)
-    drawLocalizedIngressPlumes(
+    // Organic midpoint-displaced fractal branching electric lightning arcs around 0.68r .. 1.06r
+    drawFractalPerimeterLightningArcs(
       canvas = canvas,
-      cx = cx + (upperCx - cx) * 0.55f,
-      cy = cy + (upperCy - cy) * 0.55f,
-      outerRimR = r * 0.94f,
-      innerReachR = if (inwardSpiral) r * 0.36f else r * 0.46f,
-      plumeCount = 6,
-      phaseRad = spinAngle * (if (inwardSpiral) -0.82f else 0.74f) + phaseVal * twoPi * 0.5f,
-      outerColor = outerColor,
+      cx = trueCx,
+      cy = trueCy,
+      radius = r,
+      timeSec = monoSec,
+      spinRad = spinAngle * 0.35f,
+      arcCount = boltCount.coerceIn(5, 8),
+      deepColor = deepColor,
       midColor = midColor,
-      coreColor = coreColor,
-      fadeAlpha = fadeAlpha * 0.88f,
-      swirlBias = inwardSign * 0.24f,
-    )
-
-    // Layer 2: Jagged Collarless Spacetime Fracture Rim (matching Outer Rift Wall & Safe-Zone storm crags)
-    val cragCount = 24
-    fracturePath.reset()
-    for (tIdx in 0 until cragCount) {
-      val baseAng = tIdx * (twoPi / cragCount.toFloat()) - spinAngle * 0.24f
-      val halfSpan = (twoPi / cragCount.toFloat()) * 0.5f
-      val cragWaveA = sin(tIdx * 2.13f + phaseVal * twoPi + spinAngle * 0.45f)
-      val cragWaveB = cos(tIdx * 3.41f - phaseVal * twoPi * 0.8f)
-      val outerLipR = r * (0.955f + 0.048f * cragWaveA)
-      val innerToothR = r * (0.865f + 0.042f * cragWaveB)
-      val a0 = baseAng - halfSpan * 0.55f
-      val aTip = baseAng + sin(tIdx * 1.87f) * halfSpan * 0.28f
-      val xOuter = rimCx + cos(a0) * outerLipR
-      val yOuter = rimCy + sin(a0) * outerLipR
-      val xTooth = rimCx + cos(aTip) * innerToothR
-      val yTooth = rimCy + sin(aTip) * innerToothR
-      if (tIdx == 0) fracturePath.moveTo(xOuter, yOuter) else fracturePath.lineTo(xOuter, yOuter)
-      fracturePath.lineTo(xTooth, yTooth)
-    }
-    fracturePath.close()
-
-    ringPaint.strokeCap = Paint.Cap.ROUND
-    ringPaint.strokeWidth = (r * 0.046f * borderClamped).coerceAtLeast(1.8f)
-    ringPaint.color =
-      Color.argb(
-        (115f * fadeAlpha * glowClamped.coerceAtMost(1.6f)).roundToInt().coerceIn(0, 255),
-        oR,
-        oG,
-        oB,
-      )
-    canvas.drawPath(fracturePath, ringPaint)
-
-    ringPaint.strokeWidth = (r * 0.024f * borderClamped).coerceAtLeast(1.2f)
-    ringPaint.color = Color.argb((205f * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
-    canvas.drawPath(fracturePath, ringPaint)
-
-    ringPaint.strokeWidth = (r * 0.012f * borderClamped).coerceAtLeast(0.85f)
-    ringPaint.color = Color.argb((244f * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
-    canvas.drawPath(fracturePath, ringPaint)
-
-    // Layer 3: Forked Multi-Segment Rim-to-Void Plasma Lightning Bolts (dissipating into void with zero center orb)
-    drawSpacetimeForkedLightningBolts(
-      canvas = canvas,
-      rimCx = rimCx,
-      rimCy = rimCy,
-      coreCx = coreCx,
-      coreCy = coreCy,
-      outerBoltR = r * 0.94f,
-      innerBoltR = r * 0.24f,
-      boltCount = 5,
-      spinAngle = spinAngle,
-      pulsePhase = phaseVal,
-      haloColor = outerColor,
-      midColor = midColor,
+      brightColor = brightColor,
       coreColor = coreColor,
       fadeAlpha = fadeAlpha,
-    )
-
-    // Layer 4: Subtle Outer Optical Refraction Sheen (throatRadius = 0f so zero central rings/circles are drawn)
-    drawRefractiveMeniscusRim(
-      canvas = canvas,
-      cx = rimCx,
-      cy = rimCy,
-      rimRadius = r * 0.96f,
-      throatRadius = 0f,
-      lightAngleRad = -2.26f + 0.12f * sin(spinAngle * 0.5f),
-      rimTintColor = midColor,
-      secondaryTintColor = outerColor,
-      fadeAlpha = fadeAlpha * 0.85f,
-      strokeScale = borderClamped,
-      throatOffsetX = 0f,
-      throatOffsetY = 0f,
+      strokeWeight = borderClamped,
+      seedOffset = spatialSeed,
     )
   }
 
   /**
-   * Renders an irregular multi-crag abyssal dark void polygon cavity (never a circular ball or orb)
-   * for API 24-32 and software Bitmap icon rendering with zero heap allocations.
+   * Zero-allocation multi-layer feathered `RadialGradient` storm-cloud renderer for API 24-32
+   * and offscreen Bitmap icon baking (`0.0r .. 0.42r` centered `#000000` -> `#02040A` abyssal void
+   * throat + `0.30r .. 1.08r` billowing anisotropic volumetric cloud puffs).
    */
-  private fun drawIrregularAbyssalVoidCavity(
+  private fun drawFeatheredVolumetricRiftCloudsFallback(
     canvas: Canvas,
     cx: Float,
     cy: Float,
-    baseR: Float,
-    lobeCount: Int,
-    phaseRad: Float,
-    jagFrac: Float,
-    darkR: Int,
-    darkG: Int,
-    darkB: Int,
-    alphaInt: Int,
-  ) {
-    if (baseR <= 1.5f || alphaInt <= 2 || lobeCount < 5) return
-    val path = sharedStormCloudPath
-    val fill = sharedRiftFillPaint
-    fill.shader = null
-    val twoPi = PI.toFloat() * 2f
-    val step = twoPi / lobeCount.toFloat()
-    path.reset()
-    for (i in 0 until lobeCount) {
-      val a0 = phaseRad + i * step
-      val aMid = a0 + step * 0.5f
-      val a1 = a0 + step
-      val r0 = baseR * (0.92f + jagFrac * sin(i * 2.17f + phaseRad))
-      val rCtrl = baseR * (0.98f + jagFrac * 1.25f * cos(i * 1.63f - phaseRad * 0.8f))
-      val r1 = baseR * (0.92f + jagFrac * sin((i + 1) * 2.17f + phaseRad))
-      val sx = cx + cos(a0) * r0
-      val sy = cy + sin(a0) * r0
-      val ctrlX = cx + cos(aMid) * rCtrl
-      val ctrlY = cy + sin(aMid) * rCtrl
-      val ex = cx + cos(a1) * r1
-      val ey = cy + sin(a1) * r1
-      if (i == 0) path.moveTo(sx, sy)
-      path.quadTo(ctrlX, ctrlY, ex, ey)
-    }
-    path.close()
-    fill.color = Color.argb(alphaInt.coerceIn(0, 255), darkR, darkG, darkB)
-    canvas.drawPath(path, fill)
-  }
-
-  /**
-   * Renders an organic multi-lobe billowing storm turbulence cloud shelf (matching `STORM_BOUNDARY_AGSL`)
-   * between `outerR` and `innerR` on a stepped parallax plane with zero heap allocations.
-   */
-  private fun drawBillowingStormTurbulenceShelf(
-    canvas: Canvas,
-    cx: Float,
-    cy: Float,
-    outerR: Float,
-    innerR: Float,
-    lobeCount: Int,
-    phaseRad: Float,
-    primaryColor: Int,
-    secondaryColor: Int,
-    alphaFrac: Float,
-    jagAmplitude: Float,
-  ) {
-    if (outerR <= 2f || alphaFrac <= 0.01f || lobeCount < 3) return
-    val cloudPath = sharedStormCloudPath
-    val fillPaint = sharedRiftFillPaint
-    val strokePaint = sharedRiftStrokePaint
-    fillPaint.shader = null
-    strokePaint.shader = null
-
-    val twoPi = PI.toFloat() * 2f
-    val step = twoPi / lobeCount.toFloat()
-    cloudPath.reset()
-    for (i in 0 until lobeCount) {
-      val a0 = phaseRad + i * step
-      val aMid = a0 + step * 0.5f
-      val a1 = a0 + step
-      val rStart = innerR + (outerR - innerR) * (0.48f + 0.24f * sin(i * 1.73f + phaseRad))
-      val rCrest = outerR * (0.94f + jagAmplitude * sin(i * 2.31f - phaseRad * 1.4f))
-      val rEnd = innerR + (outerR - innerR) * (0.48f + 0.24f * sin((i + 1) * 1.73f + phaseRad))
-      val sx = cx + cos(a0) * rStart
-      val sy = cy + sin(a0) * rStart
-      val ctrlX = cx + cos(aMid) * rCrest
-      val ctrlY = cy + sin(aMid) * rCrest
-      val ex = cx + cos(a1) * rEnd
-      val ey = cy + sin(a1) * rEnd
-      if (i == 0) cloudPath.moveTo(sx, sy)
-      cloudPath.quadTo(ctrlX, ctrlY, ex, ey)
-    }
-    cloudPath.close()
-
-    val pR = Color.red(primaryColor)
-    val pG = Color.green(primaryColor)
-    val pB = Color.blue(primaryColor)
-    val sR = Color.red(secondaryColor)
-    val sG = Color.green(secondaryColor)
-    val sB = Color.blue(secondaryColor)
-
-    fillPaint.color = Color.argb((88f * alphaFrac).roundToInt().coerceIn(0, 255), pR, pG, pB)
-    canvas.drawPath(cloudPath, fillPaint)
-    strokePaint.strokeWidth = ((outerR - innerR) * 0.11f).coerceAtLeast(1.0f)
-    strokePaint.color = Color.argb((158f * alphaFrac).roundToInt().coerceIn(0, 255), sR, sG, sB)
-    canvas.drawPath(cloudPath, strokePaint)
-  }
-
-  /**
-   * Renders forked multi-segment lightning bolts crackling from the fractured outer rim (`rimCx`, `rimCy`)
-   * into the parallax-displaced abyssal throat (`coreCx`, `coreCy`) with zero per-frame allocations.
-   */
-  private fun drawSpacetimeForkedLightningBolts(
-    canvas: Canvas,
-    rimCx: Float,
-    rimCy: Float,
-    coreCx: Float,
-    coreCy: Float,
-    outerBoltR: Float,
-    innerBoltR: Float,
-    boltCount: Int,
+    r: Float,
+    timeSec: Float,
     spinAngle: Float,
-    pulsePhase: Float,
-    haloColor: Int,
+    fadeAlpha: Float,
+    deepColor: Int,
     midColor: Int,
+    brightColor: Int,
+    coreColor: Int,
+    inwardSign: Float,
+    glowClamped: Float,
+  ) {
+    val fill = sharedRiftFillPaint
+    val twoPi = PI.toFloat() * 2f
+
+    // 1. Outer diffused nebula mist (0.52r .. 1.08r)
+    drawFeatheredStormRingClouds(
+      canvas = canvas,
+      cx = cx,
+      cy = cy,
+      ringRadius = r * 0.76f,
+      puffBaseRadius = r * 0.44f,
+      puffCount = 10,
+      timeSec = timeSec,
+      spinRad = spinAngle * 0.28f * inwardSign,
+      colorA = deepColor,
+      colorB = midColor,
+      alphaScale = (0.56f * fadeAlpha * glowClamped.coerceAtMost(1.5f)).coerceIn(0.08f, 0.86f),
+    )
+
+    // 2. Centered #000000 -> #02040A abyssal void throat backdrop (soft feathered gradient, NEVER a hard circle)
+    val voidOuterR = (r * 0.64f).coerceAtLeast(2f)
+    sharedCloudMatrix.reset()
+    sharedCloudMatrix.setScale(voidOuterR, voidOuterR)
+    sharedCloudMatrix.postTranslate(cx, cy)
+    unitAbyssalVoidShader.setLocalMatrix(sharedCloudMatrix)
+    fill.shader = unitAbyssalVoidShader
+    fill.alpha = (252f * fadeAlpha).roundToInt().coerceIn(0, 255)
+    canvas.drawRect(cx - voidOuterR, cy - voidOuterR, cx + voidOuterR, cy + voidOuterR, fill)
+
+    // 3. Mid billowing storm-cloud bank (0.44r .. 0.98r) with time-shifting palette highlights
+    drawFeatheredStormRingClouds(
+      canvas = canvas,
+      cx = cx,
+      cy = cy,
+      ringRadius = r * 0.66f,
+      puffBaseRadius = r * 0.36f,
+      puffCount = 11,
+      timeSec = timeSec * 1.18f + 1.4f,
+      spinRad = -spinAngle * 0.44f * inwardSign,
+      colorA = midColor,
+      colorB = brightColor,
+      alphaScale = (0.68f * fadeAlpha).coerceIn(0.08f, 0.92f),
+    )
+
+    // 4. Inner luminous cloud wisps hugging the 0.30r .. 0.62r abyssal throat edge
+    val innerCount = 8
+    for (i in 0 until innerCount) {
+      val colorWave = 0.5f + 0.5f * sin(timeSec * 1.65f + i * 1.37f)
+      val chosenCol = if (colorWave > 0.62f) coreColor else brightColor
+      val puffShader = getUnitCloudPuffShader(chosenCol)
+      val ang = spinAngle * 0.62f * inwardSign + i * (twoPi / innerCount.toFloat()) + 0.14f * sin(timeSec * 1.2f + i * 2.1f)
+      val dist = r * (0.46f + 0.08f * sin(timeSec * 1.5f + i * 1.9f))
+      val px = cx + cos(ang) * dist
+      val py = cy + sin(ang) * dist
+      val rx = (r * (0.24f + 0.05f * colorWave)).coerceAtLeast(1.5f)
+      val ry = (rx * 0.68f).coerceAtLeast(1.2f)
+      sharedCloudMatrix.reset()
+      sharedCloudMatrix.setScale(rx, ry)
+      sharedCloudMatrix.postRotate((ang * 180f / PI.toFloat()) + 90f)
+      sharedCloudMatrix.postTranslate(px, py)
+      puffShader.setLocalMatrix(sharedCloudMatrix)
+      fill.shader = puffShader
+      fill.alpha = ((92f + 68f * colorWave) * fadeAlpha * glowClamped.coerceAtMost(1.4f)).roundToInt().coerceIn(0, 230)
+      val bound = max(rx, ry) * 1.05f
+      canvas.drawRect(px - bound, py - bound, px + bound, py + bound, fill)
+    }
+
+    // 5. Re-deepen true center abyssal void throat (0.0r .. 0.42r) so storm clouds frame a pitch-dark centered core
+    val innerThroatR = (r * 0.42f).coerceAtLeast(1.5f)
+    sharedCloudMatrix.reset()
+    sharedCloudMatrix.setScale(innerThroatR, innerThroatR)
+    sharedCloudMatrix.postTranslate(cx, cy)
+    unitAbyssalVoidShader.setLocalMatrix(sharedCloudMatrix)
+    fill.shader = unitAbyssalVoidShader
+    fill.alpha = (248f * fadeAlpha).roundToInt().coerceIn(0, 255)
+    canvas.drawRect(cx - innerThroatR, cy - innerThroatR, cx + innerThroatR, cy + innerThroatR, fill)
+    fill.shader = null
+    fill.alpha = 255
+  }
+
+  /**
+   * Shared zero-allocation feathered `RadialGradient` storm-cloud ring renderer used by
+   * Playfield Rifts, Unstable Rifts, Safe-Zone storm rims, Stasis domes, and Outer Storm Wall fallbacks.
+   */
+  fun drawFeatheredStormRingClouds(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    ringRadius: Float,
+    puffBaseRadius: Float,
+    puffCount: Int,
+    timeSec: Float,
+    spinRad: Float,
+    colorA: Int,
+    colorB: Int,
+    alphaScale: Float,
+  ) {
+    if (ringRadius <= 1.5f || puffBaseRadius <= 1.2f || alphaScale <= 0.01f || puffCount < 3) return
+    val fill = sharedRiftFillPaint
+    val twoPi = PI.toFloat() * 2f
+    val step = twoPi / puffCount.toFloat()
+    val shaderA = getUnitCloudPuffShader(colorA)
+    val shaderB = getUnitCloudPuffShader(colorB)
+
+    for (i in 0 until puffCount) {
+      val wave = 0.5f + 0.5f * sin(timeSec * 1.35f + i * 1.73f)
+      val ang = spinRad + i * step + 0.12f * sin(timeSec * 0.92f + i * 2.31f)
+      val radJit = ringRadius * (0.94f + 0.10f * cos(timeSec * 1.14f - i * 1.57f))
+      val px = cx + cos(ang) * radJit
+      val py = cy + sin(ang) * radJit
+      val rx = (puffBaseRadius * (0.92f + 0.28f * wave)).coerceAtLeast(1.5f)
+      val ry = (puffBaseRadius * (0.66f + 0.20f * (1f - wave))).coerceAtLeast(1.2f)
+      val activeShader = if ((i + (timeSec * 0.8f).toInt()) % 2 == 0) shaderA else shaderB
+
+      sharedCloudMatrix.reset()
+      sharedCloudMatrix.setScale(rx, ry)
+      sharedCloudMatrix.postRotate((ang * 180f / PI.toFloat()) + 90f)
+      sharedCloudMatrix.postTranslate(px, py)
+      activeShader.setLocalMatrix(sharedCloudMatrix)
+      fill.shader = activeShader
+      fill.alpha = ((125f + 85f * wave) * alphaScale).roundToInt().coerceIn(0, 245)
+      val bound = max(rx, ry) * 1.05f
+      canvas.drawRect(px - bound, py - bound, px + bound, py + bound, fill)
+    }
+    fill.shader = null
+    fill.alpha = 255
+  }
+
+  /**
+   * Renders 5-8 organic, midpoint-displaced fractal branching electric lightning arcs crackling
+   * around `0.68r .. 1.06r` (curving tangentially/diagonally across the volumetric storm boundary
+   * with 2-3 thinner forked sub-branches, `Paint.Cap.ROUND` & `Paint.Join.ROUND`, wide soft-alpha
+   * plasma glow `~0.055r` + crisp bright inner filament `~0.014r`) shifting smoothly within the
+   * Rift's fixed color palette. Zero heap allocations per frame.
+   */
+  fun drawFractalPerimeterLightningArcs(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    radius: Float,
+    timeSec: Float,
+    spinRad: Float,
+    arcCount: Int,
+    deepColor: Int,
+    midColor: Int,
+    brightColor: Int,
     coreColor: Int,
     fadeAlpha: Float,
+    strokeWeight: Float = 1.0f,
+    seedOffset: Float = 0f,
   ) {
-    if (outerBoltR <= innerBoltR || fadeAlpha <= 0.01f) return
-    val boltPath = sharedBoltPath
-    val strokePaint = sharedRiftStrokePaint
-    strokePaint.shader = null
+    if (radius <= 3f || fadeAlpha <= 0.02f || arcCount <= 0) return
+    val stroke = sharedRiftStrokePaint
+    val trunkPath = sharedPrimaryLightningPath
+    val forkPath = sharedForkLightningPath
+    val ptsX = sharedLightningPtsX
+    val ptsY = sharedLightningPtsY
+    stroke.shader = null
+    stroke.strokeCap = Paint.Cap.ROUND
+    stroke.strokeJoin = Paint.Join.ROUND
+
     val twoPi = PI.toFloat() * 2f
+    val count = arcCount.coerceIn(3, 10)
+    val weight = strokeWeight.coerceIn(0.55f, 1.85f)
+    // Quantize lightning geometry re-seed smoothly by overlapping flicker envelopes (zero snap!)
+    val trunkGlowW = (radius * 0.055f * weight).coerceIn(2.0f, 18.0f)
+    val trunkCoreW = (radius * 0.014f * weight).coerceIn(0.85f, 4.6f)
+    val forkGlowW = (trunkGlowW * 0.62f).coerceAtLeast(1.35f)
+    val forkCoreW = (trunkCoreW * 0.66f).coerceAtLeast(0.70f)
 
-    val hR = Color.red(haloColor)
-    val hG = Color.green(haloColor)
-    val hB = Color.blue(haloColor)
-    val mR = Color.red(midColor)
-    val mG = Color.green(midColor)
-    val mB = Color.blue(midColor)
-    val cR = Color.red(coreColor)
-    val cG = Color.green(coreColor)
-    val cB = Color.blue(coreColor)
+    for (bIdx in 0 until count) {
+      val arcSeed = seedOffset + bIdx * 2.39996f
+      val flickerA = 0.5f + 0.5f * sin(timeSec * 4.7f + bIdx * 1.93f + seedOffset)
+      val flickerB = 0.5f + 0.5f * cos(timeSec * 7.3f - bIdx * 2.41f)
+      val env = (0.32f + 0.68f * flickerA * (0.55f + 0.45f * flickerB)).coerceIn(0f, 1f)
+      if (env < 0.16f) continue
 
-    for (bIdx in 0 until boltCount) {
-      val flicker = 0.55f + 0.45f * sin(pulsePhase * twoPi * 2f + bIdx * 1.85f)
-      if (flicker < 0.24f) continue
-      val baseAng = -spinAngle * 1.12f + bIdx * (twoPi / boltCount.toFloat()) + sin(pulsePhase * twoPi + bIdx) * 0.14f
+      val palettePos = 0.5f + 0.5f * sin(timeSec * 1.55f + bIdx * 1.18f + seedOffset)
+      val boltAlpha = (fadeAlpha * env).coerceIn(0f, 1f)
+      val glowCol =
+        samplePalette4(
+          deepCol = deepColor,
+          midCol = midColor,
+          brightCol = brightColor,
+          coreCol = coreColor,
+          posRaw = (0.28f + 0.52f * palettePos).coerceIn(0.15f, 0.85f),
+          alphaInt = (124f * boltAlpha).roundToInt().coerceIn(0, 215),
+        )
+      val innerCol =
+        samplePalette4(
+          deepCol = deepColor,
+          midCol = midColor,
+          brightCol = brightColor,
+          coreCol = coreColor,
+          posRaw = (0.72f + 0.28f * palettePos).coerceIn(0.65f, 1.0f),
+          alphaInt = (246f * boltAlpha).roundToInt().coerceIn(0, 255),
+        )
 
-      val x0 = rimCx + cos(baseAng) * outerBoltR
-      val y0 = rimCy + sin(baseAng) * outerBoltR
+      val startAng =
+        spinRad +
+          bIdx * (twoPi / count.toFloat()) +
+          0.22f * sin(timeSec * 0.85f + arcSeed)
+      val arcSpan = (if (bIdx % 2 == 0) 1f else -1f) * (0.48f + 0.24f * sin(arcSeed * 1.7f + timeSec * 0.6f))
+      val startR = radius * (0.94f + 0.10f * sin(timeSec * 1.9f + arcSeed))
+      val endR = radius * (0.72f + 0.14f * cos(timeSec * 1.6f - arcSeed))
 
-      val a1 = baseAng + 0.16f * sin(bIdx * 3.1f + pulsePhase * twoPi)
-      val r1 = innerBoltR + (outerBoltR - innerBoltR) * 0.68f
-      val c1x = rimCx * 0.68f + coreCx * 0.32f
-      val c1y = rimCy * 0.68f + coreCy * 0.32f
-      val x1 = c1x + cos(a1) * r1
-      val y1 = c1y + sin(a1) * r1
+      // Build 9-vertex (8-segment) midpoint-displaced curved lightning trunk within 0.68r .. 1.06r
+      ptsX[0] = cx + cos(startAng) * startR
+      ptsY[0] = cy + sin(startAng) * startR
+      ptsX[8] = cx + cos(startAng + arcSpan) * endR
+      ptsY[8] = cy + sin(startAng + arcSpan) * endR
 
-      val a2 = baseAng - 0.19f * cos(bIdx * 2.3f - pulsePhase * twoPi)
-      val r2 = innerBoltR + (outerBoltR - innerBoltR) * 0.36f
-      val c2x = rimCx * 0.34f + coreCx * 0.66f
-      val c2y = rimCy * 0.34f + coreCy * 0.66f
-      val x2 = c2x + cos(a2) * r2
-      val y2 = c2y + sin(a2) * r2
+      val midAng = startAng + arcSpan * 0.5f
+      val midR = (startR + endR) * 0.5f + radius * 0.065f * sin(timeSec * 5.4f + arcSeed * 2.1f)
+      ptsX[4] = cx + cos(midAng) * midR.coerceIn(radius * 0.68f, radius * 1.06f)
+      ptsY[4] = cy + sin(midAng) * midR.coerceIn(radius * 0.68f, radius * 1.06f)
 
-      val a3 = baseAng + 0.09f * sin(bIdx * 1.7f + spinAngle)
-      val x3 = coreCx + cos(a3) * innerBoltR
-      val y3 = coreCy + sin(a3) * innerBoltR
+      // Level-2 midpoints (indices 2 and 6)
+      displaceMidpoint(ptsX, ptsY, 0, 4, 2, radius * 0.058f, timeSec * 8.2f + arcSeed * 3.1f)
+      displaceMidpoint(ptsX, ptsY, 4, 8, 6, radius * 0.058f, timeSec * 8.9f - arcSeed * 2.7f)
 
-      // Lateral fork branch splitting off from segment 1
-      val forkAng = a1 + (if (bIdx % 2 == 0) 0.34f else -0.34f)
-      val forkR = innerBoltR + (outerBoltR - innerBoltR) * 0.44f
-      val fx = c2x + cos(forkAng) * forkR
-      val fy = c2y + sin(forkAng) * forkR
+      // Level-3 midpoints (indices 1, 3, 5, 7)
+      displaceMidpoint(ptsX, ptsY, 0, 2, 1, radius * 0.030f, timeSec * 11.4f + arcSeed * 1.9f)
+      displaceMidpoint(ptsX, ptsY, 2, 4, 3, radius * 0.030f, timeSec * 12.1f - arcSeed * 4.3f)
+      displaceMidpoint(ptsX, ptsY, 4, 6, 5, radius * 0.030f, timeSec * 10.7f + arcSeed * 5.1f)
+      displaceMidpoint(ptsX, ptsY, 6, 8, 7, radius * 0.030f, timeSec * 11.8f - arcSeed * 3.6f)
 
-      boltPath.reset()
-      boltPath.moveTo(x0, y0)
-      boltPath.lineTo(x1, y1)
-      boltPath.lineTo(x2, y2)
-      boltPath.lineTo(x3, y3)
-      boltPath.moveTo(x1, y1)
-      boltPath.lineTo(fx, fy)
+      trunkPath.reset()
+      trunkPath.moveTo(ptsX[0], ptsY[0])
+      for (k in 1..8) {
+        trunkPath.lineTo(ptsX[k], ptsY[k])
+      }
 
-      val boltAlpha = fadeAlpha * flicker
-      strokePaint.strokeWidth = (outerBoltR * 0.036f).coerceAtLeast(1.6f)
-      strokePaint.color = Color.argb((118f * boltAlpha).roundToInt().coerceIn(0, 255), hR, hG, hB)
-      canvas.drawPath(boltPath, strokePaint)
+      // Build 2-3 thinner forked sub-branches splitting off displaced trunk vertices
+      forkPath.reset()
+      val forkCount = if (bIdx % 2 == 0) 3 else 2
+      for (fIdx in 0 until forkCount) {
+        val anchorIdx =
+          when (fIdx) {
+            0 -> 2
+            1 -> 5
+            else -> 6
+          }
+        val ax = ptsX[anchorIdx]
+        val ay = ptsY[anchorIdx]
+        val dirX = ptsX[(anchorIdx + 1).coerceAtMost(8)] - ptsX[(anchorIdx - 1).coerceAtLeast(0)]
+        val dirY = ptsY[(anchorIdx + 1).coerceAtMost(8)] - ptsY[(anchorIdx - 1).coerceAtLeast(0)]
+        val baseForkAng =
+          atan2(dirY, dirX) +
+            (if ((bIdx + fIdx) % 2 == 0) 1f else -1f) * (0.46f + 0.16f * sin(timeSec * 6.1f + fIdx * 2.3f + arcSeed))
+        val forkLen = radius * (0.16f + 0.08f * ((fIdx + 1) % 2))
+        val kx = ax + cos(baseForkAng + 0.18f * sin(timeSec * 9.5f + fIdx + arcSeed)) * (forkLen * 0.54f)
+        val ky = ay + sin(baseForkAng + 0.18f * sin(timeSec * 9.5f + fIdx + arcSeed)) * (forkLen * 0.54f)
+        var tx = ax + cos(baseForkAng - 0.12f * cos(timeSec * 8.3f - fIdx)) * forkLen
+        var ty = ay + sin(baseForkAng - 0.12f * cos(timeSec * 8.3f - fIdx)) * forkLen
+        // Clamp fork tip inside 0.64r .. 1.08r so forks never stab into a central core ball
+        val tipDist = hypot(tx - cx, ty - cy).coerceAtLeast(0.001f)
+        val clampedTipDist = tipDist.coerceIn(radius * 0.64f, radius * 1.08f)
+        tx = cx + ((tx - cx) / tipDist) * clampedTipDist
+        ty = cy + ((ty - cy) / tipDist) * clampedTipDist
 
-      strokePaint.strokeWidth = (outerBoltR * 0.019f).coerceAtLeast(1.05f)
-      strokePaint.color = Color.argb((205f * boltAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
-      canvas.drawPath(boltPath, strokePaint)
+        forkPath.moveTo(ax, ay)
+        forkPath.lineTo(kx, ky)
+        forkPath.lineTo(tx, ty)
+      }
 
-      strokePaint.strokeWidth = (outerBoltR * 0.010f).coerceAtLeast(0.75f)
-      strokePaint.color = Color.argb((248f * boltAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
-      canvas.drawPath(boltPath, strokePaint)
+      // Pass 1: Wide soft-alpha colored plasma glow
+      stroke.color = glowCol
+      stroke.strokeWidth = trunkGlowW
+      canvas.drawPath(trunkPath, stroke)
+      stroke.strokeWidth = forkGlowW
+      canvas.drawPath(forkPath, stroke)
+
+      // Pass 2: Crisp bright inner filament
+      stroke.color = innerCol
+      stroke.strokeWidth = trunkCoreW
+      canvas.drawPath(trunkPath, stroke)
+      stroke.strokeWidth = forkCoreW
+      canvas.drawPath(forkPath, stroke)
     }
   }
 
+  private fun displaceMidpoint(
+    ptsX: FloatArray,
+    ptsY: FloatArray,
+    i0: Int,
+    i1: Int,
+    iMid: Int,
+    amp: Float,
+    phase: Float,
+  ) {
+    val mx = (ptsX[i0] + ptsX[i1]) * 0.5f
+    val my = (ptsY[i0] + ptsY[i1]) * 0.5f
+    val dx = ptsX[i1] - ptsX[i0]
+    val dy = ptsY[i1] - ptsY[i0]
+    val len = hypot(dx, dy).coerceAtLeast(0.001f)
+    val nx = -dy / len
+    val ny = dx / len
+    val disp = amp * sin(phase) * cos(phase * 0.63f + iMid)
+    ptsX[iMid] = mx + nx * disp
+    ptsY[iMid] = my + ny * disp
+  }
+
   /**
-   * Renders localized droplet-reaction inward-blooming plasma ingress plumes originating along
-   * discrete angular vectors on `outerRimR` and blooming into the containment interior toward
-   * `innerReachR`, with teardrop plume heads, bifurcated curl tendrils, and glowing rim menisci.
+   * Renders soft feathered volumetric plasma ingress wisps along `outerRimR` toward `innerReachR`
+   * (zero straight lines, zero circular droplet bulbs, zero rim beads).
    */
   fun drawLocalizedIngressPlumes(
     canvas: Canvas,
@@ -3728,122 +3971,46 @@ object RiftSpriteBaker {
     phaseRad: Float,
     outerColor: Int,
     midColor: Int,
-    coreColor: Int,
+    @Suppress("UNUSED_PARAMETER") coreColor: Int,
     fadeAlpha: Float = 1.0f,
     swirlBias: Float = 0.22f,
   ) {
     if (outerRimR <= 6f || fadeAlpha <= 0.02f || plumeCount <= 0) return
     val fill = sharedRiftFillPaint
-    val stroke = sharedRiftStrokePaint
-    val path = sharedPlumePath
-    fill.shader = null
-    stroke.shader = null
-
-    val oR = Color.red(outerColor)
-    val oG = Color.green(outerColor)
-    val oB = Color.blue(outerColor)
-    val mR = Color.red(midColor)
-    val mG = Color.green(midColor)
-    val mB = Color.blue(midColor)
-    val cR = Color.red(coreColor)
-    val cG = Color.green(coreColor)
-    val cB = Color.blue(coreColor)
-
     val twoPi = PI.toFloat() * 2f
-    val clampedInner = innerReachR.coerceIn(outerRimR * 0.18f, outerRimR * 0.86f)
-    val maxPlumeSpan = (outerRimR - clampedInner).coerceAtLeast(3.5f)
+    val clampedInner = innerReachR.coerceIn(outerRimR * 0.34f, outerRimR * 0.90f)
+    val span = (outerRimR - clampedInner).coerceAtLeast(3.5f)
+    val shaderOuter = getUnitCloudPuffShader(outerColor)
+    val shaderMid = getUnitCloudPuffShader(midColor)
 
     for (idx in 0 until plumeCount) {
-      // Slightly Golden-Ratio / harmonic angular spacing so plumes read as organic localized ingress points
-      val baseAng =
-        phaseRad +
-          idx * (twoPi / plumeCount.toFloat()) +
-          0.19f * sin(phaseRad * 1.7f + idx * 2.35f)
-      val bloomCycle = 0.5f + 0.5f * sin(phaseRad * 2.3f + idx * 1.83f)
-      val reachFrac = 0.48f + 0.52f * bloomCycle
-      val tipR = (outerRimR - maxPlumeSpan * reachFrac).coerceAtLeast(clampedInner * 0.85f)
-      val neckSpread = 0.055f + 0.032f * (1f - bloomCycle)
-      val headSpread = 0.115f + 0.065f * bloomCycle
-      val curlAng = baseAng + swirlBias * (0.45f + 0.55f * bloomCycle)
+      val bloom = 0.5f + 0.5f * sin(phaseRad * 1.9f + idx * 1.83f)
+      val ang = phaseRad + idx * (twoPi / plumeCount.toFloat()) + swirlBias * bloom
+      val puffCenterR = outerRimR - span * (0.32f + 0.34f * bloom)
+      val px = cx + cos(ang) * puffCenterR
+      val py = cy + sin(ang) * puffCenterR
+      val rx = (span * (0.48f + 0.22f * bloom)).coerceAtLeast(2.5f)
+      val ry = (outerRimR * 0.14f * (0.85f + 0.30f * bloom)).coerceAtLeast(2.0f)
+      val activeShader = if (idx % 2 == 0) shaderOuter else shaderMid
 
-      val rootLx = cx + cos(baseAng - neckSpread) * outerRimR
-      val rootLy = cy + sin(baseAng - neckSpread) * outerRimR
-      val rootRx = cx + cos(baseAng + neckSpread) * outerRimR
-      val rootRy = cy + sin(baseAng + neckSpread) * outerRimR
-      val rootCx = cx + cos(baseAng) * outerRimR
-      val rootCy = cy + sin(baseAng) * outerRimR
-
-      val midR = outerRimR - (outerRimR - tipR) * 0.58f
-      val lobeLx = cx + cos(curlAng - headSpread) * midR
-      val lobeLy = cy + sin(curlAng - headSpread) * midR
-      val lobeRx = cx + cos(curlAng + headSpread) * midR
-      val lobeRy = cy + sin(curlAng + headSpread) * midR
-
-      val tipX = cx + cos(curlAng) * tipR
-      val tipY = cy + sin(curlAng) * tipR
-
-      // Outer billowing plasma ingress plume envelope
-      path.reset()
-      path.moveTo(rootLx, rootLy)
-      path.cubicTo(
-        cx + cos(baseAng - neckSpread * 0.7f) * (outerRimR - maxPlumeSpan * 0.24f),
-        cy + sin(baseAng - neckSpread * 0.7f) * (outerRimR - maxPlumeSpan * 0.24f),
-        lobeLx,
-        lobeLy,
-        tipX,
-        tipY,
-      )
-      path.cubicTo(
-        lobeRx,
-        lobeRy,
-        cx + cos(baseAng + neckSpread * 0.7f) * (outerRimR - maxPlumeSpan * 0.24f),
-        cy + sin(baseAng + neckSpread * 0.7f) * (outerRimR - maxPlumeSpan * 0.24f),
-        rootRx,
-        rootRy,
-      )
-      path.close()
-
-      val envAlpha = ((68f + 56f * bloomCycle) * fadeAlpha).roundToInt().coerceIn(0, 255)
-      fill.color = Color.argb(envAlpha, oR, oG, oB)
-      canvas.drawPath(path, fill)
-
-      // Curved feeder plasma wisp spine + forked curl tendrils (zero droplet bulbs or rim beads)
-      path.reset()
-      path.moveTo(rootCx, rootCy)
-      path.quadTo(
-        cx + cos((baseAng + curlAng) * 0.5f + swirlBias * 0.25f) * ((outerRimR + tipR) * 0.5f),
-        cy + sin((baseAng + curlAng) * 0.5f + swirlBias * 0.25f) * ((outerRimR + tipR) * 0.5f),
-        tipX,
-        tipY,
-      )
-      stroke.strokeWidth = (outerRimR * 0.019f).coerceAtLeast(1.0f)
-      stroke.color = Color.argb(((168f + 62f * bloomCycle) * fadeAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
-      canvas.drawPath(path, stroke)
-
-      val curlArmR = (tipR - maxPlumeSpan * 0.08f).coerceAtLeast(clampedInner * 0.72f)
-      stroke.strokeWidth = (outerRimR * 0.013f).coerceAtLeast(0.85f)
-      stroke.color = Color.argb(((142f * bloomCycle + 38f) * fadeAlpha).roundToInt().coerceIn(0, 255), mR, mG, mB)
-      val armSpread = 0.16f + 0.09f * bloomCycle
-      canvas.drawLine(
-        tipX,
-        tipY,
-        cx + cos(curlAng - armSpread) * curlArmR,
-        cy + sin(curlAng - armSpread) * curlArmR,
-        stroke,
-      )
-      canvas.drawLine(
-        tipX,
-        tipY,
-        cx + cos(curlAng + armSpread) * curlArmR,
-        cy + sin(curlAng + armSpread) * curlArmR,
-        stroke,
-      )
+      sharedCloudMatrix.reset()
+      sharedCloudMatrix.setScale(rx, ry)
+      sharedCloudMatrix.postRotate(ang * 180f / PI.toFloat())
+      sharedCloudMatrix.postTranslate(px, py)
+      activeShader.setLocalMatrix(sharedCloudMatrix)
+      fill.shader = activeShader
+      fill.alpha = ((58f + 54f * bloom) * fadeAlpha).roundToInt().coerceIn(0, 185)
+      val bound = max(rx, ry) * 1.05f
+      canvas.drawRect(px - bound, py - bound, px + bound, py + bound, fill)
     }
+    fill.shader = null
+    fill.alpha = 255
   }
 
   /**
-   * Renders a single high-energy contact-triggered inward storm surge plume & forked discharge
-   * at `ingressAngleRad` when ordnance, debris, or a starfighter crosses or rebounds off a Rift or Stasis boundary.
+   * Renders a soft feathered volumetric storm surge puff & organic midpoint-displaced forked arc
+   * at `ingressAngleRad` when ordnance or a starfighter crosses a Rift or Stasis boundary
+   * (zero straight radial spoke lines or circular bulbs).
    */
   fun drawContactIngressBurstPlume(
     canvas: Canvas,
@@ -3860,80 +4027,80 @@ object RiftSpriteBaker {
     if (outerRimR <= 6f || norm <= 0.02f) return
     val fill = sharedRiftFillPaint
     val stroke = sharedRiftStrokePaint
-    val path = sharedPlumePath
-    fill.shader = null
+    val trunk = sharedPrimaryLightningPath
     stroke.shader = null
+    stroke.strokeCap = Paint.Cap.ROUND
+    stroke.strokeJoin = Paint.Join.ROUND
 
-    val penetration = outerRimR * (0.24f + 0.38f * (1f - norm * 0.45f))
-    val tipR = (outerRimR - penetration).coerceAtLeast(outerRimR * 0.22f)
-    val rootSpread = 0.09f + 0.08f * norm
-    val headSpread = 0.16f + 0.10f * (1f - norm * 0.3f)
+    // 1. Feathered volumetric cloud surge puff at the boundary ingress point
+    val puffR = (outerRimR * (0.24f + 0.14f * norm)).coerceAtLeast(4f)
+    val px = cx + cos(ingressAngleRad) * (outerRimR * 0.86f)
+    val py = cy + sin(ingressAngleRad) * (outerRimR * 0.86f)
+    val surgeShader = getUnitCloudPuffShader(midColor)
+    sharedCloudMatrix.reset()
+    sharedCloudMatrix.setScale(puffR, puffR * 0.78f)
+    sharedCloudMatrix.postRotate(ingressAngleRad * 180f / PI.toFloat())
+    sharedCloudMatrix.postTranslate(px, py)
+    surgeShader.setLocalMatrix(sharedCloudMatrix)
+    fill.shader = surgeShader
+    fill.alpha = (165f * norm).roundToInt().coerceIn(0, 235)
+    canvas.drawRect(px - puffR, py - puffR, px + puffR, py + puffR, fill)
+    fill.shader = null
+    fill.alpha = 255
 
-    val rLx = cx + cos(ingressAngleRad - rootSpread) * outerRimR
-    val rLy = cy + sin(ingressAngleRad - rootSpread) * outerRimR
-    val rRx = cx + cos(ingressAngleRad + rootSpread) * outerRimR
-    val rRy = cy + sin(ingressAngleRad + rootSpread) * outerRimR
-    val rCx = cx + cos(ingressAngleRad) * outerRimR
-    val rCy = cy + sin(ingressAngleRad) * outerRimR
-    val midR = (outerRimR + tipR) * 0.52f
-    val tipX = cx + cos(ingressAngleRad) * tipR
-    val tipY = cy + sin(ingressAngleRad) * tipR
+    // 2. Curved midpoint-displaced branching lightning ripple hugging the outer storm cloud band
+    val span = 0.34f + 0.18f * norm
+    val a0 = ingressAngleRad - span * 0.5f
+    val a1 = ingressAngleRad
+    val a2 = ingressAngleRad + span * 0.5f
+    val x0 = cx + cos(a0) * (outerRimR * 0.96f)
+    val y0 = cy + sin(a0) * (outerRimR * 0.96f)
+    val xm = cx + cos(a1) * (outerRimR * 0.78f)
+    val ym = cy + sin(a1) * (outerRimR * 0.78f)
+    val x1 = cx + cos(a2) * (outerRimR * 0.94f)
+    val y1 = cy + sin(a2) * (outerRimR * 0.94f)
+    trunk.reset()
+    trunk.moveTo(x0, y0)
+    trunk.quadTo(xm, ym, x1, y1)
 
-    path.reset()
-    path.moveTo(rLx, rLy)
-    path.quadTo(cx + cos(ingressAngleRad - headSpread) * midR, cy + sin(ingressAngleRad - headSpread) * midR, tipX, tipY)
-    path.quadTo(cx + cos(ingressAngleRad + headSpread) * midR, cy + sin(ingressAngleRad + headSpread) * midR, rRx, rRy)
-    path.close()
-
-    fill.color =
+    stroke.strokeWidth = (outerRimR * 0.048f).coerceAtLeast(1.8f)
+    stroke.color =
       Color.argb(
-        (158f * norm).roundToInt().coerceIn(0, 255),
+        (135f * norm).roundToInt().coerceIn(0, 220),
         Color.red(outerColor),
         Color.green(outerColor),
         Color.blue(outerColor),
       )
-    canvas.drawPath(path, fill)
+    canvas.drawPath(trunk, stroke)
 
-    stroke.strokeWidth = (outerRimR * 0.026f).coerceAtLeast(1.3f)
+    stroke.strokeWidth = (outerRimR * 0.014f).coerceAtLeast(0.85f)
     stroke.color =
       Color.argb(
-        (228f * norm).roundToInt().coerceIn(0, 255),
-        Color.red(midColor),
-        Color.green(midColor),
-        Color.blue(midColor),
-      )
-    canvas.drawLine(rCx, rCy, tipX, tipY, stroke)
-
-    stroke.strokeWidth = (outerRimR * 0.013f).coerceAtLeast(0.85f)
-    stroke.color =
-      Color.argb(
-        (246f * norm).roundToInt().coerceIn(0, 255),
+        (242f * norm).roundToInt().coerceIn(0, 255),
         Color.red(coreColor),
         Color.green(coreColor),
         Color.blue(coreColor),
       )
-    val forkR = (tipR - outerRimR * 0.07f).coerceAtLeast(outerRimR * 0.16f)
-    canvas.drawLine(tipX, tipY, cx + cos(ingressAngleRad - 0.18f) * forkR, cy + sin(ingressAngleRad - 0.18f) * forkR, stroke)
-    canvas.drawLine(tipX, tipY, cx + cos(ingressAngleRad + 0.18f) * forkR, cy + sin(ingressAngleRad + 0.18f) * forkR, stroke)
+    canvas.drawPath(trunk, stroke)
   }
 
   /**
-   * Renders crisp optical meniscus specular crescents, counter-lit internal caustic arcs, and
-   * optional gravitational throat lensing highlights along circular Rift & Stasis boundaries.
+   * Renders subtle optical specular crescents on physical/crystalline objects (e.g. Flux Core Orb).
+   * Never draws central throat circles or droplet beads.
    */
   fun drawRefractiveMeniscusRim(
     canvas: Canvas,
     cx: Float,
     cy: Float,
     rimRadius: Float,
-    throatRadius: Float = 0f,
+    @Suppress("UNUSED_PARAMETER") throatRadius: Float = 0f,
     lightAngleRad: Float = -2.26f,
     rimTintColor: Int,
     secondaryTintColor: Int,
     fadeAlpha: Float = 1.0f,
     strokeScale: Float = 1.0f,
-    throatOffsetX: Float = 0f,
-    throatOffsetY: Float = 0f,
+    @Suppress("UNUSED_PARAMETER") throatOffsetX: Float = 0f,
+    @Suppress("UNUSED_PARAMETER") throatOffsetY: Float = 0f,
   ) {
     if (rimRadius <= 5f || fadeAlpha <= 0.02f) return
     val stroke = sharedRiftStrokePaint
@@ -3946,58 +4113,22 @@ object RiftSpriteBaker {
     val sR = Color.red(secondaryTintColor)
     val sG = Color.green(secondaryTintColor)
     val sB = Color.blue(secondaryTintColor)
-
     val lightDeg = (lightAngleRad * 180f / PI.toFloat())
 
-    // 1. Feathered chromatic dispersion sheen just inside the optical meniscus lip
-    val dispersionR = rimRadius * 0.962f
+    val dispersionR = rimRadius * 0.965f
     arcRect.set(cx - dispersionR, cy - dispersionR, cx + dispersionR, cy + dispersionR)
-    stroke.strokeWidth = (rimRadius * 0.030f * strokeScale).coerceAtLeast(1.2f)
-    stroke.color = Color.argb((112f * fadeAlpha).roundToInt().coerceIn(0, 255), tR, tG, tB)
-    canvas.drawArc(arcRect, lightDeg - 52f, 104f, false, stroke)
+    stroke.strokeWidth = (rimRadius * 0.026f * strokeScale).coerceAtLeast(1.1f)
+    stroke.color = Color.argb((96f * fadeAlpha).roundToInt().coerceIn(0, 255), tR, tG, tB)
+    canvas.drawArc(arcRect, lightDeg - 44f, 88f, false, stroke)
 
-    // 2. Razor-sharp primary optical meniscus specular highlight crescent
-    val meniscusR = rimRadius * 0.978f
-    arcRect.set(cx - meniscusR, cy - meniscusR, cx + meniscusR, cy + meniscusR)
-    stroke.strokeWidth = (rimRadius * 0.015f * strokeScale).coerceAtLeast(0.95f)
-    stroke.color = Color.argb((232f * fadeAlpha).roundToInt().coerceIn(0, 255), 248, 252, 255)
-    canvas.drawArc(arcRect, lightDeg - 38f, 76f, false, stroke)
-
-    // Secondary pinpoint specular glint near the leading meniscus horn
-    stroke.strokeWidth = (rimRadius * 0.021f * strokeScale).coerceAtLeast(1.1f)
-    stroke.color = Color.argb((248f * fadeAlpha).roundToInt().coerceIn(0, 255), 255, 255, 255)
-    canvas.drawArc(arcRect, lightDeg - 14f, 18f, false, stroke)
-
-    // 3. Opposite-hemisphere internal total-reflection caustic crescent
-    val causticR = rimRadius * 0.934f
-    arcRect.set(cx - causticR, cy - causticR, cx + causticR, cy + causticR)
-    stroke.strokeWidth = (rimRadius * 0.018f * strokeScale).coerceAtLeast(0.95f)
-    stroke.color = Color.argb((148f * fadeAlpha).roundToInt().coerceIn(0, 255), sR, sG, sB)
-    canvas.drawArc(arcRect, lightDeg + 144f, 72f, false, stroke)
-
-    val innerCausticR = rimRadius * 0.904f
-    arcRect.set(cx - innerCausticR, cy - innerCausticR, cx + innerCausticR, cy + innerCausticR)
-    stroke.strokeWidth = (rimRadius * 0.011f * strokeScale).coerceAtLeast(0.8f)
-    stroke.color = Color.argb((118f * fadeAlpha).roundToInt().coerceIn(0, 255), 224, 242, 254)
-    canvas.drawArc(arcRect, lightDeg + 158f, 44f, false, stroke)
-
-    // 4. Optional Einstein-ring throat meniscus lensing crescents
-    if (throatRadius > 2.4f) {
-      val tCx = cx + throatOffsetX
-      val tCy = cy + throatOffsetY
-      val lensR = throatRadius * 1.22f
-      arcRect.set(tCx - lensR, tCy - lensR, tCx + lensR, tCy + lensR)
-      stroke.strokeWidth = (throatRadius * 0.085f * strokeScale).coerceAtLeast(0.95f)
-      stroke.color = Color.argb((210f * fadeAlpha).roundToInt().coerceIn(0, 255), 240, 249, 255)
-      canvas.drawArc(arcRect, lightDeg - 44f, 68f, false, stroke)
-      stroke.color = Color.argb((165f * fadeAlpha).roundToInt().coerceIn(0, 255), tR, tG, tB)
-      canvas.drawArc(arcRect, lightDeg + 136f, 64f, false, stroke)
-    }
+    stroke.strokeWidth = (rimRadius * 0.014f * strokeScale).coerceAtLeast(0.85f)
+    stroke.color = Color.argb((132f * fadeAlpha).roundToInt().coerceIn(0, 255), sR, sG, sB)
+    canvas.drawArc(arcRect, lightDeg + 148f, 64f, false, stroke)
   }
 
   /**
-   * Renders a faceted 3D crystalline precipitate cluster (hexagonal / diamond / dendritic micro-shards)
-   * nucleated during Rift ordnance absorption or Stasis / Storm / Rift plasma hull-obstacle reactions.
+   * Renders a faceted crystalline precipitate shard (zero circular halos, zero orbiting balls,
+   * zero protruding radial spoke lines).
    */
   fun drawPrecipitateCrystalCluster(
     canvas: Canvas,
@@ -4025,44 +4156,24 @@ object RiftSpriteBaker {
     val cG = Color.green(coreColor)
     val cB = Color.blue(coreColor)
 
-    // Primary 6-point asymmetric crystal shard prism facet (zero circular halos or orbiting balls)
     val vertices = if (facetSeed % 2 == 0) 6 else 4
     val step = (PI.toFloat() * 2f) / vertices.toFloat()
     path.reset()
     for (v in 0 until vertices) {
       val a = angleRad + v * step
-      val stretch = if (v % 2 == 0) 1.24f else 0.58f
+      val stretch = if (v % 2 == 0) 1.18f else 0.58f
       val vx = cx + cos(a) * (radius * stretch)
       val vy = cy + sin(a) * (radius * stretch)
       if (v == 0) path.moveTo(vx, vy) else path.lineTo(vx, vy)
     }
     path.close()
 
-    fill.color = Color.argb((186f * normAlpha).roundToInt().coerceIn(0, 255), pR, pG, pB)
+    fill.color = Color.argb((178f * normAlpha).roundToInt().coerceIn(0, 255), pR, pG, pB)
     canvas.drawPath(path, fill)
 
-    stroke.strokeWidth = (radius * 0.16f).coerceAtLeast(1.0f)
-    stroke.color = Color.argb((238f * normAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
+    stroke.strokeWidth = (radius * 0.14f).coerceAtLeast(0.95f)
+    stroke.color = Color.argb((228f * normAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
     canvas.drawPath(path, stroke)
-
-    // Internal specular crystal ridge + sharp dendritic needle streaks (zero circular dots)
-    val ridgeA = angleRad
-    stroke.strokeWidth = (radius * 0.12f).coerceAtLeast(0.85f)
-    stroke.color = Color.argb((245f * normAlpha).roundToInt().coerceIn(0, 255), 255, 255, 255)
-    canvas.drawLine(
-      cx - cos(ridgeA) * (radius * 0.82f),
-      cy - sin(ridgeA) * (radius * 0.82f),
-      cx + cos(ridgeA) * (radius * 0.82f),
-      cy + sin(ridgeA) * (radius * 0.82f),
-      stroke,
-    )
-    for (s in 0 until 3) {
-      val sa = -angleRad * 0.8f + s * (PI.toFloat() * 2f / 3f) + (facetSeed % 5) * 0.4f
-      val r0 = radius * 0.88f
-      val r1 = radius * 1.32f
-      stroke.color = Color.argb((205f * normAlpha).roundToInt().coerceIn(0, 255), cR, cG, cB)
-      canvas.drawLine(cx + cos(sa) * r0, cy + sin(sa) * r0, cx + cos(sa) * r1, cy + sin(sa) * r1, stroke)
-    }
   }
 
   /**
@@ -4088,38 +4199,37 @@ object RiftSpriteBaker {
     val stroke = sharedRiftStrokePaint
     val path = sharedFilamentPath
     stroke.shader = null
+    stroke.strokeCap = Paint.Cap.ROUND
+    stroke.strokeJoin = Paint.Join.ROUND
 
     path.reset()
     path.moveTo(x0, y0)
     path.quadTo(ctrlX, ctrlY, x1, y1)
 
-    // Outer plasma sheath
-    stroke.strokeWidth = (thickness * 2.15f).coerceAtLeast(2.2f)
+    stroke.strokeWidth = (thickness * 2.10f).coerceAtLeast(2.0f)
     stroke.color =
       Color.argb(
-        (92f * normAlpha).roundToInt().coerceIn(0, 255),
+        (88f * normAlpha).roundToInt().coerceIn(0, 255),
         Color.red(outerColor),
         Color.green(outerColor),
         Color.blue(outerColor),
       )
     canvas.drawPath(path, stroke)
 
-    // Mid harmonic filament body
-    stroke.strokeWidth = thickness.coerceAtLeast(1.2f)
+    stroke.strokeWidth = thickness.coerceAtLeast(1.1f)
     stroke.color =
       Color.argb(
-        (198f * normAlpha).roundToInt().coerceIn(0, 255),
+        (192f * normAlpha).roundToInt().coerceIn(0, 255),
         Color.red(midColor),
         Color.green(midColor),
         Color.blue(midColor),
       )
     canvas.drawPath(path, stroke)
 
-    // High-luminance filament spine
-    stroke.strokeWidth = (thickness * 0.42f).coerceAtLeast(0.85f)
+    stroke.strokeWidth = (thickness * 0.40f).coerceAtLeast(0.80f)
     stroke.color =
       Color.argb(
-        (245f * normAlpha).roundToInt().coerceIn(0, 255),
+        (242f * normAlpha).roundToInt().coerceIn(0, 255),
         Color.red(coreColor),
         Color.green(coreColor),
         Color.blue(coreColor),
@@ -4128,9 +4238,11 @@ object RiftSpriteBaker {
   }
 
   /**
-   * Renders the converged 10.0s multicolored `Unstable Rift` using the unified collarless volumetric
-   * storm-cloud turbulence, jagged fracture rim, and branching plasma lightning style with zero
-   * central/orbiting balls, orbs, or segmented collar rings.
+   * Renders the converged 10.0s multicolored `Unstable Rift`:
+   * - Swirling multi-color volumetric storm body (`#00F5D4`, `#38BDF8`, `#A855F7`, `#EC4899`)
+   * - Centered `#000000` -> `#02040A` abyssal void throat locked at `(cx, cy)` (`<= 0.025r` drift)
+   * - Zero straight/rigid lines, zero spokes, zero central balls
+   * - Organic midpoint-displaced fractal branching electric lightning arcs around `0.68r .. 1.06r`
    */
   fun drawUnstableMergedRiftOnCanvas(
     canvas: Canvas,
@@ -4140,91 +4252,91 @@ object RiftSpriteBaker {
     spinAngle: Float,
     pulsePhase: Float = 0.5f,
     fadeAlpha: Float = 1f,
-    parallaxOffsetX: Float = 0f,
-    parallaxOffsetY: Float = 0f,
+    @Suppress("UNUSED_PARAMETER") parallaxOffsetX: Float = 0f,
+    @Suppress("UNUSED_PARAMETER") parallaxOffsetY: Float = 0f,
   ) {
     if (r <= 1f || fadeAlpha <= 0.01f) return
-    val calmPrimarySpin = spinAngle * 0.46f
-    val calmCounterSpin = -spinAngle * 0.38f
+    val monoSec =
+      if (pulsePhase != 0.5f) {
+        pulsePhase * 3.4f
+      } else {
+        (SystemClock.elapsedRealtimeNanos() - bakerStartElapsedNanos) * 1e-9f
+      }
+    val seed = 8.4f + cx * 0.0027f + cy * 0.0021f
+    val trueCx = cx + sin(monoSec * 1.1f + seed) * (0.017f * r)
+    val trueCy = cy + cos(monoSec * 0.85f + seed) * (0.017f * r)
 
-    val rawMag = kotlin.math.hypot(parallaxOffsetX, parallaxOffsetY)
-    val maxPx = r * 0.16f
-    val pScale = if (rawMag > maxPx && rawMag > 0.001f) maxPx / rawMag else 1f
-    val px = parallaxOffsetX * pScale
-    val py = parallaxOffsetY * pScale
-    val midCx = cx + px * 0.58f
-    val midCy = cy + py * 0.58f
-    val coreCx = cx + px
-    val coreCy = cy + py
+    val mintCyan = Color.rgb(0, 245, 212)   // #00F5D4
+    val skyBlue = Color.rgb(56, 189, 248)   // #38BDF8
+    val violet = Color.rgb(168, 85, 247)    // #A855F7
+    val magenta = Color.rgb(236, 72, 153)   // #EC4899
+    val paleCore = Color.rgb(240, 253, 250)
 
-    draw3dPlayfieldRiftColors(
+    // Primary volumetric storm-cloud body (violet -> magenta -> cyan) centered at (trueCx, trueCy)
+    drawVolumetricPlayfieldRiftInternal(
       canvas = canvas,
       cx = cx,
       cy = cy,
       r = r,
-      spinAngle = calmPrimarySpin,
+      spinAngle = spinAngle * 0.52f,
       fadeAlpha = fadeAlpha,
-      outerColor = Color.rgb(250, 204, 21),
-      midColor = Color.rgb(239, 68, 68),
-      coreColor = Color.rgb(254, 249, 195),
-      darkVoidCenter = true,
+      deepColor = Color.rgb(59, 7, 100),
+      midColor = violet,
+      brightColor = magenta,
+      coreColor = paleCore,
       inwardSpiral = true,
-      pulsePhaseOverride = pulsePhase,
-      parallaxOffsetX = parallaxOffsetX,
-      parallaxOffsetY = parallaxOffsetY,
-      turbulence = 1.35f,
-      glowIntensity = 1.25f,
-      borderWeight = 1.15f,
+      pulsePhaseOverride = if (pulsePhase != 0.5f) pulsePhase else null,
+      turbulence = 1.28f,
+      glowIntensity = 1.24f,
+      borderWeight = 1.12f,
+      boltCount = 5,
+      seedOffset = 8.4f,
     )
 
-    val twoPi = PI.toFloat() * 2f
-
-    // Counter-drifting cyan/violet/rose storm-cloud shelves fusing across the unstable breach
-    drawBillowingStormTurbulenceShelf(
+    // Counter-swirling #00F5D4 & #38BDF8 feathered volumetric storm-cloud shelves around the centered throat
+    drawFeatheredStormRingClouds(
       canvas = canvas,
-      cx = midCx,
-      cy = midCy,
-      outerR = r * 0.88f,
-      innerR = r * 0.40f,
-      lobeCount = 9,
-      phaseRad = calmCounterSpin * 1.15f + pulsePhase * twoPi * 0.5f,
-      primaryColor = Color.rgb(0, 245, 212),
-      secondaryColor = Color.rgb(168, 85, 247),
-      alphaFrac = 0.48f * fadeAlpha,
-      jagAmplitude = 0.105f,
+      cx = trueCx,
+      cy = trueCy,
+      ringRadius = r * 0.68f,
+      puffBaseRadius = r * 0.36f,
+      puffCount = 10,
+      timeSec = monoSec * 1.15f,
+      spinRad = -spinAngle * 0.46f,
+      colorA = mintCyan,
+      colorB = skyBlue,
+      alphaScale = (0.58f * fadeAlpha).coerceIn(0.08f, 0.88f),
     )
 
-    drawLocalizedIngressPlumes(
-      canvas = canvas,
-      cx = cx + px * 0.30f,
-      cy = cy + py * 0.30f,
-      outerRimR = r * 0.94f,
-      innerReachR = r * 0.34f,
-      plumeCount = 6,
-      phaseRad = -calmPrimarySpin * 1.35f + pulsePhase * twoPi,
-      outerColor = Color.rgb(236, 72, 153),
-      midColor = Color.rgb(0, 245, 212),
-      coreColor = Color.rgb(254, 249, 195),
-      fadeAlpha = fadeAlpha * 0.88f,
-      swirlBias = -0.26f,
-    )
+    // Re-anchor deep centered #000000 -> #02040A abyssal throat so counter-clouds never wash out the core
+    val innerVoidR = (r * 0.39f).coerceAtLeast(1.5f)
+    val fill = sharedRiftFillPaint
+    sharedCloudMatrix.reset()
+    sharedCloudMatrix.setScale(innerVoidR, innerVoidR)
+    sharedCloudMatrix.postTranslate(trueCx, trueCy)
+    unitAbyssalVoidShader.setLocalMatrix(sharedCloudMatrix)
+    fill.shader = unitAbyssalVoidShader
+    fill.alpha = (236f * fadeAlpha).roundToInt().coerceIn(0, 255)
+    canvas.drawRect(trueCx - innerVoidR, trueCy - innerVoidR, trueCx + innerVoidR, trueCy + innerVoidR, fill)
+    fill.shader = null
+    fill.alpha = 255
 
-    // Secondary multicolored cyan/gold forked fracture lightning bolts crackling across the merged breach
-    drawSpacetimeForkedLightningBolts(
+    // Secondary cyan -> sky -> lavender fractal branching lightning arcs interwoven around 0.68r .. 1.06r
+    drawFractalPerimeterLightningArcs(
       canvas = canvas,
-      rimCx = cx + px * 0.14f,
-      rimCy = cy + py * 0.14f,
-      coreCx = coreCx,
-      coreCy = coreCy,
-      outerBoltR = r * 0.95f,
-      innerBoltR = r * 0.22f,
-      boltCount = 6,
-      spinAngle = -calmPrimarySpin * 1.4f,
-      pulsePhase = pulsePhase,
-      haloColor = Color.rgb(0, 245, 212),
-      midColor = Color.rgb(250, 204, 21),
-      coreColor = Color.WHITE,
+      cx = trueCx,
+      cy = trueCy,
+      radius = r * 1.01f,
+      timeSec = monoSec * 1.08f + 1.7f,
+      spinRad = -spinAngle * 0.42f,
+      arcCount = 5,
+      deepColor = Color.rgb(15, 118, 110),
+      midColor = skyBlue,
+      brightColor = mintCyan,
+      coreColor = Color.rgb(240, 249, 255),
       fadeAlpha = fadeAlpha,
+      strokeWeight = 1.08f,
+      seedOffset = 13.7f,
     )
   }
 
@@ -4233,7 +4345,7 @@ object RiftSpriteBaker {
     val c = Canvas(bmp)
     val cx = sizePx * 0.5f
     val cy = sizePx * 0.5f
-    val r = sizePx * 0.35f
+    val r = sizePx * 0.37f
 
     when (riftId) {
       "plasma_rift" ->
@@ -4243,36 +4355,28 @@ object RiftSpriteBaker {
       "gravity_rift" ->
         draw3dPlayfieldRift(c, AnomalyType.GRAVITY_RIFT, cx, cy, r, spinAngle = 0.55f, pulsePhaseOverride = 0.42f)
       "unstable_rift" ->
-        drawUnstableMergedRiftOnCanvas(c, cx, cy, r * 1.05f, spinAngle = 0.38f, pulsePhase = 0.48f)
+        drawUnstableMergedRiftOnCanvas(c, cx, cy, r * 1.02f, spinAngle = 0.38f, pulsePhase = 0.48f)
       else -> {
         val c1x = sizePx * 0.32f
         val c1y = sizePx * 0.36f
         val c2x = sizePx * 0.68f
         val c2y = sizePx * 0.64f
-        val nodeR = sizePx * 0.21f
-        val bridgeGlow =
-          Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 4.0f
-            strokeCap = Paint.Cap.ROUND
-            color = Color.argb(130, 45, 212, 191)
-          }
-        val bridgeCore =
-          Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 1.8f
-            strokeCap = Paint.Cap.ROUND
-            color = Color.parseColor("#E0F2FE")
-          }
-        val bridgePath =
-          Path().apply {
-            moveTo(c1x, c1y)
-            lineTo((c1x + c2x) * 0.5f - 4f, (c1y + c2y) * 0.5f + 5f)
-            lineTo((c1x + c2x) * 0.5f + 4f, (c1y + c2y) * 0.5f - 5f)
-            lineTo(c2x, c2y)
-          }
-        c.drawPath(bridgePath, bridgeGlow)
-        c.drawPath(bridgePath, bridgeCore)
+        val nodeR = sizePx * 0.22f
+        // Curved organic phase-lightning tendril linking Node A & Node B (zero rigid straight segments)
+        drawReactiveFilamentStrand(
+          canvas = c,
+          x0 = c1x,
+          y0 = c1y,
+          ctrlX = (c1x + c2x) * 0.5f + sizePx * 0.08f,
+          ctrlY = (c1y + c2y) * 0.5f - sizePx * 0.08f,
+          x1 = c2x,
+          y1 = c2y,
+          thickness = 2.4f,
+          outerColor = Color.rgb(15, 118, 110),
+          midColor = Color.rgb(6, 182, 212),
+          coreColor = Color.rgb(204, 251, 241),
+          alphaFrac = 0.90f,
+        )
         draw3dPlayfieldRift(c, AnomalyType.PHASE_RIFT_A, c1x, c1y, nodeR, spinAngle = 0.45f, pulsePhaseOverride = 0.38f)
         draw3dPlayfieldRift(c, AnomalyType.PHASE_RIFT_B, c2x, c2y, nodeR, spinAngle = -0.45f, pulsePhaseOverride = 0.62f)
       }

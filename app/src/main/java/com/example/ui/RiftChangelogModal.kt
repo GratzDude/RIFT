@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 112
+const val CURRENT_RIFT_BUILD_VERSION = 113
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,20 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 113,
+      versionTag = "v1.0.113 // BUILD #113",
+      releaseDate = "Nov 24, 2026",
+      headline = "Volumetric Storm-Cloud & Color-Shifting Branching Lightning Rifts, True Centered Rift Cores, Smooth Box-Free Outer Storm Wall, Line-Free Deep Space & GitHub APK SHA-1 Readout",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "True-Centered Volumetric Storm-Cloud Rifts & Color-Shifting Fractal Lightning: Locked every Rift core and abyssal void throat to its true geometric center, removed all jagged perimeter polylines, radial spoke lines, line-attached orbs, and central balls, and upgraded Plasma, Repulsor, Gravity, Phase, and Unstable Merged Rifts with Quintic FBM volumetric storm clouds on API 33+, multi-layer feathered radial cloud puffs on API 24-32, and midpoint-displaced branching lightning shifting smoothly within each Rift's fixed palette.",
+          "Smooth Box-Free Non-Snapping Outer Storm Wall & Safe-Zone / Stasis Containment: Rebuilt the 280px Outer Storm Border Wall, Rift Station Safe-Zone perimeter, and Stasis domes with continuous 2D world-space Quintic-smoothed FBM clouds, soft radial feathering, and monotonic elapsed-second timing so flying near the perimeter never shows grid boxes or animation resets while preserving live 220px proximity lightning strikes.",
+          "Line-Free True Deep-Space Backdrop & GitHub Release SHA-1 Output: Removed all sector grid crosshairs, coordinate rings, megastructure wireframe lines, micro-rock wireframe rims, and nebula wrap seams in favor of deep #010308 to #040917 space, multi-plane feathered indigo/violet/cyan nebulae, 3-plane pinpoint stars, distant softly-lit celestial bodies, and automatic RIFT_APK_SHA1 fingerprint output in GitHub Releases.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 112,
       versionTag = "v1.0.112 // BUILD #112",

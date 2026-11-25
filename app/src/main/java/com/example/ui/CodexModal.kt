@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.engine.AnomalyType
 import com.example.engine.PowerUpCodexEntry
 import com.example.engine.RiftCodex
 import com.example.engine.RiftSpriteBaker
@@ -373,7 +374,7 @@ fun CodexModal(
                 modifier = Modifier.weight(1f),
                 title = "45S VOLUMETRIC RIFT CYCLES",
                 body =
-                  "Volumetric storm-cloud Playfield Rifts with jagged fracture rims and branching lightning relocate every 45s outside the Safe Zone and never spawn inside Stasis Breach Jails or Rift Control rings.",
+                  "Volumetric storm-cloud Playfield Rifts with centered abyssal throats and color-shifting branching lightning relocate every 45s outside the Safe Zone and never spawn inside Stasis Breach Jails or Rift Control rings.",
                 bgColor = Color(0xFF1B102E),
                 borderColor = Color(0xFFA855F7),
                 bodyColor = Color(0xFFE9D5FF),
@@ -869,23 +870,38 @@ private fun SafeZoneAndSectorObstaclesCard(
         val stationR = size.minDimension * 0.38f
         val timeSec = continuousSec
 
-        for (b in 0 until 8) {
-          val ang = (b * PI * 0.25).toFloat()
-          drawLine(
-            color = Color(0xFF00F5D4).copy(alpha = 0.42f),
-            start = Offset(cx + cos(ang) * (stationR * 0.45f), cy + sin(ang) * (stationR * 0.45f)),
-            end = Offset(cx + cos(ang) * shieldR, cy + sin(ang) * shieldR),
-            strokeWidth = 1.1.dp.toPx(),
-          )
-        }
+        // Feathered sanctuary aura + volumetric storm-cloud & branching-lightning perimeter (zero radial spoke lines)
         drawCircle(
-          color = Color(0xFF00F5D4).copy(alpha = 0.55f),
-          radius = shieldR,
+          brush =
+            Brush.radialGradient(
+              colorStops =
+                arrayOf(
+                  0.00f to Color(0xFF030B1B).copy(alpha = 0.72f),
+                  0.68f to Color(0xFF0F766E).copy(alpha = 0.28f),
+                  0.92f to Color(0xFF00F5D4).copy(alpha = 0.38f),
+                  1.00f to Color.Transparent,
+                ),
+              center = Offset(cx, cy),
+              radius = shieldR * 1.06f,
+            ),
+          radius = shieldR * 1.06f,
           center = Offset(cx, cy),
-          style = Stroke(width = 1.2.dp.toPx()),
         )
         drawIntoCanvas { composeCanvas ->
           val nc = composeCanvas.nativeCanvas
+          RiftSpriteBaker.drawFeatheredStormRingClouds(
+            canvas = nc,
+            cx = cx,
+            cy = cy,
+            ringRadius = shieldR * 0.94f,
+            puffBaseRadius = shieldR * 0.26f,
+            puffCount = 10,
+            timeSec = timeSec,
+            spinRad = -timeSec * 0.35f,
+            colorA = android.graphics.Color.rgb(15, 118, 110),
+            colorB = android.graphics.Color.rgb(6, 182, 212),
+            alphaScale = 0.72f,
+          )
           nc.save()
           nc.translate(cx, cy)
           nc.rotate((timeSec * 40f) % 360f)
@@ -900,6 +916,22 @@ private fun SafeZoneAndSectorObstaclesCard(
             timeSec = timeSec,
             isLockedOut = false,
             alphaScale = 1f,
+          )
+          RiftSpriteBaker.drawFractalPerimeterLightningArcs(
+            canvas = nc,
+            cx = cx,
+            cy = cy,
+            radius = shieldR,
+            timeSec = timeSec,
+            spinRad = -timeSec * 0.32f,
+            arcCount = 5,
+            deepColor = android.graphics.Color.rgb(15, 118, 110),
+            midColor = android.graphics.Color.rgb(6, 182, 212),
+            brightColor = android.graphics.Color.rgb(0, 245, 212),
+            coreColor = android.graphics.Color.rgb(204, 251, 241),
+            fadeAlpha = 0.90f,
+            strokeWeight = 0.9f,
+            seedOffset = 2.1f,
           )
         }
       }
@@ -1382,7 +1414,6 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
     if (headless || continuousNanos == 0L) 1.45f else ((continuousNanos - startEpochNs) * 1e-9f)
   val spinAngle = timeSec * 1.65f
   val pulsePhase = timeSec * 0.55f
-  val linkPath = remember { Path() }
 
   Box(
     modifier =
@@ -1399,38 +1430,26 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
       val cx = w * 0.5f
       val cy = h * 0.5f
       if (riftId == "phase_rift" || riftId == "phase_rift_pair") {
-        val ax = w * 0.33f
-        val ay = h * 0.35f
-        val bx = w * 0.68f
-        val by = h * 0.66f
-        val midX = (ax + bx) * 0.5f + sin(spinAngle * 2f) * (minDim * 0.06f)
-        val midY = (ay + by) * 0.5f - sin(spinAngle * 2f) * (minDim * 0.06f)
-        linkPath.reset()
-        linkPath.moveTo(ax, ay)
-        linkPath.quadraticTo(midX, midY, bx, by)
-        drawPath(
-          linkPath,
-          Brush.linearGradient(
-            listOf(Color(0x662DD4BF), Color(0x6638BDF8)),
-            Offset(ax, ay),
-            Offset(bx, by),
-          ),
-          style = Stroke(width = 4.0.dp.toPx(), cap = StrokeCap.Round),
-        )
-        drawPath(
-          linkPath,
-          Brush.linearGradient(
-            listOf(Color(0xFF2DD4BF), Color(0xFF38BDF8)),
-            Offset(ax, ay),
-            Offset(bx, by),
-          ),
-          style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round),
+        // Soft feathered quantum mist corridor between paired Phase Rift nodes (zero solid wire lines)
+        val mistPulse = 0.5f + 0.5f * sin(timeSec * 2.2f)
+        drawCircle(
+          brush =
+            Brush.radialGradient(
+              colors =
+                listOf(
+                  Color(0xFF00F5D4).copy(alpha = 0.22f + 0.12f * mistPulse),
+                  Color(0xFF06B6D4).copy(alpha = 0.12f),
+                  Color.Transparent,
+                ),
+              center = Offset(cx, cy),
+              radius = minDim * 0.36f,
+            ),
+          radius = minDim * 0.36f,
+          center = Offset(cx, cy),
         )
       }
 
       val baseRiftR = minDim * 0.38f
-      val orbParallaxX = cos(spinAngle * 0.85f) * (baseRiftR * 0.11f)
-      val orbParallaxY = sin(spinAngle * 0.85f) * (baseRiftR * 0.11f)
 
       drawIntoCanvas { composeCanvas ->
         val nc = composeCanvas.nativeCanvas
@@ -1438,74 +1457,40 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
           "plasma_rift" ->
             RiftSpriteBaker.draw3dPlayfieldRift(
               canvas = nc,
+              type = AnomalyType.PLASMA_RIFT,
               cx = cx,
               cy = cy,
-              r = baseRiftR,
+              radius = baseRiftR,
               spinAngle = spinAngle,
-              outerColor = android.graphics.Color.rgb(239, 68, 68),
-              midColor = android.graphics.Color.rgb(217, 70, 239),
-              coreColor = android.graphics.Color.rgb(255, 228, 230),
-              darkVoidCenter = true,
-              inwardSpiral = false,
               pulsePhaseOverride = pulsePhase,
-              parallaxOffsetX = orbParallaxX,
-              parallaxOffsetY = orbParallaxY,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
           "repulsor_rift" ->
             RiftSpriteBaker.draw3dPlayfieldRift(
               canvas = nc,
+              type = AnomalyType.REPULSOR_RIFT,
               cx = cx,
               cy = cy,
-              r = baseRiftR,
-              spinAngle = -spinAngle * 1.15f,
-              outerColor = android.graphics.Color.rgb(56, 189, 248),
-              midColor = android.graphics.Color.rgb(0, 245, 212),
-              coreColor = android.graphics.Color.rgb(224, 242, 254),
-              darkVoidCenter = true,
-              inwardSpiral = false,
+              radius = baseRiftR,
+              spinAngle = spinAngle,
               pulsePhaseOverride = pulsePhase,
-              parallaxOffsetX = orbParallaxX,
-              parallaxOffsetY = orbParallaxY,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
-          "gravity_rift" -> {
-            val gravR = baseRiftR
+          "gravity_rift" ->
             RiftSpriteBaker.draw3dPlayfieldRift(
               canvas = nc,
+              type = AnomalyType.GRAVITY_RIFT,
               cx = cx,
               cy = cy,
-              r = gravR,
-              spinAngle = spinAngle * 1.35f,
-              outerColor = android.graphics.Color.rgb(168, 85, 247),
-              midColor = android.graphics.Color.rgb(99, 102, 241),
-              coreColor = android.graphics.Color.rgb(233, 213, 255),
-              darkVoidCenter = true,
-              inwardSpiral = true,
+              radius = baseRiftR,
+              spinAngle = spinAngle,
+              absorbedCount = 3,
               pulsePhaseOverride = pulsePhase,
-              parallaxOffsetX = orbParallaxX,
-              parallaxOffsetY = orbParallaxY,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
-            for (cIdx in 0 until 3) {
-              val ang = -spinAngle * 1.25f + cIdx * (2f * PI.toFloat() / 3f)
-              val breathePull = 0.5f + 0.5f * sin(timeSec * 2.4f + cIdx * 2.09f)
-              val dist = gravR * (0.48f + 0.20f * breathePull)
-              val px = (cx + orbParallaxX * 0.72f) + kotlin.math.cos(ang) * dist
-              val py = (cy + orbParallaxY * 0.72f) + kotlin.math.sin(ang) * dist
-              RiftSpriteBaker.drawReactiveFilamentStrand(
-                canvas = nc,
-                x0 = cx + kotlin.math.cos(ang - 0.35f) * (gravR * 0.88f),
-                y0 = cy + kotlin.math.sin(ang - 0.35f) * (gravR * 0.88f),
-                ctrlX = (cx + orbParallaxX * 0.38f) + kotlin.math.cos(ang - 0.16f) * (gravR * 0.68f),
-                ctrlY = (cy + orbParallaxY * 0.38f) + kotlin.math.sin(ang - 0.16f) * (gravR * 0.68f),
-                x1 = px,
-                y1 = py,
-                thickness = (gravR * 0.052f).coerceAtLeast(1.1f),
-                outerColor = android.graphics.Color.rgb(168, 85, 247),
-                midColor = android.graphics.Color.rgb(0, 245, 212),
-                coreColor = android.graphics.Color.rgb(250, 204, 21),
-                alphaFrac = 0.82f,
-              )
-            }
-          }
           "unstable_rift" ->
             RiftSpriteBaker.drawUnstableMergedRiftOnCanvas(
               canvas = nc,
@@ -1514,42 +1499,32 @@ fun RiftAnomalyIconPreview(riftId: String, sizeDp: Int, accentColor: Color) {
               r = minDim * 0.39f,
               spinAngle = spinAngle * 0.45f,
               pulsePhase = pulsePhase,
-              parallaxOffsetX = orbParallaxX,
-              parallaxOffsetY = orbParallaxY,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
           else -> {
-            val nodeR = minDim * 0.22f
-            val nodePx = orbParallaxX * 0.58f
-            val nodePy = orbParallaxY * 0.58f
+            val nodeR = minDim * 0.24f
             RiftSpriteBaker.draw3dPlayfieldRift(
               canvas = nc,
-              cx = w * 0.33f,
-              cy = h * 0.35f,
-              r = nodeR,
+              type = AnomalyType.PHASE_RIFT_A,
+              cx = w * 0.34f,
+              cy = h * 0.36f,
+              radius = nodeR,
               spinAngle = spinAngle,
-              outerColor = android.graphics.Color.rgb(45, 212, 191),
-              midColor = android.graphics.Color.rgb(56, 189, 248),
-              coreColor = android.graphics.Color.rgb(240, 253, 250),
-              darkVoidCenter = true,
-              inwardSpiral = false,
               pulsePhaseOverride = pulsePhase,
-              parallaxOffsetX = nodePx,
-              parallaxOffsetY = nodePy,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
             RiftSpriteBaker.draw3dPlayfieldRift(
               canvas = nc,
-              cx = w * 0.68f,
-              cy = h * 0.66f,
-              r = nodeR,
-              spinAngle = -spinAngle,
-              outerColor = android.graphics.Color.rgb(56, 189, 248),
-              midColor = android.graphics.Color.rgb(168, 85, 247),
-              coreColor = android.graphics.Color.rgb(240, 253, 250),
-              darkVoidCenter = true,
-              inwardSpiral = false,
+              type = AnomalyType.PHASE_RIFT_B,
+              cx = w * 0.67f,
+              cy = h * 0.65f,
+              radius = nodeR,
+              spinAngle = spinAngle,
               pulsePhaseOverride = pulsePhase,
-              parallaxOffsetX = -nodePx,
-              parallaxOffsetY = -nodePy,
+              parallaxOffsetX = 0f,
+              parallaxOffsetY = 0f,
             )
           }
         }

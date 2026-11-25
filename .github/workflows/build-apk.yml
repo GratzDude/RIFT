@@ -45,6 +45,13 @@ jobs:
           fi
           echo "Active signing keystore fingerprints:"
           keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -E "SHA1:|SHA256:" || true
+          RIFT_APK_SHA1=$(keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android 2>/dev/null | sed -n 's/.*SHA1:[[:space:]]*\([0-9A-Fa-f:]*\).*/\1/p' | head -n 1)
+          if [ -z "$RIFT_APK_SHA1" ]; then
+            DETECTED_KEY_ALIAS=$(keytool -list -keystore debug.keystore -storepass android 2>/dev/null | sed -n 's/^\([^,]*\),.*/\1/p' | head -n 1)
+            RIFT_APK_SHA1=$(keytool -list -v -keystore debug.keystore -alias "${DETECTED_KEY_ALIAS:-androiddebugkey}" -storepass android -keypass android 2>/dev/null | sed -n 's/.*SHA1:[[:space:]]*\([0-9A-Fa-f:]*\).*/\1/p' | head -n 1)
+          fi
+          echo "RIFT_APK_SHA1=${RIFT_APK_SHA1:-UNKNOWN}" >> "$GITHUB_ENV"
+          echo "Exported RIFT_APK_SHA1=${RIFT_APK_SHA1:-UNKNOWN} to GITHUB_ENV"
           cp debug.keystore app/debug.keystore || true
           cp debug.keystore my-upload-key.jks || true
           cp debug.keystore app/my-upload-key.jks || true
@@ -267,6 +274,7 @@ jobs:
           name: "RIFT — Build #${{ env.RIFT_VERSION_CODE }} (v${{ env.RIFT_VERSION_NAME }} • com.game.rift)"
           body: |
             - **Direct Phone Install:** Tap **RIFT.apk** below.
+            - **Sideload APK Signing SHA-1 (`com.game.rift` — Firebase Console):** `${{ env.RIFT_APK_SHA1 }}`
             - **Google Play Console Upload:** Download **RIFT-release.aab** (`com.game.rift`, Version Code `${{ env.RIFT_VERSION_CODE }}`, Version Name `${{ env.RIFT_VERSION_NAME }}`).
             - **Full Codebase Bundle for Gemini:** `RIFT-codebase.md`
           files: |
