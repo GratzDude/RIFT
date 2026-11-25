@@ -3346,10 +3346,10 @@ object RiftSpriteBaker {
         )
       }
       AnomalyType.REPULSOR_RIFT -> {
-        // Fixed Palette: Deep Cobalt #0369A1 -> Electric Sky #0EA5E9 -> Ice Blue #7DD3FC -> White-Blue #F0F9FF
-        val deepCol = if (useCustomColors) rec!!.primaryColorInt else Color.rgb(3, 105, 161)
-        val midCol = if (useCustomColors) rec!!.trimColorInt else Color.rgb(14, 165, 233)
-        val brightCol = if (useCustomColors) rec!!.glowColorInt else Color.rgb(125, 211, 252)
+        // Locked Pure Ice/Sky-Blue Palette (zero purple/violet tint): Deep Cobalt #0369A1 -> Electric Sky #0EA5E9 -> Ice Blue #7DD3FC -> White-Blue #F0F9FF
+        val deepCol = Color.rgb(3, 105, 161)
+        val midCol = Color.rgb(14, 165, 233)
+        val brightCol = Color.rgb(125, 211, 252)
         val coreCol = Color.rgb(240, 249, 255)
         drawVolumetricPlayfieldRiftInternal(
           canvas = canvas,
@@ -4340,47 +4340,58 @@ object RiftSpriteBaker {
     )
   }
 
+  fun drawAnimatedCodexRiftPreview(
+    canvas: Canvas,
+    riftId: String,
+    cx: Float,
+    cy: Float,
+    radiusPx: Float,
+    pulsePhase: Float,
+    spinAngle: Float,
+  ) {
+    when (riftId) {
+      "plasma_rift" ->
+        draw3dPlayfieldRift(canvas, AnomalyType.PLASMA_RIFT, cx, cy, radiusPx, spinAngle = spinAngle, pulsePhaseOverride = pulsePhase)
+      "repulsor_rift" ->
+        draw3dPlayfieldRift(canvas, AnomalyType.REPULSOR_RIFT, cx, cy, radiusPx, spinAngle = spinAngle, pulsePhaseOverride = pulsePhase)
+      "gravity_rift" ->
+        draw3dPlayfieldRift(canvas, AnomalyType.GRAVITY_RIFT, cx, cy, radiusPx, spinAngle = spinAngle, pulsePhaseOverride = pulsePhase)
+      "unstable_rift" ->
+        drawUnstableMergedRiftOnCanvas(canvas, cx, cy, radiusPx * 1.02f, spinAngle = spinAngle, pulsePhase = pulsePhase)
+      else -> {
+        val c1x = cx - radiusPx * 0.44f
+        val c1y = cy - radiusPx * 0.34f
+        val c2x = cx + radiusPx * 0.44f
+        val c2y = cy + radiusPx * 0.34f
+        val nodeR = radiusPx * 0.56f
+        val sway = sin(pulsePhase * 6.283f) * radiusPx * 0.16f
+        drawReactiveFilamentStrand(
+          canvas = canvas,
+          x0 = c1x,
+          y0 = c1y,
+          ctrlX = cx + sway,
+          ctrlY = cy - sway,
+          x1 = c2x,
+          y1 = c2y,
+          thickness = (radiusPx * 0.09f).coerceAtLeast(1.8f),
+          outerColor = Color.rgb(15, 118, 110),
+          midColor = Color.rgb(6, 182, 212),
+          coreColor = Color.rgb(204, 251, 241),
+          alphaFrac = 0.92f,
+        )
+        draw3dPlayfieldRift(canvas, AnomalyType.PHASE_RIFT_A, c1x, c1y, nodeR, spinAngle = spinAngle, pulsePhaseOverride = pulsePhase)
+        draw3dPlayfieldRift(canvas, AnomalyType.PHASE_RIFT_B, c2x, c2y, nodeR, spinAngle = -spinAngle, pulsePhaseOverride = (pulsePhase + 0.35f) % 1f)
+      }
+    }
+  }
+
   private fun bakeRiftAnomalyIconBitmap(riftId: String, sizePx: Int = 96): Bitmap {
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
     val cx = sizePx * 0.5f
     val cy = sizePx * 0.5f
     val r = sizePx * 0.37f
-
-    when (riftId) {
-      "plasma_rift" ->
-        draw3dPlayfieldRift(c, AnomalyType.PLASMA_RIFT, cx, cy, r, spinAngle = 0.55f, pulsePhaseOverride = 0.42f)
-      "repulsor_rift" ->
-        draw3dPlayfieldRift(c, AnomalyType.REPULSOR_RIFT, cx, cy, r, spinAngle = 0.55f, pulsePhaseOverride = 0.42f)
-      "gravity_rift" ->
-        draw3dPlayfieldRift(c, AnomalyType.GRAVITY_RIFT, cx, cy, r, spinAngle = 0.55f, pulsePhaseOverride = 0.42f)
-      "unstable_rift" ->
-        drawUnstableMergedRiftOnCanvas(c, cx, cy, r * 1.02f, spinAngle = 0.38f, pulsePhase = 0.48f)
-      else -> {
-        val c1x = sizePx * 0.32f
-        val c1y = sizePx * 0.36f
-        val c2x = sizePx * 0.68f
-        val c2y = sizePx * 0.64f
-        val nodeR = sizePx * 0.22f
-        // Curved organic phase-lightning tendril linking Node A & Node B (zero rigid straight segments)
-        drawReactiveFilamentStrand(
-          canvas = c,
-          x0 = c1x,
-          y0 = c1y,
-          ctrlX = (c1x + c2x) * 0.5f + sizePx * 0.08f,
-          ctrlY = (c1y + c2y) * 0.5f - sizePx * 0.08f,
-          x1 = c2x,
-          y1 = c2y,
-          thickness = 2.4f,
-          outerColor = Color.rgb(15, 118, 110),
-          midColor = Color.rgb(6, 182, 212),
-          coreColor = Color.rgb(204, 251, 241),
-          alphaFrac = 0.90f,
-        )
-        draw3dPlayfieldRift(c, AnomalyType.PHASE_RIFT_A, c1x, c1y, nodeR, spinAngle = 0.45f, pulsePhaseOverride = 0.38f)
-        draw3dPlayfieldRift(c, AnomalyType.PHASE_RIFT_B, c2x, c2y, nodeR, spinAngle = -0.45f, pulsePhaseOverride = 0.62f)
-      }
-    }
+    drawAnimatedCodexRiftPreview(c, riftId, cx, cy, r, pulsePhase = 0.42f, spinAngle = 0.55f)
     return bmp
   }
 

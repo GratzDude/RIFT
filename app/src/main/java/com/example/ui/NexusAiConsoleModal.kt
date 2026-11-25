@@ -34,6 +34,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
@@ -59,6 +61,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -102,10 +105,14 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -165,6 +172,7 @@ import com.example.engine.RiftSoundSynthesizer
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.RiftVisualForgeState
 import com.example.engine.ShipSpec
+import com.example.engine.SyndicateCrestRecipe
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
@@ -222,7 +230,7 @@ private enum class ConvergenceGateTab {
   CUSTOM_RIFT_GATE,
 }
 
-private enum class RiftHubSideBayMode {
+internal enum class RiftHubSideBayMode {
   HUB_MAIN,
   HANGAR_BAY,
   RIFT_FRAME_BAY,
@@ -251,18 +259,18 @@ private fun parseSideBayModeKey(rawKey: String): RiftHubSideBayMode =
     else -> RiftHubSideBayMode.HUB_MAIN
   }
 
-private enum class SquadronPilotFilter {
+internal enum class SquadronPilotFilter {
   ALL,
   SYNDICATE,
   FRIENDS,
 }
 
-private enum class SquadronPilotSort {
+internal enum class SquadronPilotSort {
   RESONANCE,
   ACTIVITY,
 }
 
-private data class SquadronOnlinePilotItem(
+internal data class SquadronOnlinePilotItem(
   val uid: String,
   val callsign: String,
   val syndicateTag: String,
@@ -275,9 +283,9 @@ private data class SquadronOnlinePilotItem(
   val rawLivePilot: LivePilotState,
 )
 
-private sealed interface OverwatchCircularPrompt {
+internal sealed interface OverwatchCircularPrompt {
   data object None : OverwatchCircularPrompt
-  data class ShipInspect(val shipId: Int) : OverwatchCircularPrompt
+  data class ShipInspect(val shipId: Int, val hideChargeButton: Boolean = false) : OverwatchCircularPrompt
   data class PilotInspect(val pilot: SquadronOnlinePilotItem) : OverwatchCircularPrompt
   data class ActionConfirm(
     val kicker: String,
@@ -288,6 +296,7 @@ private sealed interface OverwatchCircularPrompt {
     val onConfirm: () -> Unit = {},
   ) : OverwatchCircularPrompt
   data class CallsignRename(val initialCallsign: String) : OverwatchCircularPrompt
+  data class SyndicateCrestBuilder(val syndicateTag: String) : OverwatchCircularPrompt
   data class InfoStageInspect(
     val kicker: String,
     val title: String,
@@ -317,10 +326,10 @@ data class OverwatchRiftInstance(
   val remainingSeconds: Int = 3600,
 )
 
-private fun formatOverwatchResonance(value: Int): String =
+internal fun formatOverwatchResonance(value: Int): String =
   String.format(Locale.US, "%,d", value.coerceAtLeast(0))
 
-private fun formatOverwatchTimerMmSs(totalSeconds: Int): String {
+internal fun formatOverwatchTimerMmSs(totalSeconds: Int): String {
   val clamped = totalSeconds.coerceAtLeast(0)
   val mins = clamped / 60
   val secs = clamped % 60
@@ -422,7 +431,7 @@ fun RiftShardGemIcon(sizeDp: Dp = 14.dp, modifier: Modifier = Modifier) {
  * (`fluxIconBitmap`) that carry from the Hangar bay directly into the Rift Hub view.
  */
 @Composable
-private fun Spinning25dShipWithOrbitingFlux(
+internal fun Spinning25dShipWithOrbitingFlux(
   shipId: Int,
   shipSpinDeg: Float,
   fluxOrbitRad: Float,
@@ -1071,86 +1080,407 @@ fun NexusAiConsoleModal(
   renderModuleForNode: (@Composable (NexusCoreNode) -> Unit)? = null,
   embeddedModuleContent: (@Composable () -> Unit)? = null,
 ) {
-  val context = LocalContext.current
-  val keyboardController = LocalSoftwareKeyboardController.current
-  val listState = rememberLazyListState()
-  val isStreaming = streamState is NexusStreamState.Loading || streamState is NexusStreamState.Streaming
-  val cleanSyndicateTag =
-    if (!isGoogleAuthenticated) {
-      "RFT"
-    } else {
-      val upper = syndicateTag.trim().uppercase(Locale.US)
-      if (upper.isBlank() || upper in setOf("RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED", "NONE", "BOT")) {
-        ""
+  val params =
+    NexusAiConsoleParams(
+      messages = messages,
+      streamState = streamState,
+      lastFailedQuestion = lastFailedQuestion,
+      activeShipSummary = activeShipSummary,
+      pilotLevel = pilotLevel,
+      pointBudget = pointBudget,
+      highestBountySummary = highestBountySummary,
+      onSendQuestion = onSendQuestion,
+      onRetryLastQuestion = onRetryLastQuestion,
+      onClearHistory = onClearHistory,
+      onCloseModal = onCloseModal,
+      callsign = callsign,
+      syndicateTag = syndicateTag,
+      syndicateName = syndicateName,
+      activeShipId = activeShipId,
+      bestShipId = bestShipId,
+      riftShards = riftShards,
+      unreadCommsCount = unreadCommsCount,
+      currentUserId = currentUserId,
+      bootToNexusHub = bootToNexusHub,
+      onToggleBootToNexusHub = onToggleBootToNexusHub,
+      totalOnlinePilots = totalOnlinePilots,
+      syndicateOnlineCount = syndicateOnlineCount,
+      strikeWingOnlineCount = strikeWingOnlineCount,
+      presetArmadasReadyCount = presetArmadasReadyCount,
+      activeArmadaName = activeArmadaName,
+      armadaSlots = armadaSlots,
+      onlineHumanPilots = onlineHumanPilots,
+      onResolvePilotBestShipId = onResolvePilotBestShipId,
+      activeRankedMode = activeRankedMode,
+      activeTeamSizeBracket = activeTeamSizeBracket,
+      humanPilotCountByMode = humanPilotCountByMode,
+      canQueueSyndicateWars = canQueueSyndicateWars,
+      syndicateWarRecord = syndicateWarRecord,
+      onDeployToRankedMode = onDeployToRankedMode,
+      onLeaveMatch = onLeaveMatch,
+      onOpenArmadaModal = onOpenArmadaModal,
+      onQuickFormSyndicateArmada = onQuickFormSyndicateArmada,
+      onOpenSyndicatesModal = onOpenSyndicatesModal,
+      onOpenSyndicateDirectory = onOpenSyndicateDirectory,
+      onOpenHangar = onOpenHangar,
+      onOpenDossier = onOpenDossier,
+      onOpenCodex = onOpenCodex,
+      onOpenSettings = onOpenSettings,
+      onOpenCalibration = onOpenCalibration,
+      onOpenForge = onOpenForge,
+      onOpenHangarForShip = onOpenHangarForShip,
+      canAccessSyndicateServer = canAccessSyndicateServer,
+      syndicateCustomChannels = syndicateCustomChannels,
+      syndicateInvitedGuests = syndicateInvitedGuests,
+      onAddSyndicateChannel = onAddSyndicateChannel,
+      onDeleteSyndicateChannel = onDeleteSyndicateChannel,
+      onInviteSyndicateGuest = onInviteSyndicateGuest,
+      onRevokeSyndicateGuest = onRevokeSyndicateGuest,
+      lobbyMessages = lobbyMessages,
+      onSendChannelMessage = onSendChannelMessage,
+      onSubmitBugReport = onSubmitBugReport,
+      onShareActiveRiftFrameBuild = onShareActiveRiftFrameBuild,
+      onLoadSharedRiftFrameBuild = onLoadSharedRiftFrameBuild,
+      onPostStrikeWingInvite = onPostStrikeWingInvite,
+      onPostPrivateRoomInvite = onPostPrivateRoomInvite,
+      onJoinSharedStrikeWing = onJoinSharedStrikeWing,
+      onAddOnlinePilotFriend = onAddOnlinePilotFriend,
+      onInviteOnlinePilotToWing = onInviteOnlinePilotToWing,
+      engine = engine,
+      isInMatch = isInMatch,
+      onEnterPracticeRift = onEnterPracticeRift,
+      onOpenHowToPlayTutorial = onOpenHowToPlayTutorial,
+      initialLayoutMode = initialLayoutMode,
+      activeModuleKey = activeModuleKey,
+      activeNode = activeNode,
+      onSelectNode = onSelectNode,
+      syndicateSubDeck = syndicateSubDeck,
+      onSelectSyndicateSubDeck = onSelectSyndicateSubDeck,
+      archiveSubDeck = archiveSubDeck,
+      onSelectArchiveSubDeck = onSelectArchiveSubDeck,
+      onSelectNexusLobby = onSelectNexusLobby,
+      onOpenProgression = onOpenProgression,
+      isCalibrationLivePeeking = isCalibrationLivePeeking,
+      hideTopHeaderForFullScreenStage = hideTopHeaderForFullScreenStage,
+      liveResonance = liveResonance,
+      isGoogleAuthenticated = isGoogleAuthenticated,
+      overwatchInstances = overwatchInstances,
+      selectedOverwatchKey = selectedOverwatchKey,
+      favoriteOverwatchKey = favoriteOverwatchKey,
+      onSelectOverwatchKey = onSelectOverwatchKey,
+      onToggleFavoriteOverwatchKey = onToggleFavoriteOverwatchKey,
+      onQuickZoneIntoOverwatch = onQuickZoneIntoOverwatch,
+      onUpdateOverwatchViewport = onUpdateOverwatchViewport,
+      overwatchZoom = overwatchZoom,
+      onOverwatchTransformGesture = onOverwatchTransformGesture,
+      onResetOverwatchCamera = onResetOverwatchCamera,
+      onStageRankedModeViaHangar = onStageRankedModeViaHangar,
+      onStageCustomGameViaHangar = onStageCustomGameViaHangar,
+      onStageExistingCustomInstanceViaHangar = onStageExistingCustomInstanceViaHangar,
+      publicCustomGames = publicCustomGames,
+      onLookupCustomRoomByCode = onLookupCustomRoomByCode,
+      isNetworkOnline = isNetworkOnline,
+      cloudSyncHealth = cloudSyncHealth,
+      onSwitchAccount = onSwitchAccount,
+      requestedSideBayKey = requestedSideBayKey,
+      requestedSideBayNonce = requestedSideBayNonce,
+      syndicateDirectory = syndicateDirectory,
+      syndicateStatusMessage = syndicateStatusMessage,
+      onJoinOfficialSyndicate = onJoinOfficialSyndicate,
+      onLeaveCurrentSyndicate = onLeaveCurrentSyndicate,
+      onCharterCustomSyndicate = onCharterCustomSyndicate,
+      onClaimDailyDirectiveSlot = onClaimDailyDirectiveSlot,
+      onRerollDailyDirectiveSlot = onRerollDailyDirectiveSlot,
+      onClaimDailySweepBonus = onClaimDailySweepBonus,
+      onUnlockOrEquipCosmeticItem = onUnlockOrEquipCosmeticItem,
+      onUnlockOrSelectFrameSlotId = onUnlockOrSelectFrameSlotId,
+      activeCustomSlotId = activeCustomSlotId,
+      activeCustomSlot = activeCustomSlot,
+      onSaveCustomSlot = onSaveCustomSlot,
+      cloudLeaderboardEntries = cloudLeaderboardEntries,
+      onRenamePilotCallsign = onRenamePilotCallsign,
+      onResetLocalPilotTelemetry = onResetLocalPilotTelemetry,
+      helmInitialSubDeck = helmInitialSubDeck,
+      sfxEnabled = sfxEnabled,
+      musicEnabled = musicEnabled,
+      musicBpm = musicBpm,
+      musicVolume = musicVolume,
+      sfxVolume = sfxVolume,
+      cameraZoom = cameraZoom,
+      playfieldTextScale = playfieldTextScale,
+      onToggleSfx = onToggleSfx,
+      onToggleMusic = onToggleMusic,
+      onChangeMusicBpm = onChangeMusicBpm,
+      onChangeMusicVolume = onChangeMusicVolume,
+      onChangeSfxVolume = onChangeSfxVolume,
+      onChangeCameraZoom = onChangeCameraZoom,
+      onChangePlayfieldTextScale = onChangePlayfieldTextScale,
+      onOpenChangelogModal = onOpenChangelogModal,
+      onOpenAudioSynthForge = onOpenAudioSynthForge,
+      updateStatusLabel = updateStatusLabel,
+      hasUpdateAvailable = hasUpdateAvailable,
+      onCheckOrApplyUpdate = onCheckOrApplyUpdate,
+      renderModuleForNode = renderModuleForNode,
+      embeddedModuleContent = embeddedModuleContent,
+    )
+  NexusAiConsoleRootContent(params = params)
+}
+
+private class NexusAiConsoleParams(
+  val messages: List<NexusChatMessage>,
+  val streamState: NexusStreamState,
+  val lastFailedQuestion: String?,
+  val activeShipSummary: String,
+  val pilotLevel: Int,
+  val pointBudget: Int,
+  val highestBountySummary: String,
+  val onSendQuestion: (String) -> Unit,
+  val onRetryLastQuestion: () -> Unit,
+  val onClearHistory: () -> Unit,
+  val onCloseModal: () -> Unit,
+  val callsign: String,
+  val syndicateTag: String,
+  val syndicateName: String,
+  val activeShipId: Int,
+  val bestShipId: Int,
+  val riftShards: Long,
+  val unreadCommsCount: Int,
+  val currentUserId: String,
+  val bootToNexusHub: Boolean,
+  val onToggleBootToNexusHub: (Boolean) -> Unit,
+  val totalOnlinePilots: Int,
+  val syndicateOnlineCount: Int,
+  val strikeWingOnlineCount: Int,
+  val presetArmadasReadyCount: Int,
+  val activeArmadaName: String,
+  val armadaSlots: List<ArmadaMemberSlot>,
+  val onlineHumanPilots: List<LivePilotState>,
+  val onResolvePilotBestShipId: (uid: String, fallbackShipId: Int) -> Int,
+  val activeRankedMode: RankedGameMode,
+  val activeTeamSizeBracket: Int,
+  val humanPilotCountByMode: (RankedGameMode) -> Int,
+  val canQueueSyndicateWars: Pair<Boolean, String>,
+  val syndicateWarRecord: SyndicateWarRecord,
+  val onDeployToRankedMode: (RankedGameMode, Int) -> Unit,
+  val onLeaveMatch: () -> Unit,
+  val onOpenArmadaModal: () -> Unit,
+  val onQuickFormSyndicateArmada: () -> Unit,
+  val onOpenSyndicatesModal: () -> Unit,
+  val onOpenSyndicateDirectory: () -> Unit,
+  val onOpenHangar: () -> Unit,
+  val onOpenDossier: () -> Unit,
+  val onOpenCodex: () -> Unit,
+  val onOpenSettings: () -> Unit,
+  val onOpenCalibration: () -> Unit,
+  val onOpenForge: () -> Unit,
+  val onOpenHangarForShip: (Int) -> Unit,
+  val canAccessSyndicateServer: Boolean,
+  val syndicateCustomChannels: List<String>,
+  val syndicateInvitedGuests: Set<String>,
+  val onAddSyndicateChannel: (String) -> Unit,
+  val onDeleteSyndicateChannel: (String) -> Unit,
+  val onInviteSyndicateGuest: (String) -> Unit,
+  val onRevokeSyndicateGuest: (String) -> Unit,
+  val lobbyMessages: List<SyndicateChatMessage>,
+  val onSendChannelMessage: (channelKey: String, messageText: String) -> Unit,
+  val onSubmitBugReport: (category: String, description: String) -> Unit,
+  val onShareActiveRiftFrameBuild: () -> Unit,
+  val onLoadSharedRiftFrameBuild: (String) -> Unit,
+  val onPostStrikeWingInvite: () -> Unit,
+  val onPostPrivateRoomInvite: (roomCode: String, modeTitle: String) -> Unit,
+  val onJoinSharedStrikeWing: (SyndicateChatMessage) -> Unit,
+  val onAddOnlinePilotFriend: (String) -> Unit,
+  val onInviteOnlinePilotToWing: (LivePilotState) -> Unit,
+  val engine: RiftGameEngine?,
+  val isInMatch: Boolean,
+  val onEnterPracticeRift: () -> Unit,
+  val onOpenHowToPlayTutorial: () -> Unit,
+  val initialLayoutMode: NexusHubLayoutMode,
+  val activeModuleKey: String,
+  val activeNode: NexusCoreNode,
+  val onSelectNode: (NexusCoreNode) -> Unit,
+  val syndicateSubDeck: SyndicateCitadelSubDeck,
+  val onSelectSyndicateSubDeck: (SyndicateCitadelSubDeck) -> Unit,
+  val archiveSubDeck: ArchiveCodexSubDeck,
+  val onSelectArchiveSubDeck: (ArchiveCodexSubDeck) -> Unit,
+  val onSelectNexusLobby: () -> Unit,
+  val onOpenProgression: () -> Unit,
+  val isCalibrationLivePeeking: Boolean,
+  val hideTopHeaderForFullScreenStage: Boolean,
+  val liveResonance: Int,
+  val isGoogleAuthenticated: Boolean,
+  val overwatchInstances: List<OverwatchRiftInstance>,
+  val selectedOverwatchKey: String,
+  val favoriteOverwatchKey: String,
+  val onSelectOverwatchKey: (String) -> Unit,
+  val onToggleFavoriteOverwatchKey: (String) -> Unit,
+  val onQuickZoneIntoOverwatch: (OverwatchRiftInstance) -> Unit,
+  val onUpdateOverwatchViewport: (cx: Float, cy: Float, radiusPx: Float) -> Unit,
+  val overwatchZoom: Float,
+  val onOverwatchTransformGesture:
+    (centroidRootX: Float, centroidRootY: Float, panDxPx: Float, panDyPx: Float, zoomChange: Float) -> Unit,
+  val onResetOverwatchCamera: () -> Unit,
+  val onStageRankedModeViaHangar: ((RankedGameMode, Int) -> Unit)?,
+  val onStageCustomGameViaHangar: ((CustomGameConfig) -> Unit)?,
+  val onStageExistingCustomInstanceViaHangar: ((String) -> Unit)?,
+  val publicCustomGames: List<CustomGameConfig>,
+  val onLookupCustomRoomByCode: ((String, (CustomGameConfig?, String) -> Unit) -> Unit)?,
+  val isNetworkOnline: Boolean,
+  val cloudSyncHealth: CloudSyncHealth,
+  val onSwitchAccount: () -> Unit,
+  val requestedSideBayKey: String,
+  val requestedSideBayNonce: Int,
+  val syndicateDirectory: List<SyndicateInfo>,
+  val syndicateStatusMessage: String?,
+  val onJoinOfficialSyndicate: (SyndicateInfo) -> Unit,
+  val onLeaveCurrentSyndicate: () -> Unit,
+  val onCharterCustomSyndicate: (tag: String, name: String, motto: String) -> Unit,
+  val onClaimDailyDirectiveSlot: (Int) -> Long,
+  val onRerollDailyDirectiveSlot: (Int) -> Boolean,
+  val onClaimDailySweepBonus: () -> Long,
+  val onUnlockOrEquipCosmeticItem: (String, CosmeticCatalogItem) -> Pair<Boolean, String>,
+  val onUnlockOrSelectFrameSlotId: (String) -> Pair<Boolean, String>,
+  val activeCustomSlotId: String,
+  val activeCustomSlot: CustomShipLoadoutSlot,
+  val onSaveCustomSlot: (CustomShipLoadoutSlot) -> Unit,
+  val cloudLeaderboardEntries: List<LeaderboardEntry>,
+  val onRenamePilotCallsign: (String) -> Pair<Boolean, String>,
+  val onResetLocalPilotTelemetry: () -> Unit,
+  val helmInitialSubDeck: Int,
+  val sfxEnabled: Boolean,
+  val musicEnabled: Boolean,
+  val musicBpm: Int,
+  val musicVolume: Float,
+  val sfxVolume: Float,
+  val cameraZoom: Float,
+  val playfieldTextScale: Float,
+  val onToggleSfx: () -> Unit,
+  val onToggleMusic: () -> Unit,
+  val onChangeMusicBpm: (Int) -> Unit,
+  val onChangeMusicVolume: (Float) -> Unit,
+  val onChangeSfxVolume: (Float) -> Unit,
+  val onChangeCameraZoom: (Float) -> Unit,
+  val onChangePlayfieldTextScale: (Float) -> Unit,
+  val onOpenChangelogModal: () -> Unit,
+  val onOpenAudioSynthForge: () -> Unit,
+  val updateStatusLabel: String,
+  val hasUpdateAvailable: Boolean,
+  val onCheckOrApplyUpdate: () -> Unit,
+  val renderModuleForNode: (@Composable (NexusCoreNode) -> Unit)?,
+  val embeddedModuleContent: (@Composable () -> Unit)?,
+) {
+  val isStreaming: Boolean
+    get() = streamState is NexusStreamState.Loading || streamState is NexusStreamState.Streaming
+
+  val cleanSyndicateTag: String
+    get() =
+      if (!isGoogleAuthenticated) {
+        "RFT"
       } else {
-        upper
-      }
-    }
-  val liveTrafficShipIds =
-    remember(activeShipId, onlineHumanPilots, currentUserId) {
-      val ids = ArrayList<Int>(onlineHumanPilots.size + 1)
-      ids.add(activeShipId.coerceIn(1, 10))
-      for (p in onlineHumanPilots) {
-        val pUid = p.userId.ifBlank { p.id }
-        if (pUid != currentUserId) {
-          ids.add(p.shipId.toInt().coerceIn(1, 10))
+        val upper = syndicateTag.trim().uppercase(Locale.US)
+        if (upper.isBlank() || upper in setOf("RFT", "GUEST", "FREE", "SOLO", "UNAFFILIATED", "NONE", "BOT")) {
+          ""
+        } else {
+          upper
         }
       }
-      ids.toIntArray()
-    }
-  val isLocalArchitect = remember(currentUserId, callsign) {
-    RiftCommunityRoles.isDeveloperArchitect(currentUserId, callsign)
-  }
-  val resolvedLiveResonance =
-    when {
-      liveResonance >= 0 -> liveResonance
-      engine != null -> engine.liveResonance
-      else -> ((pilotLevel - 1).coerceAtLeast(0) * 18)
-    }
 
-  var selectedChannelKey by remember { mutableStateOf("#nexus-ai") }
-  var showOnlineRosterPane by remember { mutableStateOf(true) }
-  var inputQuery by remember { mutableStateOf("") }
-  var channelChatInput by remember { mutableStateOf("") }
+  val resolvedLiveResonance: Int
+    get() =
+      when {
+        liveResonance >= 0 -> liveResonance
+        engine != null -> engine.liveResonance
+        else -> ((pilotLevel - 1).coerceAtLeast(0) * 18)
+      }
 
-  var gateTab by remember { mutableStateOf(ConvergenceGateTab.OFFICIAL_RANKED) }
-  var skirmishBracket by remember { mutableIntStateOf(activeTeamSizeBracket.coerceIn(2, 5)) }
-  var riftControlBracket by remember {
-    mutableIntStateOf(if (activeTeamSizeBracket >= 10) 10 else if (activeTeamSizeBracket >= 5) 5 else 3)
-  }
-  var syndicateWarBracket by remember {
-    mutableIntStateOf(if (activeTeamSizeBracket >= 10) 10 else if (activeTeamSizeBracket >= 5) 5 else 3)
-  }
+  val isCalibrationPeekActive: Boolean
+    get() =
+      (activeNode == NexusCoreNode.STAR_FORGE || activeModuleKey == "FORGE" || activeModuleKey == "CALIBRATE") &&
+        isCalibrationLivePeeking
 
-  var customIsPrivateRoom by remember { mutableStateOf(false) }
-  var generatedRoomCode by remember { mutableStateOf(generateSixCharRoomCode()) }
-  var joinRoomCodeDraft by remember { mutableStateOf("") }
-  var roomCodeBanner by remember { mutableStateOf<String?>(null) }
-  val unlockedPrivateCodes = remember { mutableStateListOf<String>() }
+  val isFullScreenForgeStage: Boolean
+    get() =
+      hideTopHeaderForFullScreenStage &&
+        (activeNode == NexusCoreNode.STAR_FORGE || activeModuleKey == "FORGE")
+}
 
-  var customBaseMode by remember { mutableStateOf(RankedGameMode.SECTOR_CONVERGENCE) }
-  var customResetMinutes by remember { mutableIntStateOf(10) }
-  var customTeamBracket by remember { mutableIntStateOf(5) }
-  var customAllowArmadasInFfa by remember { mutableStateOf(true) }
-  var customBotsEnabled by remember { mutableStateOf(true) }
-  var customBotCount by remember { mutableIntStateOf(engine?.currentCustomGame?.botCount ?: 12) }
-  var customBotSkillLevel by remember { mutableIntStateOf(engine?.currentCustomGame?.botSkillLevel ?: 1) }
-  var customScoreCap by remember { mutableIntStateOf(engine?.currentCustomGame?.scoreCap ?: 50) }
-  var customBulletSizeMult by remember { mutableFloatStateOf(1.0f) }
-  var customSpeedMult by remember { mutableFloatStateOf(1.0f) }
-  var customRechargeMult by remember { mutableFloatStateOf(1.0f) }
-  var customDamageMult by remember { mutableFloatStateOf(1.0f) }
-  var customCrateSpawnMult by remember { mutableFloatStateOf(1.0f) }
-  var customDamageTakenScalePct by remember {
-    mutableIntStateOf(snapCustomFivePercentScale(engine?.currentCustomGame?.damageTakenScalePct ?: 100))
-  }
-  var customWeaponFluxCostScalePct by remember {
-    mutableIntStateOf(snapCustomFivePercentScale(engine?.currentCustomGame?.weaponFluxCostScalePct ?: 100))
-  }
-  var customGamesRefreshTick by remember { mutableIntStateOf(0) }
-  var showHubSurvivalSpreadsheetModal by remember { mutableStateOf(false) }
+private class NexusConsoleUiState(
+  val context: Context,
+  val localPrefs: LocalPilotPrefs,
+  val chargedPrefs: android.content.SharedPreferences,
+  initialChargedPrefsKey: String,
+  initialTeamSizeBracket: Int,
+  initialCustomGame: CustomGameConfig?,
+  initialSideBayKey: String,
+) {
+  var selectedChannelKey by mutableStateOf("#nexus-ai")
+  var showOnlineRosterPane by mutableStateOf(true)
+  var inputQuery by mutableStateOf("")
+  var channelChatInput by mutableStateOf("")
 
-  fun updateCustomDamageTakenScale(rawPct: Int) {
+  var gateTab by mutableStateOf(ConvergenceGateTab.OFFICIAL_RANKED)
+  var skirmishBracket by mutableIntStateOf(initialTeamSizeBracket.coerceIn(2, 5))
+  var riftControlBracket by
+    mutableIntStateOf(if (initialTeamSizeBracket >= 10) 10 else if (initialTeamSizeBracket >= 5) 5 else 3)
+  var syndicateWarBracket by
+    mutableIntStateOf(if (initialTeamSizeBracket >= 10) 10 else if (initialTeamSizeBracket >= 5) 5 else 3)
+
+  var customIsPrivateRoom by mutableStateOf(false)
+  var generatedRoomCode by mutableStateOf(generateSixCharRoomCode())
+  var joinRoomCodeDraft by mutableStateOf("")
+  var roomCodeBanner by mutableStateOf<String?>(null)
+  val unlockedPrivateCodes = mutableStateListOf<String>()
+
+  var customBaseMode by mutableStateOf(RankedGameMode.SECTOR_CONVERGENCE)
+  var customResetMinutes by mutableIntStateOf(10)
+  var customTeamBracket by mutableIntStateOf(5)
+  var customAllowArmadasInFfa by mutableStateOf(true)
+  var customBotsEnabled by mutableStateOf(true)
+  var customBotCount by mutableIntStateOf(initialCustomGame?.botCount ?: 12)
+  var customBotSkillLevel by mutableIntStateOf(initialCustomGame?.botSkillLevel ?: 1)
+  var customScoreCap by mutableIntStateOf(initialCustomGame?.scoreCap ?: 50)
+  var customBulletSizeMult by mutableFloatStateOf(1.0f)
+  var customSpeedMult by mutableFloatStateOf(1.0f)
+  var customRechargeMult by mutableFloatStateOf(1.0f)
+  var customDamageMult by mutableFloatStateOf(1.0f)
+  var customCrateSpawnMult by mutableFloatStateOf(1.0f)
+  var customDamageTakenScalePct by
+    mutableIntStateOf(snapCustomFivePercentScale(initialCustomGame?.damageTakenScalePct ?: 100))
+  var customWeaponFluxCostScalePct by
+    mutableIntStateOf(snapCustomFivePercentScale(initialCustomGame?.weaponFluxCostScalePct ?: 100))
+  var customGamesRefreshTick by mutableIntStateOf(0)
+  var showHubSurvivalSpreadsheetModal by mutableStateOf(false)
+
+  var showChannelManager by mutableStateOf(false)
+  var newChannelDraft by mutableStateOf("")
+  var showGuestManager by mutableStateOf(false)
+  var guestCallsignDraft by mutableStateOf("")
+
+  var bugCategory by mutableStateOf("PHYSICS / COLLISION")
+  var bugDescription by mutableStateOf("")
+  var bugStatusBanner by mutableStateOf<String?>(null)
+
+  var focusedOrbitalIndex by mutableIntStateOf(0)
+  var sideBayMode by mutableStateOf(parseSideBayModeKey(initialSideBayKey))
+  var overwatchPrompt by mutableStateOf<OverwatchCircularPrompt>(OverwatchCircularPrompt.None)
+  var squadronFilter by mutableStateOf(SquadronPilotFilter.ALL)
+  var squadronSort by mutableStateOf(SquadronPilotSort.RESONANCE)
+  var selectedSquadronPilotUid by mutableStateOf("")
+  var squadronStatusBanner by mutableStateOf<String?>(null)
+
+  var chargedShipId by
+    mutableIntStateOf(chargedPrefs.getInt(initialChargedPrefsKey, 0).let { if (it in 1..10) it else 0 })
+
+  var showWarpOffConfirmModal by mutableStateOf(false)
+  var showSwitchAccountConfirmModal by mutableStateOf(false)
+  val localEchoMessages = mutableStateMapOf<String, MutableList<SyndicateChatMessage>>()
+
+  var glViewRef by mutableStateOf<NexusSpaceGlView?>(null)
+  var hubApertureRootBounds by mutableStateOf(Triple(0f, 0f, 0f))
+  var modalRootOrigin by mutableStateOf(Offset.Zero)
+  var lastCardNodeForSlide by mutableStateOf(NexusCoreNode.HANGAR_DECK)
+
+  fun updateCustomDamageTakenScale(rawPct: Int, engine: RiftGameEngine?) {
     val snapped = snapCustomFivePercentScale(rawPct)
     customDamageTakenScalePct = snapped
     engine?.currentCustomGame?.let { activeCfg ->
@@ -1158,7 +1488,7 @@ fun NexusAiConsoleModal(
     }
   }
 
-  fun updateCustomWeaponFluxCostScale(rawPct: Int) {
+  fun updateCustomWeaponFluxCostScale(rawPct: Int, engine: RiftGameEngine?) {
     val snapped = snapCustomFivePercentScale(rawPct)
     customWeaponFluxCostScalePct = snapped
     engine?.currentCustomGame?.let { activeCfg ->
@@ -1166,62 +1496,17 @@ fun NexusAiConsoleModal(
     }
   }
 
-  LaunchedEffect(engine?.currentCustomGame?.instanceId) {
-    engine?.currentCustomGame?.let { activeCfg ->
-      customDamageTakenScalePct = snapCustomFivePercentScale(activeCfg.damageTakenScalePct)
-      customWeaponFluxCostScalePct = snapCustomFivePercentScale(activeCfg.weaponFluxCostScalePct)
-      customBotCount = activeCfg.botCount.coerceIn(0, 19)
-      customBotSkillLevel = activeCfg.botSkillLevel.coerceIn(0, 3)
-      customScoreCap = activeCfg.scoreCap.coerceIn(5, 500)
-    }
-  }
-
-  var showChannelManager by remember { mutableStateOf(false) }
-  var newChannelDraft by remember { mutableStateOf("") }
-  var showGuestManager by remember { mutableStateOf(false) }
-  var guestCallsignDraft by remember { mutableStateOf("") }
-
-  var bugCategory by remember { mutableStateOf("PHYSICS / COLLISION") }
-  var bugDescription by remember { mutableStateOf("") }
-  var bugStatusBanner by remember { mutableStateOf<String?>(null) }
-
-  var focusedOrbitalIndex by remember { mutableIntStateOf(0) }
-  var sideBayMode by remember { mutableStateOf(parseSideBayModeKey(requestedSideBayKey)) }
-  var overwatchPrompt by remember { mutableStateOf<OverwatchCircularPrompt>(OverwatchCircularPrompt.None) }
-  var squadronFilter by remember { mutableStateOf(SquadronPilotFilter.ALL) }
-  var squadronSort by remember { mutableStateOf(SquadronPilotSort.RESONANCE) }
-  var selectedSquadronPilotUid by remember { mutableStateOf("") }
-  var squadronStatusBanner by remember { mutableStateOf<String?>(null) }
-
-  LaunchedEffect(requestedSideBayNonce, requestedSideBayKey) {
-    if (requestedSideBayNonce > 0) {
-      overwatchPrompt = OverwatchCircularPrompt.None
-      sideBayMode = parseSideBayModeKey(requestedSideBayKey)
-    }
-  }
-
-  val localPrefs = remember(context) { LocalPilotPrefs(context) }
-  val chargedPrefs =
-    remember(context) {
-      context.getSharedPreferences("rift_hub_charged_ship_prefs", android.content.Context.MODE_PRIVATE)
-    }
-  val chargedPrefsKey =
-    remember(currentUserId) {
-      "charged_ship_${currentUserId.trim().ifBlank { "local" }}"
-    }
-  var chargedShipId by
-    remember(chargedPrefsKey) {
-      mutableIntStateOf(chargedPrefs.getInt(chargedPrefsKey, 0).let { if (it in 1..10) it else 0 })
-    }
-
-  // Strictly locks/charges the ship across all game modes WITHOUT launching or auto-Rifting into Overwatch
-  fun chargeShipAcrossAllModes(targetShipId: Int) {
+  fun chargeShipAcrossAllModes(
+    targetShipId: Int,
+    chargedPrefsKey: String,
+    params: NexusAiConsoleParams,
+  ) {
     val clamped = targetShipId.coerceIn(1, 10)
     chargedShipId = clamped
     chargedPrefs.edit().putInt(chargedPrefsKey, clamped).apply()
     localPrefs.setPreferredShipId(clamped)
-    onOpenHangarForShip(clamped)
-    engine?.let { eng ->
+    params.onOpenHangarForShip(clamped)
+    params.engine?.let { eng ->
       if (eng.hasJoinedMatch && !eng.isHubOverwatchActive) {
         eng.isShipLockedForMatch = false
         eng.switchLocalPlayerShip(clamped, forceFromHangar = true)
@@ -1229,142 +1514,120 @@ fun NexusAiConsoleModal(
     }
   }
 
-  // Keep any persisted Charged ship locked across all game modes on mount / user switch (never auto-launching)
-  LaunchedEffect(chargedShipId, currentUserId) {
-    if (chargedShipId in 1..10 && activeShipId.coerceIn(1, 10) != chargedShipId) {
-      localPrefs.setPreferredShipId(chargedShipId)
-      onOpenHangarForShip(chargedShipId)
-    }
-  }
-
-  // Reset Overwatch circular prompt when leaving ORBITAL_HUB
-  LaunchedEffect(activeNode) {
-    if (activeNode != NexusCoreNode.ORBITAL_HUB) {
-      overwatchPrompt = OverwatchCircularPrompt.None
-    }
-  }
-
-  // Hardware/System Back cleanly dismisses HTML spreadsheet first, circular Overwatch prompt second, then dissolves side-bay back to Rift Hub
-  BackHandler(
-    enabled =
-      showHubSurvivalSpreadsheetModal ||
-        (activeNode == NexusCoreNode.ORBITAL_HUB &&
-          (overwatchPrompt != OverwatchCircularPrompt.None || sideBayMode != RiftHubSideBayMode.HUB_MAIN))
+  fun submitNexusAiQuery(
+    params: NexusAiConsoleParams,
+    keyboardController: androidx.compose.ui.platform.SoftwareKeyboardController?,
   ) {
-    when {
-      showHubSurvivalSpreadsheetModal -> showHubSurvivalSpreadsheetModal = false
-      overwatchPrompt != OverwatchCircularPrompt.None -> overwatchPrompt = OverwatchCircularPrompt.None
-      else -> sideBayMode = RiftHubSideBayMode.HUB_MAIN
-    }
-  }
-
-  var showWarpOffConfirmModal by remember { mutableStateOf(false) }
-  var showSwitchAccountConfirmModal by remember { mutableStateOf(false) }
-  val localEchoMessages = remember { mutableStateMapOf<String, MutableList<SyndicateChatMessage>>() }
-
-  val lastMsgTextLen = messages.lastOrNull()?.text?.length ?: 0
-  LaunchedEffect(messages.size, lastMsgTextLen, streamState, selectedChannelKey) {
-    if (selectedChannelKey == "#nexus-ai") {
-      val totalItems = listState.layoutInfo.totalItemsCount
-      if (totalItems > 0) listState.animateScrollToItem(totalItems - 1)
-    }
-  }
-
-  fun submitNexusAiQuery() {
     val trimmed = inputQuery.trim()
-    if (trimmed.isNotEmpty() && !isStreaming) {
+    if (trimmed.isNotEmpty() && !params.isStreaming) {
       inputQuery = ""
       keyboardController?.hide()
-      onSendQuestion(trimmed)
+      params.onSendQuestion(trimmed)
     }
   }
 
-  fun postToCloudChannel(channelKey: String, rawText: String) {
+  fun postToCloudChannel(channelKey: String, rawText: String, params: NexusAiConsoleParams) {
     val clean = rawText.trim()
     if (clean.isEmpty()) return
     val normalizedKey = channelKey.trim().lowercase(Locale.US)
     val echo =
       SyndicateChatMessage(
         id = "local_${System.currentTimeMillis()}",
-        senderUid = currentUserId,
-        senderCallsign = callsign,
-        senderSyndicateTag = cleanSyndicateTag,
+        senderUid = params.currentUserId,
+        senderCallsign = params.callsign,
+        senderSyndicateTag = params.cleanSyndicateTag,
         timestampLabel = channelKey.uppercase(Locale.US).take(24),
         messageText = clean,
         createdAtMs = System.currentTimeMillis(),
       )
     localEchoMessages.getOrPut(normalizedKey) { mutableStateListOf() }.add(echo)
-    onSendChannelMessage(channelKey, clean)
+    params.onSendChannelMessage(channelKey, clean)
   }
 
-  val resolvedBestShipForGate = bestShipId.coerceIn(1, 10)
-  val clampedActiveShipForGate = activeShipId.coerceIn(1, 10)
-  val isGateShipLocked =
-    chargedShipId in 1..10 ||
-      activeShipSummary.startsWith("LOCKED|", ignoreCase = true) ||
-      engine?.isShipLockedForMatch == true ||
-      clampedActiveShipForGate != resolvedBestShipForGate
-  val gateDeployShipId =
-    when {
+  fun resolveGateDeployShipId(params: NexusAiConsoleParams): Int {
+    val resolvedBestShipForGate = params.bestShipId.coerceIn(1, 10)
+    val clampedActiveShipForGate = params.activeShipId.coerceIn(1, 10)
+    val isGateShipLocked =
+      chargedShipId in 1..10 ||
+        params.activeShipSummary.startsWith("LOCKED|", ignoreCase = true) ||
+        params.engine?.isShipLockedForMatch == true ||
+        clampedActiveShipForGate != resolvedBestShipForGate
+    return when {
       chargedShipId in 1..10 -> chargedShipId
       isGateShipLocked -> clampedActiveShipForGate
       else -> resolvedBestShipForGate
     }
-  val gateDeployShipName =
-    remember(gateDeployShipId, RiftSpriteBaker.customShip9Version) {
+  }
+
+  fun resolveGateShipStatusSummary(params: NexusAiConsoleParams, gateDeployShipId: Int): String {
+    val resolvedBestShipForGate = params.bestShipId.coerceIn(1, 10)
+    val clampedActiveShipForGate = params.activeShipId.coerceIn(1, 10)
+    val isGateShipLocked =
+      chargedShipId in 1..10 ||
+        params.activeShipSummary.startsWith("LOCKED|", ignoreCase = true) ||
+        params.engine?.isShipLockedForMatch == true ||
+        clampedActiveShipForGate != resolvedBestShipForGate
+    val gateDeployShipName =
       RiftCodex.getShipById(gateDeployShipId)
         .name
         .replace(Regex("^[0-9]+-"), "")
         .trim()
         .uppercase(Locale.US)
-    }
-  val gateShipStatusSummary =
-    "$gateDeployShipName (${
+    val tag =
       when {
         chargedShipId in 1..10 -> "CHARGED"
         isGateShipLocked -> "LOCKED"
         else -> "BEST"
       }
-    })"
-
-  fun deployOrStageRankedSelection(mode: RankedGameMode, bracket: Int) {
-    if (chargedShipId in 1..10) {
-      onOpenHangarForShip(chargedShipId)
-    }
-    if (onStageRankedModeViaHangar != null) {
-      onStageRankedModeViaHangar(mode, bracket)
-      return
-    }
-    onDeployToRankedMode(mode, bracket)
+    return "$gateDeployShipName ($tag)"
   }
 
-  fun deployOrStageExistingCustom(instanceId: String) {
+  fun deployOrStageRankedSelection(mode: RankedGameMode, bracket: Int, params: NexusAiConsoleParams) {
     if (chargedShipId in 1..10) {
-      onOpenHangarForShip(chargedShipId)
+      params.onOpenHangarForShip(chargedShipId)
     }
-    if (onStageExistingCustomInstanceViaHangar != null) {
-      onStageExistingCustomInstanceViaHangar(instanceId)
+    if (params.onStageRankedModeViaHangar != null) {
+      params.onStageRankedModeViaHangar.invoke(mode, bracket)
       return
     }
-    engine?.let { eng ->
+    params.onDeployToRankedMode(mode, bracket)
+  }
+
+  fun deployOrStageExistingCustom(
+    instanceId: String,
+    gateDeployShipId: Int,
+    params: NexusAiConsoleParams,
+  ) {
+    if (chargedShipId in 1..10) {
+      params.onOpenHangarForShip(chargedShipId)
+    }
+    if (params.onStageExistingCustomInstanceViaHangar != null) {
+      params.onStageExistingCustomInstanceViaHangar.invoke(instanceId)
+      return
+    }
+    params.engine?.let { eng ->
       eng.isShipLockedForMatch = false
       eng.switchLocalPlayerShip(gateDeployShipId, forceFromHangar = true)
       eng.joinCustomGame(instanceId)
       RiftCalibrationState.applyCalibrationChangesLive(eng, context)
     }
     customGamesRefreshTick++
-    onCloseModal()
+    params.onCloseModal()
   }
 
-  fun deployOrStageNewCustomConfig(cfg: CustomGameConfig) {
+  fun deployOrStageNewCustomConfig(
+    cfg: CustomGameConfig,
+    gateDeployShipId: Int,
+    params: NexusAiConsoleParams,
+  ) {
     if (chargedShipId in 1..10) {
-      onOpenHangarForShip(chargedShipId)
+      params.onOpenHangarForShip(chargedShipId)
     }
-    if (onStageCustomGameViaHangar != null) {
-      onStageCustomGameViaHangar(cfg)
+    if (params.onStageCustomGameViaHangar != null) {
+      params.onStageCustomGameViaHangar.invoke(cfg)
       return
     }
-    engine?.let { eng ->
+    params.engine?.let { eng ->
       eng.isShipLockedForMatch = false
       eng.switchLocalPlayerShip(gateDeployShipId, forceFromHangar = true)
       eng.createAndJoinCustomGame(cfg)
@@ -1372,10 +1635,49 @@ fun NexusAiConsoleModal(
       RiftCalibrationState.applyCalibrationChangesLive(eng, context)
     }
     customGamesRefreshTick++
-    onCloseModal()
+    params.onCloseModal()
   }
 
-  fun joinCustomByRoomCode(rawCode: String) {
+  fun launchCustomGameFromDraft(gateDeployShipId: Int, params: NexusAiConsoleParams) {
+    val prefix = if (customIsPrivateRoom) "priv" else "pub"
+    val code = generatedRoomCode
+    if (code !in unlockedPrivateCodes) {
+      unlockedPrivateCodes.add(code)
+    }
+    val modeShort = customBaseMode.title.uppercase(Locale.US)
+    val cfg =
+      CustomGameConfig(
+        instanceId = "${prefix}_${code}",
+        roomCode = code,
+        privateRoom = customIsPrivateRoom,
+        title = "${params.callsign.uppercase(Locale.US)} $modeShort [$code]",
+        hostCallsign = params.callsign,
+        baseMode = customBaseMode,
+        teamSizeBracket = customTeamBracket,
+        matchDurationMinutes = customResetMinutes,
+        allowArmadasInFfa = customAllowArmadasInFfa,
+        botsEnabled = customBotsEnabled,
+        bulletSizeMult = customBulletSizeMult,
+        damageMult = customDamageMult,
+        speedMult = customSpeedMult,
+        healthMult = if (customRechargeMult > 1.0f) 1.25f else 1.0f,
+        rechargeMult = customRechargeMult,
+        crateSpawnMult = customCrateSpawnMult,
+        damageTakenScalePct = customDamageTakenScalePct,
+        weaponFluxCostScalePct = customWeaponFluxCostScalePct,
+        botCount = if (customBotsEnabled) customBotCount else 0,
+        botSkillLevel = customBotSkillLevel,
+        scoreCap = customScoreCap,
+      )
+    generatedRoomCode = generateSixCharRoomCode(System.currentTimeMillis() + 7919L)
+    deployOrStageNewCustomConfig(cfg, gateDeployShipId, params)
+  }
+
+  fun joinCustomByRoomCode(
+    rawCode: String,
+    gateDeployShipId: Int,
+    params: NexusAiConsoleParams,
+  ) {
     val cleanCode = rawCode.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(8)
     if (cleanCode.length < 4) {
       roomCodeBanner = "ENTER A VALID 6-CHARACTER JOIN CODE."
@@ -1384,8 +1686,8 @@ fun NexusAiConsoleModal(
     if (cleanCode !in unlockedPrivateCodes) unlockedPrivateCodes.add(cleanCode)
     val combinedKnown =
       buildList {
-        addAll(publicCustomGames)
-        addAll(engine?.activeCustomGames.orEmpty())
+        addAll(params.publicCustomGames)
+        addAll(params.engine?.activeCustomGames.orEmpty())
       }
     val matching =
       combinedKnown.firstOrNull { candidate ->
@@ -1394,23 +1696,23 @@ fun NexusAiConsoleModal(
           candidate.instanceId.equals("pub_$cleanCode", ignoreCase = true)
       }
     if (matching != null) {
-      engine?.let { eng ->
+      params.engine?.let { eng ->
         if (eng.activeCustomGames.none { it.instanceId.equals(matching.instanceId, ignoreCase = true) }) {
           eng.activeCustomGames.add(0, matching)
         }
       }
       roomCodeBanner = "JOINING ROOM [$cleanCode] // ${matching.title}"
       customGamesRefreshTick++
-      deployOrStageExistingCustom(matching.instanceId)
+      deployOrStageExistingCustom(matching.instanceId, gateDeployShipId, params)
       return
     }
-    if (onLookupCustomRoomByCode != null) {
+    if (params.onLookupCustomRoomByCode != null) {
       roomCodeBanner = "SEARCHING SECTOR FOR JOIN CODE [$cleanCode]..."
-      onLookupCustomRoomByCode(cleanCode) { cloudMatch, statusMsg ->
+      params.onLookupCustomRoomByCode.invoke(cleanCode) { cloudMatch, statusMsg ->
         if (cloudMatch != null) {
           val resolvedCode = extractCustomRoomCode(cloudMatch)
           if (resolvedCode !in unlockedPrivateCodes) unlockedPrivateCodes.add(resolvedCode)
-          engine?.let { eng ->
+          params.engine?.let { eng ->
             val existingIdx =
               eng.activeCustomGames.indexOfFirst {
                 it.instanceId.equals(cloudMatch.instanceId, ignoreCase = true)
@@ -1423,7 +1725,7 @@ fun NexusAiConsoleModal(
           }
           roomCodeBanner = "JOINING ROOM [$resolvedCode] // ${cloudMatch.title}"
           customGamesRefreshTick++
-          deployOrStageExistingCustom(cloudMatch.instanceId)
+          deployOrStageExistingCustom(cloudMatch.instanceId, gateDeployShipId, params)
         } else {
           roomCodeBanner = statusMsg.ifBlank { "NO ACTIVE CUSTOM GAME FOUND FOR CODE [$cleanCode]." }
         }
@@ -1435,7 +1737,7 @@ fun NexusAiConsoleModal(
           roomCode = cleanCode,
           privateRoom = true,
           title = "PRIVATE RIFT [$cleanCode]",
-          hostCallsign = callsign,
+          hostCallsign = params.callsign,
           baseMode = customBaseMode,
           teamSizeBracket = customTeamBracket,
           matchDurationMinutes = customResetMinutes,
@@ -1454,34 +1756,190 @@ fun NexusAiConsoleModal(
           scoreCap = customScoreCap,
         )
       roomCodeBanner = "ENTERING PRIVATE RIFT [$cleanCode]"
-      deployOrStageNewCustomConfig(created)
+      deployOrStageNewCustomConfig(created, gateDeployShipId, params)
+    }
+  }
+}
+
+@Composable
+private fun NexusConsoleSideEffects(
+  params: NexusAiConsoleParams,
+  uiState: NexusConsoleUiState,
+  listState: LazyListState,
+  liveTrafficShipIds: IntArray,
+) {
+  LaunchedEffect(params.engine?.currentCustomGame?.instanceId) {
+    params.engine?.currentCustomGame?.let { activeCfg ->
+      uiState.customDamageTakenScalePct = snapCustomFivePercentScale(activeCfg.damageTakenScalePct)
+      uiState.customWeaponFluxCostScalePct = snapCustomFivePercentScale(activeCfg.weaponFluxCostScalePct)
+      uiState.customBotCount = activeCfg.botCount.coerceIn(0, 19)
+      uiState.customBotSkillLevel = activeCfg.botSkillLevel.coerceIn(0, 3)
+      uiState.customScoreCap = activeCfg.scoreCap.coerceIn(5, 500)
     }
   }
 
-  val isCalibrationPeekActive =
-    (activeNode == NexusCoreNode.STAR_FORGE || activeModuleKey == "FORGE" || activeModuleKey == "CALIBRATE") &&
-      isCalibrationLivePeeking
-  val isFullScreenForgeStage =
-    hideTopHeaderForFullScreenStage &&
-      (activeNode == NexusCoreNode.STAR_FORGE || activeModuleKey == "FORGE")
+  LaunchedEffect(params.requestedSideBayNonce, params.requestedSideBayKey) {
+    if (params.requestedSideBayNonce > 0) {
+      uiState.overwatchPrompt = OverwatchCircularPrompt.None
+      uiState.sideBayMode = parseSideBayModeKey(params.requestedSideBayKey)
+    }
+  }
 
-  var glViewRef by remember { mutableStateOf<NexusSpaceGlView?>(null) }
-  var hubApertureRootBounds by remember { mutableStateOf(Triple(0f, 0f, 0f)) }
-  var modalRootOrigin by remember { mutableStateOf(Offset.Zero) }
+  // Keep any persisted Charged ship locked across all game modes on mount / user switch (never auto-launching)
+  LaunchedEffect(uiState.chargedShipId, params.currentUserId) {
+    if (uiState.chargedShipId in 1..10 && params.activeShipId.coerceIn(1, 10) != uiState.chargedShipId) {
+      uiState.localPrefs.setPreferredShipId(uiState.chargedShipId)
+      params.onOpenHangarForShip(uiState.chargedShipId)
+    }
+  }
+
+  // Reset Overwatch circular prompt when leaving ORBITAL_HUB
+  LaunchedEffect(params.activeNode) {
+    if (params.activeNode != NexusCoreNode.ORBITAL_HUB) {
+      uiState.overwatchPrompt = OverwatchCircularPrompt.None
+    }
+  }
+
+  // Hardware/System Back cleanly dismisses HTML spreadsheet first, circular Overwatch prompt second, then dissolves side-bay back to Rift Hub
+  BackHandler(
+    enabled =
+      uiState.showHubSurvivalSpreadsheetModal ||
+        (params.activeNode == NexusCoreNode.ORBITAL_HUB &&
+          (uiState.overwatchPrompt != OverwatchCircularPrompt.None ||
+            uiState.sideBayMode != RiftHubSideBayMode.HUB_MAIN))
+  ) {
+    when {
+      uiState.showHubSurvivalSpreadsheetModal -> uiState.showHubSurvivalSpreadsheetModal = false
+      uiState.overwatchPrompt != OverwatchCircularPrompt.None ->
+        uiState.overwatchPrompt = OverwatchCircularPrompt.None
+      else -> uiState.sideBayMode = RiftHubSideBayMode.HUB_MAIN
+    }
+  }
+
+  val lastMsgTextLen = params.messages.lastOrNull()?.text?.length ?: 0
+  LaunchedEffect(params.messages.size, lastMsgTextLen, params.streamState, uiState.selectedChannelKey) {
+    if (uiState.selectedChannelKey == "#nexus-ai") {
+      val totalItems = listState.layoutInfo.totalItemsCount
+      if (totalItems > 0) listState.animateScrollToItem(totalItems - 1)
+    }
+  }
+
+  LaunchedEffect(params.activeNode, uiState.focusedOrbitalIndex, uiState.glViewRef, liveTrafficShipIds) {
+    val view = uiState.glViewRef ?: return@LaunchedEffect
+    view.updateOnlinePilotShips(liveTrafficShipIds)
+    view.dimFactor = 0.44f
+    view.focusedTearIndex = -1
+  }
+}
+
+private fun handleNexusOrbitalKeyEvent(
+  native: KeyEvent,
+  params: NexusAiConsoleParams,
+  uiState: NexusConsoleUiState,
+  activeOverwatchInstance: OverwatchRiftInstance,
+): Boolean {
+  if (params.activeNode != NexusCoreNode.ORBITAL_HUB) return false
+  if (native.action != KeyEvent.ACTION_DOWN || native.repeatCount != 0) return false
+  val totalTargets = 5
+  return when (native.keyCode) {
+    KeyEvent.KEYCODE_DPAD_RIGHT,
+    KeyEvent.KEYCODE_DPAD_DOWN -> {
+      uiState.focusedOrbitalIndex = (uiState.focusedOrbitalIndex + 1) % totalTargets
+      true
+    }
+    KeyEvent.KEYCODE_DPAD_LEFT,
+    KeyEvent.KEYCODE_DPAD_UP -> {
+      uiState.focusedOrbitalIndex =
+        if (uiState.focusedOrbitalIndex <= 0) totalTargets - 1 else uiState.focusedOrbitalIndex - 1
+      true
+    }
+    KeyEvent.KEYCODE_BUTTON_A,
+    KeyEvent.KEYCODE_DPAD_CENTER,
+    KeyEvent.KEYCODE_ENTER -> {
+      when (uiState.focusedOrbitalIndex.coerceIn(0, 4)) {
+        0 -> params.onQuickZoneIntoOverwatch(activeOverwatchInstance)
+        1 -> {
+          uiState.overwatchPrompt = OverwatchCircularPrompt.None
+          uiState.sideBayMode = RiftHubSideBayMode.HANGAR_BAY
+        }
+        2 -> {
+          uiState.overwatchPrompt = OverwatchCircularPrompt.None
+          uiState.sideBayMode = RiftHubSideBayMode.RIFT_FRAME_BAY
+        }
+        3 -> params.onSelectNode(NexusCoreNode.SUBSPACE_COMMS)
+        else -> {
+          uiState.overwatchPrompt = OverwatchCircularPrompt.None
+          uiState.sideBayMode = RiftHubSideBayMode.GAME_MODES_BAY
+        }
+      }
+      true
+    }
+    else -> false
+  }
+}
+
+@Composable
+private fun NexusAiConsoleRootContent(params: NexusAiConsoleParams) {
+  val context = LocalContext.current
+  val keyboardController = LocalSoftwareKeyboardController.current
+  val listState = rememberLazyListState()
+  val localPrefs = remember(context) { LocalPilotPrefs(context) }
+  val chargedPrefs =
+    remember(context) {
+      context.getSharedPreferences("rift_hub_charged_ship_prefs", Context.MODE_PRIVATE)
+    }
+  val chargedPrefsKey =
+    remember(params.currentUserId) {
+      "charged_ship_${params.currentUserId.trim().ifBlank { "local" }}"
+    }
+  val uiState =
+    remember(chargedPrefsKey) {
+      NexusConsoleUiState(
+        context = context,
+        localPrefs = localPrefs,
+        chargedPrefs = chargedPrefs,
+        initialChargedPrefsKey = chargedPrefsKey,
+        initialTeamSizeBracket = params.activeTeamSizeBracket,
+        initialCustomGame = params.engine?.currentCustomGame,
+        initialSideBayKey = params.requestedSideBayKey,
+      )
+    }
+
+  val liveTrafficShipIds =
+    remember(params.activeShipId, params.onlineHumanPilots, params.currentUserId) {
+      val ids = ArrayList<Int>(params.onlineHumanPilots.size + 1)
+      ids.add(params.activeShipId.coerceIn(1, 10))
+      for (p in params.onlineHumanPilots) {
+        val pUid = p.userId.ifBlank { p.id }
+        if (pUid != params.currentUserId) {
+          ids.add(p.shipId.toInt().coerceIn(1, 10))
+        }
+      }
+      ids.toIntArray()
+    }
+  val isLocalArchitect =
+    remember(params.currentUserId, params.callsign) {
+      RiftCommunityRoles.isDeveloperArchitect(params.currentUserId, params.callsign)
+    }
 
   val resolvedOverwatchInstances =
-    remember(overwatchInstances, callsign, engine?.currentCustomGame, engine?.hasJoinedMatch) {
+    remember(
+      params.overwatchInstances,
+      params.callsign,
+      params.engine?.currentCustomGame,
+      params.engine?.hasJoinedMatch,
+    ) {
       val allowedModes = setOf(RankedGameMode.SECTOR_CONVERGENCE, RankedGameMode.FLUX_CORE)
       val filtered =
-        overwatchInstances.filter { inst ->
+        params.overwatchInstances.filter { inst ->
           val cfg = inst.customConfig
           if (cfg == null) {
             inst.rankedMode in allowedModes
           } else {
             val isOwnCustom =
-              cfg.hostCallsign.equals(callsign, ignoreCase = true) ||
-                (engine?.hasJoinedMatch == true &&
-                  engine.currentCustomGame?.instanceId?.equals(cfg.instanceId, ignoreCase = true) == true)
+              cfg.hostCallsign.equals(params.callsign, ignoreCase = true) ||
+                (params.engine?.hasJoinedMatch == true &&
+                  params.engine.currentCustomGame?.instanceId?.equals(cfg.instanceId, ignoreCase = true) == true)
             isOwnCustom && cfg.baseMode in allowedModes
           }
         }
@@ -1515,241 +1973,87 @@ fun NexusAiConsoleModal(
       }
     }
   val activeOverwatchInstance =
-    remember(resolvedOverwatchInstances, selectedOverwatchKey, favoriteOverwatchKey) {
-      resolvedOverwatchInstances.firstOrNull { it.key == selectedOverwatchKey }
-        ?: favoriteOverwatchKey
+    remember(resolvedOverwatchInstances, params.selectedOverwatchKey, params.favoriteOverwatchKey) {
+      resolvedOverwatchInstances.firstOrNull { it.key == params.selectedOverwatchKey }
+        ?: params.favoriteOverwatchKey
           .takeIf { it.isNotBlank() }
           ?.let { fav -> resolvedOverwatchInstances.firstOrNull { it.key == fav } }
         ?: resolvedOverwatchInstances.maxByOrNull { it.combinedResonance }
         ?: resolvedOverwatchInstances.first()
     }
 
-  LaunchedEffect(activeNode, focusedOrbitalIndex, glViewRef, liveTrafficShipIds) {
-    val view = glViewRef ?: return@LaunchedEffect
-    view.updateOnlinePilotShips(liveTrafficShipIds)
-    view.dimFactor = 0.44f
-    view.focusedTearIndex = -1
-  }
+  NexusConsoleSideEffects(
+    params = params,
+    uiState = uiState,
+    listState = listState,
+    liveTrafficShipIds = liveTrafficShipIds,
+  )
 
-  var lastCardNodeForSlide by remember { mutableStateOf(NexusCoreNode.HANGAR_DECK) }
-  if (activeNode != NexusCoreNode.ORBITAL_HUB) {
-    lastCardNodeForSlide = activeNode
+  if (params.activeNode != NexusCoreNode.ORBITAL_HUB) {
+    uiState.lastCardNodeForSlide = params.activeNode
   }
-  val enterDirectionSign = if (isLeftSideHubCard(lastCardNodeForSlide)) -1f else 1f
+  val enterDirectionSign = if (isLeftSideHubCard(uiState.lastCardNodeForSlide)) -1f else 1f
   val terminalScale by
     animateFloatAsState(
-      targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 0.95f else 1.0f,
+      targetValue = if (params.activeNode == NexusCoreNode.ORBITAL_HUB) 0.95f else 1.0f,
       animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
       label = "terminal_emerge_scale",
     )
   val terminalAlpha by
     animateFloatAsState(
-      targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 0.0f else 1.0f,
+      targetValue = if (params.activeNode == NexusCoreNode.ORBITAL_HUB) 0.0f else 1.0f,
       animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing),
       label = "terminal_emerge_alpha",
     )
   val terminalSlideFraction by
     animateFloatAsState(
-      targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 0.08f * enterDirectionSign else 0.0f,
+      targetValue = if (params.activeNode == NexusCoreNode.ORBITAL_HUB) 0.08f * enterDirectionSign else 0.0f,
       animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
       label = "terminal_slide_fraction",
     )
   val hubStageAlpha by
     animateFloatAsState(
-      targetValue = if (activeNode == NexusCoreNode.ORBITAL_HUB) 1.0f else 0.0f,
+      targetValue = if (params.activeNode == NexusCoreNode.ORBITAL_HUB) 1.0f else 0.0f,
       animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing),
       label = "hub_stage_alpha",
     )
 
-  // Full-bleed container BEFORE safeDrawing:
-  // On ORBITAL_HUB, renders the edge-to-edge abyssal slate (#02050B / #030711 / #060D1A) & gunmetal (#091528 / #0B192E)
-  // sci-fi hardware terminal across 100% of the physical viewport outside the circular Overwatch aperture (zero outer margin frame).
+  val gateDeployShipId = uiState.resolveGateDeployShipId(params)
+  val gateShipStatusSummary = uiState.resolveGateShipStatusSummary(params, gateDeployShipId)
+
   Box(
     modifier =
       Modifier.fillMaxSize()
         .onGloballyPositioned { coords ->
-          modalRootOrigin = coords.positionInRoot()
+          uiState.modalRootOrigin = coords.positionInRoot()
         }
         .drawBehind {
           when {
-            isCalibrationPeekActive -> drawRect(Color(0x1802050B))
-            activeNode == NexusCoreNode.ORBITAL_HUB -> {
-              val w = size.width
-              val h = size.height
-              val (acx, acy, ar) = hubApertureRootBounds
-              val localCx = if (ar > 8f) acx - modalRootOrigin.x else w * 0.5f
-              val localCy = if (ar > 8f) acy - modalRootOrigin.y else h * 0.5f
-              val cutR = if (ar > 8f) ar else min(w, h) * 0.34f
-
-              drawContext.canvas.save()
-              if (ar > 8f) {
-                val maskPath =
-                  Path().apply {
-                    fillType = PathFillType.EvenOdd
-                    addRect(Rect(0f, 0f, w, h))
-                    addOval(Rect(localCx - cutR, localCy - cutR, localCx + cutR, localCy + cutR))
-                  }
-                drawContext.canvas.clipPath(maskPath)
-              }
-
-              // 1. Edge-to-edge deep abyssal slate chassis base (#02050B -> #030711 -> #060D1A)
-              drawRect(
-                brush =
-                  Brush.verticalGradient(
-                    colors = listOf(Color(0xFF060D1A), Color(0xFF030711), Color(0xFF02050B))
-                  ),
-                size = size,
+            params.isCalibrationPeekActive -> drawRect(Color(0x1802050B))
+            params.activeNode == NexusCoreNode.ORBITAL_HUB -> {
+              drawNexusOrbitalChassisBackdrop(
+                hubApertureRootBounds = uiState.hubApertureRootBounds,
+                modalRootOrigin = uiState.modalRootOrigin,
               )
-
-              // 2. Gunmetal/cyan Overwatch-anchored radial illumination (#0B192E -> #091528 -> #060D1A -> #02050B)
-              drawRect(
-                brush =
-                  Brush.radialGradient(
-                    colors =
-                      listOf(
-                        Color(0xFF0B192E),
-                        Color(0xFF091528),
-                        Color(0xFF060D1A),
-                        Color(0xFF02050B),
-                      ),
-                    center = Offset(localCx, localCy),
-                    radius = maxOf(w, h) * 0.64f,
-                  ),
-                size = size,
-              )
-
-              // 3. Calibrated polar astrogation reticle lines radiating from Overwatch collar to viewport edges
-              for (spoke in 0 until 12) {
-                val rad = spoke * (PI.toFloat() / 6f)
-                val r0 = cutR * 1.05f
-                val r1 = maxOf(w, h) * 0.74f
-                drawLine(
-                  color = if (spoke % 3 == 0) Color(0x1E00F5D4) else Color(0x1438BDF8),
-                  start = Offset(localCx + cos(rad) * r0, localCy + sin(rad) * r0),
-                  end = Offset(localCx + cos(rad) * r1, localCy + sin(rad) * r1),
-                  strokeWidth = 0.85.dp.toPx(),
-                )
-              }
-
-              // 4. Concentric beveled gunmetal/cyan bulkhead rings anchoring the full-bleed hardware stage
-              val ring1 = cutR * 1.10f
-              val ring2 = cutR * 1.28f
-              val ring3 = cutR * 1.52f
-              drawCircle(
-                brush =
-                  Brush.verticalGradient(
-                    listOf(Color(0x4500F5D4), Color(0x2438BDF8), Color(0x32FACC15)),
-                    startY = localCy - ring1,
-                    endY = localCy + ring1,
-                  ),
-                radius = ring1,
-                center = Offset(localCx, localCy),
-                style = Stroke(width = 1.25.dp.toPx()),
-              )
-              drawCircle(
-                brush =
-                  Brush.verticalGradient(
-                    listOf(Color(0x28FFD700), Color(0x1838BDF8), Color(0x2600F5D4)),
-                    startY = localCy - ring2,
-                    endY = localCy + ring2,
-                  ),
-                radius = ring2,
-                center = Offset(localCx, localCy),
-                style = Stroke(width = 0.95.dp.toPx()),
-              )
-              drawCircle(
-                color = Color(0x1438BDF8),
-                radius = ring3,
-                center = Offset(localCx, localCy),
-                style = Stroke(width = 0.8.dp.toPx()),
-              )
-
-              // 5. Four dual-walled power-bus conduits coupling the 4 flanking hardware bays to the Overwatch bezel
-              val conduitAnglesDeg = floatArrayOf(-148f, 148f, -32f, 32f)
-              for (i in conduitAnglesDeg.indices) {
-                val rad = conduitAnglesDeg[i] * (PI.toFloat() / 180f)
-                val p0 = Offset(localCx + cos(rad) * (cutR * 1.045f), localCy + sin(rad) * (cutR * 1.045f))
-                val p1 = Offset(localCx + cos(rad) * (ring2 * 1.26f), localCy + sin(rad) * (ring2 * 1.26f))
-                val coreCol =
-                  when (i) {
-                    0 -> Color(0x4838BDF8)
-                    1 -> Color(0x4800F5D4)
-                    2 -> Color(0x48FFD700)
-                    else -> Color(0x4600F5D4)
-                  }
-                drawLine(
-                  color = Color(0xC002050B),
-                  start = p0,
-                  end = p1,
-                  strokeWidth = 4.0.dp.toPx(),
-                  cap = StrokeCap.Round,
-                )
-                drawLine(
-                  brush = Brush.linearGradient(listOf(coreCol, Color.Transparent), start = p0, end = p1),
-                  start = p0,
-                  end = p1,
-                  strokeWidth = 1.65.dp.toPx(),
-                  cap = StrokeCap.Round,
-                )
-              }
-
-              drawContext.canvas.restore()
             }
             else -> drawRect(Color(0xFF02050B))
           }
         }
         .onPreviewKeyEvent { keyEvent ->
-          if (activeNode != NexusCoreNode.ORBITAL_HUB) return@onPreviewKeyEvent false
-          val native = keyEvent.nativeKeyEvent
-          if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
-            val totalTargets = 5
-            when (native.keyCode) {
-              KeyEvent.KEYCODE_DPAD_RIGHT,
-              KeyEvent.KEYCODE_DPAD_DOWN -> {
-                focusedOrbitalIndex = (focusedOrbitalIndex + 1) % totalTargets
-                true
-              }
-              KeyEvent.KEYCODE_DPAD_LEFT,
-              KeyEvent.KEYCODE_DPAD_UP -> {
-                focusedOrbitalIndex =
-                  if (focusedOrbitalIndex <= 0) totalTargets - 1 else focusedOrbitalIndex - 1
-                true
-              }
-              KeyEvent.KEYCODE_BUTTON_A,
-              KeyEvent.KEYCODE_DPAD_CENTER,
-              KeyEvent.KEYCODE_ENTER -> {
-                when (focusedOrbitalIndex.coerceIn(0, 4)) {
-                  0 -> onQuickZoneIntoOverwatch(activeOverwatchInstance)
-                  1 -> {
-                    overwatchPrompt = OverwatchCircularPrompt.None
-                    sideBayMode = RiftHubSideBayMode.HANGAR_BAY
-                  }
-                  2 -> {
-                    overwatchPrompt = OverwatchCircularPrompt.None
-                    sideBayMode = RiftHubSideBayMode.RIFT_FRAME_BAY
-                  }
-                  3 -> onSelectNode(NexusCoreNode.SUBSPACE_COMMS)
-                  else -> {
-                    overwatchPrompt = OverwatchCircularPrompt.None
-                    sideBayMode = RiftHubSideBayMode.GAME_MODES_BAY
-                  }
-                }
-                true
-              }
-              else -> false
-            }
-          } else {
-            false
-          }
+          handleNexusOrbitalKeyEvent(
+            native = keyEvent.nativeKeyEvent,
+            params = params,
+            uiState = uiState,
+            activeOverwatchInstance = activeOverwatchInstance,
+          )
         }
         .testTag("nexus_ai_console_modal"),
     contentAlignment = Alignment.Center,
   ) {
-    // Sub-modal 3D backdrop (NOT mounted on ORBITAL_HUB, which opens directly onto live RiftArenaView Overwatch!)
     if (
-      activeNode != NexusCoreNode.ORBITAL_HUB &&
-        !isCalibrationPeekActive &&
-        !isFullScreenForgeStage &&
+      params.activeNode != NexusCoreNode.ORBITAL_HUB &&
+        !params.isCalibrationPeekActive &&
+        !params.isFullScreenForgeStage &&
         !isHeadlessGlEnvironment()
     ) {
       AndroidView(
@@ -1759,16 +2063,16 @@ fun NexusAiConsoleModal(
             dimFactor = 0.44f
             focusedTearIndex = -1
             updateOnlinePilotShips(liveTrafficShipIds)
-            updateStationHologramTelemetry(totalOnlinePilots, unreadCommsCount)
-            glViewRef = this
+            updateStationHologramTelemetry(params.totalOnlinePilots, params.unreadCommsCount)
+            uiState.glViewRef = this
           }
         },
         update = { view ->
-          glViewRef = view
+          uiState.glViewRef = view
           view.isSplashMode = false
           view.dimFactor = 0.44f
           view.updateOnlinePilotShips(liveTrafficShipIds)
-          view.updateStationHologramTelemetry(totalOnlinePilots, unreadCommsCount)
+          view.updateStationHologramTelemetry(params.totalOnlinePilots, params.unreadCommsCount)
         },
         modifier = Modifier.fillMaxSize(),
       )
@@ -1782,745 +2086,1157 @@ fun NexusAiConsoleModal(
       contentAlignment = Alignment.Center,
     ) {
       when {
-        isFullScreenForgeStage && (renderModuleForNode != null || embeddedModuleContent != null) -> {
+        params.isFullScreenForgeStage &&
+          (params.renderModuleForNode != null || params.embeddedModuleContent != null) -> {
           Box(modifier = Modifier.fillMaxSize().testTag("nexus_embedded_module_container")) {
-            if (renderModuleForNode != null) {
-              renderModuleForNode(activeNode)
+            if (params.renderModuleForNode != null) {
+              params.renderModuleForNode.invoke(params.activeNode)
             } else {
-              embeddedModuleContent?.invoke()
+              params.embeddedModuleContent?.invoke()
             }
           }
         }
-        activeNode == NexusCoreNode.ORBITAL_HUB -> {
-          Box(
-            modifier =
-              Modifier.fillMaxSize().graphicsLayer {
-                alpha = hubStageAlpha
-              }
-          ) {
-            OrbitalHubSpatialStage(
-              callsign = callsign,
-              syndicateTag = cleanSyndicateTag,
-              syndicateName = syndicateName,
-              liveResonance = resolvedLiveResonance,
-              riftShards = riftShards,
-              activeShipId = gateDeployShipId,
-              bestShipId = bestShipId,
-              chargedShipId = chargedShipId,
-              onChargeShip = { shipToCharge -> chargeShipAcrossAllModes(shipToCharge) },
-              activeShipSummary = activeShipSummary,
-              armadaCount = armadaSlots.size.coerceAtLeast(1),
-              activeArmadaName = activeArmadaName,
-              armadaSlots = armadaSlots,
-              onlineHumanPilots = onlineHumanPilots,
-              onResolvePilotBestShipId = onResolvePilotBestShipId,
-              onInviteOnlinePilotToWing = { targetPilot ->
-                onInviteOnlinePilotToWing(targetPilot)
-                squadronStatusBanner = "SQUADRON INVITE SENT TO ${targetPilot.callsign.uppercase(Locale.US)}"
-              },
-              onAddOnlinePilotFriend = { targetCallsign ->
-                onAddOnlinePilotFriend(targetCallsign)
-                squadronStatusBanner = "FRIEND REQUEST DISPATCHED TO ${targetCallsign.uppercase(Locale.US)}"
-              },
-              onPostStrikeWingInvite = {
-                onPostStrikeWingInvite()
-                squadronStatusBanner = "BROADCASTED SQUADRON INVITE TO #SQUADRON-LFG"
-              },
-              squadronStatusBanner = squadronStatusBanner,
-              sideBayMode = sideBayMode,
-              onChangeSideBayMode = { nextBay ->
-                overwatchPrompt = OverwatchCircularPrompt.None
-                sideBayMode = nextBay
-              },
-              overwatchPrompt = overwatchPrompt,
-              onChangeOverwatchPrompt = { nextPrompt -> overwatchPrompt = nextPrompt },
-              squadronFilter = squadronFilter,
-              onSelectSquadronFilter = { squadronFilter = it },
-              squadronSort = squadronSort,
-              onToggleSquadronSort = {
-                squadronSort =
-                  if (squadronSort == SquadronPilotSort.RESONANCE) SquadronPilotSort.ACTIVITY
-                  else SquadronPilotSort.RESONANCE
-              },
-              selectedSquadronPilotUid = selectedSquadronPilotUid,
-              onSelectSquadronPilotUid = { selectedSquadronPilotUid = it },
-              activeRankedMode = activeRankedMode,
-              skirmishBracket = skirmishBracket,
-              onSelectSkirmishBracket = { skirmishBracket = it.coerceIn(2, 5) },
-              riftControlBracket = riftControlBracket,
-              onSelectRiftControlBracket = { riftControlBracket = it },
-              syndicateWarBracket = syndicateWarBracket,
-              onSelectSyndicateWarBracket = { syndicateWarBracket = it },
-              humanPilotCountByMode = humanPilotCountByMode,
-              canQueueSyndicateWars = canQueueSyndicateWars,
-              onStageRanked = { mode, bracket -> deployOrStageRankedSelection(mode, bracket) },
-              publicCustomGames = publicCustomGames,
-              customIsPrivateRoom = customIsPrivateRoom,
-              onTogglePrivateRoom = {
-                customIsPrivateRoom = it
-                generatedRoomCode = generateSixCharRoomCode()
-              },
-              generatedRoomCode = generatedRoomCode,
-              joinRoomCodeDraft = joinRoomCodeDraft,
-              onJoinRoomCodeDraftChange = { raw ->
-                joinRoomCodeDraft = raw.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(8)
-              },
-              roomCodeBanner = roomCodeBanner,
-              unlockedPrivateCodes = unlockedPrivateCodes,
-              onJoinByRoomCode = { joinCustomByRoomCode(joinRoomCodeDraft) },
-              customBaseMode = customBaseMode,
-              onSelectCustomBaseMode = { customBaseMode = it },
-              onJoinCustomInstance = { instanceId ->
-                val known =
-                  publicCustomGames.firstOrNull {
-                    it.instanceId.equals(instanceId, ignoreCase = true)
-                  }
-                if (known != null && engine != null) {
-                  if (engine.activeCustomGames.none { it.instanceId.equals(known.instanceId, ignoreCase = true) }) {
-                    engine.activeCustomGames.add(0, known)
-                  }
-                }
-                deployOrStageExistingCustom(instanceId)
-              },
-              onQuickCreateCustomGame = {
-                val prefix = if (customIsPrivateRoom) "priv" else "pub"
-                val code = generatedRoomCode
-                if (code !in unlockedPrivateCodes) {
-                  unlockedPrivateCodes.add(code)
-                }
-                val modeShort = customBaseMode.title.uppercase(Locale.US)
-                val cfg =
-                  CustomGameConfig(
-                    instanceId = "${prefix}_${code}",
-                    roomCode = code,
-                    privateRoom = customIsPrivateRoom,
-                    title = "${callsign.uppercase(Locale.US)} $modeShort [$code]",
-                    hostCallsign = callsign,
-                    baseMode = customBaseMode,
-                    teamSizeBracket = customTeamBracket,
-                    matchDurationMinutes = customResetMinutes,
-                    allowArmadasInFfa = customAllowArmadasInFfa,
-                    botsEnabled = customBotsEnabled,
-                    bulletSizeMult = customBulletSizeMult,
-                    damageMult = customDamageMult,
-                    speedMult = customSpeedMult,
-                    healthMult = if (customRechargeMult > 1.0f) 1.25f else 1.0f,
-                    rechargeMult = customRechargeMult,
-                    crateSpawnMult = customCrateSpawnMult,
-                    damageTakenScalePct = customDamageTakenScalePct,
-                    weaponFluxCostScalePct = customWeaponFluxCostScalePct,
-                    botCount = if (customBotsEnabled) customBotCount else 0,
-                    botSkillLevel = customBotSkillLevel,
-                    scoreCap = customScoreCap,
-                  )
-                generatedRoomCode = generateSixCharRoomCode(System.currentTimeMillis() + 7919L)
-                deployOrStageNewCustomConfig(cfg)
-              },
-              customDamageTakenScalePct = customDamageTakenScalePct,
-              onSelectCustomDamageTakenScalePct = { updateCustomDamageTakenScale(it) },
-              customWeaponFluxCostScalePct = customWeaponFluxCostScalePct,
-              onSelectCustomWeaponFluxCostScalePct = { updateCustomWeaponFluxCostScale(it) },
-              onOpenSurvivalSpreadsheet = { showHubSurvivalSpreadsheetModal = true },
-              onOpenFullCustomGate = {
-                overwatchPrompt = OverwatchCircularPrompt.None
-                gateTab = ConvergenceGateTab.CUSTOM_RIFT_GATE
-                onSelectNode(NexusCoreNode.CONVERGENCE_GATE)
-              },
-              onOpenShipwrightStudio = {
-                onOpenForge()
-              },
-              onOpenFullSquadronModal = {
-                overwatchPrompt = OverwatchCircularPrompt.None
-                sideBayMode = RiftHubSideBayMode.SQUADRON_BAY
-              },
-              syndicateWarRecord = syndicateWarRecord,
-              syndicateDirectory = syndicateDirectory,
-              syndicateStatusMessage = syndicateStatusMessage,
-              onJoinOfficialSyndicate = onJoinOfficialSyndicate,
-              onLeaveCurrentSyndicate = onLeaveCurrentSyndicate,
-              onCharterCustomSyndicate = onCharterCustomSyndicate,
-              onClaimDailyDirectiveSlot = { slotIdx -> onClaimDailyDirectiveSlot(slotIdx) },
-              onRerollDailyDirectiveSlot = { slotIdx -> onRerollDailyDirectiveSlot(slotIdx) },
-              onClaimDailySweepBonus = { onClaimDailySweepBonus() },
-              onUnlockOrEquipCosmeticItem = { item ->
-                onUnlockOrEquipCosmeticItem(item.category, item)
-              },
-              onUnlockOrSelectFrameSlotId = { slotId ->
-                onUnlockOrSelectFrameSlotId(slotId)
-              },
-              activeCustomSlotId = activeCustomSlotId,
-              activeCustomSlot = activeCustomSlot,
-              pointBudget = pointBudget,
-              onSaveCustomSlot = onSaveCustomSlot,
-              onShareActiveRiftFrameBuild = onShareActiveRiftFrameBuild,
-              cloudLeaderboardEntries = cloudLeaderboardEntries,
-              onRenamePilotCallsign = { updated -> onRenamePilotCallsign(updated) },
-              onResetLocalPilotTelemetry = onResetLocalPilotTelemetry,
-              helmInitialSubDeck = helmInitialSubDeck,
-              sfxEnabled = sfxEnabled,
-              musicEnabled = musicEnabled,
-              musicBpm = musicBpm,
-              musicVolume = musicVolume,
-              sfxVolume = sfxVolume,
-              cameraZoom = cameraZoom,
-              playfieldTextScale = playfieldTextScale,
-              onToggleSfx = { _ -> onToggleSfx() },
-              onToggleMusic = { _ -> onToggleMusic() },
-              onChangeMusicBpm = onChangeMusicBpm,
-              onChangeMusicVolume = onChangeMusicVolume,
-              onChangeSfxVolume = onChangeSfxVolume,
-              onChangeCameraZoom = onChangeCameraZoom,
-              onChangePlayfieldTextScale = onChangePlayfieldTextScale,
-              onOpenChangelogModal = onOpenChangelogModal,
-              onOpenAudioSynthForge = onOpenAudioSynthForge,
-              updateStatusLabel = updateStatusLabel,
-              hasUpdateAvailable = hasUpdateAvailable,
-              onCheckOrApplyUpdate = onCheckOrApplyUpdate,
-              engine = engine,
-              currentUserId = currentUserId,
-              totalOnlinePilots = totalOnlinePilots,
-              syndicateOnlineCount = syndicateOnlineCount,
-              strikeWingOnlineCount = strikeWingOnlineCount,
-              unreadCommsCount = unreadCommsCount,
-              isNetworkOnline = isNetworkOnline,
-              isGoogleAuthenticated = isGoogleAuthenticated,
-              cloudSyncHealth = cloudSyncHealth,
-              bootToNexusHub = bootToNexusHub,
-              isInMatch = isInMatch,
-              isStreaming = isStreaming,
-              focusedOrbitalIndex = focusedOrbitalIndex,
-              overwatchInstances = resolvedOverwatchInstances,
-              activeOverwatchInstance = activeOverwatchInstance,
-              favoriteOverwatchKey = favoriteOverwatchKey,
-              onSelectOverwatchKey = onSelectOverwatchKey,
-              onToggleFavoriteOverwatchKey = onToggleFavoriteOverwatchKey,
-              onQuickZoneIntoOverwatch = { inst ->
-                if (chargedShipId in 1..10) {
-                  onOpenHangarForShip(chargedShipId)
-                }
-                onQuickZoneIntoOverwatch(inst)
-              },
-              overwatchZoom = overwatchZoom,
-              onOverwatchTransformGesture = onOverwatchTransformGesture,
-              onResetOverwatchCamera = onResetOverwatchCamera,
-              onApertureRootBoundsChanged = { cx, cy, r ->
-                if (
-                  abs(hubApertureRootBounds.first - cx) > 0.5f ||
-                    abs(hubApertureRootBounds.second - cy) > 0.5f ||
-                    abs(hubApertureRootBounds.third - r) > 0.5f
-                ) {
-                  hubApertureRootBounds = Triple(cx, cy, r)
-                }
-                onUpdateOverwatchViewport(cx, cy, r)
-              },
-              onToggleBootToNexusHub = onToggleBootToNexusHub,
-              onLeaveMatch = {
-                if (isInMatch) {
-                  showWarpOffConfirmModal = true
-                } else {
-                  onLeaveMatch()
-                }
-              },
-              onEnterPracticeRift = {
-                if (chargedShipId in 1..10) {
-                  onOpenHangarForShip(chargedShipId)
-                }
-                onEnterPracticeRift()
-              },
-              onOpenHowToPlayTutorial = {
-                if (chargedShipId in 1..10) {
-                  onOpenHangarForShip(chargedShipId)
-                }
-                onOpenHowToPlayTutorial()
-              },
-              onCloseModal = onCloseModal,
-              onClickCallsign = {
-                overwatchPrompt = OverwatchCircularPrompt.None
-                sideBayMode = RiftHubSideBayMode.DOSSIER_BAY
-              },
-              onClickResonance = {
-                overwatchPrompt = OverwatchCircularPrompt.None
-                sideBayMode = RiftHubSideBayMode.CONDUIT_BAY
-              },
-              onClickShards = {
-                overwatchPrompt = OverwatchCircularPrompt.None
-                sideBayMode = RiftHubSideBayMode.SHARD_STORE_BAY
-              },
-              onClickSyn = {
-                overwatchPrompt = OverwatchCircularPrompt.None
-                sideBayMode = RiftHubSideBayMode.SYNDICATE_BAY
-              },
-              onClickWing = {
-                overwatchPrompt = OverwatchCircularPrompt.None
-                sideBayMode = RiftHubSideBayMode.SQUADRON_BAY
-              },
-              onClickOnline = {
-                focusedOrbitalIndex = 3
-                onSelectNode(NexusCoreNode.SUBSPACE_COMMS)
-              },
-              onOpenPilotDossier = {
-                focusedOrbitalIndex = 6
-                overwatchPrompt = OverwatchCircularPrompt.None
-                sideBayMode = RiftHubSideBayMode.DOSSIER_BAY
-              },
-              onSelectNode = { idx, node ->
-                focusedOrbitalIndex = idx
-                when (node) {
-                  NexusCoreNode.HANGAR_DECK -> {
-                    overwatchPrompt = OverwatchCircularPrompt.None
-                    sideBayMode = RiftHubSideBayMode.HANGAR_BAY
-                  }
-                  NexusCoreNode.CONVERGENCE_GATE -> {
-                    overwatchPrompt = OverwatchCircularPrompt.None
-                    sideBayMode = RiftHubSideBayMode.GAME_MODES_BAY
-                  }
-                  NexusCoreNode.RIFT_CONDUIT -> {
-                    overwatchPrompt = OverwatchCircularPrompt.None
-                    sideBayMode = RiftHubSideBayMode.CONDUIT_BAY
-                  }
-                  NexusCoreNode.SYNDICATE_CITADEL -> {
-                    overwatchPrompt = OverwatchCircularPrompt.None
-                    sideBayMode =
-                      if (syndicateSubDeck == SyndicateCitadelSubDeck.STRIKE_WING) {
-                        RiftHubSideBayMode.SQUADRON_BAY
-                      } else {
-                        RiftHubSideBayMode.SYNDICATE_BAY
-                      }
-                  }
-                  NexusCoreNode.ARCHIVE_CODEX -> {
-                    overwatchPrompt = OverwatchCircularPrompt.None
-                    sideBayMode =
-                      if (archiveSubDeck == ArchiveCodexSubDeck.TACTICAL_CODEX) {
-                        RiftHubSideBayMode.HELM_CODEX_BAY
-                      } else {
-                        RiftHubSideBayMode.DOSSIER_BAY
-                      }
-                  }
-                  NexusCoreNode.HELM_SYSTEMS -> {
-                    overwatchPrompt = OverwatchCircularPrompt.None
-                    sideBayMode = RiftHubSideBayMode.HELM_CODEX_BAY
-                  }
-                  else -> onSelectNode(node)
-                }
-              },
-              onSwitchAccount = { showSwitchAccountConfirmModal = true },
-            )
-          }
+        params.activeNode == NexusCoreNode.ORBITAL_HUB -> {
+          NexusOrbitalHubStageHost(
+            params = params,
+            uiState = uiState,
+            chargedPrefsKey = chargedPrefsKey,
+            gateDeployShipId = gateDeployShipId,
+            resolvedOverwatchInstances = resolvedOverwatchInstances,
+            activeOverwatchInstance = activeOverwatchInstance,
+            hubStageAlpha = hubStageAlpha,
+          )
         }
         else -> {
-          val terminalChassisShape =
-            CutCornerShape(topStart = 14.dp, topEnd = 8.dp, bottomEnd = 14.dp, bottomStart = 8.dp)
-          Surface(
-            modifier =
-              Modifier.fillMaxSize()
-                .padding(horizontal = 4.dp, vertical = 2.dp)
-                .graphicsLayer {
-                  scaleX = terminalScale
-                  scaleY = terminalScale
-                  alpha = terminalAlpha
-                  translationX = size.width * terminalSlideFraction
-                }
-                .border(
-                  1.35.dp,
-                  Brush.linearGradient(
-                    listOf(Color(0xFF00F5D4), Color(0xFF38BDF8), Color(0xFF1E293B), Color(0xFFFACC15))
-                  ),
-                  terminalChassisShape,
-                ),
-            color = Color.Transparent,
-            shape = terminalChassisShape,
-            shadowElevation = 14.dp,
-          ) {
-            Column(
-              modifier =
-                Modifier.fillMaxSize()
-                  .background(
-                    if (isCalibrationPeekActive) {
-                      Brush.verticalGradient(listOf(Color(0x48091528), Color(0x3D030711)))
-                    } else {
-                      Brush.verticalGradient(
-                        listOf(Color(0xFA091528), Color(0xF8060D1A), Color(0xFC030711))
-                      )
-                    }
-                  )
-                  .drawBehind {
-                    drawLine(
-                      brush =
-                        Brush.horizontalGradient(
-                          listOf(
-                            Color.White.copy(alpha = 0.42f),
-                            Color(0xFF00F5D4).copy(alpha = 0.34f),
-                            Color.Transparent,
-                          )
-                        ),
-                      start = Offset(16.dp.toPx(), 1.4.dp.toPx()),
-                      end = Offset(size.width * 0.62f, 1.4.dp.toPx()),
-                      strokeWidth = 1.2.dp.toPx(),
-                    )
-                  }
-                  .padding(horizontal = 10.dp, vertical = 6.dp),
-              verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-              GlassTerminalTopHeader(
-                activeNode = activeNode,
-                syndicateSubDeck = syndicateSubDeck,
-                onSelectSyndicateSubDeck = onSelectSyndicateSubDeck,
-                archiveSubDeck = archiveSubDeck,
-                onSelectArchiveSubDeck = onSelectArchiveSubDeck,
-                onOpenCodexInHelm = onOpenCodex,
-                armadaCount = armadaSlots.size.coerceAtLeast(1),
-                showClearAi = activeNode == NexusCoreNode.SUBSPACE_COMMS && selectedChannelKey == "#nexus-ai" && messages.isNotEmpty(),
-                isInMatch = isInMatch,
-                onSelectHubCard = { nextCardNode ->
-                  when (nextCardNode) {
-                    NexusCoreNode.HANGAR_DECK -> {
-                      overwatchPrompt = OverwatchCircularPrompt.None
-                      sideBayMode = RiftHubSideBayMode.HANGAR_BAY
-                      onSelectNode(NexusCoreNode.ORBITAL_HUB)
-                    }
-                    else -> {
-                      if (nextCardNode != activeNode) {
-                        onSelectNode(nextCardNode)
-                      }
-                    }
-                  }
-                },
-                onBackToHub = {
-                  overwatchPrompt = OverwatchCircularPrompt.None
-                  sideBayMode = RiftHubSideBayMode.HUB_MAIN
-                  onSelectNode(NexusCoreNode.ORBITAL_HUB)
-                },
-                onClearAi = onClearHistory,
-                onLeaveMatch = {
-                  if (isInMatch) {
-                    showWarpOffConfirmModal = true
-                  } else {
-                    onLeaveMatch()
-                  }
-                },
-                onEnterPracticeRift = onEnterPracticeRift,
-                onCloseToArena = onCloseModal,
-              )
-
-              AnimatedContent(
-                targetState = activeNode,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                transitionSpec = {
-                  val fromOrder = riftHubCardTransitionOrder(initialState)
-                  val toOrder = riftHubCardTransitionOrder(targetState)
-                  val forward = toOrder >= fromOrder
-                  (slideInHorizontally(
-                    animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
-                  ) { fullWidth ->
-                    if (forward) (fullWidth / 5).coerceAtLeast(24) else -(fullWidth / 5).coerceAtLeast(24)
-                  } + fadeIn(animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing)))
-                    .togetherWith(
-                      slideOutHorizontally(
-                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                      ) { fullWidth ->
-                        if (forward) -(fullWidth / 6).coerceAtLeast(20) else (fullWidth / 6).coerceAtLeast(20)
-                      } + fadeOut(animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing))
-                    )
-                    .using(SizeTransform(clip = false))
-                },
-                label = "rift_hub_card_deck_transition",
-              ) { targetCardNode ->
-                Box(modifier = Modifier.fillMaxSize()) {
-                  when {
-                    targetCardNode == NexusCoreNode.CONVERGENCE_GATE -> {
-                      ConvergenceGateZeroScrollDeck(
-                        gateTab = gateTab,
-                        onSelectGateTab = { gateTab = it },
-                        activeArmadaName = activeArmadaName,
-                        armadaSize = armadaSlots.size.coerceAtLeast(1),
-                        syndicateTag = cleanSyndicateTag,
-                        hangarShipSummaryLabel = gateShipStatusSummary,
-                        activeShipId = gateDeployShipId,
-                        bestShipId = resolvedBestShipForGate,
-                        onSelectShipInPlace = { chosenShipId -> chargeShipAcrossAllModes(chosenShipId) },
-                        onOpenStrikeWing = {
-                          overwatchPrompt = OverwatchCircularPrompt.None
-                          sideBayMode = RiftHubSideBayMode.SQUADRON_BAY
-                          onSelectNode(NexusCoreNode.ORBITAL_HUB)
-                        },
-                        activeRankedMode = activeRankedMode,
-                        skirmishBracket = skirmishBracket,
-                        onSelectSkirmishBracket = { skirmishBracket = it.coerceIn(2, 5) },
-                        riftControlBracket = riftControlBracket,
-                        onSelectRiftControlBracket = { riftControlBracket = it },
-                        syndicateWarBracket = syndicateWarBracket,
-                        onSelectSyndicateWarBracket = { syndicateWarBracket = it },
-                        humanPilotCountByMode = humanPilotCountByMode,
-                        canQueueSyndicateWars = canQueueSyndicateWars,
-                        syndicateWarRecord = syndicateWarRecord,
-                        onStageRanked = { mode, bracket -> deployOrStageRankedSelection(mode, bracket) },
-                        engine = engine,
-                        publicCustomGames = publicCustomGames,
-                        onlineHumanPilots = onlineHumanPilots,
-                        customIsPrivateRoom = customIsPrivateRoom,
-                        onTogglePrivateRoom = {
-                          customIsPrivateRoom = it
-                          generatedRoomCode = generateSixCharRoomCode()
-                        },
-                        generatedRoomCode = generatedRoomCode,
-                        joinRoomCodeDraft = joinRoomCodeDraft,
-                        onJoinRoomCodeDraftChange = { raw ->
-                          joinRoomCodeDraft = raw.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(8)
-                        },
-                        roomCodeBanner = roomCodeBanner,
-                        unlockedPrivateCodes = unlockedPrivateCodes,
-                        onJoinByRoomCode = { joinCustomByRoomCode(joinRoomCodeDraft) },
-                        onShareRoomToLfg = {
-                          val activeRoom = engine?.currentCustomGame
-                          val shareCode =
-                            if (activeRoom != null && engine.hasJoinedMatch) extractCustomRoomCode(activeRoom)
-                            else generatedRoomCode
-                          val shareMode =
-                            if (activeRoom != null && engine.hasJoinedMatch) activeRoom.baseMode.title
-                            else customBaseMode.title
-                          onPostPrivateRoomInvite(shareCode, shareMode)
-                          roomCodeBanner = "SHARED JOIN CODE [$shareCode] TO #SQUADRON-LFG"
-                        },
-                        customRefreshTick = customGamesRefreshTick,
-                        customBaseMode = customBaseMode,
-                        onSelectCustomBaseMode = { customBaseMode = it },
-                        customResetMinutes = customResetMinutes,
-                        onSelectCustomResetMinutes = { customResetMinutes = it },
-                        customTeamBracket = customTeamBracket,
-                        onSelectCustomTeamBracket = { customTeamBracket = it },
-                        customAllowArmadasInFfa = customAllowArmadasInFfa,
-                        onToggleAllowArmadasInFfa = { customAllowArmadasInFfa = it },
-                        customBotsEnabled = customBotsEnabled,
-                        onToggleBotsEnabled = {
-                          customBotsEnabled = it
-                          if (it && customBotCount <= 0) customBotCount = 12
-                        },
-                        customBotCount = customBotCount,
-                        onSelectCustomBotCount = { count ->
-                          customBotCount = count.coerceIn(0, 19)
-                          customBotsEnabled = count > 0
-                        },
-                        customBotSkillLevel = customBotSkillLevel,
-                        onSelectCustomBotSkillLevel = { customBotSkillLevel = it.coerceIn(0, 3) },
-                        customScoreCap = customScoreCap,
-                        onSelectCustomScoreCap = { customScoreCap = it.coerceIn(5, 500) },
-                        customBulletSizeMult = customBulletSizeMult,
-                        onSelectBulletSizeMult = { customBulletSizeMult = it },
-                        customSpeedMult = customSpeedMult,
-                        onSelectSpeedMult = { customSpeedMult = it },
-                        customRechargeMult = customRechargeMult,
-                        onSelectRechargeMult = { customRechargeMult = it },
-                        customDamageMult = customDamageMult,
-                        onSelectDamageMult = { customDamageMult = it },
-                        customCrateSpawnMult = customCrateSpawnMult,
-                        onSelectCrateSpawnMult = { customCrateSpawnMult = it },
-                        customDamageTakenScalePct = customDamageTakenScalePct,
-                        onSelectCustomDamageTakenScalePct = { updateCustomDamageTakenScale(it) },
-                        customWeaponFluxCostScalePct = customWeaponFluxCostScalePct,
-                        onSelectCustomWeaponFluxCostScalePct = { updateCustomWeaponFluxCostScale(it) },
-                        onReturnToRankedFfa = {
-                          deployOrStageRankedSelection(RankedGameMode.SECTOR_CONVERGENCE, 20)
-                          customGamesRefreshTick++
-                        },
-                        onJoinCustomInstance = { instanceId ->
-                          val known =
-                            publicCustomGames.firstOrNull {
-                              it.instanceId.equals(instanceId, ignoreCase = true)
-                            }
-                          if (known != null && engine != null) {
-                            if (engine.activeCustomGames.none { it.instanceId.equals(known.instanceId, ignoreCase = true) }) {
-                              engine.activeCustomGames.add(0, known)
-                            }
-                          }
-                          deployOrStageExistingCustom(instanceId)
-                        },
-                        onLaunchCustomGame = {
-                          val prefix = if (customIsPrivateRoom) "priv" else "pub"
-                          val code = generatedRoomCode
-                          if (code !in unlockedPrivateCodes) {
-                            unlockedPrivateCodes.add(code)
-                          }
-                          val modeShort = customBaseMode.title.uppercase(Locale.US)
-                          val cfg =
-                            CustomGameConfig(
-                              instanceId = "${prefix}_${code}",
-                              roomCode = code,
-                              privateRoom = customIsPrivateRoom,
-                              title = "${callsign.uppercase(Locale.US)} $modeShort [$code]",
-                              hostCallsign = callsign,
-                              baseMode = customBaseMode,
-                              teamSizeBracket = customTeamBracket,
-                              matchDurationMinutes = customResetMinutes,
-                              allowArmadasInFfa = customAllowArmadasInFfa,
-                              botsEnabled = customBotsEnabled,
-                              bulletSizeMult = customBulletSizeMult,
-                              damageMult = customDamageMult,
-                              speedMult = customSpeedMult,
-                              healthMult = if (customRechargeMult > 1.0f) 1.25f else 1.0f,
-                              rechargeMult = customRechargeMult,
-                              crateSpawnMult = customCrateSpawnMult,
-                              damageTakenScalePct = customDamageTakenScalePct,
-                              weaponFluxCostScalePct = customWeaponFluxCostScalePct,
-                              botCount = if (customBotsEnabled) customBotCount else 0,
-                              botSkillLevel = customBotSkillLevel,
-                              scoreCap = customScoreCap,
-                            )
-                          generatedRoomCode = generateSixCharRoomCode(System.currentTimeMillis() + 7919L)
-                          deployOrStageNewCustomConfig(cfg)
-                        },
-                      )
-                    }
-                    targetCardNode == NexusCoreNode.SUBSPACE_COMMS -> {
-                      SubspaceCommsDiscordDeck(
-                        selectedChannelKey = selectedChannelKey,
-                        onSelectChannel = { selectedChannelKey = it },
-                        messages = messages,
-                        streamState = streamState,
-                        isStreaming = isStreaming,
-                        lastFailedQuestion = lastFailedQuestion,
-                        listState = listState,
-                        inputQuery = inputQuery,
-                        onInputQueryChange = { inputQuery = it },
-                        onSubmitAiQuery = { submitNexusAiQuery() },
-                        onSendStarterQuestion = onSendQuestion,
-                        onRetryLastQuestion = onRetryLastQuestion,
-                        callsign = callsign,
-                        cleanSyndicateTag = cleanSyndicateTag,
-                        syndicateName = syndicateName,
-                        isLocalArchitect = isLocalArchitect,
-                        isInMatch = isInMatch,
-                        activeRankedModeTitle = activeRankedMode.title,
-                        activeArmadaName = activeArmadaName,
-                        armadaSlots = armadaSlots,
-                        canAccessSyndicateServer = canAccessSyndicateServer,
-                        syndicateCustomChannels = syndicateCustomChannels,
-                        syndicateInvitedGuests = syndicateInvitedGuests,
-                        showChannelManager = showChannelManager,
-                        onToggleChannelManager = { showChannelManager = !showChannelManager },
-                        newChannelDraft = newChannelDraft,
-                        onNewChannelDraftChange = { newChannelDraft = it },
-                        onAddSyndicateChannel = {
-                          if (newChannelDraft.isNotBlank()) {
-                            onAddSyndicateChannel(newChannelDraft)
-                            newChannelDraft = ""
-                          }
-                        },
-                        onDeleteSyndicateChannel = onDeleteSyndicateChannel,
-                        showGuestManager = showGuestManager,
-                        onToggleGuestManager = { showGuestManager = !showGuestManager },
-                        guestCallsignDraft = guestCallsignDraft,
-                        onGuestDraftChange = { guestCallsignDraft = it },
-                        onInviteGuest = {
-                          if (guestCallsignDraft.isNotBlank()) {
-                            onInviteSyndicateGuest(guestCallsignDraft)
-                            guestCallsignDraft = ""
-                          }
-                        },
-                        onRevokeGuest = onRevokeSyndicateGuest,
-                        onOpenSyndicateCitadel = {
-                          overwatchPrompt = OverwatchCircularPrompt.None
-                          sideBayMode = RiftHubSideBayMode.SYNDICATE_BAY
-                          onSelectNode(NexusCoreNode.ORBITAL_HUB)
-                        },
-                        lobbyMessages = lobbyMessages,
-                        localEchoMessages = localEchoMessages,
-                        channelChatInput = channelChatInput,
-                        onChannelChatInputChange = { channelChatInput = it },
-                        onSendToChannel = { key, txt ->
-                          postToCloudChannel(key, txt)
-                          channelChatInput = ""
-                          keyboardController?.hide()
-                        },
-                        onSendVoiceHeartbeat = { voiceKey, payload ->
-                          onSendChannelMessage(voiceKey, payload)
-                        },
-                        bugCategory = bugCategory,
-                        onSelectBugCategory = { bugCategory = it },
-                        bugDescription = bugDescription,
-                        onBugDescriptionChange = { bugDescription = it },
-                        bugStatusBanner = bugStatusBanner,
-                        onSubmitBug = {
-                          val clean = bugDescription.trim()
-                          if (clean.isNotEmpty()) {
-                            onSubmitBugReport(bugCategory, clean)
-                            bugDescription = ""
-                            bugStatusBanner = "ANOMALY LOGGED TO CLOUD SECTOR TELEMETRY [$bugCategory]"
-                            keyboardController?.hide()
-                          }
-                        },
-                        activeCustomRoomCode = engine?.currentCustomGame?.let { extractCustomRoomCode(it) },
-                        activeCustomModeTitle = engine?.currentCustomGame?.baseMode?.title,
-                        onShareRiftFrameBuild = onShareActiveRiftFrameBuild,
-                        onLoadSharedBuild = onLoadSharedRiftFrameBuild,
-                        onAskAiAboutBuild = { prompt ->
-                          selectedChannelKey = "#nexus-ai"
-                          onSendQuestion(prompt)
-                        },
-                        onPostStrikeWingInvite = onPostStrikeWingInvite,
-                        onPostPrivateRoomInvite = onPostPrivateRoomInvite,
-                        onJoinSharedStrikeWing = onJoinSharedStrikeWing,
-                        onJoinCustomRoomCode = { code -> joinCustomByRoomCode(code) },
-                        onlineHumanPilots = onlineHumanPilots,
-                        totalOnlinePilots = totalOnlinePilots,
-                        showOnlineRosterPane = showOnlineRosterPane,
-                        onToggleOnlineRosterPane = { showOnlineRosterPane = !showOnlineRosterPane },
-                        onAddOnlinePilotFriend = onAddOnlinePilotFriend,
-                        onInviteOnlinePilotToWing = onInviteOnlinePilotToWing,
-                      )
-                    }
-                    renderModuleForNode != null -> {
-                      Box(modifier = Modifier.fillMaxSize().testTag("nexus_embedded_module_container")) {
-                        renderModuleForNode(targetCardNode)
-                      }
-                    }
-                    embeddedModuleContent != null -> {
-                      Box(modifier = Modifier.fillMaxSize().testTag("nexus_embedded_module_container")) {
-                        embeddedModuleContent()
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
+          NexusGlassTerminalDeckHost(
+            params = params,
+            uiState = uiState,
+            chargedPrefsKey = chargedPrefsKey,
+            gateDeployShipId = gateDeployShipId,
+            gateShipStatusSummary = gateShipStatusSummary,
+            isLocalArchitect = isLocalArchitect,
+            listState = listState,
+            keyboardController = keyboardController,
+            terminalScale = terminalScale,
+            terminalAlpha = terminalAlpha,
+            terminalSlideFraction = terminalSlideFraction,
+          )
         }
       }
 
-      if (showWarpOffConfirmModal) {
+      if (uiState.showWarpOffConfirmModal) {
         NexusWarpOffConfirmationModal(
-          onStayInRift = { showWarpOffConfirmModal = false },
+          onStayInRift = { uiState.showWarpOffConfirmModal = false },
           onConfirmWarpOff = {
-            showWarpOffConfirmModal = false
-            onLeaveMatch()
+            uiState.showWarpOffConfirmModal = false
+            params.onLeaveMatch()
           },
         )
       }
-      if (showSwitchAccountConfirmModal) {
+      if (uiState.showSwitchAccountConfirmModal) {
         NexusSwitchAccountConfirmationModal(
-          onCancel = { showSwitchAccountConfirmModal = false },
+          onCancel = { uiState.showSwitchAccountConfirmModal = false },
           onConfirmSwitchAccount = {
-            showSwitchAccountConfirmModal = false
-            onSwitchAccount()
+            uiState.showSwitchAccountConfirmModal = false
+            params.onSwitchAccount()
           },
         )
       }
-      if (showHubSurvivalSpreadsheetModal) {
+      if (uiState.showHubSurvivalSpreadsheetModal) {
         SurvivalTelemetrySpreadsheetModal(
-          callsign = callsign,
-          liveResonance = resolvedLiveResonance,
-          uidOrNull = currentUserId.ifBlank { null },
+          callsign = params.callsign,
+          liveResonance = params.resolvedLiveResonance,
+          uidOrNull = params.currentUserId.ifBlank { null },
           localPrefs = localPrefs,
-          onClose = { showHubSurvivalSpreadsheetModal = false },
+          onClose = { uiState.showHubSurvivalSpreadsheetModal = false },
         )
       }
     }
   }
 }
 
-private enum class HubWingSlot {
-  TOP,
-  MIDDLE,
-  BOTTOM,
+@Composable
+private fun NexusOrbitalHubStageHost(
+  params: NexusAiConsoleParams,
+  uiState: NexusConsoleUiState,
+  chargedPrefsKey: String,
+  gateDeployShipId: Int,
+  resolvedOverwatchInstances: List<OverwatchRiftInstance>,
+  activeOverwatchInstance: OverwatchRiftInstance,
+  hubStageAlpha: Float,
+) {
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .pointerInput(uiState.sideBayMode) {
+          awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            val w = size.width.toFloat().coerceAtLeast(1f)
+            val h = size.height.toFloat().coerceAtLeast(1f)
+            uiState.localPrefs.recordHubTapTelemetry(
+              tapXNorm = (down.position.x / w).coerceIn(0f, 1f),
+              tapYNorm = (down.position.y / h).coerceIn(0f, 1f),
+              activeHubView = uiState.sideBayMode.name,
+              targetControlTag = "HUB_${uiState.sideBayMode.name}",
+            )
+          }
+        }
+        .graphicsLayer {
+          alpha = hubStageAlpha
+        }
+  ) {
+    OrbitalHubSpatialStage(
+      callsign = params.callsign,
+      syndicateTag = params.cleanSyndicateTag,
+      syndicateName = params.syndicateName,
+      liveResonance = params.resolvedLiveResonance,
+      riftShards = params.riftShards,
+      activeShipId = gateDeployShipId,
+      bestShipId = params.bestShipId,
+      chargedShipId = uiState.chargedShipId,
+      onChargeShip = { shipToCharge ->
+        uiState.chargeShipAcrossAllModes(shipToCharge, chargedPrefsKey, params)
+      },
+      activeShipSummary = params.activeShipSummary,
+      armadaCount = params.armadaSlots.size.coerceAtLeast(1),
+      activeArmadaName = params.activeArmadaName,
+      armadaSlots = params.armadaSlots,
+      onlineHumanPilots = params.onlineHumanPilots,
+      onResolvePilotBestShipId = params.onResolvePilotBestShipId,
+      onInviteOnlinePilotToWing = { targetPilot ->
+        params.onInviteOnlinePilotToWing(targetPilot)
+        uiState.squadronStatusBanner =
+          "SQUADRON INVITE SENT TO ${targetPilot.callsign.uppercase(Locale.US)}"
+      },
+      onAddOnlinePilotFriend = { targetCallsign ->
+        params.onAddOnlinePilotFriend(targetCallsign)
+        uiState.squadronStatusBanner =
+          "FRIEND REQUEST DISPATCHED TO ${targetCallsign.uppercase(Locale.US)}"
+      },
+      onPostStrikeWingInvite = {
+        params.onPostStrikeWingInvite()
+        uiState.squadronStatusBanner = "BROADCASTED SQUADRON INVITE TO #SQUADRON-LFG"
+      },
+      squadronStatusBanner = uiState.squadronStatusBanner,
+      sideBayMode = uiState.sideBayMode,
+      onChangeSideBayMode = { nextBay ->
+        uiState.overwatchPrompt = OverwatchCircularPrompt.None
+        uiState.sideBayMode = nextBay
+      },
+      overwatchPrompt = uiState.overwatchPrompt,
+      onChangeOverwatchPrompt = { nextPrompt -> uiState.overwatchPrompt = nextPrompt },
+      squadronFilter = uiState.squadronFilter,
+      onSelectSquadronFilter = { uiState.squadronFilter = it },
+      squadronSort = uiState.squadronSort,
+      onToggleSquadronSort = {
+        uiState.squadronSort =
+          if (uiState.squadronSort == SquadronPilotSort.RESONANCE) SquadronPilotSort.ACTIVITY
+          else SquadronPilotSort.RESONANCE
+      },
+      selectedSquadronPilotUid = uiState.selectedSquadronPilotUid,
+      onSelectSquadronPilotUid = { uiState.selectedSquadronPilotUid = it },
+      activeRankedMode = params.activeRankedMode,
+      skirmishBracket = uiState.skirmishBracket,
+      onSelectSkirmishBracket = { uiState.skirmishBracket = it.coerceIn(2, 5) },
+      riftControlBracket = uiState.riftControlBracket,
+      onSelectRiftControlBracket = { uiState.riftControlBracket = it },
+      syndicateWarBracket = uiState.syndicateWarBracket,
+      onSelectSyndicateWarBracket = { uiState.syndicateWarBracket = it },
+      humanPilotCountByMode = params.humanPilotCountByMode,
+      canQueueSyndicateWars = params.canQueueSyndicateWars,
+      onStageRanked = { mode, bracket ->
+        uiState.deployOrStageRankedSelection(mode, bracket, params)
+      },
+      publicCustomGames = params.publicCustomGames,
+      customIsPrivateRoom = uiState.customIsPrivateRoom,
+      onTogglePrivateRoom = {
+        uiState.customIsPrivateRoom = it
+        uiState.generatedRoomCode = generateSixCharRoomCode()
+      },
+      generatedRoomCode = uiState.generatedRoomCode,
+      joinRoomCodeDraft = uiState.joinRoomCodeDraft,
+      onJoinRoomCodeDraftChange = { raw ->
+        uiState.joinRoomCodeDraft =
+          raw.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(8)
+      },
+      roomCodeBanner = uiState.roomCodeBanner,
+      unlockedPrivateCodes = uiState.unlockedPrivateCodes,
+      onJoinByRoomCode = {
+        uiState.joinCustomByRoomCode(uiState.joinRoomCodeDraft, gateDeployShipId, params)
+      },
+      customBaseMode = uiState.customBaseMode,
+      onSelectCustomBaseMode = { uiState.customBaseMode = it },
+      onJoinCustomInstance = { instanceId ->
+        val known =
+          params.publicCustomGames.firstOrNull {
+            it.instanceId.equals(instanceId, ignoreCase = true)
+          }
+        if (known != null && params.engine != null) {
+          if (params.engine.activeCustomGames.none {
+              it.instanceId.equals(known.instanceId, ignoreCase = true)
+            }
+          ) {
+            params.engine.activeCustomGames.add(0, known)
+          }
+        }
+        uiState.deployOrStageExistingCustom(instanceId, gateDeployShipId, params)
+      },
+      onQuickCreateCustomGame = {
+        uiState.launchCustomGameFromDraft(gateDeployShipId, params)
+      },
+      customDamageTakenScalePct = uiState.customDamageTakenScalePct,
+      onSelectCustomDamageTakenScalePct = {
+        uiState.updateCustomDamageTakenScale(it, params.engine)
+      },
+      customWeaponFluxCostScalePct = uiState.customWeaponFluxCostScalePct,
+      onSelectCustomWeaponFluxCostScalePct = {
+        uiState.updateCustomWeaponFluxCostScale(it, params.engine)
+      },
+      customBotCount = uiState.customBotCount,
+      onSelectCustomBotCount = { uiState.customBotCount = it.coerceIn(0, 19) },
+      customBotSkillLevel = uiState.customBotSkillLevel,
+      onSelectCustomBotSkillLevel = { uiState.customBotSkillLevel = it.coerceIn(0, 3) },
+      customResetMinutes = uiState.customResetMinutes,
+      onSelectCustomResetMinutes = { uiState.customResetMinutes = it.coerceIn(5, 60) },
+      customScoreCap = uiState.customScoreCap,
+      onSelectCustomScoreCap = { uiState.customScoreCap = it.coerceIn(10, 200) },
+      customBulletSizeMult = uiState.customBulletSizeMult,
+      onSelectCustomBulletSizeMult = {
+        uiState.customBulletSizeMult = it.coerceIn(0.70f, 1.75f)
+      },
+      onOpenSurvivalSpreadsheet = { uiState.showHubSurvivalSpreadsheetModal = true },
+      onOpenFullCustomGate = {
+        uiState.overwatchPrompt = OverwatchCircularPrompt.None
+        uiState.gateTab = ConvergenceGateTab.CUSTOM_RIFT_GATE
+        params.onSelectNode(NexusCoreNode.CONVERGENCE_GATE)
+      },
+      onOpenShipwrightStudio = { params.onOpenForge() },
+      onOpenFullSquadronModal = {
+        uiState.overwatchPrompt = OverwatchCircularPrompt.None
+        uiState.sideBayMode = RiftHubSideBayMode.SQUADRON_BAY
+      },
+      syndicateWarRecord = params.syndicateWarRecord,
+      syndicateDirectory = params.syndicateDirectory,
+      syndicateStatusMessage = params.syndicateStatusMessage,
+      onJoinOfficialSyndicate = params.onJoinOfficialSyndicate,
+      onLeaveCurrentSyndicate = params.onLeaveCurrentSyndicate,
+      onCharterCustomSyndicate = params.onCharterCustomSyndicate,
+      onClaimDailyDirectiveSlot = { slotIdx -> params.onClaimDailyDirectiveSlot(slotIdx) },
+      onRerollDailyDirectiveSlot = { slotIdx -> params.onRerollDailyDirectiveSlot(slotIdx) },
+      onClaimDailySweepBonus = { params.onClaimDailySweepBonus() },
+      onUnlockOrEquipCosmeticItem = { item ->
+        params.onUnlockOrEquipCosmeticItem(item.category, item)
+      },
+      onUnlockOrSelectFrameSlotId = { slotId -> params.onUnlockOrSelectFrameSlotId(slotId) },
+      activeCustomSlotId = params.activeCustomSlotId,
+      activeCustomSlot = params.activeCustomSlot,
+      pointBudget = params.pointBudget,
+      onSaveCustomSlot = params.onSaveCustomSlot,
+      onShareActiveRiftFrameBuild = params.onShareActiveRiftFrameBuild,
+      cloudLeaderboardEntries = params.cloudLeaderboardEntries,
+      onRenamePilotCallsign = { updated -> params.onRenamePilotCallsign(updated) },
+      onResetLocalPilotTelemetry = params.onResetLocalPilotTelemetry,
+      helmInitialSubDeck = params.helmInitialSubDeck,
+      sfxEnabled = params.sfxEnabled,
+      musicEnabled = params.musicEnabled,
+      musicBpm = params.musicBpm,
+      musicVolume = params.musicVolume,
+      sfxVolume = params.sfxVolume,
+      cameraZoom = params.cameraZoom,
+      playfieldTextScale = params.playfieldTextScale,
+      onToggleSfx = { _ -> params.onToggleSfx() },
+      onToggleMusic = { _ -> params.onToggleMusic() },
+      onChangeMusicBpm = params.onChangeMusicBpm,
+      onChangeMusicVolume = params.onChangeMusicVolume,
+      onChangeSfxVolume = params.onChangeSfxVolume,
+      onChangeCameraZoom = params.onChangeCameraZoom,
+      onChangePlayfieldTextScale = params.onChangePlayfieldTextScale,
+      onOpenChangelogModal = params.onOpenChangelogModal,
+      onOpenAudioSynthForge = params.onOpenAudioSynthForge,
+      updateStatusLabel = params.updateStatusLabel,
+      hasUpdateAvailable = params.hasUpdateAvailable,
+      onCheckOrApplyUpdate = params.onCheckOrApplyUpdate,
+      engine = params.engine,
+      currentUserId = params.currentUserId,
+      totalOnlinePilots = params.totalOnlinePilots,
+      syndicateOnlineCount = params.syndicateOnlineCount,
+      strikeWingOnlineCount = params.strikeWingOnlineCount,
+      unreadCommsCount = params.unreadCommsCount,
+      isNetworkOnline = params.isNetworkOnline,
+      isGoogleAuthenticated = params.isGoogleAuthenticated,
+      cloudSyncHealth = params.cloudSyncHealth,
+      bootToNexusHub = params.bootToNexusHub,
+      isInMatch = params.isInMatch,
+      isStreaming = params.isStreaming,
+      focusedOrbitalIndex = uiState.focusedOrbitalIndex,
+      overwatchInstances = resolvedOverwatchInstances,
+      activeOverwatchInstance = activeOverwatchInstance,
+      favoriteOverwatchKey = params.favoriteOverwatchKey,
+      onSelectOverwatchKey = params.onSelectOverwatchKey,
+      onToggleFavoriteOverwatchKey = params.onToggleFavoriteOverwatchKey,
+      onQuickZoneIntoOverwatch = { inst ->
+        if (uiState.chargedShipId in 1..10) {
+          params.onOpenHangarForShip(uiState.chargedShipId)
+        }
+        params.onQuickZoneIntoOverwatch(inst)
+      },
+      overwatchZoom = params.overwatchZoom,
+      onOverwatchTransformGesture = params.onOverwatchTransformGesture,
+      onResetOverwatchCamera = params.onResetOverwatchCamera,
+      onApertureRootBoundsChanged = { cx, cy, r ->
+        if (
+          abs(uiState.hubApertureRootBounds.first - cx) > 0.5f ||
+            abs(uiState.hubApertureRootBounds.second - cy) > 0.5f ||
+            abs(uiState.hubApertureRootBounds.third - r) > 0.5f
+        ) {
+          uiState.hubApertureRootBounds = Triple(cx, cy, r)
+        }
+        params.onUpdateOverwatchViewport(cx, cy, r)
+      },
+      onToggleBootToNexusHub = params.onToggleBootToNexusHub,
+      onLeaveMatch = {
+        if (params.isInMatch) {
+          uiState.showWarpOffConfirmModal = true
+        } else {
+          params.onLeaveMatch()
+        }
+      },
+      onEnterPracticeRift = {
+        if (uiState.chargedShipId in 1..10) {
+          params.onOpenHangarForShip(uiState.chargedShipId)
+        }
+        params.onEnterPracticeRift()
+      },
+      onOpenHowToPlayTutorial = {
+        if (uiState.chargedShipId in 1..10) {
+          params.onOpenHangarForShip(uiState.chargedShipId)
+        }
+        params.onOpenHowToPlayTutorial()
+      },
+      onCloseModal = params.onCloseModal,
+      onClickCallsign = {
+        uiState.overwatchPrompt = OverwatchCircularPrompt.None
+        uiState.sideBayMode = RiftHubSideBayMode.DOSSIER_BAY
+      },
+      onClickResonance = {
+        uiState.overwatchPrompt = OverwatchCircularPrompt.None
+        uiState.sideBayMode = RiftHubSideBayMode.CONDUIT_BAY
+      },
+      onClickShards = {
+        uiState.overwatchPrompt = OverwatchCircularPrompt.None
+        uiState.sideBayMode = RiftHubSideBayMode.SHARD_STORE_BAY
+      },
+      onClickSyn = {
+        uiState.overwatchPrompt = OverwatchCircularPrompt.None
+        uiState.sideBayMode = RiftHubSideBayMode.SYNDICATE_BAY
+      },
+      onClickWing = {
+        uiState.overwatchPrompt = OverwatchCircularPrompt.None
+        uiState.sideBayMode = RiftHubSideBayMode.SQUADRON_BAY
+      },
+      onClickOnline = {
+        uiState.focusedOrbitalIndex = 3
+        params.onSelectNode(NexusCoreNode.SUBSPACE_COMMS)
+      },
+      onOpenPilotDossier = {
+        uiState.focusedOrbitalIndex = 6
+        uiState.overwatchPrompt = OverwatchCircularPrompt.None
+        uiState.sideBayMode = RiftHubSideBayMode.DOSSIER_BAY
+      },
+      onSelectNode = { idx, node ->
+        uiState.focusedOrbitalIndex = idx
+        when (node) {
+          NexusCoreNode.HANGAR_DECK -> {
+            uiState.overwatchPrompt = OverwatchCircularPrompt.None
+            uiState.sideBayMode = RiftHubSideBayMode.HANGAR_BAY
+          }
+          NexusCoreNode.CONVERGENCE_GATE -> {
+            uiState.overwatchPrompt = OverwatchCircularPrompt.None
+            uiState.sideBayMode = RiftHubSideBayMode.GAME_MODES_BAY
+          }
+          NexusCoreNode.RIFT_CONDUIT -> {
+            uiState.overwatchPrompt = OverwatchCircularPrompt.None
+            uiState.sideBayMode = RiftHubSideBayMode.CONDUIT_BAY
+          }
+          NexusCoreNode.SYNDICATE_CITADEL -> {
+            uiState.overwatchPrompt = OverwatchCircularPrompt.None
+            uiState.sideBayMode =
+              if (params.syndicateSubDeck == SyndicateCitadelSubDeck.STRIKE_WING) {
+                RiftHubSideBayMode.SQUADRON_BAY
+              } else {
+                RiftHubSideBayMode.SYNDICATE_BAY
+              }
+          }
+          NexusCoreNode.ARCHIVE_CODEX -> {
+            uiState.overwatchPrompt = OverwatchCircularPrompt.None
+            uiState.sideBayMode =
+              if (params.archiveSubDeck == ArchiveCodexSubDeck.TACTICAL_CODEX) {
+                RiftHubSideBayMode.HELM_CODEX_BAY
+              } else {
+                RiftHubSideBayMode.DOSSIER_BAY
+              }
+          }
+          NexusCoreNode.HELM_SYSTEMS -> {
+            uiState.overwatchPrompt = OverwatchCircularPrompt.None
+            uiState.sideBayMode = RiftHubSideBayMode.HELM_CODEX_BAY
+          }
+          else -> params.onSelectNode(node)
+        }
+      },
+      onSwitchAccount = { uiState.showSwitchAccountConfirmModal = true },
+    )
+  }
+}
+
+@Composable
+private fun NexusGlassTerminalDeckHost(
+  params: NexusAiConsoleParams,
+  uiState: NexusConsoleUiState,
+  chargedPrefsKey: String,
+  gateDeployShipId: Int,
+  gateShipStatusSummary: String,
+  isLocalArchitect: Boolean,
+  listState: LazyListState,
+  keyboardController: androidx.compose.ui.platform.SoftwareKeyboardController?,
+  terminalScale: Float,
+  terminalAlpha: Float,
+  terminalSlideFraction: Float,
+) {
+  NexusGlassTerminalDeckPanel(
+    terminalScale = terminalScale,
+    terminalAlpha = terminalAlpha,
+    terminalSlideFraction = terminalSlideFraction,
+    isCalibrationPeekActive = params.isCalibrationPeekActive,
+    activeNode = params.activeNode,
+    syndicateSubDeck = params.syndicateSubDeck,
+    onSelectSyndicateSubDeck = params.onSelectSyndicateSubDeck,
+    archiveSubDeck = params.archiveSubDeck,
+    onSelectArchiveSubDeck = params.onSelectArchiveSubDeck,
+    onOpenCodex = params.onOpenCodex,
+    armadaSlots = params.armadaSlots,
+    selectedChannelKey = uiState.selectedChannelKey,
+    onSelectChannel = { uiState.selectedChannelKey = it },
+    messages = params.messages,
+    isInMatch = params.isInMatch,
+    onOpenHangarFromHeader = {
+      uiState.overwatchPrompt = OverwatchCircularPrompt.None
+      uiState.sideBayMode = RiftHubSideBayMode.HANGAR_BAY
+      params.onSelectNode(NexusCoreNode.ORBITAL_HUB)
+    },
+    onSelectNode = params.onSelectNode,
+    onBackToHub = {
+      uiState.overwatchPrompt = OverwatchCircularPrompt.None
+      uiState.sideBayMode = RiftHubSideBayMode.HUB_MAIN
+      params.onSelectNode(NexusCoreNode.ORBITAL_HUB)
+    },
+    onClearHistory = params.onClearHistory,
+    onRequestLeaveMatch = {
+      if (params.isInMatch) uiState.showWarpOffConfirmModal = true else params.onLeaveMatch()
+    },
+    onEnterPracticeRift = params.onEnterPracticeRift,
+    onCloseModal = params.onCloseModal,
+    gateTab = uiState.gateTab,
+    onSelectGateTab = { uiState.gateTab = it },
+    activeArmadaName = params.activeArmadaName,
+    cleanSyndicateTag = params.cleanSyndicateTag,
+    gateShipStatusSummary = gateShipStatusSummary,
+    gateDeployShipId = gateDeployShipId,
+    resolvedBestShipForGate = params.bestShipId.coerceIn(1, 10),
+    onChargeShip = { uiState.chargeShipAcrossAllModes(it, chargedPrefsKey, params) },
+    onOpenSquadronBay = {
+      uiState.overwatchPrompt = OverwatchCircularPrompt.None
+      uiState.sideBayMode = RiftHubSideBayMode.SQUADRON_BAY
+      params.onSelectNode(NexusCoreNode.ORBITAL_HUB)
+    },
+    activeRankedMode = params.activeRankedMode,
+    skirmishBracket = uiState.skirmishBracket,
+    onSelectSkirmishBracket = { uiState.skirmishBracket = it.coerceIn(2, 5) },
+    riftControlBracket = uiState.riftControlBracket,
+    onSelectRiftControlBracket = { uiState.riftControlBracket = it },
+    syndicateWarBracket = uiState.syndicateWarBracket,
+    onSelectSyndicateWarBracket = { uiState.syndicateWarBracket = it },
+    humanPilotCountByMode = params.humanPilotCountByMode,
+    canQueueSyndicateWars = params.canQueueSyndicateWars,
+    syndicateWarRecord = params.syndicateWarRecord,
+    onDeployOrStageRanked = { mode, bracket ->
+      uiState.deployOrStageRankedSelection(mode, bracket, params)
+    },
+    engine = params.engine,
+    publicCustomGames = params.publicCustomGames,
+    onlineHumanPilots = params.onlineHumanPilots,
+    customIsPrivateRoom = uiState.customIsPrivateRoom,
+    onTogglePrivateRoom = {
+      uiState.customIsPrivateRoom = it
+      uiState.generatedRoomCode = generateSixCharRoomCode()
+    },
+    generatedRoomCode = uiState.generatedRoomCode,
+    joinRoomCodeDraft = uiState.joinRoomCodeDraft,
+    onJoinRoomCodeDraftChange = { raw ->
+      uiState.joinRoomCodeDraft =
+        raw.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(8)
+    },
+    roomCodeBanner = uiState.roomCodeBanner,
+    onRoomCodeBannerChange = { uiState.roomCodeBanner = it },
+    unlockedPrivateCodes = uiState.unlockedPrivateCodes,
+    onJoinByRoomCode = {
+      uiState.joinCustomByRoomCode(uiState.joinRoomCodeDraft, gateDeployShipId, params)
+    },
+    onPostPrivateRoomInvite = params.onPostPrivateRoomInvite,
+    customGamesRefreshTick = uiState.customGamesRefreshTick,
+    onIncrementCustomGamesRefreshTick = { uiState.customGamesRefreshTick++ },
+    customBaseMode = uiState.customBaseMode,
+    onSelectCustomBaseMode = { uiState.customBaseMode = it },
+    customResetMinutes = uiState.customResetMinutes,
+    onSelectCustomResetMinutes = { uiState.customResetMinutes = it },
+    customTeamBracket = uiState.customTeamBracket,
+    onSelectCustomTeamBracket = { uiState.customTeamBracket = it },
+    customAllowArmadasInFfa = uiState.customAllowArmadasInFfa,
+    onToggleAllowArmadasInFfa = { uiState.customAllowArmadasInFfa = it },
+    customBotsEnabled = uiState.customBotsEnabled,
+    onToggleBotsEnabled = {
+      uiState.customBotsEnabled = it
+      if (it && uiState.customBotCount <= 0) uiState.customBotCount = 12
+    },
+    customBotCount = uiState.customBotCount,
+    onSelectCustomBotCount = { count ->
+      uiState.customBotCount = count.coerceIn(0, 19)
+      uiState.customBotsEnabled = count > 0
+    },
+    customBotSkillLevel = uiState.customBotSkillLevel,
+    onSelectCustomBotSkillLevel = { uiState.customBotSkillLevel = it.coerceIn(0, 3) },
+    customScoreCap = uiState.customScoreCap,
+    onSelectCustomScoreCap = { uiState.customScoreCap = it.coerceIn(5, 500) },
+    customBulletSizeMult = uiState.customBulletSizeMult,
+    onSelectCustomBulletSizeMult = { uiState.customBulletSizeMult = it },
+    customSpeedMult = uiState.customSpeedMult,
+    onSelectCustomSpeedMult = { uiState.customSpeedMult = it },
+    customRechargeMult = uiState.customRechargeMult,
+    onSelectCustomRechargeMult = { uiState.customRechargeMult = it },
+    customDamageMult = uiState.customDamageMult,
+    onSelectCustomDamageMult = { uiState.customDamageMult = it },
+    customCrateSpawnMult = uiState.customCrateSpawnMult,
+    onSelectCustomCrateSpawnMult = { uiState.customCrateSpawnMult = it },
+    customDamageTakenScalePct = uiState.customDamageTakenScalePct,
+    onUpdateCustomDamageTakenScale = {
+      uiState.updateCustomDamageTakenScale(it, params.engine)
+    },
+    customWeaponFluxCostScalePct = uiState.customWeaponFluxCostScalePct,
+    onUpdateCustomWeaponFluxCostScale = {
+      uiState.updateCustomWeaponFluxCostScale(it, params.engine)
+    },
+    onDeployOrStageExistingCustom = {
+      uiState.deployOrStageExistingCustom(it, gateDeployShipId, params)
+    },
+    onLaunchCustomGame = { uiState.launchCustomGameFromDraft(gateDeployShipId, params) },
+    streamState = params.streamState,
+    isStreaming = params.isStreaming,
+    lastFailedQuestion = params.lastFailedQuestion,
+    listState = listState,
+    inputQuery = uiState.inputQuery,
+    onInputQueryChange = { uiState.inputQuery = it },
+    onSubmitAiQuery = { uiState.submitNexusAiQuery(params, keyboardController) },
+    onSendQuestion = params.onSendQuestion,
+    onRetryLastQuestion = params.onRetryLastQuestion,
+    callsign = params.callsign,
+    syndicateName = params.syndicateName,
+    isLocalArchitect = isLocalArchitect,
+    canAccessSyndicateServer = params.canAccessSyndicateServer,
+    syndicateCustomChannels = params.syndicateCustomChannels,
+    syndicateInvitedGuests = params.syndicateInvitedGuests,
+    showChannelManager = uiState.showChannelManager,
+    onToggleChannelManager = { uiState.showChannelManager = !uiState.showChannelManager },
+    newChannelDraft = uiState.newChannelDraft,
+    onNewChannelDraftChange = { uiState.newChannelDraft = it },
+    onAddSyndicateChannel = {
+      if (uiState.newChannelDraft.isNotBlank()) {
+        params.onAddSyndicateChannel(uiState.newChannelDraft)
+        uiState.newChannelDraft = ""
+      }
+    },
+    onDeleteSyndicateChannel = params.onDeleteSyndicateChannel,
+    showGuestManager = uiState.showGuestManager,
+    onToggleGuestManager = { uiState.showGuestManager = !uiState.showGuestManager },
+    guestCallsignDraft = uiState.guestCallsignDraft,
+    onGuestDraftChange = { uiState.guestCallsignDraft = it },
+    onInviteGuest = {
+      if (uiState.guestCallsignDraft.isNotBlank()) {
+        params.onInviteSyndicateGuest(uiState.guestCallsignDraft)
+        uiState.guestCallsignDraft = ""
+      }
+    },
+    onRevokeGuest = params.onRevokeSyndicateGuest,
+    onOpenSyndicateCitadel = {
+      uiState.overwatchPrompt = OverwatchCircularPrompt.None
+      uiState.sideBayMode = RiftHubSideBayMode.SYNDICATE_BAY
+      params.onSelectNode(NexusCoreNode.ORBITAL_HUB)
+    },
+    lobbyMessages = params.lobbyMessages,
+    localEchoMessages = uiState.localEchoMessages,
+    channelChatInput = uiState.channelChatInput,
+    onChannelChatInputChange = { uiState.channelChatInput = it },
+    onSendToChannel = { key, txt ->
+      uiState.postToCloudChannel(key, txt, params)
+      uiState.channelChatInput = ""
+      keyboardController?.hide()
+    },
+    onSendVoiceHeartbeat = { voiceKey, payload ->
+      params.onSendChannelMessage(voiceKey, payload)
+    },
+    bugCategory = uiState.bugCategory,
+    onSelectBugCategory = { uiState.bugCategory = it },
+    bugDescription = uiState.bugDescription,
+    onBugDescriptionChange = { uiState.bugDescription = it },
+    bugStatusBanner = uiState.bugStatusBanner,
+    onSubmitBug = {
+      val clean = uiState.bugDescription.trim()
+      if (clean.isNotEmpty()) {
+        params.onSubmitBugReport(uiState.bugCategory, clean)
+        uiState.bugDescription = ""
+        uiState.bugStatusBanner =
+          "ANOMALY LOGGED TO CLOUD SECTOR TELEMETRY [${uiState.bugCategory}]"
+        keyboardController?.hide()
+      }
+    },
+    onShareRiftFrameBuild = params.onShareActiveRiftFrameBuild,
+    onLoadSharedBuild = params.onLoadSharedRiftFrameBuild,
+    onPostStrikeWingInvite = params.onPostStrikeWingInvite,
+    onJoinSharedStrikeWing = params.onJoinSharedStrikeWing,
+    onJoinCustomRoomCode = { code ->
+      uiState.joinCustomByRoomCode(code, gateDeployShipId, params)
+    },
+    totalOnlinePilots = params.totalOnlinePilots,
+    showOnlineRosterPane = uiState.showOnlineRosterPane,
+    onToggleOnlineRosterPane = { uiState.showOnlineRosterPane = !uiState.showOnlineRosterPane },
+    onAddOnlinePilotFriend = params.onAddOnlinePilotFriend,
+    onInviteOnlinePilotToWing = params.onInviteOnlinePilotToWing,
+    renderModuleForNode = params.renderModuleForNode,
+    embeddedModuleContent = params.embeddedModuleContent,
+  )
+}
+
+private fun DrawScope.drawNexusOrbitalChassisBackdrop(
+  hubApertureRootBounds: Triple<Float, Float, Float>,
+  modalRootOrigin: Offset,
+) {
+  val w = size.width
+  val h = size.height
+  val (acx, acy, ar) = hubApertureRootBounds
+  val localCx = if (ar > 8f) acx - modalRootOrigin.x else w * 0.5f
+  val localCy = if (ar > 8f) acy - modalRootOrigin.y else h * 0.5f
+  val cutR = if (ar > 8f) ar else min(w, h) * 0.34f
+
+  drawContext.canvas.save()
+  if (ar > 8f) {
+    val maskPath =
+      Path().apply {
+        fillType = PathFillType.EvenOdd
+        addRect(Rect(0f, 0f, w, h))
+        addOval(Rect(localCx - cutR, localCy - cutR, localCx + cutR, localCy + cutR))
+      }
+    drawContext.canvas.clipPath(maskPath)
+  }
+
+  drawRect(
+    brush = Brush.verticalGradient(colors = listOf(Color(0xFF060D1A), Color(0xFF030711), Color(0xFF02050B))),
+    size = size,
+  )
+  drawRect(
+    brush =
+      Brush.radialGradient(
+        colors = listOf(Color(0xFF0B192E), Color(0xFF091528), Color(0xFF060D1A), Color(0xFF02050B)),
+        center = Offset(localCx, localCy),
+        radius = maxOf(w, h) * 0.64f,
+      ),
+    size = size,
+  )
+  for (spoke in 0 until 12) {
+    val rad = spoke * (PI.toFloat() / 6f)
+    val r0 = cutR * 1.05f
+    val r1 = maxOf(w, h) * 0.74f
+    drawLine(
+      color = if (spoke % 3 == 0) Color(0x1E00F5D4) else Color(0x1438BDF8),
+      start = Offset(localCx + cos(rad) * r0, localCy + sin(rad) * r0),
+      end = Offset(localCx + cos(rad) * r1, localCy + sin(rad) * r1),
+      strokeWidth = 0.85.dp.toPx(),
+    )
+  }
+
+  val ring1 = cutR * 1.10f
+  val ring2 = cutR * 1.28f
+  val ring3 = cutR * 1.52f
+  drawCircle(
+    brush = Brush.verticalGradient(listOf(Color(0x4500F5D4), Color(0x2438BDF8), Color(0x32FACC15)), startY = localCy - ring1, endY = localCy + ring1),
+    radius = ring1,
+    center = Offset(localCx, localCy),
+    style = Stroke(width = 1.25.dp.toPx()),
+  )
+  drawCircle(
+    brush = Brush.verticalGradient(listOf(Color(0x28FFD700), Color(0x1838BDF8), Color(0x2600F5D4)), startY = localCy - ring2, endY = localCy + ring2),
+    radius = ring2,
+    center = Offset(localCx, localCy),
+    style = Stroke(width = 0.95.dp.toPx()),
+  )
+  drawCircle(
+    color = Color(0x1438BDF8),
+    radius = ring3,
+    center = Offset(localCx, localCy),
+    style = Stroke(width = 0.8.dp.toPx()),
+  )
+
+  val conduitAnglesDeg = floatArrayOf(-148f, 148f, -32f, 32f)
+  for (i in conduitAnglesDeg.indices) {
+    val rad = conduitAnglesDeg[i] * (PI.toFloat() / 180f)
+    val p0 = Offset(localCx + cos(rad) * (cutR * 1.045f), localCy + sin(rad) * (cutR * 1.045f))
+    val p1 = Offset(localCx + cos(rad) * (ring2 * 1.26f), localCy + sin(rad) * (ring2 * 1.26f))
+    val coreCol =
+      when (i) {
+        0 -> Color(0x4838BDF8)
+        1 -> Color(0x4800F5D4)
+        2 -> Color(0x48FFD700)
+        else -> Color(0x4600F5D4)
+      }
+    drawLine(color = Color(0xC002050B), start = p0, end = p1, strokeWidth = 4.0.dp.toPx(), cap = StrokeCap.Round)
+    drawLine(
+      brush = Brush.linearGradient(listOf(coreCol, Color.Transparent), start = p0, end = p1),
+      start = p0,
+      end = p1,
+      strokeWidth = 1.65.dp.toPx(),
+      cap = StrokeCap.Round,
+    )
+  }
+
+  drawContext.canvas.restore()
+}
+
+@Composable
+private fun NexusGlassTerminalDeckPanel(
+  terminalScale: Float,
+  terminalAlpha: Float,
+  terminalSlideFraction: Float,
+  isCalibrationPeekActive: Boolean,
+  activeNode: NexusCoreNode,
+  syndicateSubDeck: SyndicateCitadelSubDeck,
+  onSelectSyndicateSubDeck: (SyndicateCitadelSubDeck) -> Unit,
+  archiveSubDeck: ArchiveCodexSubDeck,
+  onSelectArchiveSubDeck: (ArchiveCodexSubDeck) -> Unit,
+  onOpenCodex: () -> Unit,
+  armadaSlots: List<ArmadaMemberSlot>,
+  selectedChannelKey: String,
+  onSelectChannel: (String) -> Unit,
+  messages: List<NexusChatMessage>,
+  isInMatch: Boolean,
+  onOpenHangarFromHeader: () -> Unit,
+  onSelectNode: (NexusCoreNode) -> Unit,
+  onBackToHub: () -> Unit,
+  onClearHistory: () -> Unit,
+  onRequestLeaveMatch: () -> Unit,
+  onEnterPracticeRift: () -> Unit,
+  onCloseModal: () -> Unit,
+  gateTab: ConvergenceGateTab,
+  onSelectGateTab: (ConvergenceGateTab) -> Unit,
+  activeArmadaName: String,
+  cleanSyndicateTag: String,
+  gateShipStatusSummary: String,
+  gateDeployShipId: Int,
+  resolvedBestShipForGate: Int,
+  onChargeShip: (Int) -> Unit,
+  onOpenSquadronBay: () -> Unit,
+  activeRankedMode: RankedGameMode,
+  skirmishBracket: Int,
+  onSelectSkirmishBracket: (Int) -> Unit,
+  riftControlBracket: Int,
+  onSelectRiftControlBracket: (Int) -> Unit,
+  syndicateWarBracket: Int,
+  onSelectSyndicateWarBracket: (Int) -> Unit,
+  humanPilotCountByMode: (RankedGameMode) -> Int,
+  canQueueSyndicateWars: Pair<Boolean, String>,
+  syndicateWarRecord: SyndicateWarRecord,
+  onDeployOrStageRanked: (RankedGameMode, Int) -> Unit,
+  engine: RiftGameEngine?,
+  publicCustomGames: List<CustomGameConfig>,
+  onlineHumanPilots: List<LivePilotState>,
+  customIsPrivateRoom: Boolean,
+  onTogglePrivateRoom: (Boolean) -> Unit,
+  generatedRoomCode: String,
+  joinRoomCodeDraft: String,
+  onJoinRoomCodeDraftChange: (String) -> Unit,
+  roomCodeBanner: String?,
+  onRoomCodeBannerChange: (String) -> Unit,
+  unlockedPrivateCodes: MutableList<String>,
+  onJoinByRoomCode: () -> Unit,
+  onPostPrivateRoomInvite: (String, String) -> Unit,
+  customGamesRefreshTick: Int,
+  onIncrementCustomGamesRefreshTick: () -> Unit,
+  customBaseMode: RankedGameMode,
+  onSelectCustomBaseMode: (RankedGameMode) -> Unit,
+  customResetMinutes: Int,
+  onSelectCustomResetMinutes: (Int) -> Unit,
+  customTeamBracket: Int,
+  onSelectCustomTeamBracket: (Int) -> Unit,
+  customAllowArmadasInFfa: Boolean,
+  onToggleAllowArmadasInFfa: (Boolean) -> Unit,
+  customBotsEnabled: Boolean,
+  onToggleBotsEnabled: (Boolean) -> Unit,
+  customBotCount: Int,
+  onSelectCustomBotCount: (Int) -> Unit,
+  customBotSkillLevel: Int,
+  onSelectCustomBotSkillLevel: (Int) -> Unit,
+  customScoreCap: Int,
+  onSelectCustomScoreCap: (Int) -> Unit,
+  customBulletSizeMult: Float,
+  onSelectCustomBulletSizeMult: (Float) -> Unit,
+  customSpeedMult: Float,
+  onSelectCustomSpeedMult: (Float) -> Unit,
+  customRechargeMult: Float,
+  onSelectCustomRechargeMult: (Float) -> Unit,
+  customDamageMult: Float,
+  onSelectCustomDamageMult: (Float) -> Unit,
+  customCrateSpawnMult: Float,
+  onSelectCustomCrateSpawnMult: (Float) -> Unit,
+  customDamageTakenScalePct: Int,
+  onUpdateCustomDamageTakenScale: (Int) -> Unit,
+  customWeaponFluxCostScalePct: Int,
+  onUpdateCustomWeaponFluxCostScale: (Int) -> Unit,
+  onDeployOrStageExistingCustom: (String) -> Unit,
+  onLaunchCustomGame: () -> Unit,
+  streamState: NexusStreamState,
+  isStreaming: Boolean,
+  lastFailedQuestion: String?,
+  listState: LazyListState,
+  inputQuery: String,
+  onInputQueryChange: (String) -> Unit,
+  onSubmitAiQuery: () -> Unit,
+  onSendQuestion: (String) -> Unit,
+  onRetryLastQuestion: () -> Unit,
+  callsign: String,
+  syndicateName: String,
+  isLocalArchitect: Boolean,
+  canAccessSyndicateServer: Boolean,
+  syndicateCustomChannels: List<String>,
+  syndicateInvitedGuests: Set<String>,
+  showChannelManager: Boolean,
+  onToggleChannelManager: () -> Unit,
+  newChannelDraft: String,
+  onNewChannelDraftChange: (String) -> Unit,
+  onAddSyndicateChannel: () -> Unit,
+  onDeleteSyndicateChannel: (String) -> Unit,
+  showGuestManager: Boolean,
+  onToggleGuestManager: () -> Unit,
+  guestCallsignDraft: String,
+  onGuestDraftChange: (String) -> Unit,
+  onInviteGuest: () -> Unit,
+  onRevokeGuest: (String) -> Unit,
+  onOpenSyndicateCitadel: () -> Unit,
+  lobbyMessages: List<SyndicateChatMessage>,
+  localEchoMessages: Map<String, List<SyndicateChatMessage>>,
+  channelChatInput: String,
+  onChannelChatInputChange: (String) -> Unit,
+  onSendToChannel: (String, String) -> Unit,
+  onSendVoiceHeartbeat: (String, String) -> Unit,
+  bugCategory: String,
+  onSelectBugCategory: (String) -> Unit,
+  bugDescription: String,
+  onBugDescriptionChange: (String) -> Unit,
+  bugStatusBanner: String?,
+  onSubmitBug: () -> Unit,
+  onShareRiftFrameBuild: () -> Unit,
+  onLoadSharedBuild: (String) -> Unit,
+  onPostStrikeWingInvite: () -> Unit,
+  onJoinSharedStrikeWing: (SyndicateChatMessage) -> Unit,
+  onJoinCustomRoomCode: (String) -> Unit,
+  totalOnlinePilots: Int,
+  showOnlineRosterPane: Boolean,
+  onToggleOnlineRosterPane: () -> Unit,
+  onAddOnlinePilotFriend: (String) -> Unit,
+  onInviteOnlinePilotToWing: (LivePilotState) -> Unit,
+  renderModuleForNode: (@Composable (NexusCoreNode) -> Unit)?,
+  embeddedModuleContent: (@Composable () -> Unit)?,
+) {
+  val terminalChassisShape =
+    CutCornerShape(topStart = 14.dp, topEnd = 8.dp, bottomEnd = 14.dp, bottomStart = 8.dp)
+  Surface(
+    modifier =
+      Modifier.fillMaxSize()
+        .padding(horizontal = 4.dp, vertical = 2.dp)
+        .graphicsLayer {
+          scaleX = terminalScale
+          scaleY = terminalScale
+          alpha = terminalAlpha
+          translationX = size.width * terminalSlideFraction
+        }
+        .border(
+          1.35.dp,
+          Brush.linearGradient(
+            listOf(Color(0xFF00F5D4), Color(0xFF38BDF8), Color(0xFF1E293B), Color(0xFFFACC15))
+          ),
+          terminalChassisShape,
+        ),
+    color = Color.Transparent,
+    shape = terminalChassisShape,
+    shadowElevation = 14.dp,
+  ) {
+    Column(
+      modifier =
+        Modifier.fillMaxSize()
+          .background(
+            if (isCalibrationPeekActive) {
+              Brush.verticalGradient(listOf(Color(0x48091528), Color(0x3D030711)))
+            } else {
+              Brush.verticalGradient(
+                listOf(Color(0xFA091528), Color(0xF8060D1A), Color(0xFC030711))
+              )
+            }
+          )
+          .drawBehind {
+            drawLine(
+              brush =
+                Brush.horizontalGradient(
+                  listOf(
+                    Color.White.copy(alpha = 0.42f),
+                    Color(0xFF00F5D4).copy(alpha = 0.34f),
+                    Color.Transparent,
+                  )
+                ),
+              start = Offset(16.dp.toPx(), 1.4.dp.toPx()),
+              end = Offset(size.width * 0.62f, 1.4.dp.toPx()),
+              strokeWidth = 1.2.dp.toPx(),
+            )
+          }
+          .padding(horizontal = 10.dp, vertical = 6.dp),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      GlassTerminalTopHeader(
+        activeNode = activeNode,
+        syndicateSubDeck = syndicateSubDeck,
+        onSelectSyndicateSubDeck = onSelectSyndicateSubDeck,
+        archiveSubDeck = archiveSubDeck,
+        onSelectArchiveSubDeck = onSelectArchiveSubDeck,
+        onOpenCodexInHelm = onOpenCodex,
+        armadaCount = armadaSlots.size.coerceAtLeast(1),
+        showClearAi = activeNode == NexusCoreNode.SUBSPACE_COMMS && selectedChannelKey == "#nexus-ai" && messages.isNotEmpty(),
+        isInMatch = isInMatch,
+        onSelectHubCard = { nextCardNode ->
+          when (nextCardNode) {
+            NexusCoreNode.HANGAR_DECK -> onOpenHangarFromHeader()
+            else -> {
+              if (nextCardNode != activeNode) {
+                onSelectNode(nextCardNode)
+              }
+            }
+          }
+        },
+        onBackToHub = onBackToHub,
+        onClearAi = onClearHistory,
+        onLeaveMatch = onRequestLeaveMatch,
+        onEnterPracticeRift = onEnterPracticeRift,
+        onCloseToArena = onCloseModal,
+      )
+
+      AnimatedContent(
+        targetState = activeNode,
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        transitionSpec = {
+          val fromOrder = riftHubCardTransitionOrder(initialState)
+          val toOrder = riftHubCardTransitionOrder(targetState)
+          val forward = toOrder >= fromOrder
+          (slideInHorizontally(
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+          ) { fullWidth ->
+            if (forward) (fullWidth / 5).coerceAtLeast(24) else -(fullWidth / 5).coerceAtLeast(24)
+          } + fadeIn(animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing)))
+            .togetherWith(
+              slideOutHorizontally(
+                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+              ) { fullWidth ->
+                if (forward) -(fullWidth / 6).coerceAtLeast(20) else (fullWidth / 6).coerceAtLeast(20)
+              } + fadeOut(animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing))
+            )
+            .using(SizeTransform(clip = false))
+        },
+        label = "rift_hub_card_deck_transition",
+      ) { targetCardNode ->
+        Box(modifier = Modifier.fillMaxSize()) {
+          when {
+            targetCardNode == NexusCoreNode.CONVERGENCE_GATE -> {
+              ConvergenceGateZeroScrollDeck(
+                gateTab = gateTab,
+                onSelectGateTab = onSelectGateTab,
+                activeArmadaName = activeArmadaName,
+                armadaSize = armadaSlots.size.coerceAtLeast(1),
+                syndicateTag = cleanSyndicateTag,
+                hangarShipSummaryLabel = gateShipStatusSummary,
+                activeShipId = gateDeployShipId,
+                bestShipId = resolvedBestShipForGate,
+                onSelectShipInPlace = onChargeShip,
+                onOpenStrikeWing = onOpenSquadronBay,
+                activeRankedMode = activeRankedMode,
+                skirmishBracket = skirmishBracket,
+                onSelectSkirmishBracket = onSelectSkirmishBracket,
+                riftControlBracket = riftControlBracket,
+                onSelectRiftControlBracket = onSelectRiftControlBracket,
+                syndicateWarBracket = syndicateWarBracket,
+                onSelectSyndicateWarBracket = onSelectSyndicateWarBracket,
+                humanPilotCountByMode = humanPilotCountByMode,
+                canQueueSyndicateWars = canQueueSyndicateWars,
+                syndicateWarRecord = syndicateWarRecord,
+                onStageRanked = onDeployOrStageRanked,
+                engine = engine,
+                publicCustomGames = publicCustomGames,
+                onlineHumanPilots = onlineHumanPilots,
+                customIsPrivateRoom = customIsPrivateRoom,
+                onTogglePrivateRoom = onTogglePrivateRoom,
+                generatedRoomCode = generatedRoomCode,
+                joinRoomCodeDraft = joinRoomCodeDraft,
+                onJoinRoomCodeDraftChange = onJoinRoomCodeDraftChange,
+                roomCodeBanner = roomCodeBanner,
+                unlockedPrivateCodes = unlockedPrivateCodes,
+                onJoinByRoomCode = onJoinByRoomCode,
+                onShareRoomToLfg = {
+                  val activeRoom = engine?.currentCustomGame
+                  val shareCode =
+                    if (activeRoom != null && engine.hasJoinedMatch) extractCustomRoomCode(activeRoom)
+                    else generatedRoomCode
+                  val shareMode =
+                    if (activeRoom != null && engine.hasJoinedMatch) activeRoom.baseMode.title
+                    else customBaseMode.title
+                  onPostPrivateRoomInvite(shareCode, shareMode)
+                  onRoomCodeBannerChange("SHARED JOIN CODE [$shareCode] TO #SQUADRON-LFG")
+                },
+                customRefreshTick = customGamesRefreshTick,
+                customBaseMode = customBaseMode,
+                onSelectCustomBaseMode = onSelectCustomBaseMode,
+                customResetMinutes = customResetMinutes,
+                onSelectCustomResetMinutes = onSelectCustomResetMinutes,
+                customTeamBracket = customTeamBracket,
+                onSelectCustomTeamBracket = onSelectCustomTeamBracket,
+                customAllowArmadasInFfa = customAllowArmadasInFfa,
+                onToggleAllowArmadasInFfa = onToggleAllowArmadasInFfa,
+                customBotsEnabled = customBotsEnabled,
+                onToggleBotsEnabled = onToggleBotsEnabled,
+                customBotCount = customBotCount,
+                onSelectCustomBotCount = onSelectCustomBotCount,
+                customBotSkillLevel = customBotSkillLevel,
+                onSelectCustomBotSkillLevel = onSelectCustomBotSkillLevel,
+                customScoreCap = customScoreCap,
+                onSelectCustomScoreCap = onSelectCustomScoreCap,
+                customBulletSizeMult = customBulletSizeMult,
+                onSelectBulletSizeMult = onSelectCustomBulletSizeMult,
+                customSpeedMult = customSpeedMult,
+                onSelectSpeedMult = onSelectCustomSpeedMult,
+                customRechargeMult = customRechargeMult,
+                onSelectRechargeMult = onSelectCustomRechargeMult,
+                customDamageMult = customDamageMult,
+                onSelectDamageMult = onSelectCustomDamageMult,
+                customCrateSpawnMult = customCrateSpawnMult,
+                onSelectCrateSpawnMult = onSelectCustomCrateSpawnMult,
+                customDamageTakenScalePct = customDamageTakenScalePct,
+                onSelectCustomDamageTakenScalePct = onUpdateCustomDamageTakenScale,
+                customWeaponFluxCostScalePct = customWeaponFluxCostScalePct,
+                onSelectCustomWeaponFluxCostScalePct = onUpdateCustomWeaponFluxCostScale,
+                onReturnToRankedFfa = {
+                  onDeployOrStageRanked(RankedGameMode.SECTOR_CONVERGENCE, 20)
+                  onIncrementCustomGamesRefreshTick()
+                },
+                onJoinCustomInstance = { instanceId ->
+                  val known =
+                    publicCustomGames.firstOrNull {
+                      it.instanceId.equals(instanceId, ignoreCase = true)
+                    }
+                  if (known != null && engine != null) {
+                    if (engine.activeCustomGames.none { it.instanceId.equals(known.instanceId, ignoreCase = true) }) {
+                      engine.activeCustomGames.add(0, known)
+                    }
+                  }
+                  onDeployOrStageExistingCustom(instanceId)
+                },
+                onLaunchCustomGame = onLaunchCustomGame,
+              )
+            }
+            targetCardNode == NexusCoreNode.SUBSPACE_COMMS -> {
+              SubspaceCommsDiscordDeck(
+                selectedChannelKey = selectedChannelKey,
+                onSelectChannel = onSelectChannel,
+                messages = messages,
+                streamState = streamState,
+                isStreaming = isStreaming,
+                lastFailedQuestion = lastFailedQuestion,
+                listState = listState,
+                inputQuery = inputQuery,
+                onInputQueryChange = onInputQueryChange,
+                onSubmitAiQuery = onSubmitAiQuery,
+                onSendStarterQuestion = onSendQuestion,
+                onRetryLastQuestion = onRetryLastQuestion,
+                callsign = callsign,
+                cleanSyndicateTag = cleanSyndicateTag,
+                syndicateName = syndicateName,
+                isLocalArchitect = isLocalArchitect,
+                isInMatch = isInMatch,
+                activeRankedModeTitle = activeRankedMode.title,
+                activeArmadaName = activeArmadaName,
+                armadaSlots = armadaSlots,
+                canAccessSyndicateServer = canAccessSyndicateServer,
+                syndicateCustomChannels = syndicateCustomChannels,
+                syndicateInvitedGuests = syndicateInvitedGuests,
+                showChannelManager = showChannelManager,
+                onToggleChannelManager = onToggleChannelManager,
+                newChannelDraft = newChannelDraft,
+                onNewChannelDraftChange = onNewChannelDraftChange,
+                onAddSyndicateChannel = onAddSyndicateChannel,
+                onDeleteSyndicateChannel = onDeleteSyndicateChannel,
+                showGuestManager = showGuestManager,
+                onToggleGuestManager = onToggleGuestManager,
+                guestCallsignDraft = guestCallsignDraft,
+                onGuestDraftChange = onGuestDraftChange,
+                onInviteGuest = onInviteGuest,
+                onRevokeGuest = onRevokeGuest,
+                onOpenSyndicateCitadel = onOpenSyndicateCitadel,
+                lobbyMessages = lobbyMessages,
+                localEchoMessages = localEchoMessages,
+                channelChatInput = channelChatInput,
+                onChannelChatInputChange = onChannelChatInputChange,
+                onSendToChannel = onSendToChannel,
+                onSendVoiceHeartbeat = onSendVoiceHeartbeat,
+                bugCategory = bugCategory,
+                onSelectBugCategory = onSelectBugCategory,
+                bugDescription = bugDescription,
+                onBugDescriptionChange = onBugDescriptionChange,
+                bugStatusBanner = bugStatusBanner,
+                onSubmitBug = onSubmitBug,
+                activeCustomRoomCode = engine?.currentCustomGame?.let { extractCustomRoomCode(it) },
+                activeCustomModeTitle = engine?.currentCustomGame?.baseMode?.title,
+                onShareRiftFrameBuild = onShareRiftFrameBuild,
+                onLoadSharedBuild = onLoadSharedBuild,
+                onAskAiAboutBuild = { prompt ->
+                  onSelectChannel("#nexus-ai")
+                  onSendQuestion(prompt)
+                },
+                onPostStrikeWingInvite = onPostStrikeWingInvite,
+                onPostPrivateRoomInvite = onPostPrivateRoomInvite,
+                onJoinSharedStrikeWing = onJoinSharedStrikeWing,
+                onJoinCustomRoomCode = onJoinCustomRoomCode,
+                onlineHumanPilots = onlineHumanPilots,
+                totalOnlinePilots = totalOnlinePilots,
+                showOnlineRosterPane = showOnlineRosterPane,
+                onToggleOnlineRosterPane = onToggleOnlineRosterPane,
+                onAddOnlinePilotFriend = onAddOnlinePilotFriend,
+                onInviteOnlinePilotToWing = onInviteOnlinePilotToWing,
+              )
+            }
+            renderModuleForNode != null -> {
+              Box(modifier = Modifier.fillMaxSize().testTag("nexus_embedded_module_container")) {
+                renderModuleForNode(targetCardNode)
+              }
+            }
+            embeddedModuleContent != null -> {
+              Box(modifier = Modifier.fillMaxSize().testTag("nexus_embedded_module_container")) {
+                embeddedModuleContent()
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 @Composable
@@ -2581,6 +3297,16 @@ private fun OrbitalHubSpatialStage(
   onSelectCustomDamageTakenScalePct: (Int) -> Unit = {},
   customWeaponFluxCostScalePct: Int = 100,
   onSelectCustomWeaponFluxCostScalePct: (Int) -> Unit = {},
+  customBotCount: Int = 12,
+  onSelectCustomBotCount: (Int) -> Unit = {},
+  customBotSkillLevel: Int = 1,
+  onSelectCustomBotSkillLevel: (Int) -> Unit = {},
+  customResetMinutes: Int = 10,
+  onSelectCustomResetMinutes: (Int) -> Unit = {},
+  customScoreCap: Int = 50,
+  onSelectCustomScoreCap: (Int) -> Unit = {},
+  customBulletSizeMult: Float = 1.0f,
+  onSelectCustomBulletSizeMult: (Float) -> Unit = {},
   onOpenSurvivalSpreadsheet: () -> Unit = {},
   onOpenFullCustomGate: () -> Unit = {},
   onOpenShipwrightStudio: () -> Unit = {},
@@ -2668,6 +3394,8 @@ private fun OrbitalHubSpatialStage(
   val headless = remember { isHeadlessGlEnvironment() }
   val localPrefs = remember(context) { LocalPilotPrefs(context) }
   var renameDraftState by remember(callsign) { mutableStateOf(callsign) }
+  var storePurchaseBanner by remember { mutableStateOf<String?>(null) }
+  var liveShardsBonus by remember(riftShards) { mutableStateOf(0L) }
 
   // Live 1-second ticker for the 1-hour public match reset / active match countdown
   val nowEpochMs by
@@ -2732,16 +3460,24 @@ private fun OrbitalHubSpatialStage(
 
   val shardText =
     if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) "999,999"
-    else String.format(Locale.US, "%,d", riftShards)
+    else String.format(Locale.US, "%,d", (riftShards + liveShardsBonus).coerceAtLeast(0L))
   val formattedLiveResonance =
     remember(liveResonance) { String.format(Locale.US, "%,d", liveResonance) }
   val pilotIdentityLabel =
     if (syndicateTag.isNotBlank()) "[$syndicateTag] $callsign" else callsign
+  val cleanSyndicateDisplayTitle =
+    if (syndicateTag.isBlank()) {
+      "UNAFFILIATED"
+    } else {
+      syndicateName.trim().takeIf {
+        it.isNotBlank() &&
+          !it.equals("GUEST", ignoreCase = true) &&
+          !it.equals("NONE", ignoreCase = true) &&
+          !it.equals("UNAFFILIATED", ignoreCase = true)
+      } ?: "[$syndicateTag]"
+    }
 
-  val activeCrestRecipe = RiftVisualForgeState.activeSyndicateCrestRecipe
-  val spriteRev = RiftSpriteBaker.spriteVisualRevision
   val customShipRev = RiftSpriteBaker.customShip9Version
-  val hullTrim = RiftSpriteBaker.activeHullTrimStyle
   val clampedShipId = activeShipId.coerceIn(1, 10)
   val resolvedBestShipId = bestShipId.coerceIn(1, 10)
   val hasChargedShip = chargedShipId in 1..10
@@ -2941,81 +3677,8 @@ private fun OrbitalHubSpatialStage(
     else "$completedDirectives/${directives.size.coerceAtLeast(1)} QUESTS"
   val conduitPrimaryStat = conduitTier.title.uppercase(Locale.US)
 
-  val forgePrimaryStat = "1:1 ARENA & HULL TRIM"
-  val forgeBadge = "STUDIO"
-
-  val commsBadge =
-    if (unreadCommsCount > 0) "$unreadCommsCount NEW" else "VOICE + AI"
-  val commsPrimaryStat =
-    if (unreadCommsCount > 0) "$unreadCommsCount UNREAD MESSAGES"
-    else "SECTOR CHAT, VOICE & RIFT AI"
-
-  val cleanSyndicateDisplayTitle =
-    remember(syndicateTag, syndicateName) {
-      syndicateName.trim().takeIf { raw ->
-        syndicateTag.isNotBlank() &&
-          raw.isNotBlank() &&
-          raw.uppercase(Locale.US) !in
-            setOf("UNAFFILIATED", "GUEST", "NONE", "SOLO", "FREE", "RFT", "DRIFTER")
-      }?.uppercase(Locale.US) ?: "UNAFFILIATED"
-    }
-  val citadelBadge = if (syndicateTag.isNotBlank()) "[$syndicateTag]" else "SOLO"
-  val squadronBadgeText = "${armadaCount.coerceIn(1, 5)}/5"
-  val squadronPrimaryStat =
-    if (activeArmadaName.isNotBlank()) "[$activeArmadaName]"
-    else "${maxOf(strikeWingOnlineCount, armadaCount)}/5 READY"
-
   val peakResonance =
     maxOf(liveResonance, localPrefs.getPeakResonance(currentUserId.ifBlank { null }))
-  val totalWins = localPrefs.getConvergencesWon()
-  val archiveBadge = if (totalWins > 0L) "${totalWins}W" else "RECORD"
-  val archivePrimaryStat = "PEAK ${String.format(Locale.US, "%,d", peakResonance)}"
-
-  val hangarEmblem =
-    remember(hangarIndicatedShipId, spriteRev, customShipRev, hullTrim) {
-      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
-        moduleKey = "HANGAR",
-        activeShipId = hangarIndicatedShipId,
-        sizePx = 192,
-      ).asImageBitmap()
-    }
-  val conduitEmblem =
-    remember(spriteRev) {
-      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
-        moduleKey = "CONDUIT",
-        sizePx = 192,
-      ).asImageBitmap()
-    }
-  val forgeEmblem =
-    remember(spriteRev) {
-      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
-        moduleKey = "FORGE",
-        sizePx = 192,
-      ).asImageBitmap()
-    }
-  val commsEmblem =
-    remember(spriteRev) {
-      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
-        moduleKey = "COMMS",
-        sizePx = 192,
-      ).asImageBitmap()
-    }
-  val citadelEmblem =
-    remember(spriteRev, activeCrestRecipe, syndicateTag) {
-      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
-        moduleKey = "CITADEL",
-        crestRecipe = activeCrestRecipe,
-        syndicateTag = syndicateTag,
-        sizePx = 192,
-      ).asImageBitmap()
-    }
-  val archiveEmblem =
-    remember(spriteRev) {
-      RiftSpriteBaker.getNexusHubModuleEmblemBitmap(
-        moduleKey = "ARCHIVE",
-        sizePx = 192,
-      ).asImageBitmap()
-    }
 
   val syncHealthy =
     isNetworkOnline &&
@@ -3103,7 +3766,10 @@ private fun OrbitalHubSpatialStage(
         onChargeShip = { chosenShip ->
           onChargeShip(chosenShip)
           onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
-          onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+        },
+        onCustomizeRiftFrame = {
+          onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+          onChangeSideBayMode(RiftHubSideBayMode.RIFT_FRAME_BAY)
         },
         onDismissPrompt = { onChangeOverwatchPrompt(OverwatchCircularPrompt.None) },
         onSquadUpPilot = { pilotItem ->
@@ -3159,7 +3825,7 @@ private fun OrbitalHubSpatialStage(
           when (mode) {
             RiftHubSideBayMode.HUB_MAIN -> {
               val frameShortSlot = activeCustomSlot.slotId.uppercase(Locale.US)
-              val framePointsUsed = activeCustomSlot.totalAllocatedPoints()
+              val framePointsUsed = activeCustomSlot.clampToPointBudget(pointBudget.coerceAtLeast(100)).totalAllocatedPoints()
               val isRiftFrameCharged = chargedShipId == 10
               Column(
                 modifier = Modifier.fillMaxSize(),
@@ -3176,23 +3842,19 @@ private fun OrbitalHubSpatialStage(
                   onSwitchAccount = onSwitchAccount,
                 )
 
-                SculptedHubModulePlate(
+                RiftVerticalCard(
                   modifier = Modifier.weight(1f).fillMaxWidth(),
                   title = "HANGAR DECK",
-                  primaryStat = hangarPrimaryStat,
-                  detailCue =
-                    if (hasChargedShip) "CHARGED • ORBITING FLUX LOCK"
-                    else "10 SHIPS • TAP TO CHARGE HULL",
-                  emblemBitmap = hangarEmblem,
+                  subtitle = "Choose and charge ships",
                   accent = if (hasChargedShip) Color(0xFF00F5D4) else Color(0xFF38BDF8),
                   secondaryAccent = if (hasChargedShip) Color(0xFF00F5D4) else Color(0xFFFFD700),
-                  badgeText = hangarBadgeText,
-                  isFocused = focusedOrbitalIndex == 1,
                   isRightColumn = false,
-                  slotPosition = HubWingSlot.TOP,
+                  isHighlighted = focusedOrbitalIndex == 1 || hasChargedShip,
+                  badgeText = "$hangarPrimaryStat • $hangarBadgeText",
+                  badgeColor = if (hasChargedShip) Color(0xFF00F5D4) else Color(0xFFFACC15),
                   isTabletDeck = isTabletDeck,
                   testTag = "nexus_node_hangar_deck",
-                  customEmblemContent = { sizeDp ->
+                  visualContent = { sizeDp ->
                     Spinning25dShipWithOrbitingFlux(
                       shipId = hangarIndicatedShipId,
                       shipSpinDeg = shipSpinDeg,
@@ -3209,21 +3871,19 @@ private fun OrbitalHubSpatialStage(
                   },
                 )
 
-                SculptedHubModulePlate(
+                RiftVerticalCard(
                   modifier = Modifier.weight(1f).fillMaxWidth(),
                   title = "RIFT FRAME",
-                  primaryStat = "$frameShortSlot • $framePointsUsed/${pointBudget.coerceAtLeast(100)} PT",
-                  detailCue = "${activeCustomSlot.customName.uppercase(Locale.US)} • COSMETICS",
-                  emblemBitmap = forgeEmblem,
-                  accent = if (isRiftFrameCharged) Color(0xFF00F5D4) else Color(0xFFFFD700),
+                  subtitle = "Custom 100-point ship builds",
+                  accent = if (isRiftFrameCharged) Color(0xFF00F5D4) else Color(0xFFC084FC),
                   secondaryAccent = Color(0xFF38BDF8),
-                  badgeText = if (isRiftFrameCharged) "CHARGED" else frameShortSlot.removePrefix("FRAME ").trim(),
-                  isFocused = focusedOrbitalIndex == 2,
                   isRightColumn = false,
-                  slotPosition = HubWingSlot.BOTTOM,
+                  isHighlighted = focusedOrbitalIndex == 2 || isRiftFrameCharged,
+                  badgeText = if (isRiftFrameCharged) "CHARGED" else "$framePointsUsed/${pointBudget.coerceAtLeast(100)} PT",
+                  badgeColor = if (isRiftFrameCharged) Color(0xFF00F5D4) else Color(0xFFC084FC),
                   isTabletDeck = isTabletDeck,
                   testTag = "nexus_node_rift_frame",
-                  customEmblemContent = { sizeDp ->
+                  visualContent = { sizeDp ->
                     Spinning25dShipWithOrbitingFlux(
                       shipId = 10,
                       shipSpinDeg = shipSpinDeg,
@@ -3255,7 +3915,7 @@ private fun OrbitalHubSpatialStage(
               }
             }
             RiftHubSideBayMode.HANGAR_BAY -> {
-              HangarDigitizedWingBay(
+              HangarVerticalWingBay(
                 ships = remember(customShipRev) { RiftCodex.getAllTenShips().filter { it.id in 1..5 } },
                 isRightSide = false,
                 isTabletDeck = isTabletDeck,
@@ -3281,7 +3941,7 @@ private fun OrbitalHubSpatialStage(
               )
             }
             RiftHubSideBayMode.RIFT_FRAME_BAY -> {
-              RiftFrameLeftLoadoutBay(
+              RiftFrameLoadoutSideBay(
                 isTabletDeck = isTabletDeck,
                 headerHeight = bayHeaderHeight,
                 wingStackGap = wingStackGap,
@@ -3289,7 +3949,6 @@ private fun OrbitalHubSpatialStage(
                 activeCustomSlotId = activeCustomSlotId,
                 pointBudget = pointBudget.coerceAtLeast(100),
                 isCharged = chargedShipId == 10,
-                shipResonance = resolveLocalShipResonance(10),
                 localPrefs = localPrefs,
                 currentUserId = currentUserId,
                 onBackToHub = {
@@ -3298,6 +3957,9 @@ private fun OrbitalHubSpatialStage(
                 },
                 onSelectFrameSlot = onUnlockOrSelectFrameSlotId,
                 onSaveCustomSlot = onSaveCustomSlot,
+                onPreviewWeaponStage = { infoPrompt ->
+                  onChangeOverwatchPrompt(infoPrompt)
+                },
                 onPreviewInOverwatch = {
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(10))
                 },
@@ -3325,6 +3987,7 @@ private fun OrbitalHubSpatialStage(
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
                 },
                 onBroadcastLfg = onPostStrikeWingInvite,
+                onAddFriendCallsign = onAddOnlinePilotFriend,
                 onTapPilot = { pilotItem ->
                   onSelectSquadronPilotUid(pilotItem.uid)
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.PilotInspect(pilotItem))
@@ -3338,12 +4001,13 @@ private fun OrbitalHubSpatialStage(
                 wingStackGap = wingStackGap,
                 currentTag = syndicateTag,
                 syndicateDirectory = syndicateDirectory,
+                syndicateWarRecord = syndicateWarRecord,
                 statusMessage = syndicateStatusMessage,
                 onBackToHub = {
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
                 },
-                 onInspectSyndicate = { syn ->
+                onInspectSyndicate = { syn ->
                   val isCurrent = syndicateTag.isNotBlank() && syn.tag.equals(syndicateTag, ignoreCase = true)
                   onChangeOverwatchPrompt(
                     OverwatchCircularPrompt.ActionConfirm(
@@ -3416,7 +4080,6 @@ private fun OrbitalHubSpatialStage(
                     )
                   )
                 },
-                onDeployMode = onStageRanked,
               )
             }
             RiftHubSideBayMode.CONDUIT_BAY -> {
@@ -3438,7 +4101,7 @@ private fun OrbitalHubSpatialStage(
               )
             }
             RiftHubSideBayMode.SHARD_STORE_BAY -> {
-              ShardStoreLeftSummaryBay(
+              ShardStoreLeftTreasuryBay(
                 isTabletDeck = isTabletDeck,
                 headerHeight = bayHeaderHeight,
                 wingStackGap = wingStackGap,
@@ -3446,6 +4109,7 @@ private fun OrbitalHubSpatialStage(
                 liveResonance = liveResonance,
                 peakResonance = peakResonance,
                 activeCustomSlotId = activeCustomSlotId,
+                purchaseStatusMessage = storePurchaseBanner,
                 localPrefs = localPrefs,
                 currentUserId = currentUserId,
                 onBackToHub = {
@@ -3475,7 +4139,7 @@ private fun OrbitalHubSpatialStage(
                         when {
                           isSelected -> "OPEN RIFT FRAME >"
                           isUnlocked -> "SELECT BAY"
-                          else -> "UNLOCK (${gate.shardCost}S)"
+                          else -> "UNLOCK ${gate.shardCost}"
                         },
                       onPrimaryAction = {
                         if (isSelected) {
@@ -3528,7 +4192,18 @@ private fun OrbitalHubSpatialStage(
                     )
                   )
                 },
-                onSwitchAccount = onSwitchAccount,
+                onOpenSwitchAccountPrompt = {
+                  onChangeOverwatchPrompt(
+                    OverwatchCircularPrompt.ActionConfirm(
+                      kicker = "PILOT ACCOUNT",
+                      title = "SWITCH ACCOUNT?",
+                      subtitle = "Signs out of your current pilot session and opens the Rift sign-in screen.",
+                      confirmLabel = "SWITCH",
+                      accentHex = 0xFFFACC15L,
+                      onConfirm = onSwitchAccount,
+                    )
+                  )
+                },
                 onOpenSurvivalSpreadsheet = onOpenSurvivalSpreadsheet,
               )
             }
@@ -3561,7 +4236,18 @@ private fun OrbitalHubSpatialStage(
                 updateStatusLabel = updateStatusLabel,
                 hasUpdateAvailable = hasUpdateAvailable,
                 onCheckOrApplyUpdate = onCheckOrApplyUpdate,
-                onSwitchAccount = onSwitchAccount,
+                onOpenSwitchAccountPrompt = {
+                  onChangeOverwatchPrompt(
+                    OverwatchCircularPrompt.ActionConfirm(
+                      kicker = "PILOT ACCOUNT",
+                      title = "SWITCH ACCOUNT?",
+                      subtitle = "Signs out of your current pilot session and opens the Rift sign-in screen.",
+                      confirmLabel = "SWITCH",
+                      accentHex = 0xFFFACC15L,
+                      onConfirm = onSwitchAccount,
+                    )
+                  )
+                },
                 onBackToHub = {
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
@@ -3639,37 +4325,42 @@ private fun OrbitalHubSpatialStage(
                   },
                 )
 
-                SculptedHubModulePlate(
+                RiftVerticalCard(
                   modifier = Modifier.weight(1f).fillMaxWidth(),
                   title = "SUBSPACE COMMS",
-                  primaryStat = commsPrimaryStat,
-                  detailCue = "FULL-SCREEN CHAT, VOICE & RIFT AI",
-                  emblemBitmap = commsEmblem,
+                  subtitle = "Live chat, voice, AI",
                   accent = Color(0xFF00F5D4),
                   secondaryAccent = if (unreadCommsCount > 0) Color(0xFFFB7185) else Color(0xFF38BDF8),
-                  badgeText = commsBadge,
-                  isFocused = focusedOrbitalIndex == 3,
                   isRightColumn = true,
-                  slotPosition = HubWingSlot.TOP,
+                  isHighlighted = focusedOrbitalIndex == 3 || unreadCommsCount > 0,
+                  badgeText = if (unreadCommsCount > 0) "$unreadCommsCount NEW" else null,
+                  badgeColor = Color(0xFFFB7185),
                   isTabletDeck = isTabletDeck,
                   testTag = "nexus_node_subspace_comms",
+                  visualContent = { sizeDp ->
+                    SubspaceWaveformEmblem(
+                      sizeDp = sizeDp,
+                      hasUnread = unreadCommsCount > 0,
+                    )
+                  },
                   onClick = { onSelectNode(3, NexusCoreNode.SUBSPACE_COMMS) },
                 )
 
-                SculptedHubModulePlate(
+                RiftVerticalCard(
                   modifier = Modifier.weight(1f).fillMaxWidth(),
                   title = "ACTIVE RIFTS",
-                  primaryStat = activeOverwatchInstance.modeTitle.uppercase(Locale.US),
-                  detailCue = "6 MODES • PUBLIC & CUSTOM RIFTS",
-                  emblemBitmap = conduitEmblem,
+                  subtitle = "Ranked modes, custom arenas",
                   accent = Color(0xFFFFD700),
                   secondaryAccent = Color(0xFF00F5D4),
-                  badgeText = if (activeRiftsLiveCount == 1) "1 PILOT" else "$activeRiftsLiveCount PILOTS",
-                  isFocused = focusedOrbitalIndex == 4,
                   isRightColumn = true,
-                  slotPosition = HubWingSlot.BOTTOM,
+                  isHighlighted = focusedOrbitalIndex == 4,
+                  badgeText = if (activeRiftsLiveCount == 1) "1 PILOT" else "$activeRiftsLiveCount LIVE",
+                  badgeColor = Color(0xFF00F5D4),
                   isTabletDeck = isTabletDeck,
                   testTag = "nexus_node_convergence_gate",
+                  visualContent = { sizeDp ->
+                    ActiveRiftsEmblem(sizeDp = sizeDp)
+                  },
                   onClick = {
                     onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                     onChangeSideBayMode(RiftHubSideBayMode.GAME_MODES_BAY)
@@ -3691,7 +4382,7 @@ private fun OrbitalHubSpatialStage(
               }
             }
             RiftHubSideBayMode.HANGAR_BAY -> {
-              HangarDigitizedWingBay(
+              HangarVerticalWingBay(
                 ships = remember(customShipRev) { RiftCodex.getAllTenShips().filter { it.id in 6..10 } },
                 isRightSide = true,
                 isTabletDeck = isTabletDeck,
@@ -3712,17 +4403,12 @@ private fun OrbitalHubSpatialStage(
                   onChangeSideBayMode(RiftHubSideBayMode.RIFT_FRAME_BAY)
                 },
                 onTapShip = { shipId ->
-                  if (shipId == 10) {
-                    onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(10))
-                    onChangeSideBayMode(RiftHubSideBayMode.RIFT_FRAME_BAY)
-                  } else {
-                    onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId))
-                  }
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId))
                 },
               )
             }
             RiftHubSideBayMode.RIFT_FRAME_BAY -> {
-              RiftFrameRightCosmeticsBay(
+              RiftFrameCosmeticsSideBay(
                 isTabletDeck = isTabletDeck,
                 headerHeight = bayHeaderHeight,
                 wingStackGap = wingStackGap,
@@ -3756,7 +4442,7 @@ private fun OrbitalHubSpatialStage(
                         when {
                           isEquipped -> ""
                           isUnlocked -> "EQUIP"
-                          else -> "UNLOCK (${item.shardCost}S)"
+                          else -> "UNLOCK ${item.shardCost}"
                         },
                       onPrimaryAction = if (isEquipped) null else ({ onUnlockOrEquipCosmeticItem(item) }),
                     )
@@ -3779,6 +4465,7 @@ private fun OrbitalHubSpatialStage(
                 armadaSlots = armadaSlots,
                 shipSpinDeg = shipSpinDeg,
                 fluxOrbitRad = fluxOrbitRad,
+                onLeaveSquadron = { engine?.leaveArmadaToSolo() },
                 onInspectPilotPrompt = { pilotItem ->
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.PilotInspect(pilotItem))
                 },
@@ -3794,6 +4481,12 @@ private fun OrbitalHubSpatialStage(
                 syndicateName = cleanSyndicateDisplayTitle,
                 syndicateOnlineCount = syndicateOnlineCount,
                 syndicateWarRecord = syndicateWarRecord,
+                currentUserId = currentUserId,
+                callsign = callsign,
+                localShipId = hangarIndicatedShipId,
+                liveResonance = liveResonance.toLong(),
+                kills = 0L,
+                localPrefs = localPrefs,
                 onLeaveCurrentSyndicate = {
                   onChangeOverwatchPrompt(
                     OverwatchCircularPrompt.ActionConfirm(
@@ -3807,7 +4500,9 @@ private fun OrbitalHubSpatialStage(
                   )
                 },
                 onCharterCustomSyndicate = onCharterCustomSyndicate,
-                onOpenCrestForge = onOpenShipwrightStudio,
+                onOpenCrestBuilder = { tag ->
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.SyndicateCrestBuilder(tag))
+                },
               )
             }
             RiftHubSideBayMode.GAME_MODES_BAY -> {
@@ -3815,12 +4510,6 @@ private fun OrbitalHubSpatialStage(
                 isTabletDeck = isTabletDeck,
                 headerHeight = bayHeaderHeight,
                 wingStackGap = wingStackGap,
-                chargedShipId = hangarIndicatedShipId,
-                isShipCharged = hasChargedShip,
-                shipSpinDeg = shipSpinDeg,
-                fluxOrbitRad = fluxOrbitRad,
-                onSwitchToHangarBay = { onChangeSideBayMode(RiftHubSideBayMode.HANGAR_BAY) },
-                onOpenFullCustomGate = onOpenFullCustomGate,
                 publicCustomGames = publicCustomGames,
                 engineCustomGames = engine?.activeCustomGames.orEmpty(),
                 unlockedPrivateCodes = unlockedPrivateCodes,
@@ -3837,48 +4526,69 @@ private fun OrbitalHubSpatialStage(
                 onSelectCustomDamageTakenScalePct = onSelectCustomDamageTakenScalePct,
                 customWeaponFluxCostScalePct = customWeaponFluxCostScalePct,
                 onSelectCustomWeaponFluxCostScalePct = onSelectCustomWeaponFluxCostScalePct,
+                customBotCount = customBotCount,
+                onSelectCustomBotCount = onSelectCustomBotCount,
+                customBotSkillLevel = customBotSkillLevel,
+                onSelectCustomBotSkillLevel = onSelectCustomBotSkillLevel,
+                customResetMinutes = customResetMinutes,
+                onSelectCustomResetMinutes = onSelectCustomResetMinutes,
+                customScoreCap = customScoreCap,
+                onSelectCustomScoreCap = onSelectCustomScoreCap,
+                customBulletSizeMult = customBulletSizeMult,
+                onSelectCustomBulletSizeMult = onSelectCustomBulletSizeMult,
                 onJoinCustomInstance = onJoinCustomInstance,
                 onQuickCreateCustomGame = onQuickCreateCustomGame,
+                onOpenFullCustomGate = onOpenFullCustomGate,
               )
             }
-            RiftHubSideBayMode.CONDUIT_BAY,
-            RiftHubSideBayMode.SHARD_STORE_BAY -> {
-              ConduitRightVaultBay(
+            RiftHubSideBayMode.CONDUIT_BAY -> {
+              ConduitRankTrackSideBay(
                 isTabletDeck = isTabletDeck,
                 headerHeight = bayHeaderHeight,
                 wingStackGap = wingStackGap,
-                shardText = shardText,
-                activeCustomSlotId = activeCustomSlotId,
-                localPrefs = localPrefs,
+                liveResonance = liveResonance,
+                peakResonance = peakResonance,
+                onInspectTierStage = { infoPrompt ->
+                  onChangeOverwatchPrompt(infoPrompt)
+                },
+              )
+            }
+            RiftHubSideBayMode.SHARD_STORE_BAY -> {
+              ShardStoreRightPacksBay(
+                isTabletDeck = isTabletDeck,
+                headerHeight = bayHeaderHeight,
+                wingStackGap = wingStackGap,
                 currentUserId = currentUserId,
-                onSelectFrameSlot = onUnlockOrSelectFrameSlotId,
-                onInspectCosmetic = { item, isUnlocked, isEquipped ->
+                callsign = callsign,
+                onInspectSkuPack = { sku, launchPurchase ->
                   onChangeOverwatchPrompt(
                     OverwatchCircularPrompt.InfoStageInspect(
-                      kicker = "SHARD STORE • ${item.category.replace("_", " ")}",
-                      title = item.name.uppercase(Locale.US),
-                      badge =
-                        when {
-                          isEquipped -> "ACTIVE"
-                          isUnlocked -> "OWNED"
-                          else -> "${item.shardCost} SHARDS"
-                        },
-                      summary = item.summary,
+                      kicker = "SHARD STORE PACK",
+                      title = "${sku.title.uppercase(Locale.US)} • ${sku.displayPriceUsd}",
+                      badge = sku.badgeLabel,
+                      summary =
+                        if (sku.bonusShards > 0L)
+                          "Includes ${formatOverwatchResonance(sku.shardAmount.toInt())} base Shards plus ${sku.bonusShards} bonus Shards (${formatOverwatchResonance(sku.totalShards.toInt())} total)."
+                        else
+                          "Includes ${formatOverwatchResonance(sku.totalShards.toInt())} Rift Shards.",
                       tacticalNote =
-                        if (item.freeAtResonance > 0)
-                          "Unlocks free at ${item.freeAtResonance} Peak Resonance or instantly with ${item.shardCost} Rift Shards ($shardText available)."
-                        else "Unlock instantly with ${item.shardCost} Rift Shards ($shardText available).",
-                      accentHex = if (isUnlocked) 0xFF00F5D4L else 0xFFFFD700L,
-                      shipId = hangarIndicatedShipId,
-                      primaryActionLabel =
-                        when {
-                          isEquipped -> ""
-                          isUnlocked -> "EQUIP"
-                          else -> "UNLOCK (${item.shardCost}S)"
-                        },
-                      onPrimaryAction = if (isEquipped) null else ({ onUnlockOrEquipCosmeticItem(item) }),
+                        if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE)
+                          "Tester Treasury active: 999,999 non-depleting Shards unlocked; billing handled by ${RiftBillingManager.STUDIO_LEGAL_NAME}."
+                        else
+                          "Processed via Google Play Billing (${RiftBillingManager.STUDIO_LEGAL_NAME}).",
+                      accentHex = 0xFFFACC15L,
+                      primaryActionLabel = "BUY ${sku.displayPriceUsd}",
+                      onPrimaryAction = launchPurchase,
                     )
                   )
+                },
+                onPurchaseResultBanner = { msg, credited ->
+                  storePurchaseBanner = msg
+                  if (credited > 0L) {
+                    liveShardsBonus += credited
+                    val uidOrNull = currentUserId.ifBlank { null }
+                    localPrefs.setRiftShards(localPrefs.getRiftShards(uidOrNull) + credited, uidOrNull)
+                  }
                 },
               )
             }
@@ -3894,7 +4604,6 @@ private fun OrbitalHubSpatialStage(
                 localPrefs = localPrefs,
                 currentUserId = currentUserId,
                 cloudLeaderboardEntries = cloudLeaderboardEntries,
-                onOpenSurvivalSpreadsheet = onOpenSurvivalSpreadsheet,
                 onInspectShip = { shipId ->
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId))
                 },
@@ -3906,11 +4615,13 @@ private fun OrbitalHubSpatialStage(
                 headerHeight = bayHeaderHeight,
                 wingStackGap = wingStackGap,
                 initialSubDeck = helmInitialSubDeck,
+                shipSpinDeg = shipSpinDeg,
+                fluxOrbitRad = fluxOrbitRad,
                 onInspectCodexStage = { infoPrompt ->
                   onChangeOverwatchPrompt(infoPrompt)
                 },
                 onInspectShipStage = { shipId ->
-                  onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId))
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId, hideChargeButton = true))
                 },
               )
             }
@@ -3947,6 +4658,8 @@ private fun OrbitalHubSpatialStage(
         overwatchZoom = overwatchZoom,
         liveRemainingSec = liveRemainingSec,
         liveAvgResonance = liveAvgResonance,
+        activeShipTitle = hangarPrimaryStat,
+        activeShipState = hangarBadgeText,
         sideBayMode = sideBayMode,
         overwatchPrompt = overwatchPrompt,
         chargedShipId = chargedShipId,
@@ -3981,9 +4694,13 @@ private fun OrbitalHubSpatialStage(
         onBottomRightConfirmOrCharge = {
           when (val p = overwatchPrompt) {
             is OverwatchCircularPrompt.ShipInspect -> {
-              onChargeShip(p.shipId)
-              onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
-              onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+              if (!p.hideChargeButton) {
+                onChargeShip(p.shipId)
+                onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+                onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+              } else {
+                onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+              }
             }
             is OverwatchCircularPrompt.PilotInspect -> {
               onInviteOnlinePilotToWing(p.pilot.rawLivePilot)
@@ -3999,6 +4716,9 @@ private fun OrbitalHubSpatialStage(
                 onRenamePilotCallsign(clean)
                 onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
               }
+            }
+            is OverwatchCircularPrompt.SyndicateCrestBuilder -> {
+              onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
             }
             is OverwatchCircularPrompt.InfoStageInspect -> {
               p.onPrimaryAction?.invoke()
@@ -4151,7 +4871,7 @@ private fun DedicatedCompactSplitBay(
   }
 }
 
-private fun Modifier.chamferedSciFiPodSurface(
+internal fun Modifier.chamferedSciFiPodSurface(
   isRightSide: Boolean,
   primaryBorder: Color,
   secondaryBorder: Color,
@@ -4315,35 +5035,42 @@ private fun PortTopPilotPod(
           .background(Color(0x4438BDF8))
     )
 
-    Column(
+    Box(
       modifier =
         Modifier.minimumInteractiveComponentSize()
-          .fillMaxHeight()
+          .size(48.dp)
           .clickable { onSwitchAccount() }
-          .padding(start = 7.dp, end = 3.dp)
           .testTag("nexus_top_switch_account"),
-      verticalArrangement = Arrangement.Center,
-      horizontalAlignment = Alignment.CenterHorizontally,
+      contentAlignment = Alignment.Center,
     ) {
-      Text(
-        text = "SWITCH",
-        color = Color(0xFFFACC15),
-        fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-        maxLines = 1,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-      )
-      Spacer(modifier = Modifier.height(2.dp))
-      Text(
-        text = if (isGoogleAuthenticated) "CLOUD ID" else "ACCOUNT",
-        color = Color(0xFF94A3B8),
-        fontSize = if (isTabletDeck) 7.8.sp else 7.0.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.Monospace,
-        maxLines = 1,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-      )
+      Canvas(modifier = Modifier.size(20.dp)) {
+        val w = size.width
+        val h = size.height
+        val accent = if (isGoogleAuthenticated) Color(0xFF00F5D4) else Color(0xFFFACC15)
+        drawArc(
+          color = accent,
+          startAngle = -145f,
+          sweepAngle = 125f,
+          useCenter = false,
+          topLeft = Offset(w * 0.10f, h * 0.12f),
+          size = Size(w * 0.80f, h * 0.76f),
+          style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+        )
+        drawArc(
+          color = Color(0xFF38BDF8),
+          startAngle = 35f,
+          sweepAngle = 125f,
+          useCenter = false,
+          topLeft = Offset(w * 0.10f, h * 0.12f),
+          size = Size(w * 0.80f, h * 0.76f),
+          style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+        )
+        drawCircle(
+          color = Color.White,
+          radius = 2.6.dp.toPx(),
+          center = Offset(w * 0.5f, h * 0.5f),
+        )
+      }
     }
   }
 }
@@ -4376,7 +5103,7 @@ private fun PortBottomTelemetryPod(
   ) {
     Column(
       modifier =
-        Modifier.weight(1.02f)
+        Modifier.weight(1.0f)
           .fillMaxHeight()
           .minimumInteractiveComponentSize()
           .clickable { onClickResonance() }
@@ -4418,7 +5145,7 @@ private fun PortBottomTelemetryPod(
 
     Column(
       modifier =
-        Modifier.weight(1.06f)
+        Modifier.weight(1.18f)
           .fillMaxHeight()
           .minimumInteractiveComponentSize()
           .clickable { onClickShards() }
@@ -4435,11 +5162,11 @@ private fun PortBottomTelemetryPod(
         Text(
           text = shardText,
           color = Color(0xFF38BDF8),
-          fontSize = if (isTabletDeck) 11.2.sp else 9.6.sp,
+          fontSize = if (isTabletDeck) 11.0.sp else 9.4.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
+          softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
@@ -4451,7 +5178,7 @@ private fun PortBottomTelemetryPod(
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+        softWrap = false,
         style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
     }
@@ -4460,7 +5187,7 @@ private fun PortBottomTelemetryPod(
 
     Column(
       modifier =
-        Modifier.weight(0.95f)
+        Modifier.weight(0.92f)
           .fillMaxHeight()
           .minimumInteractiveComponentSize()
           .clickable { onClickOnline() }
@@ -4786,481 +5513,8 @@ private fun StarboardBottomUplinkPod(
   }
 }
 
-/**
- * Overwatch-Anchored Concave-Contoured 2.5D Sci-Fi Hardware Blade:
- * - Deep abyssal/gunmetal slate (#02050B / #030711 / #060D1A / #091528 / #0B192E) beveled chassis with top-left specular catchlight.
- * - Supports optional `customEmblemContent` so `HANGAR DECK` carries the Charged 2.5D ship + orbiting Flux icons onto Rift Hub.
- */
 @Composable
-private fun SculptedHubModulePlate(
-  modifier: Modifier,
-  title: String,
-  primaryStat: String,
-  detailCue: String,
-  emblemBitmap: androidx.compose.ui.graphics.ImageBitmap,
-  accent: Color,
-  secondaryAccent: Color,
-  badgeText: String?,
-  isFocused: Boolean,
-  isRightColumn: Boolean,
-  slotPosition: HubWingSlot,
-  isTabletDeck: Boolean,
-  testTag: String,
-  customEmblemContent: (@Composable (Dp) -> Unit)? = null,
-  onClick: () -> Unit,
-) {
-  val phaseSeedRad = remember(title) { ((abs(title.hashCode()) % 360) * (PI / 180.0)).toFloat() }
-  val titleGlow =
-    remember(accent, isFocused) {
-      Shadow(
-        color = if (isFocused) Color.White.copy(alpha = 0.55f) else accent.copy(alpha = 0.34f),
-        offset = Offset.Zero,
-        blurRadius = 5f,
-      )
-    }
-
-  BoxWithConstraints(
-    modifier =
-      modifier
-        .minimumInteractiveComponentSize()
-        .heightIn(min = 52.dp)
-        .clickable { onClick() }
-        .testTag(testTag),
-  ) {
-    val showDetailLine = maxHeight >= 96.dp
-    val emblemSizeDp = (maxHeight * 0.68f).coerceIn(42.dp, if (isTabletDeck) 74.dp else 54.dp)
-
-    Canvas(modifier = Modifier.fillMaxSize()) {
-      val w = size.width
-      val h = size.height
-      if (w <= 8f || h <= 8f) return@Canvas
-      val drop = 2.4.dp.toPx()
-      val outerChamfer = 12.dp.toPx().coerceAtMost(h * 0.24f)
-      val innerSlope = 13.dp.toPx().coerceAtMost(w * 0.08f)
-      val concaveBow = 10.dp.toPx().coerceAtMost(w * 0.06f)
-      val cornerCut = 5.dp.toPx()
-
-      fun buildPlatePath(yOffset: Float, hBody: Float): Path =
-        Path().apply {
-          if (!isRightColumn) {
-            when (slotPosition) {
-              HubWingSlot.TOP -> {
-                moveTo(outerChamfer, yOffset)
-                lineTo(w - cornerCut, yOffset)
-                lineTo(w, yOffset + cornerCut)
-                lineTo(w - innerSlope, yOffset + hBody - cornerCut)
-                lineTo(w - innerSlope - cornerCut, yOffset + hBody)
-                lineTo(outerChamfer, yOffset + hBody)
-                lineTo(0f, yOffset + hBody - outerChamfer)
-                lineTo(0f, yOffset + outerChamfer)
-                close()
-              }
-              HubWingSlot.MIDDLE -> {
-                moveTo(outerChamfer, yOffset)
-                lineTo(w - cornerCut, yOffset)
-                lineTo(w, yOffset + cornerCut)
-                quadraticTo(
-                  w - concaveBow,
-                  yOffset + hBody * 0.5f,
-                  w,
-                  yOffset + hBody - cornerCut,
-                )
-                lineTo(w - cornerCut, yOffset + hBody)
-                lineTo(outerChamfer, yOffset + hBody)
-                lineTo(0f, yOffset + hBody - outerChamfer)
-                lineTo(0f, yOffset + outerChamfer)
-                close()
-              }
-              HubWingSlot.BOTTOM -> {
-                moveTo(outerChamfer, yOffset)
-                lineTo(w - innerSlope - cornerCut, yOffset)
-                lineTo(w - innerSlope, yOffset + cornerCut)
-                lineTo(w, yOffset + hBody - cornerCut)
-                lineTo(w - cornerCut, yOffset + hBody)
-                lineTo(outerChamfer, yOffset + hBody)
-                lineTo(0f, yOffset + hBody - outerChamfer)
-                lineTo(0f, yOffset + outerChamfer)
-                close()
-              }
-            }
-          } else {
-            when (slotPosition) {
-              HubWingSlot.TOP -> {
-                moveTo(cornerCut, yOffset)
-                lineTo(w - outerChamfer, yOffset)
-                lineTo(w, yOffset + outerChamfer)
-                lineTo(w, yOffset + hBody - outerChamfer)
-                lineTo(w - outerChamfer, yOffset + hBody)
-                lineTo(innerSlope + cornerCut, yOffset + hBody)
-                lineTo(innerSlope, yOffset + hBody - cornerCut)
-                lineTo(0f, yOffset + cornerCut)
-                close()
-              }
-              HubWingSlot.MIDDLE -> {
-                moveTo(cornerCut, yOffset)
-                lineTo(w - outerChamfer, yOffset)
-                lineTo(w, yOffset + outerChamfer)
-                lineTo(w, yOffset + hBody - outerChamfer)
-                lineTo(w - outerChamfer, yOffset + hBody)
-                lineTo(cornerCut, yOffset + hBody)
-                lineTo(0f, yOffset + hBody - cornerCut)
-                quadraticTo(
-                  concaveBow,
-                  yOffset + hBody * 0.5f,
-                  0f,
-                  yOffset + cornerCut,
-                )
-                close()
-              }
-              HubWingSlot.BOTTOM -> {
-                moveTo(innerSlope + cornerCut, yOffset)
-                lineTo(w - outerChamfer, yOffset)
-                lineTo(w, yOffset + outerChamfer)
-                lineTo(w, yOffset + hBody - outerChamfer)
-                lineTo(w - outerChamfer, yOffset + hBody)
-                lineTo(cornerCut, yOffset + hBody)
-                lineTo(0f, yOffset + hBody - cornerCut)
-                lineTo(innerSlope, yOffset + cornerCut)
-                close()
-              }
-            }
-          }
-        }
-
-      val bodyH = (h - drop).coerceAtLeast(8f)
-      val shadowPath = buildPlatePath(drop, bodyH)
-      val platePath = buildPlatePath(0f, bodyH)
-
-      drawPath(shadowPath, color = Color(0xE0010308))
-      drawPath(
-        path = platePath,
-        brush =
-          Brush.verticalGradient(
-            colors =
-              if (isFocused) {
-                listOf(Color(0xFA102442), Color(0xF8091528), Color(0xFC02050B))
-              } else {
-                listOf(Color(0xFA0B192E), Color(0xF8060D1A), Color(0xFC02050B))
-              }
-          ),
-      )
-      drawPath(
-        path = platePath,
-        color = Color(0x9902050B),
-        style = Stroke(width = 3.2.dp.toPx()),
-      )
-      drawPath(
-        path = platePath,
-        brush =
-          Brush.horizontalGradient(
-            if (isRightColumn) {
-              listOf(
-                accent.copy(alpha = if (isFocused) 1f else 0.88f),
-                Color(0x661E293B),
-                secondaryAccent.copy(alpha = 0.74f),
-              )
-            } else {
-              listOf(
-                secondaryAccent.copy(alpha = 0.74f),
-                Color(0x661E293B),
-                accent.copy(alpha = if (isFocused) 1f else 0.88f),
-              )
-            }
-          ),
-        style = Stroke(width = if (isFocused) 1.65.dp.toPx() else 1.2.dp.toPx()),
-      )
-
-      val specStartX = (if (isRightColumn) cornerCut else outerChamfer) + 4.dp.toPx()
-      drawLine(
-        brush =
-          Brush.horizontalGradient(
-            listOf(
-              Color.White.copy(alpha = if (isFocused) 0.58f else 0.44f),
-              accent.copy(alpha = 0.44f),
-              Color.Transparent,
-            )
-          ),
-        start = Offset(specStartX, 1.3.dp.toPx()),
-        end = Offset(w * 0.72f, 1.3.dp.toPx()),
-        strokeWidth = 1.15.dp.toPx(),
-      )
-
-      val midInnerEdgeX =
-        if (!isRightColumn) {
-          when (slotPosition) {
-            HubWingSlot.MIDDLE -> w - concaveBow * 0.5f - 2.0.dp.toPx()
-            else -> w - innerSlope * 0.5f - 2.0.dp.toPx()
-          }
-        } else {
-          when (slotPosition) {
-            HubWingSlot.MIDDLE -> concaveBow * 0.5f + 2.0.dp.toPx()
-            else -> innerSlope * 0.5f + 2.0.dp.toPx()
-          }
-        }
-      drawLine(
-        brush = Brush.verticalGradient(listOf(Color.Transparent, accent, secondaryAccent, Color.Transparent)),
-        start = Offset(midInnerEdgeX, bodyH * 0.22f),
-        end = Offset(midInnerEdgeX, bodyH * 0.78f),
-        strokeWidth = 2.2.dp.toPx(),
-        cap = StrokeCap.Round,
-      )
-    }
-
-    val innerClearanceDp = if (isTabletDeck) 15.dp else 13.dp
-    Row(
-      modifier =
-        Modifier.fillMaxSize()
-          .padding(
-            start = if (isRightColumn) innerClearanceDp else 9.dp,
-            end = if (isRightColumn) 9.dp else innerClearanceDp,
-            top = 4.dp,
-            bottom = 6.dp,
-          ),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(if (isTabletDeck) 10.dp else 7.dp),
-    ) {
-      if (!isRightColumn) {
-        if (customEmblemContent != null) {
-          customEmblemContent(emblemSizeDp)
-        } else {
-          HubMetallicEmblemPedestal(
-            emblemBitmap = emblemBitmap,
-            contentDescription = title,
-            accent = accent,
-            secondaryAccent = secondaryAccent,
-            phaseSeedRad = phaseSeedRad,
-            sizeDp = emblemSizeDp,
-          )
-        }
-      }
-
-      Column(
-        modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 3.5.dp else 2.5.dp),
-        horizontalAlignment = Alignment.Start,
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-          Text(
-            text = title,
-            color = Color.White,
-            fontSize = if (isTabletDeck) 12.8.sp else 11.0.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style =
-              TextStyle(
-                shadow = titleGlow,
-                platformStyle = PlatformTextStyle(includeFontPadding = false),
-              ),
-            modifier = Modifier.weight(1f, fill = false).padding(end = 4.dp),
-          )
-
-          if (badgeText != null) {
-            Text(
-              text = badgeText,
-              color = secondaryAccent,
-              fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              softWrap = false,
-              style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-            )
-          }
-        }
-
-        Text(
-          text = primaryStat,
-          color = accent,
-          fontSize = if (isTabletDeck) 11.0.sp else 9.8.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-
-        if (showDetailLine) {
-          Text(
-            text = detailCue,
-            color = Color(0xFFCBD5E1),
-            fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
-            fontWeight = FontWeight.SemiBold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-          )
-        }
-      }
-
-      if (isRightColumn) {
-        if (customEmblemContent != null) {
-          customEmblemContent(emblemSizeDp)
-        } else {
-          HubMetallicEmblemPedestal(
-            emblemBitmap = emblemBitmap,
-            contentDescription = title,
-            accent = accent,
-            secondaryAccent = secondaryAccent,
-            phaseSeedRad = phaseSeedRad,
-            sizeDp = emblemSizeDp,
-          )
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun HubMetallicEmblemPedestal(
-  emblemBitmap: androidx.compose.ui.graphics.ImageBitmap,
-  contentDescription: String,
-  accent: Color,
-  secondaryAccent: Color,
-  phaseSeedRad: Float,
-  sizeDp: Dp = 56.dp,
-) {
-  val headless = remember { isHeadlessGlEnvironment() }
-  val instrumentPhaseRad =
-    if (headless) {
-      0.55f + phaseSeedRad
-    } else {
-      val transition = rememberInfiniteTransition(label = "hub_module_instrument")
-      val animPhase by
-        transition.animateFloat(
-          initialValue = 0f,
-          targetValue = (2.0 * PI).toFloat(),
-          animationSpec =
-            infiniteRepeatable(
-              animation = tween(durationMillis = 16000, easing = LinearEasing),
-              repeatMode = RepeatMode.Restart,
-            ),
-          label = "hub_instrument_sweep",
-        )
-      animPhase + phaseSeedRad
-    }
-
-  Box(
-    modifier = Modifier.size(sizeDp),
-    contentAlignment = Alignment.Center,
-  ) {
-    Canvas(modifier = Modifier.fillMaxSize()) {
-      val minDim = size.minDimension
-      if (minDim <= 6f) return@Canvas
-      val cx = center.x
-      val cy = center.y
-      val outerR = minDim * 0.485f
-      val pulse = 0.88f + 0.12f * sin(instrumentPhaseRad * 2f)
-
-      // 1. Dual-Bevel 3D Dark-Titanium Turret Socket Well
-      drawCircle(
-        color = Color(0xCC010308),
-        radius = outerR,
-        center = Offset(cx, cy + 1.4.dp.toPx()),
-      )
-      drawCircle(
-        brush =
-          Brush.radialGradient(
-            colors =
-              listOf(
-                Color(0xFF0E203B),
-                Color(0xFF040914),
-                Color(0xFF193052),
-              ),
-            center = center,
-            radius = outerR,
-          ),
-        radius = outerR,
-        center = center,
-      )
-      drawCircle(
-        brush =
-          Brush.radialGradient(
-            colors =
-              listOf(
-                accent.copy(alpha = 0.30f * pulse),
-                secondaryAccent.copy(alpha = 0.14f * pulse),
-                Color.Transparent,
-              ),
-            center = center,
-            radius = outerR * 0.96f,
-          ),
-        radius = outerR * 0.96f,
-        center = center,
-      )
-      drawCircle(
-        brush =
-          Brush.verticalGradient(
-            listOf(
-              Color.White.copy(alpha = 0.42f),
-              accent.copy(alpha = 0.62f),
-              Color(0xFF02050B),
-            )
-          ),
-        radius = outerR,
-        center = center,
-        style = Stroke(width = 1.35.dp.toPx()),
-      )
-
-      // 2. Calibrated 24-Tick Instrument Vernier Ring
-      val tickInnerMajor = outerR * 0.84f
-      val tickInnerMinor = outerR * 0.90f
-      for (idx in 0 until 24) {
-        val ang = idx * ((2.0 * PI) / 24.0).toFloat() + instrumentPhaseRad * 0.20f
-        val isMajor = idx % 6 == 0
-        val r0 = if (isMajor) tickInnerMajor else tickInnerMinor
-        drawLine(
-          color =
-            if (isMajor) accent.copy(alpha = 0.78f)
-            else secondaryAccent.copy(alpha = 0.32f),
-          start = Offset(cx + cos(ang) * r0, cy + sin(ang) * r0),
-          end = Offset(cx + cos(ang) * (outerR * 0.97f), cy + sin(ang) * (outerR * 0.97f)),
-          strokeWidth = if (isMajor) 1.25.dp.toPx() else 0.75.dp.toPx(),
-          cap = StrokeCap.Round,
-        )
-      }
-
-      // 3. Upper-Left Optical Specular Rim + Slow-Moving Orbital Sweep Arc
-      val specR = outerR * 0.94f
-      drawArc(
-        color = Color.White.copy(alpha = 0.45f),
-        startAngle = -148f,
-        sweepAngle = 52f,
-        useCenter = false,
-        topLeft = Offset(cx - specR, cy - specR),
-        size = Size(specR * 2f, specR * 2f),
-        style = Stroke(width = 1.0.dp.toPx(), cap = StrokeCap.Round),
-      )
-      val sweepDeg = (instrumentPhaseRad * (180f / PI.toFloat())) % 360f
-      val ringR = outerR * 0.91f
-      drawArc(
-        color = accent.copy(alpha = 0.88f),
-        startAngle = sweepDeg,
-        sweepAngle = 56f,
-        useCenter = false,
-        topLeft = Offset(cx - ringR, cy - ringR),
-        size = Size(ringR * 2f, ringR * 2f),
-        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
-      )
-    }
-
-    Image(
-      bitmap = emblemBitmap,
-      contentDescription = contentDescription,
-      modifier = Modifier.fillMaxSize(0.76f),
-      contentScale = ContentScale.Fit,
-    )
-  }
-}
-
-@Composable
-private fun HubDigitizedReturnBar(
+internal fun HubDigitizedReturnBar(
   heightDp: Dp,
   isRightSide: Boolean,
   isTabletDeck: Boolean,
@@ -5344,1302 +5598,7 @@ private fun HubDigitizedReturnBar(
   }
 }
 
-@Composable
-private fun HangarDigitizedWingBay(
-  ships: List<ShipSpec>,
-  isRightSide: Boolean,
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  chargedShipId: Int,
-  bestShipId: Int,
-  inspectedShipId: Int,
-  shipSpinDeg: Float,
-  fluxOrbitRad: Float,
-  shipResonanceFor: (Int) -> Int,
-  onBackToHub: () -> Unit,
-  onOpenStudio: () -> Unit,
-  onTapShip: (Int) -> Unit,
-) {
-  Column(
-    modifier = Modifier.fillMaxSize(),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    if (!isRightSide) {
-      HubDigitizedReturnBar(
-        heightDp = headerHeight,
-        isRightSide = false,
-        isTabletDeck = isTabletDeck,
-        sectionTitle = "HULLS 01-05",
-        accent = Color(0xFF00F5D4),
-        onBackToHub = onBackToHub,
-      )
-    } else {
-      HubDigitizedReturnBar(
-        heightDp = headerHeight,
-        isRightSide = true,
-        isTabletDeck = isTabletDeck,
-        sectionTitle = "HULLS 06-10",
-        accent = Color(0xFF38BDF8),
-        trailingLabel = "RIFT FRAME >",
-        trailingTag = "hangar_bay_open_studio",
-        onTrailingClick = onOpenStudio,
-      )
-    }
 
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      ships.forEach { ship ->
-        val isCharged = chargedShipId == ship.id
-        val isBest = bestShipId == ship.id
-        val isInspected = inspectedShipId == ship.id
-        val cleanName = remember(ship.name) { ship.name.replace(Regex("^[0-9]+-"), "").trim().uppercase(Locale.US) }
-        val shipRes = shipResonanceFor(ship.id)
-        val primaryBorder =
-          when {
-            isCharged -> Color(0xFF00F5D4)
-            isInspected -> Color.White
-            isBest -> Color(0xFFFFD700)
-            else -> Color(0xFF38BDF8)
-          }
-        val secondaryBorder =
-          when {
-            isCharged -> Color(0xFF38BDF8)
-            isBest -> Color(0xFFFACC15)
-            else -> Color(0xFF091528)
-          }
-
-        Row(
-          modifier =
-            Modifier.fillMaxWidth()
-              .minimumInteractiveComponentSize()
-              .heightIn(min = if (isTabletDeck) 72.dp else 54.dp)
-              .chamferedSciFiPodSurface(
-                isRightSide = isRightSide,
-                primaryBorder = primaryBorder,
-                secondaryBorder = secondaryBorder,
-              )
-              .clickable { onTapShip(ship.id) }
-              .padding(horizontal = 8.dp, vertical = 4.dp)
-              .testTag("hangar_bay_ship_${ship.id}"),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          if (!isRightSide) {
-            Spinning25dShipWithOrbitingFlux(
-              shipId = ship.id,
-              shipSpinDeg = shipSpinDeg,
-              fluxOrbitRad = fluxOrbitRad,
-              isCharged = isCharged,
-              isBestShip = isBest,
-              isSelected = isInspected,
-              sizeDp = if (isTabletDeck) 56.dp else 44.dp,
-            )
-          }
-
-          Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-          ) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Text(
-                text = cleanName,
-                color = Color.White,
-                fontSize = if (isTabletDeck) 11.4.sp else 10.0.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                modifier = Modifier.weight(1f, fill = false).padding(end = 4.dp),
-              )
-              if (isCharged || isBest) {
-                Text(
-                  text = if (isCharged) "CHARGED" else "BEST",
-                  color = if (isCharged) Color(0xFF00F5D4) else Color(0xFFFFD700),
-                  fontSize = if (isTabletDeck) 9.0.sp else 8.2.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                  style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                )
-              } else {
-                Row(
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                  ResonanceCrestIcon(sizeDp = 11.dp)
-                  Text(
-                    text = "$shipRes",
-                    color = Color(0xFFFACC15),
-                    fontSize = if (isTabletDeck) 9.0.sp else 8.2.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                  )
-                }
-              }
-            }
-            Text(
-              text = "${ship.role.uppercase(Locale.US)} • ${ship.primaryShortLabel}/${ship.secondaryShortLabel}",
-              color = if (isCharged) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-              fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-            )
-          }
-
-          if (isRightSide) {
-            Spinning25dShipWithOrbitingFlux(
-              shipId = ship.id,
-              shipSpinDeg = shipSpinDeg,
-              fluxOrbitRad = fluxOrbitRad,
-              isCharged = isCharged,
-              isBestShip = isBest,
-              isSelected = isInspected,
-              sizeDp = if (isTabletDeck) 56.dp else 44.dp,
-            )
-          }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun SquadronLeftPilotListBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  filter: SquadronPilotFilter,
-  onSelectFilter: (SquadronPilotFilter) -> Unit,
-  sortMode: SquadronPilotSort = SquadronPilotSort.RESONANCE,
-  onToggleSort: () -> Unit = {},
-  pilots: List<SquadronOnlinePilotItem>,
-  selectedPilotUid: String,
-  squadronStatusBanner: String?,
-  onBackToHub: () -> Unit,
-  onBroadcastLfg: () -> Unit,
-  onTapPilot: (SquadronOnlinePilotItem) -> Unit,
-) {
-  val spriteRev = RiftSpriteBaker.spriteVisualRevision
-  val customRev = RiftSpriteBaker.customShip9Version
-
-  Column(
-    modifier = Modifier.fillMaxSize(),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    HubDigitizedReturnBar(
-      heightDp = headerHeight,
-      isRightSide = false,
-      isTabletDeck = isTabletDeck,
-      sectionTitle = "ONLINE (${pilots.size})",
-      accent = Color(0xFF00F5D4),
-      trailingLabel = "LFG PING",
-      trailingTag = "squadron_bay_lfg_ping",
-      onTrailingClick = onBroadcastLfg,
-      onBackToHub = onBackToHub,
-    )
-
-    // Filterable Bar: ALL • SYNDICATE • FRIENDS + Sort Toggle (RESONANCE / ACTIVITY) (>= 48dp touch targets)
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .height(48.dp)
-          .chamferedSciFiPodSurface(
-            isRightSide = false,
-            primaryBorder = Color(0xFF38BDF8),
-            secondaryBorder = Color(0xFF00F5D4),
-          )
-          .padding(horizontal = 4.dp),
-      horizontalArrangement = Arrangement.spacedBy(3.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      SquadronPilotFilter.entries.forEach { tab ->
-        val selected = filter == tab
-        val label =
-          when (tab) {
-            SquadronPilotFilter.ALL -> "ALL"
-            SquadronPilotFilter.SYNDICATE -> if (isTabletDeck) "SYNDICATE" else "SYN"
-            SquadronPilotFilter.FRIENDS -> if (isTabletDeck) "FRIENDS" else "FRND"
-          }
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .fillMaxHeight()
-              .minimumInteractiveComponentSize()
-              .clickable { onSelectFilter(tab) }
-              .padding(vertical = 5.dp)
-              .testTag("squadron_filter_${tab.name.lowercase(Locale.US)}"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(6.dp))
-                .background(
-                  if (selected) Color(0x3800F5D4) else Color(0x6602050B)
-                )
-                .border(
-                  1.dp,
-                  if (selected) Color(0xFF00F5D4) else Color(0x4438BDF8),
-                  RoundedCornerShape(6.dp),
-                ),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = label,
-              color = if (selected) Color.White else Color(0xFF94A3B8),
-              fontSize = if (isTabletDeck) 8.4.sp else 7.4.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-            )
-          }
-        }
-      }
-
-      Box(
-        modifier =
-          Modifier.weight(1.05f)
-            .fillMaxHeight()
-            .minimumInteractiveComponentSize()
-            .clickable { onToggleSort() }
-            .padding(vertical = 5.dp)
-            .testTag("squadron_sort_toggle"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Box(
-          modifier =
-            Modifier.fillMaxSize()
-              .clip(RoundedCornerShape(6.dp))
-              .background(Color(0x33FFD700))
-              .border(1.dp, Color(0xFFFFD700), RoundedCornerShape(6.dp)),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text =
-              when (sortMode) {
-                SquadronPilotSort.RESONANCE -> if (isTabletDeck) "SORT: TOP" else "TOP v"
-                SquadronPilotSort.ACTIVITY -> if (isTabletDeck) "SORT: LIVE" else "LIVE v"
-              },
-            color = Color(0xFFFFD700),
-            fontSize = if (isTabletDeck) 8.8.sp else 7.8.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-          )
-        }
-      }
-    }
-
-    if (!squadronStatusBanner.isNullOrBlank()) {
-      Text(
-        text = squadronStatusBanner,
-        color = Color(0xFF00F5D4),
-        fontSize = 7.8.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.Monospace,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(horizontal = 4.dp),
-      )
-    }
-
-    LazyColumn(
-      modifier =
-        Modifier.weight(1f)
-          .fillMaxWidth()
-          .chamferedSciFiPodSurface(
-            isRightSide = false,
-            primaryBorder = Color(0xFF091528),
-            secondaryBorder = Color(0xFF38BDF8),
-          )
-          .padding(6.dp),
-      verticalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-      if (pilots.isEmpty()) {
-        item(key = "empty_squadron_pilots") {
-          Column(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-          ) {
-            Text(
-              text =
-                when (filter) {
-                  SquadronPilotFilter.ALL -> "NO OTHER ONLINE PILOTS DETECTED"
-                  SquadronPilotFilter.SYNDICATE -> "NO SYNDICATE MATES ONLINE"
-                  SquadronPilotFilter.FRIENDS -> "NO VERIFIED FRIENDS ONLINE"
-                },
-              color = Color(0xFF94A3B8),
-              fontSize = 8.4.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              textAlign = TextAlign.Center,
-            )
-            Text(
-              text = "Tap LFG PING above to broadcast a Squadron invite across active sectors.",
-              color = Color(0xFF64748B),
-              fontSize = 7.8.sp,
-              fontFamily = FontFamily.SansSerif,
-              textAlign = TextAlign.Center,
-            )
-          }
-        }
-      }
-
-      items(pilots, key = { it.uid }) { pilot ->
-        val isSelected = pilot.uid == selectedPilotUid
-        val bestShipBmp =
-          remember(pilot.bestShipId, spriteRev, customRev) {
-            RiftSpriteBaker.getShipSprite(shipId = pilot.bestShipId, isAllied = true).asImageBitmap()
-          }
-        val displayIdentity =
-          if (pilot.syndicateTag.isNotBlank()) "[${pilot.syndicateTag}] ${pilot.callsign}"
-          else pilot.callsign
-
-        Row(
-          modifier =
-            Modifier.fillMaxWidth()
-              .minimumInteractiveComponentSize()
-              .heightIn(min = 50.dp)
-              .clip(RoundedCornerShape(8.dp))
-              .background(
-                if (isSelected) {
-                  Brush.horizontalGradient(listOf(Color(0xFF0E2A47), Color(0xFF091528)))
-                } else {
-                  Brush.horizontalGradient(listOf(Color(0xFF091528), Color(0xFF030711)))
-                }
-              )
-              .border(
-                if (isSelected) 1.3.dp else 0.9.dp,
-                if (isSelected) Color(0xFF00F5D4) else Color(0x4438BDF8),
-                RoundedCornerShape(8.dp),
-              )
-              .clickable { onTapPilot(pilot) }
-              .padding(horizontal = 7.dp, vertical = 5.dp)
-              .testTag("squadron_pilot_row_${pilot.uid.take(16)}"),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          Box(
-            modifier =
-              Modifier.size(if (isTabletDeck) 40.dp else 34.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF02050B))
-                .border(1.dp, Color(0xFFFFD700), CircleShape),
-            contentAlignment = Alignment.Center,
-          ) {
-            Image(
-              bitmap = bestShipBmp,
-              contentDescription = "${pilot.callsign} best ship",
-              modifier = Modifier.fillMaxSize(0.80f),
-              contentScale = ContentScale.Fit,
-            )
-          }
-
-          Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-          ) {
-            Text(
-              text = displayIdentity,
-              color = Color.White,
-              fontSize = if (isTabletDeck) 9.8.sp else 8.6.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-            )
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-              ResonanceCrestIcon(sizeDp = 11.dp)
-              Text(
-                text = "${pilot.resonance} • ${pilot.sectorLabel}",
-                color = Color(0xFFFFD700),
-                fontSize = 8.4.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-          }
-
-          if (pilot.isInSquadron) {
-            Text(
-              text = "SQUAD",
-              color = Color(0xFF00F5D4),
-              fontSize = 7.4.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun SquadronRightPlayfieldShipBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  localCallsign: String,
-  localSyndicateTag: String,
-  localShipId: Int,
-  localShipResonance: Int,
-  isLocalShipCharged: Boolean,
-  inspectedPilot: SquadronOnlinePilotItem?,
-  armadaName: String,
-  armadaSlots: List<ArmadaMemberSlot>,
-  shipSpinDeg: Float,
-  fluxOrbitRad: Float,
-  onInspectPilotPrompt: (SquadronOnlinePilotItem) -> Unit,
-  onOpenFullSquadronModal: () -> Unit,
-) {
-  val targetShipId = (inspectedPilot?.lockedShipId ?: localShipId).coerceIn(1, 10)
-  val targetResonance = inspectedPilot?.resonance ?: localShipResonance
-  val targetName =
-    if (inspectedPilot != null) {
-      if (inspectedPilot.syndicateTag.isNotBlank()) "[${inspectedPilot.syndicateTag}] ${inspectedPilot.callsign}"
-      else inspectedPilot.callsign
-    } else {
-      if (localSyndicateTag.isNotBlank()) "[$localSyndicateTag] $localCallsign" else localCallsign
-    }
-  val targetShipSpec = remember(targetShipId, RiftSpriteBaker.customShip9Version) { RiftCodex.getShipById(targetShipId) }
-  val cleanShipTitle = remember(targetShipSpec.name) { targetShipSpec.name.replace(Regex("^[0-9]+-"), "").trim().uppercase(Locale.US) }
-  val spriteRev = RiftSpriteBaker.spriteVisualRevision
-  val customRev = RiftSpriteBaker.customShip9Version
-  val trimStyle = RiftSpriteBaker.activeHullTrimStyle
-  val lockedShipBmp =
-    remember(targetShipId, spriteRev, customRev, trimStyle) {
-      RiftSpriteBaker.getShipSprite(shipId = targetShipId, isAllied = true).asImageBitmap()
-    }
-
-  Column(
-    modifier = Modifier.fillMaxSize(),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    HubDigitizedReturnBar(
-      heightDp = headerHeight,
-      isRightSide = true,
-      isTabletDeck = isTabletDeck,
-      sectionTitle = if (armadaName.isNotBlank()) "SQUAD [$armadaName]" else "LOCKED HULL",
-      accent = Color(0xFF38BDF8),
-      trailingLabel = "ROSTER >",
-      trailingTag = "squadron_bay_open_full_roster",
-      onTrailingClick = onOpenFullSquadronModal,
-    )
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      // Playfield-Style 2.5D Locked-In Ship Stage: Ship Resonance ABOVE, 2.5D Ship Graphic CENTER, Pilot Name BELOW
-      Box(
-        modifier =
-          Modifier.fillMaxWidth()
-            .heightIn(min = if (isTabletDeck) 216.dp else 172.dp)
-            .chamferedSciFiPodSurface(
-              isRightSide = true,
-              primaryBorder = Color(0xFF00F5D4),
-              secondaryBorder = Color(0xFFFFD700),
-            )
-            .clickable(enabled = inspectedPilot != null) {
-              if (inspectedPilot != null) onInspectPilotPrompt(inspectedPilot)
-            }
-            .padding(10.dp)
-            .testTag("squadron_playfield_ship_stage"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-          val cx = size.width * 0.5f
-          val cy = size.height * 0.5f
-          val ringR = min(size.width, size.height) * 0.34f
-          drawCircle(
-            brush =
-              Brush.radialGradient(
-                colors = listOf(Color(0x2800F5D4), Color(0x10091528), Color.Transparent),
-                center = Offset(cx, cy),
-                radius = ringR * 1.35f,
-              ),
-            radius = ringR * 1.35f,
-            center = Offset(cx, cy),
-          )
-          drawCircle(
-            color = if (inspectedPilot?.isInSquadron == true || inspectedPilot == null) Color(0xAA00F5D4) else Color(0xAA38BDF8),
-            radius = ringR,
-            center = Offset(cx, cy),
-            style = Stroke(width = 1.6.dp.toPx()),
-          )
-          drawCircle(
-            color = Color(0x44FFD700),
-            radius = ringR * 0.76f,
-            center = Offset(cx, cy),
-            style = Stroke(width = 0.9.dp.toPx()),
-          )
-        }
-
-        Column(
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 8.dp else 5.dp),
-        ) {
-          Row(
-            modifier =
-              Modifier.clip(RoundedCornerShape(8.dp))
-                .background(Color(0xD902050B))
-                .border(1.dp, Color(0xAAFFD700), RoundedCornerShape(8.dp))
-                .padding(horizontal = 9.dp, vertical = 3.5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-          ) {
-            ResonanceCrestIcon(sizeDp = if (isTabletDeck) 15.dp else 13.dp)
-            Text(
-              text = String.format(Locale.US, "%,d", targetResonance),
-              color = Color(0xFFFFD700),
-              fontSize = if (isTabletDeck) 12.0.sp else 10.4.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-
-          if (inspectedPilot == null && isLocalShipCharged) {
-            Spinning25dShipWithOrbitingFlux(
-              shipId = targetShipId,
-              shipSpinDeg = shipSpinDeg,
-              fluxOrbitRad = fluxOrbitRad,
-              isCharged = true,
-              sizeDp = if (isTabletDeck) 104.dp else 78.dp,
-            )
-          } else {
-            Image(
-              bitmap = lockedShipBmp,
-              contentDescription = cleanShipTitle,
-              contentScale = ContentScale.Fit,
-              modifier =
-                Modifier.size(if (isTabletDeck) 98.dp else 74.dp)
-                  .graphicsLayer { rotationZ = shipSpinDeg * 0.35f },
-            )
-          }
-
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-              text = targetName,
-              color = Color.White,
-              fontSize = if (isTabletDeck) 11.4.sp else 10.0.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-              text = "LOCKED // $cleanShipTitle",
-              color = Color(0xFF00F5D4),
-              fontSize = if (isTabletDeck) 8.8.sp else 7.8.sp,
-              fontWeight = FontWeight.ExtraBold,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-            )
-          }
-        }
-      }
-
-      // Active Squadron Slot Strip (1..5/5)
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .height(headerHeight)
-            .chamferedSciFiPodSurface(
-              isRightSide = true,
-              primaryBorder = Color(0xFF00F5D4),
-              secondaryBorder = Color(0xFF38BDF8),
-            )
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Text(
-          text = "SQUADRON ${armadaSlots.size.coerceAtLeast(1)}/5",
-          color = Color(0xFF00F5D4),
-          fontSize = if (isTabletDeck) 9.4.sp else 8.2.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-        Text(
-          text =
-            if (inspectedPilot != null) "TAP SHIP FOR SQUAD UP"
-            else "SELECT PILOT ON LEFT",
-          color = Color(0xFFFACC15),
-          fontSize = if (isTabletDeck) 8.4.sp else 7.4.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-        )
-      }
-    }
-  }
-}
-
-@Composable
-private fun GameModesLeftRankedBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  activeRankedMode: RankedGameMode,
-  skirmishBracket: Int,
-  onSelectSkirmishBracket: (Int) -> Unit,
-  riftControlBracket: Int,
-  onSelectRiftControlBracket: (Int) -> Unit,
-  syndicateWarBracket: Int,
-  onSelectSyndicateWarBracket: (Int) -> Unit,
-  humanPilotCountByMode: (RankedGameMode) -> Int,
-  canQueueSyndicateWars: Pair<Boolean, String>,
-  overwatchInstances: List<OverwatchRiftInstance>,
-  onSelectOverwatchKey: (String) -> Unit,
-  onBackToHub: () -> Unit,
-  onInspectMode: (RankedGameMode, Int, Boolean) -> Unit = { _, _, _ -> },
-  onDeployMode: (RankedGameMode, Int) -> Unit,
-) {
-  val orderedModes = remember {
-    listOf(RankedGameMode.SECTOR_CONVERGENCE) +
-      RankedGameMode.entries.filter { it != RankedGameMode.SECTOR_CONVERGENCE }
-  }
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("game_modes_left_ranked_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    HubDigitizedReturnBar(
-      heightDp = headerHeight,
-      isRightSide = false,
-      isTabletDeck = isTabletDeck,
-      sectionTitle = "6 RANKED MODES",
-      accent = Color(0xFF00F5D4),
-      onBackToHub = onBackToHub,
-    )
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      orderedModes.forEach { mode ->
-        val isActive = activeRankedMode == mode
-        val humans = humanPilotCountByMode(mode).coerceAtLeast(0)
-        val bracketOptions: List<Int> =
-          when (mode) {
-            RankedGameMode.RIFT_SKIRMISH -> listOf(2, 3, 4, 5)
-            RankedGameMode.RIFT_CONTROL, RankedGameMode.SYNDICATE_WARS -> listOf(3, 5, 10)
-            else -> emptyList()
-          }
-        val activeBracket =
-          when (mode) {
-            RankedGameMode.RIFT_SKIRMISH -> skirmishBracket
-            RankedGameMode.RIFT_CONTROL -> riftControlBracket
-            RankedGameMode.SYNDICATE_WARS -> syndicateWarBracket
-            RankedGameMode.STASIS_BREACH -> 10
-            else -> 20
-          }
-        val canDeploy = mode != RankedGameMode.SYNDICATE_WARS || canQueueSyndicateWars.first
-
-        val isOverwatchEligible =
-          mode == RankedGameMode.SECTOR_CONVERGENCE || mode == RankedGameMode.FLUX_CORE
-
-        Column(
-          modifier =
-            Modifier.fillMaxWidth()
-              .chamferedSciFiPodSurface(
-                isRightSide = false,
-                primaryBorder = if (isActive) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-                secondaryBorder = if (isActive) Color(0xFFFFD700) else Color(0xFF091528),
-              )
-              .clickable {
-                if (isOverwatchEligible) {
-                  overwatchInstances
-                    .firstOrNull { it.customConfig == null && it.rankedMode == mode }
-                    ?.let { onSelectOverwatchKey(it.key) }
-                }
-                onInspectMode(mode, activeBracket, canDeploy)
-              }
-              .padding(horizontal = 8.dp, vertical = 6.dp)
-              .testTag("game_modes_card_${mode.name.lowercase(Locale.US)}"),
-          verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
-              Text(
-                text = mode.title.uppercase(Locale.US),
-                color = Color.White,
-                fontSize = if (isTabletDeck) 10.6.sp else 9.4.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-              val subLine =
-                when {
-                  mode == RankedGameMode.SYNDICATE_WARS && !canDeploy -> canQueueSyndicateWars.second
-                  isOverwatchEligible -> "${humans}P LIVE • TAP FOR INTEL & PREVIEW"
-                  else -> "${humans}P LIVE • TAP FOR RULES • <=15S QUEUE"
-                }
-              Text(
-                text = subLine,
-                color = if (!canDeploy) Color(0xFFFB7185) else Color(0xFF38BDF8),
-                fontSize = if (isTabletDeck) 8.8.sp else 8.0.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-
-            Box(
-              modifier =
-                Modifier.minimumInteractiveComponentSize()
-                  .height(48.dp)
-                  .clickable(enabled = canDeploy) { onDeployMode(mode, activeBracket) }
-                  .padding(vertical = 6.dp)
-                  .testTag("game_modes_deploy_${mode.name.lowercase(Locale.US)}"),
-              contentAlignment = Alignment.Center,
-            ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(6.dp))
-                    .background(
-                      Brush.verticalGradient(
-                        if (canDeploy) listOf(Color(0xFF0D2D46), Color(0xFF061626))
-                        else listOf(Color(0xFF1E293B), Color(0xFF0F172A))
-                      )
-                    )
-                    .border(
-                      1.dp,
-                      if (canDeploy) Color(0xFF00F5D4) else Color(0xFF475569),
-                      RoundedCornerShape(6.dp),
-                    )
-                    .padding(horizontal = 9.dp, vertical = 5.dp),
-                contentAlignment = Alignment.Center,
-              ) {
-                Text(
-                  text = if (canDeploy) "RIFT IN >" else "LOCKED",
-                  color = if (canDeploy) Color.White else Color(0xFF64748B),
-                  fontSize = 8.8.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                )
-              }
-            }
-          }
-
-          if (bracketOptions.isNotEmpty()) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(4.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              bracketOptions.forEach { b ->
-                val sel = activeBracket == b
-                Box(
-                  modifier =
-                    Modifier.minimumInteractiveComponentSize()
-                      .clickable {
-                        when (mode) {
-                          RankedGameMode.RIFT_SKIRMISH -> onSelectSkirmishBracket(b)
-                          RankedGameMode.RIFT_CONTROL -> onSelectRiftControlBracket(b)
-                          RankedGameMode.SYNDICATE_WARS -> onSelectSyndicateWarBracket(b)
-                          else -> {}
-                        }
-                      }
-                      .padding(vertical = 3.dp)
-                      .testTag("game_modes_bracket_${mode.name.lowercase(Locale.US)}_${b}v${b}"),
-                  contentAlignment = Alignment.Center,
-                ) {
-                  Box(
-                    modifier =
-                      Modifier.clip(RoundedCornerShape(5.dp))
-                        .background(if (sel) Color(0x3800F5D4) else Color(0x6602050B))
-                        .border(
-                          1.dp,
-                          if (sel) Color(0xFF00F5D4) else Color(0xFF334155),
-                          RoundedCornerShape(5.dp),
-                        )
-                        .padding(horizontal = 7.dp, vertical = 3.5.dp),
-                  ) {
-                    Text(
-                      text = "${b}v${b}",
-                      color = if (sel) Color.White else Color(0xFF94A3B8),
-                      fontSize = 7.6.sp,
-                      fontWeight = FontWeight.Black,
-                      fontFamily = FontFamily.Monospace,
-                    )
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun GameModesRightCustomBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  chargedShipId: Int,
-  isShipCharged: Boolean,
-  shipSpinDeg: Float,
-  fluxOrbitRad: Float,
-  onSwitchToHangarBay: () -> Unit,
-  onOpenFullCustomGate: () -> Unit,
-  publicCustomGames: List<CustomGameConfig>,
-  engineCustomGames: List<CustomGameConfig>,
-  unlockedPrivateCodes: List<String>,
-  customIsPrivateRoom: Boolean,
-  onTogglePrivateRoom: (Boolean) -> Unit,
-  generatedRoomCode: String,
-  joinRoomCodeDraft: String,
-  onJoinRoomCodeDraftChange: (String) -> Unit,
-  roomCodeBanner: String?,
-  onJoinByRoomCode: () -> Unit,
-  customBaseMode: RankedGameMode,
-  onSelectCustomBaseMode: (RankedGameMode) -> Unit,
-  customDamageTakenScalePct: Int = 100,
-  onSelectCustomDamageTakenScalePct: (Int) -> Unit = {},
-  customWeaponFluxCostScalePct: Int = 100,
-  onSelectCustomWeaponFluxCostScalePct: (Int) -> Unit = {},
-  onJoinCustomInstance: (String) -> Unit,
-  onQuickCreateCustomGame: () -> Unit,
-) {
-  val shipSpec = remember(chargedShipId, RiftSpriteBaker.customShip9Version) {
-    RiftCodex.getShipById(chargedShipId.coerceIn(1, 10))
-  }
-  val cleanHullName = remember(shipSpec.name) {
-    shipSpec.name.replace(Regex("^[0-9]+-"), "").trim().uppercase(Locale.US)
-  }
-  val visibleCustomRooms =
-    remember(publicCustomGames, engineCustomGames, unlockedPrivateCodes) {
-      (publicCustomGames + engineCustomGames)
-        .distinctBy { it.instanceId.uppercase(Locale.US) }
-        .filter { g ->
-          !isPrivateCustomGame(g) ||
-            extractCustomRoomCode(g).uppercase(Locale.US) in unlockedPrivateCodes
-        }
-    }
-
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("game_modes_right_custom_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    HubDigitizedReturnBar(
-      heightDp = headerHeight,
-      isRightSide = true,
-      isTabletDeck = isTabletDeck,
-      sectionTitle = "CUSTOM RIFTS",
-      accent = Color(0xFF38BDF8),
-      trailingLabel = "10-RULE LAB >",
-      trailingTag = "game_modes_open_full_custom",
-      onTrailingClick = onOpenFullCustomGate,
-    )
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      // Charged Hull Quick-Switch Strip
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .height(48.dp)
-            .chamferedSciFiPodSurface(
-              isRightSide = true,
-              primaryBorder = if (isShipCharged) Color(0xFF00F5D4) else Color(0xFFFFD700),
-              secondaryBorder = Color(0xFF38BDF8),
-            )
-            .clickable { onSwitchToHangarBay() }
-            .padding(horizontal = 7.dp)
-            .testTag("game_modes_charged_hull_bar"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-          modifier = Modifier.weight(1f),
-        ) {
-          Spinning25dShipWithOrbitingFlux(
-            shipId = chargedShipId,
-            shipSpinDeg = shipSpinDeg,
-            fluxOrbitRad = fluxOrbitRad,
-            isCharged = isShipCharged,
-            isBestShip = !isShipCharged,
-            sizeDp = 36.dp,
-          )
-          Column {
-            Text(
-              text = if (isShipCharged) "CHARGED: $cleanHullName" else "DEFAULT: $cleanHullName",
-              color = Color.White,
-              fontSize = 8.4.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-              text = "TAP TO CHARGE ANOTHER HULL",
-              color = Color(0xFF00F5D4),
-              fontSize = 7.2.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-            )
-          }
-        }
-        Text(
-          text = "HANGAR >",
-          color = Color(0xFFFACC15),
-          fontSize = 8.0.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-
-      // 6-Char Private Join Code Entry
-      Column(
-        modifier =
-          Modifier.fillMaxWidth()
-            .chamferedSciFiPodSurface(
-              isRightSide = true,
-              primaryBorder = Color(0xFFFACC15),
-              secondaryBorder = Color(0xFF38BDF8),
-            )
-            .padding(horizontal = 7.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-          Box(
-            modifier =
-              Modifier.weight(1f)
-                .height(34.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF02050B))
-                .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
-                .padding(horizontal = 8.dp),
-            contentAlignment = Alignment.CenterStart,
-          ) {
-            if (joinRoomCodeDraft.isEmpty()) {
-              Text(
-                text = "ENTER 6-CHAR JOIN CODE",
-                color = Color(0xFF64748B),
-                fontSize = 8.0.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-              )
-            }
-            BasicTextField(
-              value = joinRoomCodeDraft,
-              onValueChange = { raw ->
-                onJoinRoomCodeDraftChange(
-                  raw.uppercase(Locale.US).filter { it.isLetterOrDigit() }.take(6)
-                )
-              },
-              singleLine = true,
-              cursorBrush = SolidColor(Color(0xFF00F5D4)),
-              textStyle =
-                TextStyle(
-                  color = Color.White,
-                  fontSize = 9.2.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                ),
-              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-              keyboardActions = KeyboardActions(onDone = { onJoinByRoomCode() }),
-              modifier = Modifier.fillMaxWidth().testTag("hub_custom_room_code_input"),
-            )
-          }
-          Box(
-            modifier =
-              Modifier.minimumInteractiveComponentSize()
-                .height(48.dp)
-                .clickable { onJoinByRoomCode() }
-                .padding(vertical = 6.dp)
-                .testTag("hub_btn_join_room_code"),
-            contentAlignment = Alignment.Center,
-          ) {
-            Box(
-              modifier =
-                Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(Brush.verticalGradient(listOf(Color(0xFF282008), Color(0xFF141004))))
-                  .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(6.dp))
-                  .padding(horizontal = 8.dp, vertical = 5.dp),
-            ) {
-              Text(
-                text = "JOIN CODE",
-                color = Color(0xFFFFD700),
-                fontSize = 7.8.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-          }
-        }
-        if (!roomCodeBanner.isNullOrBlank()) {
-          Text(
-            text = roomCodeBanner,
-            color = Color(0xFF00F5D4),
-            fontSize = 7.2.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
-      }
-
-      // Public Custom Game List
-      Column(
-        modifier =
-          Modifier.fillMaxWidth()
-            .chamferedSciFiPodSurface(
-              isRightSide = true,
-              primaryBorder = Color(0xFF38BDF8),
-              secondaryBorder = Color(0xFF091528),
-            )
-            .padding(6.dp)
-            .testTag("hub_public_custom_game_list"),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        if (visibleCustomRooms.isEmpty()) {
-          Text(
-            text = "NO PUBLIC CUSTOM RIFTS OPEN • CREATE ONE BELOW OR ENTER A JOIN CODE",
-            color = Color(0xFF94A3B8),
-            fontSize = 7.8.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(4.dp),
-          )
-        } else {
-          visibleCustomRooms.forEach { game ->
-            val code = extractCustomRoomCode(game)
-            val priv = isPrivateCustomGame(game)
-            Row(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .clip(RoundedCornerShape(6.dp))
-                  .background(Color(0xCC060D1A))
-                  .border(
-                    1.dp,
-                    if (priv) Color(0xFFFACC15) else Color(0xFF334155),
-                    RoundedCornerShape(6.dp),
-                  )
-                  .padding(horizontal = 6.dp, vertical = 3.dp),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Column(modifier = Modifier.weight(1f).padding(end = 5.dp)) {
-                Text(
-                  text = "${if (priv) "[PRIV] " else ""}${game.title}",
-                  color = Color.White,
-                  fontSize = 8.0.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-                val scaleSuffix =
-                  if (game.damageTakenScalePct != 100 || game.weaponFluxCostScalePct != 100)
-                    " • DMG ${game.damageTakenScalePct}% • FLUX ${game.weaponFluxCostScalePct}%"
-                  else ""
-                val botLabel =
-                  if (game.botsEnabled && game.botCount > 0) " • ${game.botCount}B" else " • 0B"
-                Text(
-                  text = "${game.baseMode.title} • CODE $code$botLabel$scaleSuffix",
-                  color = Color(0xFF38BDF8),
-                  fontSize = 7.2.sp,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-              }
-              Box(
-                modifier =
-                  Modifier.minimumInteractiveComponentSize()
-                    .clickable { onJoinCustomInstance(game.instanceId) }
-                    .padding(vertical = 4.dp)
-                    .testTag("hub_join_custom_${game.instanceId}"),
-                contentAlignment = Alignment.Center,
-              ) {
-                Box(
-                  modifier =
-                    Modifier.clip(RoundedCornerShape(5.dp))
-                      .background(Color(0xFF0D2D46))
-                      .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(5.dp))
-                      .padding(horizontal = 7.dp, vertical = 4.dp),
-                ) {
-                  Text(
-                    text = "JOIN >",
-                    color = Color.White,
-                    fontSize = 7.6.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                  )
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // 5% Increment Custom Sandbox Scales (Damage Taken & Weapon Flux Cost: 0%..100%, Default 100%)
-      Column(
-        modifier =
-          Modifier.fillMaxWidth()
-            .chamferedSciFiPodSurface(
-              isRightSide = true,
-              primaryBorder = Color(0xFF38BDF8),
-              secondaryBorder = Color(0xFF00F5D4),
-            )
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-            .testTag("custom_sandbox_5pct_scales_pod"),
-        verticalArrangement = Arrangement.spacedBy(1.dp),
-      ) {
-        HubCustomFivePercentStepperRow(
-          label = "DMG TAKEN",
-          valuePct = customDamageTakenScalePct,
-          minusTag = "hub_custom_damage_taken_minus",
-          valueTag = "hub_custom_damage_taken_value",
-          plusTag = "hub_custom_damage_taken_plus",
-          onMinus = { onSelectCustomDamageTakenScalePct(customDamageTakenScalePct - 5) },
-          onPlus = { onSelectCustomDamageTakenScalePct(customDamageTakenScalePct + 5) },
-        )
-        HubCustomFivePercentStepperRow(
-          label = "FLUX COST",
-          valuePct = customWeaponFluxCostScalePct,
-          minusTag = "hub_custom_weapon_flux_minus",
-          valueTag = "hub_custom_weapon_flux_value",
-          plusTag = "hub_custom_weapon_flux_plus",
-          onMinus = { onSelectCustomWeaponFluxCostScalePct(customWeaponFluxCostScalePct - 5) },
-          onPlus = { onSelectCustomWeaponFluxCostScalePct(customWeaponFluxCostScalePct + 5) },
-        )
-      }
-
-      // Quick Custom Rift Creator Pod
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .height(48.dp)
-            .chamferedSciFiPodSurface(
-              isRightSide = true,
-              primaryBorder = Color(0xFF00F5D4),
-              secondaryBorder = Color(0xFFFACC15),
-            )
-            .padding(horizontal = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Box(
-          modifier =
-            Modifier.minimumInteractiveComponentSize()
-              .fillMaxHeight()
-              .clickable { onTogglePrivateRoom(!customIsPrivateRoom) }
-              .padding(horizontal = 4.dp)
-              .testTag("hub_custom_toggle_visibility"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = if (customIsPrivateRoom) "PRIV [$generatedRoomCode]" else "PUBLIC",
-            color = if (customIsPrivateRoom) Color(0xFFFACC15) else Color(0xFF00F5D4),
-            fontSize = 7.8.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-          )
-        }
-
-        Box(
-          modifier =
-            Modifier.minimumInteractiveComponentSize()
-              .fillMaxHeight()
-              .clickable {
-                val modes =
-                  listOf(
-                    RankedGameMode.SECTOR_CONVERGENCE,
-                    RankedGameMode.RIFT_SKIRMISH,
-                    RankedGameMode.FLUX_CORE,
-                    RankedGameMode.STASIS_BREACH,
-                    RankedGameMode.RIFT_CONTROL,
-                  )
-                val nextIdx = (modes.indexOf(customBaseMode) + 1) % modes.size
-                onSelectCustomBaseMode(modes[nextIdx])
-              }
-              .padding(horizontal = 4.dp)
-              .testTag("hub_custom_cycle_base_mode"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = customBaseMode.title.uppercase(Locale.US).take(11),
-            color = Color(0xFFE2E8F0),
-            fontSize = 7.6.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-          )
-        }
-
-        Box(
-          modifier =
-            Modifier.minimumInteractiveComponentSize()
-              .fillMaxHeight()
-              .clickable { onQuickCreateCustomGame() }
-              .padding(vertical = 6.dp)
-              .testTag("hub_btn_quick_create_custom"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(6.dp))
-                .background(Brush.verticalGradient(listOf(Color(0xFF0D2D46), Color(0xFF061626))))
-                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
-                .padding(horizontal = 8.dp, vertical = 5.dp),
-          ) {
-            Text(
-              text = "CREATE RIFT >",
-              color = Color.White,
-              fontSize = 7.8.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-            )
-          }
-        }
-      }
-    }
-  }
-}
 
 /**
  * Renders the four open-space corner regions outside the curved top-to-bottom Overwatch circle:
@@ -6665,17 +5624,19 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
   overwatchZoom: Float,
   liveRemainingSec: Int,
   liveAvgResonance: Int,
+  activeShipTitle: String,
+  activeShipState: String,
   sideBayMode: RiftHubSideBayMode,
   overwatchPrompt: OverwatchCircularPrompt,
-  chargedShipId: Int,
+  @Suppress("UNUSED_PARAMETER") chargedShipId: Int,
   @Suppress("UNUSED_PARAMETER") renameDraft: String,
-  density: androidx.compose.ui.unit.Density,
+  @Suppress("UNUSED_PARAMETER") density: androidx.compose.ui.unit.Density,
   onSelectOverwatchKey: (String) -> Unit,
   @Suppress("UNUSED_PARAMETER") onToggleFavoriteOverwatchKey: (String) -> Unit = {},
   onResetOverwatchCamera: () -> Unit,
   onQuickZoneIntoOverwatch: (OverwatchRiftInstance) -> Unit,
   onToggleOverwatchInspectBay: () -> Unit = {},
-  onToggleAllModesBay: () -> Unit,
+  @Suppress("UNUSED_PARAMETER") onToggleAllModesBay: () -> Unit,
   onBottomLeftBackOrCancel: () -> Unit,
   onBottomRightConfirmOrCharge: () -> Unit,
 ) {
@@ -6841,7 +5802,7 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
     }
   }
 
-  // 2. TOP-RIGHT OPEN SPACE: Primary [ RIFT IN > ] Launch Trigger + Compact [ ACTIVE RIFTS ]
+  // 2. TOP-RIGHT OPEN SPACE: Primary [ RIFT IN > ] Launch Trigger + Active Ship Badge (zero duplicate ACTIVE RIFTS button)
   val riftInGlow =
     remember(isFocused) {
       Shadow(
@@ -6905,30 +5866,20 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
 
     Box(
       modifier =
-        Modifier.minimumInteractiveComponentSize()
-          .height(48.dp)
-          .clickable { onToggleAllModesBay() }
-          .padding(vertical = 6.dp)
-          .testTag("overwatch_btn_active_rifts"),
-      contentAlignment = Alignment.CenterEnd,
+        Modifier.clip(RoundedCornerShape(5.dp))
+          .background(Color(0xCC060D1A))
+          .border(0.9.dp, if (activeShipState == "CHARGED") Color(0xFF00F5D4) else Color(0xFF38BDF8), RoundedCornerShape(5.dp))
+          .padding(horizontal = 7.dp, vertical = 3.dp),
     ) {
-      val isModesOpen = sideBayMode == RiftHubSideBayMode.GAME_MODES_BAY
-      Box(
-        modifier =
-          Modifier.clip(RoundedCornerShape(6.dp))
-            .background(Color(0xD9060D1A))
-            .border(1.dp, if (isModesOpen) Color(0xFF00F5D4) else Color(0xFF38BDF8), RoundedCornerShape(6.dp))
-            .padding(horizontal = 9.dp, vertical = 5.dp),
-      ) {
-        Text(
-          text = if (isModesOpen) "CLOSE MODES" else "ACTIVE RIFTS",
-          color = if (isModesOpen) Color(0xFF00F5D4) else Color(0xFFE2E8F0),
-          fontSize = if (isTabletDeck) 9.8.sp else 8.8.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-        )
-      }
+      Text(
+        text = "$activeShipTitle • $activeShipState",
+        color = if (activeShipState == "CHARGED") Color(0xFF00F5D4) else Color(0xFFFACC15),
+        fontSize = if (isTabletDeck) 8.2.sp else 7.4.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
     }
   }
 
@@ -7057,6 +6008,7 @@ private fun RoundRipplingOverwatchAperture(
   onRenameDraftChange: (String) -> Unit = {},
   resolveShipResonance: (Int) -> Int = { 0 },
   onChargeShip: (Int) -> Unit = {},
+  onCustomizeRiftFrame: () -> Unit = {},
   onDismissPrompt: () -> Unit = {},
   onSquadUpPilot: (SquadronOnlinePilotItem) -> Unit = {},
   onAddFriendPilot: (SquadronOnlinePilotItem) -> Unit = {},
@@ -7439,6 +6391,7 @@ private fun RoundRipplingOverwatchAperture(
             onRenameDraftChange = onRenameDraftChange,
             resolveShipResonance = resolveShipResonance,
             onChargeShip = onChargeShip,
+            onCustomizeRiftFrame = onCustomizeRiftFrame,
             onDismissPrompt = onDismissPrompt,
             onSquadUpPilot = onSquadUpPilot,
             onAddFriendPilot = onAddFriendPilot,
@@ -7463,6 +6416,7 @@ private fun OverwatchCircularGlassPromptOverlay(
   onRenameDraftChange: (String) -> Unit = {},
   resolveShipResonance: (Int) -> Int,
   onChargeShip: (Int) -> Unit,
+  onCustomizeRiftFrame: () -> Unit = {},
   onDismissPrompt: () -> Unit,
   onSquadUpPilot: (SquadronOnlinePilotItem) -> Unit,
   onAddFriendPilot: (SquadronOnlinePilotItem) -> Unit,
@@ -7595,33 +6549,56 @@ private fun OverwatchCircularGlassPromptOverlay(
             overflow = TextOverflow.Ellipsis,
           )
 
-          // Compact 2x2 Hull Telemetry Bars
+          // 6 Core Performance Bars (Firepower, Flux Pool, Flux Regen, Top Speed, Thrust, Turn Rate)
+          val firepowerScore =
+            remember(ship.primaryDamage, ship.primaryStreams, ship.primaryCooldown, ship.bombDamage) {
+              val dps = (ship.primaryDamage * ship.primaryStreams) / ship.primaryCooldown.coerceAtLeast(0.08f)
+              val combined = dps + if (ship.hasBomb) ship.bombDamage * 0.25f else 0f
+              (combined / 1450f).coerceIn(0.22f, 1f)
+            }
           Row(
-            modifier = Modifier.fillMaxWidth(0.90f),
+            modifier = Modifier.fillMaxWidth(0.92f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
+            CircularPromptStatBar(
+              modifier = Modifier.weight(1f),
+              label = "FIRE",
+              fraction = firepowerScore,
+              color = Color(0xFFFB7185),
+            )
             CircularPromptStatBar(
               modifier = Modifier.weight(1f),
               label = "FLUX",
               fraction = (ship.maxFluxPts / 25f).coerceIn(0.18f, 1f),
               color = Color(0xFF00F5D4),
             )
-            CircularPromptStatBar(
-              modifier = Modifier.weight(1f),
-              label = "RECH",
-              fraction = (ship.rechargePts / 25f).coerceIn(0.18f, 1f),
-              color = Color(0xFF38BDF8),
-            )
           }
           Row(
-            modifier = Modifier.fillMaxWidth(0.90f),
+            modifier = Modifier.fillMaxWidth(0.92f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             CircularPromptStatBar(
               modifier = Modifier.weight(1f),
-              label = "SPD",
+              label = "REGEN",
+              fraction = (ship.rechargePts / 25f).coerceIn(0.18f, 1f),
+              color = Color(0xFF38BDF8),
+            )
+            CircularPromptStatBar(
+              modifier = Modifier.weight(1f),
+              label = "SPEED",
               fraction = (ship.speedPts / 25f).coerceIn(0.18f, 1f),
               color = Color(0xFFFACC15),
+            )
+          }
+          Row(
+            modifier = Modifier.fillMaxWidth(0.92f),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            CircularPromptStatBar(
+              modifier = Modifier.weight(1f),
+              label = "THRUST",
+              fraction = (ship.thrustPts / 25f).coerceIn(0.18f, 1f),
+              color = Color(0xFFA855F7),
             )
             CircularPromptStatBar(
               modifier = Modifier.weight(1f),
@@ -7631,49 +6608,80 @@ private fun OverwatchCircularGlassPromptOverlay(
             )
           }
 
-          // Primary [ CHARGE (Flux Icon) ] + [ X ] Row (>= 48dp touch targets)
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
+          if (ship.id == 10) {
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
-                  .clickable { onChargeShip(ship.id) }
-                  .padding(vertical = 5.dp)
-                  .testTag("overwatch_ship_charge_button"),
+                  .clickable { onCustomizeRiftFrame() }
+                  .padding(vertical = 4.dp)
+                  .testTag("overwatch_customize_rift_frame_btn"),
               contentAlignment = Alignment.Center,
             ) {
-              Row(
+              Box(
                 modifier =
-                  Modifier.clip(RoundedCornerShape(18.dp))
-                    .background(
-                      Brush.horizontalGradient(
-                        if (isAlreadyCharged) listOf(Color(0xFF0A363D), Color(0xFF091528))
-                        else listOf(Color(0xFF0D3554), Color(0xFF0B192E))
-                      )
-                    )
-                    .border(
-                      1.35.dp,
-                      Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
-                      RoundedCornerShape(18.dp),
-                    )
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                  Modifier.clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF1A1038))
+                    .border(1.1.dp, Color(0xFFC084FC), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
               ) {
                 Text(
-                  text = if (isAlreadyCharged) "CHARGED" else "CHARGE",
-                  color = Color.White,
-                  fontSize = chargeFontSp,
+                  text = "CUSTOMIZE FRAME >",
+                  color = Color(0xFFE9D5FF),
+                  fontSize = 8.4.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
-                  letterSpacing = 0.6.sp,
                   maxLines = 1,
-                  style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                 )
-                FluxToroidIcon(sizeDp = fluxExactDp)
+              }
+            }
+          }
+
+          // Primary [ CHARGE (Flux Icon) ] (hidden in Codex inspect-only preview) + [ CLOSE ] Row (>= 48dp touch targets)
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            if (!prompt.hideChargeButton) {
+              Box(
+                modifier =
+                  Modifier.minimumInteractiveComponentSize()
+                    .height(48.dp)
+                    .clickable { onChargeShip(ship.id) }
+                    .padding(vertical = 5.dp)
+                    .testTag("overwatch_ship_charge_button"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Row(
+                  modifier =
+                    Modifier.clip(RoundedCornerShape(18.dp))
+                      .background(
+                        Brush.horizontalGradient(
+                          if (isAlreadyCharged) listOf(Color(0xFF0A363D), Color(0xFF091528))
+                          else listOf(Color(0xFF0D3554), Color(0xFF0B192E))
+                        )
+                      )
+                      .border(
+                        1.35.dp,
+                        Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
+                        RoundedCornerShape(18.dp),
+                      )
+                      .padding(horizontal = 12.dp, vertical = 6.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                  Text(
+                    text = if (isAlreadyCharged) "CHARGED" else "CHARGE",
+                    color = Color.White,
+                    fontSize = chargeFontSp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.6.sp,
+                    maxLines = 1,
+                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                  )
+                  FluxToroidIcon(sizeDp = fluxExactDp)
+                }
               }
             }
 
@@ -8086,11 +7094,20 @@ private fun OverwatchCircularGlassPromptOverlay(
               )
             }
             prompt.riftAnomalyId.isNotBlank() -> {
-              RiftAnomalyIconPreview(
-                riftId = prompt.riftAnomalyId,
-                sizeDp = if (isTabletDeck) 60 else 48,
-                accentColor = accentCol,
-              )
+              val animPhase = ((fluxOrbitRad / (2.0 * PI)).toFloat() % 1f).let { if (it < 0f) it + 1f else it }
+              Canvas(modifier = Modifier.size(if (isTabletDeck) 84.dp else 66.dp)) {
+                drawIntoCanvas { canvas ->
+                  RiftSpriteBaker.drawAnimatedCodexRiftPreview(
+                    canvas = canvas.nativeCanvas,
+                    riftId = prompt.riftAnomalyId,
+                    cx = size.width * 0.5f,
+                    cy = size.height * 0.5f,
+                    radiusPx = min(size.width, size.height) * 0.40f,
+                    pulsePhase = animPhase,
+                    spinAngle = shipSpinDeg * 0.01745f,
+                  )
+                }
+              }
             }
             prompt.showStationPreview -> {
               Image(
@@ -8222,12 +7239,184 @@ private fun OverwatchCircularGlassPromptOverlay(
           }
         }
       }
+
+      is OverwatchCircularPrompt.SyndicateCrestBuilder -> {
+        val context = LocalContext.current
+        val localPrefs = remember(context) { LocalPilotPrefs(context) }
+        val palettes = remember {
+          listOf(
+            Triple("#0B1528", "#FACC15", "#00F5D4"),
+            Triple("#1A070C", "#EF4444", "#F59E0B"),
+            Triple("#0F0722", "#E879F9", "#00F5D4"),
+            Triple("#051914", "#10B981", "#38BDF8"),
+            Triple("#061528", "#38BDF8", "#E0F2FE"),
+          )
+        }
+        var crestDraft by
+          remember(prompt.syndicateTag) {
+            mutableStateOf(
+              localPrefs.getSyndicateCrestJson(prompt.syndicateTag)?.let { raw ->
+                runCatching { SyndicateCrestRecipe.fromJson(org.json.JSONObject(raw)) }.getOrNull()
+              } ?: RiftVisualForgeState.activeSyndicateCrestRecipe
+            )
+          }
+        Column(
+          modifier = Modifier.fillMaxWidth(0.86f).testTag("overwatch_syndicate_crest_builder"),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 6.dp else 4.dp),
+        ) {
+          Text(
+            text = "[${prompt.syndicateTag}] SYNDICATE CREST",
+            color = Color(0xFF00F5D4),
+            fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          Canvas(modifier = Modifier.size(if (isTabletDeck) 78.dp else 62.dp)) {
+            drawIntoCanvas { canvas ->
+              RiftSpriteBaker.drawSyndicateCrestOnCanvas(
+                c = canvas.nativeCanvas,
+                cx = size.width * 0.5f,
+                cy = size.height * 0.5f,
+                r = min(size.width, size.height) * 0.44f,
+                recipe = crestDraft,
+                tagText = prompt.syndicateTag,
+              )
+            }
+          }
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable {
+                    crestDraft = crestDraft.copy(shieldShape = (crestDraft.shieldShape + 1) % 4)
+                  }
+                  .padding(vertical = 7.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0D253B))
+                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+              ) {
+                Text(
+                  text = "SHAPE: ${crestDraft.shieldShapeLabel.uppercase(Locale.US)}",
+                  color = Color.White,
+                  fontSize = 7.0.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable {
+                    crestDraft = crestDraft.copy(emblemGlyph = (crestDraft.emblemGlyph + 1) % 6)
+                  }
+                  .padding(vertical = 7.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0D253B))
+                    .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+              ) {
+                Text(
+                  text = "GLYPH: ${crestDraft.emblemGlyphLabel.uppercase(Locale.US)}",
+                  color = Color.White,
+                  fontSize = 7.0.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+          }
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable {
+                    val curIdx = palettes.indexOfFirst { it.second == crestDraft.trimHex }
+                    val next = palettes[(curIdx + 1) % palettes.size]
+                    crestDraft = crestDraft.copy(primaryHex = next.first, trimHex = next.second, glowHex = next.third)
+                  }
+                  .padding(vertical = 7.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF091528))
+                    .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+              ) {
+                Text("COLORS", color = Color(0xFFFACC15), fontSize = 7.2.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+              }
+            }
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable {
+                    RiftVisualForgeState.updateSyndicateCrest(crestDraft, context)
+                    localPrefs.setSyndicateCrestJson(prompt.syndicateTag, crestDraft.toJson().toString())
+                    onDismissPrompt()
+                  }
+                  .padding(vertical = 7.dp)
+                  .testTag("overwatch_crest_save_button"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF065F46))
+                    .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+              ) {
+                Text("SAVE CREST", color = Color.White, fontSize = 7.6.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+              }
+            }
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable { onDismissPrompt() }
+                  .padding(vertical = 7.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(CircleShape)
+                    .background(Color(0xCC060D1A))
+                    .border(1.dp, Color(0xFF64748B), CircleShape)
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+              ) {
+                Text("CLOSE", color = Color(0xFFCBD5E1), fontSize = 7.4.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
 
 @Composable
-private fun CircularPromptStatBar(
+internal fun CircularPromptStatBar(
   modifier: Modifier = Modifier,
   label: String,
   fraction: Float,
@@ -8264,371 +7453,7 @@ private fun CircularPromptStatBar(
   }
 }
 
-@Composable
-private fun SyndicateLeftDirectoryBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  currentTag: String,
-  syndicateDirectory: List<SyndicateInfo>,
-  statusMessage: String?,
-  onBackToHub: () -> Unit,
-  onInspectSyndicate: (SyndicateInfo) -> Unit,
-) {
-  val cleanSyndicates =
-    remember(syndicateDirectory) {
-      syndicateDirectory
-        .filter { it.isRealPlayerFoundedSyndicate() }
-        .distinctBy { it.tag.trim().uppercase(Locale.US) }
-        .sortedByDescending { it.combinedBounty }
-    }
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("syndicate_left_directory_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    HubDigitizedReturnBar(
-      heightDp = headerHeight,
-      isRightSide = false,
-      isTabletDeck = isTabletDeck,
-      sectionTitle = "SYNDICATES (${cleanSyndicates.size})",
-      accent = Color(0xFFFACC15),
-      onBackToHub = onBackToHub,
-    )
-    if (!statusMessage.isNullOrBlank()) {
-      Text(
-        text = statusMessage,
-        color = Color(0xFF00F5D4),
-        fontSize = 7.6.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.Monospace,
-        maxLines = 2,
-        modifier = Modifier.padding(horizontal = 6.dp),
-      )
-    }
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      if (cleanSyndicates.isEmpty()) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth()
-              .chamferedSciFiPodSurface(
-                isRightSide = false,
-                primaryBorder = Color(0xFF38BDF8),
-                secondaryBorder = Color(0xFF091528),
-              )
-              .padding(10.dp),
-        ) {
-          Text(
-            text = "NO HUMAN-CHARTERED SYNDICATES YET. FOUND ONE ON THE RIGHT WING.",
-            color = Color(0xFF94A3B8),
-            fontSize = if (isTabletDeck) 8.6.sp else 7.6.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      } else {
-        cleanSyndicates.forEach { syn ->
-          val isMember = currentTag.isNotBlank() && syn.tag.equals(currentTag, ignoreCase = true)
-          Row(
-            modifier =
-              Modifier.fillMaxWidth()
-                .minimumInteractiveComponentSize()
-                .chamferedSciFiPodSurface(
-                  isRightSide = false,
-                  primaryBorder = if (isMember) Color(0xFFFFD700) else Color(0xFF38BDF8),
-                  secondaryBorder = if (isMember) Color(0xFF00F5D4) else Color(0xFF091528),
-                )
-                .clickable { onInspectSyndicate(syn) }
-                .padding(horizontal = 8.dp, vertical = 6.dp)
-                .testTag("syndicate_row_${syn.tag.lowercase(Locale.US)}"),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
-              Text(
-                text = "[${syn.tag.uppercase(Locale.US)}] ${syn.name.uppercase(Locale.US)}",
-                color = Color.White,
-                fontSize = if (isTabletDeck) 9.4.sp else 8.2.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-              ) {
-                ResonanceCrestIcon(sizeDp = 11.dp)
-                Text(
-                  text = "${String.format(Locale.US, "%,d", syn.combinedBounty.coerceAtLeast(0L))} • ${syn.memberCount.coerceAtLeast(1)}P",
-                  color = Color(0xFFFFD700),
-                  fontSize = 8.4.sp,
-                  fontWeight = FontWeight.Bold,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                )
-              }
-            }
-            Text(
-              text = if (isMember) "ENLISTED" else "INSPECT >",
-              color = if (isMember) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-              fontSize = 7.6.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-        }
-      }
-    }
-  }
-}
 
-@Composable
-private fun SyndicateRightCitadelBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  syndicateTag: String,
-  syndicateName: String,
-  syndicateOnlineCount: Int,
-  syndicateWarRecord: SyndicateWarRecord,
-  onLeaveCurrentSyndicate: () -> Unit,
-  onCharterCustomSyndicate: (tag: String, name: String, motto: String) -> Unit,
-  onOpenCrestForge: () -> Unit,
-) {
-  var draftTag by remember { mutableStateOf("") }
-  var draftName by remember { mutableStateOf("") }
-  var draftMotto by remember { mutableStateOf("") }
-
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("syndicate_right_citadel_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .height(headerHeight)
-          .chamferedSciFiPodSurface(
-            isRightSide = true,
-            primaryBorder = Color(0xFFFACC15),
-            secondaryBorder = Color(0xFF38BDF8),
-          )
-          .padding(horizontal = 8.dp),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(
-        text = if (syndicateTag.isNotBlank()) "[$syndicateTag] CITADEL" else "CHARTER CITADEL",
-        color = Color(0xFFFFD700),
-        fontSize = if (isTabletDeck) 9.6.sp else 8.4.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-        maxLines = 1,
-      )
-      Box(
-        modifier =
-          Modifier.minimumInteractiveComponentSize()
-            .clickable { onOpenCrestForge() }
-            .padding(horizontal = 4.dp, vertical = 6.dp)
-            .testTag("syndicate_open_crest_forge"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = "CREST >",
-          color = Color(0xFF00F5D4),
-          fontSize = 7.8.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-    }
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      Column(
-        modifier =
-          Modifier.fillMaxWidth()
-            .chamferedSciFiPodSurface(
-              isRightSide = true,
-              primaryBorder = Color(0xFF38BDF8),
-              secondaryBorder = Color(0xFF091528),
-            )
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-      ) {
-        Text(
-          text = if (syndicateTag.isNotBlank()) syndicateName else "UNAFFILIATED PILOT",
-          color = Color.White,
-          fontSize = if (isTabletDeck) 9.6.sp else 8.4.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-        Text(
-          text = "ONLINE: $syndicateOnlineCount • WARS: ${syndicateWarRecord.warWins}W-${syndicateWarRecord.warLosses}L",
-          color = Color(0xFF38BDF8),
-          fontSize = 7.6.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
-        )
-        if (syndicateTag.isNotBlank()) {
-          Box(
-            modifier =
-              Modifier.minimumInteractiveComponentSize()
-                .height(48.dp)
-                .clickable { onLeaveCurrentSyndicate() }
-                .padding(vertical = 5.dp)
-                .testTag("syndicate_leave_button"),
-            contentAlignment = Alignment.CenterStart,
-          ) {
-            Box(
-              modifier =
-                Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(Color(0x33FB7185))
-                  .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(6.dp))
-                  .padding(horizontal = 9.dp, vertical = 5.dp),
-            ) {
-              Text(
-                text = "LEAVE [$syndicateTag]",
-                color = Color(0xFFFB7185),
-                fontSize = 7.8.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-          }
-        }
-      }
-
-      // Charter Human-Founded Syndicate Box
-      Column(
-        modifier =
-          Modifier.fillMaxWidth()
-            .chamferedSciFiPodSurface(
-              isRightSide = true,
-              primaryBorder = Color(0xFFFFD700),
-              secondaryBorder = Color(0xFF00F5D4),
-            )
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Text(
-          text = "FOUND NEW SYNDICATE (1-3 TAG)",
-          color = Color(0xFFFFD700),
-          fontSize = 8.0.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-        BasicTextField(
-          value = draftTag,
-          onValueChange = { draftTag = it.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(3) },
-          singleLine = true,
-          cursorBrush = SolidColor(Color(0xFF00F5D4)),
-          textStyle = TextStyle(color = Color.White, fontSize = 8.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace),
-          decorationBox = { inner ->
-            Box(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .clip(RoundedCornerShape(5.dp))
-                  .background(Color(0xDD02050B))
-                  .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(5.dp))
-                  .padding(horizontal = 7.dp, vertical = 5.dp),
-            ) {
-              if (draftTag.isEmpty()) {
-                Text("TAG (E.G. VTX)", color = Color(0xFF64748B), fontSize = 8.0.sp, fontFamily = FontFamily.Monospace)
-              }
-              inner()
-            }
-          },
-          modifier = Modifier.testTag("syndicate_charter_tag_input"),
-        )
-        BasicTextField(
-          value = draftName,
-          onValueChange = { draftName = it.take(22) },
-          singleLine = true,
-          cursorBrush = SolidColor(Color(0xFF00F5D4)),
-          textStyle = TextStyle(color = Color.White, fontSize = 8.8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
-          decorationBox = { inner ->
-            Box(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .clip(RoundedCornerShape(5.dp))
-                  .background(Color(0xDD02050B))
-                  .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(5.dp))
-                  .padding(horizontal = 7.dp, vertical = 5.dp),
-            ) {
-              if (draftName.isEmpty()) {
-                Text("SYNDICATE NAME", color = Color(0xFF64748B), fontSize = 8.0.sp, fontFamily = FontFamily.Monospace)
-              }
-              inner()
-            }
-          },
-          modifier = Modifier.testTag("syndicate_charter_name_input"),
-        )
-        BasicTextField(
-          value = draftMotto,
-          onValueChange = { draftMotto = it.take(36) },
-          singleLine = true,
-          cursorBrush = SolidColor(Color(0xFF00F5D4)),
-          textStyle = TextStyle(color = Color(0xFFCBD5E1), fontSize = 8.2.sp, fontFamily = FontFamily.Monospace),
-          decorationBox = { inner ->
-            Box(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .clip(RoundedCornerShape(5.dp))
-                  .background(Color(0xDD02050B))
-                  .border(1.dp, Color(0x5538BDF8), RoundedCornerShape(5.dp))
-                  .padding(horizontal = 7.dp, vertical = 5.dp),
-            ) {
-              if (draftMotto.isEmpty()) {
-                Text("SECTOR MOTTO", color = Color(0xFF64748B), fontSize = 7.8.sp, fontFamily = FontFamily.Monospace)
-              }
-              inner()
-            }
-          },
-          modifier = Modifier.testTag("syndicate_charter_motto_input"),
-        )
-        val canCharter = draftTag.trim().length in 1..3 && draftName.trim().length >= 3
-        Box(
-          modifier =
-            Modifier.fillMaxWidth()
-              .minimumInteractiveComponentSize()
-              .height(48.dp)
-              .clickable(enabled = canCharter) {
-                onCharterCustomSyndicate(draftTag.trim(), draftName.trim(), draftMotto.trim())
-                draftTag = ""
-                draftName = ""
-                draftMotto = ""
-              }
-              .padding(vertical = 5.dp)
-              .testTag("syndicate_charter_submit_button"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Box(
-            modifier =
-              Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (canCharter) Color(0xFF0D2D46) else Color(0xFF0F172A))
-                .border(1.dp, if (canCharter) Color(0xFFFFD700) else Color(0xFF475569), RoundedCornerShape(6.dp))
-                .padding(vertical = 6.dp),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = "CHARTER SYNDICATE >",
-              color = if (canCharter) Color.White else Color(0xFF64748B),
-              fontSize = 8.2.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-        }
-      }
-    }
-  }
-}
 
 @Composable
 private fun ConduitLeftDirectivesBay(
@@ -8859,1884 +7684,7 @@ private fun ConduitLeftDirectivesBay(
   }
 }
 
-@Composable
-private fun ConduitRightVaultBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  shardText: String,
-  activeCustomSlotId: String,
-  localPrefs: LocalPilotPrefs,
-  currentUserId: String,
-  onSelectFrameSlot: (String) -> Unit,
-  onInspectCosmetic: (CosmeticCatalogItem, Boolean, Boolean) -> Unit,
-) {
-  val uidOrNull = currentUserId.ifBlank { null }
-  val allCosmetics = remember {
-    RiftProgressionCatalog.hullTrims +
-      RiftProgressionCatalog.killFinishers +
-      RiftProgressionCatalog.warpSignatures
-  }
 
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("conduit_right_vault_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .height(headerHeight)
-          .chamferedSciFiPodSurface(
-            isRightSide = true,
-            primaryBorder = Color(0xFFFFD700),
-            secondaryBorder = Color(0xFF00F5D4),
-          )
-          .padding(horizontal = 8.dp),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(
-        text = "COSMETIC VAULT",
-        color = Color.White,
-        fontSize = if (isTabletDeck) 9.4.sp else 8.2.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-      )
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        RiftShardGemIcon(sizeDp = 12.dp)
-        Text(
-          text = shardText,
-          color = Color(0xFF00F5D4),
-          fontSize = 8.2.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-    }
-
-    // Rift Frame Loadout Slots A..E
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .height(48.dp)
-          .chamferedSciFiPodSurface(
-            isRightSide = true,
-            primaryBorder = Color(0xFF38BDF8),
-            secondaryBorder = Color(0xFF091528),
-          )
-          .padding(horizontal = 4.dp),
-      horizontalArrangement = Arrangement.spacedBy(3.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      val normalizedActiveSlot = localPrefs.normalizeCustomSlotId(activeCustomSlotId)
-      listOf("A", "B", "C", "D", "E").forEach { slot ->
-        val fullSlot = localPrefs.normalizeCustomSlotId(slot)
-        val sel = normalizedActiveSlot == fullSlot
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .fillMaxHeight()
-              .minimumInteractiveComponentSize()
-              .clickable { onSelectFrameSlot(fullSlot) }
-              .padding(vertical = 6.dp)
-              .testTag("conduit_frame_slot_$slot"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(5.dp))
-                .background(if (sel) Color(0x3800F5D4) else Color(0x6602050B))
-                .border(1.dp, if (sel) Color(0xFF00F5D4) else Color(0x4438BDF8), RoundedCornerShape(5.dp)),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = slot,
-              color = if (sel) Color.White else Color(0xFF94A3B8),
-              fontSize = 8.2.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-        }
-      }
-    }
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      allCosmetics.forEach { item ->
-        val unlocked = localPrefs.isCosmeticUnlocked(item.category, item.id, uid = uidOrNull)
-        val equipped = localPrefs.getEquippedCosmeticId(item.category, uidOrNull) == item.id
-        Row(
-          modifier =
-            Modifier.fillMaxWidth()
-              .minimumInteractiveComponentSize()
-              .chamferedSciFiPodSurface(
-                isRightSide = true,
-                primaryBorder = if (equipped) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-                secondaryBorder = if (unlocked) Color(0xFFFFD700) else Color(0xFF091528),
-              )
-              .clickable { onInspectCosmetic(item, unlocked, equipped) }
-              .padding(horizontal = 8.dp, vertical = 6.dp)
-              .testTag("conduit_cosmetic_${item.category.lowercase(Locale.US)}_${item.id}"),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
-            Text(
-              text = item.name.uppercase(Locale.US),
-              color = Color.White,
-              fontSize = if (isTabletDeck) 8.8.sp else 7.8.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-              text = item.category.replace("_", " "),
-              color = Color(0xFF94A3B8),
-              fontSize = 7.0.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-          Text(
-            text = when {
-              equipped -> "ACTIVE"
-              unlocked -> "EQUIP >"
-              else -> "${item.shardCost}S"
-            },
-            color = when {
-              equipped -> Color(0xFF00F5D4)
-              unlocked -> Color(0xFFFACC15)
-              else -> Color(0xFFCBD5E1)
-            },
-            fontSize = 7.6.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun DossierLeftIdentityBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  callsign: String,
-  syndicateTag: String,
-  liveResonance: Int,
-  peakResonance: Int,
-  localPrefs: LocalPilotPrefs,
-  currentUserId: String,
-  onBackToHub: () -> Unit,
-  onOpenRenamePrompt: () -> Unit,
-  onOpenResetPrompt: () -> Unit,
-  onSwitchAccount: () -> Unit,
-  onOpenSurvivalSpreadsheet: () -> Unit = {},
-) {
-  val context = LocalContext.current
-  val uidOrNull = currentUserId.ifBlank { null }
-  var exportStatusBanner by remember { mutableStateOf<String?>(null) }
-  val allKills = remember(currentUserId, liveResonance) { localPrefs.getAllTimeKills(uidOrNull) }
-  val allDeaths = remember(currentUserId, liveResonance) { localPrefs.getAllTimeDeaths(uidOrNull) }
-  val pvpKills = remember(currentUserId, liveResonance) { localPrefs.getPvpKills(uidOrNull) }
-  val wins = remember(currentUserId, liveResonance) { localPrefs.getConvergencesWon() }
-  val survivalSummary = remember(currentUserId, liveResonance, allKills, allDeaths, wins) {
-    localPrefs.getPilotSurvivalTelemetrySummary(uidOrNull)
-  }
-  val kdText =
-    remember(allKills, allDeaths) {
-      if (allDeaths <= 0L) String.format(Locale.US, "%.1f", allKills.toDouble())
-      else String.format(Locale.US, "%.2f", allKills.toDouble() / allDeaths.toDouble())
-    }
-
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("dossier_left_identity_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    HubDigitizedReturnBar(
-      heightDp = headerHeight,
-      isRightSide = false,
-      isTabletDeck = isTabletDeck,
-      sectionTitle = "PILOT DOSSIER",
-      accent = Color(0xFF00F5D4),
-      onBackToHub = onBackToHub,
-    )
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      Column(
-        modifier =
-          Modifier.fillMaxWidth()
-            .chamferedSciFiPodSurface(
-              isRightSide = false,
-              primaryBorder = Color(0xFF00F5D4),
-              secondaryBorder = Color(0xFFFFD700),
-            )
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Text(
-          text = if (syndicateTag.isNotBlank()) "[$syndicateTag] $callsign" else callsign,
-          color = Color.White,
-          fontSize = if (isTabletDeck) 10.6.sp else 9.4.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-          ResonanceCrestIcon(sizeDp = 13.dp)
-          Text(
-            text = "LIVE ${String.format(Locale.US, "%,d", liveResonance)} • PEAK ${String.format(Locale.US, "%,d", peakResonance)}",
-            color = Color(0xFFFFD700),
-            fontSize = 8.6.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-          )
-        }
-        Text(
-          text = "ELIMS: $allKills (PVP $pvpKills) • K/D: $kdText • WINS: $wins",
-          color = Color(0xFF38BDF8),
-          fontSize = 7.6.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-
-      // Ship Alive Duration Summary + 1-Click HTML / CSV / JSON Telemetry Export Pod
-      Column(
-        modifier =
-          Modifier.fillMaxWidth()
-            .chamferedSciFiPodSurface(
-              isRightSide = false,
-              primaryBorder = Color(0xFF38BDF8),
-              secondaryBorder = Color(0xFF00F5D4),
-            )
-            .padding(8.dp)
-            .testTag("dossier_hub_survival_summary_pod"),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Text(
-          text = "SHIP ALIVE DURATION (${survivalSummary.pilotCompletedLives} LIVES)",
-          color = Color(0xFF00F5D4),
-          fontSize = 7.8.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-        )
-        Text(
-          text =
-            "AVG ${formatSurvivalDurationSec(survivalSummary.pilotAvgSurvivalSec)} • LAST ${formatSurvivalDurationSec(survivalSummary.pilotLastSurvivalSec)} • MAX ${formatSurvivalDurationSec(survivalSummary.pilotMaxSurvivalSec)}",
-          color = Color.White,
-          fontSize = 7.5.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-          text =
-            "AI BOT AVG: ${formatSurvivalDurationSec(survivalSummary.botAvgSurvivalSec)} (${survivalSummary.botCompletedLives} LIVES)",
-          color = Color(0xFFC084FC),
-          fontSize = 7.2.sp,
-          fontWeight = FontWeight.Bold,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(4.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          HubTelemetryMiniExportBtn(
-            modifier = Modifier.weight(1.25f),
-            label = "HTML TABLE",
-            accent = Color(0xFF00F5D4),
-            testTag = "hub_dossier_open_html_btn",
-          ) {
-            onOpenSurvivalSpreadsheet()
-          }
-          HubTelemetryMiniExportBtn(
-            modifier = Modifier.weight(1f),
-            label = "CSV",
-            accent = Color(0xFFFACC15),
-            testTag = "hub_dossier_export_csv_btn",
-          ) {
-            val csv = localPrefs.exportSurvivalTelemetryCsv(callsign, liveResonance, uidOrNull)
-            exportStatusBanner =
-              shareOrOpenSurvivalExport(
-                context = context,
-                fileName = "rift_ship_survival_telemetry.csv",
-                mimeType = "text/csv",
-                payload = csv,
-              )
-          }
-          HubTelemetryMiniExportBtn(
-            modifier = Modifier.weight(1f),
-            label = "JSON",
-            accent = Color(0xFF38BDF8),
-            testTag = "hub_dossier_export_json_btn",
-          ) {
-            val json = localPrefs.exportSurvivalTelemetryJson(callsign, liveResonance, uidOrNull)
-            exportStatusBanner =
-              shareOrOpenSurvivalExport(
-                context = context,
-                fileName = "rift_ship_survival_telemetry.json",
-                mimeType = "application/json",
-                payload = json,
-              )
-          }
-        }
-        if (!exportStatusBanner.isNullOrBlank()) {
-          Text(
-            text = exportStatusBanner!!,
-            color = Color(0xFFFACC15),
-            fontSize = 7.0.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
-      }
-
-      // Rename Callsign Trigger -> Opens Circular Glass Rename Prompt in Overwatch
-      Box(
-        modifier =
-          Modifier.fillMaxWidth()
-            .minimumInteractiveComponentSize()
-            .height(48.dp)
-            .clickable { onOpenRenamePrompt() }
-            .padding(vertical = 4.dp)
-            .testTag("dossier_rename_callsign_button"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth()
-              .clip(RoundedCornerShape(7.dp))
-              .background(Color(0xFF0D2D46))
-              .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(7.dp))
-              .padding(vertical = 6.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = "RENAME CALLSIGN >",
-            color = Color.White,
-            fontSize = 8.2.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-
-      // Switch Account Trigger
-      Box(
-        modifier =
-          Modifier.fillMaxWidth()
-            .minimumInteractiveComponentSize()
-            .height(48.dp)
-            .clickable { onSwitchAccount() }
-            .padding(vertical = 4.dp)
-            .testTag("dossier_switch_account_button"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth()
-              .clip(RoundedCornerShape(7.dp))
-              .background(Color(0xFF091528))
-              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(7.dp))
-              .padding(vertical = 6.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = "SWITCH PILOT ACCOUNT",
-            color = Color(0xFFE2E8F0),
-            fontSize = 8.0.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-
-      // Reset Local Telemetry Trigger -> Opens Circular Glass Confirmation in Overwatch
-      Box(
-        modifier =
-          Modifier.fillMaxWidth()
-            .minimumInteractiveComponentSize()
-            .height(48.dp)
-            .clickable { onOpenResetPrompt() }
-            .padding(vertical = 4.dp)
-            .testTag("dossier_reset_pilot_button"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth()
-              .clip(RoundedCornerShape(7.dp))
-              .background(Color(0x26FB7185))
-              .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(7.dp))
-              .padding(vertical = 6.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = "RESET LOCAL RECORD",
-            color = Color(0xFFFB7185),
-            fontSize = 8.0.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun HubTelemetryMiniExportBtn(
-  modifier: Modifier = Modifier,
-  label: String,
-  accent: Color,
-  testTag: String,
-  onClick: () -> Unit,
-) {
-  Box(
-    modifier =
-      modifier
-        .minimumInteractiveComponentSize()
-        .height(48.dp)
-        .clickable { onClick() }
-        .padding(vertical = 6.dp)
-        .testTag(testTag),
-    contentAlignment = Alignment.Center,
-  ) {
-    Box(
-      modifier =
-        Modifier.fillMaxSize()
-          .clip(RoundedCornerShape(6.dp))
-          .background(accent.copy(alpha = 0.16f))
-          .border(1.dp, accent, RoundedCornerShape(6.dp)),
-      contentAlignment = Alignment.Center,
-    ) {
-      Text(
-        text = label,
-        color = Color.White,
-        fontSize = 7.2.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-        maxLines = 1,
-      )
-    }
-  }
-}
-
-@Composable
-private fun HubCustomFivePercentStepperRow(
-  label: String,
-  valuePct: Int,
-  minusTag: String,
-  valueTag: String,
-  plusTag: String,
-  onMinus: () -> Unit,
-  onPlus: () -> Unit,
-) {
-  val snapped = snapCustomFivePercentScale(valuePct)
-  Row(
-    modifier = Modifier.fillMaxWidth().height(48.dp),
-    horizontalArrangement = Arrangement.SpaceBetween,
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Text(
-      text = label,
-      color = Color(0xFFCBD5E1),
-      fontSize = 7.4.sp,
-      fontWeight = FontWeight.Black,
-      fontFamily = FontFamily.Monospace,
-      maxLines = 1,
-    )
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-      Box(
-        modifier =
-          Modifier.minimumInteractiveComponentSize()
-            .size(48.dp)
-            .clickable(enabled = snapped > 0) { onMinus() }
-            .testTag(minusTag),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = "[-5%]",
-          color = if (snapped > 0) Color(0xFF00F5D4) else Color(0xFF475569),
-          fontSize = 7.6.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-      Text(
-        text = "$snapped%",
-        color = if (snapped == 100) Color(0xFFE2E8F0) else Color(0xFFFFD700),
-        fontSize = 8.0.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-        modifier = Modifier.width(34.dp).testTag(valueTag),
-        textAlign = TextAlign.Center,
-      )
-      Box(
-        modifier =
-          Modifier.minimumInteractiveComponentSize()
-            .size(48.dp)
-            .clickable(enabled = snapped < 100) { onPlus() }
-            .testTag(plusTag),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = "[+5%]",
-          color = if (snapped < 100) Color(0xFF00F5D4) else Color(0xFF475569),
-          fontSize = 7.6.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-    }
-  }
-}
-
-@Composable
-private fun DossierRightCareerBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  bestShipId: Int,
-  shipSpinDeg: Float,
-  fluxOrbitRad: Float,
-  shipResonanceFor: (Int) -> Int,
-  localPrefs: LocalPilotPrefs,
-  currentUserId: String,
-  cloudLeaderboardEntries: List<LeaderboardEntry>,
-  onOpenSurvivalSpreadsheet: () -> Unit = {},
-  onInspectShip: (Int) -> Unit,
-) {
-  var careerTab by remember { mutableIntStateOf(0) }
-  val uidOrNull = currentUserId.ifBlank { null }
-  val survivalSummary = remember(currentUserId, careerTab, bestShipId) {
-    localPrefs.getPilotSurvivalTelemetrySummary(uidOrNull)
-  }
-  val survivalByShip = remember(survivalSummary) {
-    survivalSummary.perShip.associateBy { it.shipId }
-  }
-  val shipsSorted = remember(bestShipId) {
-    RiftCodex.getAllTenShips().sortedByDescending { shipResonanceFor(it.id) }
-  }
-  val realHumanLeaders = remember(cloudLeaderboardEntries) {
-    cloudLeaderboardEntries
-      .filter { e ->
-        val uid = e.userId.ifBlank { e.id }.trim()
-        uid.isNotBlank() &&
-          !uid.startsWith("bot_", ignoreCase = true) &&
-          !e.callsign.equals("COMMANDER", ignoreCase = true)
-      }
-      .distinctBy { (it.userId.ifBlank { it.id }).lowercase(Locale.US) }
-      .sortedByDescending { it.allTimeBounty }
-      .take(20)
-  }
-
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("dossier_right_career_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .height(headerHeight)
-          .chamferedSciFiPodSurface(
-            isRightSide = true,
-            primaryBorder = Color(0xFF00F5D4),
-            secondaryBorder = Color(0xFFFFD700),
-          )
-          .padding(horizontal = 4.dp),
-      horizontalArrangement = Arrangement.spacedBy(3.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      listOf(
-        Triple(0, "HULL RANK", "dossier_tab_ship_res"),
-        Triple(1, "SURVIVAL", "dossier_tab_survival"),
-        Triple(2, "FAME", "dossier_tab_hall_of_fame"),
-      ).forEach { (tabIdx, label, tag) ->
-        val sel = careerTab == tabIdx
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .fillMaxHeight()
-              .minimumInteractiveComponentSize()
-              .clickable { careerTab = tabIdx }
-              .padding(vertical = 5.dp)
-              .testTag(tag),
-          contentAlignment = Alignment.Center,
-        ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (sel) Color(0x3800F5D4) else Color(0x6602050B))
-                .border(1.dp, if (sel) Color(0xFF00F5D4) else Color(0x4438BDF8), RoundedCornerShape(6.dp)),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = label,
-              color = if (sel) Color.White else Color(0xFF94A3B8),
-              fontSize = 8.4.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-            )
-          }
-        }
-      }
-    }
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      when (careerTab) {
-        0 -> {
-          shipsSorted.forEach { ship ->
-            val res = shipResonanceFor(ship.id)
-            val isBest = ship.id == bestShipId
-            val cleanName = ship.name.replace(Regex("^[0-9]+-"), "").trim().uppercase(Locale.US)
-            val surv = survivalByShip[ship.id]
-            Row(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .minimumInteractiveComponentSize()
-                  .chamferedSciFiPodSurface(
-                    isRightSide = true,
-                    primaryBorder = if (isBest) Color(0xFFFFD700) else Color(0xFF38BDF8),
-                    secondaryBorder = Color(0xFF091528),
-                  )
-                  .clickable { onInspectShip(ship.id) }
-                  .padding(horizontal = 8.dp, vertical = 4.dp)
-                  .testTag("dossier_ship_row_${ship.id}"),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.weight(1f),
-              ) {
-                Spinning25dShipWithOrbitingFlux(
-                  shipId = ship.id,
-                  shipSpinDeg = shipSpinDeg,
-                  fluxOrbitRad = fluxOrbitRad,
-                  isCharged = false,
-                  isBestShip = isBest,
-                  sizeDp = 32.dp,
-                )
-                Column {
-                  Text(
-                    text = cleanName,
-                    color = Color.White,
-                    fontSize = if (isTabletDeck) 8.8.sp else 7.8.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                  )
-                  val subLine =
-                    when {
-                      isBest && (surv?.completedLives ?: 0) > 0 ->
-                        "BEST • AVG ${formatSurvivalDurationSec(surv!!.avgSurvivalSec)}"
-                      isBest -> "BEST HULL"
-                      (surv?.completedLives ?: 0) > 0 ->
-                        "AVG ${formatSurvivalDurationSec(surv!!.avgSurvivalSec)} (${surv.completedLives}L)"
-                      else -> "0 LIVES RECORDED"
-                    }
-                  Text(
-                    text = subLine,
-                    color = if (isBest) Color(0xFFFFD700) else Color(0xFF38BDF8),
-                    fontSize = 6.8.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                  )
-                }
-              }
-              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                ResonanceCrestIcon(sizeDp = 11.dp)
-                Text(
-                  text = String.format(Locale.US, "%,d", res),
-                  color = Color(0xFFFFD700),
-                  fontSize = 8.8.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
-            }
-          }
-        }
-
-        1 -> {
-          Box(
-            modifier =
-              Modifier.fillMaxWidth()
-                .minimumInteractiveComponentSize()
-                .height(48.dp)
-                .clickable { onOpenSurvivalSpreadsheet() }
-                .padding(vertical = 4.dp)
-                .testTag("dossier_right_open_html_spreadsheet_btn"),
-            contentAlignment = Alignment.Center,
-          ) {
-            Box(
-              modifier =
-                Modifier.fillMaxSize()
-                  .clip(RoundedCornerShape(6.dp))
-                  .background(Color(0xFF0D2D46))
-                  .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp)),
-              contentAlignment = Alignment.Center,
-            ) {
-              Text(
-                text = "OPEN HTML TELEMETRY SPREADSHEET >",
-                color = Color(0xFF00F5D4),
-                fontSize = 7.6.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-          }
-
-          survivalSummary.perShip.forEach { entry ->
-            Row(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .minimumInteractiveComponentSize()
-                  .chamferedSciFiPodSurface(
-                    isRightSide = true,
-                    primaryBorder = if (entry.completedLives > 0) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-                    secondaryBorder = Color(0xFF091528),
-                  )
-                  .clickable { onInspectShip(entry.shipId) }
-                  .padding(horizontal = 8.dp, vertical = 5.dp)
-                  .testTag("dossier_survival_row_${entry.shipId}"),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Column(modifier = Modifier.weight(1f).padding(end = 4.dp)) {
-                Text(
-                  text = "${entry.shipName} (${entry.completedLives}L)",
-                  color = Color.White,
-                  fontSize = 7.8.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-                val botPart =
-                  if (entry.botCompletedLives > 0)
-                    " • BOT ${formatSurvivalDurationSec(entry.botAvgSurvivalSec)}"
-                  else ""
-                Text(
-                  text =
-                    "LAST ${formatSurvivalDurationSec(entry.lastSurvivalSec)} • MAX ${formatSurvivalDurationSec(entry.maxSurvivalSec)}$botPart",
-                  color = Color(0xFF94A3B8),
-                  fontSize = 6.9.sp,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-              }
-              Text(
-                text = "AVG ${formatSurvivalDurationSec(entry.avgSurvivalSec)}",
-                color = Color(0xFF00F5D4),
-                fontSize = 7.8.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-          }
-        }
-
-        else -> {
-          if (realHumanLeaders.isEmpty()) {
-            Box(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .chamferedSciFiPodSurface(
-                    isRightSide = true,
-                    primaryBorder = Color(0xFF38BDF8),
-                    secondaryBorder = Color(0xFF091528),
-                  )
-                  .padding(10.dp),
-            ) {
-              Text(
-                text = "REAL-PLAYER HALL OF FAME SYNCS WHEN ONLINE.",
-                color = Color(0xFF94A3B8),
-                fontSize = 7.8.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-          } else {
-            realHumanLeaders.forEachIndexed { idx, entry ->
-              val cleanTag =
-                entry.syndicateTag.trim().uppercase(Locale.US).takeIf {
-                  it !in setOf("GUEST", "RFT", "NONE", "SOLO", "UNAFFILIATED", "FREE", "BOT")
-                }.orEmpty()
-              val label = if (cleanTag.isNotEmpty()) "[${cleanTag}] ${entry.callsign}" else entry.callsign
-              Row(
-                modifier =
-                  Modifier.fillMaxWidth()
-                    .chamferedSciFiPodSurface(
-                      isRightSide = true,
-                      primaryBorder = if (idx == 0) Color(0xFFFFD700) else Color(0xFF38BDF8),
-                      secondaryBorder = Color(0xFF091528),
-                    )
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Text(
-                  text = "#${idx + 1} $label",
-                  color = Color.White,
-                  fontSize = 8.0.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                  modifier = Modifier.weight(1f).padding(end = 6.dp),
-                )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                  ResonanceCrestIcon(sizeDp = 11.dp)
-                  Text(
-                    text = String.format(Locale.US, "%,d", entry.allTimeBounty.coerceAtLeast(0L)),
-                    color = Color(0xFFFFD700),
-                    fontSize = 8.6.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                  )
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun HelmLeftSystemsBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  sfxEnabled: Boolean,
-  musicEnabled: Boolean,
-  musicBpm: Int,
-  musicVolume: Float,
-  sfxVolume: Float,
-  cameraZoom: Float,
-  playfieldTextScale: Float,
-  onToggleSfx: (Boolean) -> Unit,
-  onToggleMusic: (Boolean) -> Unit,
-  onChangeMusicBpm: (Int) -> Unit,
-  onChangeMusicVolume: (Float) -> Unit,
-  onChangeSfxVolume: (Float) -> Unit,
-  onChangeCameraZoom: (Float) -> Unit,
-  onChangePlayfieldTextScale: (Float) -> Unit,
-  onOpenChangelogModal: () -> Unit,
-  onOpenAudioSynthForge: () -> Unit,
-  onOpenStarForge: () -> Unit = {},
-  onStartTutorial: () -> Unit = {},
-  isNetworkOnline: Boolean = true,
-  isGoogleAuthenticated: Boolean = true,
-  cloudSyncHealth: CloudSyncHealth = CloudSyncHealth(),
-  updateStatusLabel: String = "",
-  hasUpdateAvailable: Boolean = false,
-  onCheckOrApplyUpdate: () -> Unit = {},
-  onSwitchAccount: () -> Unit = {},
-  onBackToHub: () -> Unit,
-) {
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("helm_left_systems_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    HubDigitizedReturnBar(
-      heightDp = headerHeight,
-      isRightSide = false,
-      isTabletDeck = isTabletDeck,
-      sectionTitle = "HELM SYSTEMS",
-      accent = Color(0xFF00F5D4),
-      trailingLabel = "PATCH LOG",
-      trailingTag = "helm_open_changelog",
-      onTrailingClick = onOpenChangelogModal,
-      onBackToHub = onBackToHub,
-    )
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      // Solo Flight Tutorial Launch Row + Star Forge 1:1 Entry
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Box(
-          modifier =
-            Modifier.weight(0.95f)
-              .minimumInteractiveComponentSize()
-              .height(48.dp)
-              .clickable { onStartTutorial() }
-              .padding(vertical = 2.dp)
-              .testTag("helm_start_tutorial"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(8.dp))
-                .background(Brush.horizontalGradient(listOf(Color(0xFF0D2D46), Color(0xFF091A2E))))
-                .border(1.2.dp, Color(0xFFFACC15), RoundedCornerShape(8.dp))
-                .padding(horizontal = 6.dp),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = "TUTORIAL >",
-              color = Color(0xFFFACC15),
-              fontSize = if (isTabletDeck) 9.2.sp else 8.4.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-            )
-          }
-        }
-        Box(
-          modifier =
-            Modifier.weight(1.25f)
-              .minimumInteractiveComponentSize()
-              .height(48.dp)
-              .clickable { onOpenStarForge() }
-              .padding(vertical = 2.dp)
-              .testTag("helm_open_star_forge"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(8.dp))
-                .background(Brush.horizontalGradient(listOf(Color(0xFF23103C), Color(0xFF0D253E))))
-                .border(
-                  1.2.dp,
-                  Brush.horizontalGradient(listOf(Color(0xFFC084FC), Color(0xFF00F5D4), Color(0xFFFFD700))),
-                  RoundedCornerShape(8.dp),
-                )
-                .padding(horizontal = 6.dp),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = "STAR FORGE 1:1 >",
-              color = Color(0xFFF3E8FF),
-              fontSize = if (isTabletDeck) 9.0.sp else 8.2.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
-        }
-      }
-
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .minimumInteractiveComponentSize()
-              .height(48.dp)
-              .chamferedSciFiPodSurface(
-                isRightSide = false,
-                primaryBorder = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFF475569),
-                secondaryBorder = Color(0xFF091528),
-              )
-              .clickable { onToggleMusic(!musicEnabled) }
-              .testTag("helm_toggle_music"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = if (musicEnabled) "MUSIC: ON" else "MUSIC: OFF",
-            color = if (musicEnabled) Color(0xFF00F5D4) else Color(0xFF94A3B8),
-            fontSize = 8.0.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .minimumInteractiveComponentSize()
-              .height(48.dp)
-              .chamferedSciFiPodSurface(
-                isRightSide = false,
-                primaryBorder = if (sfxEnabled) Color(0xFF00F5D4) else Color(0xFF475569),
-                secondaryBorder = Color(0xFF091528),
-              )
-              .clickable { onToggleSfx(!sfxEnabled) }
-              .testTag("helm_toggle_sfx"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = if (sfxEnabled) "SFX: ON" else "SFX: OFF",
-            color = if (sfxEnabled) Color(0xFF00F5D4) else Color(0xFF94A3B8),
-            fontSize = 8.0.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-
-      HelmStepperControlRow(
-        label = "MUSIC VOL",
-        valueText = "${(musicVolume * 100f).roundToInt()}%",
-        onMinus = { onChangeMusicVolume((musicVolume - 0.10f).coerceIn(0f, 1f)) },
-        onPlus = { onChangeMusicVolume((musicVolume + 0.10f).coerceIn(0f, 1f)) },
-      )
-      HelmStepperControlRow(
-        label = "SFX VOL",
-        valueText = "${(sfxVolume * 100f).roundToInt()}%",
-        onMinus = { onChangeSfxVolume((sfxVolume - 0.10f).coerceIn(0f, 1f)) },
-        onPlus = { onChangeSfxVolume((sfxVolume + 0.10f).coerceIn(0f, 1f)) },
-      )
-      HelmStepperControlRow(
-        label = "SYNTH BPM",
-        valueText = "$musicBpm",
-        onMinus = { onChangeMusicBpm((musicBpm - 6).coerceIn(96, 168)) },
-        onPlus = { onChangeMusicBpm((musicBpm + 6).coerceIn(96, 168)) },
-      )
-      HelmStepperControlRow(
-        label = "ARENA ZOOM",
-        valueText = String.format(Locale.US, "%.2fx", cameraZoom),
-        onMinus = { onChangeCameraZoom((cameraZoom - 0.08f).coerceIn(0.65f, 1.45f)) },
-        onPlus = { onChangeCameraZoom((cameraZoom + 0.08f).coerceIn(0.65f, 1.45f)) },
-      )
-      HelmStepperControlRow(
-        label = "HUD TEXT",
-        valueText = String.format(Locale.US, "%.2fx", playfieldTextScale),
-        onMinus = { onChangePlayfieldTextScale((playfieldTextScale - 0.08f).coerceIn(0.80f, 1.35f)) },
-        onPlus = { onChangePlayfieldTextScale((playfieldTextScale + 0.08f).coerceIn(0.80f, 1.35f)) },
-      )
-
-      Box(
-        modifier =
-          Modifier.fillMaxWidth()
-            .minimumInteractiveComponentSize()
-            .height(48.dp)
-            .clickable { onOpenAudioSynthForge() }
-            .padding(vertical = 2.dp)
-            .testTag("helm_open_audio_synth_forge"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth()
-              .clip(RoundedCornerShape(7.dp))
-              .background(Color(0xFF0D2D46))
-              .border(1.dp, Color(0xFFFFD700), RoundedCornerShape(7.dp))
-              .padding(vertical = 6.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = "AUDIO SYNTH LAB >",
-            color = Color(0xFFFFD700),
-            fontSize = 8.0.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-
-      // Cloud Sync Health Pod
-      val syncHealthy = isNetworkOnline && cloudSyncHealth.isConnected
-      Column(
-        modifier =
-          Modifier.fillMaxWidth()
-            .chamferedSciFiPodSurface(
-              isRightSide = false,
-              primaryBorder = if (syncHealthy) Color(0xFF00F5D4) else Color(0xFFFACC15),
-              secondaryBorder = Color(0xFF091528),
-            )
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-            .testTag("helm_cloud_sync_health_pod"),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-      ) {
-        Text(
-          text =
-            when {
-              !isNetworkOnline -> "CLOUD SYNC • OFFLINE LOCAL"
-              syncHealthy -> "CLOUD SYNC • LIVE CONNECTED"
-              isGoogleAuthenticated -> "CLOUD SYNC • RECONNECTING"
-              else -> "CLOUD SYNC • LOCAL PILOT"
-            },
-          color = if (syncHealthy) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          fontSize = 7.8.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-        Text(
-          text = cloudSyncHealth.statusLabel.ifBlank { "Realtime sector presence & profile uplink." },
-          color = Color(0xFF94A3B8),
-          fontSize = 7.0.sp,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
-
-      // App Update Check & Account Switch Row
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .minimumInteractiveComponentSize()
-              .height(48.dp)
-              .chamferedSciFiPodSurface(
-                isRightSide = false,
-                primaryBorder = if (hasUpdateAvailable) Color(0xFFFFD700) else Color(0xFF38BDF8),
-                secondaryBorder = Color(0xFF091528),
-              )
-              .clickable { onCheckOrApplyUpdate() }
-              .padding(horizontal = 4.dp)
-              .testTag("helm_check_update"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text =
-              when {
-                hasUpdateAvailable -> "APPLY UPDATE >"
-                updateStatusLabel.isNotBlank() -> updateStatusLabel.uppercase(Locale.US)
-                else -> "CHECK UPDATE"
-              },
-            color = if (hasUpdateAvailable) Color(0xFFFFD700) else Color(0xFF38BDF8),
-            fontSize = 7.4.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .minimumInteractiveComponentSize()
-              .height(48.dp)
-              .chamferedSciFiPodSurface(
-                isRightSide = false,
-                primaryBorder = Color(0xFFFACC15),
-                secondaryBorder = Color(0xFF091528),
-              )
-              .clickable { onSwitchAccount() }
-              .padding(horizontal = 4.dp)
-              .testTag("helm_switch_account"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = "SWITCH ACCOUNT",
-            color = Color(0xFFFACC15),
-            fontSize = 7.4.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-          )
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun RiftFrameLeftLoadoutBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  activeCustomSlot: CustomShipLoadoutSlot,
-  activeCustomSlotId: String,
-  pointBudget: Int,
-  isCharged: Boolean,
-  shipResonance: Int,
-  localPrefs: LocalPilotPrefs,
-  currentUserId: String,
-  onBackToHub: () -> Unit,
-  onSelectFrameSlot: (String) -> Unit,
-  onSaveCustomSlot: (CustomShipLoadoutSlot) -> Unit,
-  onPreviewInOverwatch: () -> Unit,
-  onChargeRiftFrame: () -> Unit,
-) {
-  val density = LocalDensity.current
-  val uidOrNull = currentUserId.ifBlank { null }
-  val normalizedActiveId = localPrefs.normalizeCustomSlotId(activeCustomSlotId)
-  var draftSlot by remember(activeCustomSlot, normalizedActiveId) {
-    mutableStateOf(activeCustomSlot.copy(slotId = normalizedActiveId))
-  }
-  val primaryOptions = remember { CustomShipLoadoutSlot.PRIMARY_OPTIONS }
-  val secondaryOptions = remember(RiftSpriteBaker.customShip9Version) {
-    CustomShipLoadoutSlot.getAllAvailableSecondaryOptions()
-  }
-  val usedPoints = draftSlot.totalAllocatedPoints()
-  val remainingPoints = pointBudget - usedPoints
-
-  fun commitDraft(updated: CustomShipLoadoutSlot) {
-    if (updated.totalAllocatedPoints() <= pointBudget) {
-      draftSlot = updated
-      onSaveCustomSlot(updated)
-    }
-  }
-
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("rift_frame_left_loadout_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    HubDigitizedReturnBar(
-      heightDp = headerHeight,
-      isRightSide = false,
-      isTabletDeck = isTabletDeck,
-      sectionTitle = "RIFT FRAME • ${usedPoints}/${pointBudget}P",
-      accent = Color(0xFFC084FC),
-      trailingLabel = "PREVIEW >",
-      trailingTag = "rift_frame_preview_overwatch",
-      onTrailingClick = onPreviewInOverwatch,
-      onBackToHub = onBackToHub,
-    )
-
-    // Frame A..E Loadout Selector Pills
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .height(48.dp)
-          .chamferedSciFiPodSurface(
-            isRightSide = false,
-            primaryBorder = Color(0xFFC084FC),
-            secondaryBorder = Color(0xFF00F5D4),
-          )
-          .padding(horizontal = 4.dp),
-      horizontalArrangement = Arrangement.spacedBy(3.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      listOf("A", "B", "C", "D", "E").forEach { shortKey ->
-        val fullSlotId = localPrefs.normalizeCustomSlotId(shortKey)
-        val isSelected = normalizedActiveId == fullSlotId
-        val isUnlocked = localPrefs.isCustomSlotUnlocked(fullSlotId, uidOrNull)
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .fillMaxHeight()
-              .minimumInteractiveComponentSize()
-              .clickable { onSelectFrameSlot(fullSlotId) }
-              .padding(vertical = 5.dp)
-              .testTag("rift_frame_slot_$shortKey"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(6.dp))
-                .background(
-                  when {
-                    isSelected -> Color(0x44C084FC)
-                    isUnlocked -> Color(0x66060D1A)
-                    else -> Color(0x6602050B)
-                  }
-                )
-                .border(
-                  1.dp,
-                  when {
-                    isSelected -> Color(0xFF00F5D4)
-                    isUnlocked -> Color(0xFF38BDF8)
-                    else -> Color(0x66FACC15)
-                  },
-                  RoundedCornerShape(6.dp),
-                ),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = if (isUnlocked) shortKey else "${shortKey}*",
-              color =
-                when {
-                  isSelected -> Color.White
-                  isUnlocked -> Color(0xFFE2E8F0)
-                  else -> Color(0xFFFACC15)
-                },
-              fontSize = 8.4.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-        }
-      }
-    }
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      // Parity Budget Readout
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .chamferedSciFiPodSurface(
-              isRightSide = false,
-              primaryBorder = if (remainingPoints == 0) Color(0xFF00F5D4) else Color(0xFFFFD700),
-              secondaryBorder = Color(0xFF091528),
-            )
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(
-          text = draftSlot.customName.ifBlank { "RIFT FRAME" }.uppercase(Locale.US),
-          color = Color.White,
-          fontSize = if (isTabletDeck) 9.0.sp else 8.0.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.weight(1f).padding(end = 6.dp),
-        )
-        Text(
-          text = if (remainingPoints == 0) "100P PARITY LOCKED" else "${remainingPoints}P OPEN",
-          color = if (remainingPoints == 0) Color(0xFF00F5D4) else Color(0xFFFFD700),
-          fontSize = 7.6.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
-
-      // Primary Weapon Selector
-      val curPriIdx = primaryOptions.indexOfFirst { it.id == draftSlot.primaryArchetype }.let { if (it < 0) 0 else it }
-      val curPri = primaryOptions[curPriIdx]
-      HelmStepperControlRow(
-        label = "PRI: ${curPri.shortLabel}",
-        valueText = "${curPri.pointCost}P",
-        onMinus = {
-          val prev = primaryOptions[if (curPriIdx <= 0) primaryOptions.lastIndex else curPriIdx - 1]
-          val nextSlot = draftSlot.copy(primaryArchetype = prev.id)
-          if (nextSlot.totalAllocatedPoints() <= pointBudget) commitDraft(nextSlot)
-        },
-        onPlus = {
-          val next = primaryOptions[(curPriIdx + 1) % primaryOptions.size]
-          val nextSlot = draftSlot.copy(primaryArchetype = next.id)
-          if (nextSlot.totalAllocatedPoints() <= pointBudget) commitDraft(nextSlot)
-        },
-      )
-
-      // Secondary Ability Selector
-      val curSecIdx = secondaryOptions.indexOfFirst { it.id == draftSlot.secondaryType }.let { if (it < 0) 0 else it }
-      val curSec = secondaryOptions[curSecIdx]
-      HelmStepperControlRow(
-        label = "SEC: ${curSec.shortLabel}",
-        valueText = "${curSec.pointCost}P",
-        onMinus = {
-          val prev = secondaryOptions[if (curSecIdx <= 0) secondaryOptions.lastIndex else curSecIdx - 1]
-          val nextSlot = draftSlot.copy(secondaryType = prev.id)
-          if (nextSlot.totalAllocatedPoints() <= pointBudget) commitDraft(nextSlot)
-        },
-        onPlus = {
-          val next = secondaryOptions[(curSecIdx + 1) % secondaryOptions.size]
-          val nextSlot = draftSlot.copy(secondaryType = next.id)
-          if (nextSlot.totalAllocatedPoints() <= pointBudget) commitDraft(nextSlot)
-        },
-      )
-
-      // 5 Hull Stat Point Steppers (Speed, Thrust, Turn, Max Flux, Recharge)
-      HelmStepperControlRow(
-        label = "TOP SPEED",
-        valueText = "${draftSlot.speedPts}P",
-        onMinus = { commitDraft(draftSlot.copy(speedPts = (draftSlot.speedPts - 2).coerceAtLeast(0))) },
-        onPlus = {
-          val step = minOf(2, remainingPoints.coerceAtLeast(0))
-          if (step > 0) commitDraft(draftSlot.copy(speedPts = (draftSlot.speedPts + step).coerceAtMost(45)))
-        },
-      )
-      HelmStepperControlRow(
-        label = "THRUST",
-        valueText = "${draftSlot.thrustPts}P",
-        onMinus = { commitDraft(draftSlot.copy(thrustPts = (draftSlot.thrustPts - 2).coerceAtLeast(0))) },
-        onPlus = {
-          val step = minOf(2, remainingPoints.coerceAtLeast(0))
-          if (step > 0) commitDraft(draftSlot.copy(thrustPts = (draftSlot.thrustPts + step).coerceAtMost(45)))
-        },
-      )
-      HelmStepperControlRow(
-        label = "TURN RATE",
-        valueText = "${draftSlot.turnPts}P",
-        onMinus = { commitDraft(draftSlot.copy(turnPts = (draftSlot.turnPts - 2).coerceAtLeast(0))) },
-        onPlus = {
-          val step = minOf(2, remainingPoints.coerceAtLeast(0))
-          if (step > 0) commitDraft(draftSlot.copy(turnPts = (draftSlot.turnPts + step).coerceAtMost(45)))
-        },
-      )
-      HelmStepperControlRow(
-        label = "MAX FLUX",
-        valueText = "${draftSlot.maxFluxPts}P",
-        onMinus = { commitDraft(draftSlot.copy(maxFluxPts = (draftSlot.maxFluxPts - 2).coerceAtLeast(0))) },
-        onPlus = {
-          val step = minOf(2, remainingPoints.coerceAtLeast(0))
-          if (step > 0) commitDraft(draftSlot.copy(maxFluxPts = (draftSlot.maxFluxPts + step).coerceAtMost(45)))
-        },
-      )
-      HelmStepperControlRow(
-        label = "FLUX RECHARGE",
-        valueText = "${draftSlot.rechargePts}P",
-        onMinus = { commitDraft(draftSlot.copy(rechargePts = (draftSlot.rechargePts - 2).coerceAtLeast(0))) },
-        onPlus = {
-          val step = minOf(2, remainingPoints.coerceAtLeast(0))
-          if (step > 0) commitDraft(draftSlot.copy(rechargePts = (draftSlot.rechargePts + step).coerceAtMost(45)))
-        },
-      )
-
-      // Charge Rift Frame Button
-      val chargeFontSp = if (isTabletDeck) 9.4.sp else 8.4.sp
-      val fluxDp = with(density) { chargeFontSp.toDp() }
-      Box(
-        modifier =
-          Modifier.fillMaxWidth()
-            .minimumInteractiveComponentSize()
-            .height(48.dp)
-            .clickable {
-              onSaveCustomSlot(draftSlot)
-              onChargeRiftFrame()
-            }
-            .padding(vertical = 3.dp)
-            .testTag("rift_frame_charge_btn"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Row(
-          modifier =
-            Modifier.fillMaxWidth()
-              .clip(RoundedCornerShape(8.dp))
-              .background(Brush.horizontalGradient(listOf(Color(0xFF1A103D), Color(0xFF0D3349))))
-              .border(
-                1.2.dp,
-                Brush.horizontalGradient(listOf(Color(0xFFC084FC), Color(0xFF00F5D4), Color(0xFFFFD700))),
-                RoundedCornerShape(8.dp),
-              )
-              .padding(horizontal = 10.dp, vertical = 7.dp),
-          horizontalArrangement = Arrangement.Center,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Text(
-            text = if (isCharged) "RIFT FRAME CHARGED " else "CHARGE RIFT FRAME ",
-            color = Color.White,
-            fontSize = chargeFontSp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-          FluxToroidIcon(sizeDp = fluxDp)
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun RiftFrameRightCosmeticsBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  shardText: String,
-  peakResonance: Int,
-  shipSpinDeg: Float,
-  fluxOrbitRad: Float,
-  isCharged: Boolean,
-  localPrefs: LocalPilotPrefs,
-  currentUserId: String,
-  onShareBuild: () -> Unit,
-  onInspectCosmetic: (CosmeticCatalogItem, Boolean, Boolean) -> Unit,
-) {
-  val uidOrNull = currentUserId.ifBlank { null }
-  var categoryFilter by remember { mutableStateOf("ALL") }
-  val allCosmetics = remember {
-    RiftProgressionCatalog.hullTrims +
-      RiftProgressionCatalog.killFinishers +
-      RiftProgressionCatalog.warpSignatures
-  }
-  val filteredCosmetics =
-    remember(categoryFilter, allCosmetics) {
-      when (categoryFilter) {
-        "TRIM" -> RiftProgressionCatalog.hullTrims
-        "FINISH" -> RiftProgressionCatalog.killFinishers
-        "WARP" -> RiftProgressionCatalog.warpSignatures
-        else -> allCosmetics
-      }
-    }
-
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("rift_frame_right_cosmetics_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    HubDigitizedReturnBar(
-      heightDp = headerHeight,
-      isRightSide = true,
-      isTabletDeck = isTabletDeck,
-      sectionTitle = "COSMETIC BUFFS",
-      accent = Color(0xFFFFD700),
-      trailingLabel = "SHARE >",
-      trailingTag = "rift_frame_share_build",
-      onTrailingClick = onShareBuild,
-    )
-
-    // Live 2.5D Rift Frame Preview + Peak Resonance & Shards Readout
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .chamferedSciFiPodSurface(
-            isRightSide = true,
-            primaryBorder = Color(0xFFC084FC),
-            secondaryBorder = Color(0xFF00F5D4),
-          )
-          .padding(horizontal = 8.dp, vertical = 5.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      Spinning25dShipWithOrbitingFlux(
-        shipId = 10,
-        shipSpinDeg = shipSpinDeg,
-        fluxOrbitRad = fluxOrbitRad,
-        isCharged = isCharged,
-        isBestShip = false,
-        isSelected = true,
-        sizeDp = if (isTabletDeck) 52.dp else 42.dp,
-      )
-      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-          text = "RESONANCE COSMETICS",
-          color = Color.White,
-          fontSize = if (isTabletDeck) 8.8.sp else 7.8.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-          ResonanceCrestIcon(sizeDp = 10.dp)
-          Text(
-            text = "PEAK ${formatOverwatchResonance(peakResonance)}",
-            color = Color(0xFFFFD700),
-            fontSize = 7.4.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-          RiftShardGemIcon(sizeDp = 10.dp)
-          Text(
-            text = shardText,
-            color = Color(0xFF00F5D4),
-            fontSize = 7.4.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-    }
-
-    // Cosmetic Category Filter Row (>= 48dp touch targets)
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .height(48.dp)
-          .chamferedSciFiPodSurface(
-            isRightSide = true,
-            primaryBorder = Color(0xFF38BDF8),
-            secondaryBorder = Color(0xFF091528),
-          )
-          .padding(horizontal = 4.dp),
-      horizontalArrangement = Arrangement.spacedBy(3.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      listOf("ALL", "TRIM", "FINISH", "WARP").forEach { tab ->
-        val sel = categoryFilter == tab
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .fillMaxHeight()
-              .minimumInteractiveComponentSize()
-              .clickable { categoryFilter = tab }
-              .padding(vertical = 6.dp)
-              .testTag("rift_frame_cosmetic_tab_${tab.lowercase(Locale.US)}"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(5.dp))
-                .background(if (sel) Color(0x38C084FC) else Color(0x6602050B))
-                .border(1.dp, if (sel) Color(0xFFC084FC) else Color(0x4438BDF8), RoundedCornerShape(5.dp)),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = tab,
-              color = if (sel) Color.White else Color(0xFF94A3B8),
-              fontSize = 7.6.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-        }
-      }
-    }
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      filteredCosmetics.forEach { item ->
-        val unlockedByResonance = item.freeAtResonance > 0 && peakResonance >= item.freeAtResonance
-        val unlocked = unlockedByResonance || localPrefs.isCosmeticUnlocked(item.category, item.id, uid = uidOrNull)
-        val equipped = localPrefs.getEquippedCosmeticId(item.category, uidOrNull) == item.id
-        Row(
-          modifier =
-            Modifier.fillMaxWidth()
-              .minimumInteractiveComponentSize()
-              .chamferedSciFiPodSurface(
-                isRightSide = true,
-                primaryBorder = if (equipped) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-                secondaryBorder = if (unlocked) Color(0xFFFFD700) else Color(0xFF091528),
-              )
-              .clickable { onInspectCosmetic(item, unlocked, equipped) }
-              .padding(horizontal = 8.dp, vertical = 6.dp)
-              .testTag("rift_frame_cosmetic_${item.category.lowercase(Locale.US)}_${item.id}"),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
-            Text(
-              text = item.name.uppercase(Locale.US),
-              color = Color.White,
-              fontSize = if (isTabletDeck) 8.6.sp else 7.8.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-              text =
-                if (item.freeAtResonance > 0)
-                  "${item.category.replace("_", " ")} • FREE @ ${item.freeAtResonance} PEAK"
-                else item.category.replace("_", " "),
-              color = Color(0xFF94A3B8),
-              fontSize = 7.8.sp,
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
-          Text(
-            text =
-              when {
-                equipped -> "ACTIVE"
-                unlocked -> "EQUIP >"
-                else -> "${item.shardCost}S"
-              },
-            color =
-              when {
-                equipped -> Color(0xFF00F5D4)
-                unlocked -> Color(0xFFFACC15)
-                else -> Color(0xFFCBD5E1)
-              },
-            fontSize = 8.4.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun ShardStoreLeftSummaryBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  shardText: String,
-  liveResonance: Int,
-  peakResonance: Int,
-  activeCustomSlotId: String,
-  localPrefs: LocalPilotPrefs,
-  currentUserId: String,
-  onBackToHub: () -> Unit,
-  onSelectFrameSlot: (String) -> Unit,
-  onInspectFrameSlot: (com.example.engine.FrameSlotGateInfo, String, Boolean, Boolean) -> Unit =
-    { _, slotId, _, _ -> onSelectFrameSlot(slotId) },
-  onOpenRiftFrameBay: () -> Unit,
-  onOpenConduitQuests: () -> Unit,
-) {
-  val uidOrNull = currentUserId.ifBlank { null }
-  val normalizedActiveId = localPrefs.normalizeCustomSlotId(activeCustomSlotId)
-
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("shard_store_left_summary_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    HubDigitizedReturnBar(
-      heightDp = headerHeight,
-      isRightSide = false,
-      isTabletDeck = isTabletDeck,
-      sectionTitle = "SHARD STORE",
-      accent = Color(0xFF00F5D4),
-      trailingLabel = "QUESTS >",
-      trailingTag = "shard_vault_open_quests",
-      onTrailingClick = onOpenConduitQuests,
-      onBackToHub = onBackToHub,
-    )
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      // Live Shards & Resonance Balance Card
-      Column(
-        modifier =
-          Modifier.fillMaxWidth()
-            .chamferedSciFiPodSurface(
-              isRightSide = false,
-              primaryBorder = Color(0xFF00F5D4),
-              secondaryBorder = Color(0xFFFFD700),
-            )
-            .padding(horizontal = 9.dp, vertical = 7.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          RiftShardGemIcon(sizeDp = 16.dp)
-          Text(
-            text = "$shardText RIFT SHARDS",
-            color = Color(0xFF00F5D4),
-            fontSize = if (isTabletDeck) 10.8.sp else 9.6.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-          ResonanceCrestIcon(sizeDp = 12.dp)
-          Text(
-            text = "LIVE ${formatOverwatchResonance(liveResonance)} • PEAK ${formatOverwatchResonance(peakResonance)}",
-            color = Color(0xFFFFD700),
-            fontSize = 8.4.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-        Text(
-          text = "Tap any Frame Bay below or Cosmetic on the right to preview & unlock in Overwatch.",
-          color = Color(0xFFCBD5E1),
-          fontSize = 8.0.sp,
-          fontFamily = FontFamily.SansSerif,
-        )
-      }
-
-      // Frame Slots A..E Unlock Ledger
-      RiftProgressionCatalog.frameSlotGates.forEach { gate ->
-        val slotId = localPrefs.normalizeCustomSlotId(gate.slotId)
-        val unlocked = localPrefs.isCustomSlotUnlocked(slotId, uidOrNull) || peakResonance >= gate.freeAtResonance
-        val selected = normalizedActiveId == slotId
-        Row(
-          modifier =
-            Modifier.fillMaxWidth()
-              .minimumInteractiveComponentSize()
-              .chamferedSciFiPodSurface(
-                isRightSide = false,
-                primaryBorder = if (selected) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-                secondaryBorder = if (unlocked) Color(0xFFC084FC) else Color(0xFFFACC15),
-              )
-              .clickable { onInspectFrameSlot(gate, slotId, unlocked, selected) }
-              .padding(horizontal = 8.dp, vertical = 6.dp)
-              .testTag("shard_vault_slot_${slotId.takeLast(1)}"),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
-            Text(
-              text = "${gate.slotId.uppercase(Locale.US)} • ${gate.archetypeTitle.uppercase(Locale.US)}",
-              color = Color.White,
-              fontSize = 8.8.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-              text =
-                if (gate.freeAtResonance <= 0) "OPEN AT 0 • 100P PARITY"
-                else "FREE @ ${gate.freeAtResonance} PEAK OR ${gate.shardCost} SHARDS",
-              color = Color(0xFF94A3B8),
-              fontSize = 7.8.sp,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
-          Text(
-            text =
-              when {
-                selected -> "ACTIVE"
-                unlocked -> "SELECT >"
-                else -> "${gate.shardCost}S"
-              },
-            color =
-              when {
-                selected -> Color(0xFF00F5D4)
-                unlocked -> Color(0xFFC084FC)
-                else -> Color(0xFFFFD700)
-              },
-            fontSize = 8.4.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-
-      Box(
-        modifier =
-          Modifier.fillMaxWidth()
-            .minimumInteractiveComponentSize()
-            .height(48.dp)
-            .clickable { onOpenRiftFrameBay() }
-            .padding(vertical = 3.dp)
-            .testTag("shard_vault_open_rift_frame"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth()
-              .clip(RoundedCornerShape(7.dp))
-              .background(Color(0xFF1A1038))
-              .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(7.dp))
-              .padding(vertical = 7.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = "CONFIGURE RIFT FRAME >",
-            color = Color(0xFFE9D5FF),
-            fontSize = 8.0.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
-      }
-    }
-  }
-}
 
 @Composable
 private fun OverwatchInspectLeftInfoBay(
@@ -11025,7 +7973,7 @@ private fun OverwatchInspectRightPilotsBay(
 }
 
 @Composable
-private fun HelmStepperControlRow(
+internal fun HelmStepperControlRow(
   label: String,
   valueText: String,
   onMinus: () -> Unit,
@@ -11081,519 +8029,7 @@ private fun HelmStepperControlRow(
   }
 }
 
-@Composable
-private fun HelmRightCodexBay(
-  isTabletDeck: Boolean,
-  headerHeight: Dp,
-  wingStackGap: Dp,
-  @Suppress("UNUSED_PARAMETER") initialSubDeck: Int = 0,
-  onInspectCodexStage: (OverwatchCircularPrompt.InfoStageInspect) -> Unit = {},
-  onInspectShipStage: (Int) -> Unit = {},
-) {
-  var selectedCategory by remember { mutableIntStateOf(0) }
-  val categories = remember {
-    listOf(
-      "BASICS" to Color(0xFF00F5D4),
-      "MODES" to Color(0xFFFACC15),
-      "BUFFS" to Color(0xFF34D399),
-      "RIFTS" to Color(0xFFA855F7),
-      "SHIPS" to Color(0xFF38BDF8),
-    )
-  }
 
-  val howToCards = remember {
-    listOf(
-      Triple(
-        "TWIN-STICK FLIGHT & SHARED FLUX",
-        "FLIGHT",
-        "Left stick controls thrust and heading; right stick or touch controls primary fire, secondary ordnance, brake, and Special Crate buffs. Your Flux ring powers BOTH shields and weapons—feather shots so your reactor recharges.",
-      ),
-      Triple(
-        "PER-SHIP RESONANCE & 100-PT PARITY",
-        "PARITY",
-        "All 10 hulls (#1 Viper through #10 modular Rift Frame) are open at 0 Resonance on an identical 100-Point stat and weapon budget. Your highest-Resonance hull is highlighted in gold as your Best Ship.",
-      ),
-      Triple(
-        "5X RIFT STATION SAFE HARBOR",
-        "STATION",
-        "Sector Convergence and Flux Core feature a central 5x ship-scale Rift Station Safe Zone. Weapons lock inside, and staying beyond 15 seconds (or firing before entry) triggers a 15-second Safe-Zone lockout.",
-      ),
-      Triple(
-        "SYNDICATES, SQUADRONS & SHARD STORE",
-        "SOCIAL",
-        "Found or join human-chartered Syndicates, form up to 5-pilot Squadrons, queue into <=15s Resonance matchmaking, and unlock hull cosmetics & Frame bays in the Shard Store.",
-      ),
-    )
-  }
-
-  val modeCards = remember {
-    listOf(
-      Triple(
-        "1. SECTOR CONVERGENCE",
-        "OPEN 60M",
-        "Always-running open sector dogfighting around the central Rift Station Safe Harbor. Harvest Supply Crates, ride Playfield Rifts, and build per-ship Resonance.",
-      ),
-      Triple(
-        "2. FLUX CORE",
-        "OBJECTIVE",
-        "Capture and hold the golden Flux Core Singularity Orb in the center of the sector to earn continuous Resonance while broadcasting a radar beacon to rival pilots.",
-      ),
-      Triple(
-        "3. RIFT SKIRMISH",
-        "TEAM PVP",
-        "Coordinated 2v2 to 5v5 Squadron battles matched against the closest-Resonance opponent squad within 15 seconds.",
-      ),
-      Triple(
-        "4. RIFT CONTROL",
-        "2 RINGS",
-        "Contest and hold the Alpha and Omega Rift Control rings to accumulate team dominance points with no central Safe Zone.",
-      ),
-      Triple(
-        "5. STASIS BREACH",
-        "RESCUE",
-        "Eliminated pilots are detained in the rival Brig Reactor. Crack the enemy Brig shield to free captured teammates or capture all rivals for an instant sweep.",
-      ),
-      Triple(
-        "6. CUSTOM GAMES & SOLO TUTORIAL",
-        "SANDBOX",
-        "Host public or private room-code Custom Rifts with custom damage, Flux cost, and speed multipliers, or launch the Solo Tutorial anytime.",
-      ),
-    )
-  }
-
-  val allShips = remember(RiftSpriteBaker.customShip9Version) { RiftCodex.getAllTenShips() }
-
-  Column(
-    modifier = Modifier.fillMaxSize().testTag("helm_right_codex_bay"),
-    verticalArrangement = Arrangement.spacedBy(wingStackGap),
-  ) {
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .height(headerHeight)
-          .chamferedSciFiPodSurface(
-            isRightSide = true,
-            primaryBorder = Color(0xFFFFD700),
-            secondaryBorder = Color(0xFF00F5D4),
-          )
-          .padding(horizontal = 8.dp),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(
-        text = "TACTICAL CODEX",
-        color = Color(0xFFFFD700),
-        fontSize = if (isTabletDeck) 10.4.sp else 9.2.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-      )
-      Text(
-        text = "TAP TO PREVIEW",
-        color = Color(0xFF00F5D4),
-        fontSize = 8.0.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-      )
-    }
-
-    // 5-Category Codex Selector Row (>= 48dp touch targets)
-    Row(
-      modifier =
-        Modifier.fillMaxWidth()
-          .height(48.dp)
-          .chamferedSciFiPodSurface(
-            isRightSide = true,
-            primaryBorder = Color(0xFF38BDF8),
-            secondaryBorder = Color(0xFF091528),
-          )
-          .padding(horizontal = 3.dp),
-      horizontalArrangement = Arrangement.spacedBy(2.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      categories.forEachIndexed { idx, (label, col) ->
-        val sel = selectedCategory == idx
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .fillMaxHeight()
-              .minimumInteractiveComponentSize()
-              .clickable { selectedCategory = idx }
-              .padding(vertical = 5.dp)
-              .testTag("helm_codex_tab_${idx}"),
-          contentAlignment = Alignment.Center,
-        ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(5.dp))
-                .background(if (sel) col.copy(alpha = 0.24f) else Color(0x6602050B))
-                .border(1.dp, if (sel) col else Color(0x4438BDF8), RoundedCornerShape(5.dp)),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = label,
-              color = if (sel) Color.White else Color(0xFF94A3B8),
-              fontSize = if (isTabletDeck) 8.2.sp else 7.4.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-            )
-          }
-        }
-      }
-    }
-
-    Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
-    ) {
-      when (selectedCategory) {
-        0 -> {
-          howToCards.forEachIndexed { idx, (heading, badge, body) ->
-            Column(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .minimumInteractiveComponentSize()
-                  .chamferedSciFiPodSurface(
-                    isRightSide = true,
-                    primaryBorder = Color(0xFF00F5D4),
-                    secondaryBorder = Color(0xFF091528),
-                  )
-                  .clickable {
-                    onInspectCodexStage(
-                      OverwatchCircularPrompt.InfoStageInspect(
-                        kicker = "CODEX • FLIGHT BASICS",
-                        title = heading,
-                        badge = badge,
-                        summary = body,
-                        accentHex = 0xFF00F5D4L,
-                        showStationPreview = idx == 2,
-                        shipId = if (idx == 1) 1 else 0,
-                      )
-                    )
-                  }
-                  .padding(8.dp),
-              verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Text(
-                  text = heading,
-                  color = Color.White,
-                  fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  modifier = Modifier.weight(1f).padding(end = 6.dp),
-                )
-                Text(
-                  text = "VIEW >",
-                  color = Color(0xFF00F5D4),
-                  fontSize = 7.8.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
-              Text(
-                text = body,
-                color = Color(0xFFCBD5E1),
-                fontSize = if (isTabletDeck) 8.6.sp else 7.8.sp,
-                lineHeight = 11.0.sp,
-                fontFamily = FontFamily.SansSerif,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-          }
-        }
-        1 -> {
-          modeCards.forEachIndexed { idx, (heading, badge, body) ->
-            Column(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .minimumInteractiveComponentSize()
-                  .chamferedSciFiPodSurface(
-                    isRightSide = true,
-                    primaryBorder = Color(0xFFFACC15),
-                    secondaryBorder = Color(0xFF091528),
-                  )
-                  .clickable {
-                    onInspectCodexStage(
-                      OverwatchCircularPrompt.InfoStageInspect(
-                        kicker = "CODEX • GAME MODES",
-                        title = heading,
-                        badge = badge,
-                        summary = body,
-                        accentHex = 0xFFFACC15L,
-                        showStationPreview = idx <= 1,
-                      )
-                    )
-                  }
-                  .padding(8.dp),
-              verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Text(
-                  text = heading,
-                  color = Color.White,
-                  fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  modifier = Modifier.weight(1f).padding(end = 6.dp),
-                )
-                Text(
-                  text = badge,
-                  color = Color(0xFFFACC15),
-                  fontSize = 7.8.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
-              Text(
-                text = body,
-                color = Color(0xFFCBD5E1),
-                fontSize = if (isTabletDeck) 8.6.sp else 7.8.sp,
-                lineHeight = 11.0.sp,
-                fontFamily = FontFamily.SansSerif,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-          }
-        }
-        2 -> {
-          RiftCodex.POWERUP_CODEX.forEach { buff ->
-            Row(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .minimumInteractiveComponentSize()
-                  .chamferedSciFiPodSurface(
-                    isRightSide = true,
-                    primaryBorder = Color(0xFF34D399),
-                    secondaryBorder = Color(0xFF091528),
-                  )
-                  .clickable {
-                    onInspectCodexStage(
-                      OverwatchCircularPrompt.InfoStageInspect(
-                        kicker = "SUPPLY CRATE BUFF",
-                        title = buff.title.uppercase(Locale.US),
-                        badge = "${buff.dropRatePercent}% DROP",
-                        summary = buff.effectSummary,
-                        tacticalNote = buff.tacticalNote,
-                        accentHex = 0xFF34D399L,
-                        buffTypeIndex = buff.buffTypeIndex,
-                      )
-                    )
-                  }
-                  .padding(horizontal = 8.dp, vertical = 6.dp),
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              BuffIconPreview(
-                buffType = buff.buffTypeIndex,
-                sizeDp = 34,
-                accentColor = Color(0xFF34D399),
-              )
-              Column(modifier = Modifier.weight(1f)) {
-                Text(
-                  text = buff.title.uppercase(Locale.US),
-                  color = Color.White,
-                  fontSize = if (isTabletDeck) 9.2.sp else 8.2.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                  text = buff.effectSummary,
-                  color = Color(0xFFCBD5E1),
-                  fontSize = 7.8.sp,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-              }
-              Text(
-                text = "VIEW >",
-                color = Color(0xFF34D399),
-                fontSize = 7.8.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-          }
-        }
-        3 -> {
-          // Rift Station Safe Harbor + Obstacles entry first
-          Row(
-            modifier =
-              Modifier.fillMaxWidth()
-                .minimumInteractiveComponentSize()
-                .chamferedSciFiPodSurface(
-                  isRightSide = true,
-                  primaryBorder = Color(0xFF00F5D4),
-                  secondaryBorder = Color(0xFFFFD700),
-                )
-                .clickable {
-                  onInspectCodexStage(
-                    OverwatchCircularPrompt.InfoStageInspect(
-                      kicker = "SAFE HARBOR & OBSTACLES",
-                      title = "5X RIFT STATION & SECTOR OBSTACLES",
-                      badge = "180PX SAFE ZONE",
-                      summary =
-                        "Rift Station anchors Sector Convergence & Flux Core (15s max stay, weapons locked inside). Crystal Asteroids (2,400 Flux) drop Supply Crates on shatter and respawn in 20s.",
-                      tacticalNote =
-                        "Orbital & Asteroid Stations fire a 16-bolt 360° Defense Nova every 10 hits or when imploded by a >= 260px Gravity Rift.",
-                      accentHex = 0xFF00F5D4L,
-                      showStationPreview = true,
-                    )
-                  )
-                }
-                .padding(horizontal = 8.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
-              Text(
-                text = "RIFT STATION & SECTOR OBSTACLES",
-                color = Color.White,
-                fontSize = if (isTabletDeck) 9.2.sp else 8.2.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-              Text(
-                text = "180px Safe Zone • 2,400-Flux Asteroids • 10-Hit Station Nova",
-                color = Color(0xFF00F5D4),
-                fontSize = 7.8.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-            Text(
-              text = "VIEW >",
-              color = Color(0xFFFFD700),
-              fontSize = 7.8.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
-
-          RiftCodex.RIFT_ANOMALIES_CODEX.forEach { rift ->
-            val accentCol =
-              runCatching { Color(android.graphics.Color.parseColor(rift.accentHex)) }
-                .getOrDefault(Color(0xFFA855F7))
-            Row(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .minimumInteractiveComponentSize()
-                  .chamferedSciFiPodSurface(
-                    isRightSide = true,
-                    primaryBorder = accentCol,
-                    secondaryBorder = Color(0xFF091528),
-                  )
-                  .clickable {
-                    onInspectCodexStage(
-                      OverwatchCircularPrompt.InfoStageInspect(
-                        kicker = "SPACETIME-TEAR RIFT",
-                        title = rift.title.uppercase(Locale.US),
-                        badge = rift.specBadge,
-                        summary = rift.effectSummary,
-                        tacticalNote = rift.tacticalNote,
-                        accentHex = 0xFFA855F7L,
-                        riftAnomalyId = rift.id,
-                      )
-                    )
-                  }
-                  .padding(horizontal = 8.dp, vertical = 6.dp),
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              RiftAnomalyIconPreview(
-                riftId = rift.id,
-                sizeDp = 36,
-                accentColor = accentCol,
-              )
-              Column(modifier = Modifier.weight(1f)) {
-                Text(
-                  text = rift.title.uppercase(Locale.US),
-                  color = Color.White,
-                  fontSize = if (isTabletDeck) 9.2.sp else 8.2.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                  text = rift.effectSummary,
-                  color = Color(0xFFCBD5E1),
-                  fontSize = 7.8.sp,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-              }
-              Text(
-                text = "VIEW >",
-                color = accentCol,
-                fontSize = 7.8.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-          }
-        }
-        else -> {
-          allShips.forEach { ship ->
-            val cleanShipName = ship.name.replace(Regex("^[0-9]+-"), "").trim().uppercase(Locale.US)
-            Row(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .minimumInteractiveComponentSize()
-                  .chamferedSciFiPodSurface(
-                    isRightSide = true,
-                    primaryBorder = Color(0xFF38BDF8),
-                    secondaryBorder = Color(0xFF091528),
-                  )
-                  .clickable { onInspectShipStage(ship.id) }
-                  .padding(horizontal = 8.dp, vertical = 6.dp),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
-                Text(
-                  text = "#${ship.id} $cleanShipName",
-                  color = Color.White,
-                  fontSize = if (isTabletDeck) 9.2.sp else 8.2.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                )
-                Text(
-                  text = "${ship.role.uppercase(Locale.US)} • ${ship.primaryTitle} + ${ship.secondaryTitle}",
-                  color = Color(0xFF38BDF8),
-                  fontSize = 7.8.sp,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-              }
-              Text(
-                text = "STAGE >",
-                color = Color(0xFF00F5D4),
-                fontSize = 7.8.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
-          }
-        }
-      }
-    }
-  }
-}
 
 /**
  * Explicit `#060D1A` Sci-Fi Tablet Warp-Off Confirmation Dialog triggered strictly when intentionally
@@ -14560,8 +10996,9 @@ private fun SubspaceTeamVoiceChatDeck(
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
   var voiceScopeTeamMatch by remember { mutableStateOf(isInMatch) }
-  var micActive by remember { mutableStateOf(false) }
+  var micActive by remember { mutableStateOf(!RiftCalibrationState.teamVoiceMuted && RiftCalibrationState.squadronVoiceEnabled) }
   var deafened by remember { mutableStateOf(false) }
+  var pushToTalk by remember { mutableStateOf(RiftCalibrationState.teamVoicePushToTalk) }
   var micLevel by remember { mutableFloatStateOf(0f) }
   var permissionDeniedBanner by remember { mutableStateOf(false) }
 
@@ -14578,9 +11015,12 @@ private fun SubspaceTeamVoiceChatDeck(
         permissionDeniedBanner = false
         deafened = false
         micActive = true
+        RiftCalibrationState.teamVoiceMuted = false
+        RiftCalibrationState.savePersistedLayout(context)
         onSendVoiceHeartbeat(targetVoiceKey, "[VOICE-STATE] $callsign joined voice comms (MIC LIVE)")
       } else {
         micActive = false
+        RiftCalibrationState.teamVoiceMuted = true
         permissionDeniedBanner = true
       }
     }
@@ -14789,11 +11229,13 @@ private fun SubspaceTeamVoiceChatDeck(
     ) {
       Box(
         modifier =
-          Modifier.weight(1.25f)
+          Modifier.weight(1.1f)
             .minimumInteractiveComponentSize()
             .clickable {
               if (micActive) {
                 micActive = false
+                RiftCalibrationState.teamVoiceMuted = true
+                RiftCalibrationState.savePersistedLayout(context)
                 onSendVoiceHeartbeat(targetVoiceKey, "[VOICE-STATE] $callsign muted mic")
               } else {
                 val granted =
@@ -14803,6 +11245,8 @@ private fun SubspaceTeamVoiceChatDeck(
                   permissionDeniedBanner = false
                   deafened = false
                   micActive = true
+                  RiftCalibrationState.teamVoiceMuted = false
+                  RiftCalibrationState.savePersistedLayout(context)
                   onSendVoiceHeartbeat(
                     targetVoiceKey,
                     "[VOICE-STATE] $callsign joined voice comms (MIC LIVE)",
@@ -14834,7 +11278,7 @@ private fun SubspaceTeamVoiceChatDeck(
           Text(
             text = if (micActive && !deafened) "MIC LIVE" else "MIC MUTED",
             color = Color.White,
-            fontSize = 7.4.sp,
+            fontSize = 7.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -14843,11 +11287,52 @@ private fun SubspaceTeamVoiceChatDeck(
 
       Box(
         modifier =
-          Modifier.weight(0.95f)
+          Modifier.weight(0.9f)
+            .minimumInteractiveComponentSize()
+            .clickable {
+              val nextPtt = !pushToTalk
+              pushToTalk = nextPtt
+              RiftCalibrationState.teamVoicePushToTalk = nextPtt
+              RiftCalibrationState.savePersistedLayout(context)
+            }
+            .padding(vertical = 3.dp)
+            .testTag("subspace_voice_ptt_toggle"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(
+          modifier =
+            Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(5.dp))
+              .background(if (pushToTalk) Color(0x38FACC15) else Color(0xFF060D1A))
+              .border(
+                1.dp,
+                if (pushToTalk) Color(0xFFFACC15) else Color(0xFF475569),
+                RoundedCornerShape(5.dp),
+              )
+              .padding(vertical = 5.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = if (pushToTalk) "PTT ON" else "OPEN MIC",
+            color = if (pushToTalk) Color(0xFFFACC15) else Color(0xFFCBD5E1),
+            fontSize = 6.9.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
+
+      Box(
+        modifier =
+          Modifier.weight(0.9f)
             .minimumInteractiveComponentSize()
             .clickable {
               deafened = !deafened
-              if (deafened) micActive = false
+              if (deafened) {
+                micActive = false
+                RiftCalibrationState.teamVoiceMuted = true
+                RiftCalibrationState.savePersistedLayout(context)
+              }
             }
             .padding(vertical = 3.dp)
             .testTag("subspace_voice_deafen_toggle"),
@@ -14869,7 +11354,7 @@ private fun SubspaceTeamVoiceChatDeck(
           Text(
             text = if (deafened) "DEAFENED" else "DEAFEN",
             color = if (deafened) Color(0xFFFECDD3) else Color(0xFFCBD5E1),
-            fontSize = 7.2.sp,
+            fontSize = 6.9.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )

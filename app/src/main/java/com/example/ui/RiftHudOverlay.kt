@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -371,74 +372,74 @@ fun RiftHudOverlay(
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(6.dp),
    ) {
-    Box(
-     modifier =
-      Modifier.goldenRiftTutorialHighlight(
-        active = highlightAddBot,
-        phaseRad = tutorialPhaseRad,
-        cornerRadius = 10.dp,
-       )
-       .heightIn(min = 40.dp)
-       .clip(RoundedCornerShape(10.dp))
-       .background(Color(0xEE060D1A))
-       .border(
-        width = 1.2.dp,
-        color = if (highlightAddBot) Color(0xFFFFD700) else Color(0xFF00F5D4),
-        shape = RoundedCornerShape(10.dp),
-       )
-       .clickable { engine.spawnPracticeBot() }
-       .padding(horizontal = 12.dp, vertical = 7.dp)
-       .testTag("practice_add_bot_btn"),
-     contentAlignment = Alignment.Center,
-    ) {
-     Text(
-      text = if (botCount > 0) "+ ADD BOT ($botCount)" else "+ ADD BOT",
-      color = if (highlightAddBot) Color(0xFFFEF08A) else Color(0xFF00F5D4),
-      fontSize = (9.2f * textScale).sp,
-      fontWeight = FontWeight.Black,
-      fontFamily = FontFamily.Monospace,
-      style = WingTelemetryTextStyle,
-     )
-    }
-    if (botCount > 0) {
      Box(
       modifier =
-       Modifier.heightIn(min = 40.dp)
+       Modifier.minimumInteractiveComponentSize()
+        .goldenRiftTutorialHighlight(
+         active = highlightAddBot,
+         phaseRad = tutorialPhaseRad,
+         cornerRadius = 10.dp,
+        )
+        .heightIn(min = 48.dp)
         .clip(RoundedCornerShape(10.dp))
-        .background(Color(0xEE180812))
+        .background(Color(0xEE060D1A))
         .border(
          width = 1.2.dp,
-         color = Color(0xFFFB7185),
+         color = if (highlightAddBot) Color(0xFFFFD700) else Color(0xFF00F5D4),
          shape = RoundedCornerShape(10.dp),
         )
-        .clickable { engine.clearPracticeBots() }
-        .padding(horizontal = 11.dp, vertical = 7.dp)
-        .testTag("practice_clear_bots_btn"),
+        .clickable { engine.spawnPracticeBot() }
+        .padding(horizontal = 12.dp, vertical = 8.dp)
+        .testTag("practice_add_bot_btn"),
       contentAlignment = Alignment.Center,
      ) {
       Text(
-       text = "CLEAR BOTS",
-       color = Color(0xFFFB7185),
-       fontSize = (9.0f * textScale).sp,
+       text = if (botCount > 0) "+ ADD BOT ($botCount)" else "+ ADD BOT",
+       color = if (highlightAddBot) Color(0xFFFEF08A) else Color(0xFF00F5D4),
+       fontSize = (9.2f * textScale).sp,
        fontWeight = FontWeight.Black,
        fontFamily = FontFamily.Monospace,
        style = WingTelemetryTextStyle,
       )
      }
+     if (botCount > 0) {
+      Box(
+       modifier =
+        Modifier.minimumInteractiveComponentSize()
+         .heightIn(min = 48.dp)
+         .clip(RoundedCornerShape(10.dp))
+         .background(Color(0xEE180812))
+         .border(
+          width = 1.2.dp,
+          color = Color(0xFFFB7185),
+          shape = RoundedCornerShape(10.dp),
+         )
+         .clickable { engine.clearPracticeBots() }
+         .padding(horizontal = 12.dp, vertical = 8.dp)
+         .testTag("practice_clear_bots_btn"),
+       contentAlignment = Alignment.Center,
+      ) {
+       Text(
+        text = "- CLEAR BOTS",
+        color = Color(0xFFFB7185),
+        fontSize = (9.0f * textScale).sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        style = WingTelemetryTextStyle,
+       )
+      }
+     }
     }
    }
-  }
 
-  if (engine.isEphemeralPracticeRift && !uiUnlocked) {
-   val highlightExitBtn = activeTutorialStep == PracticeTutorialStep.ADD_BOT_AND_NEXUS
-   Column(
-    modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp).zIndex(15f),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(6.dp),
-   ) {
+   if (engine.isEphemeralPracticeRift && !uiUnlocked) {
+    val highlightExitBtn = activeTutorialStep == PracticeTutorialStep.ADD_BOT_AND_NEXUS
     Row(
      modifier =
-      Modifier.clip(RoundedCornerShape(10.dp))
+      Modifier.align(Alignment.TopCenter)
+       .padding(top = 6.dp)
+       .zIndex(15f)
+       .clip(RoundedCornerShape(10.dp))
        .background(Color(0xDD050C1A))
        .border(1.dp, Color(0xFF00F5D4).copy(alpha = 0.72f), RoundedCornerShape(10.dp))
        .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -518,7 +519,10 @@ fun RiftHudOverlay(
      val isFinalStep = activeTutorialStep.stepNumber >= totalSteps
      Column(
       modifier =
-       Modifier.widthIn(min = 290.dp, max = 420.dp)
+       Modifier.align(Alignment.TopStart)
+        .padding(start = 12.dp, top = 62.dp)
+        .zIndex(15f)
+        .widthIn(min = 240.dp, max = 336.dp)
         .clip(RoundedCornerShape(12.dp))
         .background(Color(0xF0060D1A))
         .border(1.3.dp, Color(0xFFFACC15).copy(alpha = 0.88f), RoundedCornerShape(12.dp))
@@ -587,12 +591,13 @@ fun RiftHudOverlay(
       ) {
        Box(
         modifier =
-         Modifier.heightIn(min = 34.dp)
+         Modifier.minimumInteractiveComponentSize()
+          .heightIn(min = 48.dp)
           .clip(RoundedCornerShape(8.dp))
           .background(Color(0xFF0F172A))
           .border(1.dp, Color(0xFF64748B), RoundedCornerShape(8.dp))
           .clickable { engine.skipPracticeTutorial() }
-          .padding(horizontal = 12.dp, vertical = 6.dp)
+          .padding(horizontal = 12.dp, vertical = 8.dp)
           .testTag("practice_tutorial_skip_btn"),
         contentAlignment = Alignment.Center,
        ) {
@@ -613,12 +618,13 @@ fun RiftHudOverlay(
         if (isFinalStep) {
          Box(
           modifier =
-           Modifier.heightIn(min = 34.dp)
+           Modifier.minimumInteractiveComponentSize()
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF0D253B))
             .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
             .clickable { onOpenNexus() }
-            .padding(horizontal = 11.dp, vertical = 6.dp)
+            .padding(horizontal = 11.dp, vertical = 8.dp)
             .testTag("practice_tutorial_enter_nexus_btn"),
           contentAlignment = Alignment.Center,
          ) {
@@ -634,12 +640,13 @@ fun RiftHudOverlay(
         }
         Box(
          modifier =
-          Modifier.heightIn(min = 34.dp)
+          Modifier.minimumInteractiveComponentSize()
+           .heightIn(min = 48.dp)
            .clip(RoundedCornerShape(8.dp))
            .background(Color(0xFF422006))
            .border(1.2.dp, Color(0xFFFFD700), RoundedCornerShape(8.dp))
            .clickable { engine.advancePracticeTutorialStep() }
-           .padding(horizontal = 14.dp, vertical = 6.dp)
+           .padding(horizontal = 14.dp, vertical = 8.dp)
            .testTag("practice_tutorial_next_btn"),
          contentAlignment = Alignment.Center,
         ) {
@@ -656,8 +663,7 @@ fun RiftHudOverlay(
       }
      }
     }
-   }
-  } else if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE || engine.isCustomGameActive() || uiUnlocked) {
+   } else if (engine.activeRankedMode != RankedGameMode.SECTOR_CONVERGENCE || engine.isCustomGameActive() || uiUnlocked) {
    val mode = engine.effectiveModeRules()
    val topBarDragMod =
     Modifier.align(Alignment.TopCenter)
