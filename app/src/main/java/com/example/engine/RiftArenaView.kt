@@ -516,17 +516,22 @@ class RiftArenaView(
       style = Paint.Style.FILL
       color = Color.parseColor("#00F5D4")
     }
-  private val perimeterVoidPaint =
-    Paint(Paint.ANTI_ALIAS_FLAG).apply {
-      style = Paint.Style.STROKE
-      strokeWidth = 280f
-      color = Color.argb(235, 2, 5, 11)
-    }
   private val perimeterStormShaderPaint =
     Paint(Paint.ANTI_ALIAS_FLAG).apply {
-      style = Paint.Style.STROKE
-      strokeWidth = 460f
+      style = Paint.Style.FILL
     }
+  private val cosmeticStrokePaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeCap = Paint.Cap.ROUND
+      strokeJoin = Paint.Join.ROUND
+    }
+  private val cosmeticFillPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.FILL
+    }
+  private val cosmeticPath = Path()
+  private val cosmeticRect = RectF()
   private val perimeterGlowPaint =
     Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.STROKE
@@ -2458,6 +2463,36 @@ class RiftArenaView(
         canvas.drawCircle(endX, endY, flareR * 0.38f, bombPaint)
       }
     }
+    // Compute the sector's top-Resonance Leader ship (strictly above match average) for Resonance Leader Halos
+    var resonanceTotal = 0L
+    var resonanceShipCount = 0
+    var topLeaderResonance = -1
+    var topResonanceLeaderId: String? = null
+    for (cand in shipsToRender) {
+      if (cand.respawnTimer > 0f) continue
+      val candRes =
+        when {
+          cand.isLocalPlayer ->
+            engine.getShipResonance(cand.shipId).let { if (it > 0) it else engine.liveResonance }
+          cand.isHuman -> cand.liveResonanceRating
+          else ->
+            max(
+              cand.liveResonanceRating,
+              (cand.kills * 16 + max(0, cand.bounty - 100) / 4 - cand.deaths * 4).coerceAtLeast(0),
+            )
+        }
+      resonanceTotal += candRes
+      resonanceShipCount++
+      if (candRes > topLeaderResonance) {
+        topLeaderResonance = candRes
+        topResonanceLeaderId = cand.id
+      }
+    }
+    val avgSectorResonance = if (resonanceShipCount > 0) resonanceTotal.toFloat() / resonanceShipCount.toFloat() else 0f
+    if (topLeaderResonance <= 0 || topLeaderResonance.toFloat() <= avgSectorResonance) {
+      topResonanceLeaderId = null
+    }
+
     for (s in shipsToRender) {
       if (s.respawnTimer > 0f) continue
       if (s.x < viewLeft - 110f || s.x > viewRight + 110f || s.y < viewTop - 110f || s.y > viewBottom + 110f) {
@@ -2470,12 +2505,16 @@ class RiftArenaView(
         continue
       }
 
-      // 2x 3D Metallic Ship Sprite (88f world units) with Dynamic 3D Turn Banking & 0.48s 360° Bounce Barrel Roll
+      // 2x 3D Metallic Ship Sprite (88f world units) with Live Ship Skins 0..5, Dynamic 3D Turn Banking & 360° Barrel Roll
+      val resolvedSkin =
+        if (s.isLocalPlayer) RiftSpriteBaker.activeHullTrimStyle.coerceIn(0, 5)
+        else s.equippedHullSkin.coerceIn(0, 5)
       val bmp =
         RiftSpriteBaker.getShipSprite(
           shipId = s.shipId,
           isAllied = isFriendly,
           isHitFlashing = false,
+          trimStyleOverride = resolvedSkin,
         )
       val halfBmp = bmp.width * 0.5f
       val drawScale = (88f / bmp.width.toFloat()) * RiftCalibrationState.shipScale
@@ -2629,6 +2668,35 @@ class RiftArenaView(
           vortexRibbonPaint.color = Color.argb((205 * fade).toInt(), 250, 204, 21)
           canvas.drawArc(arcRect, spinDeg + 180f, 105f, false, vortexRibbonPaint)
         }
+
+        // 10c-2. Dynamic 2.5D Rim Relighting facing nearest active Playfield Rift (within 680f) or central Rift Station
+        drawDynamicShipRiftRimLight(canvas, s)
+      }
+
+      // 10c-3. Live Resonance Leader Halo (equippedHvtHaloStyle 0..3) on the sector's top-Resonance ship
+      if (topResonanceLeaderId != null && s.id == topResonanceLeaderId && !s.isCloaked) {
+        drawResonanceLeaderHalo(
+          canvas = canvas,
+          cx = s.x,
+          cy = s.y,
+          baseRadius = 50f * RiftCalibrationState.shipScale,
+          style = s.equippedHvtHaloStyle.coerceIn(0, 3),
+          tSec = tSec,
+          alphaScale = if (isHubOverwatchMode) overwatchLabelAlphaFactor.coerceAtLeast(0.45f) else 1f,
+        )
+      }
+
+      // 10c-4. Live Warp Signature Arrival Animation (equippedWarpStyle 0..3)
+      if (s.warpInAnimTimer > 0f) {
+        val warpProg = (1f - (s.warpInAnimTimer / 0.65f)).coerceIn(0f, 1f)
+        drawWarpSignatureEffect(
+          canvas = canvas,
+          cx = s.x,
+          cy = s.y,
+          baseRadius = 46f * RiftCalibrationState.shipScale,
+          style = s.equippedWarpStyle.coerceIn(0, 3),
+          progress = warpProg,
+        )
       }
 
       if (s.phaseDashTimer > 0f) {
@@ -2804,6 +2872,7 @@ class RiftArenaView(
 
       val badgePrefix =
         when {
+          !s.isHuman -> "[BOT]"
           s.armadaName.isNotEmpty() -> "[${s.armadaName}]"
           s.syndicateTag.isNotEmpty() && s.syndicateTag !in RiftGameEngine.LEGACY_FOUNDRY_TAGS -> "[${s.syndicateTag}]"
           else -> "[GUEST]"
@@ -3057,6 +3126,14 @@ class RiftArenaView(
       canvas.drawCircle(sw.x, sw.y, sw.r * RiftCalibrationState.projectileScale, shockwavePaint)
     }
     shockwavePaint.alpha = 255
+
+    // 10d. Live Kill Finisher Cosmetic Bursts (styles 0..4, zero per-frame allocations)
+    for (fb in engine.finisherBursts) {
+      if (fb.x < viewLeft - 240f || fb.x > viewRight + 240f || fb.y < viewTop - 240f || fb.y > viewBottom + 240f) {
+        continue
+      }
+      drawKillFinisherBurst(canvas, fb)
+    }
 
     if (overwatchLabelAlphaFactor > 0.02f) {
       val safeFctWorldScale = worldScale.coerceAtLeast(0.15f)
@@ -4026,10 +4103,7 @@ class RiftArenaView(
         rawPerimGlow
       }
 
-    // Outer deep-void backing beyond the feathered storm wall
-    canvas.drawCircle(cx, cy, r + 245f, perimeterVoidPaint)
-
-    // Layer 1: Smooth, Box-Free, Non-Snapping Volumetric Outer Storm Wall (2D world-space Quintic FBM on API 33+ / feathered cloud puffs on API 24-32)
+    // Layer 1: Seamless 360-Degree Volumetric Outer Storm Wall (viewport-clamped FILL quad — zero East seam, zero outer clip ring)
     val perimTurb = perimRec.shaderTurbulence.coerceIn(0.15f, 2.2f)
     val perimGlowMult = perimRec.glowIntensity.coerceIn(0.25f, 2.4f)
     val perimOpacity = perimRec.surfaceOpacity.coerceIn(0.25f, 1.0f)
@@ -4046,8 +4120,13 @@ class RiftArenaView(
         rt.setFloatUniform("uGlowRGB", Color.red(perimGlow) / 255f, Color.green(perimGlow) / 255f, Color.blue(perimGlow) / 255f)
         rt.setFloatUniform("uTrimRGB", Color.red(perimTrim) / 255f, Color.green(perimTrim) / 255f, Color.blue(perimTrim) / 255f)
         perimeterStormShaderPaint.shader = rt
-        perimeterStormShaderPaint.strokeWidth = 460f
-        canvas.drawCircle(cx, cy, r - 35f, perimeterStormShaderPaint)
+        val left = max(viewLeft - 64f, cx - r - 260f)
+        val top = max(viewTop - 64f, cy - r - 260f)
+        val right = min(viewRight + 64f, cx + r + 260f)
+        val bottom = min(viewBottom + 64f, cy + r + 260f)
+        if (left < right && top < bottom) {
+          canvas.drawRect(left, top, right, bottom, perimeterStormShaderPaint)
+        }
         perimeterStormShaderPaint.shader = null
         drewStormShader = true
       }
@@ -6096,6 +6175,369 @@ class RiftArenaView(
       seedOffset = ((outerColor shr 8) and 0xFF) * 0.041f + cx * 0.0017f,
     )
   }
+
+  private fun drawDynamicShipRiftRimLight(canvas: Canvas, s: ShipEntity) {
+    var bestDistSq = 680f * 680f
+    var lightX = 0f
+    var lightY = 0f
+    var lightColor = Color.parseColor("#00F5D4")
+    var found = false
+
+    for (anom in engine.anomalies) {
+      val dx = anom.x - s.x
+      val dy = anom.y - s.y
+      val dSq = dx * dx + dy * dy
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq
+        lightX = anom.x
+        lightY = anom.y
+        lightColor =
+          when (anom.type) {
+            AnomalyType.PLASMA_RIFT -> Color.parseColor("#FB7185")
+            AnomalyType.REPULSOR_RIFT -> Color.parseColor("#7DD3FC")
+            AnomalyType.GRAVITY_RIFT -> Color.parseColor("#C084FC")
+            AnomalyType.PHASE_RIFT_A, AnomalyType.PHASE_RIFT_B -> Color.parseColor("#2DD4BF")
+          }
+        found = true
+      }
+    }
+
+    var maxRange = 680f
+    if (!found) {
+      val dx = engine.arenaCenterX - s.x
+      val dy = engine.arenaCenterY - s.y
+      val dSq = dx * dx + dy * dy
+      if (dSq < 980f * 980f) {
+        bestDistSq = dSq
+        lightX = engine.arenaCenterX
+        lightY = engine.arenaCenterY
+        lightColor = Color.parseColor("#00F5D4")
+        maxRange = 980f
+        found = true
+      }
+    }
+    if (!found) return
+
+    val dist = kotlin.math.sqrt(bestDistSq)
+    val falloff = (1f - (dist / maxRange)).coerceIn(0f, 1f)
+    if (falloff <= 0.04f) return
+
+    val lightAngDeg = atan2(lightY - s.y, lightX - s.x) * 180f / PI.toFloat()
+    val rimR = 37f * RiftCalibrationState.shipScale
+    cosmeticRect.set(s.x - rimR, s.y - rimR, s.x + rimR, s.y + rimR)
+    val outerAlpha = (145f * falloff).roundToInt().coerceIn(12, 165)
+    cosmeticStrokePaint.strokeWidth = 3.2f * RiftCalibrationState.shipScale
+    cosmeticStrokePaint.color =
+      Color.argb(outerAlpha, Color.red(lightColor), Color.green(lightColor), Color.blue(lightColor))
+    canvas.drawArc(cosmeticRect, lightAngDeg - 48f, 96f, false, cosmeticStrokePaint)
+
+    val coreAlpha = (165f * falloff).roundToInt().coerceIn(14, 185)
+    cosmeticStrokePaint.strokeWidth = 1.45f * RiftCalibrationState.shipScale
+    cosmeticStrokePaint.color = Color.argb(coreAlpha, 248, 250, 252)
+    canvas.drawArc(cosmeticRect, lightAngDeg - 28f, 56f, false, cosmeticStrokePaint)
+  }
+
+  private fun drawWarpSignatureEffect(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    baseRadius: Float,
+    style: Int,
+    progress: Float,
+  ) {
+    val p = progress.coerceIn(0f, 1f)
+    val fade = (1f - p).coerceIn(0f, 1f)
+    if (fade <= 0.01f) return
+    val spinDeg = p * 220f
+
+    when (style.coerceIn(0, 3)) {
+      1 -> {
+        val rOut = baseRadius * (1.75f - 0.55f * p)
+        val rIn = baseRadius * (0.72f + 0.52f * p)
+        cosmeticRect.set(cx - rOut, cy - rOut, cx + rOut, cy + rOut)
+        cosmeticStrokePaint.strokeWidth = 4.2f * fade + 1.2f
+        cosmeticStrokePaint.color = Color.argb((230f * fade).roundToInt(), 250, 204, 21)
+        canvas.drawArc(cosmeticRect, spinDeg, 108f, false, cosmeticStrokePaint)
+        canvas.drawArc(cosmeticRect, spinDeg + 180f, 108f, false, cosmeticStrokePaint)
+
+        cosmeticRect.set(cx - rIn, cy - rIn, cx + rIn, cy + rIn)
+        cosmeticStrokePaint.strokeWidth = 2.1f * fade + 0.8f
+        cosmeticStrokePaint.color = Color.argb((240f * fade).roundToInt(), 254, 240, 138)
+        canvas.drawArc(cosmeticRect, -spinDeg * 1.2f + 35f, 84f, false, cosmeticStrokePaint)
+        canvas.drawArc(cosmeticRect, -spinDeg * 1.2f + 215f, 84f, false, cosmeticStrokePaint)
+      }
+      2 -> {
+        val rRing = baseRadius * (0.85f + 0.95f * p)
+        cosmeticStrokePaint.strokeWidth = 2.6f * fade + 0.8f
+        cosmeticStrokePaint.color = Color.argb((205f * fade).roundToInt(), 192, 132, 252)
+        canvas.drawCircle(cx, cy, rRing, cosmeticStrokePaint)
+
+        cosmeticFillPaint.color = Color.argb((235f * fade).roundToInt(), 245, 208, 254)
+        for (k in 0 until 8) {
+          val ang = (k * PI.toFloat() * 0.25f) + p * 1.4f
+          val dist = baseRadius * (0.55f + 1.28f * p)
+          val sx = cx + cos(ang) * dist
+          val sy = cy + sin(ang) * dist
+          val len = (11f * fade + 3f)
+          val wid = (4.2f * fade + 1.2f)
+          val ca = cos(ang)
+          val sa = sin(ang)
+          cosmeticPath.reset()
+          cosmeticPath.moveTo(sx + ca * len, sy + sa * len)
+          cosmeticPath.lineTo(sx - sa * wid, sy + ca * wid)
+          cosmeticPath.lineTo(sx - ca * len * 0.65f, sy - sa * len * 0.65f)
+          cosmeticPath.lineTo(sx + sa * wid, sy - ca * wid)
+          cosmeticPath.close()
+          canvas.drawPath(cosmeticPath, cosmeticFillPaint)
+        }
+      }
+      3 -> {
+        val rWave = baseRadius * (0.60f + 1.55f * p)
+        cosmeticStrokePaint.strokeWidth = 6.2f * fade + 1.4f
+        cosmeticStrokePaint.color = Color.argb((190f * fade).roundToInt(), 239, 68, 68)
+        canvas.drawCircle(cx, cy, rWave, cosmeticStrokePaint)
+        cosmeticStrokePaint.strokeWidth = 2.6f * fade + 0.9f
+        cosmeticStrokePaint.color = Color.argb((240f * fade).roundToInt(), 254, 205, 211)
+        canvas.drawCircle(cx, cy, rWave * 0.88f, cosmeticStrokePaint)
+      }
+      else -> {
+        val rOuter = baseRadius * (1.85f - 0.72f * p)
+        val rInner = baseRadius * (0.52f + 0.88f * p)
+        cosmeticStrokePaint.strokeWidth = 3.4f * fade + 1.0f
+        cosmeticStrokePaint.color = Color.argb((225f * fade).roundToInt(), 0, 245, 212)
+        canvas.drawCircle(cx, cy, rOuter, cosmeticStrokePaint)
+        cosmeticStrokePaint.strokeWidth = 2.0f * fade + 0.8f
+        cosmeticStrokePaint.color = Color.argb((245f * fade).roundToInt(), 224, 242, 254)
+        canvas.drawCircle(cx, cy, rInner, cosmeticStrokePaint)
+      }
+    }
+  }
+
+  private fun drawResonanceLeaderHalo(
+    canvas: Canvas,
+    cx: Float,
+    cy: Float,
+    baseRadius: Float,
+    style: Int,
+    tSec: Float,
+    alphaScale: Float,
+  ) {
+    val aScale = alphaScale.coerceIn(0f, 1f)
+    if (aScale <= 0.02f) return
+    val spinDeg = (tSec * 44f) % 360f
+
+    when (style.coerceIn(0, 3)) {
+      1 -> {
+        val rOuter = baseRadius * 1.12f
+        val rInner = baseRadius * 0.94f
+        cosmeticStrokePaint.strokeWidth = 2.6f
+        cosmeticStrokePaint.color = Color.argb((235f * aScale).roundToInt(), 250, 204, 21)
+        canvas.drawCircle(cx, cy, rOuter, cosmeticStrokePaint)
+        cosmeticStrokePaint.strokeWidth = 1.6f
+        cosmeticStrokePaint.color = Color.argb((200f * aScale).roundToInt(), 254, 240, 138)
+        canvas.drawCircle(cx, cy, rInner, cosmeticStrokePaint)
+        for (i in 0 until 6) {
+          val a = (spinDeg + i * 60f) * PI.toFloat() / 180f
+          val ca = cos(a)
+          val sa = sin(a)
+          val px = -sa
+          val py = ca
+          val tipX = cx + ca * (rOuter + 12f)
+          val tipY = cy + sa * (rOuter + 12f)
+          val baseX = cx + ca * (rOuter + 2f)
+          val baseY = cy + sa * (rOuter + 2f)
+          cosmeticStrokePaint.strokeWidth = 2.5f
+          cosmeticStrokePaint.color = Color.argb((245f * aScale).roundToInt(), 254, 240, 138)
+          canvas.drawLine(baseX + px * 6f, baseY + py * 6f, tipX, tipY, cosmeticStrokePaint)
+          canvas.drawLine(baseX - px * 6f, baseY - py * 6f, tipX, tipY, cosmeticStrokePaint)
+        }
+      }
+      2 -> {
+        val rOrbit = baseRadius * 1.10f
+        cosmeticStrokePaint.strokeWidth = 2.2f
+        cosmeticStrokePaint.color = Color.argb((205f * aScale).roundToInt(), 168, 85, 247)
+        canvas.drawCircle(cx, cy, rOrbit, cosmeticStrokePaint)
+        for (i in 0 until 4) {
+          val a = (spinDeg * 1.15f + i * 90f) * PI.toFloat() / 180f
+          val nx = cx + cos(a) * rOrbit
+          val ny = cy + sin(a) * rOrbit
+          val d = 7.5f
+          cosmeticPath.reset()
+          cosmeticPath.moveTo(nx, ny - d)
+          cosmeticPath.lineTo(nx + d * 0.72f, ny)
+          cosmeticPath.lineTo(nx, ny + d)
+          cosmeticPath.lineTo(nx - d * 0.72f, ny)
+          cosmeticPath.close()
+          cosmeticFillPaint.color = Color.argb((235f * aScale).roundToInt(), 192, 132, 252)
+          canvas.drawPath(cosmeticPath, cosmeticFillPaint)
+          cosmeticFillPaint.color = Color.argb((245f * aScale).roundToInt(), 245, 208, 254)
+          canvas.drawCircle(nx, ny, 2.6f, cosmeticFillPaint)
+        }
+      }
+      3 -> {
+        val rCyan = baseRadius * 1.16f
+        val rCrimson = baseRadius * 0.98f
+        cosmeticRect.set(cx - rCyan, cy - rCyan, cx + rCyan, cy + rCyan)
+        cosmeticStrokePaint.strokeWidth = 2.8f
+        cosmeticStrokePaint.color = Color.argb((240f * aScale).roundToInt(), 0, 245, 212)
+        for (i in 0 until 3) {
+          canvas.drawArc(cosmeticRect, spinDeg + i * 120f, 68f, false, cosmeticStrokePaint)
+        }
+        cosmeticRect.set(cx - rCrimson, cy - rCrimson, cx + rCrimson, cy + rCrimson)
+        cosmeticStrokePaint.strokeWidth = 2.6f
+        cosmeticStrokePaint.color = Color.argb((235f * aScale).roundToInt(), 251, 113, 133)
+        for (i in 0 until 3) {
+          canvas.drawArc(cosmeticRect, -spinDeg * 1.35f + i * 120f + 24f, 62f, false, cosmeticStrokePaint)
+        }
+        cosmeticFillPaint.color = Color.argb((245f * aScale).roundToInt(), 248, 250, 252)
+        for (i in 0 until 3) {
+          val a = (spinDeg + i * 120f + 34f) * PI.toFloat() / 180f
+          canvas.drawCircle(cx + cos(a) * rCyan, cy + sin(a) * rCyan, 3.2f, cosmeticFillPaint)
+        }
+      }
+      else -> {
+        val rRet = baseRadius * 1.06f
+        cosmeticRect.set(cx - rRet, cy - rRet, cx + rRet, cy + rRet)
+        cosmeticStrokePaint.strokeWidth = 2.5f
+        cosmeticStrokePaint.color = Color.argb((230f * aScale).roundToInt(), 245, 158, 11)
+        for (i in 0 until 4) {
+          canvas.drawArc(cosmeticRect, spinDeg + i * 90f, 44f, false, cosmeticStrokePaint)
+        }
+      }
+    }
+  }
+
+  private fun drawKillFinisherBurst(canvas: Canvas, fb: FinisherBurstEntity) {
+    val prog = (fb.ageSec / fb.maxLifeSec.coerceAtLeast(0.01f)).coerceIn(0f, 1f)
+    val inv = (1f - prog).coerceIn(0f, 1f)
+    if (inv <= 0.01f) return
+    val cx = fb.x
+    val cy = fb.y
+    val scale = RiftCalibrationState.projectileScale
+
+    when (fb.style.coerceIn(0, 4)) {
+      1 -> {
+        if (prog < 0.48f) {
+          val pIn = prog / 0.48f
+          val pullR = (165f * (1f - pIn * 0.82f)) * scale
+          cosmeticFillPaint.color = Color.argb((125f * (0.4f + 0.6f * pIn)).roundToInt(), 79, 70, 229)
+          canvas.drawCircle(cx, cy, pullR * 0.42f, cosmeticFillPaint)
+          cosmeticStrokePaint.strokeWidth = 4.2f
+          cosmeticStrokePaint.color = Color.argb(225, 129, 140, 248)
+          canvas.drawCircle(cx, cy, pullR, cosmeticStrokePaint)
+          cosmeticStrokePaint.strokeWidth = 2.2f
+          cosmeticStrokePaint.color = Color.argb(230, 192, 132, 252)
+          for (i in 0 until 8) {
+            val a = i * (PI.toFloat() * 0.25f) + pIn * 1.6f
+            canvas.drawLine(
+              cx + cos(a) * pullR,
+              cy + sin(a) * pullR,
+              cx + cos(a) * (pullR * 0.34f),
+              cy + sin(a) * (pullR * 0.34f),
+              cosmeticStrokePaint,
+            )
+          }
+        } else {
+          val pOut = ((prog - 0.48f) / 0.52f).coerceIn(0f, 1f)
+          val fadeOut = 1f - pOut
+          val snapR = (28f + 225f * pOut) * scale
+          cosmeticStrokePaint.strokeWidth = 6.5f * fadeOut + 1.5f
+          cosmeticStrokePaint.color = Color.argb((235f * fadeOut).roundToInt(), 0, 245, 212)
+          canvas.drawCircle(cx, cy, snapR, cosmeticStrokePaint)
+          cosmeticStrokePaint.strokeWidth = 3.2f * fadeOut + 1f
+          cosmeticStrokePaint.color = Color.argb((220f * fadeOut).roundToInt(), 168, 85, 247)
+          canvas.drawCircle(cx, cy, snapR * 0.78f, cosmeticStrokePaint)
+        }
+      }
+      2 -> {
+        val coronaR = (28f + 195f * prog) * scale
+        cosmeticFillPaint.color = Color.argb((110f * inv).roundToInt(), 250, 204, 21)
+        canvas.drawCircle(cx, cy, coronaR * 0.44f, cosmeticFillPaint)
+        cosmeticStrokePaint.strokeWidth = 5.4f * inv + 1.4f
+        cosmeticStrokePaint.color = Color.argb((240f * inv).roundToInt(), 250, 204, 21)
+        canvas.drawCircle(cx, cy, coronaR, cosmeticStrokePaint)
+        cosmeticStrokePaint.strokeWidth = 2.6f * inv + 0.9f
+        cosmeticStrokePaint.color = Color.argb((245f * inv).roundToInt(), 254, 240, 138)
+        for (i in 0 until 12) {
+          val a = i * (PI.toFloat() / 6f) + prog * 0.85f
+          val r0 = coronaR * 0.32f
+          val r1 = coronaR * (if (i % 2 == 0) 1.32f else 1.05f)
+          canvas.drawLine(cx + cos(a) * r0, cy + sin(a) * r0, cx + cos(a) * r1, cy + sin(a) * r1, cosmeticStrokePaint)
+        }
+      }
+      3 -> {
+        val shatterR = (24f + 205f * prog) * scale
+        cosmeticStrokePaint.strokeWidth = 4.2f * inv + 1.2f
+        cosmeticStrokePaint.color = Color.argb((220f * inv).roundToInt(), 168, 85, 247)
+        canvas.drawCircle(cx, cy, shatterR * 0.78f, cosmeticStrokePaint)
+        for (i in 0 until 8) {
+          val a = i * (PI.toFloat() * 0.25f) + prog * 1.15f
+          val sx = cx + cos(a) * shatterR
+          val sy = cy + sin(a) * shatterR
+          val len = (24f * inv + 7f) * scale
+          val wid = (8.5f * inv + 2.5f) * scale
+          val ca = cos(a)
+          val sa = sin(a)
+          cosmeticPath.reset()
+          cosmeticPath.moveTo(sx + ca * len, sy + sa * len)
+          cosmeticPath.lineTo(sx - sa * wid, sy + ca * wid)
+          cosmeticPath.lineTo(sx - ca * len * 0.65f, sy - sa * len * 0.65f)
+          cosmeticPath.lineTo(sx + sa * wid, sy - ca * wid)
+          cosmeticPath.close()
+          cosmeticFillPaint.color = Color.argb((230f * inv).roundToInt(), 192, 132, 252)
+          canvas.drawPath(cosmeticPath, cosmeticFillPaint)
+          cosmeticStrokePaint.strokeWidth = 1.6f
+          cosmeticStrokePaint.color = Color.argb((245f * inv).roundToInt(), 245, 208, 254)
+          canvas.drawPath(cosmeticPath, cosmeticStrokePaint)
+        }
+      }
+      4 -> {
+        val apexR = (26f + 220f * prog) * scale
+        val rotDeg = prog * 260f
+        cosmeticFillPaint.color = Color.argb((145f * inv).roundToInt(), 255, 255, 255)
+        canvas.drawCircle(cx, cy, apexR * 0.26f, cosmeticFillPaint)
+
+        cosmeticRect.set(cx - apexR, cy - apexR, cx + apexR, cy + apexR)
+        cosmeticStrokePaint.strokeWidth = 5.2f * inv + 1.4f
+        cosmeticStrokePaint.color = Color.argb((240f * inv).roundToInt(), 251, 113, 133)
+        canvas.drawArc(cosmeticRect, rotDeg, 130f, false, cosmeticStrokePaint)
+        canvas.drawArc(cosmeticRect, rotDeg + 180f, 130f, false, cosmeticStrokePaint)
+
+        val innerR = apexR * 0.76f
+        cosmeticRect.set(cx - innerR, cy - innerR, cx + innerR, cy + innerR)
+        cosmeticStrokePaint.strokeWidth = 4.4f * inv + 1.2f
+        cosmeticStrokePaint.color = Color.argb((245f * inv).roundToInt(), 0, 245, 212)
+        canvas.drawArc(cosmeticRect, -rotDeg * 1.25f + 40f, 120f, false, cosmeticStrokePaint)
+        canvas.drawArc(cosmeticRect, -rotDeg * 1.25f + 220f, 120f, false, cosmeticStrokePaint)
+
+        cosmeticStrokePaint.strokeWidth = 2.4f * inv + 0.8f
+        for (i in 0 until 8) {
+          val a = i * (PI.toFloat() * 0.25f) + prog * 1.4f
+          cosmeticStrokePaint.color =
+            if (i % 2 == 0) Color.argb((235f * inv).roundToInt(), 0, 245, 212)
+            else Color.argb((235f * inv).roundToInt(), 251, 113, 133)
+          canvas.drawLine(
+            cx + cos(a) * (apexR * 0.25f),
+            cy + sin(a) * (apexR * 0.25f),
+            cx + cos(a) * (apexR * 1.18f),
+            cy + sin(a) * (apexR * 1.18f),
+            cosmeticStrokePaint,
+          )
+        }
+      }
+      else -> {
+        val novaR = (24f + 185f * prog) * scale
+        cosmeticFillPaint.color = Color.argb((120f * inv).roundToInt(), 245, 158, 11)
+        canvas.drawCircle(cx, cy, novaR * 0.36f, cosmeticFillPaint)
+        cosmeticStrokePaint.strokeWidth = 5.0f * inv + 1.2f
+        cosmeticStrokePaint.color = Color.argb((235f * inv).roundToInt(), 0, 245, 212)
+        canvas.drawCircle(cx, cy, novaR, cosmeticStrokePaint)
+        cosmeticStrokePaint.strokeWidth = 3.0f * inv + 1.0f
+        cosmeticStrokePaint.color = Color.argb((230f * inv).roundToInt(), 250, 204, 21)
+        canvas.drawCircle(cx, cy, novaR * 0.68f, cosmeticStrokePaint)
+      }
+    }
+  }
 }
 
 private const val SAFE_NEXUS_RIFT_AGSL =
@@ -6308,11 +6750,11 @@ private const val STORM_BOUNDARY_AGSL =
     float2 delta = fragCoord - uCenter;
     float dist = length(delta);
     float signedOff = dist - uRadius;
-    if (signedOff < -255.0 || signedOff > 195.0) {
+    if (signedOff < -255.0 || signedOff > 250.0) {
       return half4(0.0);
     }
 
-    // Continuous 2D Cartesian world-space coordinates (zero boxy lattice Mach bands, zero polar stretching, zero time snap)
+    // Continuous 2D Cartesian world-space coordinates (zero East seam, zero polar stretching, zero clip ring)
     float turb = clamp(uTurbulence, 0.15, 2.2);
     float glow = clamp(uGlow, 0.25, 2.4);
     float worldScale = 0.0046 * (0.76 + 0.32 * turb);
@@ -6322,12 +6764,12 @@ private const val STORM_BOUNDARY_AGSL =
     float cloudB = fbms3(worldUv * 1.92 + float2(-uTime * 0.21 + cloudA * 1.35, uTime * 0.16 - cloudA * 1.15));
     float billow = clamp(cloudA * 0.56 + cloudB * 0.56, 0.0, 1.0);
 
-    // Smooth radial smoothstep feathering across the 280px storm perimeter band
+    // Smooth radial smoothstep feathering with quadratic outer tail dissolving seamlessly into #010308 deep space
     float pertIn = signedOff + (cloudA - 0.5) * 72.0 * clamp(turb, 0.5, 1.5);
     float pertOut = signedOff + (cloudB - 0.5) * 42.0;
     float inwardMask = smoothstep(-235.0, -14.0, pertIn);
-    float outwardMask = 1.0 - smoothstep(45.0, 185.0, pertOut);
-    float stormEnvelope = inwardMask * outwardMask;
+    float outwardMask = 1.0 - smoothstep(10.0, 235.0, pertOut);
+    float stormEnvelope = inwardMask * (outwardMask * outwardMask);
 
     float paletteShift = 0.5 + 0.5 * sin(uTime * 1.25 + cloudA * 4.4);
     float ridge = clamp(1.0 - abs(cloudA - cloudB) * 3.1, 0.0, 1.0);

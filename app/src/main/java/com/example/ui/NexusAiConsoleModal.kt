@@ -314,6 +314,10 @@ internal sealed interface OverwatchCircularPrompt {
     val codexModeIndex: Int = -1,
     val primaryActionLabel: String = "",
     val onPrimaryAction: (() -> Unit)? = null,
+    val previewHullSkinId: Int? = null,
+    val previewFinisherId: Int? = null,
+    val previewWarpStyleId: Int? = null,
+    val previewHaloStyleId: Int? = null,
   ) : OverwatchCircularPrompt
 }
 
@@ -444,16 +448,25 @@ internal fun Spinning25dShipWithOrbitingFlux(
   isSelected: Boolean = false,
   sizeDp: Dp = 54.dp,
   orbitingFluxCount: Int = 5,
+  trimStyleOverride: Int? = null,
+  previewFinisherId: Int? = null,
+  previewWarpStyleId: Int? = null,
+  previewHaloStyleId: Int? = null,
   modifier: Modifier = Modifier,
 ) {
   val clampedId = shipId.coerceIn(1, 10)
   val spriteRev = RiftSpriteBaker.spriteVisualRevision
   val customRev = RiftSpriteBaker.customShip9Version
-  val trimStyle = RiftSpriteBaker.activeHullTrimStyle
+  val effectiveTrim = (trimStyleOverride ?: RiftSpriteBaker.activeHullTrimStyle).coerceIn(0, 5)
   val visualRev = RiftVisualForgeState.visualRevision
   val shipBmp =
-    remember(clampedId, spriteRev, customRev, trimStyle) {
-      RiftSpriteBaker.getShipSprite(shipId = clampedId, isAllied = true, isHitFlashing = false).asImageBitmap()
+    remember(clampedId, spriteRev, customRev, effectiveTrim, visualRev) {
+      RiftSpriteBaker.getShipSprite(
+        shipId = clampedId,
+        isAllied = true,
+        isHitFlashing = false,
+        trimStyleOverride = effectiveTrim,
+      ).asImageBitmap()
     }
   val fluxBmp = remember(visualRev, spriteRev) { RiftSpriteBaker.fluxIconBitmap.asImageBitmap() }
 
@@ -536,7 +549,14 @@ internal fun Spinning25dShipWithOrbitingFlux(
     }
 
     // 2. Slowly Spinning 2.5D Ship Sprite (with subtle phase offset per ship hull)
-    val hullFraction = if (isCharged) 0.66f else 0.72f
+    val hasCosmeticFx =
+      previewHaloStyleId != null || previewWarpStyleId != null || previewFinisherId != null
+    val hullFraction =
+      when {
+        hasCosmeticFx -> 0.58f
+        isCharged -> 0.66f
+        else -> 0.72f
+      }
     Image(
       bitmap = shipBmp,
       contentDescription = null,
@@ -548,8 +568,8 @@ internal fun Spinning25dShipWithOrbitingFlux(
           },
     )
 
-    // 3. Orbiting 3D Flux Icons Ringing the Charged Ship
-    if (isCharged && orbitingFluxCount > 0) {
+    // 3. Orbiting 3D Flux Icons Ringing the Charged Ship (suppressed during dedicated FX preview)
+    if (isCharged && orbitingFluxCount > 0 && !hasCosmeticFx) {
       Canvas(modifier = Modifier.fillMaxSize()) {
         val minDim = size.minDimension
         if (minDim <= 8f) return@Canvas
@@ -567,6 +587,327 @@ internal fun Spinning25dShipWithOrbitingFlux(
             dstOffset = IntOffset(ix, iy),
             dstSize = IntSize(iconPx, iconPx),
           )
+        }
+      }
+    }
+
+    // 4. Live Animated Overwatch Preview FX (Resonance Leader Halos 0..3, Warp Signatures 0..3, Kill Finishers 0..4)
+    if (hasCosmeticFx) {
+      Canvas(modifier = Modifier.fillMaxSize()) {
+        val minDim = size.minDimension
+        if (minDim <= 10f) return@Canvas
+        val cx = center.x
+        val cy = center.y
+        val baseR = minDim * 0.36f
+        val cycleT = ((fluxOrbitRad / (2.0 * PI)).toFloat() % 1f).let { if (it < 0f) it + 1f else it }
+        val rotDeg = cycleT * 360f
+
+        previewHaloStyleId?.let { rawStyle ->
+          val style = rawStyle.coerceIn(0, 3)
+          when (style) {
+            0 -> {
+              val ringR = baseR * 1.12f
+              drawCircle(
+                color = Color(0xFFF59E0B).copy(alpha = 0.72f),
+                radius = ringR,
+                center = center,
+                style = Stroke(width = 1.4.dp.toPx()),
+              )
+              for (i in 0 until 4) {
+                val a = ((rotDeg * 0.85f + i * 90f) * PI / 180.0).toFloat()
+                drawLine(
+                  color = Color(0xFFFDE047),
+                  start = Offset(cx + cos(a) * (ringR - 3.dp.toPx()), cy + sin(a) * (ringR - 3.dp.toPx())),
+                  end = Offset(cx + cos(a) * (ringR + 3.dp.toPx()), cy + sin(a) * (ringR + 3.dp.toPx())),
+                  strokeWidth = 1.6.dp.toPx(),
+                  cap = StrokeCap.Round,
+                )
+              }
+            }
+            1 -> {
+              val innerR = baseR * 1.04f
+              val outerR = baseR * 1.24f
+              drawCircle(
+                color = Color(0xFFFACC15).copy(alpha = 0.85f),
+                radius = innerR,
+                center = center,
+                style = Stroke(width = 1.5.dp.toPx()),
+              )
+              drawCircle(
+                color = Color(0xFFFEF08A).copy(alpha = 0.45f),
+                radius = outerR,
+                center = center,
+                style = Stroke(width = 1.0.dp.toPx()),
+              )
+              val chevPath = Path()
+              for (i in 0 until 6) {
+                val a = ((rotDeg + i * 60f) * PI / 180.0).toFloat()
+                val ax = cos(a)
+                val ay = sin(a)
+                val tx = -ay
+                val ty = ax
+                val tipX = cx + ax * (outerR + 3.2.dp.toPx())
+                val tipY = cy + ay * (outerR + 3.2.dp.toPx())
+                val b1x = cx + ax * (innerR + 0.8.dp.toPx()) - tx * 2.6.dp.toPx()
+                val b1y = cy + ay * (innerR + 0.8.dp.toPx()) - ty * 2.6.dp.toPx()
+                val b2x = cx + ax * (innerR + 0.8.dp.toPx()) + tx * 2.6.dp.toPx()
+                val b2y = cy + ay * (innerR + 0.8.dp.toPx()) + ty * 2.6.dp.toPx()
+                chevPath.reset()
+                chevPath.moveTo(tipX, tipY)
+                chevPath.lineTo(b1x, b1y)
+                chevPath.lineTo(b2x, b2y)
+                chevPath.close()
+                drawPath(chevPath, color = Color(0xFFFFD700).copy(alpha = 0.90f))
+              }
+            }
+            2 -> {
+              val ringR = baseR * 1.15f
+              drawCircle(
+                color = Color(0xFFA855F7).copy(alpha = 0.55f),
+                radius = ringR,
+                center = center,
+                style = Stroke(width = 1.3.dp.toPx()),
+              )
+              val dSize = 3.6.dp.toPx()
+              val dPath = Path()
+              for (i in 0 until 4) {
+                val a = ((rotDeg * 1.25f + i * 90f) * PI / 180.0).toFloat()
+                val px = cx + cos(a) * ringR
+                val py = cy + sin(a) * ringR
+                dPath.reset()
+                dPath.moveTo(px, py - dSize)
+                dPath.lineTo(px + dSize * 0.72f, py)
+                dPath.lineTo(px, py + dSize)
+                dPath.lineTo(px - dSize * 0.72f, py)
+                dPath.close()
+                drawPath(dPath, color = Color(0xFFE9D5FF))
+                drawPath(dPath, color = Color(0xFFC084FC), style = Stroke(width = 1.0.dp.toPx()))
+              }
+            }
+            else -> {
+              val outerR = baseR * 1.20f
+              val innerR = baseR * 1.02f
+              for (i in 0 until 3) {
+                drawArc(
+                  color = Color(0xFF00F5D4).copy(alpha = 0.92f),
+                  startAngle = rotDeg * 1.3f + i * 120f,
+                  sweepAngle = 56f,
+                  useCenter = false,
+                  topLeft = Offset(cx - outerR, cy - outerR),
+                  size = Size(outerR * 2f, outerR * 2f),
+                  style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round),
+                )
+                drawArc(
+                  color = Color(0xFFFB7185).copy(alpha = 0.88f),
+                  startAngle = -rotDeg * 1.55f + i * 120f + 40f,
+                  sweepAngle = 48f,
+                  useCenter = false,
+                  topLeft = Offset(cx - innerR, cy - innerR),
+                  size = Size(innerR * 2f, innerR * 2f),
+                  style = Stroke(width = 1.7.dp.toPx(), cap = StrokeCap.Round),
+                )
+              }
+            }
+          }
+        }
+
+        previewWarpStyleId?.let { rawStyle ->
+          val style = rawStyle.coerceIn(0, 3)
+          val p = cycleT
+          val fade = (1f - p).coerceIn(0f, 1f)
+          when (style) {
+            0 -> {
+              val rOuter = baseR * (0.45f + p * 0.95f)
+              val rInner = baseR * (0.28f + p * 0.62f)
+              drawCircle(
+                color = Color(0xFF00F5D4).copy(alpha = 0.86f * fade),
+                radius = rOuter,
+                center = center,
+                style = Stroke(width = 2.1.dp.toPx()),
+              )
+              drawCircle(
+                color = Color(0xFF38BDF8).copy(alpha = 0.56f * fade),
+                radius = rInner,
+                center = center,
+                style = Stroke(width = 1.3.dp.toPx()),
+              )
+            }
+            1 -> {
+              val rFlare = baseR * (0.55f + p * 0.80f)
+              for (k in 0 until 2) {
+                drawArc(
+                  color = Color(0xFFFACC15).copy(alpha = 0.90f * fade),
+                  startAngle = rotDeg * 1.4f + k * 180f,
+                  sweepAngle = 115f,
+                  useCenter = false,
+                  topLeft = Offset(cx - rFlare, cy - rFlare),
+                  size = Size(rFlare * 2f, rFlare * 2f),
+                  style = Stroke(width = 2.3.dp.toPx(), cap = StrokeCap.Round),
+                )
+              }
+              drawCircle(
+                color = Color(0xFFFEF08A).copy(alpha = 0.30f * fade),
+                radius = rFlare * 0.72f,
+                center = center,
+              )
+            }
+            2 -> {
+              val rRing = baseR * (0.50f + p * 0.84f)
+              drawCircle(
+                color = Color(0xFFA855F7).copy(alpha = 0.82f * fade),
+                radius = rRing,
+                center = center,
+                style = Stroke(width = 1.9.dp.toPx()),
+              )
+              for (i in 0 until 8) {
+                val a = ((i * 45f + rotDeg * 0.9f) * PI / 180.0).toFloat()
+                val r1 = baseR * (0.34f + p * 0.48f)
+                val r2 = r1 + baseR * 0.34f * fade
+                drawLine(
+                  color = Color(0xFFE9D5FF).copy(alpha = 0.90f * fade),
+                  start = Offset(cx + cos(a) * r1, cy + sin(a) * r1),
+                  end = Offset(cx + cos(a) * r2, cy + sin(a) * r2),
+                  strokeWidth = 1.6.dp.toPx(),
+                  cap = StrokeCap.Round,
+                )
+              }
+            }
+            else -> {
+              val rShock = baseR * (0.42f + p * 0.98f)
+              drawCircle(
+                color = Color(0xFFF43F5E).copy(alpha = 0.92f * fade),
+                radius = rShock,
+                center = center,
+                style = Stroke(width = 2.6.dp.toPx()),
+              )
+              drawCircle(
+                color = Color(0xFFFDA4AF).copy(alpha = 0.65f * fade),
+                radius = rShock * 0.68f,
+                center = center,
+                style = Stroke(width = 1.3.dp.toPx()),
+              )
+            }
+          }
+        }
+
+        previewFinisherId?.let { rawStyle ->
+          val style = rawStyle.coerceIn(0, 4)
+          val p = cycleT
+          val fade = (1f - p).coerceIn(0f, 1f)
+          when (style) {
+            0 -> {
+              val rOuter = baseR * (0.36f + p * 1.05f)
+              drawCircle(
+                color = Color(0xFF00F5D4).copy(alpha = 0.90f * fade),
+                radius = rOuter,
+                center = center,
+                style = Stroke(width = 2.4.dp.toPx()),
+              )
+              drawCircle(
+                color = Color(0xFFF59E0B).copy(alpha = 0.42f * fade),
+                radius = rOuter * 0.65f,
+                center = center,
+              )
+            }
+            1 -> {
+              if (p < 0.50f) {
+                val pull = 1f - (p / 0.50f)
+                val rIn = baseR * (0.28f + pull * 1.02f)
+                drawCircle(
+                  color = Color(0xFF6366F1).copy(alpha = 0.86f),
+                  radius = rIn,
+                  center = center,
+                  style = Stroke(width = 2.0.dp.toPx()),
+                )
+                for (i in 0 until 8) {
+                  val a = ((i * 45f + rotDeg) * PI / 180.0).toFloat()
+                  drawLine(
+                    color = Color(0xFFA5B4FC).copy(alpha = 0.85f),
+                    start = Offset(cx + cos(a) * rIn, cy + sin(a) * rIn),
+                    end = Offset(cx + cos(a) * (rIn * 0.52f), cy + sin(a) * (rIn * 0.52f)),
+                    strokeWidth = 1.4.dp.toPx(),
+                    cap = StrokeCap.Round,
+                  )
+                }
+              } else {
+                val snapP = (p - 0.50f) / 0.50f
+                val snapFade = (1f - snapP).coerceIn(0f, 1f)
+                val rSnap = baseR * (0.32f + snapP * 1.08f)
+                drawCircle(
+                  color = Color(0xFFE0E7FF).copy(alpha = 0.94f * snapFade),
+                  radius = rSnap,
+                  center = center,
+                  style = Stroke(width = 2.6.dp.toPx()),
+                )
+              }
+            }
+            2 -> {
+              val rCrown = baseR * (0.42f + p * 0.95f)
+              drawCircle(
+                color = Color(0xFFFFD700).copy(alpha = 0.92f * fade),
+                radius = rCrown,
+                center = center,
+                style = Stroke(width = 2.3.dp.toPx()),
+              )
+              for (i in 0 until 12) {
+                val a = ((i * 30f + rotDeg * 0.5f) * PI / 180.0).toFloat()
+                val r1 = rCrown * 0.52f
+                val r2 = rCrown * 1.15f
+                drawLine(
+                  color = Color(0xFFFEF08A).copy(alpha = 0.88f * fade),
+                  start = Offset(cx + cos(a) * r1, cy + sin(a) * r1),
+                  end = Offset(cx + cos(a) * r2, cy + sin(a) * r2),
+                  strokeWidth = 1.5.dp.toPx(),
+                  cap = StrokeCap.Round,
+                )
+              }
+            }
+            3 -> {
+              val rShatter = baseR * (0.38f + p * 0.96f)
+              val shardPath = Path()
+              for (i in 0 until 8) {
+                val a = ((i * 45f + rotDeg * 0.65f) * PI / 180.0).toFloat()
+                val ax = cos(a)
+                val ay = sin(a)
+                val tx = -ay
+                val ty = ax
+                val tipR = rShatter * 1.16f
+                val baseShardR = rShatter * 0.68f
+                shardPath.reset()
+                shardPath.moveTo(cx + ax * tipR, cy + ay * tipR)
+                shardPath.lineTo(cx + ax * baseShardR - tx * 2.8.dp.toPx(), cy + ay * baseShardR - ty * 2.8.dp.toPx())
+                shardPath.lineTo(cx + ax * baseShardR + tx * 2.8.dp.toPx(), cy + ay * baseShardR + ty * 2.8.dp.toPx())
+                shardPath.close()
+                drawPath(shardPath, color = Color(0xFFC084FC).copy(alpha = 0.88f * fade))
+              }
+              drawCircle(
+                color = Color(0xFFA855F7).copy(alpha = 0.72f * fade),
+                radius = rShatter * 0.84f,
+                center = center,
+                style = Stroke(width = 1.6.dp.toPx()),
+              )
+            }
+            else -> {
+              val rApex = baseR * (0.36f + p * 1.04f)
+              drawCircle(
+                color = Color(0xFFFB7185).copy(alpha = 0.92f * fade),
+                radius = rApex,
+                center = center,
+                style = Stroke(width = 2.4.dp.toPx()),
+              )
+              for (k in 0 until 3) {
+                drawArc(
+                  color = Color(0xFF00F5D4).copy(alpha = 0.90f * fade),
+                  startAngle = rotDeg * 1.6f + k * 120f,
+                  sweepAngle = 72f,
+                  useCenter = false,
+                  topLeft = Offset(cx - rApex * 0.78f, cy - rApex * 0.78f),
+                  size = Size(rApex * 1.56f, rApex * 1.56f),
+                  style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round),
+                )
+              }
+            }
+          }
         }
       }
     }
@@ -3475,6 +3816,29 @@ private fun OrbitalHubSpatialStage(
   var liveShardsBonus by remember(riftShards) { mutableStateOf(0L) }
   var dossierRefreshNonce by remember { mutableIntStateOf(0) }
   var hubTutorialStep by remember { mutableIntStateOf(0) }
+  val syncEquippedCosmeticsNow: () -> Unit = {
+    val uid = currentUserId.ifBlank { null }
+    val equippedTrim = localPrefs.getEquippedCosmeticId("HULL_TRIM", uid).coerceIn(0, 5)
+    val equippedFinisher = localPrefs.getEquippedCosmeticId("KILL_FINISHER", uid).coerceIn(0, 4)
+    val equippedWarp = localPrefs.getEquippedCosmeticId("WARP_SIGNATURE", uid).coerceIn(0, 3)
+    val equippedHalo = localPrefs.getEquippedCosmeticId("HVT_HALO", uid).coerceIn(0, 3)
+    if (RiftSpriteBaker.activeHullTrimStyle != equippedTrim) {
+      RiftSpriteBaker.activeHullTrimStyle = equippedTrim
+      RiftVisualForgeState.visualRevision++
+    }
+    engine?.localPlayer?.let { lp ->
+      lp.equippedHullSkin = equippedTrim
+      lp.equippedKillFinisher = equippedFinisher
+      lp.equippedWarpStyle = equippedWarp
+      lp.equippedHvtHaloStyle = equippedHalo
+    }
+  }
+  LaunchedEffect(currentUserId) { syncEquippedCosmeticsNow() }
+  val handleUnlockOrEquipCosmetic: (CosmeticCatalogItem) -> Pair<Boolean, String> = { item ->
+    val res = onUnlockOrEquipCosmeticItem(item)
+    syncEquippedCosmeticsNow()
+    res
+  }
   val triggerHubGuidedTourOrFlight: () -> Unit = {
     if (isInMatch) {
       onOpenHowToPlayTutorial()
@@ -4334,6 +4698,7 @@ private fun OrbitalHubSpatialStage(
                   )
                 },
                 onInspectPaidSkin = { skin, isOwned, isEquipped ->
+                  val skinStyleId = skin.id.coerceIn(0, 5)
                   onChangeOverwatchPrompt(
                     OverwatchCircularPrompt.InfoStageInspect(
                       kicker = "PAID SHIP SKIN",
@@ -4349,6 +4714,7 @@ private fun OrbitalHubSpatialStage(
                         "Permanent hull livery across your Hangar fleet. Finishers, Warp Trails, and Halos remain strictly Ranked Live Resonance rewards.",
                       accentHex = if (isOwned) 0xFF00F5D4L else 0xFFFACC15L,
                       shipId = hangarIndicatedShipId,
+                      previewHullSkinId = skinStyleId,
                       primaryActionLabel =
                         when {
                           isEquipped -> ""
@@ -4358,8 +4724,23 @@ private fun OrbitalHubSpatialStage(
                       onPrimaryAction =
                         if (isEquipped) null
                         else ({
-                          val res = onUnlockOrEquipCosmeticItem(skin)
+                          val res = handleUnlockOrEquipCosmetic(skin)
                           storePurchaseBanner = res.second
+                          if (res.first) {
+                            onChangeOverwatchPrompt(
+                              OverwatchCircularPrompt.InfoStageInspect(
+                                kicker = "PAID SHIP SKIN",
+                                title = skin.name.uppercase(Locale.US),
+                                badge = "EQUIPPED",
+                                summary = skin.summary,
+                                tacticalNote =
+                                  "Permanent hull livery across your Hangar fleet. Finishers, Warp Trails, and Halos remain strictly Ranked Live Resonance rewards.",
+                                accentHex = 0xFF00F5D4L,
+                                shipId = hangarIndicatedShipId,
+                                previewHullSkinId = skinStyleId,
+                              )
+                            )
+                          }
                         }),
                     )
                   )
@@ -4648,6 +5029,10 @@ private fun OrbitalHubSpatialStage(
                 onShareBuild = onShareActiveRiftFrameBuild,
                 onInspectCosmetic = { item, isUnlocked, isEquipped ->
                   val isRankedReward = RiftProgressionCatalog.isRankedCosmeticCategory(item.category)
+                  val previewSkin = if (item.category == "HULL_TRIM") item.id.coerceIn(0, 5) else null
+                  val previewFinisher = if (item.category == "KILL_FINISHER") item.id.coerceIn(0, 4) else null
+                  val previewWarp = if (item.category == "WARP_SIGNATURE") item.id.coerceIn(0, 3) else null
+                  val previewHalo = if (item.category == "HVT_HALO") item.id.coerceIn(0, 3) else null
                   onChangeOverwatchPrompt(
                     if (isRankedReward) {
                       OverwatchCircularPrompt.InfoStageInspect(
@@ -4666,9 +5051,33 @@ private fun OrbitalHubSpatialStage(
                         accentHex = if (isUnlocked) 0xFF00F5D4L else 0xFFFFD700L,
                         shipId = hangarIndicatedShipId,
                         showResonanceCrest = true,
+                        previewFinisherId = previewFinisher,
+                        previewWarpStyleId = previewWarp,
+                        previewHaloStyleId = previewHalo,
                         primaryActionLabel = if (!isEquipped && isUnlocked) "EQUIP" else "",
                         onPrimaryAction =
-                          if (!isEquipped && isUnlocked) ({ onUnlockOrEquipCosmeticItem(item) })
+                          if (!isEquipped && isUnlocked) ({
+                            val res = handleUnlockOrEquipCosmetic(item)
+                            if (res.first) {
+                              onChangeOverwatchPrompt(
+                                OverwatchCircularPrompt.InfoStageInspect(
+                                  kicker = "RANKED LIVE RESONANCE REWARD",
+                                  title = item.name.uppercase(Locale.US),
+                                  badge = "EQUIPPED",
+                                  summary = item.summary,
+                                  tacticalNote =
+                                    if (item.freeAtResonance <= 0) "Standard Ranked equipment."
+                                    else "Active while maintaining ${formatOverwatchResonance(item.freeAtResonance)} Live Resonance. Never sold for Shards.",
+                                  accentHex = 0xFF00F5D4L,
+                                  shipId = hangarIndicatedShipId,
+                                  showResonanceCrest = true,
+                                  previewFinisherId = previewFinisher,
+                                  previewWarpStyleId = previewWarp,
+                                  previewHaloStyleId = previewHalo,
+                                )
+                              )
+                            }
+                          })
                           else null,
                       )
                     } else {
@@ -4687,6 +5096,7 @@ private fun OrbitalHubSpatialStage(
                           else "Permanent Ship Skin unlock (${item.shardCost} Rift Shards).",
                         accentHex = if (isUnlocked) 0xFF00F5D4L else 0xFFFFD700L,
                         shipId = hangarIndicatedShipId,
+                        previewHullSkinId = previewSkin,
                         primaryActionLabel =
                           when {
                             isEquipped -> ""
@@ -4696,8 +5106,24 @@ private fun OrbitalHubSpatialStage(
                         onPrimaryAction =
                           if (isEquipped) null
                           else ({
-                            val res = onUnlockOrEquipCosmeticItem(item)
+                            val res = handleUnlockOrEquipCosmetic(item)
                             storePurchaseBanner = res.second
+                            if (res.first) {
+                              onChangeOverwatchPrompt(
+                                OverwatchCircularPrompt.InfoStageInspect(
+                                  kicker = "SHIP SKIN",
+                                  title = item.name.uppercase(Locale.US),
+                                  badge = "EQUIPPED",
+                                  summary = item.summary,
+                                  tacticalNote =
+                                    if (item.shardCost <= 0L) "Standard anodized hull finish."
+                                    else "Permanent Ship Skin unlock (${item.shardCost} Rift Shards).",
+                                  accentHex = 0xFF00F5D4L,
+                                  shipId = hangarIndicatedShipId,
+                                  previewHullSkinId = previewSkin,
+                                )
+                              )
+                            }
                           }),
                       )
                     }
@@ -7592,6 +8018,11 @@ private fun OverwatchCircularGlassPromptOverlay(
 
           when {
             prompt.shipId in 1..10 -> {
+              val hasLiveCosmeticPreview =
+                prompt.previewHullSkinId != null ||
+                  prompt.previewFinisherId != null ||
+                  prompt.previewWarpStyleId != null ||
+                  prompt.previewHaloStyleId != null
               Spinning25dShipWithOrbitingFlux(
                 shipId = prompt.shipId,
                 shipSpinDeg = shipSpinDeg,
@@ -7599,7 +8030,11 @@ private fun OverwatchCircularGlassPromptOverlay(
                 isCharged = chargedShipId == prompt.shipId,
                 isBestShip = bestShipId in 1..10 && bestShipId == prompt.shipId,
                 isSelected = true,
-                sizeDp = 52.dp,
+                sizeDp = if (hasLiveCosmeticPreview) 72.dp else 52.dp,
+                trimStyleOverride = prompt.previewHullSkinId,
+                previewFinisherId = prompt.previewFinisherId,
+                previewWarpStyleId = prompt.previewWarpStyleId,
+                previewHaloStyleId = prompt.previewHaloStyleId,
               )
             }
             prompt.buffTypeIndex != Int.MIN_VALUE -> {

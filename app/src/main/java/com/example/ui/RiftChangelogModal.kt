@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 122
+const val CURRENT_RIFT_BUILD_VERSION = 124
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,34 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 124,
+      versionTag = "v1.0.124 // BUILD #124",
+      releaseDate = "Nov 26, 2026",
+      headline = "256x256 PBR-Lite 2.5D Starfighters & Playfield Objects, Live Arena & Overwatch Cosmetics (Skins 0..5, Finishers, Warps, Halos), Dynamic Rift Rim Relighting & Seamless 360-Degree Storm Wall",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "256x256 PBR-Lite 2.5D Ships (Skins 0..5) & Playfield Objects: Upgraded all 10 starfighter sprites with stepped sub-chassis contact ambient occlusion, directional top-left anisotropic metallic armor, Blinn-Phong specular bevel catchlights, recessed ion thruster bells, polarized curved canopy glass, and distinct hull veins across all 6 Ship Skins; enhanced the 384x384 Rift Station, 160x160 Supply Pod, and 224x224 asteroids and stations to match.",
+          "Seamless 360-Degree Outer Storm Wall: Eliminated the East horizontal seam and dark outer clip band by switching the Outer Storm Wall shader to a viewport-clamped fill pass with quadratic outer cloud feathering into deep space.",
+          "Live Arena & Overwatch Cosmetics + Dynamic Rift Rim Relighting: Wired Ship Skins 0..5, Warp Signatures 0..3, Kill Finishers 0..4, and Resonance Leader Halos 0..3 into live Arena combat and animated Overwatch previews with 256px ship atlases, added dynamic 2.5D Rift and Rift Station rim relighting on nearby ships, replaced APEX ACE with NOVA ACE, and ensured clean [BOT] callsign spacing.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 123,
+      versionTag = "v1.0.123 // BUILD #123",
+      releaseDate = "Nov 26, 2026",
+      headline = "Drag-and-Drop Overwatch Rift Frame Drydock, 9 Primary & 23 Secondary Hardware Weapon Icons, Full 6-Skin Caching (0..5), Borderless Holographic Hub Pods, Overwatch Slider Workbench & 5x2 Gamepad Grid",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Drag-and-Drop Overwatch Rift Frame Drydock & Pre-Baked Weapon Emblems: Added cached 68x68 hardware-styled ordnance icons across all 9 Primary Weapons and all 23 Secondary abilities; rebuilt Rift Frame customization into a 3-zone Drydock with Primary Weapons on the left shelf, a Secondaries and Cosmetics switcher on the right shelf, and a live Ship 10 Overwatch Drydock featuring Primary Mount and Secondary Bay drop sockets plus 5 touch-draggable 100-Point hull stat bars.",
+          "Full 0..5 Ship Skin Palette Caching & Borderless Holographic Hub Corner Pods: Upgraded all 10 starfighters (including Ship 10 Rift Frame) to bake and cache all six Ship Skins (Standard Faction Trim, Obsidian Ice-Cyan, Sovereign Solar Gold, Rift Singularity Violet, Crimson Forge Anodized, and Cryo-Titanium Stealth) at 256x256, and replaced octagonal corner pod boxes with cohesive borderless holographic projection bars.",
+          "Overwatch Interactive Slider Workbench & Unclipped 5x2 Gamepad Remap Grid: Wired Helm Controls, Display & Audio sliders, and all 11 Custom Rift match rule rows into a live draggable Overwatch Parameter Workbench with fine-tune steppers and quick presets, and organized all 10 hardware Gamepad remap buttons into a clean unclipped 5x2 grid.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 122,
       versionTag = "v1.0.122 // BUILD #122",

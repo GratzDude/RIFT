@@ -1210,6 +1210,7 @@ class NexusSpaceGlView(context: Context) :
 
     private var texShipAtlas = 0
     private var bakedCustomShipVersion = -1
+    private var bakedHullTrimStyle = -1
     private var vaoShipHull = 0
     private var vboShipHull = 0
     private var vaoShipTrail = 0
@@ -1501,10 +1502,18 @@ class NexusSpaceGlView(context: Context) :
 
     private fun ensureShipAtlasUpToDate() {
       val curCustomVer = RiftSpriteBaker.customShip9Version
-      if (texShipAtlas != 0 && curCustomVer == bakedCustomShipVersion) return
+      val curTrimStyle = RiftSpriteBaker.activeHullTrimStyle.coerceIn(0, 5)
+      if (
+        texShipAtlas != 0 &&
+          curCustomVer == bakedCustomShipVersion &&
+          curTrimStyle == bakedHullTrimStyle
+      ) {
+        return
+      }
       bakedCustomShipVersion = curCustomVer
+      bakedHullTrimStyle = curTrimStyle
 
-      val tilePx = 128
+      val tilePx = 256
       val atlasW = tilePx * 5
       val atlasH = tilePx * 2
       val atlasBmp = Bitmap.createBitmap(atlasW, atlasH, Bitmap.Config.ARGB_8888)
@@ -1521,7 +1530,7 @@ class NexusSpaceGlView(context: Context) :
             shipId = shipId,
             isAllied = true,
             isHitFlashing = false,
-            trimStyleOverride = 0,
+            trimStyleOverride = curTrimStyle,
           )
         canvas.drawBitmap(sprite, null, dstRect, null)
       }

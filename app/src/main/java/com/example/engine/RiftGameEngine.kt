@@ -295,6 +295,7 @@ data class ShipEntity(
   var equippedKillFinisher: Int = 0,
   var equippedWarpStyle: Int = 0,
   var equippedHvtHaloStyle: Int = 0,
+  var equippedHullSkin: Int = 0,
   var warpInAnimTimer: Float = 0.65f,
   var deathLingerTimer: Float = 0f,
   var prevHeadingForBank: Float = angle,
@@ -547,6 +548,15 @@ data class ShockwaveEntity(
   val color: Int,
 )
 
+data class FinisherBurstEntity(
+  val x: Float,
+  val y: Float,
+  val style: Int,
+  var ageSec: Float = 0f,
+  val maxLifeSec: Float = 1.05f,
+  val killerCallsign: String = "",
+)
+
 data class ShipDebrisChunk(
   var x: Float,
   var y: Float,
@@ -710,7 +720,7 @@ class RiftGameEngine(
 
     private val BOT_CALLSIGNS =
       listOf(
-        "APEX ACE",
+        "NOVA ACE",
         "SOLARIS IX",
         "IRON WOLF",
         "NEXUS 7",
@@ -901,6 +911,7 @@ class RiftGameEngine(
   val bombs = mutableListOf<BombEntity>()
   val particles = mutableListOf<ParticleEntity>()
   val shockwaves = mutableListOf<ShockwaveEntity>()
+  val finisherBursts = mutableListOf<FinisherBurstEntity>()
   val shipDebrisChunks = mutableListOf<ShipDebrisChunk>()
   val shieldRipples = mutableListOf<ShieldRippleEntity>()
   val phaseAfterimages = mutableListOf<PhaseAfterimageEntity>()
@@ -1364,6 +1375,7 @@ class RiftGameEngine(
       swarmDrones.clear()
       brickWalls.clear()
       shockwaves.clear()
+    finisherBursts.clear()
       shipDebrisChunks.clear()
       interdictorBubbles.clear()
       reactivePrecipitates.clear()
@@ -1432,6 +1444,7 @@ class RiftGameEngine(
     swarmDrones.clear()
     brickWalls.clear()
     shockwaves.clear()
+    finisherBursts.clear()
     shipDebrisChunks.clear()
     interdictorBubbles.clear()
     reactivePrecipitates.clear()
@@ -1531,6 +1544,7 @@ class RiftGameEngine(
     swarmDrones.clear()
     brickWalls.clear()
     shockwaves.clear()
+    finisherBursts.clear()
     shipDebrisChunks.clear()
     particles.clear()
     walls.clear()
@@ -2060,6 +2074,7 @@ class RiftGameEngine(
       swarmDrones.clear()
       brickWalls.clear()
       shockwaves.clear()
+    finisherBursts.clear()
       shipDebrisChunks.clear()
       shieldRipples.clear()
       phaseAfterimages.clear()
@@ -2175,6 +2190,7 @@ class RiftGameEngine(
     swarmDrones.clear()
     brickWalls.clear()
     shockwaves.clear()
+    finisherBursts.clear()
     shipDebrisChunks.clear()
     shieldRipples.clear()
     phaseAfterimages.clear()
@@ -7479,13 +7495,27 @@ class RiftGameEngine(
   ) {
     target.deathLingerTimer = 1.0f
     target.respawnTimer = max(target.respawnTimer, 1.35f)
-    val finisher = attacker?.equippedKillFinisher ?: 0
+    val finisher = (attacker?.equippedKillFinisher ?: 0).coerceIn(0, 4)
+    if (attacker != null) {
+      while (finisherBursts.size >= 12) {
+        finisherBursts.removeAt(0)
+      }
+      finisherBursts.add(
+        FinisherBurstEntity(
+          x = target.x,
+          y = target.y,
+          style = finisher,
+          killerCallsign = attacker.callsign,
+        )
+      )
+    }
     val (primaryCol, secondaryCol, trimCol) =
       when (finisher) {
-        1 -> Triple(Color.parseColor("#A855F7"), Color.parseColor("#00F5D4"), Color.parseColor("#C084FC"))
+        1 -> Triple(Color.parseColor("#6366F1"), Color.parseColor("#00F5D4"), Color.parseColor("#C084FC"))
         2 -> Triple(Color.parseColor("#FACC15"), Color.parseColor("#FEF08A"), Color.parseColor("#F59E0B"))
-        3 -> Triple(Color.parseColor("#38BDF8"), Color.parseColor("#00F5D4"), Color.parseColor("#7DD3FC"))
-        else -> Triple(Color.parseColor("#F97316"), Color.parseColor("#FACC15"), Color.parseColor("#FB923C"))
+        3 -> Triple(Color.parseColor("#C084FC"), Color.parseColor("#F5D0FE"), Color.parseColor("#A855F7"))
+        4 -> Triple(Color.parseColor("#FB7185"), Color.parseColor("#00F5D4"), Color.parseColor("#F43F5E"))
+        else -> Triple(Color.parseColor("#00F5D4"), Color.parseColor("#F59E0B"), Color.parseColor("#38BDF8"))
       }
 
     // 3 staggered concentric shockwave rings
@@ -10028,6 +10058,7 @@ class RiftGameEngine(
   }
 
   private fun stepSimulationInternal(rawDt: Float) {
+    localPlayer.equippedHullSkin = RiftSpriteBaker.activeHullTrimStyle.coerceIn(0, 5)
     if (safeZoneToastCooldown > 0f) {
       safeZoneToastCooldown = max(0f, safeZoneToastCooldown - rawDt)
     }
@@ -12386,6 +12417,12 @@ class RiftGameEngine(
       val sw = shockwaves[i]
       sw.r += 480f * dt
       if (sw.r >= sw.maxR) shockwaves.removeAt(i)
+    }
+
+    for (i in finisherBursts.indices.reversed()) {
+      val fb = finisherBursts[i]
+      fb.ageSec += rawDt
+      if (fb.ageSec >= fb.maxLifeSec) finisherBursts.removeAt(i)
     }
 
     // Step spinning 3D metallic ship debris chunks & glowing ember trails
