@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 128
+const val CURRENT_RIFT_BUILD_VERSION = 129
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 129,
+      versionTag = "v1.0.129 // BUILD #129",
+      releaseDate = "Nov 26, 2026",
+      headline = "Overwatch Drydock Bottom-Chord Clearance, Unoccluded Live Sector Switcher & Bezel Margin, Enlarged 10-Hull Cosmetic Showcase, 2.5D Skinned Ship Store Previews & 2-Line Shard Pack Bonuses, and Star Forge 6-Skin Parity",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Overwatch Drydock Chord Clearance & Live Sector Switcher Visibility: Compacted the Rift Frame Drydock header, weapon sockets, and five 100-Point hull sliders so the centered Charge Rift Frame pill sits cleanly above the circular bottom chord without clipping; hid the top-left live sector switcher whenever any Overwatch workbench or inspect overlay covers the live feed, and widened its upper-left circular bezel safety margin.",
+          "Enlarged 10-Hull Overwatch Cosmetic Showcase: Enlarged the spinning 2.5D Overwatch cosmetic ship centerpiece, added a live 10-hull switcher cycling across Ships 1 through 10 (including Rift Frame) when previewing Ship Skins, Kill Finishers, Warp Signatures, or Resonance Leader Halos, and condensed item notes to a clean single-line status with unclipped Equip and Shard Unlock pills.",
+          "Shard Store 2.5D Skinned Ship Previews, 2-Line Shard Pack Bonuses & Untruncated Subtitles: Replaced flat cosmetic dots on Ship Skins 0 through 5 with live 256x256 2.5D skinned starfighter sprites and crisp untruncated descriptions, formatted real-money Shard Packs with clean Line 1 Shard totals and Line 2 bonus breakdowns beside USD prices, and mapped all nine Primary Weapon cards to untruncated plain-English subtitles.",
+          "Star Forge 6-Skin Turntable Parity & Calibration Unit Polish: Expanded Star Forge turntable skin clamping and previews to all six Ship Skins (0 through 5) across all 10 hulls using unified Live-Resonance and Shard Store unlock gating, and replaced remaining abbreviated Resonance unit suffixes in Calibration parameter metadata with full plain-English Resonance labels.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 128,
       versionTag = "v1.0.128 // BUILD #128",
       releaseDate = "Nov 26, 2026",
       headline = "Shard Store Paid Skin & Live-Resonance Gate Fix, Pre-Auth 960x540 Viewport Lock, Hangar Charged Badges & Frame Economy Alignment, Unclipped Port Pilot Pod & Stacked Ship 10 Overwatch Actions, and Cloud Cosmetic Sync",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "PAID SKINS & VIEWPORT",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

@@ -71,7 +71,7 @@ object RiftCalibrationState {
   // 1. Camera, HUD & 1:1 Physical Screen-Pixel Text Sizes (Tab 0)
   var cameraZoomScale by mutableFloatStateOf(1.0f)     // Multiplier on base 0.65f camera zoom (0.35x .. 2.2x)
   var nametagFontSizePx by mutableFloatStateOf(15.0f)  // True 1:1 physical screen pixels for ship [TAG] Callsign
-  var bountyFontSizePx by mutableFloatStateOf(16.0f)   // True 1:1 physical screen pixels for ship Bounty readout
+  var bountyFontSizePx by mutableFloatStateOf(16.0f)   // True 1:1 physical screen pixels for ship Resonance readout
   var fctFontSizePx by mutableFloatStateOf(14.0f)      // True 1:1 physical screen pixels for Floating Combat Text
   var shipScale by mutableFloatStateOf(1.0f)           // In-world ship sprite scale (0.5x .. 2.0x)
   var anomalyScale by mutableFloatStateOf(1.0f)        // Spatial anomaly visual scale (0.3x .. 2.0x)
@@ -1357,7 +1357,7 @@ object RiftCalibrationState {
       key = "hvtBountyThreshold",
       tabIndex = 7,
       title = camelCaseToPlainEnglish("hvtBountyThreshold"),
-      unit = "RES",
+      unit = "Resonance",
       description = "Resonance score at which any ship earns a gold Rift Leader radar ping.",
       min = 150f, max = 1000f, step = 25f, decimals = 0,
       getter = { hvtBountyThreshold.toFloat() }, setter = { hvtBountyThreshold = it.roundToInt().coerceIn(150, 1000) },
@@ -1375,7 +1375,7 @@ object RiftCalibrationState {
       key = "cratePickupBounty",
       tabIndex = 7,
       title = camelCaseToPlainEnglish("cratePickupBounty"),
-      unit = "RES",
+      unit = "Resonance",
       description = "Bonus Resonance awarded whenever a ship collects a standard Supply Crate.",
       min = 0f, max = 50f, step = 5f, decimals = 0,
       getter = { cratePickupBounty.toFloat() }, setter = { cratePickupBounty = it.roundToInt().coerceIn(0, 50) },
@@ -1384,7 +1384,7 @@ object RiftCalibrationState {
       key = "fullChargeCrateBounty",
       tabIndex = 7,
       title = camelCaseToPlainEnglish("fullChargeCrateBounty"),
-      unit = "RES",
+      unit = "Resonance",
       description = "Bonus Resonance awarded when collecting a Full Flux Charge Supply Crate.",
       min = 0f, max = 60f, step = 5f, decimals = 0,
       getter = { fullChargeCrateBounty.toFloat() }, setter = { fullChargeCrateBounty = it.roundToInt().coerceIn(0, 60) },
@@ -1412,7 +1412,7 @@ object RiftCalibrationState {
       key = "fluxCoreBountyPerSec",
       tabIndex = 7,
       title = "Flux Core Carrier Resonance Tick",
-      unit = "RES/s",
+      unit = "Resonance/s",
       description = "Resonance awarded every second to the pilot carrying the Volatile Flux Core singularity.",
       min = 5f, max = 50f, step = 5f, decimals = 0,
       getter = { fluxCoreBountyPerSec.toFloat() },
