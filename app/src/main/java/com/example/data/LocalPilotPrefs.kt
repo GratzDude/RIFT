@@ -820,8 +820,13 @@ class LocalPilotPrefs(context: Context) {
     val losses = getMatchesLost(uid)
     val played = kotlin.math.max(getMatchesPlayed(uid), wins + losses)
     val winPct = if (played > 0L) ((wins.toDouble() / played.toDouble()) * 100.0).toInt().coerceIn(0, 100) else 0
-    val fired = getCareerShotsFired(uid)
-    val hit = getCareerShotsHit(uid)
+    val rawFired = getCareerShotsFired(uid)
+    val rawHit = getCareerShotsHit(uid)
+    val elims = getAllTimeKills(uid)
+    val deaths = getAllTimeDeaths(uid)
+    val hasAnyCareerActivity = played > 0L || elims > 0L || deaths > 0L || totalXp > 0L
+    val fired = if (rawFired <= 0L || !hasAnyCareerActivity) 0L else rawFired
+    val hit = if (fired <= 0L) 0L else rawHit.coerceIn(0L, fired)
     val accPct = if (fired > 0L) ((hit.toDouble() / fired.toDouble()) * 100.0).toInt().coerceIn(0, 100) else 0
     return PilotCareerStatsSummary(
       pilotLevel = level,
@@ -2328,7 +2333,21 @@ class LocalPilotPrefs(context: Context) {
           key.startsWith("syndicate_guests_") ||
           key.startsWith(KEY_SYNDICATE_CREST_PREFIX) ||
           key.startsWith("syndicate_war_record_") ||
-          key.startsWith(KEY_CUSTOM_SLOT_PREFIX)
+          key.startsWith(KEY_CUSTOM_SLOT_PREFIX) ||
+          key.startsWith(KEY_SHIP_SURVIVAL_PREFIX) ||
+          key.startsWith("ship_survival_") ||
+          key.startsWith(KEY_RECENT_SHIP_LIVES_JSON) ||
+          key.startsWith("recent_ship_lives") ||
+          key.startsWith("recent_completed_lives") ||
+          key.startsWith(KEY_ALL_TIME_PEAK_SNAPSHOT) ||
+          key.startsWith(KEY_PVP_PEAK_SNAPSHOT) ||
+          key.startsWith(KEY_MATCHES_PLAYED) ||
+          key.startsWith(KEY_MATCHES_LOST) ||
+          key.startsWith(KEY_CAREER_ASSISTS) ||
+          key.startsWith(KEY_CAREER_SHOTS_FIRED) ||
+          key.startsWith(KEY_CAREER_SHOTS_HIT) ||
+          key.startsWith(KEY_RIFT_CAPTURES) ||
+          key.startsWith(KEY_SHIP_RESONANCE_PREFIX)
       }
 
     val editor = prefs.edit()
@@ -2336,22 +2355,37 @@ class LocalPilotPrefs(context: Context) {
       editor.remove(k)
     }
 
-    // Combat stats
+    // Combat stats (both unscoped and UID-scoped)
     editor
       .putLong(KEY_PVP_KILLS, 0L)
+      .putLong(uidKey(KEY_PVP_KILLS, uid), 0L)
       .putLong(KEY_PVP_DEATHS, 0L)
+      .putLong(uidKey(KEY_PVP_DEATHS, uid), 0L)
       .putLong(KEY_PVP_BOUNTY_PEAK, 100L)
+      .putLong(uidKey(KEY_PVP_BOUNTY_PEAK, uid), 100L)
       .putLong(KEY_ALL_KILLS, 0L)
+      .putLong(uidKey(KEY_ALL_KILLS, uid), 0L)
       .putLong(KEY_ALL_DEATHS, 0L)
+      .putLong(uidKey(KEY_ALL_DEATHS, uid), 0L)
       .putLong(KEY_ALL_BOUNTY_PEAK, 100L)
+      .putLong(uidKey(KEY_ALL_BOUNTY_PEAK, uid), 100L)
       .putLong(KEY_CONVERGENCES_WON, 0L)
+      .putLong(uidKey(KEY_CONVERGENCES_WON, uid), 0L)
       .putLong(KEY_HVT_ELIMINATIONS, 0L)
+      .putLong(uidKey(KEY_HVT_ELIMINATIONS, uid), 0L)
       .putLong(KEY_GREENS_COLLECTED, 0L)
+      .putLong(uidKey(KEY_GREENS_COLLECTED, uid), 0L)
+      .putLong(KEY_MATCHES_PLAYED, 0L)
       .putLong(uidKey(KEY_MATCHES_PLAYED, uid), 0L)
+      .putLong(KEY_MATCHES_LOST, 0L)
       .putLong(uidKey(KEY_MATCHES_LOST, uid), 0L)
+      .putLong(KEY_CAREER_ASSISTS, 0L)
       .putLong(uidKey(KEY_CAREER_ASSISTS, uid), 0L)
+      .putLong(KEY_CAREER_SHOTS_FIRED, 0L)
       .putLong(uidKey(KEY_CAREER_SHOTS_FIRED, uid), 0L)
+      .putLong(KEY_CAREER_SHOTS_HIT, 0L)
       .putLong(uidKey(KEY_CAREER_SHOTS_HIT, uid), 0L)
+      .putLong(KEY_RIFT_CAPTURES, 0L)
       .putLong(uidKey(KEY_RIFT_CAPTURES, uid), 0L)
 
     // 5 XP sources + progression + Rift Shards (150)
@@ -2445,6 +2479,9 @@ class LocalPilotPrefs(context: Context) {
     for (slotId in com.example.engine.CustomShipLoadoutSlot.ALL_SLOT_IDS) {
       saveCustomShipSlot(com.example.engine.CustomShipLoadoutSlot.defaultSlot(slotId), uid)
     }
+
+    clearHubTapTelemetryHistory()
+    userSettingsPrefs.edit().putString(KEY_HUB_TAP_BUFFER, "").apply()
   }
 
   /**
@@ -2484,6 +2521,8 @@ class LocalPilotPrefs(context: Context) {
       }
 
     prefs.edit().clear().apply()
+    clearHubTapTelemetryHistory()
+    userSettingsPrefs.edit().putString(KEY_HUB_TAP_BUFFER, "").apply()
     setLastSeenChangelogBuild(seenBuild)
     setBootToNexusHub(preservedBootNexus)
     setMusicEnabled(preservedMusicEnabled)

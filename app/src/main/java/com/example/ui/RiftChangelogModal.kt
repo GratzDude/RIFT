@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 118
+const val CURRENT_RIFT_BUILD_VERSION = 122
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,62 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 122,
+      versionTag = "v1.0.122 // BUILD #122",
+      releaseDate = "Nov 25, 2026",
+      headline = "Full-Game 2-Phase Guided Tutorial (Hub Windows, Drydock & Arena), Real .HTML File & WebView Telemetry Sheet, Zero-Match 0% Accuracy Fix, Complete 6-Mode Untruncated Codex & Syndicate/Comms Polish",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "2-Phase Guided Tutorial Across Hub, Drydock & Live Flight: Added a 6-step interactive Hub & Drydock Coachmark Tour covering Overwatch zoom and live sector switching, Resonance Leaderboards, Hangar ship charging and 100-Point parity, Rift Frame Drag-and-Drop Drydock, Syndicates and 5-slot Squadrons, and Active Rifts before launching directly into Live Flight Training; cleaned up Tutorial HUD chrome with bracket-free Exit Tutorial, 999K tester Shards badge, and non-overlapping Rift Station Safe Harbor status.",
+          "Real .HTML File Export, WebView Telemetry Sheet & Zero-Match 0% Accuracy Fix: Replaced raw HTML text sharing with a live interactive dark-glass WebView Telemetry Sheet plus real Downloads .html file export and browser/file-sheet opening; zeroed all scoped and unscoped career shot/match counters and Hub tap telemetry on account reset so fresh 0-match profiles accurately display 0% accuracy; and tagged specific Hub control regions in tap telemetry.",
+          "Complete 6-Mode Untruncated Codex & Unaffiliated Syndicate/Squadron/Comms Polish: Eliminated 36-character mid-word Codex truncations across all 5 tabs, added Syndicate Wars so all 6 Competitive Modes appear with custom vector emblems, enabled immediate Syndicate chartering for Unaffiliated [RFT] pilots, surfaced Squadron Leave controls cleanly, and prevented Online pilot count overlap on #rift-ai prompt chips.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 121,
+      versionTag = "v1.0.121 // BUILD #121",
+      releaseDate = "Nov 25, 2026",
+      headline = "256x256 2.5D Normal-Relighted Starfighters & Playfield Objects, 6 Live Ship Skins, Arena & Overwatch Cosmetics, and Seamless East Storm Wall Fix",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "256x256 2.5D Normal-Relighted Starfighters & Playfield Structures: Quadrupled starfighter sprite resolution across all 10 ships (including modular Ship 10 Rift Frame) with stepped dark-gunmetal sub-chassis ambient occlusion, directional key-lit metallic armor bevels, micro-etched panel seams and rivets, recessed ion exhaust bells, and polarized glass canopies; upgraded the Rift Station to 384x384, Supply Pods to 160x160, and 224x224 Space Obstacles with deeper sculpted basalt craters, glowing crystal veins, and illuminated station viewports.",
+          "Six Distinct Ship Skins & Live Arena + Overwatch Cosmetics: Implemented all six Ship Skins (Standard Faction Trim, Obsidian Ice-Cyan, Sovereign Solar Gold, Rift Singularity Violet, Crimson Forge Anodized, and Cryo-Titanium Stealth) across Ships 1 through 10, plus live in-arena and Overwatch circular aperture previews for all five Kill Finishers, four Warp Signatures, four Rift Leader Resonance Halos, and dynamic 2.5D hull rim relighting near active Rifts and the Rift Station.",
+          "Seamless East Outer Storm Wall & Bot Nametag Polish: Eliminated the hard outer clip ring on the East Outer Storm Wall by replacing fixed-stroke ring clipping with viewport-clamped full-band volumetric cloud feathering, and standardized clean single-space bot nametag formatting.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 120,
+      versionTag = "v1.0.120 // BUILD #120",
+      releaseDate = "Nov 25, 2026",
+      headline = "Drag-and-Drop Overwatch Rift Frame Drydock, 9 Custom Primary & 23 Secondary Weapon Icons, Overwatch Interactive Slider Workbench & 5x2 Gamepad Remap Grid",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Pre-Baked Primary & Secondary Weapon Emblems: Added cached 68x68 hardware-styled ordnance icons across all 9 Primary Weapons and all 23 Secondary and Crate-derived abilities with glowing radial halos, gunmetal hexagonal capsules, and custom vector glyphs.",
+          "Drag-and-Drop Overwatch Rift Frame Drydock: Rebuilt Rift Frame customization around a 3-zone Drydock with Primary Weapons on the left shelf, a Secondaries and Cosmetics switcher on the right shelf with distinct procedural livery/effect emblems, and a live Ship 10 Overwatch Drydock featuring Primary Mount and Secondary Bay drop-sockets plus 5 touch-draggable 100-Point hull stat bars.",
+          "Overwatch Interactive Slider Workbench & 5x2 Gamepad Grid: Added an interactive Overwatch slider workbench with smooth dragging, fine-tune steppers, and instant presets for Helm Controls, Audio & Display, and Custom Rift match rules; upgraded Helm toggles to borderless holographic shelves; brightened the 6-character room code prompt with explicit Visibility and Base Mode labels; and arranged all 10 Gamepad remap buttons into a non-clipping 5x2 grid.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 119,
+      versionTag = "v1.0.119 // BUILD #119",
+      releaseDate = "Nov 25, 2026",
+      headline = "960x540 Virtual Reference Viewport, Borderless Holographic Projection Shelves, Front-and-Center Resonance Leaderboards, Live-Resonance Ranked Economy & Hangar/Conduit Polish",
+      badgeLabel = "HUB & LEADERBOARDS",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "960x540 Virtual Reference Viewport & Unified Proportions: Standardized UI scaling on a 960x540 landscape reference viewport across Rift Hub, side bays, modals, and combat HUD while keeping full-screen Star Forge native-pixel sharp, capping the central Overwatch bezel width on 16:10 and 4:3 tablets, and unifying crisp logical typography across phones and tablets.",
+          "Borderless Holographic Shelves, Resonance Hub Shelf & Live Overwatch Leaderboards: Replaced boxed rectangular card borders with open dark-glass holographic projection shelves anchored toward Overwatch; promoted Resonance onto the main Rift Hub left wing; and added live Global Top, By Ship, and Syndicates leaderboards directly inside the circular Overwatch aperture.",
+          "Live-Resonance Ranked Economy & Hangar/Conduit Cleanup: Locked Frame C, D, and E plus Kill Finishers, Warp Signatures, and Rift Leader Halos strictly to active Live Resonance with non-destructive Frame A fallback on de-rank; dedicated the Shard Store to Frame B and five permanent Ship Skins; restored accurate role descriptions for all 10 ships; replaced Locked ship badges with Charged; and removed duplicate prompt buttons.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 118,
       versionTag = "v1.0.118 // BUILD #118",

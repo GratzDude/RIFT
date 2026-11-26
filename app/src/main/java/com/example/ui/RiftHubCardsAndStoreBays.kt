@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,7 +71,6 @@ import com.example.engine.CosmeticCatalogItem
 import com.example.engine.CustomShipLoadoutSlot
 import com.example.engine.FrameSlotGateInfo
 import com.example.engine.PrimaryWeaponOption
-import com.example.engine.RiftCodex
 import com.example.engine.RiftProgressionCatalog
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.SecondaryAbilityOption
@@ -78,18 +78,28 @@ import com.example.engine.ShipSpec
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
 import kotlinx.coroutines.launch
 
+internal fun isFrameBPurchasedInPrefs(localPrefs: LocalPilotPrefs, uidOrNull: String?): Boolean =
+  localPrefs.isCosmeticUnlocked("FRAME_SLOT_PURCHASE", 2, 1, uidOrNull)
+
+internal fun isPaidHullSkinOwnedInPrefs(
+  itemId: Int,
+  localPrefs: LocalPilotPrefs,
+  uidOrNull: String?,
+): Boolean = itemId <= 0 || localPrefs.isCosmeticUnlocked("SHIP_SKIN_PURCHASE", itemId, 1, uidOrNull)
+
 /**
- * Reusable Vertical Card Standard used across Rift Hub, Hangar, Rift Frame Cosmetics,
+ * Borderless Holographic Projection Shelf used across Rift Hub, Hangar, Rift Frame Cosmetics,
  * Conduit Rank Track, and Shard Store packs:
- * - Sculpted dark gunmetal/abyssal slate chassis with top-left catchlight
- * - Optional top-right status/unread badge
- * - Centered visual/icon on top
- * - Full untruncated uppercase Title below
- * - 2-5 word plain-English description underneath
- * - Optional bottom cost / status pill (using RiftShardGemIcon rather than 'S' text)
+ * - Zero closed rectangular box borders
+ * - Soft dark-glass gradient veil (#B8030812 at outer edge fading to #42071528 toward Overwatch)
+ * - Crisp 2.dp luminous accent bar along the Overwatch-facing inner vertical edge
+ * - Subtle top horizontal holo-glint hairline (0.75.dp, accent.copy(alpha = 0.38f))
+ * - Soft cyan/gold radial glow behind the top visual when highlighted/charged
+ * - Unified logical typography scaled cleanly via the 960x540 virtual reference viewport
  */
 @Composable
 internal fun RiftVerticalCard(
@@ -102,10 +112,11 @@ internal fun RiftVerticalCard(
   isHighlighted: Boolean = false,
   badgeText: String? = null,
   badgeColor: Color = secondaryAccent,
+  showBadgeResonanceIcon: Boolean = false,
   shardCost: Long? = null,
   statusLabel: String? = null,
   statusColor: Color = accent,
-  isTabletDeck: Boolean = false,
+  @Suppress("UNUSED_PARAMETER") isTabletDeck: Boolean = false,
   minHeightDp: Dp = 96.dp,
   testTag: String = "",
   visualContent: @Composable (Dp) -> Unit,
@@ -114,9 +125,9 @@ internal fun RiftVerticalCard(
   val titleGlow =
     remember(accent, isHighlighted) {
       Shadow(
-        color = if (isHighlighted) Color.White.copy(alpha = 0.50f) else accent.copy(alpha = 0.30f),
+        color = if (isHighlighted) Color.White.copy(alpha = 0.52f) else accent.copy(alpha = 0.32f),
         offset = Offset.Zero,
-        blurRadius = 4f,
+        blurRadius = 5f,
       )
     }
 
@@ -129,107 +140,121 @@ internal fun RiftVerticalCard(
           val w = size.width
           val h = size.height
           if (w <= 8f || h <= 8f) return@drawBehind
-          val drop = 2.2.dp.toPx()
-          val outerCut = 11.dp.toPx().coerceAtMost(h * 0.20f)
-          val innerCut = 5.dp.toPx()
-          val bodyH = (h - drop).coerceAtLeast(8f)
 
-          fun cardPath(yOff: Float): Path =
-            Path().apply {
-              if (!isRightColumn) {
-                moveTo(outerCut, yOff)
-                lineTo(w - innerCut, yOff)
-                lineTo(w, yOff + innerCut)
-                lineTo(w, yOff + bodyH - innerCut)
-                lineTo(w - innerCut, yOff + bodyH)
-                lineTo(outerCut, yOff + bodyH)
-                lineTo(0f, yOff + bodyH - outerCut)
-                lineTo(0f, yOff + outerCut)
-                close()
-              } else {
-                moveTo(innerCut, yOff)
-                lineTo(w - outerCut, yOff)
-                lineTo(w, yOff + outerCut)
-                lineTo(w, yOff + bodyH - outerCut)
-                lineTo(w - outerCut, yOff + bodyH)
-                lineTo(innerCut, yOff + bodyH)
-                lineTo(0f, yOff + bodyH - innerCut)
-                lineTo(0f, yOff + innerCut)
-                close()
-              }
-            }
-
-          drawPath(cardPath(drop), color = Color(0xE0010308))
-          drawPath(
-            path = cardPath(0f),
-            brush =
-              Brush.verticalGradient(
-                if (isHighlighted) {
-                  listOf(Color(0xFA102442), Color(0xF8091528), Color(0xFC030711))
-                } else {
-                  listOf(Color(0xFA0B192E), Color(0xF8060D1A), Color(0xFC030711))
-                }
-              ),
-          )
-          drawPath(
-            path = cardPath(0f),
+          // 1. Soft dark-glass gradient veil (#B8030812 at outer edge fading to #42071528 toward Overwatch)
+          val outerVeil = if (isHighlighted) Color(0xC4050E1E) else Color(0xB8030812)
+          val innerVeil = if (isHighlighted) Color(0x660B223E) else Color(0x42071528)
+          drawRect(
             brush =
               Brush.horizontalGradient(
-                if (isRightColumn) {
-                  listOf(
-                    accent.copy(alpha = if (isHighlighted) 0.98f else 0.85f),
-                    Color(0x551E293B),
-                    secondaryAccent.copy(alpha = 0.72f),
-                  )
-                } else {
-                  listOf(
-                    secondaryAccent.copy(alpha = 0.72f),
-                    Color(0x551E293B),
-                    accent.copy(alpha = if (isHighlighted) 0.98f else 0.85f),
-                  )
-                }
+                colors =
+                  if (isRightColumn) {
+                    listOf(innerVeil, outerVeil)
+                  } else {
+                    listOf(outerVeil, innerVeil)
+                  },
+                startX = 0f,
+                endX = w,
               ),
-            style = Stroke(width = if (isHighlighted) 1.6.dp.toPx() else 1.2.dp.toPx()),
+            size = size,
           )
+
+          // 2. Soft cyan/gold radial glow behind top visual when highlighted/charged
+          if (isHighlighted) {
+            val glowCenter = Offset(w * 0.5f, h * 0.35f)
+            val glowRadius = (min(w, h) * 0.48f).coerceAtLeast(16f)
+            drawCircle(
+              brush =
+                Brush.radialGradient(
+                  colors =
+                    listOf(
+                      accent.copy(alpha = 0.30f),
+                      secondaryAccent.copy(alpha = 0.12f),
+                      Color.Transparent,
+                    ),
+                  center = glowCenter,
+                  radius = glowRadius,
+                ),
+              radius = glowRadius,
+              center = glowCenter,
+            )
+          }
+
+          // 3. Subtle top horizontal holo-glint hairline (0.75.dp, accent.copy(alpha = 0.38f))
+          val glintY = 0.5.dp.toPx()
           drawLine(
             brush =
               Brush.horizontalGradient(
-                listOf(
-                  Color.White.copy(alpha = if (isHighlighted) 0.56f else 0.42f),
-                  accent.copy(alpha = 0.40f),
-                  Color.Transparent,
-                )
+                colors =
+                  if (isRightColumn) {
+                    listOf(
+                      accent.copy(alpha = 0.38f),
+                      secondaryAccent.copy(alpha = 0.22f),
+                      Color.Transparent,
+                    )
+                  } else {
+                    listOf(
+                      Color.Transparent,
+                      secondaryAccent.copy(alpha = 0.22f),
+                      accent.copy(alpha = 0.38f),
+                    )
+                  },
+                startX = 0f,
+                endX = w,
               ),
-            start = Offset((if (isRightColumn) innerCut else outerCut) + 4.dp.toPx(), 1.3.dp.toPx()),
-            end = Offset(w * 0.72f, 1.3.dp.toPx()),
-            strokeWidth = 1.1.dp.toPx(),
+            start = Offset(0f, glintY),
+            end = Offset(w, glintY),
+            strokeWidth = 0.75.dp.toPx(),
+          )
+
+          // 4. Crisp 2.dp luminous accent bar along the Overwatch-facing inner vertical edge
+          val barW = 2.dp.toPx()
+          val barLeft = if (isRightColumn) 0f else (w - barW).coerceAtLeast(0f)
+          drawRect(
+            brush =
+              Brush.verticalGradient(
+                colors =
+                  listOf(
+                    accent.copy(alpha = if (isHighlighted) 0.72f else 0.42f),
+                    if (isHighlighted) Color.White else accent,
+                    secondaryAccent.copy(alpha = if (isHighlighted) 0.85f else 0.52f),
+                  ),
+                startY = 0f,
+                endY = h,
+              ),
+            topLeft = Offset(barLeft, 0f),
+            size = Size(barW, h),
           )
         }
         .clickable { onClick() }
-        .padding(horizontal = if (isTabletDeck) 9.dp else 7.dp, vertical = if (isTabletDeck) 7.dp else 5.dp)
+        .padding(horizontal = 8.dp, vertical = 6.dp)
         .let { base -> if (testTag.isNotBlank()) base.testTag(testTag) else base },
   ) {
     val compactHeight = maxHeight < 108.dp
     val visualDp =
       when {
-        maxHeight >= 156.dp -> if (isTabletDeck) 56.dp else 46.dp
-        maxHeight >= 116.dp -> if (isTabletDeck) 46.dp else 38.dp
-        else -> if (isTabletDeck) 38.dp else 32.dp
+        maxHeight >= 152.dp -> 48.dp
+        maxHeight >= 114.dp -> 40.dp
+        else -> 34.dp
       }
 
     if (!badgeText.isNullOrBlank()) {
-      Box(
+      Row(
         modifier =
           Modifier.align(Alignment.TopEnd)
             .clip(RoundedCornerShape(4.dp))
-            .background(badgeColor.copy(alpha = 0.16f))
-            .border(0.8.dp, badgeColor.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
+            .background(badgeColor.copy(alpha = 0.18f))
             .padding(horizontal = 5.dp, vertical = 1.5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
       ) {
+        if (showBadgeResonanceIcon) {
+          ResonanceCrestIcon(sizeDp = 9.5.dp)
+        }
         Text(
           text = badgeText,
           color = badgeColor,
-          fontSize = if (isTabletDeck) 8.4.sp else 7.4.sp,
+          fontSize = 9.5.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -249,13 +274,14 @@ internal fun RiftVerticalCard(
       Text(
         text = title,
         color = Color(0xFFF8FAFC),
-        fontSize = if (isTabletDeck) 12.0.sp else 10.6.sp,
+        fontSize = 12.0.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         textAlign = TextAlign.Center,
-        lineHeight = if (isTabletDeck) 14.sp else 12.5.sp,
-        maxLines = 2,
-        softWrap = true,
+        lineHeight = 13.5.sp,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
         style =
           TextStyle(
             shadow = titleGlow,
@@ -265,12 +291,12 @@ internal fun RiftVerticalCard(
 
       Text(
         text = subtitle,
-        color = Color(0xFF94A3B8),
-        fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
+        color = Color(0xFFCBD5E1),
+        fontSize = 9.5.sp,
         fontWeight = FontWeight.SemiBold,
         fontFamily = FontFamily.SansSerif,
         textAlign = TextAlign.Center,
-        lineHeight = if (isTabletDeck) 12.sp else 10.5.sp,
+        lineHeight = 11.5.sp,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
         style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
@@ -281,11 +307,11 @@ internal fun RiftVerticalCard(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-          RiftShardGemIcon(sizeDp = if (isTabletDeck) 13.dp else 11.dp)
+          RiftShardGemIcon(sizeDp = 12.dp)
           Text(
             text = formatOverwatchResonance(shardCost.toInt()),
             color = Color(0xFF38BDF8),
-            fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
+            fontSize = 10.0.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -296,11 +322,12 @@ internal fun RiftVerticalCard(
         Text(
           text = statusLabel,
           color = statusColor,
-          fontSize = if (isTabletDeck) 9.2.sp else 8.2.sp,
+          fontSize = 9.5.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           textAlign = TextAlign.Center,
           maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
@@ -533,17 +560,17 @@ internal fun CosmeticSwatchEmblem(
   }
 }
 
-internal fun cleanShipRoleSummary(role: String): String =
-  when {
-    role.contains("Interceptor", ignoreCase = true) -> "Fast precision striker"
-    role.contains("Twin", ignoreCase = true) -> "Dual laser skirmisher"
-    role.contains("EMP", ignoreCase = true) || role.contains("Disrupt", ignoreCase = true) -> "Cloak and EMP ambush"
-    role.contains("Scatter", ignoreCase = true) || role.contains("Brawl", ignoreCase = true) -> "Close-range scatter brawler"
-    role.contains("Aura", ignoreCase = true) || role.contains("Wave", ignoreCase = true) -> "360-degree pulse defender"
-    role.contains("Ricochet", ignoreCase = true) || role.contains("Bank", ignoreCase = true) -> "Multi-bounce bank shooter"
-    role.contains("Heavy", ignoreCase = true) || role.contains("Siege", ignoreCase = true) -> "Heavy sniper siege hull"
-    role.contains("Stasis", ignoreCase = true) || role.contains("Dome", ignoreCase = true) -> "Tactical stasis zone control"
-    role.contains("Laser", ignoreCase = true) || role.contains("Suppress", ignoreCase = true) -> "Twin-beam suppression cruiser"
+internal fun cleanShipRoleSummary(shipId: Int): String =
+  when (shipId) {
+    1 -> "Fast rail phase fighter"
+    2 -> "Multi-bounce bank specialist"
+    3 -> "Rapid twin-stream skirmisher"
+    4 -> "Heavy siege juggernaut"
+    5 -> "Agile dual-fang dogfighter"
+    6 -> "Stealth cloak EMP ambusher"
+    7 -> "Proximity flak interceptor"
+    8 -> "Stealth minefield controller"
+    9 -> "Two-way stasis controller"
     else -> "Custom 100-point modular hull"
   }
 
@@ -596,11 +623,13 @@ internal fun HangarVerticalWingBay(
     ) {
       ships.forEach { ship ->
         val isCharged = chargedShipId == ship.id
-        val isBest = bestShipId == ship.id
+        val isBest = bestShipId in 1..10 && bestShipId == ship.id
         val isInspected = inspectedShipId == ship.id
-        val cleanName = remember(ship.name) {
-          ship.name.replace(Regex("^[0-9]+-"), "").trim().uppercase(Locale.US)
-        }
+        val cleanName =
+          remember(ship.id, ship.name) {
+            if (ship.id == 10) "RIFT FRAME"
+            else ship.name.replace(Regex("^[0-9]+-"), "").trim().uppercase(Locale.US)
+          }
         val shipRes = shipResonanceFor(ship.id)
         val primaryBorder =
           when {
@@ -625,15 +654,14 @@ internal fun HangarVerticalWingBay(
         RiftVerticalCard(
           modifier = Modifier.fillMaxWidth(),
           title = cleanName,
-          subtitle = cleanShipRoleSummary(ship.role),
+          subtitle = cleanShipRoleSummary(ship.id),
           accent = primaryBorder,
           secondaryAccent = secondaryBorder,
           isRightColumn = isRightSide,
           isHighlighted = isCharged || isBest || isInspected,
           badgeText = badgeText,
           badgeColor = if (isCharged) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          isTabletDeck = isTabletDeck,
-          minHeightDp = if (isTabletDeck) 120.dp else 104.dp,
+          minHeightDp = 108.dp,
           testTag = "hangar_bay_ship_${ship.id}",
           visualContent = { visualDp ->
             Column(
@@ -657,7 +685,7 @@ internal fun HangarVerticalWingBay(
                 Text(
                   text = formatOverwatchResonance(shipRes),
                   color = Color(0xFFFACC15),
-                  fontSize = if (isTabletDeck) 8.6.sp else 7.8.sp,
+                  fontSize = 9.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                   maxLines = 1,
@@ -680,6 +708,7 @@ internal fun RiftFrameLoadoutSideBay(
   wingStackGap: Dp,
   activeCustomSlot: CustomShipLoadoutSlot,
   activeCustomSlotId: String,
+  liveResonance: Int,
   pointBudget: Int,
   isCharged: Boolean,
   localPrefs: LocalPilotPrefs,
@@ -696,6 +725,14 @@ internal fun RiftFrameLoadoutSideBay(
   val uidOrNull = currentUserId.ifBlank { null }
   val effectiveBudget = pointBudget.coerceAtLeast(100)
   val normalizedActiveId = localPrefs.normalizeCustomSlotId(activeCustomSlotId)
+  val isFrameBPurchased = isFrameBPurchasedInPrefs(localPrefs, uidOrNull)
+
+  LaunchedEffect(normalizedActiveId, liveResonance, isFrameBPurchased) {
+    if (!RiftProgressionCatalog.isFrameSlotActive(normalizedActiveId, liveResonance, isFrameBPurchased)) {
+      onSelectFrameSlot("Frame A")
+    }
+  }
+
   var draftSlot by remember(activeCustomSlot, normalizedActiveId, effectiveBudget) {
     mutableStateOf(activeCustomSlot.copy(slotId = normalizedActiveId).clampToPointBudget(effectiveBudget))
   }
@@ -748,7 +785,7 @@ internal fun RiftFrameLoadoutSideBay(
       onBackToHub = onBackToHub,
     )
 
-    // Frame A..E Loadout Selector Pills
+    // Frame A..E Loadout Selector Pills (Frame B via Shard Store; Frame C..E strictly via Live Resonance)
     Row(
       modifier =
         Modifier.fillMaxWidth()
@@ -765,13 +802,33 @@ internal fun RiftFrameLoadoutSideBay(
       listOf("A", "B", "C", "D", "E").forEach { shortKey ->
         val fullSlotId = localPrefs.normalizeCustomSlotId(shortKey)
         val isSelected = normalizedActiveId == fullSlotId
-        val isUnlocked = localPrefs.isCustomSlotUnlocked(fullSlotId, uidOrNull)
+        val isActiveSlot =
+          RiftProgressionCatalog.isFrameSlotActive(fullSlotId, liveResonance, isFrameBPurchased)
+        val gate = RiftProgressionCatalog.getFrameSlotGate(fullSlotId)
         Box(
           modifier =
             Modifier.weight(1f)
               .fillMaxHeight()
               .minimumInteractiveComponentSize()
-              .clickable { onSelectFrameSlot(fullSlotId) }
+              .clickable {
+                if (isActiveSlot || fullSlotId == "Frame B") {
+                  onSelectFrameSlot(fullSlotId)
+                } else {
+                  onPreviewWeaponStage(
+                    OverwatchCircularPrompt.InfoStageInspect(
+                      kicker = "RANKED FRAME SLOT",
+                      title = "${gate.slotId.uppercase(Locale.US)} • ${gate.archetypeTitle.uppercase(Locale.US)}",
+                      badge = "${formatOverwatchResonance(gate.freeAtResonance)} LIVE RESONANCE",
+                      summary = gate.summary,
+                      tacticalNote =
+                        "Maintained solely through active Live Resonance (${formatOverwatchResonance(liveResonance)} / ${formatOverwatchResonance(gate.freeAtResonance)}). Saved builds remain preserved whenever your rank fluctuates.",
+                      accentHex = 0xFFC084FCL,
+                      shipId = 10,
+                      showResonanceCrest = true,
+                    )
+                  )
+                }
+              }
               .padding(vertical = 5.dp)
               .testTag("rift_frame_slot_$shortKey"),
           contentAlignment = Alignment.Center,
@@ -783,7 +840,7 @@ internal fun RiftFrameLoadoutSideBay(
                 .background(
                   when {
                     isSelected -> Color(0x44C084FC)
-                    isUnlocked -> Color(0x66060D1A)
+                    isActiveSlot -> Color(0x66060D1A)
                     else -> Color(0x6602050B)
                   }
                 )
@@ -791,7 +848,7 @@ internal fun RiftFrameLoadoutSideBay(
                   1.dp,
                   when {
                     isSelected -> Color(0xFF00F5D4)
-                    isUnlocked -> Color(0xFF38BDF8)
+                    isActiveSlot -> Color(0xFF38BDF8)
                     else -> Color(0x66FACC15)
                   },
                   RoundedCornerShape(6.dp),
@@ -799,14 +856,14 @@ internal fun RiftFrameLoadoutSideBay(
             contentAlignment = Alignment.Center,
           ) {
             Text(
-              text = if (isUnlocked) shortKey else "${shortKey}*",
+              text = if (isActiveSlot) shortKey else "${shortKey}*",
               color =
                 when {
                   isSelected -> Color.White
-                  isUnlocked -> Color(0xFFE2E8F0)
+                  isActiveSlot -> Color(0xFFE2E8F0)
                   else -> Color(0xFFFACC15)
                 },
-              fontSize = 8.8.sp,
+              fontSize = 9.5.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -834,7 +891,7 @@ internal fun RiftFrameLoadoutSideBay(
         Text(
           text = "USED: $usedPoints / $effectiveBudget PTS • REMAINING: $remainingPoints PTS",
           color = if (remainingPoints == 0) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          fontSize = if (isTabletDeck) 9.0.sp else 8.0.sp,
+          fontSize = 9.5.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -854,7 +911,7 @@ internal fun RiftFrameLoadoutSideBay(
               textStyle =
                 TextStyle(
                   color = Color.White,
-                  fontSize = 10.sp,
+                  fontSize = 10.5.sp,
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.Monospace,
                 ),
@@ -888,7 +945,7 @@ internal fun RiftFrameLoadoutSideBay(
                 Text(
                   text = "SAVE",
                   color = Color.White,
-                  fontSize = 8.4.sp,
+                  fontSize = 9.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -904,7 +961,7 @@ internal fun RiftFrameLoadoutSideBay(
             Text(
               text = draftSlot.customName.ifBlank { normalizedActiveId }.uppercase(Locale.US),
               color = Color.White,
-              fontSize = if (isTabletDeck) 9.8.sp else 8.8.sp,
+              fontSize = 11.5.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -932,7 +989,7 @@ internal fun RiftFrameLoadoutSideBay(
                 Text(
                   text = "RENAME",
                   color = Color(0xFF38BDF8),
-                  fontSize = 7.8.sp,
+                  fontSize = 9.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -959,7 +1016,7 @@ internal fun RiftFrameLoadoutSideBay(
                 Text(
                   text = "RESET",
                   color = Color(0xFFFB7185),
-                  fontSize = 7.8.sp,
+                  fontSize = 9.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -1026,13 +1083,16 @@ internal fun RiftFrameLoadoutSideBay(
         },
       )
 
-      // Primary vs Secondary Weapon Selector Deck (auto-clamps hull stats when switching to costlier weapons)
+      // Primary vs Secondary Weapon Selector Deck
       Row(
         modifier = Modifier.fillMaxWidth().height(48.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        listOf("PRI" to "PRIMARY (${draftSlot.primaryPointCost()}P)", "SEC" to "SECONDARY (${draftSlot.secondaryPointCost()}P)").forEach { (key, label) ->
+        listOf(
+          "PRI" to "PRIMARY (${draftSlot.primaryPointCost()}P)",
+          "SEC" to "SECONDARY (${draftSlot.secondaryPointCost()}P)",
+        ).forEach { (key, label) ->
           val active = weaponTab == key
           Box(
             modifier =
@@ -1055,7 +1115,7 @@ internal fun RiftFrameLoadoutSideBay(
               Text(
                 text = label,
                 color = if (active) Color.White else Color(0xFF94A3B8),
-                fontSize = 8.0.sp,
+                fontSize = 9.5.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
@@ -1101,7 +1161,7 @@ internal fun RiftFrameLoadoutSideBay(
               Text(
                 text = pri.title.uppercase(Locale.US),
                 color = if (selected) Color(0xFF00F5D4) else Color.White,
-                fontSize = if (isTabletDeck) 8.8.sp else 8.0.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
@@ -1109,8 +1169,8 @@ internal fun RiftFrameLoadoutSideBay(
               )
               Text(
                 text = pri.summary,
-                color = Color(0xFF94A3B8),
-                fontSize = 7.4.sp,
+                color = Color(0xFFCBD5E1),
+                fontSize = 9.5.sp,
                 fontFamily = FontFamily.SansSerif,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1119,7 +1179,7 @@ internal fun RiftFrameLoadoutSideBay(
             Text(
               text = if (selected) "${pri.pointCost}P ON" else "${pri.pointCost}P",
               color = if (selected) Color(0xFF00F5D4) else Color(0xFFFACC15),
-              fontSize = 8.2.sp,
+              fontSize = 9.5.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -1160,7 +1220,7 @@ internal fun RiftFrameLoadoutSideBay(
               Text(
                 text = sec.title.uppercase(Locale.US),
                 color = if (selected) Color(0xFFC084FC) else Color.White,
-                fontSize = if (isTabletDeck) 8.8.sp else 8.0.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
@@ -1168,8 +1228,8 @@ internal fun RiftFrameLoadoutSideBay(
               )
               Text(
                 text = "${sec.fluxCostLabel} • ${sec.summary}",
-                color = Color(0xFF94A3B8),
-                fontSize = 7.4.sp,
+                color = Color(0xFFCBD5E1),
+                fontSize = 9.5.sp,
                 fontFamily = FontFamily.SansSerif,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1178,7 +1238,7 @@ internal fun RiftFrameLoadoutSideBay(
             Text(
               text = if (selected) "${sec.pointCost}P ON" else "${sec.pointCost}P",
               color = if (selected) Color(0xFFC084FC) else Color(0xFFFACC15),
-              fontSize = 8.2.sp,
+              fontSize = 9.5.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -1187,7 +1247,7 @@ internal fun RiftFrameLoadoutSideBay(
       }
 
       // Charge Rift Frame Button
-      val chargeFontSp = if (isTabletDeck) 9.4.sp else 8.4.sp
+      val chargeFontSp = 10.0.sp
       val fluxDp = with(density) { chargeFontSp.toDp() }
       Box(
         modifier =
@@ -1236,7 +1296,7 @@ internal fun RiftFrameCosmeticsSideBay(
   headerHeight: Dp,
   wingStackGap: Dp,
   shardText: String,
-  peakResonance: Int,
+  liveResonance: Int,
   shipSpinDeg: Float,
   fluxOrbitRad: Float,
   isCharged: Boolean,
@@ -1256,7 +1316,7 @@ internal fun RiftFrameCosmeticsSideBay(
   val filteredCosmetics =
     remember(categoryFilter, allCosmetics) {
       when (categoryFilter) {
-        "TRIM" -> RiftProgressionCatalog.hullTrims
+        "SKINS" -> RiftProgressionCatalog.hullTrims
         "FINISH" -> RiftProgressionCatalog.killFinishers
         "WARP" -> RiftProgressionCatalog.warpSignatures
         "HALOS" -> RiftProgressionCatalog.hvtHalos
@@ -1279,7 +1339,7 @@ internal fun RiftFrameCosmeticsSideBay(
       onTrailingClick = onShareBuild,
     )
 
-    // Live 2.5D Rift Frame Preview + Peak Resonance & Shards Readout
+    // Live 2.5D Rift Frame Preview + Live Resonance & Shards Readout
     Row(
       modifier =
         Modifier.fillMaxWidth()
@@ -1299,30 +1359,31 @@ internal fun RiftFrameCosmeticsSideBay(
         isCharged = isCharged,
         isBestShip = false,
         isSelected = true,
-        sizeDp = if (isTabletDeck) 50.dp else 40.dp,
+        sizeDp = 44.dp,
       )
       Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
-          text = "RESONANCE COSMETICS",
+          text = "SKINS & RANKED EFFECTS",
           color = Color.White,
-          fontSize = if (isTabletDeck) 8.8.sp else 7.8.sp,
+          fontSize = 10.5.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
+          maxLines = 1,
         )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-          ResonanceCrestIcon(sizeDp = 10.dp)
+          ResonanceCrestIcon(sizeDp = 11.dp)
           Text(
-            text = "PEAK ${formatOverwatchResonance(peakResonance)}",
+            text = "LIVE ${formatOverwatchResonance(liveResonance)}",
             color = Color(0xFFFFD700),
-            fontSize = 7.6.sp,
+            fontSize = 9.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
-          RiftShardGemIcon(sizeDp = 10.dp)
+          RiftShardGemIcon(sizeDp = 11.dp)
           Text(
             text = shardText,
             color = Color(0xFF00F5D4),
-            fontSize = 7.6.sp,
+            fontSize = 9.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -1345,7 +1406,7 @@ internal fun RiftFrameCosmeticsSideBay(
       horizontalArrangement = Arrangement.spacedBy(3.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      listOf("ALL", "TRIM", "FINISH", "WARP", "HALOS").forEach { tab ->
+      listOf("ALL", "SKINS", "FINISH", "WARP", "HALOS").forEach { tab ->
         val sel = categoryFilter == tab
         Box(
           modifier =
@@ -1368,7 +1429,7 @@ internal fun RiftFrameCosmeticsSideBay(
             Text(
               text = tab,
               color = if (sel) Color.White else Color(0xFF94A3B8),
-              fontSize = 7.6.sp,
+              fontSize = 9.5.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -1384,9 +1445,26 @@ internal fun RiftFrameCosmeticsSideBay(
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       filteredCosmetics.forEach { item ->
-        val unlockedByResonance = item.freeAtResonance > 0 && peakResonance >= item.freeAtResonance
-        val unlocked = unlockedByResonance || localPrefs.isCosmeticUnlocked(item.category, item.id, uid = uidOrNull)
-        val equipped = localPrefs.getEquippedCosmeticId(item.category, uidOrNull) == item.id
+        val isRanked = RiftProgressionCatalog.isRankedCosmeticCategory(item.category)
+        val unlocked =
+          if (isRanked) {
+            RiftProgressionCatalog.isRankedCosmeticActive(item, liveResonance)
+          } else {
+            isPaidHullSkinOwnedInPrefs(item.id, localPrefs, uidOrNull)
+          }
+        val rawEquippedId = localPrefs.getEquippedCosmeticId(item.category, uidOrNull)
+        val effectiveEquippedId =
+          if (isRanked) {
+            val savedItem = RiftProgressionCatalog.getCosmeticItem(item.category, rawEquippedId)
+            if (savedItem != null && RiftProgressionCatalog.isRankedCosmeticActive(savedItem, liveResonance)) {
+              rawEquippedId
+            } else {
+              0
+            }
+          } else {
+            if (isPaidHullSkinOwnedInPrefs(rawEquippedId, localPrefs, uidOrNull)) rawEquippedId else 0
+          }
+        val equipped = unlocked && effectiveEquippedId == item.id
         val itemAccent = Color(item.accentColorHex)
 
         RiftVerticalCard(
@@ -1400,21 +1478,22 @@ internal fun RiftFrameCosmeticsSideBay(
           badgeText =
             when {
               equipped -> "ACTIVE"
-              unlocked -> "OWNED"
-              item.freeAtResonance > 0 -> "PEAK ${item.freeAtResonance}"
-              else -> null
+              unlocked -> if (isRanked) "ACTIVE TIER" else "OWNED"
+              isRanked -> "${item.freeAtResonance}+"
+              else -> "SKIN"
             },
           badgeColor = if (equipped) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          shardCost = if (!unlocked && item.shardCost > 0L) item.shardCost else null,
+          showBadgeResonanceIcon = !unlocked && isRanked,
+          shardCost = if (!unlocked && !isRanked && item.shardCost > 0L) item.shardCost else null,
           statusLabel =
             when {
               equipped -> "EQUIPPED"
               unlocked -> "TAP TO EQUIP"
+              isRanked -> "ACTIVE AT ${formatOverwatchResonance(item.freeAtResonance)} LIVE RESONANCE"
               else -> null
             },
           statusColor = if (equipped) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          isTabletDeck = isTabletDeck,
-          minHeightDp = if (isTabletDeck) 114.dp else 98.dp,
+          minHeightDp = 104.dp,
           testTag = "rift_frame_cosmetic_${item.category.lowercase(Locale.US)}_${item.id}",
           visualContent = { visualDp ->
             CosmeticSwatchEmblem(item = item, sizeDp = visualDp)
@@ -1432,7 +1511,6 @@ internal fun ConduitRankTrackSideBay(
   headerHeight: Dp,
   wingStackGap: Dp,
   liveResonance: Int,
-  peakResonance: Int,
   onInspectTierStage: (OverwatchCircularPrompt.InfoStageInspect) -> Unit,
 ) {
   val currentTier = remember(liveResonance) { RiftProgressionCatalog.getConduitTierForResonance(liveResonance) }
@@ -1455,7 +1533,7 @@ internal fun ConduitRankTrackSideBay(
     ) {
       RiftProgressionCatalog.CONDUIT_RANK_TIERS.forEach { tier ->
         val isCurrent = currentTier.title == tier.title
-        val isReached = peakResonance >= tier.minResonance || liveResonance >= tier.minResonance
+        val isReached = liveResonance >= tier.minResonance
         val tierAccent = Color(tier.accentColorHex)
 
         RiftVerticalCard(
@@ -1469,14 +1547,14 @@ internal fun ConduitRankTrackSideBay(
           badgeText =
             when {
               isCurrent -> "ACTIVE"
-              isReached -> "UNLOCKED"
-              else -> "${tier.minResonance}+ RES"
+              isReached -> "EARNED"
+              else -> "${tier.minResonance}+"
             },
           badgeColor = if (isCurrent) Color(0xFF00F5D4) else tierAccent,
-          statusLabel = "MIN ${formatOverwatchResonance(tier.minResonance)} RESONANCE",
+          showBadgeResonanceIcon = !isCurrent && !isReached,
+          statusLabel = "MIN ${formatOverwatchResonance(tier.minResonance)} LIVE RESONANCE",
           statusColor = if (isReached) Color(0xFFFACC15) else Color(0xFF94A3B8),
-          isTabletDeck = isTabletDeck,
-          minHeightDp = if (isTabletDeck) 108.dp else 94.dp,
+          minHeightDp = 100.dp,
           testTag = "conduit_tier_${tier.title.lowercase(Locale.US).replace(" ", "_")}",
           visualContent = { visualDp ->
             Box(
@@ -1495,51 +1573,61 @@ internal fun ConduitRankTrackSideBay(
               OverwatchCircularPrompt.InfoStageInspect(
                 kicker = "CONDUIT RANK TIER",
                 title = tier.title.uppercase(Locale.US),
-                badge = if (isCurrent) "ACTIVE RANK" else if (isReached) "UNLOCKED" else "${tier.minResonance} RESONANCE",
+                badge =
+                  if (isCurrent) "ACTIVE RANK"
+                  else if (isReached) "ACTIVE TIER"
+                  else "${formatOverwatchResonance(tier.minResonance)} LIVE RESONANCE",
                 summary =
-                  "Reaching ${formatOverwatchResonance(tier.minResonance)} Resonance upgrades your starting match Resonance baseline to ${tier.startingBounty}.",
+                  "Maintaining ${formatOverwatchResonance(tier.minResonance)} Live Resonance sets your starting match Resonance baseline to ${tier.startingBounty}.",
                 tacticalNote = "Pure competitive tier progression — zero paid combat advantages.",
                 accentHex = tier.accentColorHex,
+                showResonanceCrest = true,
               )
             )
           },
         )
       }
 
-      RiftProgressionCatalog.frameSlotGates.forEach { gate ->
-        val unlocked = peakResonance >= gate.freeAtResonance
-        RiftVerticalCard(
-          modifier = Modifier.fillMaxWidth(),
-          title = gate.slotId.uppercase(Locale.US),
-          subtitle = "Free at ${formatOverwatchResonance(gate.freeAtResonance)} Peak Resonance",
-          accent = if (unlocked) Color(0xFF00F5D4) else Color(0xFFC084FC),
-          isRightColumn = true,
-          isHighlighted = unlocked,
-          badgeText = if (unlocked) "EARNED" else "MILESTONE",
-          badgeColor = if (unlocked) Color(0xFF00F5D4) else Color(0xFFC084FC),
-          statusLabel = gate.archetypeTitle.uppercase(Locale.US),
-          statusColor = Color(0xFFCBD5E1),
-          isTabletDeck = isTabletDeck,
-          minHeightDp = if (isTabletDeck) 104.dp else 92.dp,
-          testTag = "conduit_milestone_${gate.slotId.lowercase(Locale.US).replace(" ", "_")}",
-          visualContent = { visualDp ->
-            ResonanceCrestIcon(sizeDp = visualDp * 0.72f)
-          },
-          onClick = {
-            onInspectTierStage(
-              OverwatchCircularPrompt.InfoStageInspect(
-                kicker = "CONDUIT FRAME MILESTONE",
-                title = "${gate.slotId.uppercase(Locale.US)} • ${gate.archetypeTitle.uppercase(Locale.US)}",
-                badge = if (unlocked) "UNLOCKED BY RESONANCE" else "${gate.freeAtResonance} PEAK RESONANCE",
-                summary = gate.summary,
-                tacticalNote = "Earn Peak Resonance in Sector Convergence or unlock instantly in the Shard Store.",
-                accentHex = 0xFFC084FCL,
-                shipId = 10,
+      RiftProgressionCatalog.frameSlotGates
+        .filter { it.freeAtResonance > 0 }
+        .forEach { gate ->
+          val active = liveResonance >= gate.freeAtResonance
+          RiftVerticalCard(
+            modifier = Modifier.fillMaxWidth(),
+            title = gate.slotId.uppercase(Locale.US),
+            subtitle = "Active at ${formatOverwatchResonance(gate.freeAtResonance)} Live Resonance",
+            accent = if (active) Color(0xFF00F5D4) else Color(0xFFC084FC),
+            isRightColumn = true,
+            isHighlighted = active,
+            badgeText = if (active) "ACTIVE" else "${gate.freeAtResonance}+",
+            badgeColor = if (active) Color(0xFF00F5D4) else Color(0xFFC084FC),
+            showBadgeResonanceIcon = !active,
+            statusLabel = gate.archetypeTitle.uppercase(Locale.US),
+            statusColor = Color(0xFFCBD5E1),
+            minHeightDp = 98.dp,
+            testTag = "conduit_milestone_${gate.slotId.lowercase(Locale.US).replace(" ", "_")}",
+            visualContent = { visualDp ->
+              ResonanceCrestIcon(sizeDp = visualDp * 0.72f)
+            },
+            onClick = {
+              onInspectTierStage(
+                OverwatchCircularPrompt.InfoStageInspect(
+                  kicker = "RANKED FRAME MILESTONE",
+                  title = "${gate.slotId.uppercase(Locale.US)} • ${gate.archetypeTitle.uppercase(Locale.US)}",
+                  badge =
+                    if (active) "ACTIVE BY LIVE RESONANCE"
+                    else "${formatOverwatchResonance(gate.freeAtResonance)} LIVE RESONANCE",
+                  summary = "Active at ${formatOverwatchResonance(gate.freeAtResonance)} Live Resonance.",
+                  tacticalNote =
+                    "Ranked loadout bay maintained strictly through Live Resonance. Dropping below ${formatOverwatchResonance(gate.freeAtResonance)} preserves your saved build and switches to Frame A.",
+                  accentHex = 0xFFC084FCL,
+                  shipId = 10,
+                  showResonanceCrest = true,
+                )
               )
-            )
-          },
-        )
-      }
+            },
+          )
+        }
     }
   }
 }
@@ -1551,20 +1639,24 @@ internal fun ShardStoreLeftTreasuryBay(
   wingStackGap: Dp,
   shardText: String,
   liveResonance: Int,
-  peakResonance: Int,
   activeCustomSlotId: String,
   purchaseStatusMessage: String?,
   localPrefs: LocalPilotPrefs,
   currentUserId: String,
   onBackToHub: () -> Unit,
-  onSelectFrameSlot: (String) -> Unit,
-  onInspectFrameSlot: (FrameSlotGateInfo, String, Boolean, Boolean) -> Unit,
+  onInspectFrameB: (FrameSlotGateInfo, Boolean, Boolean) -> Unit,
+  onInspectPaidSkin: (CosmeticCatalogItem, Boolean, Boolean) -> Unit,
   onOpenRiftFrameBay: () -> Unit,
   onOpenConduitQuests: () -> Unit,
 ) {
   val uidOrNull = currentUserId.ifBlank { null }
   val normalizedActiveId = localPrefs.normalizeCustomSlotId(activeCustomSlotId)
   val isTesterMode = RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE
+  val frameBGate = remember { RiftProgressionCatalog.getFrameSlotGate("Frame B") }
+  val isFrameBOwned = isFrameBPurchasedInPrefs(localPrefs, uidOrNull)
+  val isFrameBSelected = isFrameBOwned && normalizedActiveId == "Frame B"
+  val paidSkins = remember { RiftProgressionCatalog.hullTrims.filter { it.id >= 1 } }
+  val equippedSkinId = localPrefs.getEquippedCosmeticId("HULL_TRIM", uidOrNull)
 
   Column(
     modifier = Modifier.fillMaxSize().testTag("shard_store_left_summary_bay"),
@@ -1586,7 +1678,7 @@ internal fun ShardStoreLeftTreasuryBay(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
-      // Live Treasury & Billing Status Card
+      // Live Treasury & Billing Status Shelf
       Column(
         modifier =
           Modifier.fillMaxWidth()
@@ -1603,7 +1695,7 @@ internal fun ShardStoreLeftTreasuryBay(
           Text(
             text = "$shardText RIFT SHARDS",
             color = Color(0xFF00F5D4),
-            fontSize = if (isTabletDeck) 11.2.sp else 10.0.sp,
+            fontSize = 11.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -1611,9 +1703,9 @@ internal fun ShardStoreLeftTreasuryBay(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
           ResonanceCrestIcon(sizeDp = 12.dp)
           Text(
-            text = "LIVE ${formatOverwatchResonance(liveResonance)} • PEAK ${formatOverwatchResonance(peakResonance)}",
+            text = "LIVE ${formatOverwatchResonance(liveResonance)} RESONANCE",
             color = Color(0xFFFFD700),
-            fontSize = 8.4.sp,
+            fontSize = 9.5.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
           )
@@ -1624,56 +1716,85 @@ internal fun ShardStoreLeftTreasuryBay(
               ?: if (isTesterMode) {
                 "Tester Treasury active (999,999 non-depleting Shards). Google Play Billing by ${RiftBillingManager.STUDIO_LEGAL_NAME}."
               } else {
-                "Google Play Billing active (${RiftBillingManager.STUDIO_LEGAL_NAME}). Tap any Shard Pack on the right."
+                "Google Play Billing active (${RiftBillingManager.STUDIO_LEGAL_NAME}). Unlock Frame B or permanent Ship Skins below."
               },
           color = if (purchaseStatusMessage != null) Color(0xFF00F5D4) else Color(0xFFCBD5E1),
-          fontSize = 8.0.sp,
+          fontSize = 9.5.sp,
           fontFamily = FontFamily.SansSerif,
         )
       }
 
-      // Frame B..E Unlock Cards
-      RiftProgressionCatalog.frameSlotGates.forEach { gate ->
-        val slotId = localPrefs.normalizeCustomSlotId(gate.slotId)
-        val unlocked = localPrefs.isCustomSlotUnlocked(slotId, uidOrNull) || peakResonance >= gate.freeAtResonance
-        val selected = normalizedActiveId == slotId
+      // Single Purchasable Frame B Bay Card (250 Shards, permanent once bought)
+      RiftVerticalCard(
+        modifier = Modifier.fillMaxWidth(),
+        title = "FRAME B BAY",
+        subtitle = "Permanent custom 100-point bay",
+        accent = if (isFrameBSelected) Color(0xFF00F5D4) else Color(0xFFC084FC),
+        secondaryAccent = if (isFrameBOwned) Color(0xFF38BDF8) else Color(0xFFFACC15),
+        isRightColumn = false,
+        isHighlighted = isFrameBSelected || isFrameBOwned,
+        badgeText =
+          when {
+            isFrameBSelected -> "ACTIVE"
+            isFrameBOwned -> "OWNED"
+            else -> "PERMANENT"
+          },
+        badgeColor = if (isFrameBSelected) Color(0xFF00F5D4) else Color(0xFFFACC15),
+        shardCost = if (!isFrameBOwned) frameBGate.shardCost else null,
+        statusLabel =
+          when {
+            isFrameBSelected -> "ACTIVE BAY"
+            isFrameBOwned -> "TAP TO SELECT"
+            else -> null
+          },
+        statusColor = if (isFrameBSelected) Color(0xFF00F5D4) else Color(0xFFC084FC),
+        minHeightDp = 96.dp,
+        testTag = "shard_vault_slot_B",
+        visualContent = { visualDp ->
+          PrismaticShardClusterEmblem(
+            sizeDp = visualDp,
+            accentColor = if (isFrameBSelected) Color(0xFF00F5D4) else Color(0xFFC084FC),
+            crystalCount = if (isFrameBOwned) 3 else 2,
+          )
+        },
+        onClick = { onInspectFrameB(frameBGate, isFrameBOwned, isFrameBSelected) },
+      )
+
+      // Permanent Purchasable Ship Skins (HULL_TRIM 1..5)
+      paidSkins.forEach { skin ->
+        val owned = isPaidHullSkinOwnedInPrefs(skin.id, localPrefs, uidOrNull)
+        val equipped = owned && equippedSkinId == skin.id
+        val skinAccent = Color(skin.accentColorHex)
 
         RiftVerticalCard(
           modifier = Modifier.fillMaxWidth(),
-          title = "${gate.slotId.uppercase(Locale.US)} • ${gate.archetypeTitle.uppercase(Locale.US)}",
-          subtitle =
-            if (gate.freeAtResonance <= 0) "Open immediately at 0 Resonance"
-            else "Free at ${formatOverwatchResonance(gate.freeAtResonance)} Peak Resonance",
-          accent = if (selected) Color(0xFF00F5D4) else Color(0xFFC084FC),
-          secondaryAccent = if (unlocked) Color(0xFF38BDF8) else Color(0xFFFACC15),
+          title = skin.name.uppercase(Locale.US),
+          subtitle = skin.summary,
+          accent = if (equipped) Color(0xFF00F5D4) else skinAccent,
+          secondaryAccent = if (owned) Color(0xFFFACC15) else Color(0xFF38BDF8),
           isRightColumn = false,
-          isHighlighted = selected,
+          isHighlighted = equipped,
           badgeText =
             when {
-              selected -> "ACTIVE"
-              unlocked -> "OWNED"
-              else -> "UNLOCK"
+              equipped -> "EQUIPPED"
+              owned -> "OWNED"
+              else -> "SHIP SKIN"
             },
-          badgeColor = if (selected) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          shardCost = if (!unlocked && gate.shardCost > 0L) gate.shardCost else null,
+          badgeColor = if (equipped) Color(0xFF00F5D4) else skinAccent,
+          shardCost = if (!owned) skin.shardCost else null,
           statusLabel =
             when {
-              selected -> "ACTIVE BAY"
-              unlocked -> "TAP TO SELECT"
+              equipped -> "ACTIVE LIVERY"
+              owned -> "TAP TO EQUIP"
               else -> null
             },
-          statusColor = if (selected) Color(0xFF00F5D4) else Color(0xFFC084FC),
-          isTabletDeck = isTabletDeck,
-          minHeightDp = if (isTabletDeck) 98.dp else 88.dp,
-          testTag = "shard_vault_slot_${slotId.takeLast(1)}",
+          statusColor = if (equipped) Color(0xFF00F5D4) else Color(0xFFFACC15),
+          minHeightDp = 98.dp,
+          testTag = "shard_store_skin_${skin.id}",
           visualContent = { visualDp ->
-            PrismaticShardClusterEmblem(
-              sizeDp = visualDp,
-              accentColor = if (selected) Color(0xFF00F5D4) else Color(0xFFC084FC),
-              crystalCount = if (unlocked) 3 else 2,
-            )
+            CosmeticSwatchEmblem(item = skin, sizeDp = visualDp)
           },
-          onClick = { onInspectFrameSlot(gate, slotId, unlocked, selected) },
+          onClick = { onInspectPaidSkin(skin, owned, equipped) },
         )
       }
 
@@ -1699,7 +1820,7 @@ internal fun ShardStoreLeftTreasuryBay(
           Text(
             text = "CONFIGURE RIFT FRAME >",
             color = Color(0xFFE9D5FF),
-            fontSize = 8.2.sp,
+            fontSize = 9.5.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -1768,8 +1889,7 @@ internal fun ShardStoreRightPacksBay(
           badgeColor = packAccent,
           statusLabel = if (isBusy) "PROCESSING..." else "${sku.displayPriceUsd} • BUY PACK",
           statusColor = if (isBusy) Color(0xFF00F5D4) else Color.White,
-          isTabletDeck = isTabletDeck,
-          minHeightDp = if (isTabletDeck) 118.dp else 104.dp,
+          minHeightDp = 108.dp,
           testTag = "shard_store_pack_${sku.productId}",
           visualContent = { visualDp ->
             PrismaticShardClusterEmblem(

@@ -211,10 +211,27 @@ object RiftSpriteBaker {
       textAlign = Paint.Align.CENTER
       typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
     }
+  private val sharedCosmeticFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+  private val sharedCosmeticStrokePaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeCap = Paint.Cap.ROUND
+      strokeJoin = Paint.Join.ROUND
+    }
+  private val sharedCosmeticArcRect = RectF()
+  private val sharedCosmeticPath = Path()
 
   var spriteVisualRevision: Int = 1
     private set
-  var activeHullTrimStyle: Int = 0 // 0=Standard, 1=Obsidian Ice-Cyan, 2=Sovereign Gold, 3=Rift Violet
+  var activeHullTrimStyle: Int = 0 // 0=Standard, 1=Obsidian Ice-Cyan, 2=Sovereign Solar Gold, 3=Rift Singularity Violet, 4=Crimson Forge, 5=Cryo-Titanium
+    set(value) {
+      val clamped = value.coerceIn(0, 5)
+      if (field != clamped) {
+        field = clamped
+        customShip9Version++
+        spriteVisualRevision++
+      }
+    }
   var customShip9Version: Int = 1
     private set
 
@@ -270,8 +287,8 @@ object RiftSpriteBaker {
     fluxIconBitmap = bake3dFluxReactorIcon(64)
     resonanceIconBitmap = bake3dResonanceCrestIcon(64)
     riftShardIconBitmap = bake3dRiftShardIcon(64)
-    safeZoneStationBitmap = bakeSafeZoneNexusStationBitmap(256)
-    supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(128)
+    safeZoneStationBitmap = bakeSafeZoneNexusStationBitmap(384)
+    supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(160)
 
     wallTileBitmap = bakeWallTile()
     hazardBorderBitmap = bakeHazardBorderTile()
@@ -291,16 +308,16 @@ object RiftSpriteBaker {
     val allied = mutableMapOf<Int, Bitmap>()
     val hostile = mutableMapOf<Int, Bitmap>()
     for (spec in RiftCodex.SHIPS) {
-      allied[spec.id] = bakeShipBitmap(spec, 128, isAllied = true)
-      hostile[spec.id] = bakeShipBitmap(spec, 128, isAllied = false)
+      allied[spec.id] = bakeShipBitmap(spec, 256, isAllied = true)
+      hostile[spec.id] = bakeShipBitmap(spec, 256, isAllied = false)
     }
     alliedShipBitmaps = allied
     hostileShipBitmaps = hostile
 
     val initialRecipe = RiftCodex.activeCustomShipSlot.visualRecipe
     lastCustomShip9Recipe = initialRecipe
-    customShip9AlliedBitmap = bakeCustomShip9Bitmap(initialRecipe, 128, isAllied = true)
-    customShip9HostileBitmap = bakeCustomShip9Bitmap(initialRecipe, 128, isAllied = false)
+    customShip9AlliedBitmap = bakeCustomShip9Bitmap(initialRecipe, 256, isAllied = true, hullTrimStyle = 0)
+    customShip9HostileBitmap = bakeCustomShip9Bitmap(initialRecipe, 256, isAllied = false, hullTrimStyle = 0)
 
     val buffs = mutableMapOf<Int, Bitmap>()
     for (buffType in 0..15) {
@@ -344,7 +361,7 @@ object RiftSpriteBaker {
         ForgeElementTarget.SAFE_ZONE_PAD -> {
           wallTileBitmap = bakeWallTile()
           wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
-          safeZoneStationBitmap = bakeSafeZoneNexusStationBitmap(256)
+          safeZoneStationBitmap = bakeSafeZoneNexusStationBitmap(384)
         }
         ForgeElementTarget.CURRENCY_FLUX_ICON -> {
           fluxIconBitmap = bake3dFluxReactorIcon(64)
@@ -359,7 +376,7 @@ object RiftSpriteBaker {
           riftAnomalyIconBitmaps = buildRiftAnomalyIconMap()
         }
         ForgeElementTarget.SUPPLY_CRATE -> {
-          supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(128)
+          supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(160)
         }
         else -> Unit
       }
@@ -374,8 +391,8 @@ object RiftSpriteBaker {
       nexusHubModuleEmblemCache.clear()
       wallTileBitmap = bakeWallTile()
       wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
-      safeZoneStationBitmap = bakeSafeZoneNexusStationBitmap(256)
-      supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(128)
+      safeZoneStationBitmap = bakeSafeZoneNexusStationBitmap(384)
+      supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(160)
       fluxIconBitmap = bake3dFluxReactorIcon(64)
       resonanceIconBitmap = bake3dResonanceCrestIcon(64)
       riftShardIconBitmap = bake3dRiftShardIcon(64)
@@ -395,8 +412,8 @@ object RiftSpriteBaker {
     syndicateTag: String = "",
   ) {
     val clampedShip = activeShipId.coerceIn(1, 10)
-    val clampedTrim = trimStyle.coerceIn(0, 3)
-    if (clampedTrim != 0 && clampedShip in 1..9) {
+    val clampedTrim = trimStyle.coerceIn(0, 5)
+    if (clampedTrim != 0 && clampedShip in 1..10) {
       getShipSprite(clampedShip, isAllied = true, trimStyleOverride = clampedTrim)
     }
     val obstacleTypes =
@@ -1090,25 +1107,28 @@ object RiftSpriteBaker {
   }
 
   /**
-   * Bakes the 3D hexagonal Gunmetal/Emerald Containment Supply Pod frame (`128x128`) driven live
-   * by `ForgeElementTarget.SUPPLY_CRATE` in `STAR FORGE`.
+   * Bakes the 2.5D beveled hexagonal Gunmetal/Emerald Containment Supply Pod frame (`160x160`)
+   * with 3D metallic corner clamps, recessed dark-glass core window, and specular rim catchlights,
+   * driven live by `ForgeElementTarget.SUPPLY_CRATE` in `STAR FORGE`.
    */
-  fun bakeSupplyPodFrameBitmap(sizePx: Int = 128): Bitmap {
+  fun bakeSupplyPodFrameBitmap(sizePx: Int = 160): Bitmap {
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
     val cx = sizePx * 0.5f
     val cy = sizePx * 0.5f
+    val u = sizePx / 128f
     val rec = runCatching { RiftVisualForgeState.getRecipe(ForgeElementTarget.SUPPLY_CRATE) }.getOrNull()
     val useCustom = rec != null && !rec.isFactoryDefault
-    val primaryCol = if (useCustom) rec!!.primaryColorInt else Color.parseColor("#07101E")
+    val primaryCol = if (useCustom) rec!!.primaryColorInt else Color.parseColor("#050C18")
     val trimCol = if (useCustom) rec!!.trimColorInt else Color.parseColor("#10B981")
     val glowCol = if (useCustom) rec!!.glowColorInt else Color.parseColor("#00F5D4")
     val borderMult = (rec?.borderWeight ?: 1f).coerceIn(0.55f, 2.2f)
     val opacityFrac = (rec?.surfaceOpacity ?: 0.94f).coerceIn(0.35f, 1.0f)
     val rOuter = sizePx * 0.44f
-    val rInner = sizePx * 0.34f
-    val cornerEffectOuter = CornerPathEffect(sizePx * 0.11f)
-    val cornerEffectInner = CornerPathEffect(sizePx * 0.085f)
+    val rMid = sizePx * 0.39f
+    val rInner = sizePx * 0.33f
+    val cornerEffectOuter = CornerPathEffect(sizePx * 0.105f)
+    val cornerEffectInner = CornerPathEffect(sizePx * 0.082f)
 
     fun hexPath(rad: Float): Path {
       val p = Path()
@@ -1123,89 +1143,137 @@ object RiftSpriteBaker {
     }
 
     val outerHex = hexPath(rOuter)
+    val midHex = hexPath(rMid)
     val innerHex = hexPath(rInner)
 
-    // Calm outer powerup aura
+    // 1. Calm outer powerup aura + stepped under-pod ambient occlusion shadow
     c.drawCircle(
       cx,
       cy,
-      sizePx * 0.48f,
+      sizePx * 0.485f,
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         shader =
           RadialGradient(
             cx,
             cy,
-            sizePx * 0.48f,
+            sizePx * 0.485f,
             intArrayOf(
-              Color.argb(58, Color.red(glowCol), Color.green(glowCol), Color.blue(glowCol)),
-              Color.argb(22, Color.red(trimCol), Color.green(trimCol), Color.blue(trimCol)),
+              Color.argb(64, Color.red(glowCol), Color.green(glowCol), Color.blue(glowCol)),
+              Color.argb(24, Color.red(trimCol), Color.green(trimCol), Color.blue(trimCol)),
               Color.argb(0, Color.red(trimCol), Color.green(trimCol), Color.blue(trimCol)),
             ),
-            floatArrayOf(0f, 0.65f, 1f),
+            floatArrayOf(0f, 0.66f, 1f),
             Shader.TileMode.CLAMP,
           )
       },
     )
+    c.save()
+    c.translate(2.2f * u, 2.6f * u)
+    c.drawPath(
+      outerHex,
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        pathEffect = cornerEffectOuter
+        color = Color.argb(185, 2, 6, 16)
+      },
+    )
+    c.restore()
 
-    // Smooth rounded-bevel 5-stop brushed gunmetal/titanium outer containment pod
+    // 2. Key-lit top-left L=(-0.58,-0.62,0.53) 5-stop brushed gunmetal/titanium outer containment pod
     val armorPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         pathEffect = cornerEffectOuter
         shader =
           LinearGradient(
-            cx - rOuter,
-            cy - rOuter,
-            cx + rOuter,
-            cy + rOuter,
+            cx - rOuter * 0.95f,
+            cy - rOuter * 1.02f,
+            cx + rOuter * 0.95f,
+            cy + rOuter * 1.02f,
             intArrayOf(
-              Color.parseColor("#94A3B8"),
-              Color.parseColor("#475569"),
-              Color.parseColor("#1E293B"),
+              Color.parseColor("#CBD5E1"),
+              Color.parseColor("#64748B"),
+              Color.parseColor("#334155"),
               Color.parseColor("#0F172A"),
               Color.parseColor("#040812"),
             ),
-            floatArrayOf(0f, 0.24f, 0.52f, 0.80f, 1f),
+            floatArrayOf(0f, 0.22f, 0.48f, 0.78f, 1f),
             Shader.TileMode.CLAMP,
           )
       }
     c.drawPath(outerHex, armorPaint)
 
-    // Smooth beveled outer outline + specular top-left arc
+    // Stepped recessed mid-bevel trench (AO contact groove)
     c.drawPath(
-      outerHex,
+      midHex,
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
-        pathEffect = cornerEffectOuter
-        strokeWidth = 2.2f * borderMult
-        color = Color.parseColor("#040B16")
-      },
-    )
-    c.drawPath(
-      outerHex,
-      Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeJoin = Paint.Join.ROUND
-        pathEffect = cornerEffectOuter
-        strokeWidth = 1.15f * borderMult
-        color = Color.argb(115, 224, 242, 254)
+        pathEffect = cornerEffectInner
+        strokeWidth = 1.6f * u
+        color = Color.argb(190, 3, 7, 18)
       },
     )
 
-    // Translucent dark rounded containment chamber + calm radial powerup field
+    // Crisp outer outline + directional top-left Blinn-Phong specular catchlight
+    c.drawPath(
+      outerHex,
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeJoin = Paint.Join.ROUND
+        pathEffect = cornerEffectOuter
+        strokeWidth = 2.3f * u * borderMult
+        color = Color.parseColor("#030712")
+      },
+    )
+    c.drawPath(
+      outerHex,
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeJoin = Paint.Join.ROUND
+        pathEffect = cornerEffectOuter
+        strokeWidth = 1.25f * u * borderMult
+        shader =
+          LinearGradient(
+            cx - rOuter,
+            cy - rOuter,
+            cx + rOuter * 0.65f,
+            cy + rOuter * 0.65f,
+            intArrayOf(
+              Color.argb(225, 248, 250, 252),
+              Color.argb(115, 186, 230, 253),
+              Color.argb(0, 15, 23, 42),
+            ),
+            floatArrayOf(0f, 0.45f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      },
+    )
+
+    // 3. Recessed polarized dark-glass containment core window + specular sky-glint reflection
     c.drawPath(
       innerHex,
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         pathEffect = cornerEffectInner
-        color =
-          Color.argb(
-            (220 * opacityFrac).roundToInt().coerceIn(85, 245),
-            Color.red(primaryCol),
-            Color.green(primaryCol),
-            Color.blue(primaryCol),
+        shader =
+          RadialGradient(
+            cx - rInner * 0.24f,
+            cy - rInner * 0.26f,
+            rInner * 1.28f,
+            intArrayOf(
+              Color.argb((215 * opacityFrac).roundToInt().coerceIn(90, 245), 14, 34, 58),
+              Color.argb(
+                (232 * opacityFrac).roundToInt().coerceIn(95, 248),
+                Color.red(primaryCol),
+                Color.green(primaryCol),
+                Color.blue(primaryCol),
+              ),
+              Color.argb(248, 2, 5, 12),
+            ),
+            floatArrayOf(0f, 0.56f, 1f),
+            Shader.TileMode.CLAMP,
           )
       },
     )
@@ -1221,8 +1289,8 @@ object RiftSpriteBaker {
             cy,
             rInner * 0.96f,
             intArrayOf(
-              Color.argb(82, Color.red(glowCol), Color.green(glowCol), Color.blue(glowCol)),
-              Color.argb(34, Color.red(trimCol), Color.green(trimCol), Color.blue(trimCol)),
+              Color.argb(88, Color.red(glowCol), Color.green(glowCol), Color.blue(glowCol)),
+              Color.argb(36, Color.red(trimCol), Color.green(trimCol), Color.blue(trimCol)),
               Color.argb(0, Color.red(trimCol), Color.green(trimCol), Color.blue(trimCol)),
             ),
             floatArrayOf(0f, 0.64f, 1f),
@@ -1231,25 +1299,73 @@ object RiftSpriteBaker {
       },
     )
 
-    // Smooth rounded inner containment bezel + flush indicator capsules (zero protruding spikes)
+    // Polarized curved glass reflection streak across upper-left window quadrant
+    val glassGlintRect = RectF(cx - rInner * 0.76f, cy - rInner * 0.76f, cx + rInner * 0.76f, cy + rInner * 0.76f)
+    c.drawArc(
+      glassGlintRect,
+      198f,
+      54f,
+      false,
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeWidth = 1.65f * u
+        color = Color.argb(148, 248, 250, 252)
+      },
+    )
+
+    // Glowing inner containment bezel
     c.drawPath(
       innerHex,
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         pathEffect = cornerEffectInner
-        strokeWidth = 1.85f * borderMult
+        strokeWidth = 1.95f * u * borderMult
         color = glowCol
       },
     )
+
+    // 4. Six 3D Metallic Corner Clamps + Edge Energy Conduits
+    val clampFillPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader =
+          LinearGradient(
+            cx - rOuter,
+            cy - rOuter,
+            cx + rOuter,
+            cy + rOuter,
+            intArrayOf(Color.parseColor("#E2E8F0"), Color.parseColor("#475569"), Color.parseColor("#0F172A")),
+            floatArrayOf(0f, 0.48f, 1f),
+            Shader.TileMode.CLAMP,
+          )
+      }
+    val clampStrokePaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.25f * u
+        color = Color.parseColor("#030712")
+      }
+    val clampRect = RectF()
+    for (i in 0 until 6) {
+      val vertDeg = i * 60f - 30f
+      c.save()
+      c.translate(cx, cy)
+      c.rotate(vertDeg)
+      clampRect.set(rInner * 0.90f, -4.4f * u, rOuter * 0.97f, 4.4f * u)
+      c.drawRoundRect(clampRect, 2.2f * u, 2.2f * u, clampFillPaint)
+      c.drawRoundRect(clampRect, 2.2f * u, 2.2f * u, clampStrokePaint)
+      c.restore()
+    }
 
     val arcRect = RectF(cx - rOuter * 0.89f, cy - rOuter * 0.89f, cx + rOuter * 0.89f, cy + rOuter * 0.89f)
     val accentArcPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
-        strokeWidth = 2.0f * borderMult
-        color = Color.argb(190, Color.red(trimCol), Color.green(trimCol), Color.blue(trimCol))
+        strokeWidth = 2.1f * u * borderMult
+        color = Color.argb(205, Color.red(trimCol), Color.green(trimCol), Color.blue(trimCol))
       }
     val nodePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
@@ -1261,9 +1377,9 @@ object RiftSpriteBaker {
       val nx = cx + cos(midEdgeA) * (rOuter * 0.89f)
       val ny = cy + sin(midEdgeA) * (rOuter * 0.89f)
       nodePaint.color = glowCol
-      c.drawCircle(nx, ny, 2.0f, nodePaint)
-      nodePaint.color = Color.parseColor("#E0F2FE")
-      c.drawCircle(nx, ny, 0.95f, nodePaint)
+      c.drawCircle(nx, ny, 2.15f * u, nodePaint)
+      nodePaint.color = Color.parseColor("#F8FAFC")
+      c.drawCircle(nx, ny, 1.0f * u, nodePaint)
     }
 
     return bmp
@@ -1320,31 +1436,36 @@ object RiftSpriteBaker {
       )
     }
 
-    // 5-Stop Brushed Titanium / Gunmetal Station Armor Palette (tinted live if customized in STAR FORGE)
-    val metalStop0 = if (useCustom) mixRgb(Color.parseColor("#CBD5E1"), trimCol, 0.38f) else Color.parseColor("#CBD5E1")
-    val metalStop1 = if (useCustom) mixRgb(Color.parseColor("#64748B"), trimCol, 0.34f) else Color.parseColor("#64748B")
-    val metalStop2 = if (useCustom) mixRgb(Color.parseColor("#334155"), primaryCol, 0.48f) else Color.parseColor("#334155")
-    val metalStop3 = if (useCustom) mixRgb(Color.parseColor("#1E293B"), primaryCol, 0.62f) else Color.parseColor("#1E293B")
-    val metalStop4 = if (useCustom) mixRgb(Color.parseColor("#09101D"), primaryCol, 0.72f) else Color.parseColor("#09101D")
+    // 5-Stop Brushed Titanium / Gunmetal Station Armor Palette (key-lit L=(-0.58,-0.62,0.53))
+    val metalStop0 = if (useCustom) mixRgb(Color.parseColor("#E2E8F0"), trimCol, 0.34f) else Color.parseColor("#E2E8F0")
+    val metalStop1 = if (useCustom) mixRgb(Color.parseColor("#64748B"), trimCol, 0.32f) else Color.parseColor("#64748B")
+    val metalStop2 = if (useCustom) mixRgb(Color.parseColor("#334155"), primaryCol, 0.46f) else Color.parseColor("#334155")
+    val metalStop3 = if (useCustom) mixRgb(Color.parseColor("#162032"), primaryCol, 0.62f) else Color.parseColor("#162032")
+    val metalStop4 = if (useCustom) mixRgb(Color.parseColor("#050A14"), primaryCol, 0.74f) else Color.parseColor("#050A14")
 
-    // 5-Stop Sunlit Deep-Space Basalt Rock Palette
-    val rockStop0 = if (useCustom) mixRgb(Color.parseColor("#64748B"), trimCol, 0.32f) else Color.parseColor("#64748B")
-    val rockStop1 = if (useCustom) mixRgb(Color.parseColor("#475569"), trimCol, 0.25f) else Color.parseColor("#475569")
-    val rockStop2 = if (useCustom) mixRgb(Color.parseColor("#273549"), primaryCol, 0.45f) else Color.parseColor("#273549")
-    val rockStop3 = if (useCustom) mixRgb(Color.parseColor("#152033"), primaryCol, 0.60f) else Color.parseColor("#152033")
-    val rockStop4 = if (useCustom) mixRgb(Color.parseColor("#080E1A"), primaryCol, 0.75f) else Color.parseColor("#080E1A")
+    // 5-Stop Directional Normal-Lit Deep-Space Basalt Rock Palette
+    val rockStop0 = if (useCustom) mixRgb(Color.parseColor("#788A9F"), trimCol, 0.30f) else Color.parseColor("#788A9F")
+    val rockStop1 = if (useCustom) mixRgb(Color.parseColor("#475569"), trimCol, 0.24f) else Color.parseColor("#475569")
+    val rockStop2 = if (useCustom) mixRgb(Color.parseColor("#243247"), primaryCol, 0.44f) else Color.parseColor("#243247")
+    val rockStop3 = if (useCustom) mixRgb(Color.parseColor("#111B2E"), primaryCol, 0.60f) else Color.parseColor("#111B2E")
+    val rockStop4 = if (useCustom) mixRgb(Color.parseColor("#040812"), primaryCol, 0.76f) else Color.parseColor("#040812")
 
+    val aoShadowPaint =
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(175, 2, 5, 14)
+      }
     val metalArmorFill =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         shader =
           LinearGradient(
-            cx - r * 0.92f,
-            cy - r * 0.92f,
-            cx + r * 0.92f,
-            cy + r * 0.92f,
+            cx - r * 0.90f,
+            cy - r * 0.98f,
+            cx + r * 0.90f,
+            cy + r * 0.98f,
             intArrayOf(metalStop0, metalStop1, metalStop2, metalStop3, metalStop4),
-            floatArrayOf(0f, 0.22f, 0.50f, 0.78f, 1f),
+            floatArrayOf(0f, 0.20f, 0.48f, 0.78f, 1f),
             Shader.TileMode.CLAMP,
           )
       }
@@ -1353,12 +1474,12 @@ object RiftSpriteBaker {
         style = Paint.Style.FILL
         shader =
           LinearGradient(
-            cx - r * 0.95f,
-            cy - r * 0.95f,
-            cx + r * 0.95f,
-            cy + r * 0.95f,
+            cx - r * 0.92f,
+            cy - r * 1.02f,
+            cx + r * 0.92f,
+            cy + r * 1.02f,
             intArrayOf(rockStop0, rockStop1, rockStop2, rockStop3, rockStop4),
-            floatArrayOf(0f, 0.20f, 0.48f, 0.76f, 1f),
+            floatArrayOf(0f, 0.19f, 0.46f, 0.76f, 1f),
             Shader.TileMode.CLAMP,
           )
       }
@@ -1375,26 +1496,26 @@ object RiftSpriteBaker {
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
-        strokeWidth = 1.6f * borderMult
-        color = Color.argb(190, 9, 16, 29)
+        strokeWidth = 1.55f * borderMult
+        color = Color.argb(205, 6, 11, 22)
       }
     val specHighlightStroke =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
-        strokeWidth = (1.7f * rimDepth).coerceIn(1.0f, 3.0f)
-        color = Color.argb((195 * rimDepth.coerceIn(0.3f, 1.15f)).roundToInt().coerceIn(60, 235), 226, 232, 240)
+        strokeWidth = (1.85f * rimDepth).coerceIn(1.1f, 3.2f)
+        color = Color.argb((220 * rimDepth.coerceIn(0.35f, 1.15f)).roundToInt().coerceIn(75, 248), 248, 250, 252)
       }
     val conduitGlow =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 5.0f * borderMult
+        strokeWidth = 5.6f * borderMult
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
         color =
           Color.argb(
-            (110 * glowMult).roundToInt().coerceIn(0, 240),
+            (122 * glowMult).roundToInt().coerceIn(0, 245),
             Color.red(glowCol),
             Color.green(glowCol),
             Color.blue(glowCol),
@@ -1403,7 +1524,7 @@ object RiftSpriteBaker {
     val conduitCore =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2.1f * borderMult
+        strokeWidth = 2.25f * borderMult
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
         color = glowCol
@@ -1411,10 +1532,10 @@ object RiftSpriteBaker {
     val hotSpineStroke =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.1f * borderMult
+        strokeWidth = 1.2f * borderMult
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-        color = Color.parseColor("#F0FDFA")
+        color = Color.parseColor("#F8FAFC")
       }
 
     fun drawRecessedCrater(crX: Float, crY: Float, crR: Float) {
@@ -1423,44 +1544,45 @@ object RiftSpriteBaker {
           style = Paint.Style.FILL
           shader =
             RadialGradient(
-              crX - crR * 0.24f,
-              crY - crR * 0.24f,
-              crR * 1.15f,
+              crX - crR * 0.28f,
+              crY - crR * 0.30f,
+              crR * 1.22f,
               intArrayOf(
-                Color.parseColor("#040812"),
+                Color.parseColor("#02050D"),
+                Color.parseColor("#060D1A"),
                 rockStop4,
                 rockStop2,
               ),
-              floatArrayOf(0f, 0.65f, 1f),
+              floatArrayOf(0f, 0.38f, 0.72f, 1f),
               Shader.TileMode.CLAMP,
             )
         }
       c.drawCircle(crX, crY, crR, pitPaint)
       val craterRect = RectF(crX - crR, crY - crR, crX + crR, crY + crR)
-      // Shadowed upper-left crater lip
+      // Deep AO upper-left crater overhang shadow
       c.drawArc(
         craterRect,
-        140f,
-        165f,
+        138f,
+        170f,
         false,
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
           style = Paint.Style.STROKE
-          strokeWidth = (crR * 0.19f).coerceAtLeast(1.3f)
+          strokeWidth = (crR * 0.22f).coerceAtLeast(1.4f)
           strokeCap = Paint.Cap.ROUND
-          color = Color.argb(215, 3, 7, 18)
+          color = Color.argb(235, 2, 6, 16)
         },
       )
-      // Sunlit lower-right crater rim
+      // Crisp key-lit lower-right crater rim catchlight
       c.drawArc(
         craterRect,
-        -40f,
-        155f,
+        -38f,
+        152f,
         false,
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
           style = Paint.Style.STROKE
-          strokeWidth = (crR * 0.16f).coerceAtLeast(1.2f)
+          strokeWidth = (crR * 0.17f).coerceAtLeast(1.25f)
           strokeCap = Paint.Cap.ROUND
-          color = mixRgb(rockStop0, Color.parseColor("#CBD5E1"), 0.35f)
+          color = mixRgb(rockStop0, Color.parseColor("#E2E8F0"), 0.42f)
         },
       )
     }
@@ -1479,9 +1601,9 @@ object RiftSpriteBaker {
             shader =
               LinearGradient(
                 -r * 0.9f,
-                -r * 0.9f,
+                -r * 0.95f,
                 r * 0.9f,
-                r * 0.9f,
+                r * 0.95f,
                 intArrayOf(metalStop0, metalStop1, metalStop2, metalStop3, metalStop4),
                 floatArrayOf(0f, 0.22f, 0.50f, 0.78f, 1f),
                 Shader.TileMode.CLAMP,
@@ -1493,56 +1615,62 @@ object RiftSpriteBaker {
         val finFill =
           Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
-            color = mixRgb(metalStop3, trimCol, 0.30f)
+            color = mixRgb(metalStop3, trimCol, 0.32f)
           }
         val finGridStroke =
           Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = 1.2f
-            color = Color.argb(155, Color.red(trimCol), Color.green(trimCol), Color.blue(trimCol))
+            strokeWidth = 1.25f
+            color = Color.argb(165, Color.red(trimCol), Color.green(trimCol), Color.blue(trimCol))
           }
         for (f in 0 until 4) {
           val fa = f * (PI.toFloat() * 0.5f) + finOffsetRad
           c.save()
           c.rotate(fa * (180f / PI.toFloat()))
-          val finRect = RectF(r * 0.79f, -r * 0.085f, r * 0.98f, r * 0.085f)
+          val finRect = RectF(r * 0.79f, -r * 0.088f, r * 0.985f, r * 0.088f)
           c.drawRoundRect(finRect, 4f, 4f, finFill)
           c.drawRoundRect(finRect, 4f, 4f, darkOutline)
-          c.drawLine(r * 0.82f, 0f, r * 0.95f, 0f, finGridStroke)
-          c.drawLine(r * 0.885f, -r * 0.07f, r * 0.885f, r * 0.07f, finGridStroke)
+          c.drawLine(r * 0.82f, 0f, r * 0.955f, 0f, finGridStroke)
+          c.drawLine(r * 0.885f, -r * 0.072f, r * 0.885f, r * 0.072f, finGridStroke)
           c.restore()
         }
 
-        // 2. 4 or 6 Armored Radial Docking Spokes + Docking Clamps
+        // 2. 4 or 6 Armored Radial Docking Spokes + Docking Clamps with AO shadow
         for (s in 0 until spokeCount) {
           val sa = s * (360f / spokeCount)
           c.save()
           c.rotate(sa)
-          val spokeRect = RectF(r * 0.24f, -r * 0.075f, r * 0.86f, r * 0.075f)
+          val spokeRect = RectF(r * 0.24f, -r * 0.078f, r * 0.86f, r * 0.078f)
+          c.drawRoundRect(RectF(spokeRect.left + 2f, spokeRect.top + 2.5f, spokeRect.right + 2f, spokeRect.bottom + 2.5f), 4f, 4f, aoShadowPaint)
           c.drawRoundRect(spokeRect, 4f, 4f, localMetalFill)
           c.drawRoundRect(spokeRect, 4f, 4f, darkOutline)
-          c.drawLine(r * 0.30f, -r * 0.045f, r * 0.80f, -r * 0.045f, specHighlightStroke)
+          c.drawLine(r * 0.30f, -r * 0.048f, r * 0.80f, -r * 0.048f, specHighlightStroke)
           c.drawLine(r * 0.32f, 0f, r * 0.78f, 0f, conduitCore)
           // Outer docking collar pod
-          val podRect = RectF(r * 0.83f, -r * 0.105f, r * 0.94f, r * 0.105f)
+          val podRect = RectF(r * 0.83f, -r * 0.108f, r * 0.945f, r * 0.108f)
           c.drawRoundRect(podRect, 4f, 4f, localMetalFill)
           c.drawRoundRect(podRect, 4f, 4f, darkOutline)
           c.restore()
         }
 
-        // 3. Outer Docking Torus (0.84r) + Inner Command Ring (0.48r) with 5-stop Metallic Shading
+        // 3. Outer Docking Torus (0.86r) with AO drop shadow + 5-stop Metallic Shading + Illuminated Window Arrays
         val outerRingPath =
           Path().apply {
             fillType = Path.FillType.EVEN_ODD
             addCircle(0f, 0f, r * 0.86f, Path.Direction.CW)
             addCircle(0f, 0f, r * 0.67f, Path.Direction.CW)
           }
+        c.save()
+        c.translate(2.4f, 2.8f)
+        c.drawPath(outerRingPath, aoShadowPaint)
+        c.restore()
         c.drawPath(outerRingPath, localMetalFill)
         c.drawCircle(0f, 0f, r * 0.86f, darkOutline)
         c.drawCircle(0f, 0f, r * 0.67f, darkOutline)
+        c.drawCircle(0f, 0f, r * 0.765f, seamStroke)
         // Upper-left specular rim on outer torus
-        val torusSpecRect = RectF(-r * 0.84f, -r * 0.84f, r * 0.84f, r * 0.84f)
-        c.drawArc(torusSpecRect, 155f, 145f, false, specHighlightStroke)
+        val torusSpecRect = RectF(-r * 0.845f, -r * 0.845f, r * 0.845f, r * 0.845f)
+        c.drawArc(torusSpecRect, 152f, 150f, false, specHighlightStroke)
         // Recessed mechanical panel seams around outer torus
         for (seg in 0 until 12) {
           val a = seg * (PI.toFloat() / 6f)
@@ -1555,37 +1683,46 @@ object RiftSpriteBaker {
           )
         }
 
-        // 12 Lit Cyan / Sovereign-Gold Habitat Micro-Windows around the 0.765r Promenade Deck
+        // 16 Lit Cyan / Sovereign-Gold Habitat Micro-Windows around the Promenade Deck
         val winPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        for (wIdx in 0 until 12) {
-          val wa = (wIdx + 0.5f) * (PI.toFloat() / 6f)
+        for (wIdx in 0 until 16) {
+          val wa = (wIdx + 0.5f) * (PI.toFloat() / 8f)
           val wx = cos(wa) * (r * 0.765f)
           val wy = sin(wa) * (r * 0.765f)
-          winPaint.color = if ((wIdx + v) % 3 == 0) Color.parseColor("#FACC15") else glowCol
-          c.drawCircle(wx, wy, r * 0.026f, winPaint)
+          val winCol = if ((wIdx + v) % 3 == 0) Color.parseColor("#FACC15") else glowCol
+          winPaint.color = Color.argb(95, Color.red(winCol), Color.green(winCol), Color.blue(winCol))
+          c.drawCircle(wx, wy, r * 0.038f, winPaint)
+          winPaint.color = winCol
+          c.drawCircle(wx, wy, r * 0.023f, winPaint)
           winPaint.color = Color.WHITE
-          c.drawCircle(wx, wy, r * 0.011f, winPaint)
+          c.drawCircle(wx, wy, r * 0.010f, winPaint)
         }
 
-        // Inner Command Ring (0.48r)
+        // Inner Command Ring (0.51r)
         val innerRingPath =
           Path().apply {
             fillType = Path.FillType.EVEN_ODD
             addCircle(0f, 0f, r * 0.51f, Path.Direction.CW)
             addCircle(0f, 0f, r * 0.37f, Path.Direction.CW)
           }
+        c.save()
+        c.translate(1.8f, 2.2f)
+        c.drawPath(innerRingPath, aoShadowPaint)
+        c.restore()
         c.drawPath(innerRingPath, localMetalFill)
         c.drawCircle(0f, 0f, r * 0.51f, darkOutline)
         c.drawCircle(0f, 0f, r * 0.37f, darkOutline)
+        c.drawArc(RectF(-r * 0.495f, -r * 0.495f, r * 0.495f, r * 0.495f), 155f, 140f, false, specHighlightStroke)
         c.drawCircle(
           0f,
           0f,
           r * 0.44f,
-          Paint(conduitCore).apply { strokeWidth = 1.6f * borderMult },
+          Paint(conduitCore).apply { strokeWidth = 1.65f * borderMult },
         )
 
         // 4. Central 5-Stop Armored Command Dome + Glowing Reactor Core
         val domeR = r * 0.28f
+        c.drawCircle(1.8f, 2.0f, domeR, aoShadowPaint)
         c.drawCircle(0f, 0f, domeR, localMetalFill)
         c.drawCircle(0f, 0f, domeR, darkOutline)
         val coreDomeGlow =
@@ -1593,9 +1730,9 @@ object RiftSpriteBaker {
             style = Paint.Style.FILL
             shader =
               RadialGradient(
-                -domeR * 0.22f,
-                -domeR * 0.22f,
-                domeR * 0.95f,
+                -domeR * 0.24f,
+                -domeR * 0.24f,
+                domeR * 0.96f,
                 intArrayOf(
                   Color.WHITE,
                   Color.parseColor("#E0F2FE"),
@@ -1632,20 +1769,44 @@ object RiftSpriteBaker {
           if (i == 0) rockPath.moveTo(rockPtsX[i], rockPtsY[i]) else rockPath.lineTo(rockPtsX[i], rockPtsY[i])
         }
         rockPath.close()
+        c.save()
+        c.translate(2.5f, 3.0f)
+        c.drawPath(rockPath, aoShadowPaint)
+        c.restore()
         c.drawPath(rockPath, basaltFill)
 
-        // Internal basalt facet ridge lines + upper-left sunlit ridge bevel
+        // Sculpted normal-lit basalt facet planes + upper-left sunlit ridge bevel
+        val facetPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         val ridgePath = Path()
         for (i in 0 until vCount) {
           val px = rockPtsX[i]
           val py = rockPtsY[i]
           val nx = rockPtsX[(i + 1) % vCount]
           val ny = rockPtsY[(i + 1) % vCount]
+          val midX = (px + nx) * 0.5f - cx
+          val midY = (py + ny) * 0.5f - cy
+          val len = kotlin.math.hypot(midX, midY).coerceAtLeast(1f)
+          val ndotl = ((-midX / len) * 0.58f + (-midY / len) * 0.62f + 0.28f).coerceIn(-0.6f, 1f)
+          val facetTri =
+            Path().apply {
+              moveTo(cx, cy)
+              lineTo(px, py)
+              lineTo(nx, ny)
+              close()
+            }
+          facetPaint.color =
+            if (ndotl >= 0.15f) {
+              Color.argb((ndotl * 52f).roundToInt().coerceIn(8, 56), 226, 232, 240)
+            } else {
+              Color.argb(((-ndotl + 0.25f) * 68f).roundToInt().coerceIn(10, 74), 2, 6, 18)
+            }
+          c.drawPath(facetTri, facetPaint)
+
           if ((px + nx) * 0.5f <= cx + r * 0.18f && (py + ny) * 0.5f <= cy + r * 0.18f) {
             ridgePath.moveTo(px, py)
             ridgePath.lineTo(nx, ny)
           }
-          if (i % 3 == 0) {
+          if (i % 2 == 0) {
             c.drawLine(px, py, cx + (px - cx) * 0.42f, cy + (py - cy) * 0.42f, seamStroke)
           }
         }
@@ -1657,12 +1818,13 @@ object RiftSpriteBaker {
         drawRecessedCrater(cx - r * 0.38f, cy + r * 0.42f, r * 0.18f)
         drawRecessedCrater(cx + r * 0.34f, cy + r * 0.48f, r * 0.13f)
 
-        // Recessed Brushed-Titanium Hangar Bay Trench + Landing Beacons + Geodesic Sensor Dome
+        // Recessed Brushed-Titanium Hangar Bay Trench + Lit Command Windows + Geodesic Sensor Dome
         c.save()
         c.translate(cx, cy)
         c.rotate(v * 18f - 12f)
 
         val deckCollarRect = RectF(-r * 0.16f, -r * 0.38f, r * 0.68f, r * 0.34f)
+        c.drawRoundRect(RectF(deckCollarRect.left + 2.5f, deckCollarRect.top + 3f, deckCollarRect.right + 2.5f, deckCollarRect.bottom + 3f), 9f, 9f, aoShadowPaint)
         c.drawRoundRect(deckCollarRect, 9f, 9f, metalArmorFill)
         c.drawRoundRect(deckCollarRect, 9f, 9f, darkOutline)
         c.drawLine(deckCollarRect.left + 6f, deckCollarRect.top + 3f, deckCollarRect.right - 6f, deckCollarRect.top + 3f, specHighlightStroke)
@@ -1674,7 +1836,7 @@ object RiftSpriteBaker {
           6f,
           Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
-            color = Color.parseColor("#040914")
+            color = Color.parseColor("#030712")
           },
         )
         c.drawRoundRect(
@@ -1683,7 +1845,7 @@ object RiftSpriteBaker {
           6f,
           Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = 1.6f * borderMult
+            strokeWidth = 1.65f * borderMult
             color = trimCol
           },
         )
@@ -1694,41 +1856,46 @@ object RiftSpriteBaker {
           4f,
           Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
-            color = Color.argb(46, Color.red(glowCol), Color.green(glowCol), Color.blue(glowCol))
+            color = Color.argb(52, Color.red(glowCol), Color.green(glowCol), Color.blue(glowCol))
           },
         )
         val beaconDot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         for (b in 0 until 5) {
           val bx = trenchRect.left + 10f + b * ((trenchRect.width() - 20f) / 4f)
           beaconDot.color = glowCol
-          c.drawCircle(bx, trenchRect.top + 6.5f, 2.3f, beaconDot)
-          c.drawCircle(bx, trenchRect.bottom - 6.5f, 2.3f, beaconDot)
+          c.drawCircle(bx, trenchRect.top + 6.5f, 2.4f, beaconDot)
+          c.drawCircle(bx, trenchRect.bottom - 6.5f, 2.4f, beaconDot)
           beaconDot.color = Color.WHITE
-          c.drawCircle(bx, (trenchRect.top + trenchRect.bottom) * 0.5f, 1.3f, beaconDot)
+          c.drawCircle(bx, (trenchRect.top + trenchRect.bottom) * 0.5f, 1.35f, beaconDot)
+          // Lit deck observation windows above & below hangar collar
+          beaconDot.color = if (b % 2 == 0) Color.parseColor("#FACC15") else glowCol
+          c.drawRect(bx - 2.2f, deckCollarRect.top + 6.5f, bx + 2.2f, deckCollarRect.top + 9.2f, beaconDot)
+          c.drawRect(bx - 2.2f, deckCollarRect.bottom - 9.2f, bx + 2.2f, deckCollarRect.bottom - 6.5f, beaconDot)
         }
 
         // Armored Geodesic Command Sensor Dome + Comm Mast on West Ridge
         val domeCx = -r * 0.36f
         val domeCy = -r * 0.04f
         val domeR = r * 0.24f
-        // Comm antenna mast
         c.drawLine(domeCx - domeR * 0.5f, domeCy - domeR * 0.7f, domeCx - domeR * 1.35f, domeCy - domeR * 1.45f, Paint(specHighlightStroke).apply { strokeWidth = 2.2f })
         beaconDot.color = Color.parseColor("#FACC15")
-        c.drawCircle(domeCx - domeR * 1.35f, domeCy - domeR * 1.45f, 3.2f, beaconDot)
+        c.drawCircle(domeCx - domeR * 1.35f, domeCy - domeR * 1.45f, 3.3f, beaconDot)
 
+        c.drawCircle(domeCx + 2f, domeCy + 2.2f, domeR, aoShadowPaint)
         c.drawCircle(domeCx, domeCy, domeR, metalArmorFill)
         c.drawCircle(domeCx, domeCy, domeR, darkOutline)
+        c.drawArc(RectF(domeCx - domeR * 0.9f, domeCy - domeR * 0.9f, domeCx + domeR * 0.9f, domeCy + domeR * 0.9f), 160f, 130f, false, specHighlightStroke)
         c.drawLine(domeCx - domeR * 0.78f, domeCy, domeCx + domeR * 0.78f, domeCy, seamStroke)
         c.drawLine(domeCx, domeCy - domeR * 0.78f, domeCx, domeCy + domeR * 0.78f, seamStroke)
         beaconDot.color = glowCol
         c.drawCircle(domeCx, domeCy, domeR * 0.36f, beaconDot)
-        beaconDot.color = Color.parseColor("#E0F2FE")
+        beaconDot.color = Color.parseColor("#F8FAFC")
         c.drawCircle(domeCx - domeR * 0.08f, domeCy - domeR * 0.08f, domeR * 0.16f, beaconDot)
         c.restore()
       }
 
       SpaceObstacleType.CRYSTAL_ASTEROID -> {
-        // Organic Multi-Faceted Craggy Basalt Boulder (4 distinct silhouettes) + Recessed 3D Craters + Glowing Rift Veins
+        // Organic Multi-Faceted Normal-Lit Basalt Boulder + Deep AO Craters + Internal-Glowing Crystalline Rift Veins
         val profiles =
           arrayOf(
             floatArrayOf(0.97f, 0.84f, 0.91f, 0.74f, 0.95f, 0.82f, 0.89f, 0.76f, 0.96f, 0.81f, 0.90f),
@@ -1763,7 +1930,36 @@ object RiftSpriteBaker {
         outerRock.close()
         innerPlateau.close()
 
+        c.save()
+        c.translate(2.5f, 3.0f)
+        c.drawPath(outerRock, aoShadowPaint)
+        c.restore()
         c.drawPath(outerRock, basaltFill)
+
+        // Per-facet directional key-light normal shading across basalt skirt quads
+        val facetShadePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        for (i in 0 until n) {
+          val j = (i + 1) % n
+          val mx = (vx[i] + vx[j] + ix[i] + ix[j]) * 0.25f - cx
+          val my = (vy[i] + vy[j] + iy[i] + iy[j]) * 0.25f - cy
+          val mLen = kotlin.math.hypot(mx, my).coerceAtLeast(1f)
+          val ndotl = ((-mx / mLen) * 0.58f + (-my / mLen) * 0.62f + 0.24f).coerceIn(-0.65f, 1f)
+          val quad =
+            Path().apply {
+              moveTo(vx[i], vy[i])
+              lineTo(vx[j], vy[j])
+              lineTo(ix[j], iy[j])
+              lineTo(ix[i], iy[i])
+              close()
+            }
+          facetShadePaint.color =
+            if (ndotl >= 0.12f) {
+              Color.argb((ndotl * 62f).roundToInt().coerceIn(8, 66), 226, 232, 240)
+            } else {
+              Color.argb(((-ndotl + 0.22f) * 78f).roundToInt().coerceIn(12, 84), 2, 5, 15)
+            }
+          c.drawPath(quad, facetShadePaint)
+        }
 
         // Elevated sunlit upper-left plateau + faceted ridge lines
         c.drawPath(
@@ -1773,15 +1969,15 @@ object RiftSpriteBaker {
             shader =
               LinearGradient(
                 cx - r * 0.65f,
-                cy - r * 0.65f,
+                cy - r * 0.68f,
                 cx + r * 0.65f,
-                cy + r * 0.65f,
+                cy + r * 0.68f,
                 intArrayOf(
-                  mixRgb(rockStop0, Color.parseColor("#94A3B8"), 0.32f),
+                  mixRgb(rockStop0, Color.parseColor("#CBD5E1"), 0.36f),
                   rockStop1,
                   rockStop3,
                 ),
-                floatArrayOf(0f, 0.48f, 1f),
+                floatArrayOf(0f, 0.46f, 1f),
                 Shader.TileMode.CLAMP,
               )
           },
@@ -1809,13 +2005,34 @@ object RiftSpriteBaker {
           drawRecessedCrater(cx + cos(crOff + 5.3f) * r * 0.36f, cy + sin(crOff + 5.3f) * r * 0.36f, r * 0.10f)
         }
 
-        // Branching Internal Glowing Cyan / Violet Rift Crystal Fissure Veins + Embedded Crystal Cluster
+        // Subsurface Internal-Glowing Crystalline Rift Halo + Branching Fissure Veins
+        c.drawCircle(
+          cx,
+          cy,
+          r * 0.52f,
+          Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            shader =
+              RadialGradient(
+                cx,
+                cy,
+                r * 0.52f,
+                intArrayOf(
+                  Color.argb((84 * glowMult).roundToInt().coerceIn(0, 185), Color.red(glowCol), Color.green(glowCol), Color.blue(glowCol)),
+                  Color.argb((28 * glowMult).roundToInt().coerceIn(0, 95), 168, 85, 247),
+                  Color.argb(0, 0, 0, 0),
+                ),
+                floatArrayOf(0f, 0.55f, 1f),
+                Shader.TileMode.CLAMP,
+              )
+          },
+        )
         val veinPath = Path()
         val branchCount = 3 + (v % 2)
         for (b in 0 until branchCount) {
           val ba = crOff + b * (PI.toFloat() * 2f / branchCount)
-          val midR = r * 0.34f
-          val tipR = r * 0.64f
+          val midR = r * 0.35f
+          val tipR = r * 0.66f
           val mx = cx + cos(ba + 0.22f) * midR
           val my = cy + sin(ba + 0.22f) * midR
           val tx = cx + cos(ba - 0.14f) * tipR
@@ -1823,9 +2040,8 @@ object RiftSpriteBaker {
           veinPath.moveTo(cx, cy)
           veinPath.lineTo(mx, my)
           veinPath.lineTo(tx, ty)
-          // Sub-branch fork
-          val fx = mx + cos(ba + 0.72f) * (r * 0.24f)
-          val fy = my + sin(ba + 0.72f) * (r * 0.24f)
+          val fx = mx + cos(ba + 0.72f) * (r * 0.25f)
+          val fy = my + sin(ba + 0.72f) * (r * 0.25f)
           veinPath.moveTo(mx, my)
           veinPath.lineTo(fx, fy)
         }
@@ -1835,10 +2051,11 @@ object RiftSpriteBaker {
 
         // Protruding Faceted Rift Crystal Cluster at Core
         val shardFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        for (s in 0 until 3) {
-          val sa = crOff + s * 2.09f
-          val tipX = cx + cos(sa) * (r * 0.24f)
-          val tipY = cy + sin(sa) * (r * 0.24f)
+        for (s in 0 until 4) {
+          val sa = crOff + s * 1.57f
+          val tipLen = if (s % 2 == 0) r * 0.26f else r * 0.20f
+          val tipX = cx + cos(sa) * tipLen
+          val tipY = cy + sin(sa) * tipLen
           val pA = sa + 1.45f
           val pB = sa - 1.45f
           val shard =
@@ -1849,14 +2066,14 @@ object RiftSpriteBaker {
               lineTo(cx + cos(pB) * (r * 0.09f), cy + sin(pB) * (r * 0.09f))
               close()
             }
-          shardFill.color = if (s == 0) glowCol else mixRgb(glowCol, Color.parseColor("#A855F7"), 0.42f)
+          shardFill.color = if (s % 2 == 0) glowCol else mixRgb(glowCol, Color.parseColor("#A855F7"), 0.45f)
           c.drawPath(shard, shardFill)
           c.drawPath(shard, hotSpineStroke)
         }
       }
 
       SpaceObstacleType.FLOATING_DEBRIS -> {
-        // 4 Distinct Sheared Starship Hull & Broken Reactor-Pylon Wreckage Silhouettes (Zero rounded pills!)
+        // 4 Distinct Sheared Starship Hull & Broken Reactor-Pylon Wreckage Silhouettes
         c.save()
         c.translate(cx, cy)
         c.rotate(v * 34f - 22f + styleIdx * 14f)
@@ -1867,9 +2084,9 @@ object RiftSpriteBaker {
             shader =
               LinearGradient(
                 -r * 0.85f,
-                -r * 0.75f,
+                -r * 0.78f,
                 r * 0.85f,
-                r * 0.75f,
+                r * 0.78f,
                 intArrayOf(metalStop0, metalStop1, metalStop2, metalStop3, metalStop4),
                 floatArrayOf(0f, 0.22f, 0.50f, 0.78f, 1f),
                 Shader.TileMode.CLAMP,
@@ -1885,10 +2102,9 @@ object RiftSpriteBaker {
         val scorchPaint =
           Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
-            color = Color.argb(175, 8, 12, 22)
+            color = Color.argb(185, 6, 10, 20)
           }
 
-        // Exposed structural titanium ribs protruding from sheared tear edge
         for (ribIdx in -2..2) {
           val ry = ribIdx * (r * 0.14f)
           c.drawLine(r * 0.28f, ry, r * 0.82f - kotlin.math.abs(ribIdx) * r * 0.08f, ry + ribIdx * 3f, ribPaint)
@@ -1896,7 +2112,7 @@ object RiftSpriteBaker {
 
         val hullWreck = Path()
         when (v) {
-          0 -> { // Sheared Starfighter Wing Spar & Torn Nacelle
+          0 -> {
             hullWreck.moveTo(-r * 0.84f, -r * 0.14f)
             hullWreck.lineTo(-r * 0.28f, -r * 0.58f)
             hullWreck.lineTo(r * 0.46f, -r * 0.42f)
@@ -1907,7 +2123,7 @@ object RiftSpriteBaker {
             hullWreck.lineTo(-r * 0.42f, r * 0.48f)
             hullWreck.close()
           }
-          1 -> { // Fractured Orbital Ring Arc Segment
+          1 -> {
             hullWreck.moveTo(-r * 0.78f, -r * 0.44f)
             hullWreck.lineTo(-r * 0.12f, -r * 0.68f)
             hullWreck.lineTo(r * 0.66f, -r * 0.36f)
@@ -1918,7 +2134,7 @@ object RiftSpriteBaker {
             hullWreck.lineTo(-r * 0.84f, r * 0.22f)
             hullWreck.close()
           }
-          2 -> { // Armored Cruiser Bulkhead Wedge with Severed Pylon
+          2 -> {
             hullWreck.moveTo(-r * 0.88f, 0f)
             hullWreck.lineTo(-r * 0.18f, -r * 0.56f)
             hullWreck.lineTo(r * 0.52f, -r * 0.32f)
@@ -1927,7 +2143,7 @@ object RiftSpriteBaker {
             hullWreck.lineTo(-r * 0.14f, r * 0.58f)
             hullWreck.close()
           }
-          else -> { // Split Twin-Conduit Reactor Housing
+          else -> {
             hullWreck.moveTo(-r * 0.76f, -r * 0.48f)
             hullWreck.lineTo(r * 0.42f, -r * 0.52f)
             hullWreck.lineTo(r * 0.56f, -r * 0.18f)
@@ -1940,22 +2156,33 @@ object RiftSpriteBaker {
           }
         }
 
+        c.save()
+        c.translate(2.2f, 2.6f)
+        c.drawPath(hullWreck, aoShadowPaint)
+        c.restore()
         c.drawPath(hullWreck, localMetalFill)
         c.drawCircle(r * 0.34f, r * 0.04f, r * 0.22f, scorchPaint)
         c.drawPath(hullWreck, darkOutline)
         c.drawLine(-r * 0.68f, -r * 0.16f, r * 0.24f, -r * 0.34f, specHighlightStroke)
         c.drawLine(-r * 0.52f, r * 0.18f, r * 0.20f, r * 0.18f, seamStroke)
 
+        // Micro-rivets & surviving illuminated deck viewports along bulkhead
+        val sparkDot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        for (w in 0 until 3) {
+          val wx = -r * 0.42f + w * r * 0.20f
+          sparkDot.color = if (w == 1) Color.parseColor("#FACC15") else glowCol
+          c.drawRect(wx - 2.6f, -r * 0.26f, wx + 2.6f, -r * 0.21f, sparkDot)
+        }
+
         // Broken Glowing Cyan Conduit + Amber Spark Nodes at the Tear Edge
         c.drawLine(-r * 0.50f, -r * 0.04f, r * 0.28f, -r * 0.04f, conduitGlow)
         c.drawLine(-r * 0.50f, -r * 0.04f, r * 0.28f, -r * 0.04f, conduitCore)
-        val sparkDot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         sparkDot.color = glowCol
-        c.drawCircle(-r * 0.48f, -r * 0.04f, 3.4f, sparkDot)
+        c.drawCircle(-r * 0.48f, -r * 0.04f, 3.5f, sparkDot)
         sparkDot.color = Color.parseColor("#F59E0B")
-        c.drawCircle(r * 0.32f, -r * 0.04f, 4.0f, sparkDot)
+        c.drawCircle(r * 0.32f, -r * 0.04f, 4.1f, sparkDot)
         sparkDot.color = Color.WHITE
-        c.drawCircle(r * 0.32f, -r * 0.04f, 1.9f, sparkDot)
+        c.drawCircle(r * 0.32f, -r * 0.04f, 2.0f, sparkDot)
         c.restore()
       }
 
@@ -1981,24 +2208,33 @@ object RiftSpriteBaker {
     synchronized(cacheLock) {
       if (recipe == lastCustomShip9Recipe) return
     }
-    val alliedBmp = bakeCustomShip9Bitmap(recipe, 128, isAllied = true)
-    val hostileBmp = bakeCustomShip9Bitmap(recipe, 128, isAllied = false)
+    val alliedBmp = bakeCustomShip9Bitmap(recipe, 256, isAllied = true, hullTrimStyle = 0)
+    val hostileBmp = bakeCustomShip9Bitmap(recipe, 256, isAllied = false, hullTrimStyle = 0)
     synchronized(cacheLock) {
       lastCustomShip9Recipe = recipe
       customShip9AlliedBitmap = alliedBmp
       customShip9HostileBitmap = hostileBmp
+      val iter = trimmedShipSpriteCache.keys.iterator()
+      while (iter.hasNext()) {
+        val k = iter.next()
+        if (((k ushr 8) and 0xFF) == 10) {
+          iter.remove()
+        }
+      }
       customShip9Version++
+      spriteVisualRevision++
     }
   }
 
   fun bakeCustomShip9Bitmap(
     recipe: CustomHullVisualRecipe,
-    sizePx: Int = 128,
+    sizePx: Int = 256,
     isAllied: Boolean = true,
+    hullTrimStyle: Int = 0,
   ): Bitmap {
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
-    drawCustomModularShipOnCanvas(c, sizePx / 2f, sizePx / 2f, sizePx * 0.39f, recipe, isAllied)
+    drawCustomModularShipOnCanvas(c, sizePx / 2f, sizePx / 2f, sizePx * 0.39f, recipe, isAllied, hullTrimStyle)
     return bmp
   }
 
@@ -2220,16 +2456,34 @@ object RiftSpriteBaker {
     @Suppress("UNUSED_PARAMETER") isHitFlashing: Boolean = false,
     trimStyleOverride: Int = if (isAllied) activeHullTrimStyle else 0,
   ): Bitmap {
+    val effectiveTrim = trimStyleOverride.coerceIn(0, 5)
     if (shipId == 10 || shipId > 9) {
-      return if (isAllied) customShip9AlliedBitmap else customShip9HostileBitmap
+      if (effectiveTrim == 0) {
+        return if (isAllied) customShip9AlliedBitmap else customShip9HostileBitmap
+      }
+      val recipeSnapshot: CustomHullVisualRecipe
+      val versionSalt: Int
+      synchronized(cacheLock) {
+        versionSalt = customShip9Version and 0xFFF
+        val cacheKey = (versionSalt shl 16) or (10 shl 8) or (effectiveTrim shl 1) or (if (isAllied) 1 else 0)
+        trimmedShipSpriteCache[cacheKey]?.let { return it }
+        recipeSnapshot = lastCustomShip9Recipe ?: RiftCodex.activeCustomShipSlot.visualRecipe
+      }
+      val baked = bakeCustomShip9Bitmap(recipeSnapshot, 256, isAllied, effectiveTrim)
+      val cacheKey = (versionSalt shl 16) or (10 shl 8) or (effectiveTrim shl 1) or (if (isAllied) 1 else 0)
+      synchronized(cacheLock) {
+        trimmedShipSpriteCache[cacheKey]?.let { return it }
+        trimmedShipSpriteCache[cacheKey] = baked
+        return baked
+      }
     }
-    val effectiveTrim = trimStyleOverride.coerceIn(0, 3)
+    val clampedShip = shipId.coerceIn(1, 9)
     if (effectiveTrim != 0) {
-      val cacheKey = (shipId shl 4) or (effectiveTrim shl 1) or (if (isAllied) 1 else 0)
+      val cacheKey = (clampedShip shl 8) or (effectiveTrim shl 1) or (if (isAllied) 1 else 0)
       synchronized(cacheLock) {
         trimmedShipSpriteCache[cacheKey]?.let { return it }
       }
-      val baked = bakeShipBitmap(RiftCodex.getShipById(shipId), 128, isAllied, effectiveTrim)
+      val baked = bakeShipBitmap(RiftCodex.getShipById(clampedShip), 256, isAllied, effectiveTrim)
       synchronized(cacheLock) {
         trimmedShipSpriteCache[cacheKey]?.let { return it }
         trimmedShipSpriteCache[cacheKey] = baked
@@ -2237,7 +2491,7 @@ object RiftSpriteBaker {
       }
     }
     val map = if (isAllied) alliedShipBitmaps else hostileShipBitmaps
-    return map[shipId] ?: map[1] ?: bakeShipBitmap(RiftCodex.getShipById(shipId), 128, isAllied)
+    return map[clampedShip] ?: map[1] ?: bakeShipBitmap(RiftCodex.getShipById(clampedShip), 256, isAllied)
   }
 
   fun invalidateCustomBuffIcon(buffType: Int) {
@@ -5337,6 +5591,7 @@ object RiftSpriteBaker {
     r: Float,
     recipe: CustomHullVisualRecipe,
     isAllied: Boolean = true,
+    hullTrimStyle: Int = activeHullTrimStyle,
   ) {
     c.save()
     c.translate(cx, cy)
@@ -5367,12 +5622,50 @@ object RiftSpriteBaker {
       )
 
     val trimColors =
-      intArrayOf(
-        scaleColor(trimInt, 1.30f),
-        trimInt,
-        scaleColor(trimInt, 0.62f),
-        scaleColor(trimInt, 1.15f),
-      )
+      when (hullTrimStyle) {
+        1 ->
+          intArrayOf(
+            Color.parseColor("#A5F3FC"),
+            Color.parseColor("#00F5D4"),
+            Color.parseColor("#0E7490"),
+            Color.parseColor("#38BDF8"),
+          )
+        2 ->
+          intArrayOf(
+            Color.parseColor("#FEF08A"),
+            Color.parseColor("#FACC15"),
+            Color.parseColor("#92400E"),
+            Color.parseColor("#F59E0B"),
+          )
+        3 ->
+          intArrayOf(
+            Color.parseColor("#F5D0FE"),
+            Color.parseColor("#D946EF"),
+            Color.parseColor("#581C87"),
+            Color.parseColor("#A855F7"),
+          )
+        4 ->
+          intArrayOf(
+            Color.parseColor("#FECACA"),
+            Color.parseColor("#EF4444"),
+            Color.parseColor("#7F1D1D"),
+            Color.parseColor("#F97316"),
+          )
+        5 ->
+          intArrayOf(
+            Color.parseColor("#E0F2FE"),
+            Color.parseColor("#94A3B8"),
+            Color.parseColor("#334155"),
+            Color.parseColor("#38BDF8"),
+          )
+        else ->
+          intArrayOf(
+            scaleColor(trimInt, 1.30f),
+            trimInt,
+            scaleColor(trimInt, 0.62f),
+            scaleColor(trimInt, 1.15f),
+          )
+      }
 
     val underChassisShadowPaint =
       Paint(Paint.ANTI_ALIAS_FLAG).apply {

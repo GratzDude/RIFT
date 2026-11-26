@@ -307,7 +307,7 @@ object RiftProgressionCatalog {
         name = "Gravity Implosion",
         summary = "Collapses target hull inward before a high-velocity singularity snap.",
         freeAtLevel = 15,
-        shardCost = 250L,
+        shardCost = 0L,
         accentColorHex = 0xFF818CF8.toInt(),
         freeAtResonance = 200,
       ),
@@ -317,7 +317,7 @@ object RiftProgressionCatalog {
         name = "Solar Crown Nova",
         summary = "Golden coronal flare burst with radiant executioner callcard banner.",
         freeAtLevel = 35,
-        shardCost = 450L,
+        shardCost = 0L,
         accentColorHex = 0xFFFFCA28.toInt(),
         freeAtResonance = 550,
       ),
@@ -327,7 +327,7 @@ object RiftProgressionCatalog {
         name = "Void Rift Shatter",
         summary = "Crystalline amethyst rift fracture that splinters space around the wreck.",
         freeAtLevel = 60,
-        shardCost = 700L,
+        shardCost = 0L,
         accentColorHex = 0xFFC084FC.toInt(),
         freeAtResonance = 1050,
       ),
@@ -337,7 +337,7 @@ object RiftProgressionCatalog {
         name = "Apex Singularity",
         summary = "Prismatic horizon collapse reserved for Sovereign and Archon aces.",
         freeAtLevel = 85,
-        shardCost = 1000L,
+        shardCost = 0L,
         accentColorHex = 0xFFF43F5E.toInt(),
         freeAtResonance = 1650,
       ),
@@ -360,30 +360,50 @@ object RiftProgressionCatalog {
         category = "HULL_TRIM",
         name = "Obsidian Ice-Cyan",
         summary = "Stealth matte-obsidian plating with cryogenic ice-cyan specular edges.",
-        freeAtLevel = 10,
-        shardCost = 200L,
+        freeAtLevel = 999,
+        shardCost = 350L,
         accentColorHex = 0xFF00F5D4.toInt(),
-        freeAtResonance = 150,
+        freeAtResonance = 0,
       ),
       CosmeticCatalogItem(
         id = 2,
         category = "HULL_TRIM",
         name = "Sovereign Solar Gold",
         summary = "Regal gilded auric bevels over deep gunmetal hull armor.",
-        freeAtLevel = 30,
-        shardCost = 400L,
+        freeAtLevel = 999,
+        shardCost = 500L,
         accentColorHex = 0xFFFACC15.toInt(),
-        freeAtResonance = 450,
+        freeAtResonance = 0,
       ),
       CosmeticCatalogItem(
         id = 3,
         category = "HULL_TRIM",
         name = "Rift Singularity Violet",
         summary = "Faceted amethyst crystal trim with pulsing ultraviolet phase conduits.",
-        freeAtLevel = 55,
+        freeAtLevel = 999,
         shardCost = 650L,
         accentColorHex = 0xFFA855F7.toInt(),
-        freeAtResonance = 950,
+        freeAtResonance = 0,
+      ),
+      CosmeticCatalogItem(
+        id = 4,
+        category = "HULL_TRIM",
+        name = "Crimson Forge Anodized",
+        summary = "Anodized crimson battle armor with molten reactor edge bevels.",
+        freeAtLevel = 999,
+        shardCost = 750L,
+        accentColorHex = 0xFFEF4444.toInt(),
+        freeAtResonance = 0,
+      ),
+      CosmeticCatalogItem(
+        id = 5,
+        category = "HULL_TRIM",
+        name = "Cryo-Titanium Stealth",
+        summary = "Brushed cryo-titanium stealth plating with sky-ice phase seams.",
+        freeAtLevel = 999,
+        shardCost = 850L,
+        accentColorHex = 0xFF38BDF8.toInt(),
+        freeAtResonance = 0,
       ),
     )
 
@@ -405,7 +425,7 @@ object RiftProgressionCatalog {
         name = "Solar Horizon Flash",
         summary = "Golden coronal warp arrival with twin radial flare arcs.",
         freeAtLevel = 25,
-        shardCost = 300L,
+        shardCost = 0L,
         accentColorHex = 0xFFFFB300.toInt(),
         freeAtResonance = 350,
       ),
@@ -415,7 +435,7 @@ object RiftProgressionCatalog {
         name = "Amethyst Rift Tear",
         summary = "Deep-space violet dimensional rift with crystalline phase sparks.",
         freeAtLevel = 45,
-        shardCost = 500L,
+        shardCost = 0L,
         accentColorHex = 0xFFC084FC.toInt(),
         freeAtResonance = 750,
       ),
@@ -425,7 +445,7 @@ object RiftProgressionCatalog {
         name = "Crimson Nova Entry",
         summary = "High-energy crimson shock-ring arrival signature.",
         freeAtLevel = 75,
-        shardCost = 800L,
+        shardCost = 0L,
         accentColorHex = 0xFFFB7185.toInt(),
         freeAtResonance = 1300,
       ),
@@ -449,7 +469,7 @@ object RiftProgressionCatalog {
         name = "Sovereign Solar Crown",
         summary = "Rotating twin-ring auric halo with radiant sovereign chevrons.",
         freeAtLevel = 40,
-        shardCost = 450L,
+        shardCost = 0L,
         accentColorHex = 0xFFFFD54F.toInt(),
         freeAtResonance = 500,
       ),
@@ -459,7 +479,7 @@ object RiftProgressionCatalog {
         name = "Void Monarch Orbitals",
         summary = "Orbiting amethyst singularity nodes circling the #1 Resonance leader.",
         freeAtLevel = 65,
-        shardCost = 700L,
+        shardCost = 0L,
         accentColorHex = 0xFFA855F7.toInt(),
         freeAtResonance = 1000,
       ),
@@ -469,7 +489,7 @@ object RiftProgressionCatalog {
         name = "Apex Archon Aegis",
         summary = "Prismatic cyan-crimson apex crown reserved for elite sector champions.",
         freeAtLevel = 95,
-        shardCost = 1100L,
+        shardCost = 0L,
         accentColorHex = 0xFF00F5D4.toInt(),
         freeAtResonance = 1750,
       ),
@@ -488,41 +508,66 @@ object RiftProgressionCatalog {
       FrameSlotGateInfo(
         slotId = "Frame B",
         archetypeTitle = "Scatter Brawler (100 Pts)",
-        freeAtLevel = 35,
+        freeAtLevel = 999,
         shardCost = 250L,
-        summary = "Unlocks free at 300 Peak Resonance or instantly for 250 Rift Shards.",
-        freeAtResonance = 300,
+        summary = "Permanently unlockable in the Shard Store for 250 Rift Shards.",
+        freeAtResonance = 0,
       ),
       FrameSlotGateInfo(
         slotId = "Frame C",
         archetypeTitle = "Bank Specialist (100 Pts)",
-        freeAtLevel = 50,
-        shardCost = 400L,
-        summary = "Unlocks free at 650 Peak Resonance or instantly for 400 Rift Shards.",
+        freeAtLevel = 999,
+        shardCost = 0L,
+        summary = "Active while maintaining 650+ Live Resonance in ranked play.",
         freeAtResonance = 650,
       ),
       FrameSlotGateInfo(
         slotId = "Frame D",
         archetypeTitle = "Stealth Phantom (100 Pts)",
-        freeAtLevel = 75,
-        shardCost = 600L,
-        summary = "Unlocks free at 1,100 Peak Resonance or instantly for 600 Rift Shards.",
+        freeAtLevel = 999,
+        shardCost = 0L,
+        summary = "Active while maintaining 1,100+ Live Resonance in ranked play.",
         freeAtResonance = 1100,
       ),
       FrameSlotGateInfo(
         slotId = "Frame E",
         archetypeTitle = "Stasis Archon (100 Pts)",
-        freeAtLevel = 100,
-        shardCost = 600L,
-        summary = "Unlocks free at 1,600 Peak Resonance or instantly for 600 Rift Shards.",
+        freeAtLevel = 999,
+        shardCost = 0L,
+        summary = "Active while maintaining 1,600+ Live Resonance in ranked play.",
         freeAtResonance = 1600,
       ),
     )
 
+  fun isFrameSlotActive(slotId: String, liveResonance: Int, isFrameBPurchased: Boolean): Boolean {
+    val norm = CustomShipLoadoutSlot.normalizeSlotId(slotId)
+    return when (norm) {
+      "Frame A" -> true
+      "Frame B" -> isFrameBPurchased
+      "Frame C",
+      "Frame D",
+      "Frame E" -> liveResonance >= getFrameSlotGate(norm).freeAtResonance
+      else -> false
+    }
+  }
+
+  fun isRankedCosmeticActive(item: CosmeticCatalogItem, liveResonance: Int): Boolean =
+    item.id == 0 || liveResonance >= item.freeAtResonance
+
+  fun isRankedCosmeticCategory(category: String): Boolean {
+    return when (category.trim().uppercase(Locale.US)) {
+      "KILL_FINISHER",
+      "WARP_SIGNATURE",
+      "HVT_HALO" -> true
+      else -> false
+    }
+  }
+
   fun getItemsForCategory(category: String): List<CosmeticCatalogItem> {
     return when (category.trim().uppercase(Locale.US)) {
       "KILL_FINISHER" -> killFinishers
-      "HULL_TRIM" -> hullTrims
+      "HULL_TRIM",
+      "SHIP_SKIN" -> hullTrims
       "WARP_SIGNATURE" -> warpSignatures
       "HVT_HALO" -> hvtHalos
       else -> emptyList()

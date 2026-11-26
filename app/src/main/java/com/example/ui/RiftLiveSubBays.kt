@@ -1,7 +1,18 @@
 package com.example.ui
 
+import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.view.KeyEvent
+import android.webkit.WebView
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -13,19 +24,24 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
@@ -38,9 +54,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -57,11 +76,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.ArmadaMemberSlot
 import com.example.data.CloudSyncHealth
 import com.example.data.LeaderboardEntry
 import com.example.data.LocalPilotPrefs
 import com.example.data.SyndicateInfo
+import com.example.data.SyndicateMemberEntry
 import com.example.data.SyndicateWarRecord
 import com.example.data.formatSurvivalDurationSec
 import com.example.data.snapCustomFivePercentScale
@@ -73,13 +94,261 @@ import com.example.engine.RiftGameEngine
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.RiftVisualForgeState
 import com.example.engine.SyndicateCrestRecipe
+import java.io.File
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import org.json.JSONObject
 
 private fun cleanCodexShipName(rawName: String): String =
   rawName.replace(Regex("^#?[0-9]+[-\\s]*"), "").trim().uppercase(Locale.US)
+
+private fun cleanDisplayShipTitle(shipId: Int, rawName: String): String =
+  if (shipId == 10) "RIFT FRAME" else cleanCodexShipName(rawName)
+
+internal fun copyTelemetryTextToClipboard(
+  context: Context,
+  formatLabel: String,
+  payload: String,
+): String {
+  return runCatching {
+      val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+      cm?.setPrimaryClip(ClipData.newPlainText("Rift Telemetry $formatLabel", payload))
+      "COPIED $formatLabel TELEMETRY TO CLIPBOARD"
+    }
+    .getOrDefault("READY // $formatLabel TELEMETRY GENERATED")
+}
+
+internal fun saveOrOpenTelemetryHtmlFile(
+  context: Context,
+  callsign: String,
+  htmlPayload: String,
+): String {
+  val cleanCallsign =
+    callsign
+      .trim()
+      .uppercase(Locale.US)
+      .replace(Regex("[^A-Z0-9_\\-]"), "")
+      .ifEmpty { "PILOT" }
+  val fileName = "rift_telemetry_${cleanCallsign}.html"
+
+  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+    val resolver = context.contentResolver
+    val values =
+      ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+        put(MediaStore.MediaColumns.MIME_TYPE, "text/html")
+        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+        put(MediaStore.MediaColumns.IS_PENDING, 1)
+      }
+    val insertedUri =
+      runCatching { resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) }.getOrNull()
+    if (insertedUri != null) {
+      val wroteOk =
+        runCatching {
+            resolver.openOutputStream(insertedUri)?.use { out ->
+              out.write(htmlPayload.toByteArray(Charsets.UTF_8))
+              out.flush()
+            }
+            val publishValues = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+            resolver.update(insertedUri, publishValues, null, null)
+            true
+          }
+          .getOrDefault(false)
+      if (wroteOk) {
+        val openedInViewer =
+          runCatching {
+              val viewIntent =
+                Intent(Intent.ACTION_VIEW).apply {
+                  setDataAndType(insertedUri, "text/html")
+                  clipData = ClipData.newRawUri("Rift Telemetry HTML", insertedUri)
+                  addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+              context.startActivity(viewIntent)
+              true
+            }
+            .getOrDefault(false)
+        if (!openedInViewer) {
+          runCatching {
+            val sendFileIntent =
+              Intent(Intent.ACTION_SEND).apply {
+                type = "text/html"
+                putExtra(Intent.EXTRA_STREAM, insertedUri)
+                clipData = ClipData.newRawUri("Rift Telemetry HTML", insertedUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+              }
+            val chooser =
+              Intent.createChooser(sendFileIntent, "Open or Share $fileName")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
+          }
+        }
+        return "SAVED $fileName TO DOWNLOADS"
+      }
+    }
+  }
+
+  return runCatching {
+      val localFile = File(context.cacheDir, fileName)
+      localFile.writeText(htmlPayload, Charsets.UTF_8)
+      "SAVED $fileName // VIEWING LIVE BELOW"
+    }
+    .getOrDefault("VIEWING LIVE .HTML SHEET BELOW")
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+internal fun RiftTelemetryWebSheetModal(
+  callsign: String,
+  liveResonance: Int,
+  uidOrNull: String?,
+  localPrefs: LocalPilotPrefs,
+  onClose: () -> Unit,
+) {
+  BackHandler(onBack = onClose)
+  val context = LocalContext.current
+  val htmlPayload =
+    remember(callsign, liveResonance, uidOrNull) {
+      localPrefs.exportSurvivalTelemetryHtmlSpreadsheet(callsign, liveResonance, uidOrNull)
+    }
+  var statusBanner by remember { mutableStateOf<String?>(null) }
+
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .background(Color(0xE802050B))
+        .windowInsetsPadding(WindowInsets.safeDrawing)
+        .padding(horizontal = 12.dp, vertical = 8.dp)
+        .testTag("rift_telemetry_websheet_modal"),
+    contentAlignment = Alignment.Center,
+  ) {
+    Surface(
+      modifier =
+        Modifier.fillMaxSize()
+          .widthIn(max = 1080.dp)
+          .border(
+            1.2.dp,
+            Brush.linearGradient(listOf(Color(0xFF00F5D4), Color(0xFF38BDF8), Color(0xFFFFD700))),
+            RoundedCornerShape(14.dp),
+          ),
+      color = Color(0xFA040914),
+      shape = RoundedCornerShape(14.dp),
+    ) {
+      Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(
+              text = "PILOT, SURVIVAL & HUB TAP TELEMETRY (.HTML SHEET)",
+              color = Color(0xFF00F5D4),
+              fontSize = 10.5.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+              text = statusBanner ?: "Filter hulls, actors, sessions, and Hub tap regions live below or save .HTML to Downloads.",
+              color = if (statusBanner != null) Color(0xFFFFD700) else Color(0xFFCBD5E1),
+              fontSize = 8.2.sp,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            HubTelemetryMiniExportBtn(
+              label = "SAVE / OPEN .HTML",
+              accent = Color(0xFF00F5D4),
+              testTag = "telemetry_websheet_save_open_html",
+              onClick = {
+                statusBanner = saveOrOpenTelemetryHtmlFile(context, callsign, htmlPayload)
+              },
+            )
+            HubTelemetryMiniExportBtn(
+              label = "COPY CSV",
+              accent = Color(0xFF38BDF8),
+              testTag = "telemetry_websheet_copy_csv",
+              onClick = {
+                val csv = localPrefs.exportSurvivalTelemetryCsv(callsign, liveResonance, uidOrNull)
+                statusBanner = copyTelemetryTextToClipboard(context, "CSV", csv)
+              },
+            )
+            HubTelemetryMiniExportBtn(
+              label = "COPY JSON",
+              accent = Color(0xFFFFD700),
+              testTag = "telemetry_websheet_copy_json",
+              onClick = {
+                val json = localPrefs.exportSurvivalTelemetryJson(callsign, liveResonance, uidOrNull)
+                statusBanner = copyTelemetryTextToClipboard(context, "JSON", json)
+              },
+            )
+            HubTelemetryMiniExportBtn(
+              label = "CLOSE",
+              accent = Color(0xFFFB7185),
+              testTag = "telemetry_websheet_close",
+              onClick = onClose,
+            )
+          }
+        }
+
+        Box(
+          modifier =
+            Modifier.weight(1f)
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(10.dp))
+              .background(Color(0xFF02050B))
+              .border(1.dp, Color(0x5538BDF8), RoundedCornerShape(10.dp)),
+        ) {
+          AndroidView(
+            modifier = Modifier.fillMaxSize().testTag("telemetry_websheet_webview"),
+            factory = { ctx ->
+              WebView(ctx).apply {
+                setBackgroundColor(android.graphics.Color.parseColor("#02050B"))
+                settings.javaScriptEnabled = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                settings.domStorageEnabled = false
+                loadDataWithBaseURL(
+                  "https://rift.telemetry.local/",
+                  htmlPayload,
+                  "text/html",
+                  "UTF-8",
+                  null,
+                )
+              }
+            },
+            update = { webView ->
+              if (webView.tag != htmlPayload.hashCode()) {
+                webView.tag = htmlPayload.hashCode()
+                webView.loadDataWithBaseURL(
+                  "https://rift.telemetry.local/",
+                  htmlPayload,
+                  "text/html",
+                  "UTF-8",
+                  null,
+                )
+              }
+            },
+          )
+        }
+      }
+    }
+  }
+}
 
 private data class LiveControllerActionSlotInfo(
   val slotId: String,
@@ -509,6 +778,7 @@ internal fun DossierRightCareerBay(
   dossierRefreshNonce: Int = 0,
   cloudLeaderboardEntries: List<LeaderboardEntry>,
   onInspectShip: (Int) -> Unit,
+  onOpenSurvivalSpreadsheet: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val uidOrNull = currentUserId.ifBlank { null }
@@ -666,7 +936,7 @@ internal fun DossierRightCareerBay(
           fontFamily = FontFamily.Monospace,
         )
         allShips.forEach { ship ->
-          val cleanShip = cleanCodexShipName(ship.name)
+          val cleanShip = cleanDisplayShipTitle(ship.id, ship.name)
           val shipRes = shipResonanceFor(ship.id)
           val isBest = ship.id == bestShipId
           Row(
@@ -809,22 +1079,7 @@ internal fun DossierRightCareerBay(
             label = "HTML TABLE",
             accent = Color(0xFF00F5D4),
             testTag = "dossier_export_html",
-            onClick = {
-              val payload =
-                localPrefs.exportSurvivalTelemetryHtmlSpreadsheet(
-                  localPrefs.getCallsign(),
-                  localPrefs.getLiveResonance(uidOrNull),
-                  uidOrNull,
-                )
-              exportBanner =
-                shareOrOpenSurvivalExport(
-                  context = context,
-                  fileName = "rift_ship_survival_telemetry.html",
-                  mimeType = "text/html",
-                  payload = payload,
-                  preferBrowserView = true,
-                )
-            },
+            onClick = onOpenSurvivalSpreadsheet,
           )
           HubTelemetryMiniExportBtn(
             modifier = Modifier.weight(1f),
@@ -834,17 +1089,11 @@ internal fun DossierRightCareerBay(
             onClick = {
               val payload =
                 localPrefs.exportSurvivalTelemetryCsv(
-                  localPrefs.getCallsign(),
+                  localPrefs.getCallsign(uidOrNull),
                   localPrefs.getLiveResonance(uidOrNull),
                   uidOrNull,
                 )
-              exportBanner =
-                shareOrOpenSurvivalExport(
-                  context = context,
-                  fileName = "rift_ship_survival_telemetry.csv",
-                  mimeType = "text/csv",
-                  payload = payload,
-                )
+              exportBanner = copyTelemetryTextToClipboard(context, "CSV", payload)
             },
           )
           HubTelemetryMiniExportBtn(
@@ -855,17 +1104,11 @@ internal fun DossierRightCareerBay(
             onClick = {
               val payload =
                 localPrefs.exportSurvivalTelemetryJson(
-                  localPrefs.getCallsign(),
+                  localPrefs.getCallsign(uidOrNull),
                   localPrefs.getLiveResonance(uidOrNull),
                   uidOrNull,
                 )
-              exportBanner =
-                shareOrOpenSurvivalExport(
-                  context = context,
-                  fileName = "rift_ship_survival_telemetry.json",
-                  mimeType = "application/json",
-                  payload = payload,
-                )
+              exportBanner = copyTelemetryTextToClipboard(context, "JSON", payload)
             },
           )
         }
@@ -902,10 +1145,11 @@ internal fun HubTelemetryMiniExportBtn(
   ) {
     Box(
       modifier =
-        Modifier.fillMaxSize()
+        Modifier.height(36.dp)
           .clip(RoundedCornerShape(6.dp))
           .background(accent.copy(alpha = 0.16f))
-          .border(1.dp, accent, RoundedCornerShape(6.dp)),
+          .border(1.dp, accent, RoundedCornerShape(6.dp))
+          .padding(horizontal = 8.dp),
       contentAlignment = Alignment.Center,
     ) {
       Text(
@@ -1010,7 +1254,7 @@ internal fun SyndicateLeftDirectoryBay(
         if (searchQuery.isEmpty()) {
           Text(
             text = "Search chartered Syndicates by tag or name...",
-            color = Color(0xFF64748B),
+            color = Color(0xFFCBD5E1),
             fontSize = 8.0.sp,
             fontFamily = FontFamily.Monospace,
           )
@@ -1042,6 +1286,10 @@ internal fun SyndicateLeftDirectoryBay(
         )
       }
 
+      val cleanCurrentTag = currentTag.trim().uppercase(Locale.US)
+      val isCurrentTagAffiliated =
+        cleanCurrentTag.isNotEmpty() && cleanCurrentTag !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS
+
       if (realSyndicates.isEmpty()) {
         Column(
           modifier =
@@ -1064,7 +1312,7 @@ internal fun SyndicateLeftDirectoryBay(
             fontFamily = FontFamily.Monospace,
           )
           Text(
-            text = "Use the Citadel bay on the right to found a real-player Syndicate.",
+            text = "Use the Charter Syndicate bay on the right to found a real-player Syndicate.",
             color = Color(0xFFCBD5E1),
             fontSize = 7.6.sp,
             fontFamily = FontFamily.SansSerif,
@@ -1072,7 +1320,7 @@ internal fun SyndicateLeftDirectoryBay(
         }
       } else {
         realSyndicates.forEach { syn ->
-          val isCurrent = currentTag.isNotBlank() && syn.tag.equals(currentTag, ignoreCase = true)
+          val isCurrent = isCurrentTagAffiliated && syn.tag.equals(cleanCurrentTag, ignoreCase = true)
           RiftVerticalCard(
             modifier = Modifier.fillMaxWidth(),
             title = "[${syn.tag.uppercase(Locale.US)}] ${syn.name.uppercase(Locale.US)}",
@@ -1120,15 +1368,19 @@ internal fun SyndicateRightCitadelBay(
   var nameDraft by remember { mutableStateOf("") }
   var mottoDraft by remember { mutableStateOf("") }
   var rosterRefreshTick by remember { mutableIntStateOf(0) }
-  var inviteOnly by remember(syndicateTag, rosterRefreshTick) {
+  val cleanSynTag = syndicateTag.trim().uppercase(Locale.US)
+  val isAffiliatedSyndicate =
+    cleanSynTag.isNotEmpty() && cleanSynTag !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS
+
+  var inviteOnly by remember(cleanSynTag, isAffiliatedSyndicate, rosterRefreshTick) {
     mutableStateOf(
-      if (syndicateTag.isNotBlank()) localPrefs.isSyndicateInviteOnly(syndicateTag) else false
+      if (isAffiliatedSyndicate) localPrefs.isSyndicateInviteOnly(cleanSynTag) else false
     )
   }
 
   val activeCrestRecipe =
-    remember(syndicateTag, RiftVisualForgeState.visualRevision) {
-      val savedJson = if (syndicateTag.isNotBlank()) localPrefs.getSyndicateCrestJson(syndicateTag) else null
+    remember(cleanSynTag, isAffiliatedSyndicate, RiftVisualForgeState.visualRevision) {
+      val savedJson = if (isAffiliatedSyndicate) localPrefs.getSyndicateCrestJson(cleanSynTag) else null
       if (!savedJson.isNullOrBlank()) {
         runCatching { SyndicateCrestRecipe.fromJson(JSONObject(savedJson)) }
           .getOrDefault(RiftVisualForgeState.activeSyndicateCrestRecipe)
@@ -1138,9 +1390,31 @@ internal fun SyndicateRightCitadelBay(
     }
 
   val rosterMembers =
-    remember(syndicateTag, callsign, localShipId, liveResonance, rosterRefreshTick) {
-      if (syndicateTag.isBlank()) emptyList()
-      else localPrefs.getMySyndicateRoster(currentUserId, callsign, localShipId, liveResonance, kills)
+    remember(cleanSynTag, isAffiliatedSyndicate, callsign, localShipId, liveResonance, rosterRefreshTick) {
+      if (!isAffiliatedSyndicate) {
+        emptyList()
+      } else {
+        val loaded =
+          localPrefs.getMySyndicateRoster(currentUserId, callsign, localShipId, liveResonance, kills)
+        if (loaded.any { it.isLocalPlayer }) {
+          loaded
+        } else {
+          val fallbackSelf =
+            SyndicateMemberEntry(
+              uid = currentUserId,
+              callsign = callsign,
+              tag = cleanSynTag,
+              shipId = localShipId.coerceIn(1, 10),
+              shipName = cleanDisplayShipTitle(localShipId, RiftCodex.getShipById(localShipId).name),
+              role = "Founder",
+              bountyContribution = liveResonance.coerceAtLeast(0L),
+              kills = kills,
+              isOnline = true,
+              isLocalPlayer = true,
+            )
+          listOf(fallbackSelf) + loaded
+        }
+      }
     }
   val myRole =
     rosterMembers.firstOrNull { it.isLocalPlayer }?.role?.uppercase(Locale.US) ?: "PILOT"
@@ -1155,19 +1429,20 @@ internal fun SyndicateRightCitadelBay(
       heightDp = headerHeight,
       isRightSide = true,
       isTabletDeck = isTabletDeck,
-      sectionTitle = if (syndicateTag.isNotBlank()) "[$syndicateTag] CITADEL" else "CHARTER SYNDICATE",
+      sectionTitle = if (isAffiliatedSyndicate) "[$cleanSynTag] CITADEL" else "CHARTER SYNDICATE",
       accent = Color(0xFF00F5D4),
-      trailingLabel = if (syndicateTag.isNotBlank()) "LEAVE" else null,
-      trailingTag = if (syndicateTag.isNotBlank()) "syndicate_btn_leave_header" else null,
-      onTrailingClick = if (syndicateTag.isNotBlank()) onLeaveCurrentSyndicate else null,
+      trailingLabel = if (isAffiliatedSyndicate) "LEAVE" else null,
+      trailingTag = if (isAffiliatedSyndicate) "syndicate_btn_leave_header" else null,
+      onTrailingClick = if (isAffiliatedSyndicate) onLeaveCurrentSyndicate else null,
     )
 
     Column(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
-      if (syndicateTag.isNotBlank()) {
-        // Citadel Summary + Live Crest Preview + Customize Crest Trigger
+      if (isAffiliatedSyndicate) {
+        val onlineDisplayCount =
+          kotlin.math.max(syndicateOnlineCount, rosterMembers.count { it.isOnline }).coerceAtLeast(1)
         Row(
           modifier =
             Modifier.fillMaxWidth()
@@ -1188,13 +1463,13 @@ internal fun SyndicateRightCitadelBay(
                 cy = size.height * 0.5f,
                 r = min(size.width, size.height) * 0.44f,
                 recipe = activeCrestRecipe,
-                tagText = syndicateTag,
+                tagText = cleanSynTag,
               )
             }
           }
           Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
-              text = "[$syndicateTag] $syndicateName",
+              text = "[$cleanSynTag] $syndicateName",
               color = Color.White,
               fontSize = if (isTabletDeck) 9.8.sp else 8.8.sp,
               fontWeight = FontWeight.Black,
@@ -1203,7 +1478,7 @@ internal fun SyndicateRightCitadelBay(
               overflow = TextOverflow.Ellipsis,
             )
             Text(
-              text = "$syndicateOnlineCount ONLINE • ${syndicateWarRecord.warWins}W-${syndicateWarRecord.warLosses}L",
+              text = "$onlineDisplayCount ONLINE • ${syndicateWarRecord.warWins}W-${syndicateWarRecord.warLosses}L",
               color = Color(0xFF00F5D4),
               fontSize = 7.4.sp,
               fontWeight = FontWeight.Bold,
@@ -1214,7 +1489,7 @@ internal fun SyndicateRightCitadelBay(
                 modifier =
                   Modifier.minimumInteractiveComponentSize()
                     .heightIn(min = 48.dp)
-                    .clickable { onOpenCrestBuilder(syndicateTag) }
+                    .clickable { onOpenCrestBuilder(cleanSynTag) }
                     .padding(vertical = 4.dp)
                     .testTag("syndicate_btn_crest_builder"),
                 contentAlignment = Alignment.Center,
@@ -1244,7 +1519,7 @@ internal fun SyndicateRightCitadelBay(
                       .clickable {
                         val next = !inviteOnly
                         inviteOnly = next
-                        localPrefs.setSyndicateInviteOnly(syndicateTag, next)
+                        localPrefs.setSyndicateInviteOnly(cleanSynTag, next)
                       }
                       .padding(vertical = 4.dp)
                       .testTag("syndicate_toggle_invite_only"),
@@ -1275,7 +1550,6 @@ internal fun SyndicateRightCitadelBay(
           }
         }
 
-        // Syndicate Member Roster (Online green dot, Role, Resonance, Promote/Kick)
         Text(
           text = "MEMBER ROSTER (${rosterMembers.size})",
           color = Color(0xFF38BDF8),
@@ -1287,6 +1561,9 @@ internal fun SyndicateRightCitadelBay(
         rosterMembers.forEach { member ->
           val memberRoleUp = member.role.uppercase(Locale.US)
           val isMemberOfficer = memberRoleUp.contains("OFFICER")
+          val memberRes =
+            if (member.isLocalPlayer) liveResonance.coerceAtLeast(0L)
+            else member.bountyContribution.coerceAtLeast(0L)
           Row(
             modifier =
               Modifier.fillMaxWidth()
@@ -1306,7 +1583,7 @@ internal fun SyndicateRightCitadelBay(
                   .clip(CircleShape)
                   .background(if (member.isOnline) Color(0xFF10B981) else Color(0xFF475569)),
             )
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
               Text(
                 text = if (member.isLocalPlayer) "${member.callsign} (YOU)" else member.callsign,
                 color = Color.White,
@@ -1318,18 +1595,26 @@ internal fun SyndicateRightCitadelBay(
               )
               Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
               ) {
-                Text(
-                  text = member.role.uppercase(Locale.US),
-                  color = Color(0xFF38BDF8),
-                  fontSize = 6.8.sp,
-                  fontWeight = FontWeight.Bold,
-                  fontFamily = FontFamily.Monospace,
-                )
+                Box(
+                  modifier =
+                    Modifier.clip(RoundedCornerShape(4.dp))
+                      .background(Color(0x3338BDF8))
+                      .border(0.8.dp, Color(0xFF38BDF8), RoundedCornerShape(4.dp))
+                      .padding(horizontal = 4.dp, vertical = 1.dp),
+                ) {
+                  Text(
+                    text = memberRoleUp,
+                    color = Color(0xFF7DD3FC),
+                    fontSize = 6.6.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
                 ResonanceCrestIcon(sizeDp = 10.dp)
                 Text(
-                  text = String.format(Locale.US, "%,d", member.bountyContribution.coerceAtLeast(0L)),
+                  text = String.format(Locale.US, "%,d", memberRes),
                   color = Color(0xFFFFD700),
                   fontSize = 7.0.sp,
                   fontWeight = FontWeight.Black,
@@ -1344,7 +1629,7 @@ internal fun SyndicateRightCitadelBay(
                     Modifier.minimumInteractiveComponentSize()
                       .height(48.dp)
                       .clickable {
-                        localPrefs.toggleSyndicateOfficer(syndicateTag, member.callsign)
+                        localPrefs.toggleSyndicateOfficer(cleanSynTag, member.callsign)
                         rosterRefreshTick++
                       }
                       .padding(vertical = 8.dp)
@@ -1372,7 +1657,7 @@ internal fun SyndicateRightCitadelBay(
                     Modifier.minimumInteractiveComponentSize()
                       .height(48.dp)
                       .clickable {
-                        localPrefs.kickSyndicateMember(syndicateTag, member.callsign)
+                        localPrefs.kickSyndicateMember(cleanSynTag, member.callsign)
                         rosterRefreshTick++
                       }
                       .padding(vertical = 8.dp)
@@ -1400,7 +1685,6 @@ internal fun SyndicateRightCitadelBay(
           }
         }
       } else {
-        // Unaffiliated Charter New Player-Founded Syndicate Form
         Column(
           modifier =
             Modifier.fillMaxWidth()
@@ -1413,11 +1697,18 @@ internal fun SyndicateRightCitadelBay(
           verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
           Text(
-            text = "FOUND A NEW SYNDICATE",
+            text = "CHARTER NEW SYNDICATE",
             color = Color(0xFF00F5D4),
             fontSize = 8.6.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
+          )
+          Text(
+            text = "Unaffiliated Sworn Pilots can register a 2 to 3 character Syndicate tag and unlock Syndicate Wars.",
+            color = Color(0xFFCBD5E1),
+            fontSize = 7.4.sp,
+            lineHeight = 10.4.sp,
+            fontFamily = FontFamily.SansSerif,
           )
           Box(
             modifier =
@@ -1429,15 +1720,15 @@ internal fun SyndicateRightCitadelBay(
           ) {
             if (tagDraft.isEmpty()) {
               Text(
-                text = "TAG (2-4 LETTERS, e.g. APEX)",
-                color = Color(0xFF64748B),
+                text = "3-CHAR TAG (e.g. APX)",
+                color = Color(0xFFCBD5E1),
                 fontSize = 7.6.sp,
                 fontFamily = FontFamily.Monospace,
               )
             }
             BasicTextField(
               value = tagDraft,
-              onValueChange = { tagDraft = it.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(4) },
+              onValueChange = { tagDraft = it.uppercase(Locale.US).replace(Regex("[^A-Z0-9]"), "").take(3) },
               singleLine = true,
               cursorBrush = SolidColor(Color(0xFF00F5D4)),
               textStyle =
@@ -1461,7 +1752,7 @@ internal fun SyndicateRightCitadelBay(
             if (nameDraft.isEmpty()) {
               Text(
                 text = "SYNDICATE NAME",
-                color = Color(0xFF64748B),
+                color = Color(0xFFCBD5E1),
                 fontSize = 7.6.sp,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1492,7 +1783,7 @@ internal fun SyndicateRightCitadelBay(
             if (mottoDraft.isEmpty()) {
               Text(
                 text = "MOTTO (OPTIONAL)",
-                color = Color(0xFF64748B),
+                color = Color(0xFFCBD5E1),
                 fontSize = 7.6.sp,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1504,7 +1795,7 @@ internal fun SyndicateRightCitadelBay(
               cursorBrush = SolidColor(Color(0xFF00F5D4)),
               textStyle =
                 TextStyle(
-                  color = Color(0xFFCBD5E1),
+                  color = Color(0xFFE2E8F0),
                   fontSize = 7.8.sp,
                   fontFamily = FontFamily.Monospace,
                 ),
@@ -1512,7 +1803,7 @@ internal fun SyndicateRightCitadelBay(
             )
           }
 
-          val canCharter = tagDraft.length >= 2 && nameDraft.trim().length >= 3
+          val canCharter = tagDraft.length in 2..3 && nameDraft.trim().length >= 3
           Box(
             modifier =
               Modifier.fillMaxWidth()
@@ -1530,13 +1821,13 @@ internal fun SyndicateRightCitadelBay(
                 Modifier.fillMaxWidth()
                   .clip(RoundedCornerShape(7.dp))
                   .background(if (canCharter) Color(0xFF0D2D46) else Color(0xFF0B1322))
-                  .border(1.dp, if (canCharter) Color(0xFF00F5D4) else Color(0xFF334155), RoundedCornerShape(7.dp))
+                  .border(1.dp, if (canCharter) Color(0xFF00F5D4) else Color(0xFF475569), RoundedCornerShape(7.dp))
                   .padding(vertical = 8.dp),
               contentAlignment = Alignment.Center,
             ) {
               Text(
                 text = "CHARTER SYNDICATE >",
-                color = if (canCharter) Color.White else Color(0xFF64748B),
+                color = if (canCharter) Color.White else Color(0xFFCBD5E1),
                 fontSize = 8.2.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
@@ -1691,7 +1982,7 @@ internal fun SquadronLeftPilotListBay(
         if (friendDraft.isEmpty()) {
           Text(
             text = "Callsign to add friend or filter...",
-            color = Color(0xFF64748B),
+            color = Color(0xFFCBD5E1),
             fontSize = 7.4.sp,
             fontFamily = FontFamily.Monospace,
           )
@@ -1734,14 +2025,14 @@ internal fun SquadronLeftPilotListBay(
               .background(if (friendDraft.length >= 2) Color(0xFF0D2D46) else Color(0xFF0B1322))
               .border(
                 1.dp,
-                if (friendDraft.length >= 2) Color(0xFFFACC15) else Color(0xFF334155),
+                if (friendDraft.length >= 2) Color(0xFFFACC15) else Color(0xFF475569),
                 RoundedCornerShape(6.dp),
               )
               .padding(horizontal = 8.dp, vertical = 7.dp),
         ) {
           Text(
             text = "+ FRIEND",
-            color = if (friendDraft.length >= 2) Color(0xFFFACC15) else Color(0xFF64748B),
+            color = if (friendDraft.length >= 2) Color(0xFFFACC15) else Color(0xFFCBD5E1),
             fontSize = 7.4.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
@@ -1778,7 +2069,7 @@ internal fun SquadronLeftPilotListBay(
         ) {
           Text(
             text = "NO MATCHING ONLINE PILOTS RIGHT NOW. USE LFG PING OR ADD A FRIEND CALLSIGN ABOVE.",
-            color = Color(0xFF94A3B8),
+            color = Color(0xFFCBD5E1),
             fontSize = 7.6.sp,
             lineHeight = 11.0.sp,
             fontFamily = FontFamily.Monospace,
@@ -1787,7 +2078,11 @@ internal fun SquadronLeftPilotListBay(
       } else {
         filteredList.forEach { pilot ->
           val isSel = selectedPilotUid.isNotBlank() && selectedPilotUid == pilot.uid
-          val tagStr = if (pilot.syndicateTag.isNotBlank()) "[${pilot.syndicateTag}] " else ""
+          val cleanPilotTag = pilot.syndicateTag.trim().uppercase(Locale.US)
+          val tagStr =
+            if (cleanPilotTag.isNotEmpty() && cleanPilotTag !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) {
+              "[$cleanPilotTag] "
+            } else ""
           val shipId = (if (pilot.lockedShipId in 1..10) pilot.lockedShipId else pilot.bestShipId).coerceIn(1, 10)
           Row(
             modifier =
@@ -1827,7 +2122,7 @@ internal fun SquadronLeftPilotListBay(
               ) {
                 ResonanceCrestIcon(sizeDp = 10.dp)
                 Text(
-                  text = "${String.format(Locale.US, "%,d", pilot.resonance)} • ${cleanCodexShipName(RiftCodex.getShipById(shipId).name)}",
+                  text = "${String.format(Locale.US, "%,d", pilot.resonance)} • ${cleanDisplayShipTitle(shipId, RiftCodex.getShipById(shipId).name)}",
                   color = Color(0xFFFFD700),
                   fontSize = 7.2.sp,
                   fontWeight = FontWeight.Bold,
@@ -1874,15 +2169,20 @@ internal fun SquadronRightPlayfieldShipBay(
   var voiceEnabled by remember { mutableStateOf(RiftCalibrationState.squadronVoiceEnabled) }
   val targetShipId = (inspectedPilot?.lockedShipId ?: localShipId).coerceIn(1, 10)
   val targetResonance = inspectedPilot?.resonance ?: localShipResonance
+  val cleanLocalTag = localSyndicateTag.trim().uppercase(Locale.US)
+  val hasAffiliatedLocalTag =
+    cleanLocalTag.isNotEmpty() && cleanLocalTag !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS
   val targetName =
     if (inspectedPilot != null) {
-      if (inspectedPilot.syndicateTag.isNotBlank()) "[${inspectedPilot.syndicateTag}] ${inspectedPilot.callsign}"
+      val cleanP = inspectedPilot.syndicateTag.trim().uppercase(Locale.US)
+      if (cleanP.isNotEmpty() && cleanP !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) "[$cleanP] ${inspectedPilot.callsign}"
       else inspectedPilot.callsign
     } else {
-      if (localSyndicateTag.isNotBlank()) "[$localSyndicateTag] $localCallsign" else localCallsign
+      if (hasAffiliatedLocalTag) "[$cleanLocalTag] $localCallsign" else localCallsign
     }
   val targetShipSpec = remember(targetShipId, RiftSpriteBaker.customShip9Version) { RiftCodex.getShipById(targetShipId) }
-  val cleanShipTitle = remember(targetShipSpec.name) { cleanCodexShipName(targetShipSpec.name) }
+  val cleanShipTitle = remember(targetShipId, targetShipSpec.name) { cleanDisplayShipTitle(targetShipId, targetShipSpec.name) }
+  val canLeaveSquadron = armadaName.isNotBlank() || armadaSlots.size > 1
 
   val avgSquadResonance =
     remember(armadaSlots, localShipResonance) {
@@ -1900,16 +2200,15 @@ internal fun SquadronRightPlayfieldShipBay(
       isTabletDeck = isTabletDeck,
       sectionTitle = if (armadaName.isNotBlank()) "SQUAD [$armadaName]" else "5-SLOT FORMATION",
       accent = Color(0xFF38BDF8),
-      trailingLabel = "ROSTER >",
-      trailingTag = "squadron_bay_open_full_roster",
-      onTrailingClick = onOpenFullSquadronModal,
+      trailingLabel = if (canLeaveSquadron) "LEAVE" else "ROSTER >",
+      trailingTag = if (canLeaveSquadron) "squadron_btn_leave_header" else "squadron_bay_open_full_roster",
+      onTrailingClick = if (canLeaveSquadron) onLeaveSquadron else onOpenFullSquadronModal,
     )
 
     Column(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
-      // Playfield-Style 2.5D Locked-In Ship Stage: [ResonanceCrestIcon] Res ABOVE, 2.5D Ship CENTER, [TAG] Callsign BELOW
       Box(
         modifier =
           Modifier.fillMaxWidth()
@@ -1968,7 +2267,7 @@ internal fun SquadronRightPlayfieldShipBay(
               overflow = TextOverflow.Ellipsis,
             )
             Text(
-              text = "LOCKED // $cleanShipTitle",
+              text = "CHARGED // $cleanShipTitle",
               color = Color(0xFF00F5D4),
               fontSize = 7.2.sp,
               fontWeight = FontWeight.Bold,
@@ -1978,7 +2277,6 @@ internal fun SquadronRightPlayfieldShipBay(
         }
       }
 
-      // Squadron Average Resonance, Squadron Voice Toggle & Leave Squadron Controls
       Row(
         modifier =
           Modifier.fillMaxWidth()
@@ -2035,14 +2333,14 @@ internal fun SquadronRightPlayfieldShipBay(
             ) {
               Text(
                 text = if (voiceEnabled) "VOICE ON" else "VOICE OFF",
-                color = if (voiceEnabled) Color(0xFF00F5D4) else Color(0xFF94A3B8),
+                color = if (voiceEnabled) Color(0xFF00F5D4) else Color(0xFFCBD5E1),
                 fontSize = 6.8.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
             }
           }
-          if (armadaSlots.size > 1) {
+          if (canLeaveSquadron) {
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
@@ -2072,12 +2370,14 @@ internal fun SquadronRightPlayfieldShipBay(
         }
       }
 
-      // 5-Slot Vertical Card Formation (Slots 1..5)
       for (slotIdx in 0 until 5) {
         val member = armadaSlots.getOrNull(slotIdx)
         val slotNum = slotIdx + 1
         if (member != null) {
-          val tagStr = if (member.syndicateTag.isNotBlank()) "[${member.syndicateTag}] " else ""
+          val cleanMTag = member.syndicateTag.trim().uppercase(Locale.US)
+          val tagStr =
+            if (cleanMTag.isNotEmpty() && cleanMTag !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) "[$cleanMTag] "
+            else ""
           RiftVerticalCard(
             modifier = Modifier.fillMaxWidth(),
             title = "SLOT $slotNum • $tagStr${member.callsign}",
@@ -2112,7 +2412,7 @@ internal fun SquadronRightPlayfieldShipBay(
             isRightColumn = true,
             isHighlighted = false,
             badgeText = "OPEN",
-            badgeColor = Color(0xFF94A3B8),
+            badgeColor = Color(0xFFCBD5E1),
             isTabletDeck = isTabletDeck,
             minHeightDp = if (isTabletDeck) 80.dp else 70.dp,
             testTag = "squadron_slot_card_$slotNum",
@@ -2121,12 +2421,12 @@ internal fun SquadronRightPlayfieldShipBay(
                 modifier =
                   Modifier.size((sizeDp * 0.52f).coerceAtLeast(22.dp))
                     .clip(CircleShape)
-                    .border(1.dp, Color(0xFF475569), CircleShape),
+                    .border(1.dp, Color(0xFF64748B), CircleShape),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
                   text = "+",
-                  color = Color(0xFF94A3B8),
+                  color = Color(0xFFCBD5E1),
                   fontSize = 14.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
@@ -2203,12 +2503,12 @@ internal fun GameModesLeftRankedBay(
           mode != RankedGameMode.SYNDICATE_WARS || canQueueSyndicateWars.first
         val shortDesc =
           when (mode) {
-            RankedGameMode.SECTOR_CONVERGENCE -> "Open 5x Safe Harbor arena"
+            RankedGameMode.SECTOR_CONVERGENCE -> "Open Safe Harbor arena"
             RankedGameMode.FLUX_CORE -> "Hold central Flux Core orb"
-            RankedGameMode.RIFT_SKIRMISH -> "Matched team dogfighting"
-            RankedGameMode.RIFT_CONTROL -> "Control Alpha & Omega rings"
-            RankedGameMode.STASIS_BREACH -> "Breach enemy Brig shield"
-            RankedGameMode.SYNDICATE_WARS -> "Chartered Syndicate wars"
+            RankedGameMode.RIFT_SKIRMISH -> "Matched Squadron team combat"
+            RankedGameMode.RIFT_CONTROL -> "Contest Alpha and Omega rings"
+            RankedGameMode.STASIS_BREACH -> "Breach rival Brig reactor"
+            RankedGameMode.SYNDICATE_WARS -> "Chartered Syndicate warfare"
           }
 
         RiftVerticalCard(
@@ -2225,7 +2525,10 @@ internal fun GameModesLeftRankedBay(
           minHeightDp = if (isTabletDeck) 98.dp else 86.dp,
           testTag = "game_mode_card_${mode.name}",
           visualContent = { sizeDp ->
-            ActiveRiftsEmblem(sizeDp = (sizeDp * 0.78f).coerceAtLeast(24.dp))
+            RankedModeDistinctEmblem(
+              modeIndex = mode.ordinal,
+              sizeDp = (sizeDp * 0.78f).coerceAtLeast(24.dp),
+            )
           },
           onClick = {
             val matchingInstance =
@@ -3573,6 +3876,292 @@ internal fun HelmLeftSystemsBay(
 }
 
 @Composable
+internal fun CodexBasicEmblem(
+  basicIndex: Int,
+  sizeDp: Dp,
+) {
+  Canvas(modifier = Modifier.size(sizeDp)) {
+    val cx = size.width * 0.5f
+    val cy = size.height * 0.5f
+    val r = min(size.width, size.height) * 0.44f
+    val strokeThin = (r * 0.11f).coerceAtLeast(1.4f)
+    val strokeMed = (r * 0.15f).coerceAtLeast(1.8f)
+    drawCircle(
+      brush =
+        Brush.radialGradient(
+          colors = listOf(Color(0x4400F5D4), Color(0x18091528), Color.Transparent),
+          center = Offset(cx, cy),
+          radius = r * 1.15f,
+        ),
+      radius = r * 1.12f,
+      center = Offset(cx, cy),
+    )
+    when (basicIndex) {
+      0 -> {
+        drawArc(
+          color = Color(0xFF00F5D4),
+          startAngle = -140f,
+          sweepAngle = 280f,
+          useCenter = false,
+          topLeft = Offset(cx - r, cy - r),
+          size = Size(r * 2f, r * 2f),
+          style = Stroke(width = strokeMed, cap = StrokeCap.Round),
+        )
+        val chevron =
+          Path().apply {
+            moveTo(cx, cy - r * 0.62f)
+            lineTo(cx + r * 0.46f, cy + r * 0.36f)
+            lineTo(cx, cy + r * 0.10f)
+            lineTo(cx - r * 0.46f, cy + r * 0.36f)
+            close()
+          }
+        drawPath(chevron, color = Color(0xFF38BDF8).copy(alpha = 0.34f))
+        drawPath(chevron, color = Color(0xFFE0F2FE), style = Stroke(width = strokeThin))
+        drawCircle(Color(0xFFFFD700), radius = r * 0.14f, center = Offset(cx, cy + r * 0.46f))
+      }
+      1 -> {
+        val diamond =
+          Path().apply {
+            moveTo(cx, cy - r * 0.86f)
+            lineTo(cx + r * 0.82f, cy)
+            lineTo(cx, cy + r * 0.86f)
+            lineTo(cx - r * 0.82f, cy)
+            close()
+          }
+        drawPath(diamond, color = Color(0x33FFD700))
+        drawPath(diamond, color = Color(0xFFFFD700), style = Stroke(width = strokeMed))
+        drawLine(
+          color = Color(0xFF00F5D4),
+          start = Offset(cx - r * 0.48f, cy),
+          end = Offset(cx + r * 0.48f, cy),
+          strokeWidth = strokeMed,
+          cap = StrokeCap.Round,
+        )
+        drawCircle(Color.White, radius = r * 0.15f, center = Offset(cx, cy))
+      }
+      2 -> {
+        val oct = Path()
+        for (i in 0 until 8) {
+          val ang = (i * 45.0 - 22.5) * PI / 180.0
+          val px = cx + (cos(ang) * r * 0.88f).toFloat()
+          val py = cy + (sin(ang) * r * 0.88f).toFloat()
+          if (i == 0) oct.moveTo(px, py) else oct.lineTo(px, py)
+        }
+        oct.close()
+        drawPath(oct, color = Color(0x2800F5D4))
+        drawPath(oct, color = Color(0xFF00F5D4), style = Stroke(width = strokeMed))
+        drawCircle(Color(0xFF38BDF8), radius = r * 0.42f, center = Offset(cx, cy), style = Stroke(width = strokeThin))
+        drawCircle(Color(0xFFFFD700), radius = r * 0.18f, center = Offset(cx, cy))
+      }
+      else -> {
+        drawCircle(Color(0xFF38BDF8), radius = r * 0.84f, center = Offset(cx, cy), style = Stroke(width = strokeThin))
+        val pts =
+          listOf(
+            Offset(cx, cy - r * 0.50f),
+            Offset(cx - r * 0.46f, cy + r * 0.34f),
+            Offset(cx + r * 0.46f, cy + r * 0.34f),
+          )
+        drawLine(Color(0xFF00F5D4), pts[0], pts[1], strokeWidth = strokeThin)
+        drawLine(Color(0xFF00F5D4), pts[1], pts[2], strokeWidth = strokeThin)
+        drawLine(Color(0xFF00F5D4), pts[2], pts[0], strokeWidth = strokeThin)
+        pts.forEachIndexed { idx, pt ->
+          drawCircle(
+            color = if (idx == 0) Color(0xFFFFD700) else Color(0xFF00F5D4),
+            radius = r * 0.18f,
+            center = pt,
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+internal fun RankedModeDistinctEmblem(
+  modeIndex: Int,
+  sizeDp: Dp,
+) {
+  Canvas(modifier = Modifier.size(sizeDp)) {
+    val cx = size.width * 0.5f
+    val cy = size.height * 0.5f
+    val r = min(size.width, size.height) * 0.44f
+    val sw = (r * 0.14f).coerceAtLeast(1.6f)
+    when (modeIndex) {
+      0 -> {
+        drawCircle(Color(0x2800F5D4), radius = r * 0.96f, center = Offset(cx, cy))
+        for (a in listOf(0f, 120f, 240f)) {
+          drawArc(
+            color = Color(0xFF00F5D4),
+            startAngle = a,
+            sweepAngle = 82f,
+            useCenter = false,
+            topLeft = Offset(cx - r * 0.88f, cy - r * 0.88f),
+            size = Size(r * 1.76f, r * 1.76f),
+            style = Stroke(width = sw, cap = StrokeCap.Round),
+          )
+        }
+        drawCircle(Color(0xFF38BDF8), radius = r * 0.44f, center = Offset(cx, cy), style = Stroke(width = sw * 0.8f))
+        drawCircle(Color.White, radius = r * 0.16f, center = Offset(cx, cy))
+      }
+      1 -> {
+        drawCircle(
+          brush =
+            Brush.radialGradient(
+              colors = listOf(Color.White, Color(0xFFFFD700), Color(0x44F59E0B), Color.Transparent),
+              center = Offset(cx, cy),
+              radius = r,
+            ),
+          radius = r,
+          center = Offset(cx, cy),
+        )
+        for (a in listOf(-35f, 55f, 145f, 235f)) {
+          drawArc(
+            color = Color(0xFFFEF08A),
+            startAngle = a,
+            sweepAngle = 54f,
+            useCenter = false,
+            topLeft = Offset(cx - r * 0.84f, cy - r * 0.84f),
+            size = Size(r * 1.68f, r * 1.68f),
+            style = Stroke(width = sw, cap = StrokeCap.Round),
+          )
+        }
+        drawCircle(Color(0xFFFFD700), radius = r * 0.34f, center = Offset(cx, cy))
+      }
+      2 -> {
+        drawCircle(Color(0x2638BDF8), radius = r * 0.92f, center = Offset(cx, cy))
+        val leftWing =
+          Path().apply {
+            moveTo(cx - r * 0.72f, cy + r * 0.48f)
+            lineTo(cx - r * 0.12f, cy - r * 0.68f)
+            lineTo(cx + r * 0.06f, cy - r * 0.14f)
+            close()
+          }
+        val rightWing =
+          Path().apply {
+            moveTo(cx + r * 0.72f, cy + r * 0.48f)
+            lineTo(cx + r * 0.12f, cy - r * 0.68f)
+            lineTo(cx - r * 0.06f, cy - r * 0.14f)
+            close()
+          }
+        drawPath(leftWing, color = Color(0xFF38BDF8))
+        drawPath(rightWing, color = Color(0xFF00F5D4))
+        drawLine(Color(0xFFFFD700), Offset(cx - r * 0.58f, cy + r * 0.64f), Offset(cx + r * 0.58f, cy - r * 0.64f), strokeWidth = sw * 0.85f, cap = StrokeCap.Round)
+      }
+      3 -> {
+        val rRing = r * 0.56f
+        val cA = Offset(cx - r * 0.32f, cy)
+        val cB = Offset(cx + r * 0.32f, cy)
+        drawCircle(Color(0x2234D399), radius = rRing, center = cA)
+        drawCircle(Color(0x2200F5D4), radius = rRing, center = cB)
+        drawCircle(Color(0xFF34D399), radius = rRing, center = cA, style = Stroke(width = sw))
+        drawCircle(Color(0xFF00F5D4), radius = rRing, center = cB, style = Stroke(width = sw))
+        drawCircle(Color(0xFFFFD700), radius = r * 0.14f, center = cA)
+        drawCircle(Color(0xFFFFD700), radius = r * 0.14f, center = cB)
+      }
+      4 -> {
+        val hex = Path()
+        for (i in 0 until 6) {
+          val ang = (i * 60.0 - 30.0) * PI / 180.0
+          val px = cx + (cos(ang) * r * 0.84f).toFloat()
+          val py = cy + (sin(ang) * r * 0.84f).toFloat()
+          if (i == 0) hex.moveTo(px, py) else hex.lineTo(px, py)
+        }
+        hex.close()
+        drawPath(hex, color = Color(0x2BC084FC))
+        drawPath(hex, color = Color(0xFFC084FC), style = Stroke(width = sw))
+        drawLine(
+          color = Color(0xFF00F5D4),
+          start = Offset(cx - r * 0.72f, cy + r * 0.56f),
+          end = Offset(cx + r * 0.72f, cy - r * 0.56f),
+          strokeWidth = sw * 1.15f,
+          cap = StrokeCap.Round,
+        )
+        drawCircle(Color.White, radius = r * 0.16f, center = Offset(cx, cy))
+      }
+      5 -> {
+        val shield =
+          Path().apply {
+            moveTo(cx, cy - r * 0.86f)
+            lineTo(cx + r * 0.74f, cy - r * 0.42f)
+            lineTo(cx + r * 0.56f, cy + r * 0.42f)
+            lineTo(cx, cy + r * 0.88f)
+            lineTo(cx - r * 0.56f, cy + r * 0.42f)
+            lineTo(cx - r * 0.74f, cy - r * 0.42f)
+            close()
+          }
+        drawPath(shield, color = Color(0x33FB7185))
+        drawPath(shield, color = Color(0xFFFB7185), style = Stroke(width = sw))
+        drawLine(Color(0xFFFFD700), Offset(cx - r * 0.44f, cy + r * 0.42f), Offset(cx + r * 0.44f, cy - r * 0.42f), strokeWidth = sw * 0.9f, cap = StrokeCap.Round)
+        drawLine(Color(0xFFFFD700), Offset(cx + r * 0.44f, cy + r * 0.42f), Offset(cx - r * 0.44f, cy - r * 0.42f), strokeWidth = sw * 0.9f, cap = StrokeCap.Round)
+        drawCircle(Color.White, radius = r * 0.14f, center = Offset(cx, cy))
+      }
+      else -> {
+        drawCircle(Color(0x2600F5D4), radius = r * 0.90f, center = Offset(cx, cy))
+        for ((rowIdx, yOff) in listOf(-r * 0.42f, 0f, r * 0.42f).withIndex()) {
+          val y = cy + yOff
+          drawLine(Color(0xFF38BDF8), Offset(cx - r * 0.68f, y), Offset(cx + r * 0.68f, y), strokeWidth = sw * 0.8f, cap = StrokeCap.Round)
+          val knobX = cx + listOf(-r * 0.24f, r * 0.28f, -r * 0.06f)[rowIdx]
+          drawCircle(Color(0xFFFFD700), radius = r * 0.17f, center = Offset(knobX, y))
+        }
+      }
+    }
+  }
+}
+
+private data class CodexCardDescriptor(
+  val heading: String,
+  val badge: String,
+  val shortSubtitle: String,
+  val fullSummary: String,
+  val tacticalNote: String = "",
+  val accentColor: Color,
+  val accentHex: Long,
+)
+
+private fun cleanCodexBuffHeading(buffTypeIndex: Int, rawTitle: String): String =
+  when (buffTypeIndex) {
+    11 -> "SWARM DRONES"
+    10 -> "5-STAT HULL TUNING"
+    else -> rawTitle.replace(Regex("\\s*\\([^)]*\\)"), "").trim().uppercase(Locale.US)
+  }
+
+private fun cleanCodexBuffShortSubtitle(buffTypeIndex: Int): String =
+  when (buffTypeIndex) {
+    0 -> "Stackable 360 plasma shockwaves"
+    1 -> "Point-blank kinetic fan blast"
+    2 -> "Predictive homing heavy torpedo"
+    3 -> "Cloaking decoy with EMP"
+    4 -> "Deployable hard-light shield wall"
+    5 -> "Zero-Flux supersonic speed burst"
+    6 -> "Instant 750 Flux restore"
+    7 -> "Extra radial shockwave charge"
+    8 -> "Angled side-barrel weapon split"
+    9 -> "Wall-bouncing primary weapon bolts"
+    10 -> "Stacking hull stat upgrade"
+    11 -> "Five weaving hunter micro-drones"
+    12 -> "Gravimetric snare laser toggle"
+    13 -> "Re-locking corridor patrol warhead"
+    14 -> "Stacking thermal cutting beam"
+    15 -> "Four-bounce serrated ricochet disc"
+    else -> "Tactical Supply Crate ordnance"
+  }
+
+private fun cleanCodexRiftShortSubtitle(riftId: String): String =
+  when (riftId) {
+    "plasma_rift" -> "High-energy Flux burn storm"
+    "repulsor_rift" -> "Ice-blue radial knockback field"
+    "gravity_rift" -> "Inward singularity pull vortex"
+    "unstable_rift" -> "Collapsing shockwave blast hazard"
+    else -> "Linked instant sector transit"
+  }
+
+private fun sanitizeCodexBodyCopy(raw: String): String =
+  raw
+    .replace("Spacetime-Tear Rift", "Unstable Rift", ignoreCase = true)
+    .replace("High-Value Targets", "High-Resonance Targets", ignoreCase = true)
+    .replace("High-Value Target", "High-Resonance Target", ignoreCase = true)
+
+@Composable
 internal fun HelmRightCodexBay(
   isTabletDeck: Boolean,
   headerHeight: Dp,
@@ -3596,60 +4185,109 @@ internal fun HelmRightCodexBay(
 
   val basicsCards = remember {
     listOf(
-      Triple(
-        "TWIN-STICK FLIGHT & SHARED FLUX",
-        "FLIGHT",
-        "Left stick controls thrust and heading; right stick or touch controls primary fire, secondary ordnance, brake, and Special Crate buffs. Your Flux ring powers both shields and weapons.",
+      CodexCardDescriptor(
+        heading = "TWIN-STICK FLIGHT & SHARED FLUX",
+        badge = "FLIGHT",
+        shortSubtitle = "Zero-drift thrust and shared Flux",
+        fullSummary = "Left stick controls thrust and heading with zero momentum drift on release; right stick or action buttons fire primary weapons, secondary ordnance, brake, Repel, and Crate buffs. Your Flux ring powers both shields and weapons.",
+        tacticalNote = "Retreat briefly or dock at the Rift Station Safe Harbor to recharge Flux before re-engaging.",
+        accentColor = Color(0xFF00F5D4),
+        accentHex = 0xFF00F5D4L,
       ),
-      Triple(
-        "PER-SHIP RESONANCE & 100-PT PARITY",
-        "PARITY",
-        "All 10 hulls operate on an identical 100-Point stat and weapon budget. Your highest-Resonance ship is highlighted in Solar Gold as your Best Ship.",
+      CodexCardDescriptor(
+        heading = "PER-SHIP RESONANCE & 100-PT PARITY",
+        badge = "PARITY",
+        shortSubtitle = "Identical 100-point hull balance",
+        fullSummary = "All 10 ships operate on an identical 100-Point stat and weapon budget from 0 Resonance. Ranked rewards unlock Frame C-E bays, Finishers, Halos, and Warps without ever granting paid or ranked stat advantages.",
+        tacticalNote = "Your highest-Resonance ship is highlighted in Solar Gold across Hangar and Pilot Dossier.",
+        accentColor = Color(0xFFFFD700),
+        accentHex = 0xFFFFD700L,
       ),
-      Triple(
-        "5X RIFT STATION SAFE HARBOR",
-        "STATION",
-        "Sector Convergence and Flux Core feature a central 5x ship-scale Rift Station Safe Zone. Weapons lock inside, and lingering beyond 15 seconds triggers a lockout.",
+      CodexCardDescriptor(
+        heading = "5X RIFT STATION SAFE HARBOR",
+        badge = "STATION",
+        shortSubtitle = "Central disarm recharge sanctuary",
+        fullSummary = "Sector Convergence and Flux Core anchor the map with a 5x ship-scale Rift Station Safe Harbor. Weapons disarm inside while Flux rapidly recharges; staying past 15 seconds triggers an automatic sector eviction lockout.",
+        tacticalNote = "Objective team modes disable the central Safe Harbor to enforce continuous territory control.",
+        accentColor = Color(0xFF38BDF8),
+        accentHex = 0xFF38BDF8L,
       ),
-      Triple(
-        "SYNDICATES, SQUADRONS & SHARD STORE",
-        "SOCIAL",
-        "Found or join human-chartered Syndicates, form up to 5-pilot Squadrons, and unlock hull cosmetics and Rift Frame bays in the Shard Store.",
+      CodexCardDescriptor(
+        heading = "SYNDICATES, SQUADRONS & SHIP SKINS",
+        badge = "SOCIAL",
+        shortSubtitle = "Syndicates, Squadrons, Ship Skins",
+        fullSummary = "Charter or join a real-player Syndicate, form a 5-pilot Squadron with team voice chat, earn Ranked cosmetics via Live Resonance, or unlock Frame B and five permanent hull liveries in the Shard Store.",
+        tacticalNote = "Open Subspace Comms anytime for live channels, Squadron LFG invites, and tactical Rift AI.",
+        accentColor = Color(0xFFC084FC),
+        accentHex = 0xFFC084FCL,
       ),
     )
   }
 
   val modeCards = remember {
     listOf(
-      Triple(
-        "SECTOR CONVERGENCE",
-        "OPEN 60M",
-        "Open free-for-all sector dogfighting anchored by the central 5x Rift Station Safe Harbor. Harvest Supply Crates, ride Playfield Rifts, and build Resonance.",
+      CodexCardDescriptor(
+        heading = "SECTOR CONVERGENCE",
+        badge = "OPEN 60M",
+        shortSubtitle = "Open Safe Harbor arena",
+        fullSummary = "Continuous 60-minute open sector dogfighting anchored by the central 5x Rift Station Safe Harbor. Harvest Supply Crates, ride Playfield Rifts, and build Live Resonance.",
+        tacticalNote = "Eliminating the sector Rift Leader awards bonus Resonance and shuts down their streak.",
+        accentColor = Color(0xFF00F5D4),
+        accentHex = 0xFF00F5D4L,
       ),
-      Triple(
-        "FLUX CORE",
-        "OBJECTIVE",
-        "Capture and hold the golden Flux Core Singularity Orb in the center of the sector to earn continuous Resonance while fighting off rival teams.",
+      CodexCardDescriptor(
+        heading = "FLUX CORE",
+        badge = "OBJECTIVE",
+        shortSubtitle = "Hold central Flux Core orb",
+        fullSummary = "Capture and carry the golden Flux Core Singularity Orb at the center of the sector to generate continuous Resonance while fending off rival pilots and squads.",
+        tacticalNote = "Escort your Flux Core carrier with Stasis Barriers and Repulsor Rifts to extend hold streaks.",
+        accentColor = Color(0xFFFACC15),
+        accentHex = 0xFFFACC15L,
       ),
-      Triple(
-        "RIFT SKIRMISH",
-        "2V2-5V5",
-        "Coordinated Squadron team battles matched against the closest-Resonance opponent squad within a 15-second matchmaking window.",
+      CodexCardDescriptor(
+        heading = "RIFT SKIRMISH",
+        badge = "2V2-5V5",
+        shortSubtitle = "Matched Squadron team combat",
+        fullSummary = "Coordinated 2v2 through 5v5 Squadron team battles matched against the closest-Resonance opponent squad within a crisp 15-second matchmaking window.",
+        tacticalNote = "Focus fire on low-Flux targets and rotate wingmates to preserve team Resonance.",
+        accentColor = Color(0xFF38BDF8),
+        accentHex = 0xFF38BDF8L,
       ),
-      Triple(
-        "RIFT CONTROL",
-        "2 RINGS",
-        "Contest and hold the Alpha and Omega control rings to earn team dominance points with no central Safe Zone active.",
+      CodexCardDescriptor(
+        heading = "RIFT CONTROL",
+        badge = "2 RINGS",
+        shortSubtitle = "Contest Alpha and Omega rings",
+        fullSummary = "Contest and hold the Alpha and Omega territory beacons in 3v3, 5v5, or 10v10 brackets to score team dominance points with no central Safe Harbor active.",
+        tacticalNote = "Split a fast interceptor wing to pressure the far beacon whenever rivals over-stack one ring.",
+        accentColor = Color(0xFF34D399),
+        accentHex = 0xFF34D399L,
       ),
-      Triple(
-        "STASIS BREACH",
-        "RESCUE",
-        "Eliminated pilots are held in the rival Brig Reactor. Breach the enemy Brig shield to free teammates or sweep all rivals.",
+      CodexCardDescriptor(
+        heading = "STASIS BREACH",
+        badge = "RESCUE",
+        shortSubtitle = "Breach rival Brig reactor",
+        fullSummary = "Eliminated pilots are detained inside the opposing Brig Reactor. Crack the enemy Brig shield to trigger a full-team breakout or eliminate every opposing pilot to sweep the round.",
+        tacticalNote = "Save heavy piercing ordnance like Lance Beam or Seeker Torpedo to crack the Brig reactor fast.",
+        accentColor = Color(0xFFC084FC),
+        accentHex = 0xFFC084FCL,
       ),
-      Triple(
-        "CUSTOM RIFTS & TUTORIAL",
-        "SANDBOX",
-        "Launch public or room-code Custom Rifts with custom damage, Flux cost, and speed rules, or enter the Solo Tutorial anytime.",
+      CodexCardDescriptor(
+        heading = "SYNDICATE WARS",
+        badge = "CHARTERED",
+        shortSubtitle = "Official chartered Syndicate warfare",
+        fullSummary = "Official 3v3, 5v5, and 10v10 chartered Syndicate warfare competing for War Record standings, Syndicate Leaderboard prestige, and sector supremacy.",
+        tacticalNote = "Requires an active player-founded Syndicate charter and matching Squadron bracket formation.",
+        accentColor = Color(0xFFFB7185),
+        accentHex = 0xFFFB7185L,
+      ),
+      CodexCardDescriptor(
+        heading = "CUSTOM RIFTS & TUTORIAL",
+        badge = "SANDBOX",
+        shortSubtitle = "Custom rules and Flight Guide",
+        fullSummary = "Host public or private 6-character room-code Custom Rifts with Overwatch sliders for damage, Flux cost, speed, and bots, or run the 2-phase Guided Tutorial anytime.",
+        tacticalNote = "Custom Rifts and Tutorial flight sessions let you test any 100-Point build risk-free.",
+        accentColor = Color(0xFF00F5D4),
+        accentHex = 0xFF00F5D4L,
       ),
     )
   }
@@ -3703,7 +4341,7 @@ internal fun HelmRightCodexBay(
           ) {
             Text(
               text = label,
-              color = if (sel) Color.White else Color(0xFF94A3B8),
+              color = if (sel) Color.White else Color(0xFFCBD5E1),
               fontSize = if (isTabletDeck) 7.8.sp else 7.0.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
@@ -3720,31 +4358,35 @@ internal fun HelmRightCodexBay(
     ) {
       when (selectedCategory) {
         0 -> {
-          basicsCards.forEachIndexed { idx, (heading, badge, body) ->
+          basicsCards.forEachIndexed { idx, card ->
             RiftVerticalCard(
               modifier = Modifier.fillMaxWidth(),
-              title = heading,
-              subtitle = body.take(36),
-              accent = Color(0xFF00F5D4),
+              title = card.heading,
+              subtitle = card.shortSubtitle,
+              accent = card.accentColor,
               isRightColumn = true,
-              badgeText = badge,
-              badgeColor = Color(0xFF00F5D4),
+              badgeText = card.badge,
+              badgeColor = card.accentColor,
               isTabletDeck = isTabletDeck,
               minHeightDp = 82.dp,
               testTag = "codex_basics_card_$idx",
               visualContent = { sizeDp ->
-                ResonanceCrestIcon(sizeDp = (sizeDp * 0.65f).coerceAtLeast(22.dp))
+                CodexBasicEmblem(
+                  basicIndex = idx,
+                  sizeDp = (sizeDp * 0.72f).coerceAtLeast(24.dp),
+                )
               },
               onClick = {
                 onInspectCodexStage(
                   OverwatchCircularPrompt.InfoStageInspect(
                     kicker = "CODEX • FLIGHT BASICS",
-                    title = heading,
-                    badge = badge,
-                    summary = body,
-                    accentHex = 0xFF00F5D4L,
+                    title = card.heading,
+                    badge = card.badge,
+                    summary = card.fullSummary,
+                    tacticalNote = card.tacticalNote,
+                    accentHex = card.accentHex,
                     showStationPreview = idx == 2,
-                    shipId = if (idx == 1) 1 else 0,
+                    codexBasicIndex = idx,
                   )
                 )
               },
@@ -3752,30 +4394,34 @@ internal fun HelmRightCodexBay(
           }
         }
         1 -> {
-          modeCards.forEachIndexed { idx, (heading, badge, body) ->
+          modeCards.forEachIndexed { idx, card ->
             RiftVerticalCard(
               modifier = Modifier.fillMaxWidth(),
-              title = heading,
-              subtitle = body.take(36),
-              accent = Color(0xFFFACC15),
+              title = card.heading,
+              subtitle = card.shortSubtitle,
+              accent = card.accentColor,
               isRightColumn = true,
-              badgeText = badge,
-              badgeColor = Color(0xFFFACC15),
+              badgeText = card.badge,
+              badgeColor = card.accentColor,
               isTabletDeck = isTabletDeck,
               minHeightDp = 82.dp,
               testTag = "codex_modes_card_$idx",
               visualContent = { sizeDp ->
-                ActiveRiftsEmblem(sizeDp = (sizeDp * 0.72f).coerceAtLeast(22.dp))
+                RankedModeDistinctEmblem(
+                  modeIndex = idx,
+                  sizeDp = (sizeDp * 0.76f).coerceAtLeast(24.dp),
+                )
               },
               onClick = {
                 onInspectCodexStage(
                   OverwatchCircularPrompt.InfoStageInspect(
                     kicker = "CODEX • GAME MODES",
-                    title = heading,
-                    badge = badge,
-                    summary = body,
-                    accentHex = 0xFFFACC15L,
-                    showStationPreview = idx <= 1,
+                    title = card.heading,
+                    badge = card.badge,
+                    summary = card.fullSummary,
+                    tacticalNote = card.tacticalNote,
+                    accentHex = card.accentHex,
+                    codexModeIndex = idx,
                   )
                 )
               },
@@ -3784,10 +4430,14 @@ internal fun HelmRightCodexBay(
         }
         2 -> {
           RiftCodex.POWERUP_CODEX.forEach { buff ->
+            val cleanTitle = cleanCodexBuffHeading(buff.buffTypeIndex, buff.title)
+            val shortSub = cleanCodexBuffShortSubtitle(buff.buffTypeIndex)
+            val cleanSummary = sanitizeCodexBodyCopy(buff.effectSummary)
+            val cleanNote = sanitizeCodexBodyCopy(buff.tacticalNote)
             RiftVerticalCard(
               modifier = Modifier.fillMaxWidth(),
-              title = buff.title.uppercase(Locale.US),
-              subtitle = buff.effectSummary.take(36),
+              title = cleanTitle,
+              subtitle = shortSub,
               accent = Color(0xFF34D399),
               isRightColumn = true,
               badgeText = "${buff.dropRatePercent}% DROP",
@@ -3806,10 +4456,10 @@ internal fun HelmRightCodexBay(
                 onInspectCodexStage(
                   OverwatchCircularPrompt.InfoStageInspect(
                     kicker = "SUPPLY CRATE BUFF",
-                    title = buff.title.uppercase(Locale.US),
+                    title = cleanTitle,
                     badge = "${buff.dropRatePercent}% DROP",
-                    summary = buff.effectSummary,
-                    tacticalNote = buff.tacticalNote,
+                    summary = cleanSummary,
+                    tacticalNote = cleanNote,
                     accentHex = 0xFF34D399L,
                     buffTypeIndex = buff.buffTypeIndex,
                   )
@@ -3828,12 +4478,12 @@ internal fun HelmRightCodexBay(
                 "unstable_rift" -> Color(0xFFFACC15)
                 else -> Color(0xFF00F5D4)
               }
-            val cleanRiftSummary = rift.effectSummary.replace("Spacetime-Tear Rift", "Unstable Rift", ignoreCase = true)
-            val cleanRiftCounter = rift.tacticalNote.replace("Spacetime-Tear Rift", "Unstable Rift", ignoreCase = true)
+            val cleanRiftSummary = sanitizeCodexBodyCopy(rift.effectSummary)
+            val cleanRiftCounter = sanitizeCodexBodyCopy(rift.tacticalNote)
             RiftVerticalCard(
               modifier = Modifier.fillMaxWidth(),
               title = rift.title.uppercase(Locale.US),
-              subtitle = cleanRiftSummary.take(36),
+              subtitle = cleanCodexRiftShortSubtitle(rift.id),
               accent = riftAccent,
               isRightColumn = true,
               badgeText = rift.specBadge.uppercase(Locale.US),
@@ -3842,7 +4492,7 @@ internal fun HelmRightCodexBay(
               minHeightDp = 88.dp,
               testTag = "codex_rift_card_${rift.id}",
               visualContent = { sizeDp ->
-                val phase = ((fluxOrbitRad / (2.0 * kotlin.math.PI)).toFloat() % 1f).let { if (it < 0f) it + 1f else it }
+                val phase = ((fluxOrbitRad / (2.0 * PI)).toFloat() % 1f).let { if (it < 0f) it + 1f else it }
                 Canvas(modifier = Modifier.size(sizeDp)) {
                   drawIntoCanvas { canvas ->
                     RiftSpriteBaker.drawAnimatedCodexRiftPreview(
@@ -3881,14 +4531,16 @@ internal fun HelmRightCodexBay(
           }
         }
         else -> {
-          // All 10 Ships without numeric #1..#10 prefixes; tapping opens Overwatch ShipInspect with hideChargeButton = true
           allShips.forEach { ship ->
-            val cleanName = cleanCodexShipName(ship.name)
+            val cleanName = cleanDisplayShipTitle(ship.id, ship.name)
+            val shipSubtitle =
+              if (ship.id == 10) "Modular 100-point custom hull"
+              else "${ship.role} • ${ship.primaryShortLabel}"
             RiftVerticalCard(
               modifier = Modifier.fillMaxWidth(),
               title = cleanName,
-              subtitle = "${ship.role} • ${ship.primaryShortLabel}",
-              accent = Color(0xFF38BDF8),
+              subtitle = shipSubtitle,
+              accent = if (ship.id == 10) Color(0xFF00F5D4) else Color(0xFF38BDF8),
               isRightColumn = true,
               badgeText = "100 PT",
               badgeColor = Color(0xFF00F5D4),

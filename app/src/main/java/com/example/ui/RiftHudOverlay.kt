@@ -505,7 +505,7 @@ fun RiftHudOverlay(
       contentAlignment = Alignment.Center,
      ) {
       Text(
-       text = "[EXIT TUTORIAL]",
+       text = "EXIT TUTORIAL",
        color = if (highlightExitBtn) Color(0xFFFEF08A) else Color(0xFF38BDF8),
        fontSize = (8.6f * textScale).sp,
        fontWeight = FontWeight.Black,
@@ -1070,6 +1070,32 @@ fun RiftHudOverlay(
       Text(promptSubtitle, color = Color(0xFFF87171), fontSize = (8.5f * textScale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
      }
     }
+   }
+  }
+
+  if (safeZoneActive && player.inSafeZone && player.respawnTimer <= 0f && !uiUnlocked) {
+   val stayRemSec = (RiftCalibrationState.safeZoneIdleLimitSec - player.safeZoneStayTimer).coerceAtLeast(0f)
+   Box(
+    modifier =
+     Modifier.align(Alignment.BottomCenter)
+      .padding(bottom = 148.dp)
+      .zIndex(8f)
+      .clip(RoundedCornerShape(50))
+      .background(Color(0xDC041422))
+      .border(1.dp, Color(0xAA00F5D4), RoundedCornerShape(50))
+      .padding(horizontal = (12f * textScale).dp, vertical = (4.5f * textScale).dp)
+      .testTag("hud_safe_harbor_status_banner"),
+    contentAlignment = Alignment.Center,
+   ) {
+    Text(
+     text = String.format(Locale.US, "RIFT STATION SAFE HARBOR // WEAPONS DISARMED • %.0fs MAX STAY", stayRemSec),
+     color = Color(0xFF00F5D4),
+     fontSize = (8.8f * textScale).sp,
+     fontWeight = FontWeight.ExtraBold,
+     fontFamily = FontFamily.Monospace,
+     maxLines = 1,
+     overflow = TextOverflow.Ellipsis,
+    )
    }
   }
 
@@ -1801,7 +1827,7 @@ private fun SymmetricBottomConsoleLayout(
 
  @Composable
  fun RightWingInner(fillEqualSpace: Boolean) {
-  val shardDisplay = if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) "INF" else engine.riftShards.toString()
+  val shardDisplay = if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) "999K" else engine.riftShards.toString()
   val resonanceIcon = remember(visualRev) { RiftSpriteBaker.resonanceIconBitmap.asImageBitmap() }
   val riftShardIcon = remember(visualRev) { RiftSpriteBaker.riftShardIconBitmap.asImageBitmap() }
   Row(
