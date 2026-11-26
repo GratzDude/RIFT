@@ -4255,6 +4255,18 @@ private fun OrbitalHubSpatialStage(
     val openCornerAnchorDp = outerPadH + wingWidthDp + 4.dp
     val openCornerMaxWidthDp =
       ((safeW * 0.5f) - openCornerAnchorDp - overwatchStageDiameterDp * 0.08f).coerceIn(112.dp, 224.dp)
+    val topReadoutBottomYDp = 44.dp
+    val topReadoutDyVal = (safeH.value * 0.5f - topReadoutBottomYDp.value).coerceAtLeast(0f)
+    val overwatchOuterCollarRadiusVal = overwatchStageDiameterDp.value * 0.498f
+    val topReadoutDxVal =
+      kotlin.math.sqrt(
+        (overwatchOuterCollarRadiusVal * overwatchOuterCollarRadiusVal - topReadoutDyVal * topReadoutDyVal)
+          .coerceAtLeast(0f)
+      )
+    val topLeftCornerMaxWidthDp =
+      ((safeW.value * 0.5f - topReadoutDxVal - 6f) - openCornerAnchorDp.value)
+        .dp
+        .coerceIn(158.dp, 260.dp)
 
     var stageRootOrigin by remember { mutableStateOf(Offset.Zero) }
     var activeDraggedFrameItem by remember { mutableStateOf<DraggedRiftFrameItem?>(null) }
@@ -4327,7 +4339,6 @@ private fun OrbitalHubSpatialStage(
         resolveShipResonance = { resolveLocalShipResonance(it) },
         onChargeShip = { chosenShip ->
           onChargeShip(chosenShip)
-          onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
         },
         onCustomizeRiftFrame = {
           onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
@@ -5464,6 +5475,7 @@ private fun OrbitalHubSpatialStage(
       OverwatchOpenSpaceCornerOverlays(
         openCornerAnchorDp = openCornerAnchorDp,
         openCornerMaxWidthDp = openCornerMaxWidthDp,
+        topLeftCornerMaxWidthDp = topLeftCornerMaxWidthDp,
         isTabletDeck = isTabletDeck,
         isFocused = centerFocused,
         overwatchInstances = overwatchInstances,
@@ -6056,6 +6068,10 @@ private fun PortTopPilotPod(
   onClickCallsign: () -> Unit,
   onSwitchAccount: () -> Unit,
 ) {
+  val callsignFontSize = if (pilotIdentityLabel.length > 15) 9.8.sp else 10.8.sp
+  val subtitleText =
+    if (conduitRankLabel.isNotBlank()) "DOSSIER • $conduitRankLabel"
+    else "PILOT DOSSIER"
   Row(
     modifier =
       Modifier.fillMaxWidth()
@@ -6065,7 +6081,7 @@ private fun PortTopPilotPod(
           primaryBorder = Color(0xFF00F5D4),
           secondaryBorder = Color(0xFF38BDF8),
         )
-        .padding(start = 9.dp, end = 7.dp, top = 4.dp, bottom = 5.dp),
+        .padding(start = 6.dp, end = 2.dp, top = 3.dp, bottom = 4.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.SpaceBetween,
   ) {
@@ -6075,13 +6091,13 @@ private fun PortTopPilotPod(
           .fillMaxHeight()
           .minimumInteractiveComponentSize()
           .clickable { onClickCallsign() }
-          .padding(end = 6.dp)
+          .padding(end = 2.dp)
           .testTag("nexus_top_callsign"),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(7.dp),
+      horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
       SwirlingRiftVortexGlyph(
-        modifier = Modifier.size(26.dp),
+        modifier = Modifier.size(21.dp),
         isStreaming = isStreaming,
       )
       Column(
@@ -6090,36 +6106,35 @@ private fun PortTopPilotPod(
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(5.dp),
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
           Box(
             modifier =
-              Modifier.size(7.dp)
+              Modifier.size(6.dp)
                 .clip(CircleShape)
                 .background(if (isGoogleAuthenticated) Color(0xFF00F5D4) else Color(0xFFFACC15))
           )
           Text(
             text = pilotIdentityLabel,
             color = Color(0xFFF8FAFC),
-            fontSize = 12.0.sp,
+            fontSize = callsignFontSize,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            softWrap = false,
             style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
           )
         }
-        Spacer(modifier = Modifier.height(2.5.dp))
+        Spacer(modifier = Modifier.height(2.dp))
         Text(
-          text =
-            if (conduitRankLabel.isNotBlank()) "DOSSIER • $conduitRankLabel"
-            else "PILOT DOSSIER >",
+          text = subtitleText,
           color = Color(0xFF38BDF8),
-          fontSize = 9.2.sp,
+          fontSize = 8.0.sp,
+          letterSpacing = (-0.15).sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
+          softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
@@ -6140,7 +6155,7 @@ private fun PortTopPilotPod(
           .testTag("nexus_top_switch_account"),
       contentAlignment = Alignment.Center,
     ) {
-      Canvas(modifier = Modifier.size(20.dp)) {
+      Canvas(modifier = Modifier.size(18.dp)) {
         val w = size.width
         val h = size.height
         val accent = if (isGoogleAuthenticated) Color(0xFF00F5D4) else Color(0xFFFACC15)
@@ -6164,7 +6179,7 @@ private fun PortTopPilotPod(
         )
         drawCircle(
           color = Color.White,
-          radius = 2.6.dp.toPx(),
+          radius = 2.4.dp.toPx(),
           center = Offset(w * 0.5f, h * 0.5f),
         )
       }
@@ -6194,72 +6209,30 @@ private fun PortBottomTelemetryPod(
           primaryBorder = Color(0xFFFFD700),
           secondaryBorder = Color(0xFF00F5D4),
         )
-        .padding(horizontal = 6.dp, vertical = 4.dp),
+        .padding(horizontal = 4.dp, vertical = 3.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.SpaceBetween,
   ) {
     Column(
       modifier =
-        Modifier.weight(1.0f)
+        Modifier.weight(0.96f)
           .fillMaxHeight()
           .minimumInteractiveComponentSize()
           .clickable { onClickResonance() }
-          .padding(horizontal = 3.dp)
+          .padding(horizontal = 1.5.dp)
           .testTag("nexus_top_resonance"),
       verticalArrangement = Arrangement.Center,
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
       ) {
-        ResonanceCrestIcon(sizeDp = 15.dp)
+        ResonanceCrestIcon(sizeDp = 13.dp)
         Text(
           text = formattedLiveResonance,
           color = Color(0xFFFFD700),
-          fontSize = 11.0.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-      }
-      Spacer(modifier = Modifier.height(2.dp))
-      Text(
-        text = conduitBadge.ifBlank { "CONDUIT >" },
-        color = Color(0xFFFACC15),
-        fontSize = 8.6.sp,
-        fontWeight = FontWeight.Bold,
-        fontFamily = FontFamily.Monospace,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-      )
-    }
-
-    Box(modifier = Modifier.width(1.dp).fillMaxHeight(0.68f).background(Color(0x3D38BDF8)))
-
-    Column(
-      modifier =
-        Modifier.weight(1.18f)
-          .fillMaxHeight()
-          .minimumInteractiveComponentSize()
-          .clickable { onClickShards() }
-          .padding(horizontal = 3.dp)
-          .testTag("nexus_top_shards"),
-      verticalArrangement = Arrangement.Center,
-      horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        RiftShardGemIcon(sizeDp = 15.dp)
-        Text(
-          text = shardText,
-          color = Color(0xFF38BDF8),
-          fontSize = 10.6.sp,
+          fontSize = 10.0.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -6269,9 +6242,9 @@ private fun PortBottomTelemetryPod(
       }
       Spacer(modifier = Modifier.height(2.dp))
       Text(
-        text = "SHARD STORE >",
-        color = Color(0xFF00F5D4),
-        fontSize = 8.6.sp,
+        text = conduitBadge.ifBlank { "CONDUIT" },
+        color = Color(0xFFFACC15),
+        fontSize = 7.8.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
@@ -6284,45 +6257,87 @@ private fun PortBottomTelemetryPod(
 
     Column(
       modifier =
-        Modifier.weight(0.92f)
+        Modifier.weight(1.26f)
+          .fillMaxHeight()
+          .minimumInteractiveComponentSize()
+          .clickable { onClickShards() }
+          .padding(horizontal = 1.5.dp)
+          .testTag("nexus_top_shards"),
+      verticalArrangement = Arrangement.Center,
+      horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+      ) {
+        RiftShardGemIcon(sizeDp = 13.dp)
+        Text(
+          text = shardText,
+          color = Color(0xFF38BDF8),
+          fontSize = 9.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          softWrap = false,
+          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        )
+      }
+      Spacer(modifier = Modifier.height(2.dp))
+      Text(
+        text = "SHARD STORE",
+        color = Color(0xFF00F5D4),
+        fontSize = 7.8.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        softWrap = false,
+        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+      )
+    }
+
+    Box(modifier = Modifier.width(1.dp).fillMaxHeight(0.68f).background(Color(0x3D38BDF8)))
+
+    Column(
+      modifier =
+        Modifier.weight(0.90f)
           .fillMaxHeight()
           .minimumInteractiveComponentSize()
           .clickable { onClickOnline() }
-          .padding(horizontal = 3.dp)
+          .padding(horizontal = 1.5.dp)
           .testTag("nexus_top_online"),
       verticalArrangement = Arrangement.Center,
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
       ) {
         Box(
           modifier =
-            Modifier.size(6.5.dp)
+            Modifier.size(6.dp)
               .clip(CircleShape)
               .background(onlineAccent)
         )
         Text(
           text = onlineShortLabel,
           color = onlineAccent,
-          fontSize = 10.0.sp,
+          fontSize = 9.0.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
+          softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
       Spacer(modifier = Modifier.height(2.dp))
       Text(
-        text = "ROSTER >",
+        text = "ROSTER",
         color = Color(0xFF94A3B8),
-        fontSize = 8.6.sp,
+        fontSize = 7.8.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+        softWrap = false,
         style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
     }
@@ -6679,63 +6694,82 @@ internal fun HubDigitizedReturnBar(
             cap = StrokeCap.Round,
           )
         }
-        .padding(horizontal = 6.dp, vertical = 2.dp),
+        .padding(horizontal = 4.dp, vertical = 2.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.SpaceBetween,
   ) {
+    val cleanSectionTitle =
+      remember(sectionTitle, onBackToHub != null, trailingLabel != null) {
+        when {
+          onBackToHub != null && trailingLabel != null && sectionTitle.startsWith("RIFT FRAME •") ->
+            "RIFT FRAME"
+          sectionTitle == "HANGAR 1-5" -> "SHIPS 1-5"
+          sectionTitle == "HANGAR 6-10" -> "SHIPS 6-10"
+          else -> sectionTitle
+        }
+      }
+    val titleFontSize =
+      when {
+        cleanSectionTitle.length > 15 -> 9.0.sp
+        cleanSectionTitle.length > 11 -> 9.8.sp
+        else -> 10.4.sp
+      }
+
     if (onBackToHub != null) {
       Box(
         modifier =
           Modifier.minimumInteractiveComponentSize()
             .fillMaxHeight()
             .clickable { onBackToHub() }
-            .padding(horizontal = 6.dp)
+            .padding(horizontal = 4.dp)
             .testTag("nexus_btn_back_to_hub"),
         contentAlignment = Alignment.Center,
       ) {
         Text(
-          text = "< RIFT HUB",
+          text = "< HUB",
           color = Color(0xFF00F5D4),
-          fontSize = 10.6.sp,
+          fontSize = 9.4.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
-      Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0x4438BDF8)))
+      Box(modifier = Modifier.width(1.dp).height(18.dp).background(Color(0x4438BDF8)))
     }
 
     Text(
-      text = sectionTitle,
+      text = cleanSectionTitle,
       color = Color.White,
-      fontSize = 11.4.sp,
+      fontSize = titleFontSize,
       fontWeight = FontWeight.Black,
       fontFamily = FontFamily.Monospace,
       maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
+      softWrap = false,
       style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-      modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
+      modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
     )
 
     if (trailingLabel != null && onTrailingClick != null) {
-      Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color(0x4438BDF8)))
+      Box(modifier = Modifier.width(1.dp).height(18.dp).background(Color(0x4438BDF8)))
       Box(
         modifier =
           Modifier.minimumInteractiveComponentSize()
             .fillMaxHeight()
             .clickable { onTrailingClick() }
-            .padding(horizontal = 6.dp)
+            .padding(horizontal = 4.dp)
             .let { mod -> if (trailingTag != null) mod.testTag(trailingTag) else mod },
         contentAlignment = Alignment.Center,
       ) {
         Text(
           text = trailingLabel,
           color = Color(0xFFFACC15),
-          fontSize = 9.8.sp,
+          fontSize = 9.0.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
@@ -6754,6 +6788,7 @@ internal fun HubDigitizedReturnBar(
 private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
   openCornerAnchorDp: Dp,
   openCornerMaxWidthDp: Dp,
+  topLeftCornerMaxWidthDp: Dp = openCornerMaxWidthDp,
   @Suppress("UNUSED_PARAMETER") isTabletDeck: Boolean,
   isFocused: Boolean,
   overwatchInstances: List<OverwatchRiftInstance>,
@@ -6788,37 +6823,15 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
   val modeHeaderLine = activeInstance.modeTitle.uppercase(Locale.US)
   val isInspectBayOpen = sideBayMode == RiftHubSideBayMode.OVERWATCH_INSPECT_BAY
 
-  // 1. TOP-LEFT OPEN SPACE: Simple Up Chevron + Tappable Option #1 Readout + Simple Down Chevron
+  // 1. TOP-LEFT OPEN SPACE: 2-Line Untruncated Sensor Readout at top chord + Compact Prev/Next Chevrons below
   Column(
     modifier =
       Modifier.align(Alignment.TopStart)
-        .padding(start = openCornerAnchorDp, top = 0.dp)
-        .widthIn(max = openCornerMaxWidthDp),
+        .padding(start = openCornerAnchorDp, top = 3.dp)
+        .widthIn(max = topLeftCornerMaxWidthDp),
     horizontalAlignment = Alignment.Start,
-    verticalArrangement = Arrangement.spacedBy(0.dp),
+    verticalArrangement = Arrangement.spacedBy(2.dp),
   ) {
-    Box(
-      modifier =
-        Modifier.minimumInteractiveComponentSize()
-          .size(width = 48.dp, height = 48.dp)
-          .clickable {
-            val prevIdx = if (currentIdx <= 0) totalInstances - 1 else currentIdx - 1
-            onSelectOverwatchKey(overwatchInstances[prevIdx].key)
-          }
-          .testTag("nexus_overwatch_prev"),
-      contentAlignment = Alignment.CenterStart,
-    ) {
-      Canvas(modifier = Modifier.padding(start = 8.dp).size(width = 16.dp, height = 9.dp)) {
-        val p =
-          Path().apply {
-            moveTo(0f, size.height)
-            lineTo(size.width * 0.5f, 0f)
-            lineTo(size.width, size.height)
-          }
-        drawPath(p, color = Color(0xFF00F5D4), style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round))
-      }
-    }
-
     Column(
       modifier =
         Modifier.minimumInteractiveComponentSize()
@@ -6832,107 +6845,138 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
             )
           }
           .clickable { onToggleOverwatchInspectBay() }
-          .padding(start = 8.dp, end = 7.dp, top = 4.dp, bottom = 4.dp)
+          .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp)
           .testTag("nexus_overwatch_terminal_readout"),
-      verticalArrangement = Arrangement.spacedBy(2.5.dp),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
       ) {
         Text(
           text = modeHeaderLine,
           color = if (isInspectBayOpen) Color(0xFF00F5D4) else Color.White,
-          fontSize = 9.8.sp,
+          fontSize = 8.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.weight(1f, fill = false),
+          softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
         Text(
           text = if (isInspectBayOpen) "[<]" else "[>]",
           color = Color(0xFF38BDF8),
-          fontSize = 8.2.sp,
+          fontSize = 7.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
 
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
       ) {
         Text(
-          text = "$countdownText LEFT ·",
+          text = "$countdownText ·",
           color = Color(0xFF00F5D4),
-          fontSize = 8.6.sp,
+          fontSize = 7.8.sp,
           fontWeight = FontWeight.ExtraBold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
-        ResonanceCrestIcon(sizeDp = 10.5.dp)
+        ResonanceCrestIcon(sizeDp = 9.5.dp)
         Text(
           text = "${formatOverwatchResonance(liveAvgResonance)} ·",
           color = Color(0xFFFFD700),
-          fontSize = 8.6.sp,
+          fontSize = 7.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
         Text(
           text = if (humanCount == 1) "1 PILOT" else "$humanCount PILOTS",
           color = if (humanCount > 0) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-          fontSize = 8.4.sp,
+          fontSize = 7.8.sp,
           fontWeight = FontWeight.ExtraBold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
         if (overwatchZoom > 1.03f) {
           Box(
             modifier =
               Modifier.clickable { onResetOverwatchCamera() }
-                .padding(horizontal = 3.dp, vertical = 1.dp)
+                .padding(horizontal = 2.dp, vertical = 1.dp)
                 .testTag("nexus_overwatch_zoom_reset"),
           ) {
             Text(
               text = "[1x]",
               color = Color(0xFF00F5D4),
-              fontSize = 8.0.sp,
+              fontSize = 7.6.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
+              softWrap = false,
             )
           }
         }
       }
     }
 
-    Box(
-      modifier =
-        Modifier.minimumInteractiveComponentSize()
-          .size(width = 48.dp, height = 48.dp)
-          .clickable {
-            val nextIdx = (currentIdx + 1) % totalInstances
-            onSelectOverwatchKey(overwatchInstances[nextIdx].key)
-          }
-          .testTag("nexus_overwatch_next"),
-      contentAlignment = Alignment.CenterStart,
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-      Canvas(modifier = Modifier.padding(start = 8.dp).size(width = 16.dp, height = 9.dp)) {
-        val p =
-          Path().apply {
-            moveTo(0f, 0f)
-            lineTo(size.width * 0.5f, size.height)
-            lineTo(size.width, 0f)
-          }
-        drawPath(p, color = Color(0xFF00F5D4), style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round))
+      Box(
+        modifier =
+          Modifier.minimumInteractiveComponentSize()
+            .size(width = 48.dp, height = 48.dp)
+            .clickable {
+              val prevIdx = if (currentIdx <= 0) totalInstances - 1 else currentIdx - 1
+              onSelectOverwatchKey(overwatchInstances[prevIdx].key)
+            }
+            .testTag("nexus_overwatch_prev"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Canvas(modifier = Modifier.size(width = 14.dp, height = 8.dp)) {
+          val p =
+            Path().apply {
+              moveTo(0f, size.height)
+              lineTo(size.width * 0.5f, 0f)
+              lineTo(size.width, size.height)
+            }
+          drawPath(p, color = Color(0xFF00F5D4), style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round))
+        }
+      }
+
+      Box(
+        modifier =
+          Modifier.minimumInteractiveComponentSize()
+            .size(width = 48.dp, height = 48.dp)
+            .clickable {
+              val nextIdx = (currentIdx + 1) % totalInstances
+              onSelectOverwatchKey(overwatchInstances[nextIdx].key)
+            }
+            .testTag("nexus_overwatch_next"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Canvas(modifier = Modifier.size(width = 14.dp, height = 8.dp)) {
+          val p =
+            Path().apply {
+              moveTo(0f, 0f)
+              lineTo(size.width * 0.5f, size.height)
+              lineTo(size.width, 0f)
+            }
+          drawPath(p, color = Color(0xFF00F5D4), style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round))
+        }
       }
     }
   }
@@ -7608,13 +7652,13 @@ private fun OverwatchCircularGlassPromptOverlay(
         val shipRes = resolveShipResonance(ship.id)
         val isAlreadyCharged = chargedShipId == ship.id
         val isBest = bestShipId in 1..10 && bestShipId == ship.id
-        val chargeFontSp = 10.6.sp
-        val fluxExactDp = with(density) { chargeFontSp.toDp() }
+        val actionFontSp = 9.8.sp
+        val fluxExactDp = with(density) { actionFontSp.toDp() }
 
         Column(
-          modifier = Modifier.fillMaxWidth(0.84f),
+          modifier = Modifier.fillMaxWidth(0.80f).padding(bottom = 12.dp),
           horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(3.dp),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
           Spinning25dShipWithOrbitingFlux(
             shipId = ship.id,
@@ -7623,17 +7667,17 @@ private fun OverwatchCircularGlassPromptOverlay(
             isCharged = isAlreadyCharged,
             isBestShip = isBest,
             isSelected = true,
-            sizeDp = 50.dp,
+            sizeDp = 44.dp,
           )
 
           Text(
             text = cleanName,
             color = Color.White,
-            fontSize = 11.4.sp,
+            fontSize = 11.0.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            softWrap = false,
             style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
           )
 
@@ -7641,7 +7685,7 @@ private fun OverwatchCircularGlassPromptOverlay(
             Text(
               text = customFrameSubline,
               color = Color(0xFFC084FC),
-              fontSize = 8.4.sp,
+              fontSize = 8.0.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -7657,27 +7701,29 @@ private fun OverwatchCircularGlassPromptOverlay(
             Text(
               text = ship.role.uppercase(Locale.US),
               color = Color(0xFF38BDF8),
-              fontSize = 8.4.sp,
+              fontSize = 8.2.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
+              softWrap = false,
             )
             Text("•", color = Color(0xFF64748B), fontSize = 8.0.sp)
-            ResonanceCrestIcon(sizeDp = 12.dp)
+            ResonanceCrestIcon(sizeDp = 11.dp)
             Text(
               text = formatOverwatchResonance(shipRes),
               color = Color(0xFFFFD700),
-              fontSize = 9.2.sp,
+              fontSize = 8.8.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
+              softWrap = false,
             )
           }
 
           Text(
             text = "${ship.primaryTitle} + ${ship.secondaryTitle}",
             color = Color(0xFFCBD5E1),
-            fontSize = 8.0.sp,
+            fontSize = 7.8.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -7692,7 +7738,7 @@ private fun OverwatchCircularGlassPromptOverlay(
               (combined / 1450f).coerceIn(0.22f, 1f)
             }
           Row(
-            modifier = Modifier.fillMaxWidth(0.92f),
+            modifier = Modifier.fillMaxWidth(0.90f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             CircularPromptStatBar(
@@ -7709,7 +7755,7 @@ private fun OverwatchCircularGlassPromptOverlay(
             )
           }
           Row(
-            modifier = Modifier.fillMaxWidth(0.92f),
+            modifier = Modifier.fillMaxWidth(0.90f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             CircularPromptStatBar(
@@ -7726,7 +7772,7 @@ private fun OverwatchCircularGlassPromptOverlay(
             )
           }
           Row(
-            modifier = Modifier.fillMaxWidth(0.92f),
+            modifier = Modifier.fillMaxWidth(0.90f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             CircularPromptStatBar(
@@ -7743,53 +7789,57 @@ private fun OverwatchCircularGlassPromptOverlay(
             )
           }
 
-          if (ship.id == 10) {
-            Box(
-              modifier =
-                Modifier.minimumInteractiveComponentSize()
-                  .height(48.dp)
-                  .clickable { onCustomizeRiftFrame() }
-                  .padding(vertical = 4.dp)
-                  .testTag("overwatch_customize_rift_frame_btn"),
-              contentAlignment = Alignment.Center,
-            ) {
+          // Single Compact Horizontal Action Row Centered Safely Above Bottom Circular Chord (>= 48dp touch targets)
+          Row(
+            modifier = Modifier.fillMaxWidth(0.84f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+          ) {
+            if (ship.id == 10 && !prompt.hideChargeButton) {
               Box(
                 modifier =
-                  Modifier.clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF1A1038))
-                    .border(1.1.dp, Color(0xFFC084FC), RoundedCornerShape(14.dp))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                  Modifier.minimumInteractiveComponentSize()
+                    .height(48.dp)
+                    .clickable { onCustomizeRiftFrame() }
+                    .padding(vertical = 4.dp)
+                    .testTag("overwatch_customize_rift_frame_btn"),
+                contentAlignment = Alignment.Center,
               ) {
-                Text(
-                  text = "CUSTOMIZE FRAME >",
-                  color = Color(0xFFE9D5FF),
-                  fontSize = 8.4.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                )
+                Box(
+                  modifier =
+                    Modifier.clip(RoundedCornerShape(14.dp))
+                      .background(Color(0xFF1A1038))
+                      .border(1.1.dp, Color(0xFFC084FC), RoundedCornerShape(14.dp))
+                      .padding(horizontal = 7.dp, vertical = 5.dp),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Text(
+                    text = "CUSTOMIZE >",
+                    color = Color(0xFFE9D5FF),
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    softWrap = false,
+                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                  )
+                }
               }
             }
-          }
 
-          // Primary [ CHARGE (Flux Icon) ] (hidden in Codex inspect-only preview) + [ CLOSE ] Row (>= 48dp touch targets)
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
             if (!prompt.hideChargeButton) {
               Box(
                 modifier =
                   Modifier.minimumInteractiveComponentSize()
                     .height(48.dp)
                     .clickable { onChargeShip(ship.id) }
-                    .padding(vertical = 5.dp)
+                    .padding(vertical = 4.dp)
                     .testTag("overwatch_ship_charge_button"),
                 contentAlignment = Alignment.Center,
               ) {
                 Row(
                   modifier =
-                    Modifier.clip(RoundedCornerShape(18.dp))
+                    Modifier.clip(RoundedCornerShape(15.dp))
                       .background(
                         Brush.horizontalGradient(
                           if (isAlreadyCharged) listOf(Color(0xFF0A363D), Color(0xFF091528))
@@ -7797,22 +7847,22 @@ private fun OverwatchCircularGlassPromptOverlay(
                         )
                       )
                       .border(
-                        1.35.dp,
+                        1.25.dp,
                         Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
-                        RoundedCornerShape(18.dp),
+                        RoundedCornerShape(15.dp),
                       )
-                      .padding(horizontal = 12.dp, vertical = 6.dp),
+                      .padding(horizontal = 8.dp, vertical = 5.dp),
                   verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(5.dp),
+                  horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                   Text(
                     text = if (isAlreadyCharged) "CHARGED" else "CHARGE",
                     color = Color.White,
-                    fontSize = chargeFontSp,
+                    fontSize = actionFontSp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
-                    letterSpacing = 0.6.sp,
                     maxLines = 1,
+                    softWrap = false,
                     style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                   )
                   FluxToroidIcon(sizeDp = fluxExactDp)
@@ -7825,7 +7875,7 @@ private fun OverwatchCircularGlassPromptOverlay(
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
                   .clickable { onDismissPrompt() }
-                  .padding(vertical = 5.dp)
+                  .padding(vertical = 4.dp)
                   .testTag("overwatch_prompt_close_button"),
               contentAlignment = Alignment.Center,
             ) {
@@ -7834,15 +7884,18 @@ private fun OverwatchCircularGlassPromptOverlay(
                   Modifier.clip(CircleShape)
                     .background(Color(0xCC060D1A))
                     .border(1.dp, Color(0xFF64748B), CircleShape)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
                   text = "CLOSE",
                   color = Color(0xFFCBD5E1),
-                  fontSize = 8.0.sp,
+                  fontSize = 9.5.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                  softWrap = false,
+                  style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                 )
               }
             }
@@ -8760,10 +8813,6 @@ private fun OverwatchRiftFrameDrydockView(
         it.id.equals(activeCustomSlot.secondaryType, ignoreCase = true)
       } ?: CustomShipLoadoutSlot.getAllAvailableSecondaryOptions().first()
     }
-  val sortedPrimaries =
-    remember {
-      CustomShipLoadoutSlot.PRIMARY_OPTIONS.sortedBy { it.pointCost }
-    }
   val primaryBmp =
     remember(primaryOpt.id, RiftSpriteBaker.spriteVisualRevision) {
       RiftSpriteBaker.getPrimaryWeaponIconBitmap(primaryOpt.id).asImageBitmap()
@@ -8791,9 +8840,12 @@ private fun OverwatchRiftFrameDrydockView(
     }
 
   Column(
-    modifier = Modifier.fillMaxWidth(0.92f).testTag("overwatch_rift_frame_drydock"),
+    modifier =
+      Modifier.fillMaxWidth(0.86f)
+        .padding(bottom = 14.dp)
+        .testTag("overwatch_rift_frame_drydock"),
     horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 4.dp else 2.5.dp),
+    verticalArrangement = Arrangement.spacedBy(2.dp),
   ) {
     // 1. Top Slot Identity + 100-Point Budget Readout
     Row(
@@ -8801,14 +8853,14 @@ private fun OverwatchRiftFrameDrydockView(
         Modifier.clip(RoundedCornerShape(8.dp))
           .background(Color(0xCC061121))
           .clickable { onOpenFrameRenamePrompt() }
-          .padding(horizontal = 8.dp, vertical = 3.dp),
+          .padding(horizontal = 8.dp, vertical = 2.5.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
       Text(
         text = displayTitle,
         color = Color.White,
-        fontSize = if (isTabletDeck) 9.0.sp else 8.0.sp,
+        fontSize = if (isTabletDeck) 8.8.sp else 7.8.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
@@ -8817,10 +8869,11 @@ private fun OverwatchRiftFrameDrydockView(
       Text(
         text = "$usedPoints/$effectiveBudget PTS",
         color = if (usedPoints >= effectiveBudget) Color(0xFFFFD700) else Color(0xFF00F5D4),
-        fontSize = if (isTabletDeck) 8.6.sp else 7.6.sp,
+        fontSize = if (isTabletDeck) 8.4.sp else 7.6.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
+        softWrap = false,
       )
     }
 
@@ -8838,38 +8891,39 @@ private fun OverwatchRiftFrameDrydockView(
         }
       Column(
         modifier =
-          Modifier.width(if (isTabletDeck) 84.dp else 72.dp)
-            .clip(RoundedCornerShape(9.dp))
+          Modifier.width(if (isTabletDeck) 80.dp else 70.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(if (isPriHovered) Color(0xCC0D2E42) else Color(0xB8071326))
-            .border(if (isPriDragActive) 1.6.dp else 1.dp, priBorderCol, RoundedCornerShape(9.dp))
+            .border(if (isPriDragActive) 1.6.dp else 1.dp, priBorderCol, RoundedCornerShape(8.dp))
             .onGloballyPositioned { coords ->
               val b = coords.boundsInRoot()
               priBounds = b
               onUpdatePrimarySocketBounds(b)
             }
-            .padding(horizontal = 4.dp, vertical = 4.dp)
+            .padding(horizontal = 4.dp, vertical = 3.dp)
             .testTag("overwatch_drydock_primary_socket"),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(1.5.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp),
       ) {
         Text(
           text = "PRIMARY",
           color = priBorderCol,
-          fontSize = 6.8.sp,
+          fontSize = 6.6.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
         )
         Image(
           bitmap = primaryBmp,
           contentDescription = primaryOpt.title,
           contentScale = ContentScale.Fit,
-          modifier = Modifier.size(if (isTabletDeck) 30.dp else 25.dp),
+          modifier = Modifier.size(if (isTabletDeck) 26.dp else 22.dp),
         )
         Text(
           text = primaryOpt.shortLabel.uppercase(Locale.US),
           color = Color.White,
-          fontSize = 7.2.sp,
+          fontSize = 7.0.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -8878,16 +8932,17 @@ private fun OverwatchRiftFrameDrydockView(
         Text(
           text = "${primaryOpt.pointCost} PTS",
           color = Color(0xFF00F5D4),
-          fontSize = 6.8.sp,
+          fontSize = 6.6.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
         )
       }
 
       Box(
         modifier =
-          Modifier.size(if (isTabletDeck) 82.dp else 68.dp)
+          Modifier.size(if (isTabletDeck) 72.dp else 62.dp)
             .drawBehind {
               val r = size.minDimension * 0.47f
               val arcTopLeft = Offset(center.x - r, center.y - r)
@@ -8899,7 +8954,7 @@ private fun OverwatchRiftFrameDrydockView(
                 useCenter = false,
                 topLeft = arcTopLeft,
                 size = arcSize,
-                style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round),
+                style = Stroke(width = 3.0.dp.toPx(), cap = StrokeCap.Round),
               )
               drawArc(
                 brush =
@@ -8914,7 +8969,7 @@ private fun OverwatchRiftFrameDrydockView(
                 useCenter = false,
                 topLeft = arcTopLeft,
                 size = arcSize,
-                style = Stroke(width = 3.4.dp.toPx(), cap = StrokeCap.Round),
+                style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round),
               )
             },
         contentAlignment = Alignment.Center,
@@ -8926,7 +8981,7 @@ private fun OverwatchRiftFrameDrydockView(
           isCharged = isCharged,
           isBestShip = false,
           isSelected = true,
-          sizeDp = if (isTabletDeck) 58.dp else 48.dp,
+          sizeDp = if (isTabletDeck) 50.dp else 44.dp,
         )
       }
 
@@ -8938,38 +8993,39 @@ private fun OverwatchRiftFrameDrydockView(
         }
       Column(
         modifier =
-          Modifier.width(if (isTabletDeck) 84.dp else 72.dp)
-            .clip(RoundedCornerShape(9.dp))
+          Modifier.width(if (isTabletDeck) 80.dp else 70.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(if (isSecHovered) Color(0xCC24123D) else Color(0xB8071326))
-            .border(if (isSecDragActive) 1.6.dp else 1.dp, secBorderCol, RoundedCornerShape(9.dp))
+            .border(if (isSecDragActive) 1.6.dp else 1.dp, secBorderCol, RoundedCornerShape(8.dp))
             .onGloballyPositioned { coords ->
               val b = coords.boundsInRoot()
               secBounds = b
               onUpdateSecondarySocketBounds(b)
             }
-            .padding(horizontal = 4.dp, vertical = 4.dp)
+            .padding(horizontal = 4.dp, vertical = 3.dp)
             .testTag("overwatch_drydock_secondary_socket"),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(1.5.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp),
       ) {
         Text(
           text = "MOD / BUFF",
           color = secBorderCol,
-          fontSize = 6.8.sp,
+          fontSize = 6.6.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
         )
         Image(
           bitmap = secondaryBmp,
           contentDescription = secondaryOpt.title,
           contentScale = ContentScale.Fit,
-          modifier = Modifier.size(if (isTabletDeck) 30.dp else 25.dp),
+          modifier = Modifier.size(if (isTabletDeck) 26.dp else 22.dp),
         )
         Text(
           text = secondaryOpt.shortLabel.uppercase(Locale.US),
           color = Color.White,
-          fontSize = 7.2.sp,
+          fontSize = 7.0.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -8978,44 +9034,22 @@ private fun OverwatchRiftFrameDrydockView(
         Text(
           text = "${secondaryOpt.pointCost} PTS",
           color = Color(0xFFC084FC),
-          fontSize = 6.8.sp,
+          fontSize = 6.6.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
         )
       }
     }
 
-    // 3. Six Compact Interactive Drag-and-Tap Allocation Bars (FIRE, FLUX, REGEN, SPEED, THRUST, TURN)
-    val priIndex =
-      sortedPrimaries.indexOfFirst { it.id.equals(primaryOpt.id, ignoreCase = true) }.coerceAtLeast(0)
-    DrydockInteractiveStatBar(
-      label = "FIRE",
-      valueText = "${primaryOpt.pointCost}P",
-      fraction =
-        if (sortedPrimaries.size <= 1) 1f
-        else priIndex.toFloat() / (sortedPrimaries.size - 1).toFloat(),
-      barColor = Color(0xFFFB7185),
-      onScrubFraction = { frac ->
-        val idx =
-          (frac * (sortedPrimaries.size - 1).toFloat())
-            .roundToInt()
-            .coerceIn(0, sortedPrimaries.lastIndex)
-        val chosen = sortedPrimaries[idx]
-        if (!chosen.id.equals(activeCustomSlot.primaryArchetype, ignoreCase = true)) {
-          onSaveCustomSlot(
-            activeCustomSlot
-              .copy(slotId = activeCustomSlotId, primaryArchetype = chosen.id)
-              .clampToPointBudget(effectiveBudget)
-          )
-        }
-      },
-    )
+    // 3. Five Hull Allocation Sliders (FLUX, REGEN, SPEED, THRUST, TURN) Clamped Within Remaining 100-Pt Budget
     DrydockInteractiveStatBar(
       label = "FLUX",
       valueText = "${activeCustomSlot.maxFluxPts}",
       fraction = (activeCustomSlot.maxFluxPts / 30f).coerceIn(0f, 1f),
       barColor = Color(0xFF38BDF8),
+      widthFraction = 0.80f,
       onScrubFraction = { frac ->
         val otherPts =
           activeCustomSlot.primaryPointCost() +
@@ -9036,6 +9070,7 @@ private fun OverwatchRiftFrameDrydockView(
       valueText = "${activeCustomSlot.rechargePts}",
       fraction = (activeCustomSlot.rechargePts / 30f).coerceIn(0f, 1f),
       barColor = Color(0xFF00F5D4),
+      widthFraction = 0.78f,
       onScrubFraction = { frac ->
         val otherPts =
           activeCustomSlot.primaryPointCost() +
@@ -9056,6 +9091,7 @@ private fun OverwatchRiftFrameDrydockView(
       valueText = "${activeCustomSlot.speedPts}",
       fraction = (activeCustomSlot.speedPts / 30f).coerceIn(0f, 1f),
       barColor = Color(0xFFFFD700),
+      widthFraction = 0.76f,
       onScrubFraction = { frac ->
         val otherPts =
           activeCustomSlot.primaryPointCost() +
@@ -9076,6 +9112,7 @@ private fun OverwatchRiftFrameDrydockView(
       valueText = "${activeCustomSlot.thrustPts}",
       fraction = (activeCustomSlot.thrustPts / 30f).coerceIn(0f, 1f),
       barColor = Color(0xFF34D399),
+      widthFraction = 0.72f,
       onScrubFraction = { frac ->
         val otherPts =
           activeCustomSlot.primaryPointCost() +
@@ -9096,6 +9133,7 @@ private fun OverwatchRiftFrameDrydockView(
       valueText = "${activeCustomSlot.turnPts}",
       fraction = (activeCustomSlot.turnPts / 30f).coerceIn(0f, 1f),
       barColor = Color(0xFFC084FC),
+      widthFraction = 0.68f,
       onScrubFraction = { frac ->
         val otherPts =
           activeCustomSlot.primaryPointCost() +
@@ -9112,35 +9150,46 @@ private fun OverwatchRiftFrameDrydockView(
       },
     )
 
-    // 4. Charge Rift Frame Action
+    // 4. Charge Rift Frame Action Safely Inside Bottom Circular Chord (>= 48dp touch target)
     Box(
       modifier =
-        Modifier.minimumInteractiveComponentSize()
+        Modifier.fillMaxWidth(0.64f)
+          .minimumInteractiveComponentSize()
+          .heightIn(min = 48.dp)
           .clickable { onChargeRiftFrame() }
-          .padding(top = 1.dp)
           .testTag("overwatch_drydock_charge_button"),
       contentAlignment = Alignment.Center,
     ) {
-      Box(
+      Row(
         modifier =
-          Modifier.clip(RoundedCornerShape(14.dp))
+          Modifier.heightIn(min = 38.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(
               Brush.horizontalGradient(
                 if (isCharged) listOf(Color(0xFF065F46), Color(0xFF09253A))
                 else listOf(Color(0xFF0D3554), Color(0xFF091528))
               )
             )
-            .border(1.2.dp, if (isCharged) Color(0xFF00F5D4) else Color(0xFFFFD700), RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp, vertical = 4.dp),
+            .border(
+              1.25.dp,
+              if (isCharged) Color(0xFF00F5D4) else Color(0xFFFFD700),
+              RoundedCornerShape(16.dp),
+            )
+            .padding(horizontal = 11.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
       ) {
         Text(
           text = if (isCharged) "RIFT FRAME CHARGED" else "CHARGE RIFT FRAME",
           color = Color.White,
-          fontSize = if (isTabletDeck) 8.4.sp else 7.6.sp,
+          fontSize = if (isTabletDeck) 8.4.sp else 7.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
+          softWrap = false,
+          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
+        FluxToroidIcon(sizeDp = 11.dp)
       }
     }
   }
@@ -9152,11 +9201,12 @@ private fun DrydockInteractiveStatBar(
   valueText: String,
   fraction: Float,
   barColor: Color,
+  widthFraction: Float = 0.78f,
   onScrubFraction: (Float) -> Unit,
 ) {
   var trackWidthPx by remember { mutableFloatStateOf(1f) }
   Row(
-    modifier = Modifier.fillMaxWidth(0.86f).height(15.dp),
+    modifier = Modifier.fillMaxWidth(widthFraction).height(13.5.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(5.dp),
   ) {
@@ -11800,11 +11850,12 @@ private fun ConvergenceGateZeroScrollDeck(
             CustomRuleChipRow(
               "BASE MODE:",
               listOf(
-                RankedGameMode.SECTOR_CONVERGENCE to "Convergence",
-                RankedGameMode.RIFT_SKIRMISH to "Skirmish",
-                RankedGameMode.FLUX_CORE to "Flux Core",
-                RankedGameMode.STASIS_BREACH to "Stasis Breach",
-                RankedGameMode.RIFT_CONTROL to "Rift Control",
+                RankedGameMode.SECTOR_CONVERGENCE to "FFA",
+                RankedGameMode.RIFT_SKIRMISH to "SKIRMISH",
+                RankedGameMode.FLUX_CORE to "FLUX CORE",
+                RankedGameMode.STASIS_BREACH to "BREACH",
+                RankedGameMode.RIFT_CONTROL to "CONTROL",
+                RankedGameMode.SYNDICATE_WARS to "SYN WARS",
               ),
               customBaseMode,
               onSelectCustomBaseMode,

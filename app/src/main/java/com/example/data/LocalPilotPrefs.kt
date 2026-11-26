@@ -477,7 +477,7 @@ class LocalPilotPrefs(context: Context) {
     userSettingsPrefs.edit().putFloat(KEY_CAMERA_ZOOM, clamped).apply()
   }
 
-  // Active Named Strike Wing / Armada (SOLO = "", or up-to-14-char Strike Wing tag e.g. "ASTRAL_FLEET")
+  // Active Named Squadron / Armada (SOLO = "", or up-to-14-char Squadron tag e.g. "ASTRAL_FLEET")
   fun getActiveArmadaName(): String = prefs.getString(KEY_ARMADA_NAME, "") ?: ""
 
   fun setActiveArmadaName(armadaName: String) {
@@ -938,69 +938,65 @@ class LocalPilotPrefs(context: Context) {
       else -> "9A"
     }
 
+  private fun isPersistedUnlockFlag(baseKey: String, uid: String?): Boolean {
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getBoolean(baseKey, false) else false
+    return if (!uid.isNullOrBlank()) {
+      prefs.getBoolean(uidKey(baseKey, uid), fallback)
+    } else {
+      fallback
+    }
+  }
+
   fun getActiveCustomSlotId(uid: String? = null): String {
+    val fallback =
+      if (canUseLegacyUnscopedFallback(uid)) prefs.getString(KEY_ACTIVE_CUSTOM_SLOT_ID, "Frame A")
+      else "Frame A"
     val raw =
-      prefs.getString(
-        uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid),
-        prefs.getString(KEY_ACTIVE_CUSTOM_SLOT_ID, "Frame A"),
-      ) ?: "Frame A"
-    return normalizeCustomSlotId(raw)
+      (if (!uid.isNullOrBlank()) prefs.getString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), fallback) else fallback)
+        ?: "Frame A"
+    val clean = normalizeCustomSlotId(raw)
+    return if (isCustomSlotUnlocked(clean, uid)) clean else "Frame A"
   }
 
   fun setActiveCustomSlotId(slotId: String, uid: String? = null) {
-    val clean = normalizeCustomSlotId(slotId)
-    prefs
-      .edit()
-      .putString(KEY_ACTIVE_CUSTOM_SLOT_ID, clean)
-      .putString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), clean)
-      .apply()
+    val requested = normalizeCustomSlotId(slotId)
+    val clean = if (isCustomSlotUnlocked(requested, uid)) requested else "Frame A"
+    val ed = prefs.edit().putString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), clean)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putString(KEY_ACTIVE_CUSTOM_SLOT_ID, clean)
+    }
+    ed.apply()
   }
 
   fun isCustomSlotUnlocked(slotId: String, uid: String? = null): Boolean {
     val norm = normalizeCustomSlotId(slotId)
     if (norm == "Frame A") return true
-    val lvl = getPilotLevel(uid)
-    val peakRes = getPeakResonance(uid)
     val gate = com.example.engine.RiftProgressionCatalog.getFrameSlotGate(norm)
     return when (norm) {
       "Frame B" ->
-        prefs.getBoolean(uidKey(KEY_SLOT_B_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_B_UNLOCKED, false)) ||
-          getUnlockedExtraSlots(uid) >= 1 ||
-          lvl >= 35 ||
-          peakRes >= gate.freeAtResonance
-      "Frame C" ->
-        prefs.getBoolean(uidKey(KEY_SLOT_C_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_C_UNLOCKED, false)) ||
-          getUnlockedExtraSlots(uid) >= 2 ||
-          lvl >= 50 ||
-          peakRes >= gate.freeAtResonance
-      "Frame D" ->
-        prefs.getBoolean(uidKey(KEY_SLOT_D_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_D_UNLOCKED, false)) ||
-          getUnlockedExtraSlots(uid) >= 3 ||
-          lvl >= 75 ||
-          peakRes >= gate.freeAtResonance
-      "Frame E" ->
-        prefs.getBoolean(uidKey(KEY_SLOT_E_UNLOCKED, uid), prefs.getBoolean(KEY_SLOT_E_UNLOCKED, false)) ||
-          getUnlockedExtraSlots(uid) >= 4 ||
-          lvl >= 100 ||
-          peakRes >= gate.freeAtResonance
-      else -> true
+        isPersistedUnlockFlag(KEY_SLOT_B_UNLOCKED, uid) ||
+          isPersistedUnlockFlag("cosmetic_unlocked_FRAME_SLOT_PURCHASE_2", uid)
+      "Frame C",
+      "Frame D",
+      "Frame E" -> getLiveResonance(uid) >= gate.freeAtResonance
+      else -> false
     }
   }
 
   fun setCustomSlotUnlocked(slotId: String, unlocked: Boolean, uid: String? = null) {
-    val key =
-      when (normalizeCustomSlotId(slotId)) {
-        "Frame B" -> KEY_SLOT_B_UNLOCKED
-        "Frame C" -> KEY_SLOT_C_UNLOCKED
-        "Frame D" -> KEY_SLOT_D_UNLOCKED
-        "Frame E" -> KEY_SLOT_E_UNLOCKED
-        else -> return
-      }
-    prefs
-      .edit()
-      .putBoolean(key, unlocked)
-      .putBoolean(uidKey(key, uid), unlocked)
-      .apply()
+    val norm = normalizeCustomSlotId(slotId)
+    if (norm != "Frame B") return
+    val ed =
+      prefs
+        .edit()
+        .putBoolean(uidKey(KEY_SLOT_B_UNLOCKED, uid), unlocked)
+        .putBoolean(uidKey("cosmetic_unlocked_FRAME_SLOT_PURCHASE_2", uid), unlocked)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed
+        .putBoolean(KEY_SLOT_B_UNLOCKED, unlocked)
+        .putBoolean("cosmetic_unlocked_FRAME_SLOT_PURCHASE_2", unlocked)
+    }
+    ed.apply()
   }
 
   fun getCustomShipSlot(slotId: String, uid: String? = null): com.example.engine.CustomShipLoadoutSlot {
@@ -1093,17 +1089,34 @@ class LocalPilotPrefs(context: Context) {
   fun isCosmeticUnlocked(
     category: String,
     itemId: Int,
-    pilotLevel: Int = getPilotLevel(),
+    @Suppress("UNUSED_PARAMETER") pilotLevel: Int = getPilotLevel(),
     uid: String? = null,
   ): Boolean {
-    if (itemId <= 0) return true
     val cat = category.trim().uppercase(Locale.US)
-    val item = com.example.engine.RiftProgressionCatalog.getCosmeticItem(cat, itemId)
-    if (item != null && (pilotLevel >= item.freeAtLevel || getPeakResonance(uid) >= item.freeAtResonance)) {
-      return true
+    if (cat == "FRAME_SLOT_PURCHASE") {
+      return when (itemId) {
+        0, 1 -> true
+        2 ->
+          isPersistedUnlockFlag(KEY_SLOT_B_UNLOCKED, uid) ||
+            isPersistedUnlockFlag("cosmetic_unlocked_FRAME_SLOT_PURCHASE_2", uid)
+        else -> false
+      }
     }
-    val baseKey = "cosmetic_unlocked_${cat}_$itemId"
-    return prefs.getBoolean(uidKey(baseKey, uid), prefs.getBoolean(baseKey, false))
+    if (itemId <= 0) return true
+    return when (cat) {
+      "HULL_TRIM",
+      "SHIP_SKIN",
+      "SHIP_SKIN_PURCHASE" ->
+        isPersistedUnlockFlag("cosmetic_unlocked_SHIP_SKIN_PURCHASE_$itemId", uid) ||
+          isPersistedUnlockFlag("cosmetic_unlocked_HULL_TRIM_$itemId", uid)
+      "KILL_FINISHER",
+      "WARP_SIGNATURE",
+      "HVT_HALO" -> {
+        val item = com.example.engine.RiftProgressionCatalog.getCosmeticItem(cat, itemId)
+        item != null && getLiveResonance(uid) >= item.freeAtResonance
+      }
+      else -> isPersistedUnlockFlag("cosmetic_unlocked_${cat}_$itemId", uid)
+    }
   }
 
   fun setCosmeticUnlocked(
@@ -1113,29 +1126,62 @@ class LocalPilotPrefs(context: Context) {
     uid: String? = null,
   ) {
     val cat = category.trim().uppercase(Locale.US)
-    val baseKey = "cosmetic_unlocked_${cat}_$itemId"
-    prefs
-      .edit()
-      .putBoolean(baseKey, unlocked)
-      .putBoolean(uidKey(baseKey, uid), unlocked)
-      .apply()
+    val ed = prefs.edit()
+    when {
+      cat == "FRAME_SLOT_PURCHASE" && itemId == 2 -> {
+        val purchaseKey = "cosmetic_unlocked_FRAME_SLOT_PURCHASE_2"
+        ed
+          .putBoolean(uidKey(purchaseKey, uid), unlocked)
+          .putBoolean(uidKey(KEY_SLOT_B_UNLOCKED, uid), unlocked)
+        if (canUseLegacyUnscopedFallback(uid)) {
+          ed
+            .putBoolean(purchaseKey, unlocked)
+            .putBoolean(KEY_SLOT_B_UNLOCKED, unlocked)
+        }
+      }
+      cat == "HULL_TRIM" || cat == "SHIP_SKIN" || cat == "SHIP_SKIN_PURCHASE" -> {
+        val skinKey = "cosmetic_unlocked_SHIP_SKIN_PURCHASE_$itemId"
+        val trimKey = "cosmetic_unlocked_HULL_TRIM_$itemId"
+        ed
+          .putBoolean(uidKey(skinKey, uid), unlocked)
+          .putBoolean(uidKey(trimKey, uid), unlocked)
+        if (canUseLegacyUnscopedFallback(uid)) {
+          ed
+            .putBoolean(skinKey, unlocked)
+            .putBoolean(trimKey, unlocked)
+        }
+      }
+      else -> {
+        val baseKey = "cosmetic_unlocked_${cat}_$itemId"
+        ed.putBoolean(uidKey(baseKey, uid), unlocked)
+        if (canUseLegacyUnscopedFallback(uid)) {
+          ed.putBoolean(baseKey, unlocked)
+        }
+      }
+    }
+    ed.apply()
   }
 
   fun getEquippedCosmeticId(category: String, uid: String? = null): Int {
     val cat = category.trim().uppercase(Locale.US)
     val baseKey = "cosmetic_equipped_$cat"
-    return prefs.getInt(uidKey(baseKey, uid), prefs.getInt(baseKey, 0)).coerceAtLeast(0)
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(baseKey, 0) else 0
+    val rawId =
+      (if (!uid.isNullOrBlank()) prefs.getInt(uidKey(baseKey, uid), fallback) else fallback)
+        .coerceAtLeast(0)
+    if (rawId <= 0) return 0
+    return if (isCosmeticUnlocked(cat, rawId, uid = uid)) rawId else 0
   }
 
   fun setEquippedCosmeticId(category: String, itemId: Int, uid: String? = null) {
     val cat = category.trim().uppercase(Locale.US)
     val baseKey = "cosmetic_equipped_$cat"
     val cleanId = itemId.coerceAtLeast(0)
-    prefs
-      .edit()
-      .putInt(baseKey, cleanId)
-      .putInt(uidKey(baseKey, uid), cleanId)
-      .apply()
+    val ed = prefs.edit().putInt(uidKey(baseKey, uid), cleanId)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putInt(baseKey, cleanId)
+    }
+    ed.apply()
   }
 
   // =========================================================================
@@ -1469,7 +1515,7 @@ class LocalPilotPrefs(context: Context) {
     return sweepShards to sweepRes
   }
 
-  // Adaptive Armada Tier Kills (1 = SOLO, 2 = 2-Man, 3 = 3-Man, 4 = 4-Man, 5 = 5-Man Strike Wing)
+  // Adaptive Squadron Tier Kills (1 = SOLO, 2 = 2-Pilot, 3 = 3-Pilot, 4 = 4-Pilot, 5 = 5-Pilot Squadron)
   fun getArmadaTierKills(tierSize: Int): Long {
     val clamped = tierSize.coerceIn(1, 5)
     return prefs.getLong("armada_tier_${clamped}_kills", 0L)

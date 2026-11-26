@@ -100,7 +100,7 @@ enum class RankedGameMode(
   SECTOR_CONVERGENCE(
     "SECTOR_CONVERGENCE",
     "Sector Convergence",
-    "Free-For-All • 1-5 Strike Wing Resonance",
+    "Free-For-All • 1-5 Pilot Squadron",
     "20 PILOTS • 60M",
   ),
   RIFT_SKIRMISH(
@@ -2398,21 +2398,21 @@ class RiftGameEngine(
       }
     }
     applyArmadaRosterToSectorShips()
-    onPrizeToast("STRIKE WING [$activeArmadaName] ACTIVE (${getCurrentArmadaSize()}/5 PILOTS)")
+    onPrizeToast("SQUADRON [$activeArmadaName] ACTIVE (${getCurrentArmadaSize()}/5 PILOTS)")
     onStatsUpdated()
   }
 
   fun addMemberToArmada(friend: FriendPilotEntry): Boolean {
     if (activeArmadaName.isEmpty()) {
-      activeArmadaName = "${localPlayer.syndicateTag}_WING".take(14)
+      activeArmadaName = "${localPlayer.syndicateTag}_SQUAD".take(14)
       syncLocalArmadaSelfSlot()
     }
     if (activeArmadaSlots.size >= 5) {
-      onPrizeToast("STRIKE WING [$activeArmadaName] IS AT MAX 5-PILOT CAPACITY")
+      onPrizeToast("SQUADRON [$activeArmadaName] IS AT MAX 5-PILOT CAPACITY")
       return false
     }
     if (activeArmadaSlots.any { it.callsign.equals(friend.callsign, ignoreCase = true) }) {
-      onPrizeToast("${friend.callsign} IS ALREADY IN ARMADA [$activeArmadaName]")
+      onPrizeToast("${friend.callsign} IS ALREADY IN SQUADRON [$activeArmadaName]")
       return false
     }
     val prevSize = getCurrentArmadaSize()
@@ -2428,7 +2428,7 @@ class RiftGameEngine(
     val newSize = getCurrentArmadaSize()
     applyArmadaRosterToSectorShips()
     onPrizeToast(
-      "ARMADA ROSTER SHIFT: [$activeArmadaName] ${prevSize}-MAN -> ${newSize}-MAN LEADERBOARD TIER"
+      "SQUADRON ROSTER SHIFT: [$activeArmadaName] ${prevSize}-PILOT -> ${newSize}-PILOT TIER"
     )
     onStatsUpdated()
     return true
@@ -2446,12 +2446,12 @@ class RiftGameEngine(
       activeArmadaSlots.clear()
       localPlayer.armadaName = ""
       applyArmadaRosterToSectorShips()
-      onPrizeToast("ARMADA [$oldName] DISBANDED -> SHIFTED TO [SOLO] LEADERBOARD TIER")
+      onPrizeToast("SQUADRON [$oldName] DISBANDED -> SHIFTED TO [SOLO] TIER")
     } else {
       val newSize = getCurrentArmadaSize()
       applyArmadaRosterToSectorShips()
       onPrizeToast(
-        "ARMADA ROSTER SHIFT: [$activeArmadaName] ${prevSize}-MAN -> ${newSize}-MAN LEADERBOARD TIER"
+        "SQUADRON ROSTER SHIFT: [$activeArmadaName] ${prevSize}-PILOT -> ${newSize}-PILOT TIER"
       )
     }
     onStatsUpdated()
@@ -2459,7 +2459,7 @@ class RiftGameEngine(
 
   fun simulateArmadaDropoutToDuo() {
     if (activeArmadaName.isEmpty() || activeArmadaSlots.size <= 2) {
-      onPrizeToast("Invite 2+ real pilots to your Armada first to test squad size reduction.")
+      onPrizeToast("Invite 2+ real pilots to your Squadron first to test squad size reduction.")
       return
     }
     val before = activeArmadaSlots.size
@@ -2468,7 +2468,7 @@ class RiftGameEngine(
     }
     applyArmadaRosterToSectorShips()
     onPrizeToast(
-      "ARMADA [$activeArmadaName] TRIMMED ${before}-MAN -> 2-MAN DUO TIER"
+      "SQUADRON [$activeArmadaName] TRIMMED ${before}-PILOT -> 2-PILOT DUO TIER"
     )
     onStatsUpdated()
   }
@@ -2480,7 +2480,7 @@ class RiftGameEngine(
     localPlayer.armadaName = ""
     applyArmadaRosterToSectorShips()
     if (old.isNotEmpty()) {
-      onPrizeToast("LEFT ARMADA [$old] -> FLYING [SOLO]")
+      onPrizeToast("LEFT SQUADRON [$old] -> FLYING [SOLO]")
     }
     onStatsUpdated()
   }

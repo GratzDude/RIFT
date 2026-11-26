@@ -2852,12 +2852,16 @@ internal fun GameModesRightCustomBay(
           }
         }
       } else {
-        // Explicit VISIBILITY and BASE MODE headers above toggles
-        Row(
+        // Explicit VISIBILITY toggle and 2x3 6-Mode BASE MODE holographic chip grid
+        Column(
           modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(4.dp),
+          verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
             Text(
               text = "VISIBILITY",
               color = Color(0xFF94A3B8),
@@ -2868,16 +2872,15 @@ internal fun GameModesRightCustomBay(
             )
             Box(
               modifier =
-                Modifier.fillMaxWidth()
-                  .minimumInteractiveComponentSize()
-                  .heightIn(min = 48.dp)
+                Modifier.minimumInteractiveComponentSize()
+                  .heightIn(min = 36.dp)
                   .chamferedSciFiPodSurface(
                     isRightSide = true,
-                    primaryBorder = Color(0xFF38BDF8),
+                    primaryBorder = if (customIsPrivateRoom) Color(0xFFC084FC) else Color(0xFF00F5D4),
                     secondaryBorder = Color(0xFF091528),
                   )
                   .clickable { onTogglePrivateRoom(!customIsPrivateRoom) }
-                  .padding(horizontal = 6.dp)
+                  .padding(horizontal = 10.dp, vertical = 5.dp)
                   .testTag("custom_toggle_privacy"),
               contentAlignment = Alignment.Center,
             ) {
@@ -2888,53 +2891,74 @@ internal fun GameModesRightCustomBay(
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
+                softWrap = false,
               )
             }
           }
-          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-              text = "BASE MODE",
-              color = Color(0xFF94A3B8),
-              fontSize = 6.8.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              modifier = Modifier.padding(start = 2.dp),
+
+          val customModeChips = remember {
+            listOf(
+              RankedGameMode.SECTOR_CONVERGENCE to "FFA",
+              RankedGameMode.RIFT_SKIRMISH to "SKIRMISH",
+              RankedGameMode.FLUX_CORE to "FLUX CORE",
+              RankedGameMode.STASIS_BREACH to "BREACH",
+              RankedGameMode.RIFT_CONTROL to "CONTROL",
+              RankedGameMode.SYNDICATE_WARS to "SYN WARS",
             )
-            Box(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .minimumInteractiveComponentSize()
-                  .heightIn(min = 48.dp)
-                  .chamferedSciFiPodSurface(
-                    isRightSide = true,
-                    primaryBorder = Color(0xFFFACC15),
-                    secondaryBorder = Color(0xFF091528),
-                  )
-                  .clickable {
-                    val modes =
-                      listOf(
-                        RankedGameMode.SECTOR_CONVERGENCE,
-                        RankedGameMode.RIFT_SKIRMISH,
-                        RankedGameMode.FLUX_CORE,
-                        RankedGameMode.STASIS_BREACH,
-                        RankedGameMode.RIFT_CONTROL,
-                      )
-                    val nextIdx = (modes.indexOf(customBaseMode) + 1) % modes.size
-                    onSelectCustomBaseMode(modes[nextIdx])
-                  }
-                  .padding(horizontal = 6.dp)
-                  .testTag("hub_custom_cycle_base_mode"),
-              contentAlignment = Alignment.Center,
+          }
+
+          Text(
+            text = "BASE MODE",
+            color = Color(0xFF94A3B8),
+            fontSize = 6.8.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            modifier =
+              Modifier.padding(start = 2.dp)
+                .clickable {
+                  val nextIdx = (customModeChips.indexOfFirst { it.first == customBaseMode } + 1) % customModeChips.size
+                  onSelectCustomBaseMode(customModeChips[nextIdx].first)
+                }
+                .testTag("hub_custom_cycle_base_mode"),
+          )
+
+          for (rowIdx in 0..1) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-              Text(
-                text = customBaseMode.title.uppercase(Locale.US),
-                color = Color.White,
-                fontSize = 7.4.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
+              for (colIdx in 0..2) {
+                val (modeItem, shortLabel) = customModeChips[rowIdx * 3 + colIdx]
+                val isSelectedMode = customBaseMode == modeItem
+                Box(
+                  modifier =
+                    Modifier.weight(1f)
+                      .minimumInteractiveComponentSize()
+                      .heightIn(min = 38.dp)
+                      .chamferedSciFiPodSurface(
+                        isRightSide = true,
+                        primaryBorder = if (isSelectedMode) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+                        secondaryBorder = if (isSelectedMode) Color(0xFFFFD700) else Color(0xFF091528),
+                      )
+                      .background(
+                        if (isSelectedMode) Color(0x3800F5D4) else Color.Transparent
+                      )
+                      .clickable { onSelectCustomBaseMode(modeItem) }
+                      .padding(horizontal = 4.dp, vertical = 5.dp)
+                      .testTag("hub_custom_base_mode_${modeItem.name}"),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Text(
+                    text = shortLabel,
+                    color = if (isSelectedMode) Color(0xFFFFD700) else Color(0xFFE2E8F0),
+                    fontSize = 7.4.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    softWrap = false,
+                  )
+                }
+              }
             }
           }
         }

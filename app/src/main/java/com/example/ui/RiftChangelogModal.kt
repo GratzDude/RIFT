@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 126
+const val CURRENT_RIFT_BUILD_VERSION = 127
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 127,
+      versionTag = "v1.0.127 // BUILD #127",
+      releaseDate = "Nov 26, 2026",
+      headline = "Unclipped Overwatch Drydock & Ship Inspect Lens, Strict Live-Resonance & Shard Store Unlock Gating, 6-Mode Custom Arena Grid, Untruncated Hub Readouts & Squadron Copy Polish",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Unclipped Overwatch Rift Frame Drydock & Ship Inspect: Removed the redundant Firepower stat bar from the Overwatch Rift Frame Drydock so Primary Weapon selection stays controlled by the drag-and-drop Primary socket while all five 100-Point hull sliders (Flux, Regen, Speed, Thrust, Turn) and the Charge Rift Frame button fit cleanly inside the circular bezel; consolidated Ship Inspect actions (Customize, Charge with orbiting Flux icon, and Close) onto a single compact horizontal row.",
+          "Strict Live-Resonance & Shard Store Unlock Gating: Locked Frame B and non-default Ship Skins strictly behind persisted Rift Shard Store purchases per pilot, and gated Frame C through Frame E plus ranked Kill Finishers, Warp Signatures, and Resonance Leader Halos strictly by active Live Resonance with automatic fallback to Frame A and default cosmetics while preserving saved loadouts.",
+          "6-Mode Custom Arena Grid & Untruncated Hub Readouts: Replaced the cycling Custom Rifts base-mode button with a 2x3 holographic chip grid covering all six modes (FFA, Skirmish, Flux Core, Breach, Control, Syn Wars), computed true circular chord clearance for the top-left Overwatch match selector, and rebalanced corner pod and return bar spacing so callsigns, 999,999 Shard balances, Shard Store labels, and Hangar/Rift Frame headers render without truncation.",
+          "Unified Squadron Nomenclature: Replaced remaining Strike Wing and Armada status messages across Sector Convergence subtitles and live roster notifications with unified Squadron terminology.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 126,
       versionTag = "v1.0.126 // BUILD #126",
       releaseDate = "Nov 26, 2026",
       headline = "Live Firebase AI Logic (Gemini) Integration, Overwatch 270-Degree Slider Workbench, Embedded 3-Track Audio Synth & SFX Deck, 6 Distinct Ranked Emblems & Borderless Sub-Bays",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "GEMINI AI & SLIDERS",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
