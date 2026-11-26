@@ -40,6 +40,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -397,12 +398,12 @@ fun HangarModal(
   customizationPointsTotal: Int = 100,
   spentCustomizationPoints: Int = 0,
   riftShards: Long = 0L,
-  unlockFullNinthShipOverride: Boolean = false,
+  @Suppress("UNUSED_PARAMETER") unlockFullNinthShipOverride: Boolean = false,
   activeCustomSlot: CustomShipLoadoutSlot = RiftCodex.activeCustomShipSlot,
   slot9BUnlocked: Boolean = false,
-  slot9CUnlocked: Boolean = false,
-  slot9DUnlocked: Boolean = false,
-  slot9EUnlocked: Boolean = false,
+  @Suppress("UNUSED_PARAMETER") slot9CUnlocked: Boolean = false,
+  @Suppress("UNUSED_PARAMETER") slot9DUnlocked: Boolean = false,
+  @Suppress("UNUSED_PARAMETER") slot9EUnlocked: Boolean = false,
   onOpenRiftShardsStore: () -> Unit = {},
   onOpenSyndicatesModal: () -> Unit = {},
   onSaveCustomSlot: (CustomShipLoadoutSlot) -> Unit = {},
@@ -417,7 +418,7 @@ fun HangarModal(
   onDeployPilot: (callsign: String, shipId: Int, mode: String, asGuest: Boolean) -> Unit,
   onCloseModal: () -> Unit = {},
   liveResonance: Int = 0,
-  peakResonance: Int = 0,
+  @Suppress("UNUSED_PARAMETER") peakResonance: Int = 0,
   stagedTargetTitle: String? = null,
   stagedHullLockNotice: Boolean = false,
   onCancelStagedModeToGate: (() -> Unit)? = null,
@@ -484,25 +485,19 @@ fun HangarModal(
   val effectivePointBudget = 100
   val pointsAllocatedInSlot = activeCustomSlot.totalAllocatedPoints()
   val pointsRemainingInSlot = (effectivePointBudget - pointsAllocatedInSlot).coerceAtLeast(0)
-  val effectivePeakRes = maxOf(liveResonance, peakResonance)
-  val startBounty = RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
   val isTesterInfiniteShards = RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE
-  var local9B by
-    remember(slot9BUnlocked, effectivePeakRes, unlockFullNinthShipOverride) {
-      mutableStateOf(slot9BUnlocked || effectivePeakRes >= 300 || unlockFullNinthShipOverride)
+  var isFrameBPurchased by remember(slot9BUnlocked) { mutableStateOf(slot9BUnlocked) }
+  val local9B = isFrameBPurchased
+  val local9C = RiftProgressionCatalog.isFrameSlotActive("Frame C", liveResonance, isFrameBPurchased)
+  val local9D = RiftProgressionCatalog.isFrameSlotActive("Frame D", liveResonance, isFrameBPurchased)
+  val local9E = RiftProgressionCatalog.isFrameSlotActive("Frame E", liveResonance, isFrameBPurchased)
+
+  LaunchedEffect(liveResonance, isFrameBPurchased, activeCustomSlot.slotId) {
+    val normSlot = CustomShipLoadoutSlot.normalizeSlotId(activeCustomSlot.slotId)
+    if (!RiftProgressionCatalog.isFrameSlotActive(normSlot, liveResonance, isFrameBPurchased)) {
+      onSwitchCustomSlot("Frame A")
     }
-  var local9C by
-    remember(slot9CUnlocked, effectivePeakRes, unlockFullNinthShipOverride) {
-      mutableStateOf(slot9CUnlocked || effectivePeakRes >= 650 || unlockFullNinthShipOverride)
-    }
-  var local9D by
-    remember(slot9DUnlocked, effectivePeakRes, unlockFullNinthShipOverride) {
-      mutableStateOf(slot9DUnlocked || effectivePeakRes >= 1100 || unlockFullNinthShipOverride)
-    }
-  var local9E by
-    remember(slot9EUnlocked, effectivePeakRes, unlockFullNinthShipOverride) {
-      mutableStateOf(slot9EUnlocked || effectivePeakRes >= 1600 || unlockFullNinthShipOverride)
-    }
+  }
 
   Column(
     modifier =
@@ -653,7 +648,7 @@ fun HangarModal(
         ) {
           ResonanceCrestIcon(sizeDp = 15.dp)
           Text(
-            text = "$liveResonance",
+            text = if (isCompactPhone) "$liveResonance" else "LIVE RESONANCE $liveResonance",
             color = Color(0xFFFFD700),
             fontSize = if (isCompactPhone) 9.5.sp else 10.sp,
             fontWeight = FontWeight.Black,
@@ -952,10 +947,10 @@ fun HangarModal(
       NinthShipModularForgePanel(
         spec = allTenShips.first { it.id == 10 },
         activeSlot = activeCustomSlot,
-        slot9BUnlocked = slot9BUnlocked || effectivePeakRes >= 300,
-        slot9CUnlocked = slot9CUnlocked || effectivePeakRes >= 650,
-        slot9DUnlocked = slot9DUnlocked || effectivePeakRes >= 1100,
-        slot9EUnlocked = slot9EUnlocked || effectivePeakRes >= 1600,
+        slot9BUnlocked = local9B,
+        slot9CUnlocked = local9C,
+        slot9DUnlocked = local9D,
+        slot9EUnlocked = local9E,
         effectivePointBudget = effectivePointBudget,
         pointsRemaining = pointsRemainingInSlot,
         isTesterInfiniteShards = isTesterInfiniteShards,
@@ -967,16 +962,26 @@ fun HangarModal(
           forgeStatusBanner = "SWITCHED ACTIVE LOADOUT TO ${slotId.uppercase(Locale.US)}"
         },
         onUnlockSlot = { slotId ->
-          val gate = RiftProgressionCatalog.getFrameSlotGate(slotId)
+          val normSlot = CustomShipLoadoutSlot.normalizeSlotId(slotId)
+          val gate = RiftProgressionCatalog.getFrameSlotGate(normSlot)
           forgeStatusBanner =
-            if (onUnlockCustomSlot(slotId)) {
-              if (isTesterInfiniteShards) {
-                "UNLOCKED ${slotId.uppercase(Locale.US)} (TESTER 999,999 SHARDS — 0 DEPLETED)"
+            if (normSlot == "Frame B") {
+              if (onUnlockCustomSlot("Frame B")) {
+                isFrameBPurchased = true
+                onSwitchCustomSlot("Frame B")
+                if (isTesterInfiniteShards) {
+                  "UNLOCKED FRAME B (TESTER 999,999 SHARDS — 0 DEPLETED)"
+                } else {
+                  "UNLOCKED FRAME B (-${gate.shardCost} RIFT SHARDS)"
+                }
               } else {
-                "UNLOCKED ${slotId.uppercase(Locale.US)} (-${gate.shardCost} RIFT SHARDS)"
+                "FRAME B REQUIRES ${gate.shardCost} RIFT SHARDS IN SHARD STORE"
               }
+            } else if (RiftProgressionCatalog.isFrameSlotActive(normSlot, liveResonance, isFrameBPurchased)) {
+              onSwitchCustomSlot(normSlot)
+              "EQUIPPED ${normSlot.uppercase(Locale.US)}"
             } else {
-              "REQUIRES ${gate.freeAtResonance} PEAK RESONANCE (FREE) OR ${gate.shardCost} RIFT SHARDS"
+              "${normSlot.uppercase(Locale.US)} ACTIVE AT ${gate.freeAtResonance} LIVE RESONANCE IN RANKED PLAY"
             }
         },
         onRespecSlot = {
@@ -1136,9 +1141,9 @@ fun HangarModal(
                     Text(
                       text =
                         when {
-                          isTenthLocked -> "LOCKED"
+                          isTenthLocked -> "CHARGED"
                           isTenthEquipped -> "EQUIPPED"
-                          else -> "TAP LOCK"
+                          else -> "TAP CHARGE"
                         },
                       color =
                         when {
@@ -1188,7 +1193,8 @@ fun HangarModal(
                   val isActiveFrame = normalizedSlot.equals(frameLbl, ignoreCase = true)
                   Box(
                     modifier =
-                      Modifier.testTag("hangar_matrix_frame_pill_$suffix")
+                      Modifier.minimumInteractiveComponentSize()
+                        .testTag("hangar_matrix_frame_pill_$suffix")
                         .clip(RoundedCornerShape(5.dp))
                         .background(
                           when {
@@ -1212,21 +1218,19 @@ fun HangarModal(
                           if (isFrameUnlocked) {
                             onSwitchCustomSlot(slotKey)
                             forgeStatusBanner = "EQUIPPED RIFT $frameLbl"
-                          } else {
-                            val unlockedNow = onUnlockCustomSlot(slotKey)
+                          } else if (suffix == "B") {
+                            val unlockedNow = onUnlockCustomSlot("Frame B")
                             if (unlockedNow) {
-                              when (suffix) {
-                                "B" -> local9B = true
-                                "C" -> local9C = true
-                                "D" -> local9D = true
-                                "E" -> local9E = true
-                              }
-                              onSwitchCustomSlot(slotKey)
-                              forgeStatusBanner = "UNLOCKED & EQUIPPED RIFT $frameLbl"
+                              isFrameBPurchased = true
+                              onSwitchCustomSlot("Frame B")
+                              forgeStatusBanner = "UNLOCKED & EQUIPPED RIFT FRAME B"
                             } else {
-                              forgeStatusBanner =
-                                "$frameLbl LOCKED — EARN RESONANCE OR SPEND 120 RIFT SHARDS"
+                              forgeStatusBanner = "FRAME B REQUIRES 250 RIFT SHARDS IN SHARD STORE"
                             }
+                          } else {
+                            val gate = RiftProgressionCatalog.getFrameSlotGate(slotKey)
+                            forgeStatusBanner =
+                              "$frameLbl ACTIVE AT ${gate.freeAtResonance} LIVE RESONANCE IN RANKED PLAY"
                           }
                         }
                         .padding(horizontal = 5.dp, vertical = 3.dp),
@@ -1473,7 +1477,7 @@ private fun MatrixShipComparisonCell(
           Text(
             text =
               when {
-                isLocked -> "LOCKED"
+                isLocked -> "CHARGED"
                 isEquipped -> "EQUIPPED"
                 else -> "SELECT"
               },
@@ -1725,7 +1729,7 @@ private fun ShipComparisonInspectorPanel(
             horizontalArrangement = Arrangement.spacedBy(5.dp),
           ) {
             Text(
-              text = if (isInspectedLocked) "RIFT LOCK // ACTIVE" else "HOLO-INSPECTOR // STANDBY",
+              text = if (isInspectedLocked) "HULL CHARGED // ACTIVE" else "HOLO-INSPECTOR // STANDBY",
               color = if (isInspectedLocked) HangarNexusTeal else Color(0xFF94A3B8),
               fontSize = 9.5.sp,
               fontWeight = FontWeight.Black,
@@ -1994,7 +1998,7 @@ private fun ShipComparisonInspectorPanel(
           .testTag("btn_deploy_pilot"),
     ) {
       Text(
-        text = if (hasLockedHull) "ENTER RIFT // $deployLabelTitle" else "TAP HULL TO LOCK IN FOR RIFT",
+        text = if (hasLockedHull) "ENTER RIFT // $deployLabelTitle" else "TAP HULL TO CHARGE FOR RIFT",
         color = if (hasLockedHull) Color.White else Color(0xFF94A3B8),
         fontSize = if (isCompactPhone) 12.sp else 13.sp,
         fontWeight = FontWeight.Black,
@@ -2087,17 +2091,18 @@ private fun NinthShipModularForgePanel(
         val slots =
           listOf(
             FrameSlotChipSpec("Frame A", true, "A", 0, 0),
-            FrameSlotChipSpec("Frame B", slot9BUnlocked, "B", 300, 250),
-            FrameSlotChipSpec("Frame C", slot9CUnlocked, "C", 650, 400),
-            FrameSlotChipSpec("Frame D", slot9DUnlocked, "D", 1100, 600),
-            FrameSlotChipSpec("Frame E", slot9EUnlocked, "E", 1600, 600),
+            FrameSlotChipSpec("Frame B", slot9BUnlocked, "B", 0, 250),
+            FrameSlotChipSpec("Frame C", slot9CUnlocked, "C", 650, 0),
+            FrameSlotChipSpec("Frame D", slot9DUnlocked, "D", 1100, 0),
+            FrameSlotChipSpec("Frame E", slot9EUnlocked, "E", 1600, 0),
           )
         slots.forEach { slotSpec ->
           val isCurrentSlot = normalizedCurrentSlot == slotSpec.slotId
           val safeTag = slotSpec.slotId.replace(" ", "_")
           Row(
             modifier =
-              Modifier.testTag("btn_custom_slot_$safeTag")
+              Modifier.minimumInteractiveComponentSize()
+                .testTag("btn_custom_slot_$safeTag")
                 .clip(RoundedCornerShape(6.dp))
                 .background(
                   when {
@@ -2110,7 +2115,8 @@ private fun NinthShipModularForgePanel(
                   when {
                     isCurrentSlot -> Color(0xFFC084FC)
                     slotSpec.unlocked -> Color(0xFF475569)
-                    else -> HangarSolarGold
+                    slotSpec.shardCost > 0 -> HangarSolarGold
+                    else -> HangarNexusTeal
                   },
                   RoundedCornerShape(6.dp),
                 )
@@ -2132,28 +2138,32 @@ private fun NinthShipModularForgePanel(
               )
             } else {
               Text(
-                text = slotSpec.shortLetter,
-                color = HangarSolarGold,
+                text = "FRAME ${slotSpec.shortLetter}",
+                color = if (slotSpec.shardCost > 0) HangarSolarGold else HangarNexusTeal,
                 fontSize = 9.5.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = Mono,
               )
-              ResonanceCrestIcon(sizeDp = 12.dp)
-              Text(
-                text = "${slotSpec.freeResonance}",
-                color = HangarNexusTeal,
-                fontSize = 9.5.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = Mono,
-              )
-              RiftShardGemIcon(sizeDp = 12.dp)
-              Text(
-                text = "${slotSpec.shardCost}",
-                color = HangarSolarGold,
-                fontSize = 9.5.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = Mono,
-              )
+              if (slotSpec.freeResonance > 0) {
+                ResonanceCrestIcon(sizeDp = 12.dp)
+                Text(
+                  text = "${slotSpec.freeResonance}",
+                  color = HangarNexusTeal,
+                  fontSize = 9.5.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = Mono,
+                )
+              }
+              if (slotSpec.shardCost > 0) {
+                RiftShardGemIcon(sizeDp = 12.dp)
+                Text(
+                  text = "${slotSpec.shardCost}",
+                  color = HangarSolarGold,
+                  fontSize = 9.5.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = Mono,
+                )
+              }
             }
           }
         }

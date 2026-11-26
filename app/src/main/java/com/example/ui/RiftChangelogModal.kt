@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 127
+const val CURRENT_RIFT_BUILD_VERSION = 128
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,21 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 128,
+      versionTag = "v1.0.128 // BUILD #128",
+      releaseDate = "Nov 26, 2026",
+      headline = "Shard Store Paid Skin & Live-Resonance Gate Fix, Pre-Auth 960x540 Viewport Lock, Hangar Charged Badges & Frame Economy Alignment, Unclipped Port Pilot Pod & Stacked Ship 10 Overwatch Actions, and Cloud Cosmetic Sync",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Shard Store Paid Skin & Live-Resonance Gate Fix: Fixed the Shard Store unlock check so Ship Skins 1 through 5 require a persisted Rift Shard purchase per pilot rather than unlocking automatically at 0 Resonance, while Ranked Kill Finishers, Warp Signatures, and Resonance Leader Halos activate strictly from current Live Resonance without ever deducting Rift Shards.",
+          "Pre-Auth & Update Chrome 960x540 Viewport Lock: Wrapped the startup loading screen, Google and Drifter sign-in screen, and update banner inside the 960x540 virtual viewport scaler with fontScale = 1f protection so pre-auth layouts stay crisp across compact phones, ultrawide phones, and tablets while keeping the live Arena view edge-to-edge.",
+          "Hangar Charged Badges & Live-Resonance Frame Economy: Updated Hangar hull status chips from Locked to Charged, gated Frame B strictly to its permanent 250-Shard unlock, gated Frame C (650), Frame D (1100), and Frame E (1600) strictly by active Live Resonance with zero Shard prices and automatic non-destructive fallback to Frame A, and paired Live Resonance readouts with the Resonance crest icon.",
+          "Unclipped Port Pilot Pod, Stacked Ship 10 Overwatch Actions & Cloud Cosmetic Sync: Added clean text ellipsis clearance before the Port Pilot Pod account divider, moved Customize Rift Frame onto its own centered pill row above Charge and Close inside the Ship 10 Overwatch inspect lens so buttons never crowd the circular chord, and persisted paid Frame B, Ship Skins 1 through 5, and equipped cosmetics in cloud progression JSON.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 127,
       versionTag = "v1.0.127 // BUILD #127",

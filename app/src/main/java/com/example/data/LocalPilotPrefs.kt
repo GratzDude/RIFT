@@ -2698,6 +2698,25 @@ class LocalPilotPrefs(context: Context) {
       slotsObj.put(slotId, getCustomShipSlot(slotId, uid).toJsonString())
     }
     obj.put("slots", slotsObj)
+    obj.put(
+      "frameBPurchased",
+      isCosmeticUnlocked("FRAME_SLOT_PURCHASE", 2, 1, uid) || isCustomSlotUnlocked("Frame B", uid),
+    )
+    val ownedHullSkinsArr = JSONArray()
+    for (skinId in 1..5) {
+      if (isCosmeticUnlocked("HULL_TRIM", skinId, 1, uid)) {
+        ownedHullSkinsArr.put(skinId)
+      }
+    }
+    obj.put("ownedHullSkins", ownedHullSkinsArr)
+    val equippedCosmeticsObj =
+      JSONObject().apply {
+        put("HULL_TRIM", getEquippedCosmeticId("HULL_TRIM", uid))
+        put("KILL_FINISHER", getEquippedCosmeticId("KILL_FINISHER", uid))
+        put("WARP_SIGNATURE", getEquippedCosmeticId("WARP_SIGNATURE", uid))
+        put("HVT_HALO", getEquippedCosmeticId("HVT_HALO", uid))
+      }
+    obj.put("equippedCosmetics", equippedCosmeticsObj)
     obj.put("shipSurvival", exportShipSurvivalJsonObject(uid))
     obj.put("updatedAtMs", System.currentTimeMillis())
     return obj.toString()
@@ -2756,6 +2775,54 @@ class LocalPilotPrefs(context: Context) {
         edPeak.putInt(KEY_PEAK_RESONANCE, bestPeak)
       }
       edPeak.apply()
+
+      val localFrameBOwned =
+        isCosmeticUnlocked("FRAME_SLOT_PURCHASE", 2, 1, uid) || isCustomSlotUnlocked("Frame B", uid)
+      val cloudFrameBOwned = obj.optBoolean("frameBPurchased", false)
+      if (localFrameBOwned || cloudFrameBOwned) {
+        setCosmeticUnlocked("FRAME_SLOT_PURCHASE", 2, true, uid)
+        setCustomSlotUnlocked("Frame B", true, uid)
+      }
+
+      val ownedSkinsArr = obj.optJSONArray("ownedHullSkins")
+      if (ownedSkinsArr != null) {
+        for (idx in 0 until ownedSkinsArr.length()) {
+          val skinId = ownedSkinsArr.optInt(idx, 0)
+          if (skinId in 1..5) {
+            setCosmeticUnlocked("HULL_TRIM", skinId, true, uid)
+          }
+        }
+      }
+
+      val equippedObj = obj.optJSONObject("equippedCosmetics")
+      if (equippedObj != null) {
+        val prevHullTrim = getEquippedCosmeticId("HULL_TRIM", uid)
+        val cloudHullTrim = equippedObj.optInt("HULL_TRIM", 0)
+        if (
+          prevHullTrim == 0 &&
+            cloudHullTrim in 1..5 &&
+            isCosmeticUnlocked("HULL_TRIM", cloudHullTrim, 1, uid)
+        ) {
+          setEquippedCosmeticId("HULL_TRIM", cloudHullTrim, uid)
+        }
+        val nextHullTrim = getEquippedCosmeticId("HULL_TRIM", uid).coerceIn(0, 5)
+        if (nextHullTrim != prevHullTrim) {
+          com.example.engine.RiftSpriteBaker.activeHullTrimStyle = nextHullTrim
+        }
+
+        val cloudKillFinisher = equippedObj.optInt("KILL_FINISHER", 0)
+        if (getEquippedCosmeticId("KILL_FINISHER", uid) == 0 && cloudKillFinisher in 1..4) {
+          setEquippedCosmeticId("KILL_FINISHER", cloudKillFinisher, uid)
+        }
+        val cloudWarpSignature = equippedObj.optInt("WARP_SIGNATURE", 0)
+        if (getEquippedCosmeticId("WARP_SIGNATURE", uid) == 0 && cloudWarpSignature in 1..3) {
+          setEquippedCosmeticId("WARP_SIGNATURE", cloudWarpSignature, uid)
+        }
+        val cloudHvtHalo = equippedObj.optInt("HVT_HALO", 0)
+        if (getEquippedCosmeticId("HVT_HALO", uid) == 0 && cloudHvtHalo in 1..3) {
+          setEquippedCosmeticId("HVT_HALO", cloudHvtHalo, uid)
+        }
+      }
 
       saveCombatStats(
         pvpKills = kotlin.math.max(getPvpKills(uid), obj.optLong("pvpKills", 0L)),

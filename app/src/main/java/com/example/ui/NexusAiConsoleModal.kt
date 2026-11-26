@@ -6091,7 +6091,7 @@ private fun PortTopPilotPod(
           .fillMaxHeight()
           .minimumInteractiveComponentSize()
           .clickable { onClickCallsign() }
-          .padding(end = 2.dp)
+          .padding(end = 4.dp)
           .testTag("nexus_top_callsign"),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -6101,7 +6101,7 @@ private fun PortTopPilotPod(
         isStreaming = isStreaming,
       )
       Column(
-        modifier = Modifier.weight(1f),
+        modifier = Modifier.weight(1f, fill = false),
         verticalArrangement = Arrangement.Center,
       ) {
         Row(
@@ -6121,7 +6121,7 @@ private fun PortTopPilotPod(
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
-            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
             style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
           )
         }
@@ -6134,7 +6134,7 @@ private fun PortTopPilotPod(
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
-          softWrap = false,
+          overflow = TextOverflow.Ellipsis,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
@@ -7607,7 +7607,10 @@ private fun OverwatchCircularGlassPromptOverlay(
             style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
           )
         }
-        .padding(all = 16.dp)
+        .padding(
+          horizontal = if (prompt is OverwatchCircularPrompt.ShipInspect && prompt.shipId == 10) 12.dp else 16.dp,
+          vertical = if (prompt is OverwatchCircularPrompt.ShipInspect && prompt.shipId == 10) 8.dp else 16.dp,
+        )
         .testTag("overwatch_circular_glass_prompt"),
     contentAlignment = Alignment.Center,
   ) {
@@ -7652,13 +7655,16 @@ private fun OverwatchCircularGlassPromptOverlay(
         val shipRes = resolveShipResonance(ship.id)
         val isAlreadyCharged = chargedShipId == ship.id
         val isBest = bestShipId in 1..10 && bestShipId == ship.id
-        val actionFontSp = 9.8.sp
+        val isRiftFrameWithActions = ship.id == 10 && !prompt.hideChargeButton
+        val actionFontSp = 9.6.sp
         val fluxExactDp = with(density) { actionFontSp.toDp() }
 
         Column(
-          modifier = Modifier.fillMaxWidth(0.80f).padding(bottom = 12.dp),
+          modifier =
+            Modifier.fillMaxWidth(if (isRiftFrameWithActions) 0.90f else 0.84f)
+              .padding(bottom = if (isRiftFrameWithActions) 2.dp else 10.dp),
           horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(2.dp),
+          verticalArrangement = Arrangement.spacedBy(if (isRiftFrameWithActions) 1.dp else 2.dp),
         ) {
           Spinning25dShipWithOrbitingFlux(
             shipId = ship.id,
@@ -7667,31 +7673,59 @@ private fun OverwatchCircularGlassPromptOverlay(
             isCharged = isAlreadyCharged,
             isBestShip = isBest,
             isSelected = true,
-            sizeDp = 44.dp,
+            sizeDp = if (isRiftFrameWithActions) 34.dp else 44.dp,
           )
 
-          Text(
-            text = cleanName,
-            color = Color.White,
-            fontSize = 11.0.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            softWrap = false,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-          )
-
-          if (customFrameSubline.isNotBlank()) {
+          if (isRiftFrameWithActions && customFrameSubline.isNotBlank()) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+            ) {
+              Text(
+                text = cleanName,
+                color = Color.White,
+                fontSize = 10.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                softWrap = false,
+                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+              )
+              Text(
+                text = "• $customFrameSubline",
+                color = Color(0xFFC084FC),
+                fontSize = 8.2.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+              )
+            }
+          } else {
             Text(
-              text = customFrameSubline,
-              color = Color(0xFFC084FC),
-              fontSize = 8.0.sp,
-              fontWeight = FontWeight.Bold,
+              text = cleanName,
+              color = Color.White,
+              fontSize = 11.0.sp,
+              fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
+              softWrap = false,
               style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
             )
+
+            if (customFrameSubline.isNotBlank()) {
+              Text(
+                text = customFrameSubline,
+                color = Color(0xFFC084FC),
+                fontSize = 8.0.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+              )
+            }
           }
 
           Row(
@@ -7701,18 +7735,18 @@ private fun OverwatchCircularGlassPromptOverlay(
             Text(
               text = ship.role.uppercase(Locale.US),
               color = Color(0xFF38BDF8),
-              fontSize = 8.2.sp,
+              fontSize = 8.0.sp,
               fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
-              softWrap = false,
+              overflow = TextOverflow.Ellipsis,
             )
             Text("•", color = Color(0xFF64748B), fontSize = 8.0.sp)
             ResonanceCrestIcon(sizeDp = 11.dp)
             Text(
               text = formatOverwatchResonance(shipRes),
               color = Color(0xFFFFD700),
-              fontSize = 8.8.sp,
+              fontSize = 8.6.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -7723,7 +7757,7 @@ private fun OverwatchCircularGlassPromptOverlay(
           Text(
             text = "${ship.primaryTitle} + ${ship.secondaryTitle}",
             color = Color(0xFFCBD5E1),
-            fontSize = 7.8.sp,
+            fontSize = 7.6.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -7738,7 +7772,7 @@ private fun OverwatchCircularGlassPromptOverlay(
               (combined / 1450f).coerceIn(0.22f, 1f)
             }
           Row(
-            modifier = Modifier.fillMaxWidth(0.90f),
+            modifier = Modifier.fillMaxWidth(0.88f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             CircularPromptStatBar(
@@ -7755,7 +7789,7 @@ private fun OverwatchCircularGlassPromptOverlay(
             )
           }
           Row(
-            modifier = Modifier.fillMaxWidth(0.90f),
+            modifier = Modifier.fillMaxWidth(0.88f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             CircularPromptStatBar(
@@ -7772,7 +7806,7 @@ private fun OverwatchCircularGlassPromptOverlay(
             )
           }
           Row(
-            modifier = Modifier.fillMaxWidth(0.90f),
+            modifier = Modifier.fillMaxWidth(0.88f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             CircularPromptStatBar(
@@ -7789,51 +7823,47 @@ private fun OverwatchCircularGlassPromptOverlay(
             )
           }
 
-          // Single Compact Horizontal Action Row Centered Safely Above Bottom Circular Chord (>= 48dp touch targets)
-          Row(
-            modifier = Modifier.fillMaxWidth(0.84f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
-          ) {
-            if (ship.id == 10 && !prompt.hideChargeButton) {
+          if (isRiftFrameWithActions) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .clickable { onCustomizeRiftFrame() }
+                  .testTag("overwatch_customize_rift_frame_btn"),
+              contentAlignment = Alignment.Center,
+            ) {
               Box(
                 modifier =
-                  Modifier.minimumInteractiveComponentSize()
-                    .height(48.dp)
-                    .clickable { onCustomizeRiftFrame() }
-                    .padding(vertical = 4.dp)
-                    .testTag("overwatch_customize_rift_frame_btn"),
+                  Modifier.clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF1A1038))
+                    .border(1.15.dp, Color(0xFFC084FC), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
                 contentAlignment = Alignment.Center,
               ) {
-                Box(
-                  modifier =
-                    Modifier.clip(RoundedCornerShape(14.dp))
-                      .background(Color(0xFF1A1038))
-                      .border(1.1.dp, Color(0xFFC084FC), RoundedCornerShape(14.dp))
-                      .padding(horizontal = 7.dp, vertical = 5.dp),
-                  contentAlignment = Alignment.Center,
-                ) {
-                  Text(
-                    text = "CUSTOMIZE >",
-                    color = Color(0xFFE9D5FF),
-                    fontSize = 9.5.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                    softWrap = false,
-                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                  )
-                }
+                Text(
+                  text = "CUSTOMIZE RIFT FRAME >",
+                  color = Color(0xFFE9D5FF),
+                  fontSize = 9.0.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                  softWrap = false,
+                  style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                )
               }
             }
+          }
 
+          // 2-Button Bottom Row Centered Safely Above Bottom Circular Chord (>= 48dp touch targets)
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+          ) {
             if (!prompt.hideChargeButton) {
               Box(
                 modifier =
                   Modifier.minimumInteractiveComponentSize()
-                    .height(48.dp)
                     .clickable { onChargeShip(ship.id) }
-                    .padding(vertical = 4.dp)
                     .testTag("overwatch_ship_charge_button"),
                 contentAlignment = Alignment.Center,
               ) {
@@ -7851,7 +7881,7 @@ private fun OverwatchCircularGlassPromptOverlay(
                         Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
                         RoundedCornerShape(15.dp),
                       )
-                      .padding(horizontal = 8.dp, vertical = 5.dp),
+                      .padding(horizontal = 9.dp, vertical = if (isRiftFrameWithActions) 4.dp else 5.dp),
                   verticalAlignment = Alignment.CenterVertically,
                   horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -7873,9 +7903,7 @@ private fun OverwatchCircularGlassPromptOverlay(
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
-                  .height(48.dp)
                   .clickable { onDismissPrompt() }
-                  .padding(vertical = 4.dp)
                   .testTag("overwatch_prompt_close_button"),
               contentAlignment = Alignment.Center,
             ) {
@@ -7884,13 +7912,13 @@ private fun OverwatchCircularGlassPromptOverlay(
                   Modifier.clip(CircleShape)
                     .background(Color(0xCC060D1A))
                     .border(1.dp, Color(0xFF64748B), CircleShape)
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                    .padding(horizontal = 9.dp, vertical = if (isRiftFrameWithActions) 4.dp else 5.dp),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
                   text = "CLOSE",
                   color = Color(0xFFCBD5E1),
-                  fontSize = 9.5.sp,
+                  fontSize = 9.4.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                   maxLines = 1,

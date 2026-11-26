@@ -996,7 +996,7 @@ fun AppNavigation(
       withContext(Dispatchers.Default) {
         try {
           val preferredShip = localPrefs.getPreferredShipId().coerceIn(1, 10)
-          val equippedTrim = localPrefs.getEquippedCosmeticId("HULL_TRIM", prewarmUid).coerceIn(0, 3)
+          val equippedTrim = localPrefs.getEquippedCosmeticId("HULL_TRIM", prewarmUid).coerceIn(0, 5)
           val activeSlotId = localPrefs.getActiveCustomSlotId(prewarmUid)
           val loadedSlot = localPrefs.getCustomShipSlot(activeSlotId, prewarmUid)
           val savedTag = localPrefs.getSyndicateTag(prewarmUid)
@@ -1030,40 +1030,44 @@ fun AppNavigation(
 
   Box(modifier = Modifier.fillMaxSize().background(Color(0xFF060D1A))) {
     if (!isStartupAssetsReady) {
-      RiftTitleLoadingScreen(
-        progress = startupProgress,
-        statusLabel = startupStatusText,
-      )
+      DeviceAwareModalAutoScaler(bypassScaling = false) {
+        RiftTitleLoadingScreen(
+          progress = startupProgress,
+          statusLabel = startupStatusText,
+        )
+      }
       return@Box
     }
     if (user == null && !isGuestMode) {
-      AuthScreen(
-        onAuthSuccess = {
-          isGuestMode = false
-          runCatching {
-            localPrefs.setGuestBypassEnabled(false)
-            localPrefs.setBootToNexusHub(true)
-          }
-        },
-        onPlayAsGuest = {
-          runCatching {
-            localPrefs.startFreshDrifterSession()
-            localPrefs.setBootToNexusHub(true)
-          }
-          drifterSessionEpoch++
-          isGuestMode = true
-        },
-        onOpenChangelog = { showPreAuthChangelog = true },
-      )
-      if (showPreAuthChangelog) {
-        DeviceAwareModalAutoScaler {
-          RiftChangelogModal(
-            lastSeenBuild = runCatching { localPrefs.getLastSeenChangelogBuild() }.getOrDefault(0),
-            onAcknowledgeAndContinue = {
-              runCatching { localPrefs.setLastSeenChangelogBuild(CURRENT_RIFT_BUILD_VERSION) }
-              showPreAuthChangelog = false
+      DeviceAwareModalAutoScaler(bypassScaling = false) {
+        Box(modifier = Modifier.fillMaxSize()) {
+          AuthScreen(
+            onAuthSuccess = {
+              isGuestMode = false
+              runCatching {
+                localPrefs.setGuestBypassEnabled(false)
+                localPrefs.setBootToNexusHub(true)
+              }
             },
+            onPlayAsGuest = {
+              runCatching {
+                localPrefs.startFreshDrifterSession()
+                localPrefs.setBootToNexusHub(true)
+              }
+              drifterSessionEpoch++
+              isGuestMode = true
+            },
+            onOpenChangelog = { showPreAuthChangelog = true },
           )
+          if (showPreAuthChangelog) {
+            RiftChangelogModal(
+              lastSeenBuild = runCatching { localPrefs.getLastSeenChangelogBuild() }.getOrDefault(0),
+              onAcknowledgeAndContinue = {
+                runCatching { localPrefs.setLastSeenChangelogBuild(CURRENT_RIFT_BUILD_VERSION) }
+                showPreAuthChangelog = false
+              },
+            )
+          }
         }
       }
     } else {
@@ -1096,12 +1100,18 @@ fun AppNavigation(
 
     val bannerUpdate = availableUpdate
     if (bannerUpdate != null && !updateBannerDismissed) {
-      RiftUpdateAvailableBanner(
-        update = bannerUpdate,
-        onApplyOrDownload = applyOrDownloadAvailableUpdate,
-        onDismiss = { updateBannerDismissed = true },
-        modifier = Modifier.align(Alignment.TopCenter).zIndex(45f),
-      )
+      Box(modifier = Modifier.fillMaxSize().zIndex(45f)) {
+        DeviceAwareModalAutoScaler(bypassScaling = false) {
+          Box(modifier = Modifier.fillMaxSize()) {
+            RiftUpdateAvailableBanner(
+              update = bannerUpdate,
+              onApplyOrDownload = applyOrDownloadAvailableUpdate,
+              onDismiss = { updateBannerDismissed = true },
+              modifier = Modifier.align(Alignment.TopCenter),
+            )
+          }
+        }
+      }
     }
   }
 }
@@ -1354,10 +1364,11 @@ fun RiftArenaScreen(
   val chatMessages = remember { mutableStateListOf<SyndicateChatMessage>() }
 
   fun isFrameBPurchasedNow(): Boolean =
-    localPrefs.isCosmeticUnlocked("FRAME_SLOT_PURCHASE", 2, 1, currentUserId)
+    localPrefs.isCosmeticUnlocked("FRAME_SLOT_PURCHASE", 2, 1, currentUserId) ||
+      localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
 
   fun isPaidSkinOwnedNow(skinId: Int): Boolean =
-    skinId <= 0 || localPrefs.isCosmeticUnlocked("SHIP_SKIN_PURCHASE", skinId, 1, currentUserId)
+    skinId <= 0 || localPrefs.isCosmeticUnlocked("HULL_TRIM", skinId, 1, currentUserId)
 
   fun enforceLiveResonanceFrameSlotFallback(liveRes: Int, targetEngine: RiftGameEngine? = null) {
     val normId = CustomShipLoadoutSlot.normalizeSlotId(activeCustomSlotId)
@@ -1887,10 +1898,11 @@ fun RiftArenaScreen(
       if (cloudDerivedPeakResonance > engine.peakResonance) {
         engine.peakResonance = cloudDerivedPeakResonance
         localPrefs.setPeakResonance(cloudDerivedPeakResonance, currentUserId)
-        slot9BUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
-        slot9CUnlocked = localPrefs.isCustomSlotUnlocked("Frame C", currentUserId)
-        slot9DUnlocked = localPrefs.isCustomSlotUnlocked("Frame D", currentUserId)
-        slot9EUnlocked = localPrefs.isCustomSlotUnlocked("Frame E", currentUserId)
+        val bOwned = isFrameBPurchasedNow()
+        slot9BUnlocked = bOwned
+        slot9CUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame C", engine.liveResonance, bOwned)
+        slot9DUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame D", engine.liveResonance, bOwned)
+        slot9EUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame E", engine.liveResonance, bOwned)
       }
 
       if (anyCareerRaised) {
@@ -3502,23 +3514,21 @@ fun RiftArenaScreen(
                           },
                           isCosmeticUnlocked = { category, item ->
                             val _unused = cosmeticsRefreshKey
-                            engine.peakResonance >= item.freeAtResonance ||
-                              localPrefs.isCosmeticUnlocked(
-                                category = category,
-                                itemId = item.id,
-                                pilotLevel = engine.pilotLevel,
-                                uid = currentUserId,
-                              )
+                            when {
+                              item.id == 0 -> true
+                              category == "HULL_TRIM" || (item.shardCost > 0L && item.freeAtResonance <= 0) ->
+                                localPrefs.isCosmeticUnlocked("HULL_TRIM", item.id, 1, currentUserId)
+                              else ->
+                                RiftProgressionCatalog.isRankedCosmeticActive(item, engine.liveResonance)
+                            }
                           },
                           isFrameSlotUnlocked = { slotId ->
-                            when {
-                              slotId.equals("Frame A", ignoreCase = true) -> true
-                              slotId.equals("Frame B", ignoreCase = true) -> slot9BUnlocked
-                              slotId.equals("Frame C", ignoreCase = true) -> slot9CUnlocked
-                              slotId.equals("Frame D", ignoreCase = true) -> slot9DUnlocked
-                              slotId.equals("Frame E", ignoreCase = true) -> slot9EUnlocked
-                              else -> localPrefs.isCustomSlotUnlocked(slotId, currentUserId)
-                            }
+                            val normSlot = CustomShipLoadoutSlot.normalizeSlotId(slotId)
+                            RiftProgressionCatalog.isFrameSlotActive(
+                              normSlot,
+                              engine.liveResonance,
+                              isFrameBPurchasedNow(),
+                            )
                           },
                           onClaimDailyDirective = { slotIdx ->
                             val claimed =
@@ -3578,11 +3588,13 @@ fun RiftArenaScreen(
                             }
                           },
                           onUnlockOrEquipCosmetic = { category, item ->
-                            val isRanked = RiftProgressionCatalog.isRankedCosmeticCategory(category)
-                            if (isRanked) {
-                              if (RiftProgressionCatalog.isRankedCosmeticActive(item, engine.liveResonance)) {
+                            val isPaidHullSkin =
+                              category == "HULL_TRIM" || (item.shardCost > 0L && item.freeAtResonance <= 0)
+                            if (!isPaidHullSkin) {
+                              if (item.id == 0 || RiftProgressionCatalog.isRankedCosmeticActive(item, engine.liveResonance)) {
                                 localPrefs.setEquippedCosmeticId(category, item.id, currentUserId)
                                 syncEquippedCosmeticsToEngine(engine)
+                                localPrefs.exportCloudProgressionJson(currentUserId)
                                 cosmeticsRefreshKey++
                                 sfx.playPrize()
                                 engine.onStatsUpdated()
@@ -3591,10 +3603,15 @@ fun RiftArenaScreen(
                                 false to "ACTIVE AT ${item.freeAtResonance} LIVE RESONANCE"
                               }
                             } else {
-                              val alreadyOwned = isPaidSkinOwnedNow(item.id)
+                              val alreadyOwned =
+                                item.id <= 0 ||
+                                  localPrefs.isCosmeticUnlocked("HULL_TRIM", item.id, 1, currentUserId)
                               if (alreadyOwned) {
                                 localPrefs.setEquippedCosmeticId("HULL_TRIM", item.id, currentUserId)
+                                RiftSpriteBaker.activeHullTrimStyle = item.id.coerceIn(0, 5)
+                                RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
                                 syncEquippedCosmeticsToEngine(engine)
+                                localPrefs.exportCloudProgressionJson(currentUserId)
                                 cosmeticsRefreshKey++
                                 sfx.playPrize()
                                 engine.onStatsUpdated()
@@ -3606,10 +3623,12 @@ fun RiftArenaScreen(
                                 engine.riftShards =
                                   RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, item.shardCost)
                                 localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                                localPrefs.setCosmeticUnlocked("SHIP_SKIN_PURCHASE", item.id, true, currentUserId)
                                 localPrefs.setCosmeticUnlocked("HULL_TRIM", item.id, true, currentUserId)
                                 localPrefs.setEquippedCosmeticId("HULL_TRIM", item.id, currentUserId)
+                                RiftSpriteBaker.activeHullTrimStyle = item.id.coerceIn(0, 5)
+                                RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
                                 syncEquippedCosmeticsToEngine(engine)
+                                localPrefs.exportCloudProgressionJson(currentUserId)
                                 cosmeticsRefreshKey++
                                 sfx.playPrize()
                                 engine.onStatsUpdated()
@@ -5486,11 +5505,13 @@ fun RiftArenaScreen(
                 }
               },
               onUnlockOrEquipCosmeticItem = { category, item ->
-                val isRanked = RiftProgressionCatalog.isRankedCosmeticCategory(category)
-                if (isRanked) {
-                  if (RiftProgressionCatalog.isRankedCosmeticActive(item, engine.liveResonance)) {
+                val isPaidHullSkin =
+                  category == "HULL_TRIM" || (item.shardCost > 0L && item.freeAtResonance <= 0)
+                if (!isPaidHullSkin) {
+                  if (item.id == 0 || RiftProgressionCatalog.isRankedCosmeticActive(item, engine.liveResonance)) {
                     localPrefs.setEquippedCosmeticId(category, item.id, currentUserId)
                     syncEquippedCosmeticsToEngine(engine)
+                    localPrefs.exportCloudProgressionJson(currentUserId)
                     cosmeticsRefreshKey++
                     sfx.playPrize()
                     engine.onStatsUpdated()
@@ -5499,10 +5520,15 @@ fun RiftArenaScreen(
                     false to "ACTIVE AT ${item.freeAtResonance} LIVE RESONANCE"
                   }
                 } else {
-                  val alreadyOwned = isPaidSkinOwnedNow(item.id)
+                  val alreadyOwned =
+                    item.id <= 0 ||
+                      localPrefs.isCosmeticUnlocked("HULL_TRIM", item.id, 1, currentUserId)
                   if (alreadyOwned) {
                     localPrefs.setEquippedCosmeticId("HULL_TRIM", item.id, currentUserId)
+                    RiftSpriteBaker.activeHullTrimStyle = item.id.coerceIn(0, 5)
+                    RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
                     syncEquippedCosmeticsToEngine(engine)
+                    localPrefs.exportCloudProgressionJson(currentUserId)
                     cosmeticsRefreshKey++
                     sfx.playPrize()
                     engine.onStatsUpdated()
@@ -5514,10 +5540,12 @@ fun RiftArenaScreen(
                     engine.riftShards =
                       RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, item.shardCost)
                     localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                    localPrefs.setCosmeticUnlocked("SHIP_SKIN_PURCHASE", item.id, true, currentUserId)
                     localPrefs.setCosmeticUnlocked("HULL_TRIM", item.id, true, currentUserId)
                     localPrefs.setEquippedCosmeticId("HULL_TRIM", item.id, currentUserId)
+                    RiftSpriteBaker.activeHullTrimStyle = item.id.coerceIn(0, 5)
+                    RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
                     syncEquippedCosmeticsToEngine(engine)
+                    localPrefs.exportCloudProgressionJson(currentUserId)
                     cosmeticsRefreshKey++
                     sfx.playPrize()
                     engine.onStatsUpdated()
