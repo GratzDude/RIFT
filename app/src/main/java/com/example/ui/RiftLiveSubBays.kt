@@ -87,10 +87,12 @@ import com.example.data.SyndicateWarRecord
 import com.example.data.formatSurvivalDurationSec
 import com.example.data.snapCustomFivePercentScale
 import com.example.engine.CustomGameConfig
+import com.example.engine.MusicSynthArchetype
 import com.example.engine.RankedGameMode
 import com.example.engine.RiftCalibrationState
 import com.example.engine.RiftCodex
 import com.example.engine.RiftGameEngine
+import com.example.engine.RiftSoundSynthesizer
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.RiftVisualForgeState
 import com.example.engine.SyndicateCrestRecipe
@@ -1949,7 +1951,7 @@ internal fun SquadronLeftPilotListBay(
           contentAlignment = Alignment.Center,
         ) {
           Text(
-            text = if (sortMode == SquadronPilotSort.RESONANCE) "SORT: RES" else "SORT: ACT",
+            text = if (sortMode == SquadronPilotSort.RESONANCE) "SORT: RANK" else "SORT: ACT",
             color = Color(0xFFFACC15),
             fontSize = 6.8.sp,
             fontWeight = FontWeight.Black,
@@ -2639,8 +2641,10 @@ internal fun GameModesRightCustomBay(
   onToggleAllowArmadasInFfa: (Boolean) -> Unit,
   onJoinCustomInstance: (String) -> Unit,
   onQuickCreateCustomGame: () -> Unit,
+  onOpenSliderWorkbench: (OverwatchCircularPrompt.SliderWorkbench) -> Unit = {},
 ) {
   var rightTab by remember { mutableIntStateOf(0) } // 0 = PUBLIC BROWSER, 1 = CREATE RIFT
+  var hostBroadcastPhysics by remember { mutableStateOf(true) }
   val publicVisibleRooms =
     remember(publicCustomGames, engineCustomGames, unlockedPrivateCodes) {
       val merged = LinkedHashMap<String, CustomGameConfig>()
@@ -2648,13 +2652,14 @@ internal fun GameModesRightCustomBay(
       publicCustomGames.forEach { merged.putIfAbsent(it.instanceId, it) }
       merged.values.filter { !it.privateRoom || it.roomCode in unlockedPrivateCodes }
     }
-  val botSkillLabel =
-    when (customBotSkillLevel.coerceIn(0, 3)) {
+  fun formatBotSkillName(level: Int): String =
+    when (level.coerceIn(0, 3)) {
       0 -> "CADET"
       1 -> "REGULAR"
       2 -> "VETERAN"
       else -> "ACE"
     }
+  val botSkillLabel = formatBotSkillName(customBotSkillLevel)
 
   Column(
     modifier = Modifier.fillMaxSize().testTag("game_modes_right_custom_bay"),
@@ -2719,7 +2724,7 @@ internal fun GameModesRightCustomBay(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
-      // Join Private Room by 6-Character Code
+      // Join Private Room by 6-Character Code (High-Contrast #0B1528 Field + #94A3B8 Placeholder)
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -2730,19 +2735,18 @@ internal fun GameModesRightCustomBay(
             Modifier.weight(1f)
               .minimumInteractiveComponentSize()
               .heightIn(min = 48.dp)
-              .chamferedSciFiPodSurface(
-                isRightSide = true,
-                primaryBorder = Color(0xFF38BDF8),
-                secondaryBorder = Color(0xFF091528),
-              )
+              .clip(RoundedCornerShape(6.dp))
+              .background(Color(0xFF0B1528))
+              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
               .padding(horizontal = 8.dp, vertical = 8.dp),
           contentAlignment = Alignment.CenterStart,
         ) {
           if (joinRoomCodeDraft.isEmpty()) {
             Text(
               text = "6-CHAR ROOM CODE",
-              color = Color(0xFF64748B),
-              fontSize = 7.6.sp,
+              color = Color(0xFF94A3B8),
+              fontSize = 7.8.sp,
+              fontWeight = FontWeight.Bold,
               fontFamily = FontFamily.Monospace,
             )
           }
@@ -2800,7 +2804,6 @@ internal fun GameModesRightCustomBay(
       }
 
       if (rightTab == 0) {
-        // Scrollable Public Custom Rifts Browser
         if (publicVisibleRooms.isEmpty()) {
           Column(
             modifier =
@@ -2849,70 +2852,90 @@ internal fun GameModesRightCustomBay(
           }
         }
       } else {
-        // CREATE RIFT Rule Customizer (Public/Private + 5%-Stepped Damage Taken & Flux Cost + Bots/Time/Score/Scale)
+        // Explicit VISIBILITY and BASE MODE headers above toggles
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-          Box(
-            modifier =
-              Modifier.weight(1f)
-                .minimumInteractiveComponentSize()
-                .heightIn(min = 48.dp)
-                .chamferedSciFiPodSurface(
-                  isRightSide = true,
-                  primaryBorder = Color(0xFF38BDF8),
-                  secondaryBorder = Color(0xFF091528),
-                )
-                .clickable { onTogglePrivateRoom(!customIsPrivateRoom) }
-                .padding(horizontal = 6.dp)
-                .testTag("custom_toggle_privacy"),
-            contentAlignment = Alignment.Center,
-          ) {
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-              text = if (customIsPrivateRoom) "PRIVATE [$generatedRoomCode]" else "PUBLIC ROOM",
-              color = if (customIsPrivateRoom) Color(0xFFC084FC) else Color(0xFF00F5D4),
-              fontSize = 7.6.sp,
+              text = "VISIBILITY",
+              color = Color(0xFF94A3B8),
+              fontSize = 6.8.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
-              maxLines = 1,
+              modifier = Modifier.padding(start = 2.dp),
             )
+            Box(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .minimumInteractiveComponentSize()
+                  .heightIn(min = 48.dp)
+                  .chamferedSciFiPodSurface(
+                    isRightSide = true,
+                    primaryBorder = Color(0xFF38BDF8),
+                    secondaryBorder = Color(0xFF091528),
+                  )
+                  .clickable { onTogglePrivateRoom(!customIsPrivateRoom) }
+                  .padding(horizontal = 6.dp)
+                  .testTag("custom_toggle_privacy"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = if (customIsPrivateRoom) "PRIVATE [$generatedRoomCode]" else "PUBLIC ROOM",
+                color = if (customIsPrivateRoom) Color(0xFFC084FC) else Color(0xFF00F5D4),
+                fontSize = 7.6.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+            }
           }
-          Box(
-            modifier =
-              Modifier.weight(1f)
-                .minimumInteractiveComponentSize()
-                .heightIn(min = 48.dp)
-                .chamferedSciFiPodSurface(
-                  isRightSide = true,
-                  primaryBorder = Color(0xFFFACC15),
-                  secondaryBorder = Color(0xFF091528),
-                )
-                .clickable {
-                  val modes =
-                    listOf(
-                      RankedGameMode.SECTOR_CONVERGENCE,
-                      RankedGameMode.RIFT_SKIRMISH,
-                      RankedGameMode.FLUX_CORE,
-                      RankedGameMode.STASIS_BREACH,
-                      RankedGameMode.RIFT_CONTROL,
-                    )
-                  val nextIdx = (modes.indexOf(customBaseMode) + 1) % modes.size
-                  onSelectCustomBaseMode(modes[nextIdx])
-                }
-                .padding(horizontal = 6.dp)
-                .testTag("hub_custom_cycle_base_mode"),
-            contentAlignment = Alignment.Center,
-          ) {
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-              text = customBaseMode.title.uppercase(Locale.US),
-              color = Color.White,
-              fontSize = 7.4.sp,
+              text = "BASE MODE",
+              color = Color(0xFF94A3B8),
+              fontSize = 6.8.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.padding(start = 2.dp),
             )
+            Box(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .minimumInteractiveComponentSize()
+                  .heightIn(min = 48.dp)
+                  .chamferedSciFiPodSurface(
+                    isRightSide = true,
+                    primaryBorder = Color(0xFFFACC15),
+                    secondaryBorder = Color(0xFF091528),
+                  )
+                  .clickable {
+                    val modes =
+                      listOf(
+                        RankedGameMode.SECTOR_CONVERGENCE,
+                        RankedGameMode.RIFT_SKIRMISH,
+                        RankedGameMode.FLUX_CORE,
+                        RankedGameMode.STASIS_BREACH,
+                        RankedGameMode.RIFT_CONTROL,
+                      )
+                    val nextIdx = (modes.indexOf(customBaseMode) + 1) % modes.size
+                    onSelectCustomBaseMode(modes[nextIdx])
+                  }
+                  .padding(horizontal = 6.dp)
+                  .testTag("hub_custom_cycle_base_mode"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = customBaseMode.title.uppercase(Locale.US),
+                color = Color.White,
+                fontSize = 7.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
           }
         }
 
@@ -2935,6 +2958,25 @@ internal fun GameModesRightCustomBay(
             plusTag = "custom_dmg_plus",
             onMinus = { onSelectCustomDamageTakenScalePct((customDamageTakenScalePct - 5).coerceIn(0, 100)) },
             onPlus = { onSelectCustomDamageTakenScalePct((customDamageTakenScalePct + 5).coerceIn(0, 100)) },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "custom_dmg_taken",
+                  title = "DAMAGE TAKEN",
+                  subtitle = "Scales incoming weapon & hazard damage in this Custom Rift (0% = Practice Shield).",
+                  currentValue = customDamageTakenScalePct.toFloat(),
+                  minValue = 0f,
+                  maxValue = 100f,
+                  stepSize = 5f,
+                  defaultValue = 100f,
+                  unitSuffix = "%",
+                  accentHex = 0xFF00F5D4L,
+                  presets = listOf("0%" to 0f, "50%" to 50f, "75%" to 75f, "100%" to 100f),
+                  valueFormatter = { "${snapCustomFivePercentScale(it.roundToInt())}%" },
+                  onValueChange = { onSelectCustomDamageTakenScalePct(snapCustomFivePercentScale(it.roundToInt())) },
+                )
+              )
+            },
           )
           HubCustomFivePercentStepperRow(
             label = "WEAPON FLUX COST",
@@ -2944,6 +2986,25 @@ internal fun GameModesRightCustomBay(
             plusTag = "custom_flux_plus",
             onMinus = { onSelectCustomWeaponFluxCostScalePct((customWeaponFluxCostScalePct - 5).coerceIn(0, 100)) },
             onPlus = { onSelectCustomWeaponFluxCostScalePct((customWeaponFluxCostScalePct + 5).coerceIn(0, 100)) },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "custom_flux_cost",
+                  title = "WEAPON FLUX COST",
+                  subtitle = "Scales Flux energy drained per weapon shot (0% = Unlimited Firing).",
+                  currentValue = customWeaponFluxCostScalePct.toFloat(),
+                  minValue = 0f,
+                  maxValue = 100f,
+                  stepSize = 5f,
+                  defaultValue = 100f,
+                  unitSuffix = "%",
+                  accentHex = 0xFF38BDF8L,
+                  presets = listOf("0%" to 0f, "50%" to 50f, "75%" to 75f, "100%" to 100f),
+                  valueFormatter = { "${snapCustomFivePercentScale(it.roundToInt())}%" },
+                  onValueChange = { onSelectCustomWeaponFluxCostScalePct(snapCustomFivePercentScale(it.roundToInt())) },
+                )
+              )
+            },
           )
         }
 
@@ -2952,30 +3013,122 @@ internal fun GameModesRightCustomBay(
           valueText = "$customBotCount",
           onMinus = { onSelectCustomBotCount((customBotCount - 1).coerceIn(0, 19)) },
           onPlus = { onSelectCustomBotCount((customBotCount + 1).coerceIn(0, 19)) },
+          onTapRow = {
+            onOpenSliderWorkbench(
+              OverwatchCircularPrompt.SliderWorkbench(
+                key = "custom_bot_count",
+                title = "BOT COUNT",
+                subtitle = "Number of AI wingmen & rival bots active inside this Custom Rift.",
+                currentValue = customBotCount.toFloat(),
+                minValue = 0f,
+                maxValue = 19f,
+                stepSize = 1f,
+                defaultValue = 9f,
+                accentHex = 0xFF00F5D4L,
+                presets = listOf("0" to 0f, "5" to 5f, "9" to 9f, "19" to 19f),
+                valueFormatter = { "${it.roundToInt()} BOTS" },
+                onValueChange = { onSelectCustomBotCount(it.roundToInt().coerceIn(0, 19)) },
+              )
+            )
+          },
         )
         HelmStepperControlRow(
           label = "BOT SKILL",
           valueText = botSkillLabel,
           onMinus = { onSelectCustomBotSkillLevel((customBotSkillLevel - 1).coerceIn(0, 3)) },
           onPlus = { onSelectCustomBotSkillLevel((customBotSkillLevel + 1).coerceIn(0, 3)) },
+          onTapRow = {
+            onOpenSliderWorkbench(
+              OverwatchCircularPrompt.SliderWorkbench(
+                key = "custom_bot_skill",
+                title = "BOT SKILL",
+                subtitle = "AI pilot aim prediction, evasion timing, and Supply Crate priority.",
+                currentValue = customBotSkillLevel.coerceIn(0, 3).toFloat(),
+                minValue = 0f,
+                maxValue = 3f,
+                stepSize = 1f,
+                defaultValue = 1f,
+                accentHex = 0xFFFFD700L,
+                presets = listOf("CADET" to 0f, "REGULAR" to 1f, "VETERAN" to 2f, "ACE" to 3f),
+                valueFormatter = { formatBotSkillName(it.roundToInt()) },
+                onValueChange = { onSelectCustomBotSkillLevel(it.roundToInt().coerceIn(0, 3)) },
+              )
+            )
+          },
         )
         HelmStepperControlRow(
           label = "TIME LIMIT",
           valueText = "${customResetMinutes}M",
           onMinus = { onSelectCustomResetMinutes((customResetMinutes - 5).coerceIn(5, 60)) },
           onPlus = { onSelectCustomResetMinutes((customResetMinutes + 5).coerceIn(5, 60)) },
+          onTapRow = {
+            onOpenSliderWorkbench(
+              OverwatchCircularPrompt.SliderWorkbench(
+                key = "custom_time_limit",
+                title = "TIME LIMIT",
+                subtitle = "Match cycle duration in minutes before sector reset.",
+                currentValue = customResetMinutes.toFloat(),
+                minValue = 5f,
+                maxValue = 60f,
+                stepSize = 5f,
+                defaultValue = 15f,
+                unitSuffix = "M",
+                accentHex = 0xFF38BDF8L,
+                presets = listOf("10M" to 10f, "15M" to 15f, "30M" to 30f, "60M" to 60f),
+                valueFormatter = { "${((it / 5f).roundToInt() * 5).coerceIn(5, 60)} MIN" },
+                onValueChange = { onSelectCustomResetMinutes(((it / 5f).roundToInt() * 5).coerceIn(5, 60)) },
+              )
+            )
+          },
         )
         HelmStepperControlRow(
           label = "SCORE CAP",
           valueText = "$customScoreCap",
           onMinus = { onSelectCustomScoreCap((customScoreCap - 10).coerceIn(10, 200)) },
           onPlus = { onSelectCustomScoreCap((customScoreCap + 10).coerceIn(10, 200)) },
+          onTapRow = {
+            onOpenSliderWorkbench(
+              OverwatchCircularPrompt.SliderWorkbench(
+                key = "custom_score_cap",
+                title = "SCORE CAP",
+                subtitle = "Target victory score before the Custom Rift concludes.",
+                currentValue = customScoreCap.toFloat(),
+                minValue = 10f,
+                maxValue = 200f,
+                stepSize = 10f,
+                defaultValue = 50f,
+                accentHex = 0xFFFACC15L,
+                presets = listOf("25" to 20f, "50" to 50f, "100" to 100f, "200" to 200f),
+                valueFormatter = { "${((it / 10f).roundToInt() * 10).coerceIn(10, 200)} PTS" },
+                onValueChange = { onSelectCustomScoreCap(((it / 10f).roundToInt() * 10).coerceIn(10, 200)) },
+              )
+            )
+          },
         )
         HelmStepperControlRow(
           label = "BULLET SCALE",
           valueText = String.format(Locale.US, "%.2fx", customBulletSizeMult),
           onMinus = { onSelectCustomBulletSizeMult((customBulletSizeMult - 0.15f).coerceIn(0.70f, 1.75f)) },
           onPlus = { onSelectCustomBulletSizeMult((customBulletSizeMult + 0.15f).coerceIn(0.70f, 1.75f)) },
+          onTapRow = {
+            onOpenSliderWorkbench(
+              OverwatchCircularPrompt.SliderWorkbench(
+                key = "custom_bullet_scale",
+                title = "BULLET SCALE",
+                subtitle = "Visual and collision radius multiplier for primary bolts.",
+                currentValue = customBulletSizeMult,
+                minValue = 0.70f,
+                maxValue = 1.75f,
+                stepSize = 0.05f,
+                defaultValue = 1.00f,
+                unitSuffix = "x",
+                accentHex = 0xFF00F5D4L,
+                presets = listOf("0.85x" to 0.85f, "1.0x" to 1.00f, "1.25x" to 1.25f, "1.5x" to 1.50f),
+                valueFormatter = { String.format(Locale.US, "%.2fx", it) },
+                onValueChange = { onSelectCustomBulletSizeMult(it.coerceIn(0.70f, 1.75f)) },
+              )
+            )
+          },
         )
         HelmStepperControlRow(
           label = "SHIP SPEED",
@@ -2987,6 +3140,25 @@ internal fun GameModesRightCustomBay(
           onPlus = {
             val next = (((customSpeedMult + 0.25f) * 100f).roundToInt() / 100f).coerceIn(0.75f, 1.75f)
             onSelectCustomSpeedMult(next)
+          },
+          onTapRow = {
+            onOpenSliderWorkbench(
+              OverwatchCircularPrompt.SliderWorkbench(
+                key = "custom_ship_speed",
+                title = "SHIP SPEED",
+                subtitle = "Global top speed and thrust multiplier for all hulls.",
+                currentValue = customSpeedMult,
+                minValue = 0.75f,
+                maxValue = 1.75f,
+                stepSize = 0.05f,
+                defaultValue = 1.00f,
+                unitSuffix = "x",
+                accentHex = 0xFF38BDF8L,
+                presets = listOf("0.75x" to 0.75f, "1.0x" to 1.00f, "1.25x" to 1.25f, "1.5x" to 1.50f),
+                valueFormatter = { String.format(Locale.US, "%.2fx", it) },
+                onValueChange = { onSelectCustomSpeedMult(it.coerceIn(0.75f, 1.75f)) },
+              )
+            )
           },
         )
         HelmStepperControlRow(
@@ -3000,6 +3172,25 @@ internal fun GameModesRightCustomBay(
             val next = (((customDamageMult + 0.25f) * 100f).roundToInt() / 100f).coerceIn(0.50f, 2.00f)
             onSelectCustomDamageMult(next)
           },
+          onTapRow = {
+            onOpenSliderWorkbench(
+              OverwatchCircularPrompt.SliderWorkbench(
+                key = "custom_weapon_dmg",
+                title = "WEAPON DAMAGE",
+                subtitle = "Outgoing weapon damage multiplier across all ship classes.",
+                currentValue = customDamageMult,
+                minValue = 0.50f,
+                maxValue = 2.00f,
+                stepSize = 0.05f,
+                defaultValue = 1.00f,
+                unitSuffix = "x",
+                accentHex = 0xFFFB7185L,
+                presets = listOf("0.75x" to 0.75f, "1.0x" to 1.00f, "1.5x" to 1.50f, "2.0x" to 2.00f),
+                valueFormatter = { String.format(Locale.US, "%.2fx", it) },
+                onValueChange = { onSelectCustomDamageMult(it.coerceIn(0.50f, 2.00f)) },
+              )
+            )
+          },
         )
         HelmStepperControlRow(
           label = "FLUX REGEN",
@@ -3012,6 +3203,25 @@ internal fun GameModesRightCustomBay(
             val next = (((customRechargeMult + 0.25f) * 100f).roundToInt() / 100f).coerceIn(0.75f, 2.00f)
             onSelectCustomRechargeMult(next)
           },
+          onTapRow = {
+            onOpenSliderWorkbench(
+              OverwatchCircularPrompt.SliderWorkbench(
+                key = "custom_flux_regen",
+                title = "FLUX REGEN",
+                subtitle = "Passive Flux ring recharge rate multiplier.",
+                currentValue = customRechargeMult,
+                minValue = 0.75f,
+                maxValue = 2.00f,
+                stepSize = 0.05f,
+                defaultValue = 1.00f,
+                unitSuffix = "x",
+                accentHex = 0xFF00F5D4L,
+                presets = listOf("0.75x" to 0.75f, "1.0x" to 1.00f, "1.5x" to 1.50f, "2.0x" to 2.00f),
+                valueFormatter = { String.format(Locale.US, "%.2fx", it) },
+                onValueChange = { onSelectCustomRechargeMult(it.coerceIn(0.75f, 2.00f)) },
+              )
+            )
+          },
         )
         HelmStepperControlRow(
           label = "SUPPLY POD RATE",
@@ -3023,6 +3233,25 @@ internal fun GameModesRightCustomBay(
           onPlus = {
             val next = (((customCrateSpawnMult + 0.50f) * 100f).roundToInt() / 100f).coerceIn(0.50f, 2.50f)
             onSelectCustomCrateSpawnMult(next)
+          },
+          onTapRow = {
+            onOpenSliderWorkbench(
+              OverwatchCircularPrompt.SliderWorkbench(
+                key = "custom_supply_pods",
+                title = "SUPPLY POD RATE",
+                subtitle = "Spawn density multiplier for green tactical Supply Crates.",
+                currentValue = customCrateSpawnMult,
+                minValue = 0.50f,
+                maxValue = 2.50f,
+                stepSize = 0.10f,
+                defaultValue = 1.00f,
+                unitSuffix = "x",
+                accentHex = 0xFF34D399L,
+                presets = listOf("0.5x" to 0.50f, "1.0x" to 1.00f, "1.5x" to 1.50f, "2.5x" to 2.50f),
+                valueFormatter = { String.format(Locale.US, "%.2fx", it) },
+                onValueChange = { onSelectCustomCrateSpawnMult(it.coerceIn(0.50f, 2.50f)) },
+              )
+            )
           },
         )
         Row(
@@ -3055,6 +3284,42 @@ internal fun GameModesRightCustomBay(
             text = if (customAllowArmadasInFfa) "ON" else "OFF",
             color = if (customAllowArmadasInFfa) Color(0xFF00F5D4) else Color(0xFFFB7185),
             fontSize = 8.4.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+
+        // Host Broadcast Physics Toggle inside CREATE RIFT
+        Row(
+          modifier =
+            Modifier.fillMaxWidth()
+              .minimumInteractiveComponentSize()
+              .heightIn(min = 48.dp)
+              .chamferedSciFiPodSurface(
+                isRightSide = true,
+                primaryBorder = if (hostBroadcastPhysics) Color(0xFFFFD700) else Color(0xFF38BDF8),
+                secondaryBorder = Color(0xFF091528),
+              )
+              .clickable { hostBroadcastPhysics = !hostBroadcastPhysics }
+              .padding(horizontal = 8.dp)
+              .testTag("custom_toggle_host_broadcast_physics"),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = "HOST BROADCAST PHYSICS",
+            color = Color(0xFFE2E8F0),
+            fontSize = 7.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(end = 6.dp),
+          )
+          Text(
+            text = if (hostBroadcastPhysics) "LIVE" else "LOCAL",
+            color = if (hostBroadcastPhysics) Color(0xFFFFD700) else Color(0xFF94A3B8),
+            fontSize = 8.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -3102,10 +3367,14 @@ internal fun HubCustomFivePercentStepperRow(
   plusTag: String,
   onMinus: () -> Unit,
   onPlus: () -> Unit,
+  onTapRow: (() -> Unit)? = null,
 ) {
   val snapped = snapCustomFivePercentScale(valuePct)
   Row(
-    modifier = Modifier.fillMaxWidth().height(48.dp),
+    modifier =
+      Modifier.fillMaxWidth()
+        .height(48.dp)
+        .let { base -> if (onTapRow != null) base.clickable { onTapRow() } else base },
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
@@ -3140,7 +3409,10 @@ internal fun HubCustomFivePercentStepperRow(
         fontSize = 8.0.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
-        modifier = Modifier.width(34.dp).testTag(valueTag),
+        modifier =
+          Modifier.width(34.dp)
+            .let { mod -> if (onTapRow != null) mod.clickable { onTapRow() } else mod }
+            .testTag(valueTag),
         textAlign = TextAlign.Center,
       )
       Box(
@@ -3194,18 +3466,26 @@ internal fun HelmLeftSystemsBay(
   onCheckOrApplyUpdate: () -> Unit,
   onOpenSwitchAccountPrompt: () -> Unit,
   onBackToHub: () -> Unit,
+  onOpenSliderWorkbench: (OverwatchCircularPrompt.SliderWorkbench) -> Unit = {},
 ) {
   val context = LocalContext.current
-  var activeSubTab by remember { mutableIntStateOf(0) } // 0 = CONTROLS, 1 = DISPLAY, 2 = SYSTEM
+  var activeSubTab by remember { mutableIntStateOf(0) } // 0 = CONTROLS, 1 = AUDIO, 2 = SYSTEM
   var touchFloating by remember { mutableStateOf(RiftCalibrationState.touchFloatingJoystick) }
   var swapControls by remember { mutableStateOf(RiftCalibrationState.swapLeftRightControls) }
   var touchDeadzone by remember { mutableStateOf(RiftCalibrationState.touchJoystickDeadzone) }
   var touchSens by remember { mutableStateOf(RiftCalibrationState.touchJoystickSensitivity) }
   var gpDeadLeft by remember { mutableStateOf(RiftCalibrationState.gamepadDeadzoneLeft) }
   var gpDeadRight by remember { mutableStateOf(RiftCalibrationState.gamepadDeadzoneRight) }
+  var hudBtnScale by remember { mutableStateOf(RiftCalibrationState.combatArcScale) }
+  var hudIdleOpacity by remember { mutableStateOf(RiftCalibrationState.gamepadIdleTouchOpacity) }
   var graphicsTier by remember { mutableIntStateOf(RiftCalibrationState.graphicsQualityTier) }
   var preferMaxHz by remember { mutableStateOf(RiftCalibrationState.preferMaxRefreshRate) }
   var selectedBindSlotId by remember { mutableStateOf<String?>(null) }
+  var synthPromptDraft by remember { mutableStateOf("") }
+  var synthStatusNotice by remember { mutableStateOf<String?>(null) }
+  val activeSynth = RiftSoundSynthesizer.activeInstance
+  val activeTrackIdx = RiftSoundSynthesizer.activeTrackSlotIndex.coerceIn(0, 2)
+  val activeMusicArchetype = activeSynth?.currentMusicRecipe?.archetype ?: MusicSynthArchetype.DARK_SYNTHWAVE
 
   Column(
     modifier = Modifier.fillMaxSize().testTag("helm_left_systems_bay"),
@@ -3223,7 +3503,7 @@ internal fun HelmLeftSystemsBay(
       onBackToHub = onBackToHub,
     )
 
-    // 3 Split Sub-Tabs: CONTROLS | DISPLAY | SYSTEM
+    // 3 Split Sub-Tabs: CONTROLS | AUDIO | SYSTEM
     Row(
       modifier =
         Modifier.fillMaxWidth()
@@ -3237,7 +3517,7 @@ internal fun HelmLeftSystemsBay(
       horizontalArrangement = Arrangement.spacedBy(2.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      listOf("CONTROLS", "DISPLAY", "SYSTEM").forEachIndexed { idx, label ->
+      listOf("CONTROLS", "AUDIO", "SYSTEM").forEachIndexed { idx, label ->
         val sel = activeSubTab == idx
         Box(
           modifier =
@@ -3275,7 +3555,7 @@ internal fun HelmLeftSystemsBay(
     ) {
       when (activeSubTab) {
         0 -> {
-          // CONTROLS: Touch Stick Mode, Deadzones, Sensitivity, Swap Left/Right, Gamepad Remapping
+          // CONTROLS: Touch Stick Mode, Deadzones, Sensitivity, HUD Scale & Opacity, Swap Left/Right, 5x2 Gamepad Grid
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -3351,6 +3631,30 @@ internal fun HelmLeftSystemsBay(
               RiftCalibrationState.touchJoystickDeadzone = v
               RiftCalibrationState.savePersistedLayout(context)
             },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_touch_deadzone",
+                  title = "TOUCH DEADZONE",
+                  subtitle = "Inner radial deadzone before touch thrust engages.",
+                  currentValue = touchDeadzone,
+                  minValue = 0.02f,
+                  maxValue = 0.30f,
+                  stepSize = 0.01f,
+                  defaultValue = 0.08f,
+                  unitSuffix = "%",
+                  accentHex = 0xFF00F5D4L,
+                  presets = listOf("4%" to 0.04f, "8%" to 0.08f, "14%" to 0.14f, "22%" to 0.22f),
+                  valueFormatter = { "${(it * 100f).roundToInt()}%" },
+                  onValueChange = {
+                    val v = it.coerceIn(0.02f, 0.30f)
+                    touchDeadzone = v
+                    RiftCalibrationState.touchJoystickDeadzone = v
+                    RiftCalibrationState.savePersistedLayout(context)
+                  },
+                )
+              )
+            },
           )
 
           HelmStepperControlRow(
@@ -3367,6 +3671,30 @@ internal fun HelmLeftSystemsBay(
               touchSens = v
               RiftCalibrationState.touchJoystickSensitivity = v
               RiftCalibrationState.savePersistedLayout(context)
+            },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_touch_sens",
+                  title = "TOUCH SENSITIVITY",
+                  subtitle = "Response curve multiplier for virtual twin-stick deflection.",
+                  currentValue = touchSens,
+                  minValue = 0.60f,
+                  maxValue = 1.80f,
+                  stepSize = 0.05f,
+                  defaultValue = 1.00f,
+                  unitSuffix = "x",
+                  accentHex = 0xFF38BDF8L,
+                  presets = listOf("0.8x" to 0.80f, "1.0x" to 1.00f, "1.25x" to 1.25f, "1.5x" to 1.50f),
+                  valueFormatter = { String.format(Locale.US, "%.2fx", it) },
+                  onValueChange = {
+                    val v = it.coerceIn(0.60f, 1.80f)
+                    touchSens = v
+                    RiftCalibrationState.touchJoystickSensitivity = v
+                    RiftCalibrationState.savePersistedLayout(context)
+                  },
+                )
+              )
             },
           )
 
@@ -3385,6 +3713,30 @@ internal fun HelmLeftSystemsBay(
               RiftCalibrationState.gamepadDeadzoneLeft = v
               RiftCalibrationState.savePersistedLayout(context)
             },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_pad_l_deadzone",
+                  title = "PAD L-DEADZONE",
+                  subtitle = "Left analog stick drift filter for hardware controllers.",
+                  currentValue = gpDeadLeft,
+                  minValue = 0.04f,
+                  maxValue = 0.36f,
+                  stepSize = 0.01f,
+                  defaultValue = 0.12f,
+                  unitSuffix = "%",
+                  accentHex = 0xFF00F5D4L,
+                  presets = listOf("8%" to 0.08f, "12%" to 0.12f, "18%" to 0.18f, "26%" to 0.26f),
+                  valueFormatter = { "${(it * 100f).roundToInt()}%" },
+                  onValueChange = {
+                    val v = it.coerceIn(0.04f, 0.36f)
+                    gpDeadLeft = v
+                    RiftCalibrationState.gamepadDeadzoneLeft = v
+                    RiftCalibrationState.savePersistedLayout(context)
+                  },
+                )
+              )
+            },
           )
 
           HelmStepperControlRow(
@@ -3402,9 +3754,115 @@ internal fun HelmLeftSystemsBay(
               RiftCalibrationState.gamepadDeadzoneRight = v
               RiftCalibrationState.savePersistedLayout(context)
             },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_pad_r_deadzone",
+                  title = "PAD R-DEADZONE",
+                  subtitle = "Right analog aim stick deadzone before firing engages.",
+                  currentValue = gpDeadRight,
+                  minValue = 0.04f,
+                  maxValue = 0.36f,
+                  stepSize = 0.01f,
+                  defaultValue = 0.18f,
+                  unitSuffix = "%",
+                  accentHex = 0xFFFACC15L,
+                  presets = listOf("10%" to 0.10f, "18%" to 0.18f, "24%" to 0.24f, "30%" to 0.30f),
+                  valueFormatter = { "${(it * 100f).roundToInt()}%" },
+                  onValueChange = {
+                    val v = it.coerceIn(0.04f, 0.36f)
+                    gpDeadRight = v
+                    RiftCalibrationState.gamepadDeadzoneRight = v
+                    RiftCalibrationState.savePersistedLayout(context)
+                  },
+                )
+              )
+            },
           )
 
-          // Hardware Controller Remapper
+          HelmStepperControlRow(
+            label = "HUD BUTTON SCALE",
+            valueText = String.format(Locale.US, "%.2fx", hudBtnScale),
+            onMinus = {
+              val v = (hudBtnScale - 0.05f).coerceIn(0.70f, 1.40f)
+              hudBtnScale = v
+              RiftCalibrationState.combatArcScale = v
+              RiftCalibrationState.savePersistedLayout(context)
+            },
+            onPlus = {
+              val v = (hudBtnScale + 0.05f).coerceIn(0.70f, 1.40f)
+              hudBtnScale = v
+              RiftCalibrationState.combatArcScale = v
+              RiftCalibrationState.savePersistedLayout(context)
+            },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_hud_btn_scale",
+                  title = "HUD BUTTON SCALE",
+                  subtitle = "Scales combat arc action buttons in live arena flight.",
+                  currentValue = hudBtnScale,
+                  minValue = 0.70f,
+                  maxValue = 1.40f,
+                  stepSize = 0.05f,
+                  defaultValue = 1.00f,
+                  unitSuffix = "x",
+                  accentHex = 0xFF00F5D4L,
+                  presets = listOf("0.85x" to 0.85f, "1.0x" to 1.00f, "1.15x" to 1.15f, "1.30x" to 1.30f),
+                  valueFormatter = { String.format(Locale.US, "%.2fx", it) },
+                  onValueChange = {
+                    val v = it.coerceIn(0.70f, 1.40f)
+                    hudBtnScale = v
+                    RiftCalibrationState.combatArcScale = v
+                    RiftCalibrationState.savePersistedLayout(context)
+                  },
+                )
+              )
+            },
+          )
+
+          HelmStepperControlRow(
+            label = "HUD OPACITY",
+            valueText = "${(hudIdleOpacity * 100f).roundToInt()}%",
+            onMinus = {
+              val v = (hudIdleOpacity - 0.05f).coerceIn(0.15f, 1.00f)
+              hudIdleOpacity = v
+              RiftCalibrationState.gamepadIdleTouchOpacity = v
+              RiftCalibrationState.savePersistedLayout(context)
+            },
+            onPlus = {
+              val v = (hudIdleOpacity + 0.05f).coerceIn(0.15f, 1.00f)
+              hudIdleOpacity = v
+              RiftCalibrationState.gamepadIdleTouchOpacity = v
+              RiftCalibrationState.savePersistedLayout(context)
+            },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_hud_opacity",
+                  title = "HUD OPACITY",
+                  subtitle = "Transparency of on-screen combat HUD rings and controls.",
+                  currentValue = hudIdleOpacity,
+                  minValue = 0.15f,
+                  maxValue = 1.00f,
+                  stepSize = 0.05f,
+                  defaultValue = 0.28f,
+                  unitSuffix = "%",
+                  accentHex = 0xFF38BDF8L,
+                  presets = listOf("25%" to 0.25f, "50%" to 0.50f, "75%" to 0.75f, "100%" to 1.00f),
+                  valueFormatter = { "${(it * 100f).roundToInt()}%" },
+                  onValueChange = {
+                    val v = it.coerceIn(0.15f, 1.00f)
+                    hudIdleOpacity = v
+                    RiftCalibrationState.gamepadIdleTouchOpacity = v
+                    RiftCalibrationState.savePersistedLayout(context)
+                  },
+                )
+              )
+            },
+          )
+
+          // Hardware Controller Remapper (5x2 Non-Scrolling Bind Grid)
           Column(
             modifier =
               Modifier.fillMaxWidth()
@@ -3486,36 +3944,46 @@ internal fun HelmLeftSystemsBay(
                   )
                 }
                 if (isEditing) {
-                  Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                  ) {
-                    LIVE_HARDWARE_BIND_CHIPS.forEach { (code, chipLabel) ->
-                      Box(
-                        modifier =
-                          Modifier.minimumInteractiveComponentSize()
-                            .heightIn(min = 48.dp)
-                            .clickable {
-                              RiftCalibrationState.assignControllerBinding(slot.slotId, code, context)
-                              selectedBindSlotId = null
-                            }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center,
-                      ) {
+                  LIVE_HARDWARE_BIND_CHIPS.chunked(2).forEach { rowPair ->
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                      rowPair.forEach { (code, chipLabel) ->
                         Box(
                           modifier =
-                            Modifier.clip(RoundedCornerShape(5.dp))
-                              .background(if (code == currentCode) slot.accentColor.copy(alpha = 0.28f) else Color(0xFF060D1A))
-                              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(5.dp))
-                              .padding(horizontal = 7.dp, vertical = 4.dp),
+                            Modifier.weight(1f)
+                              .minimumInteractiveComponentSize()
+                              .heightIn(min = 48.dp)
+                              .clickable {
+                                RiftCalibrationState.assignControllerBinding(slot.slotId, code, context)
+                                selectedBindSlotId = null
+                              }
+                              .padding(vertical = 3.dp),
+                          contentAlignment = Alignment.Center,
                         ) {
-                          Text(
-                            text = chipLabel,
-                            color = Color.White,
-                            fontSize = 7.0.sp,
-                            fontWeight = FontWeight.Black,
-                            fontFamily = FontFamily.Monospace,
-                          )
+                          Box(
+                            modifier =
+                              Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(if (code == currentCode) slot.accentColor.copy(alpha = 0.30f) else Color(0xFF060D1A))
+                                .border(
+                                  1.dp,
+                                  if (code == currentCode) slot.accentColor else Color(0xFF38BDF8),
+                                  RoundedCornerShape(5.dp),
+                                )
+                                .padding(horizontal = 4.dp, vertical = 5.dp),
+                            contentAlignment = Alignment.Center,
+                          ) {
+                            Text(
+                              text = chipLabel,
+                              color = Color.White,
+                              fontSize = 7.2.sp,
+                              fontWeight = FontWeight.Black,
+                              fontFamily = FontFamily.Monospace,
+                              maxLines = 1,
+                            )
+                          }
                         }
                       }
                     }
@@ -3526,7 +3994,7 @@ internal fun HelmLeftSystemsBay(
           }
         }
         1 -> {
-          // AUDIO & DISPLAY: Music/SFX, Volumes, BPM, Arena Zoom, HUD Text Scale, Graphics Tier, 60Hz vs Max Hz
+          // AUDIO & DISPLAY: Volumes, BPM, Overwatch SliderWorkbench + Embedded 3-Track Procedural Music & SFX Synth Deck
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -3577,6 +4045,352 @@ internal fun HelmLeftSystemsBay(
             }
           }
 
+          HelmStepperControlRow(
+            label = "MUSIC VOL",
+            valueText = "${(musicVolume * 100f).roundToInt()}%",
+            onMinus = { onChangeMusicVolume((musicVolume - 0.10f).coerceIn(0f, 1f)) },
+            onPlus = { onChangeMusicVolume((musicVolume + 0.10f).coerceIn(0f, 1f)) },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_music_vol",
+                  title = "MUSIC VOLUME",
+                  subtitle = "Procedural 3-Track synthesizer master mix.",
+                  currentValue = musicVolume,
+                  minValue = 0f,
+                  maxValue = 1f,
+                  stepSize = 0.05f,
+                  defaultValue = 0.70f,
+                  unitSuffix = "%",
+                  accentHex = 0xFF00F5D4L,
+                  presets = listOf("25%" to 0.25f, "50%" to 0.50f, "75%" to 0.75f, "100%" to 1.00f),
+                  valueFormatter = { "${(it * 100f).roundToInt()}%" },
+                  onValueChange = { onChangeMusicVolume(it.coerceIn(0f, 1f)) },
+                )
+              )
+            },
+          )
+          HelmStepperControlRow(
+            label = "SFX VOL",
+            valueText = "${(sfxVolume * 100f).roundToInt()}%",
+            onMinus = { onChangeSfxVolume((sfxVolume - 0.10f).coerceIn(0f, 1f)) },
+            onPlus = { onChangeSfxVolume((sfxVolume + 0.10f).coerceIn(0f, 1f)) },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_sfx_vol",
+                  title = "SFX VOLUME",
+                  subtitle = "Primary weapons, explosions, Repel ripples, and UI chimes.",
+                  currentValue = sfxVolume,
+                  minValue = 0f,
+                  maxValue = 1f,
+                  stepSize = 0.05f,
+                  defaultValue = 0.85f,
+                  unitSuffix = "%",
+                  accentHex = 0xFF38BDF8L,
+                  presets = listOf("25%" to 0.25f, "50%" to 0.50f, "85%" to 0.85f, "100%" to 1.00f),
+                  valueFormatter = { "${(it * 100f).roundToInt()}%" },
+                  onValueChange = { onChangeSfxVolume(it.coerceIn(0f, 1f)) },
+                )
+              )
+            },
+          )
+          HelmStepperControlRow(
+            label = "SYNTH BPM",
+            valueText = "$musicBpm",
+            onMinus = { onChangeMusicBpm((musicBpm - 6).coerceIn(96, 168)) },
+            onPlus = { onChangeMusicBpm((musicBpm + 6).coerceIn(96, 168)) },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_synth_bpm",
+                  title = "SYNTH BPM",
+                  subtitle = "Live tempo clock for the active procedural soundtrack.",
+                  currentValue = musicBpm.toFloat(),
+                  minValue = 96f,
+                  maxValue = 168f,
+                  stepSize = 2f,
+                  defaultValue = 118f,
+                  unitSuffix = " BPM",
+                  accentHex = 0xFFFACC15L,
+                  presets = listOf("96" to 96f, "118" to 118f, "138" to 138f, "160" to 160f),
+                  valueFormatter = { "${it.roundToInt()} BPM" },
+                  onValueChange = { onChangeMusicBpm(it.roundToInt().coerceIn(96, 168)) },
+                )
+              )
+            },
+          )
+
+          // Embedded 3-Track Procedural Music & Weapon SFX Synthesizer Deck
+          Column(
+            modifier =
+              Modifier.fillMaxWidth()
+                .chamferedSciFiPodSurface(
+                  isRightSide = false,
+                  primaryBorder = Color(0xFFFFD700),
+                  secondaryBorder = Color(0xFF00F5D4),
+                )
+                .padding(8.dp)
+                .testTag("helm_procedural_synth_deck"),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+          ) {
+            Text(
+              text = "3-TRACK PROCEDURAL SYNTH DECK",
+              color = Color(0xFFFFD700),
+              fontSize = 7.8.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+
+            // Track A / Track B / Track C Selector Pills
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+              listOf(0 to "TRACK A", 1 to "TRACK B", 2 to "TRACK C").forEach { (slotIdx, slotLabel) ->
+                val isTrackSel = activeTrackIdx == slotIdx
+                Box(
+                  modifier =
+                    Modifier.weight(1f)
+                      .minimumInteractiveComponentSize()
+                      .height(48.dp)
+                      .clickable {
+                        val recipe = activeSynth?.selectTrackSlot(slotIdx)
+                        if (recipe != null) {
+                          onChangeMusicBpm(recipe.bpm.coerceIn(96, 168))
+                          synthStatusNotice = "$slotLabel ACTIVE • ${recipe.archetype.label.uppercase(Locale.US)}"
+                        }
+                      }
+                      .padding(vertical = 5.dp)
+                      .testTag("helm_synth_track_$slotIdx"),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Box(
+                    modifier =
+                      Modifier.fillMaxSize()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (isTrackSel) Color(0x3800F5D4) else Color(0xFF060D1A))
+                        .border(
+                          1.dp,
+                          if (isTrackSel) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+                          RoundedCornerShape(6.dp),
+                        ),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Text(
+                      text = slotLabel,
+                      color = if (isTrackSel) Color.White else Color(0xFFCBD5E1),
+                      fontSize = 7.4.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                    )
+                  }
+                }
+              }
+            }
+
+            // 5 MusicSynthArchetype Preset Chips
+            MusicSynthArchetype.entries.chunked(2).forEach { pair ->
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                pair.forEach { arch ->
+                  val isArchActive = activeMusicArchetype == arch
+                  Box(
+                    modifier =
+                      Modifier.weight(1f)
+                        .minimumInteractiveComponentSize()
+                        .height(48.dp)
+                        .clickable {
+                          val recipe = activeSynth?.applyMusicArchetype(arch)
+                          if (recipe != null) {
+                            onChangeMusicBpm(recipe.bpm.coerceIn(96, 168))
+                            synthStatusNotice = "PRESET: ${arch.label.uppercase(Locale.US)} (${recipe.bpm} BPM)"
+                          }
+                        }
+                        .padding(vertical = 4.dp)
+                        .testTag("helm_synth_arch_${arch.id.lowercase(Locale.US)}"),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Box(
+                      modifier =
+                        Modifier.fillMaxSize()
+                          .clip(RoundedCornerShape(5.dp))
+                          .background(if (isArchActive) Color(0x33FFD700) else Color(0xFF081324))
+                          .border(
+                            1.dp,
+                            if (isArchActive) Color(0xFFFFD700) else Color(0x5538BDF8),
+                            RoundedCornerShape(5.dp),
+                          )
+                          .padding(horizontal = 4.dp),
+                      contentAlignment = Alignment.Center,
+                    ) {
+                      Text(
+                        text = arch.label.uppercase(Locale.US),
+                        color = if (isArchActive) Color(0xFFFEF08A) else Color(0xFFE2E8F0),
+                        fontSize = 6.9.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                      )
+                    }
+                  }
+                }
+                if (pair.size == 1) {
+                  Spacer(modifier = Modifier.weight(1f))
+                }
+              }
+            }
+
+            // Natural-Language Prompt Music Synthesizer
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(4.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Box(
+                modifier =
+                  Modifier.weight(1f)
+                    .minimumInteractiveComponentSize()
+                    .heightIn(min = 48.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF0B1528))
+                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                contentAlignment = Alignment.CenterStart,
+              ) {
+                if (synthPromptDraft.isEmpty()) {
+                  Text(
+                    text = "Describe mood or tempo (e.g. fast industrial 145)...",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 7.2.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                }
+                BasicTextField(
+                  value = synthPromptDraft,
+                  onValueChange = { synthPromptDraft = it.take(48) },
+                  singleLine = true,
+                  cursorBrush = SolidColor(Color(0xFF00F5D4)),
+                  textStyle =
+                    TextStyle(
+                      color = Color.White,
+                      fontSize = 8.0.sp,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = FontFamily.Monospace,
+                    ),
+                  modifier = Modifier.fillMaxWidth().testTag("helm_synth_prompt_input"),
+                )
+              }
+              Box(
+                modifier =
+                  Modifier.minimumInteractiveComponentSize()
+                    .height(48.dp)
+                    .clickable {
+                      val recipe =
+                        activeSynth?.synthesizeMusicFromPrompt(
+                          prompt = synthPromptDraft.ifBlank { "dark synthwave 124 bpm" },
+                          currentBpm = musicBpm,
+                          saveToActiveSlot = true,
+                        )
+                      if (recipe != null) {
+                        onChangeMusicBpm(recipe.bpm.coerceIn(96, 168))
+                        synthStatusNotice = "FORGED -> ${recipe.archetype.label.uppercase(Locale.US)} (${recipe.bpm} BPM)"
+                      }
+                    }
+                    .padding(vertical = 4.dp)
+                    .testTag("helm_synth_forge_btn"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Box(
+                  modifier =
+                    Modifier.clip(RoundedCornerShape(6.dp))
+                      .background(Color(0xFF0D2D46))
+                      .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+                      .padding(horizontal = 7.dp, vertical = 7.dp),
+                ) {
+                  Text(
+                    text = "FORGE",
+                    color = Color(0xFF00F5D4),
+                    fontSize = 7.4.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
+              }
+            }
+
+            if (!synthStatusNotice.isNullOrBlank()) {
+              Text(
+                text = synthStatusNotice!!,
+                color = Color(0xFF00F5D4),
+                fontSize = 7.0.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+
+            // 4 Instant Weapon & Combat SFX Audition Pads
+            Text(
+              text = "AUDITION LIVE COMBAT SFX",
+              color = Color(0xFF38BDF8),
+              fontSize = 7.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+            val sfxPads =
+              listOf(
+                Triple("PRIMARY FIRE", Color(0xFF00F5D4)) { activeSynth?.playLaser() ?: Unit },
+                Triple("EXPLOSION", Color(0xFFFB7185)) { activeSynth?.playExplosion() ?: Unit },
+                Triple("SHIELD RIPPLE", Color(0xFF38BDF8)) { activeSynth?.playRepel() ?: Unit },
+                Triple("UI CHIME", Color(0xFFFACC15)) { activeSynth?.playPrize() ?: Unit },
+              )
+            sfxPads.chunked(2).forEach { padRow ->
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                padRow.forEach { (padLabel, padAccent, triggerSfx) ->
+                  Box(
+                    modifier =
+                      Modifier.weight(1f)
+                        .minimumInteractiveComponentSize()
+                        .height(48.dp)
+                        .clickable { triggerSfx() }
+                        .padding(vertical = 4.dp)
+                        .testTag("helm_sfx_pad_${padLabel.lowercase(Locale.US).replace(" ", "_")}"),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Box(
+                      modifier =
+                        Modifier.fillMaxSize()
+                          .clip(RoundedCornerShape(6.dp))
+                          .background(padAccent.copy(alpha = 0.16f))
+                          .border(1.dp, padAccent, RoundedCornerShape(6.dp)),
+                      contentAlignment = Alignment.Center,
+                    ) {
+                      Text(
+                        text = padLabel,
+                        color = Color.White,
+                        fontSize = 7.0.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          // Display & Refresh Controls
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -3644,34 +4458,54 @@ internal fun HelmLeftSystemsBay(
           }
 
           HelmStepperControlRow(
-            label = "MUSIC VOL",
-            valueText = "${(musicVolume * 100f).roundToInt()}%",
-            onMinus = { onChangeMusicVolume((musicVolume - 0.10f).coerceIn(0f, 1f)) },
-            onPlus = { onChangeMusicVolume((musicVolume + 0.10f).coerceIn(0f, 1f)) },
-          )
-          HelmStepperControlRow(
-            label = "SFX VOL",
-            valueText = "${(sfxVolume * 100f).roundToInt()}%",
-            onMinus = { onChangeSfxVolume((sfxVolume - 0.10f).coerceIn(0f, 1f)) },
-            onPlus = { onChangeSfxVolume((sfxVolume + 0.10f).coerceIn(0f, 1f)) },
-          )
-          HelmStepperControlRow(
-            label = "SYNTH BPM",
-            valueText = "$musicBpm",
-            onMinus = { onChangeMusicBpm((musicBpm - 6).coerceIn(96, 168)) },
-            onPlus = { onChangeMusicBpm((musicBpm + 6).coerceIn(96, 168)) },
-          )
-          HelmStepperControlRow(
             label = "ARENA ZOOM",
             valueText = String.format(Locale.US, "%.2fx", cameraZoom),
             onMinus = { onChangeCameraZoom((cameraZoom - 0.08f).coerceIn(0.65f, 1.45f)) },
             onPlus = { onChangeCameraZoom((cameraZoom + 0.08f).coerceIn(0.65f, 1.45f)) },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_arena_zoom",
+                  title = "ARENA ZOOM",
+                  subtitle = "Live combat camera field-of-view scale.",
+                  currentValue = cameraZoom,
+                  minValue = 0.65f,
+                  maxValue = 1.45f,
+                  stepSize = 0.05f,
+                  defaultValue = 1.00f,
+                  unitSuffix = "x",
+                  accentHex = 0xFF00F5D4L,
+                  presets = listOf("0.75x" to 0.75f, "1.0x" to 1.00f, "1.20x" to 1.20f, "1.40x" to 1.40f),
+                  valueFormatter = { String.format(Locale.US, "%.2fx", it) },
+                  onValueChange = { onChangeCameraZoom(it.coerceIn(0.65f, 1.45f)) },
+                )
+              )
+            },
           )
           HelmStepperControlRow(
             label = "HUD TEXT",
             valueText = String.format(Locale.US, "%.2fx", playfieldTextScale),
             onMinus = { onChangePlayfieldTextScale((playfieldTextScale - 0.08f).coerceIn(0.80f, 1.35f)) },
             onPlus = { onChangePlayfieldTextScale((playfieldTextScale + 0.08f).coerceIn(0.80f, 1.35f)) },
+            onTapRow = {
+              onOpenSliderWorkbench(
+                OverwatchCircularPrompt.SliderWorkbench(
+                  key = "helm_hud_text",
+                  title = "HUD TEXT SCALE",
+                  subtitle = "Callsign, damage readout, and playfield telemetry text size.",
+                  currentValue = playfieldTextScale,
+                  minValue = 0.80f,
+                  maxValue = 1.35f,
+                  stepSize = 0.05f,
+                  defaultValue = 1.00f,
+                  unitSuffix = "x",
+                  accentHex = 0xFF38BDF8L,
+                  presets = listOf("0.85x" to 0.85f, "1.0x" to 1.00f, "1.15x" to 1.15f, "1.30x" to 1.30f),
+                  valueFormatter = { String.format(Locale.US, "%.2fx", it) },
+                  onValueChange = { onChangePlayfieldTextScale(it.coerceIn(0.80f, 1.35f)) },
+                )
+              )
+            },
           )
 
           Box(
@@ -3694,7 +4528,7 @@ internal fun HelmLeftSystemsBay(
               contentAlignment = Alignment.Center,
             ) {
               Text(
-                text = "AUDIO SYNTH LAB >",
+                text = "FULL AUDIO SYNTH STUDIO >",
                 color = Color(0xFFFFD700),
                 fontSize = 8.0.sp,
                 fontWeight = FontWeight.Black,

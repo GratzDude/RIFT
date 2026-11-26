@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 124
+const val CURRENT_RIFT_BUILD_VERSION = 126
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -61,6 +61,35 @@ data class RiftVersionLogEntry(
 
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
+    RiftVersionLogEntry(
+      buildNumber = 126,
+      versionTag = "v1.0.126 // BUILD #126",
+      releaseDate = "Nov 26, 2026",
+      headline = "Live Firebase AI Logic (Gemini) Integration, Overwatch 270-Degree Slider Workbench, Embedded 3-Track Audio Synth & SFX Deck, 6 Distinct Ranked Emblems & Borderless Sub-Bays",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Live Firebase AI Logic (Gemini) & App Check Integration: Connected Subspace Comms #rift-ai directly to Firebase AI Logic (gemini-3.8-flash) with App Check attestation, real-time token streaming, 60-second coroutine timeout handling, multi-turn chat memory, and live ground-truth RIFT telemetry.",
+          "Overwatch Interactive Slider & Dial Workbench: Tapping any Helm Systems control (Touch Deadzone, Sensitivity, Gamepad Deadzones, HUD Scale, HUD Opacity, Arena Zoom, HUD Text Scale, Volumes, BPM) or Custom Rift rule (Damage Taken, Weapon Flux Cost, Bot Count, Bot Skill, Time Limit, Score Cap, Physics Multipliers) now opens a sleek 270-degree circular arc dial and touch-drag track inside Overwatch with live value readout, quick preset chips, and instant Reset Default.",
+          "Embedded 3-Track Procedural Music & SFX Synth Deck: Surfaced Track A, Track B, and Track C live switching, all 5 synthesizer archetypes (Dark Synthwave, Industrial Bass, Deep-Space Pad, Arcade Chiptune, Singularity Drive), natural-language prompt track synthesis, and 4 instant weapon and UI SFX audition triggers directly inside Helm Systems Audio.",
+          "Distinct Ranked Mode Emblems, Custom Rifts & Borderless Sub-Bays: Upgraded all 6 Ranked Modes with unique custom emblems, added clear Visibility and Base Mode headers, brightened the 6-Character Room Code input placeholder, added a Host Broadcast Physics toggle inside Create Rift, stripped remaining octagonal pod borders across Hub and Sub-Bays, and refined Subspace Comms #rift-ai prompt chips and TRANSMIT contrast.",
+        ),
+    ),
+    RiftVersionLogEntry(
+      buildNumber = 125,
+      versionTag = "v1.0.125 // BUILD #125",
+      releaseDate = "Nov 26, 2026",
+      headline = "Interactive Drag-and-Drop Overwatch Rift Frame Drydock, Vertical Visual Weapon & Buff Cards, Unified Orbital Hub Hangar Routing & Borderless Holographic Hub Pods",
+      badgeLabel = "DRAG-AND-DROP DRYDOCK",
+      accentColorHex = "#C084FC",
+      highlights =
+        listOf(
+          "True Drag-and-Drop Overwatch Rift Frame Drydock: Opening the Rift Frame bay now centers Ship 10 inside Overwatch with an animated 100-Point Allocation Ring, glowing Primary Mount and Secondary/Buff drop sockets, a floating drag ghost icon across the Hub, and 6 horizontal touch-draggable stat allocation bars (Fire, Flux, Regen, Speed, Thrust, Turn).",
+          "Vertical Visual Weapon & Buff Cards: Replaced legacy Rift Frame stat steppers and text rows with tall vertical holographic cards displaying pre-baked custom Primary Weapon and Secondary/Buff hardware icons, full untruncated titles, and plain-English descriptions supporting both drag-to-socket and tap-to-equip.",
+          "Unified Orbital Hub Routing & Borderless Hub Pods: Eliminated legacy standalone Hangar modal routing across gamepad Start, Conduit Frame shortcuts, and Hangar entry points so all Hangar and Rift Frame sessions stay unified inside the Orbital Hub, and stripped heavy octagonal borders from Hub pods and Overwatch inspect bays.",
+        ),
+    ),
     RiftVersionLogEntry(
       buildNumber = 124,
       versionTag = "v1.0.124 // BUILD #124",

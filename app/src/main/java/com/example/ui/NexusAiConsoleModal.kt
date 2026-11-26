@@ -36,6 +36,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
@@ -54,6 +56,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -115,6 +118,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
@@ -176,6 +180,7 @@ import com.example.engine.SyndicateCrestRecipe
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.pow
@@ -286,6 +291,23 @@ internal data class SquadronOnlinePilotItem(
 internal sealed interface OverwatchCircularPrompt {
   data object None : OverwatchCircularPrompt
   data object ResonanceLeaderboard : OverwatchCircularPrompt
+  data object RiftFrameDrydock : OverwatchCircularPrompt
+  data class FrameSlotRename(val slotId: String, val initialName: String) : OverwatchCircularPrompt
+  data class SliderWorkbench(
+    val key: String,
+    val title: String,
+    val subtitle: String,
+    val currentValue: Float,
+    val minValue: Float,
+    val maxValue: Float,
+    val stepSize: Float,
+    val defaultValue: Float,
+    val unitSuffix: String = "",
+    val accentHex: Long = 0xFF00F5D4L,
+    val presets: List<Pair<String, Float>> = emptyList(),
+    val valueFormatter: ((Float) -> String)? = null,
+    val onValueChange: (Float) -> Unit = {},
+  ) : OverwatchCircularPrompt
   data class ShipInspect(val shipId: Int, val hideChargeButton: Boolean = false) : OverwatchCircularPrompt
   data class PilotInspect(val pilot: SquadronOnlinePilotItem) : OverwatchCircularPrompt
   data class ActionConfirm(
@@ -4234,7 +4256,31 @@ private fun OrbitalHubSpatialStage(
     val openCornerMaxWidthDp =
       ((safeW * 0.5f) - openCornerAnchorDp - overwatchStageDiameterDp * 0.08f).coerceIn(112.dp, 224.dp)
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    var stageRootOrigin by remember { mutableStateOf(Offset.Zero) }
+    var activeDraggedFrameItem by remember { mutableStateOf<DraggedRiftFrameItem?>(null) }
+    var dragPointerRootOffset by remember { mutableStateOf(Offset.Zero) }
+    var primarySocketRootBounds by remember { mutableStateOf(Rect.Zero) }
+    var secondarySocketRootBounds by remember { mutableStateOf(Rect.Zero) }
+    var apertureCenterRoot by remember { mutableStateOf(Offset.Zero) }
+    var apertureRadiusPx by remember { mutableFloatStateOf(0f) }
+    var frameRenameDraft by
+      remember(activeCustomSlotId, activeCustomSlot.customName) {
+        mutableStateOf(activeCustomSlot.customName.ifBlank { activeCustomSlotId })
+      }
+    val effectiveOverwatchPrompt =
+      if (overwatchPrompt == OverwatchCircularPrompt.None && sideBayMode == RiftHubSideBayMode.RIFT_FRAME_BAY) {
+        OverwatchCircularPrompt.RiftFrameDrydock
+      } else {
+        overwatchPrompt
+      }
+
+    Box(
+      modifier =
+        Modifier.fillMaxSize()
+          .onGloballyPositioned { coords ->
+            stageRootOrigin = coords.positionInRoot()
+          },
+    ) {
       // 1. CIRCULAR OVERWATCH CENTERPIECE
       val centerFocused = focusedOrbitalIndex == 0 || hubTutorialStep in listOf(1, 2, 4)
       val tutorialPulseAlpha = 0.55f + 0.45f * (0.5f + 0.5f * kotlin.math.sin(fluxOrbitRad * 2f))
@@ -4255,12 +4301,18 @@ private fun OrbitalHubSpatialStage(
         isTabletDeck = isTabletDeck,
         drawHeadlessSafeZoneFallback = headless,
         activeInstance = activeOverwatchInstance,
-        overwatchPrompt = overwatchPrompt,
+        overwatchPrompt = effectiveOverwatchPrompt,
         chargedShipId = chargedShipId,
         bestShipId = resolvedBestShipId,
         activeShipId = hangarIndicatedShipId,
+        activeCustomSlot = activeCustomSlot,
         activeCustomSlotId = activeCustomSlotId,
         activeCustomSlotName = activeCustomSlot.customName,
+        pointBudget = pointBudget.coerceAtLeast(100),
+        activeDraggedFrameItem = activeDraggedFrameItem,
+        dragPointerRootOffset = dragPointerRootOffset,
+        frameRenameDraft = frameRenameDraft,
+        onFrameRenameDraftChange = { frameRenameDraft = it },
         currentUserId = currentUserId,
         callsign = callsign,
         syndicateTag = syndicateTag,
@@ -4281,6 +4333,24 @@ private fun OrbitalHubSpatialStage(
           onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
           onChangeSideBayMode(RiftHubSideBayMode.RIFT_FRAME_BAY)
         },
+        onSaveCustomSlot = onSaveCustomSlot,
+        onOpenFrameRenamePrompt = {
+          frameRenameDraft = activeCustomSlot.customName.ifBlank { activeCustomSlotId }
+          onChangeOverwatchPrompt(OverwatchCircularPrompt.FrameSlotRename(activeCustomSlotId, frameRenameDraft))
+        },
+        onSaveFrameSlotRename = { rawName ->
+          val clean = rawName.trim().take(18)
+          if (clean.isNotBlank()) {
+            onSaveCustomSlot(
+              activeCustomSlot
+                .copy(slotId = activeCustomSlotId, customName = clean)
+                .clampToPointBudget(pointBudget.coerceAtLeast(100))
+            )
+            onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+          }
+        },
+        onUpdatePrimarySocketBounds = { primarySocketRootBounds = it },
+        onUpdateSecondarySocketBounds = { secondarySocketRootBounds = it },
         onDismissPrompt = { onChangeOverwatchPrompt(OverwatchCircularPrompt.None) },
         onSquadUpPilot = { pilotItem ->
           onInviteOnlinePilotToWing(pilotItem.rawLivePilot)
@@ -4305,7 +4375,11 @@ private fun OrbitalHubSpatialStage(
         },
         onOverwatchTransformGesture = onOverwatchTransformGesture,
         onResetOverwatchCamera = onResetOverwatchCamera,
-        onApertureRootBoundsChanged = onApertureRootBoundsChanged,
+        onApertureRootBoundsChanged = { cx, cy, rPx ->
+          apertureCenterRoot = Offset(cx, cy)
+          apertureRadiusPx = rPx
+          onApertureRootBoundsChanged(cx, cy, rPx)
+        },
       )
 
       // 2. PORT FLANKING HARDWARE WING (All Non-Full-Screen Windows Digitize Into Flanking Side-Bays)
@@ -4477,8 +4551,8 @@ private fun OrbitalHubSpatialStage(
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
                 },
                 onOpenStudio = {
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                   onChangeSideBayMode(RiftHubSideBayMode.RIFT_FRAME_BAY)
-                  onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(10))
                 },
                 onTapShip = { shipId ->
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId))
@@ -4507,12 +4581,53 @@ private fun OrbitalHubSpatialStage(
                   onChangeOverwatchPrompt(infoPrompt)
                 },
                 onPreviewInOverwatch = {
-                  onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(10))
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                 },
                 onChargeRiftFrame = {
                   onChargeShip(10)
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+                },
+                onStartDragItem = { dragged, startRoot ->
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+                  activeDraggedFrameItem = dragged
+                  dragPointerRootOffset = startRoot
+                },
+                onUpdateDragRootOffset = { rootPos ->
+                  dragPointerRootOffset = rootPos
+                },
+                onEndDragItem = {
+                  val dragged = activeDraggedFrameItem
+                  if (dragged != null) {
+                    val insideAperture =
+                      apertureRadiusPx > 0f &&
+                        (dragPointerRootOffset - apertureCenterRoot).getDistance() <= apertureRadiusPx * 1.05f
+                    val budget = pointBudget.coerceAtLeast(100)
+                    if (dragged.isPrimary) {
+                      if (primarySocketRootBounds.inflate(32f).contains(dragPointerRootOffset) || insideAperture) {
+                        onSaveCustomSlot(
+                          activeCustomSlot
+                            .copy(slotId = activeCustomSlotId, primaryArchetype = dragged.itemId)
+                            .clampToPointBudget(budget)
+                        )
+                      }
+                    } else {
+                      if (secondarySocketRootBounds.inflate(32f).contains(dragPointerRootOffset) || insideAperture) {
+                        onSaveCustomSlot(
+                          activeCustomSlot
+                            .copy(slotId = activeCustomSlotId, secondaryType = dragged.itemId)
+                            .clampToPointBudget(budget)
+                        )
+                      }
+                    }
+                  }
+                  activeDraggedFrameItem = null
+                },
+                onOpenFrameRenamePrompt = {
+                  frameRenameDraft = activeCustomSlot.customName.ifBlank { activeCustomSlotId }
+                  onChangeOverwatchPrompt(
+                    OverwatchCircularPrompt.FrameSlotRename(activeCustomSlotId, frameRenameDraft)
+                  )
                 },
               )
             }
@@ -4850,6 +4965,9 @@ private fun OrbitalHubSpatialStage(
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
                 },
+                onOpenSliderWorkbench = { wb ->
+                  onChangeOverwatchPrompt(wb)
+                },
               )
             }
             RiftHubSideBayMode.OVERWATCH_INSPECT_BAY -> {
@@ -5006,8 +5124,8 @@ private fun OrbitalHubSpatialStage(
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
                 },
                 onOpenStudio = {
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                   onChangeSideBayMode(RiftHubSideBayMode.RIFT_FRAME_BAY)
-                  onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(10))
                 },
                 onTapShip = { shipId ->
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.ShipInspect(shipId))
@@ -5229,6 +5347,9 @@ private fun OrbitalHubSpatialStage(
                 onToggleAllowArmadasInFfa = onToggleAllowArmadasInFfa,
                 onJoinCustomInstance = onJoinCustomInstance,
                 onQuickCreateCustomGame = onQuickCreateCustomGame,
+                onOpenSliderWorkbench = { wb ->
+                  onChangeOverwatchPrompt(wb)
+                },
               )
             }
             RiftHubSideBayMode.CONDUIT_BAY -> {
@@ -5419,6 +5540,25 @@ private fun OrbitalHubSpatialStage(
             OverwatchCircularPrompt.ResonanceLeaderboard -> {
               onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
             }
+            OverwatchCircularPrompt.RiftFrameDrydock -> {
+              onChargeShip(10)
+              onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+              onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
+            }
+            is OverwatchCircularPrompt.FrameSlotRename -> {
+              val clean = frameRenameDraft.trim().take(18)
+              if (clean.isNotBlank()) {
+                onSaveCustomSlot(
+                  activeCustomSlot
+                    .copy(slotId = activeCustomSlotId, customName = clean)
+                    .clampToPointBudget(pointBudget.coerceAtLeast(100))
+                )
+              }
+              onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+            }
+            is OverwatchCircularPrompt.SliderWorkbench -> {
+              onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+            }
             OverwatchCircularPrompt.None -> {
               if (sideBayMode == RiftHubSideBayMode.RIFT_FRAME_BAY) {
                 onChargeShip(10)
@@ -5469,6 +5609,50 @@ private fun OrbitalHubSpatialStage(
             onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
           },
         )
+      }
+
+      val draggedItem = activeDraggedFrameItem
+      if (draggedItem != null) {
+        val ghostBmp =
+          remember(draggedItem.isPrimary, draggedItem.itemId, RiftSpriteBaker.spriteVisualRevision) {
+            if (draggedItem.isPrimary) {
+              RiftSpriteBaker.getPrimaryWeaponIconBitmap(draggedItem.itemId).asImageBitmap()
+            } else {
+              RiftSpriteBaker.getSecondaryAbilityIconBitmap(draggedItem.itemId).asImageBitmap()
+            }
+          }
+        val localX = dragPointerRootOffset.x - stageRootOrigin.x
+        val localY = dragPointerRootOffset.y - stageRootOrigin.y
+        Column(
+          modifier =
+            Modifier.offset {
+                IntOffset(
+                  (localX - with(density) { 42.dp.toPx() }).roundToInt(),
+                  (localY - with(density) { 48.dp.toPx() }).roundToInt(),
+                )
+              }
+              .clip(RoundedCornerShape(10.dp))
+              .background(Color(0xEB071426))
+              .border(1.5.dp, draggedItem.accentColor, RoundedCornerShape(10.dp))
+              .padding(horizontal = 8.dp, vertical = 5.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          Image(
+            bitmap = ghostBmp,
+            contentDescription = draggedItem.label,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(34.dp),
+          )
+          Text(
+            text = "${draggedItem.label.uppercase(Locale.US)} • ${draggedItem.pointCost}P",
+            color = Color.White,
+            fontSize = 7.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+        }
       }
     }
   }
@@ -5817,71 +6001,47 @@ internal fun Modifier.chamferedSciFiPodSurface(
     val w = size.width
     val h = size.height
     if (w <= 8f || h <= 8f) return@drawBehind
-    val drop = 2.0.dp.toPx()
-    val outerCut = 10.dp.toPx().coerceAtMost(h * 0.28f)
-    val innerCut = 5.dp.toPx()
-    val bodyH = (h - drop).coerceAtLeast(8f)
-
-    fun podPath(yOff: Float): Path =
-      Path().apply {
-        if (!isRightSide) {
-          moveTo(outerCut, yOff)
-          lineTo(w - innerCut, yOff)
-          lineTo(w, yOff + innerCut)
-          lineTo(w, yOff + bodyH - innerCut)
-          lineTo(w - innerCut, yOff + bodyH)
-          lineTo(outerCut, yOff + bodyH)
-          lineTo(0f, yOff + bodyH - outerCut)
-          lineTo(0f, yOff + outerCut)
-          close()
-        } else {
-          moveTo(innerCut, yOff)
-          lineTo(w - outerCut, yOff)
-          lineTo(w, yOff + outerCut)
-          lineTo(w, yOff + bodyH - outerCut)
-          lineTo(w - outerCut, yOff + bodyH)
-          lineTo(innerCut, yOff + bodyH)
-          lineTo(0f, yOff + bodyH - innerCut)
-          lineTo(0f, yOff + innerCut)
-          close()
-        }
-      }
-
-    val shadow = podPath(drop)
-    val body = podPath(0f)
-    drawPath(shadow, color = Color(0xE0010308))
-    drawPath(
-      path = body,
-      brush =
-        Brush.verticalGradient(
-          listOf(Color(0xFA0B192E), Color(0xF8060D1A), Color(0xFC02050B))
-        ),
-    )
-    drawPath(
-      path = body,
+    drawRect(
       brush =
         Brush.horizontalGradient(
-          if (!isRightSide) {
-            listOf(primaryBorder.copy(alpha = 0.88f), Color(0x661E293B), secondaryBorder.copy(alpha = 0.80f))
-          } else {
-            listOf(secondaryBorder.copy(alpha = 0.80f), Color(0x661E293B), primaryBorder.copy(alpha = 0.88f))
-          }
-        ),
-      style = Stroke(width = 1.15.dp.toPx()),
+          colors =
+            if (!isRightSide) {
+              listOf(Color(0xC6050D1C), Color(0x96071326), Color(0x5208162B))
+            } else {
+              listOf(Color(0x5208162B), Color(0x96071326), Color(0xC6050D1C))
+            }
+        )
     )
-    // Top-left optical specular catchlight
+    // Subtle top holographic glint hairline (no boxy octagonal border)
     drawLine(
       brush =
         Brush.horizontalGradient(
+          colors =
+            if (!isRightSide) {
+              listOf(primaryBorder.copy(alpha = 0.44f), secondaryBorder.copy(alpha = 0.22f), Color.Transparent)
+            } else {
+              listOf(Color.Transparent, secondaryBorder.copy(alpha = 0.22f), primaryBorder.copy(alpha = 0.44f))
+            }
+        ),
+      start = Offset(0f, 0.5.dp.toPx()),
+      end = Offset(w, 0.5.dp.toPx()),
+      strokeWidth = 0.75.dp.toPx(),
+    )
+    // Inner Overwatch-facing luminous 2.dp accent rail
+    val railX = if (!isRightSide) w - 1.dp.toPx() else 1.dp.toPx()
+    drawLine(
+      brush =
+        Brush.verticalGradient(
           listOf(
-            Color.White.copy(alpha = 0.46f),
-            primaryBorder.copy(alpha = 0.44f),
-            Color.Transparent,
+            primaryBorder.copy(alpha = 0.92f),
+            secondaryBorder.copy(alpha = 0.72f),
+            primaryBorder.copy(alpha = 0.36f),
           )
         ),
-      start = Offset((if (!isRightSide) outerCut else innerCut) + 4.dp.toPx(), 1.3.dp.toPx()),
-      end = Offset(w * 0.68f, 1.3.dp.toPx()),
-      strokeWidth = 1.1.dp.toPx(),
+      start = Offset(railX, 2.dp.toPx()),
+      end = Offset(railX, (h - 2.dp.toPx()).coerceAtLeast(2.dp.toPx())),
+      strokeWidth = 2.0.dp.toPx(),
+      cap = StrokeCap.Round,
     )
   }
 
@@ -6873,8 +7033,14 @@ private fun RoundRipplingOverwatchAperture(
   chargedShipId: Int = 0,
   bestShipId: Int = 0,
   activeShipId: Int = 1,
+  activeCustomSlot: CustomShipLoadoutSlot = CustomShipLoadoutSlot(),
   activeCustomSlotId: String = "Frame A",
   activeCustomSlotName: String = "",
+  pointBudget: Int = 100,
+  activeDraggedFrameItem: DraggedRiftFrameItem? = null,
+  dragPointerRootOffset: Offset = Offset.Zero,
+  frameRenameDraft: String = "",
+  onFrameRenameDraftChange: (String) -> Unit = {},
   currentUserId: String = "",
   callsign: String = "",
   syndicateTag: String = "",
@@ -6889,6 +7055,11 @@ private fun RoundRipplingOverwatchAperture(
   resolveShipResonance: (Int) -> Int = { 0 },
   onChargeShip: (Int) -> Unit = {},
   onCustomizeRiftFrame: () -> Unit = {},
+  onSaveCustomSlot: (CustomShipLoadoutSlot) -> Unit = {},
+  onOpenFrameRenamePrompt: () -> Unit = {},
+  onSaveFrameSlotRename: (String) -> Unit = {},
+  onUpdatePrimarySocketBounds: (Rect) -> Unit = {},
+  onUpdateSecondarySocketBounds: (Rect) -> Unit = {},
   onDismissPrompt: () -> Unit = {},
   onSquadUpPilot: (SquadronOnlinePilotItem) -> Unit = {},
   onAddFriendPilot: (SquadronOnlinePilotItem) -> Unit = {},
@@ -7266,8 +7437,14 @@ private fun RoundRipplingOverwatchAperture(
             chargedShipId = chargedShipId,
             bestShipId = bestShipId,
             activeShipId = activeShipId,
+            activeCustomSlot = activeCustomSlot,
             activeCustomSlotId = activeCustomSlotId,
             activeCustomSlotName = activeCustomSlotName,
+            pointBudget = pointBudget,
+            activeDraggedFrameItem = activeDraggedFrameItem,
+            dragPointerRootOffset = dragPointerRootOffset,
+            frameRenameDraft = frameRenameDraft,
+            onFrameRenameDraftChange = onFrameRenameDraftChange,
             currentUserId = currentUserId,
             callsign = callsign,
             syndicateTag = syndicateTag,
@@ -7282,6 +7459,11 @@ private fun RoundRipplingOverwatchAperture(
             resolveShipResonance = resolveShipResonance,
             onChargeShip = onChargeShip,
             onCustomizeRiftFrame = onCustomizeRiftFrame,
+            onSaveCustomSlot = onSaveCustomSlot,
+            onOpenFrameRenamePrompt = onOpenFrameRenamePrompt,
+            onSaveFrameSlotRename = onSaveFrameSlotRename,
+            onUpdatePrimarySocketBounds = onUpdatePrimarySocketBounds,
+            onUpdateSecondarySocketBounds = onUpdateSecondarySocketBounds,
             onDismissPrompt = onDismissPrompt,
             onSquadUpPilot = onSquadUpPilot,
             onAddFriendPilot = onAddFriendPilot,
@@ -7301,8 +7483,14 @@ private fun OverwatchCircularGlassPromptOverlay(
   chargedShipId: Int,
   bestShipId: Int,
   activeShipId: Int = 1,
+  activeCustomSlot: CustomShipLoadoutSlot = CustomShipLoadoutSlot(),
   activeCustomSlotId: String = "Frame A",
   activeCustomSlotName: String = "",
+  pointBudget: Int = 100,
+  activeDraggedFrameItem: DraggedRiftFrameItem? = null,
+  dragPointerRootOffset: Offset = Offset.Zero,
+  frameRenameDraft: String = "",
+  onFrameRenameDraftChange: (String) -> Unit = {},
   currentUserId: String = "",
   callsign: String = "",
   syndicateTag: String = "",
@@ -7317,6 +7505,11 @@ private fun OverwatchCircularGlassPromptOverlay(
   resolveShipResonance: (Int) -> Int,
   onChargeShip: (Int) -> Unit,
   onCustomizeRiftFrame: () -> Unit = {},
+  onSaveCustomSlot: (CustomShipLoadoutSlot) -> Unit = {},
+  onOpenFrameRenamePrompt: () -> Unit = {},
+  onSaveFrameSlotRename: (String) -> Unit = {},
+  onUpdatePrimarySocketBounds: (Rect) -> Unit = {},
+  onUpdateSecondarySocketBounds: (Rect) -> Unit = {},
   onDismissPrompt: () -> Unit,
   onSquadUpPilot: (SquadronOnlinePilotItem) -> Unit,
   onAddFriendPilot: (SquadronOnlinePilotItem) -> Unit,
@@ -8381,6 +8574,914 @@ private fun OverwatchCircularGlassPromptOverlay(
               }
             }
           }
+        }
+      }
+
+      OverwatchCircularPrompt.RiftFrameDrydock -> {
+        OverwatchRiftFrameDrydockView(
+          isTabletDeck = isTabletDeck,
+          activeCustomSlot = activeCustomSlot,
+          activeCustomSlotId = activeCustomSlotId,
+          pointBudget = pointBudget.coerceAtLeast(100),
+          isCharged = chargedShipId == 10,
+          shipSpinDeg = shipSpinDeg,
+          fluxOrbitRad = fluxOrbitRad,
+          activeDraggedFrameItem = activeDraggedFrameItem,
+          dragPointerRootOffset = dragPointerRootOffset,
+          onSaveCustomSlot = onSaveCustomSlot,
+          onOpenFrameRenamePrompt = onOpenFrameRenamePrompt,
+          onChargeRiftFrame = { onChargeShip(10) },
+          onUpdatePrimarySocketBounds = onUpdatePrimarySocketBounds,
+          onUpdateSecondarySocketBounds = onUpdateSecondarySocketBounds,
+        )
+      }
+
+      is OverwatchCircularPrompt.FrameSlotRename -> {
+        val keyboardController = LocalSoftwareKeyboardController.current
+        Column(
+          modifier = Modifier.fillMaxWidth(0.84f).testTag("overwatch_frame_rename_overlay"),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 7.dp else 5.dp),
+        ) {
+          Text(
+            text = "RIFT FRAME CALLSIGN // ${prompt.slotId.uppercase(Locale.US)}",
+            color = Color(0xFF00F5D4),
+            fontSize = if (isTabletDeck) 9.2.sp else 8.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+          Box(
+            modifier =
+              Modifier.fillMaxWidth(0.88f)
+                .height(38.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF0B1528))
+                .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+          ) {
+            if (frameRenameDraft.isBlank()) {
+              Text(
+                text = prompt.slotId.uppercase(Locale.US),
+                color = Color(0xFF94A3B8),
+                fontSize = 9.8.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+            }
+            BasicTextField(
+              value = frameRenameDraft,
+              onValueChange = { onFrameRenameDraftChange(it.take(18)) },
+              singleLine = true,
+              cursorBrush = SolidColor(Color(0xFF00F5D4)),
+              textStyle =
+                TextStyle(
+                  color = Color.White,
+                  fontSize = 10.6.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                ),
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+              keyboardActions =
+                KeyboardActions(
+                  onDone = {
+                    keyboardController?.hide()
+                    onSaveFrameSlotRename(frameRenameDraft)
+                  }
+                ),
+              modifier = Modifier.fillMaxWidth().testTag("overwatch_frame_rename_input"),
+            )
+          }
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable {
+                    keyboardController?.hide()
+                    onSaveFrameSlotRename(frameRenameDraft)
+                  }
+                  .padding(vertical = 6.dp)
+                  .testTag("overwatch_frame_rename_save"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF065F46))
+                    .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+              ) {
+                Text(
+                  text = "SAVE NAME",
+                  color = Color.White,
+                  fontSize = 8.4.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable {
+                    keyboardController?.hide()
+                    onDismissPrompt()
+                  }
+                  .padding(vertical = 6.dp)
+                  .testTag("overwatch_frame_rename_cancel"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(CircleShape)
+                    .background(Color(0xCC060D1A))
+                    .border(1.dp, Color(0xFF64748B), CircleShape)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+              ) {
+                Text(
+                  text = "CANCEL",
+                  color = Color(0xFFCBD5E1),
+                  fontSize = 8.2.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+          }
+        }
+      }
+
+      is OverwatchCircularPrompt.SliderWorkbench -> {
+        OverwatchSliderWorkbenchView(
+          prompt = prompt,
+          isTabletDeck = isTabletDeck,
+          onDismissPrompt = onDismissPrompt,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun OverwatchRiftFrameDrydockView(
+  isTabletDeck: Boolean,
+  activeCustomSlot: CustomShipLoadoutSlot,
+  activeCustomSlotId: String,
+  pointBudget: Int,
+  isCharged: Boolean,
+  shipSpinDeg: Float,
+  fluxOrbitRad: Float,
+  activeDraggedFrameItem: DraggedRiftFrameItem?,
+  dragPointerRootOffset: Offset,
+  onSaveCustomSlot: (CustomShipLoadoutSlot) -> Unit,
+  onOpenFrameRenamePrompt: () -> Unit,
+  onChargeRiftFrame: () -> Unit,
+  onUpdatePrimarySocketBounds: (Rect) -> Unit,
+  onUpdateSecondarySocketBounds: (Rect) -> Unit,
+) {
+  val effectiveBudget = pointBudget.coerceAtLeast(100)
+  val usedPoints = activeCustomSlot.totalAllocatedPoints()
+  val budgetFrac = (usedPoints.toFloat() / effectiveBudget.toFloat()).coerceIn(0f, 1f)
+  val primaryOpt =
+    remember(activeCustomSlot.primaryArchetype) {
+      CustomShipLoadoutSlot.PRIMARY_OPTIONS.firstOrNull {
+        it.id.equals(activeCustomSlot.primaryArchetype, ignoreCase = true)
+      } ?: CustomShipLoadoutSlot.PRIMARY_OPTIONS.first()
+    }
+  val secondaryOpt =
+    remember(activeCustomSlot.secondaryType, RiftSpriteBaker.customShip9Version) {
+      CustomShipLoadoutSlot.getAllAvailableSecondaryOptions().firstOrNull {
+        it.id.equals(activeCustomSlot.secondaryType, ignoreCase = true)
+      } ?: CustomShipLoadoutSlot.getAllAvailableSecondaryOptions().first()
+    }
+  val sortedPrimaries =
+    remember {
+      CustomShipLoadoutSlot.PRIMARY_OPTIONS.sortedBy { it.pointCost }
+    }
+  val primaryBmp =
+    remember(primaryOpt.id, RiftSpriteBaker.spriteVisualRevision) {
+      RiftSpriteBaker.getPrimaryWeaponIconBitmap(primaryOpt.id).asImageBitmap()
+    }
+  val secondaryBmp =
+    remember(secondaryOpt.id, RiftSpriteBaker.spriteVisualRevision) {
+      RiftSpriteBaker.getSecondaryAbilityIconBitmap(secondaryOpt.id).asImageBitmap()
+    }
+
+  var priBounds by remember { mutableStateOf(Rect.Zero) }
+  var secBounds by remember { mutableStateOf(Rect.Zero) }
+  val isPriDragActive = activeDraggedFrameItem?.isPrimary == true
+  val isSecDragActive = activeDraggedFrameItem?.isPrimary == false
+  val isPriHovered = isPriDragActive && priBounds.inflate(28f).contains(dragPointerRootOffset)
+  val isSecHovered = isSecDragActive && secBounds.inflate(28f).contains(dragPointerRootOffset)
+
+  val displayTitle =
+    remember(activeCustomSlotId, activeCustomSlot.customName) {
+      val cleanCustom = activeCustomSlot.customName.trim()
+      if (cleanCustom.isNotBlank() && !cleanCustom.equals(activeCustomSlotId, ignoreCase = true)) {
+        "${activeCustomSlotId.uppercase(Locale.US)} • ${cleanCustom.uppercase(Locale.US)}"
+      } else {
+        activeCustomSlotId.uppercase(Locale.US)
+      }
+    }
+
+  Column(
+    modifier = Modifier.fillMaxWidth(0.92f).testTag("overwatch_rift_frame_drydock"),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 4.dp else 2.5.dp),
+  ) {
+    // 1. Top Slot Identity + 100-Point Budget Readout
+    Row(
+      modifier =
+        Modifier.clip(RoundedCornerShape(8.dp))
+          .background(Color(0xCC061121))
+          .clickable { onOpenFrameRenamePrompt() }
+          .padding(horizontal = 8.dp, vertical = 3.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      Text(
+        text = displayTitle,
+        color = Color.White,
+        fontSize = if (isTabletDeck) 9.0.sp else 8.0.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Text(
+        text = "$usedPoints/$effectiveBudget PTS",
+        color = if (usedPoints >= effectiveBudget) Color(0xFFFFD700) else Color(0xFF00F5D4),
+        fontSize = if (isTabletDeck) 8.6.sp else 7.6.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+      )
+    }
+
+    // 2. Central Drydock Row: [PRIMARY MOUNT]  (Ship #10 + 100-Pt Ring)  [SECONDARY / BUFF]
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceEvenly,
+    ) {
+      val priBorderCol =
+        when {
+          isPriHovered -> Color(0xFFFFD700)
+          isPriDragActive -> Color(0xFF00F5D4)
+          else -> Color(0x9938BDF8)
+        }
+      Column(
+        modifier =
+          Modifier.width(if (isTabletDeck) 84.dp else 72.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (isPriHovered) Color(0xCC0D2E42) else Color(0xB8071326))
+            .border(if (isPriDragActive) 1.6.dp else 1.dp, priBorderCol, RoundedCornerShape(9.dp))
+            .onGloballyPositioned { coords ->
+              val b = coords.boundsInRoot()
+              priBounds = b
+              onUpdatePrimarySocketBounds(b)
+            }
+            .padding(horizontal = 4.dp, vertical = 4.dp)
+            .testTag("overwatch_drydock_primary_socket"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(1.5.dp),
+      ) {
+        Text(
+          text = "PRIMARY",
+          color = priBorderCol,
+          fontSize = 6.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+        Image(
+          bitmap = primaryBmp,
+          contentDescription = primaryOpt.title,
+          contentScale = ContentScale.Fit,
+          modifier = Modifier.size(if (isTabletDeck) 30.dp else 25.dp),
+        )
+        Text(
+          text = primaryOpt.shortLabel.uppercase(Locale.US),
+          color = Color.White,
+          fontSize = 7.2.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = "${primaryOpt.pointCost} PTS",
+          color = Color(0xFF00F5D4),
+          fontSize = 6.8.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+      }
+
+      Box(
+        modifier =
+          Modifier.size(if (isTabletDeck) 82.dp else 68.dp)
+            .drawBehind {
+              val r = size.minDimension * 0.47f
+              val arcTopLeft = Offset(center.x - r, center.y - r)
+              val arcSize = Size(r * 2f, r * 2f)
+              drawArc(
+                color = Color(0x441E293B),
+                startAngle = 135f,
+                sweepAngle = 270f,
+                useCenter = false,
+                topLeft = arcTopLeft,
+                size = arcSize,
+                style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round),
+              )
+              drawArc(
+                brush =
+                  Brush.sweepGradient(
+                    0f to Color(0xFF00F5D4),
+                    0.5f to Color(0xFF38BDF8),
+                    1f to Color(0xFFFFD700),
+                    center = center,
+                  ),
+                startAngle = 135f,
+                sweepAngle = 270f * budgetFrac,
+                useCenter = false,
+                topLeft = arcTopLeft,
+                size = arcSize,
+                style = Stroke(width = 3.4.dp.toPx(), cap = StrokeCap.Round),
+              )
+            },
+        contentAlignment = Alignment.Center,
+      ) {
+        Spinning25dShipWithOrbitingFlux(
+          shipId = 10,
+          shipSpinDeg = shipSpinDeg,
+          fluxOrbitRad = fluxOrbitRad,
+          isCharged = isCharged,
+          isBestShip = false,
+          isSelected = true,
+          sizeDp = if (isTabletDeck) 58.dp else 48.dp,
+        )
+      }
+
+      val secBorderCol =
+        when {
+          isSecHovered -> Color(0xFFFFD700)
+          isSecDragActive -> Color(0xFFC084FC)
+          else -> Color(0x99C084FC)
+        }
+      Column(
+        modifier =
+          Modifier.width(if (isTabletDeck) 84.dp else 72.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (isSecHovered) Color(0xCC24123D) else Color(0xB8071326))
+            .border(if (isSecDragActive) 1.6.dp else 1.dp, secBorderCol, RoundedCornerShape(9.dp))
+            .onGloballyPositioned { coords ->
+              val b = coords.boundsInRoot()
+              secBounds = b
+              onUpdateSecondarySocketBounds(b)
+            }
+            .padding(horizontal = 4.dp, vertical = 4.dp)
+            .testTag("overwatch_drydock_secondary_socket"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(1.5.dp),
+      ) {
+        Text(
+          text = "MOD / BUFF",
+          color = secBorderCol,
+          fontSize = 6.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+        Image(
+          bitmap = secondaryBmp,
+          contentDescription = secondaryOpt.title,
+          contentScale = ContentScale.Fit,
+          modifier = Modifier.size(if (isTabletDeck) 30.dp else 25.dp),
+        )
+        Text(
+          text = secondaryOpt.shortLabel.uppercase(Locale.US),
+          color = Color.White,
+          fontSize = 7.2.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = "${secondaryOpt.pointCost} PTS",
+          color = Color(0xFFC084FC),
+          fontSize = 6.8.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+      }
+    }
+
+    // 3. Six Compact Interactive Drag-and-Tap Allocation Bars (FIRE, FLUX, REGEN, SPEED, THRUST, TURN)
+    val priIndex =
+      sortedPrimaries.indexOfFirst { it.id.equals(primaryOpt.id, ignoreCase = true) }.coerceAtLeast(0)
+    DrydockInteractiveStatBar(
+      label = "FIRE",
+      valueText = "${primaryOpt.pointCost}P",
+      fraction =
+        if (sortedPrimaries.size <= 1) 1f
+        else priIndex.toFloat() / (sortedPrimaries.size - 1).toFloat(),
+      barColor = Color(0xFFFB7185),
+      onScrubFraction = { frac ->
+        val idx =
+          (frac * (sortedPrimaries.size - 1).toFloat())
+            .roundToInt()
+            .coerceIn(0, sortedPrimaries.lastIndex)
+        val chosen = sortedPrimaries[idx]
+        if (!chosen.id.equals(activeCustomSlot.primaryArchetype, ignoreCase = true)) {
+          onSaveCustomSlot(
+            activeCustomSlot
+              .copy(slotId = activeCustomSlotId, primaryArchetype = chosen.id)
+              .clampToPointBudget(effectiveBudget)
+          )
+        }
+      },
+    )
+    DrydockInteractiveStatBar(
+      label = "FLUX",
+      valueText = "${activeCustomSlot.maxFluxPts}",
+      fraction = (activeCustomSlot.maxFluxPts / 30f).coerceIn(0f, 1f),
+      barColor = Color(0xFF38BDF8),
+      onScrubFraction = { frac ->
+        val otherPts =
+          activeCustomSlot.primaryPointCost() +
+            activeCustomSlot.secondaryPointCost() +
+            activeCustomSlot.rechargePts +
+            activeCustomSlot.speedPts +
+            activeCustomSlot.thrustPts +
+            activeCustomSlot.turnPts
+        val maxAllowed = (effectiveBudget - otherPts).coerceIn(0, 30)
+        val next = (frac * 30f).roundToInt().coerceIn(0, maxAllowed)
+        if (next != activeCustomSlot.maxFluxPts) {
+          onSaveCustomSlot(activeCustomSlot.copy(slotId = activeCustomSlotId, maxFluxPts = next))
+        }
+      },
+    )
+    DrydockInteractiveStatBar(
+      label = "REGEN",
+      valueText = "${activeCustomSlot.rechargePts}",
+      fraction = (activeCustomSlot.rechargePts / 30f).coerceIn(0f, 1f),
+      barColor = Color(0xFF00F5D4),
+      onScrubFraction = { frac ->
+        val otherPts =
+          activeCustomSlot.primaryPointCost() +
+            activeCustomSlot.secondaryPointCost() +
+            activeCustomSlot.maxFluxPts +
+            activeCustomSlot.speedPts +
+            activeCustomSlot.thrustPts +
+            activeCustomSlot.turnPts
+        val maxAllowed = (effectiveBudget - otherPts).coerceIn(0, 30)
+        val next = (frac * 30f).roundToInt().coerceIn(0, maxAllowed)
+        if (next != activeCustomSlot.rechargePts) {
+          onSaveCustomSlot(activeCustomSlot.copy(slotId = activeCustomSlotId, rechargePts = next))
+        }
+      },
+    )
+    DrydockInteractiveStatBar(
+      label = "SPEED",
+      valueText = "${activeCustomSlot.speedPts}",
+      fraction = (activeCustomSlot.speedPts / 30f).coerceIn(0f, 1f),
+      barColor = Color(0xFFFFD700),
+      onScrubFraction = { frac ->
+        val otherPts =
+          activeCustomSlot.primaryPointCost() +
+            activeCustomSlot.secondaryPointCost() +
+            activeCustomSlot.maxFluxPts +
+            activeCustomSlot.rechargePts +
+            activeCustomSlot.thrustPts +
+            activeCustomSlot.turnPts
+        val maxAllowed = (effectiveBudget - otherPts).coerceIn(0, 30)
+        val next = (frac * 30f).roundToInt().coerceIn(0, maxAllowed)
+        if (next != activeCustomSlot.speedPts) {
+          onSaveCustomSlot(activeCustomSlot.copy(slotId = activeCustomSlotId, speedPts = next))
+        }
+      },
+    )
+    DrydockInteractiveStatBar(
+      label = "THRUST",
+      valueText = "${activeCustomSlot.thrustPts}",
+      fraction = (activeCustomSlot.thrustPts / 30f).coerceIn(0f, 1f),
+      barColor = Color(0xFF34D399),
+      onScrubFraction = { frac ->
+        val otherPts =
+          activeCustomSlot.primaryPointCost() +
+            activeCustomSlot.secondaryPointCost() +
+            activeCustomSlot.maxFluxPts +
+            activeCustomSlot.rechargePts +
+            activeCustomSlot.speedPts +
+            activeCustomSlot.turnPts
+        val maxAllowed = (effectiveBudget - otherPts).coerceIn(0, 30)
+        val next = (frac * 30f).roundToInt().coerceIn(0, maxAllowed)
+        if (next != activeCustomSlot.thrustPts) {
+          onSaveCustomSlot(activeCustomSlot.copy(slotId = activeCustomSlotId, thrustPts = next))
+        }
+      },
+    )
+    DrydockInteractiveStatBar(
+      label = "TURN",
+      valueText = "${activeCustomSlot.turnPts}",
+      fraction = (activeCustomSlot.turnPts / 30f).coerceIn(0f, 1f),
+      barColor = Color(0xFFC084FC),
+      onScrubFraction = { frac ->
+        val otherPts =
+          activeCustomSlot.primaryPointCost() +
+            activeCustomSlot.secondaryPointCost() +
+            activeCustomSlot.maxFluxPts +
+            activeCustomSlot.rechargePts +
+            activeCustomSlot.speedPts +
+            activeCustomSlot.thrustPts
+        val maxAllowed = (effectiveBudget - otherPts).coerceIn(0, 30)
+        val next = (frac * 30f).roundToInt().coerceIn(0, maxAllowed)
+        if (next != activeCustomSlot.turnPts) {
+          onSaveCustomSlot(activeCustomSlot.copy(slotId = activeCustomSlotId, turnPts = next))
+        }
+      },
+    )
+
+    // 4. Charge Rift Frame Action
+    Box(
+      modifier =
+        Modifier.minimumInteractiveComponentSize()
+          .clickable { onChargeRiftFrame() }
+          .padding(top = 1.dp)
+          .testTag("overwatch_drydock_charge_button"),
+      contentAlignment = Alignment.Center,
+    ) {
+      Box(
+        modifier =
+          Modifier.clip(RoundedCornerShape(14.dp))
+            .background(
+              Brush.horizontalGradient(
+                if (isCharged) listOf(Color(0xFF065F46), Color(0xFF09253A))
+                else listOf(Color(0xFF0D3554), Color(0xFF091528))
+              )
+            )
+            .border(1.2.dp, if (isCharged) Color(0xFF00F5D4) else Color(0xFFFFD700), RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+      ) {
+        Text(
+          text = if (isCharged) "RIFT FRAME CHARGED" else "CHARGE RIFT FRAME",
+          color = Color.White,
+          fontSize = if (isTabletDeck) 8.4.sp else 7.6.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun DrydockInteractiveStatBar(
+  label: String,
+  valueText: String,
+  fraction: Float,
+  barColor: Color,
+  onScrubFraction: (Float) -> Unit,
+) {
+  var trackWidthPx by remember { mutableFloatStateOf(1f) }
+  Row(
+    modifier = Modifier.fillMaxWidth(0.86f).height(15.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(5.dp),
+  ) {
+    Text(
+      text = label,
+      color = Color(0xFFCBD5E1),
+      fontSize = 7.0.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+      modifier = Modifier.width(34.dp),
+      maxLines = 1,
+    )
+    Box(
+      modifier =
+        Modifier.weight(1f)
+          .fillMaxHeight()
+          .onGloballyPositioned { trackWidthPx = it.size.width.toFloat().coerceAtLeast(1f) }
+          .pointerInput(label) {
+            detectTapGestures { pos ->
+              onScrubFraction((pos.x / trackWidthPx).coerceIn(0f, 1f))
+            }
+          }
+          .pointerInput(label) {
+            detectHorizontalDragGestures { change, _ ->
+              change.consume()
+              onScrubFraction((change.position.x / trackWidthPx).coerceIn(0f, 1f))
+            }
+          }
+          .drawBehind {
+            val trackH = 6.dp.toPx()
+            val yTop = (size.height - trackH) * 0.5f
+            drawRect(
+              color = Color(0xCC040B16),
+              topLeft = Offset(0f, yTop),
+              size = Size(size.width, trackH),
+            )
+            val fillW = (size.width * fraction.coerceIn(0f, 1f)).coerceAtLeast(2.dp.toPx())
+            drawRect(
+              brush = Brush.horizontalGradient(listOf(barColor.copy(alpha = 0.55f), barColor)),
+              topLeft = Offset(0f, yTop),
+              size = Size(fillW, trackH),
+            )
+            drawCircle(
+              color = Color.White,
+              radius = 3.6.dp.toPx(),
+              center = Offset(fillW.coerceIn(3.dp.toPx(), size.width - 3.dp.toPx()), size.height * 0.5f),
+            )
+          },
+    )
+    Text(
+      text = valueText,
+      color = barColor,
+      fontSize = 7.2.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+      modifier = Modifier.width(24.dp),
+      textAlign = TextAlign.End,
+      maxLines = 1,
+    )
+  }
+}
+
+@Composable
+private fun OverwatchSliderWorkbenchView(
+  prompt: OverwatchCircularPrompt.SliderWorkbench,
+  isTabletDeck: Boolean,
+  onDismissPrompt: () -> Unit,
+) {
+  val accent = Color(prompt.accentHex)
+  val safeMin = prompt.minValue
+  val safeMax = prompt.maxValue.coerceAtLeast(safeMin + 0.0001f)
+  val span = safeMax - safeMin
+  var liveVal by remember(prompt.key) { mutableFloatStateOf(prompt.currentValue.coerceIn(safeMin, safeMax)) }
+
+  fun snapAndCommit(rawFrac: Float) {
+    val clampedFrac = rawFrac.coerceIn(0f, 1f)
+    val rawValue = safeMin + clampedFrac * span
+    val snapped =
+      if (prompt.stepSize > 0.0001f) {
+        val steps = ((rawValue - safeMin) / prompt.stepSize).roundToInt()
+        (safeMin + steps * prompt.stepSize).coerceIn(safeMin, safeMax)
+      } else {
+        rawValue.coerceIn(safeMin, safeMax)
+      }
+    liveVal = snapped
+    prompt.onValueChange(snapped)
+  }
+
+  fun angleOffsetToFraction(pos: Offset, boxSize: IntSize): Float {
+    val cx = boxSize.width * 0.5f
+    val cy = boxSize.height * 0.5f
+    val deg = Math.toDegrees(atan2((pos.y - cy).toDouble(), (pos.x - cx).toDouble())).toFloat()
+    val shifted = ((deg - 135f) % 360f + 360f) % 360f
+    return when {
+      shifted <= 270f -> (shifted / 270f).coerceIn(0f, 1f)
+      shifted < 315f -> 1f
+      else -> 0f
+    }
+  }
+
+  val formattedValue =
+    remember(liveVal, prompt.key, prompt.unitSuffix) {
+      prompt.valueFormatter?.invoke(liveVal)
+        ?: run {
+          val isWhole = prompt.stepSize >= 1f && abs(liveVal - liveVal.roundToInt()) < 0.01f
+          val numStr =
+            if (isWhole) "${liveVal.roundToInt()}"
+            else String.format(Locale.US, "%.2f", liveVal)
+          if (prompt.unitSuffix.isNotBlank()) "$numStr${prompt.unitSuffix}" else numStr
+        }
+    }
+  val normFrac = ((liveVal - safeMin) / span).coerceIn(0f, 1f)
+  var dialBoxSize by remember { mutableStateOf(IntSize.Zero) }
+  var linearWidthPx by remember { mutableFloatStateOf(1f) }
+
+  Column(
+    modifier = Modifier.fillMaxWidth(0.88f).testTag("overwatch_slider_workbench"),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 5.dp else 3.dp),
+  ) {
+    Text(
+      text = prompt.title.uppercase(Locale.US),
+      color = accent,
+      fontSize = if (isTabletDeck) 9.8.sp else 8.6.sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
+    Text(
+      text = prompt.subtitle,
+      color = Color(0xFFCBD5E1),
+      fontSize = if (isTabletDeck) 8.2.sp else 7.4.sp,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
+
+    // 270-Degree Circular Arc Dial
+    Box(
+      modifier =
+        Modifier.size(if (isTabletDeck) 114.dp else 94.dp)
+          .onGloballyPositioned { dialBoxSize = it.size }
+          .pointerInput(prompt.key) {
+            detectTapGestures { pos ->
+              if (dialBoxSize.width > 8) snapAndCommit(angleOffsetToFraction(pos, dialBoxSize))
+            }
+          }
+          .pointerInput(prompt.key) {
+            detectDragGestures { change, _ ->
+              change.consume()
+              if (dialBoxSize.width > 8) snapAndCommit(angleOffsetToFraction(change.position, dialBoxSize))
+            }
+          }
+          .testTag("overwatch_slider_arc_dial"),
+      contentAlignment = Alignment.Center,
+    ) {
+      Canvas(modifier = Modifier.fillMaxSize()) {
+        val r = size.minDimension * 0.43f
+        val topLeft = Offset(center.x - r, center.y - r)
+        val arcSize = Size(r * 2f, r * 2f)
+        drawArc(
+          color = Color(0x661E293B),
+          startAngle = 135f,
+          sweepAngle = 270f,
+          useCenter = false,
+          topLeft = topLeft,
+          size = arcSize,
+          style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round),
+        )
+        drawArc(
+          brush =
+            Brush.sweepGradient(
+              0f to accent.copy(alpha = 0.72f),
+              0.5f to accent,
+              1f to Color(0xFFFFD700),
+              center = center,
+            ),
+          startAngle = 135f,
+          sweepAngle = 270f * normFrac,
+          useCenter = false,
+          topLeft = topLeft,
+          size = arcSize,
+          style = Stroke(width = 6.5.dp.toPx(), cap = StrokeCap.Round),
+        )
+        val knobRad = Math.toRadians((135.0 + 270.0 * normFrac)).toFloat()
+        val knobCenter = Offset(center.x + cos(knobRad) * r, center.y + sin(knobRad) * r)
+        drawCircle(color = accent.copy(alpha = 0.36f), radius = 8.dp.toPx(), center = knobCenter)
+        drawCircle(color = Color.White, radius = 4.6.dp.toPx(), center = knobCenter)
+      }
+      Text(
+        text = formattedValue,
+        color = Color.White,
+        fontSize = if (isTabletDeck) 14.sp else 12.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+      )
+    }
+
+    // Wide Horizontal Fine-Scrub Track
+    Box(
+      modifier =
+        Modifier.fillMaxWidth(0.84f)
+          .height(22.dp)
+          .onGloballyPositioned { linearWidthPx = it.size.width.toFloat().coerceAtLeast(1f) }
+          .pointerInput(prompt.key) {
+            detectTapGestures { pos ->
+              snapAndCommit(pos.x / linearWidthPx)
+            }
+          }
+          .pointerInput(prompt.key) {
+            detectHorizontalDragGestures { change, _ ->
+              change.consume()
+              snapAndCommit(change.position.x / linearWidthPx)
+            }
+          }
+          .drawBehind {
+            val hBar = 7.dp.toPx()
+            val yTop = (size.height - hBar) * 0.5f
+            drawRect(
+              color = Color(0xCC050D1C),
+              topLeft = Offset(0f, yTop),
+              size = Size(size.width, hBar),
+            )
+            val fillW = (size.width * normFrac).coerceAtLeast(2.dp.toPx())
+            drawRect(
+              brush = Brush.horizontalGradient(listOf(accent.copy(alpha = 0.55f), accent)),
+              topLeft = Offset(0f, yTop),
+              size = Size(fillW, hBar),
+            )
+            drawCircle(
+              color = Color.White,
+              radius = 5.dp.toPx(),
+              center = Offset(fillW.coerceIn(5.dp.toPx(), size.width - 5.dp.toPx()), size.height * 0.5f),
+            )
+          }
+          .testTag("overwatch_slider_horizontal_track"),
+    )
+
+    // Quick Preset Chips Row
+    if (prompt.presets.isNotEmpty()) {
+      Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        prompt.presets.forEach { (presetLabel, presetVal) ->
+          val isSelected = abs(liveVal - presetVal) <= (prompt.stepSize * 0.45f).coerceAtLeast(0.01f)
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(8.dp))
+                .background(if (isSelected) accent.copy(alpha = 0.25f) else Color(0xCC060D1A))
+                .border(1.dp, if (isSelected) accent else Color(0x66475569), RoundedCornerShape(8.dp))
+                .clickable {
+                  liveVal = presetVal.coerceIn(safeMin, safeMax)
+                  prompt.onValueChange(liveVal)
+                }
+                .padding(horizontal = 7.dp, vertical = 4.dp),
+          ) {
+            Text(
+              text = presetLabel,
+              color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+              fontSize = 7.4.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
+          }
+        }
+      }
+    }
+
+    // Reset Default + Done Actions
+    Row(
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Box(
+        modifier =
+          Modifier.minimumInteractiveComponentSize()
+            .clickable {
+              liveVal = prompt.defaultValue.coerceIn(safeMin, safeMax)
+              prompt.onValueChange(liveVal)
+            }
+            .testTag("overwatch_slider_reset_default"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(12.dp))
+              .background(Color(0xCC060D1A))
+              .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(12.dp))
+              .padding(horizontal = 9.dp, vertical = 4.dp),
+        ) {
+          Text(
+            text = "RESET DEFAULT",
+            color = Color(0xFFFACC15),
+            fontSize = 7.4.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+      }
+      Box(
+        modifier =
+          Modifier.minimumInteractiveComponentSize()
+            .clickable { onDismissPrompt() }
+            .testTag("overwatch_slider_done_button"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(
+          modifier =
+            Modifier.clip(RoundedCornerShape(12.dp))
+              .background(Color(0xFF065F46))
+              .border(1.1.dp, accent, RoundedCornerShape(12.dp))
+              .padding(horizontal = 11.dp, vertical = 4.dp),
+        ) {
+          Text(
+            text = "DONE",
+            color = Color.White,
+            fontSize = 7.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
         }
       }
     }
@@ -9535,6 +10636,7 @@ internal fun HelmStepperControlRow(
   valueText: String,
   onMinus: () -> Unit,
   onPlus: () -> Unit,
+  onTapRow: (() -> Unit)? = null,
 ) {
   Row(
     modifier =
@@ -9545,6 +10647,7 @@ internal fun HelmStepperControlRow(
           primaryBorder = Color(0xFF38BDF8),
           secondaryBorder = Color(0xFF091528),
         )
+        .let { mod -> if (onTapRow != null) mod.clickable { onTapRow() } else mod }
         .padding(horizontal = 6.dp),
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
@@ -9572,6 +10675,7 @@ internal fun HelmStepperControlRow(
         fontSize = 9.0.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
+        modifier = Modifier.let { mod -> if (onTapRow != null) mod.clickable { onTapRow() } else mod },
       )
       Box(
         modifier =
@@ -11458,7 +12562,13 @@ private fun SubspaceCommsDiscordDeck(
       when {
         normSelected == "#nexus-ai" -> {
           Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier =
+              Modifier.fillMaxWidth()
+                .heightIn(min = 44.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xCC0D1E36), Color(0xCC07101F))))
+                .border(1.dp, Color(0x5538BDF8), RoundedCornerShape(8.dp))
+                .padding(horizontal = 8.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
           ) {
@@ -11478,9 +12588,8 @@ private fun SubspaceCommsDiscordDeck(
           Row(
             modifier =
               Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
                 .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
             NEXUS_STARTER_CHIPS.forEachIndexed { idx, chipPrompt ->
@@ -11488,18 +12597,25 @@ private fun SubspaceCommsDiscordDeck(
                 modifier =
                   Modifier.minimumInteractiveComponentSize()
                     .clickable(enabled = !isStreaming) { onSendStarterQuestion(chipPrompt) }
-                    .padding(vertical = 3.dp)
+                    .padding(vertical = 2.dp)
                     .testTag("nexus_quick_chip_$idx"),
                 contentAlignment = Alignment.Center,
               ) {
                 Box(
                   modifier =
                     Modifier.clip(RoundedCornerShape(10.dp))
-                      .background(Brush.verticalGradient(listOf(Color(0xCC10233B), Color(0xCC071222))))
-                      .border(1.dp, Color(0x7738BDF8), RoundedCornerShape(10.dp))
-                      .padding(horizontal = 9.dp, vertical = 4.5.dp),
+                      .background(Brush.verticalGradient(listOf(Color(0xE6102846), Color(0xE6081529))))
+                      .border(1.dp, Color(0x9938BDF8), RoundedCornerShape(10.dp))
+                      .padding(horizontal = 11.dp, vertical = 5.dp),
                 ) {
-                  Text(chipPrompt, color = if (isStreaming) Color(0xFF94A3B8) else Color(0xFFE0F2FE), fontSize = 8.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                  Text(
+                    text = chipPrompt,
+                    color = if (isStreaming) Color(0xFF94A3B8) else Color(0xFFF0F9FF),
+                    fontSize = 8.8.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                  )
                 }
               }
             }
@@ -11532,14 +12648,14 @@ private fun SubspaceCommsDiscordDeck(
                 Modifier.weight(1f)
                   .height(38.dp)
                   .clip(RoundedCornerShape(8.dp))
-                  .background(Brush.verticalGradient(listOf(Color(0xFF030812), Color(0xFF081324))))
-                  .border(1.dp, if (isStreaming) Color(0x55475569) else Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                  .background(Brush.verticalGradient(listOf(Color(0xFF061121), Color(0xFF0B192E))))
+                  .border(1.dp, if (isStreaming) Color(0x77475569) else Color(0xFF00F5D4), RoundedCornerShape(8.dp))
                   .padding(horizontal = 10.dp)
                   .testTag("nexus_query_input_box"),
               contentAlignment = Alignment.CenterStart,
             ) {
               if (inputQuery.isEmpty()) {
-                Text(stringResource(R.string.nexus_input_placeholder), color = Color(0xFFCBD5E1), fontSize = 9.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(R.string.nexus_input_placeholder), color = Color(0xFFE2E8F0), fontSize = 9.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
               }
               BasicTextField(
                 value = inputQuery,
@@ -11558,12 +12674,12 @@ private fun SubspaceCommsDiscordDeck(
               enabled = inputQuery.isNotBlank() && !isStreaming,
               colors =
                 ButtonDefaults.buttonColors(
-                  containerColor = Color(0xFF0E7490),
+                  containerColor = Color(0xFF0284C7),
                   contentColor = Color.White,
-                  disabledContainerColor = Color(0x661E293B),
-                  disabledContentColor = Color(0xFFCBD5E1),
+                  disabledContainerColor = Color(0xAA0F243C),
+                  disabledContentColor = Color(0xFFE2E8F0),
                 ),
-              border = BorderStroke(1.1.dp, if (inputQuery.isNotBlank() && !isStreaming) Color(0xFF00F5D4) else Color(0x66475569)),
+              border = BorderStroke(1.2.dp, if (inputQuery.isNotBlank() && !isStreaming) Color(0xFF00F5D4) else Color(0x9938BDF8)),
               shape = CutCornerShape(topStart = 7.dp, topEnd = 3.dp, bottomEnd = 7.dp, bottomStart = 3.dp),
               contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
               modifier = Modifier.minimumInteractiveComponentSize().heightIn(min = 38.dp).testTag("nexus_send_button"),
@@ -12437,15 +13553,15 @@ private fun NexusWelcomeTelemetryCard() {
     modifier =
       Modifier.fillMaxWidth()
         .clip(RoundedCornerShape(10.dp))
-        .background(Brush.verticalGradient(listOf(Color(0xB30F1F38), Color(0xB3071020))))
-        .border(1.dp, Color(0x66B388FF), RoundedCornerShape(10.dp))
+        .background(Brush.verticalGradient(listOf(Color(0xD9112440), Color(0xD9081326))))
+        .border(1.dp, Color(0x8838BDF8), RoundedCornerShape(10.dp))
         .padding(10.dp),
     verticalArrangement = Arrangement.spacedBy(4.dp),
   ) {
     Text("RIFT AI TELEMETRY LINK ESTABLISHED", color = Color(0xFF00F5D4), fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
     Text(
       "Ask RIFT AI anything — exact weapon dimensions, Newtonian drift & bounce raycasts, 100-point Rift Frame theorycrafting, Eclipse Stasis vs Disruptor EMP, Paired Phase Rifts, or Peak Resonance records.",
-      color = Color(0xFFE2E8F0),
+      color = Color(0xFFF8FAFC),
       fontSize = 10.sp,
       lineHeight = 14.5.sp,
     )

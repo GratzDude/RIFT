@@ -130,7 +130,6 @@ import com.example.ui.AuthScreen
 import com.example.ui.CURRENT_RIFT_BUILD_VERSION
 import com.example.ui.CodexModal
 import com.example.ui.DossierModal
-import com.example.ui.HangarModal
 import com.example.ui.MatchmakingQueueStatus
 import com.example.ui.MatchmakingQueueViewModel
 import com.example.ui.NexusAiConsoleModal
@@ -546,17 +545,11 @@ fun DeviceAwareModalAutoScaler(
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     RiftApplication.installUncaughtExceptionGuard()
-    ensureSafeFirebaseInitialized(this)
     runCatching { enableEdgeToEdge() }
       .onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "enableEdgeToEdge skipped", it) }
     super.onCreate(savedInstanceState)
+    configureAppCheck(this, intent)
     ensureSafeFirebaseInitialized(this)
-    if (!RiftApplication.isUsingFallbackFirebase) {
-      runCatching { configureAppCheck(this, intent) }
-        .onFailure { Log.w(RIFT_STARTUP_LOG_TAG, "configureAppCheck skipped", it) }
-    } else {
-      Log.i(RIFT_STARTUP_LOG_TAG, "Skipping App Check setup while using offline fallback FirebaseOptions.")
-    }
     runCatching {
       if (requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -1476,7 +1469,11 @@ fun RiftArenaScreen(
     }
   }
 
-  fun openNexusNode(node: NexusCoreNode, helmSubDeckOverride: Int? = null) {
+  fun openNexusNode(
+    node: NexusCoreNode,
+    helmSubDeckOverride: Int? = null,
+    sideBayOverride: String? = null,
+  ) {
     if (engine.isEphemeralPracticeRift) {
       engine.closeEphemeralPracticeRift()
       val snap = suspendedActiveMatch
@@ -1524,13 +1521,13 @@ fun RiftArenaScreen(
       }
       NexusCoreNode.ORBITAL_HUB -> {
         isForgeFullScreenStage = false
-        hubRequestedSideBay = "HUB_MAIN"
+        hubRequestedSideBay = sideBayOverride ?: "HUB_MAIN"
         hubSideBayRequestNonce++
         activeNexusNode = NexusCoreNode.ORBITAL_HUB
       }
       NexusCoreNode.HANGAR_DECK -> {
         isForgeFullScreenStage = false
-        hubRequestedSideBay = "HANGAR_BAY"
+        hubRequestedSideBay = sideBayOverride ?: "HANGAR_BAY"
         hubSideBayRequestNonce++
         activeNexusNode = NexusCoreNode.ORBITAL_HUB
       }
@@ -2583,7 +2580,11 @@ fun RiftArenaScreen(
             when (native.keyCode) {
               KeyEvent.KEYCODE_BUTTON_START -> {
                 RiftCalibrationState.gamepadConnected = true
-                if (isNexusShellOpen && activeNexusNode == NexusCoreNode.HANGAR_DECK) {
+                val isHangarBayOpen =
+                  isNexusShellOpen &&
+                    activeNexusNode == NexusCoreNode.ORBITAL_HUB &&
+                    (hubRequestedSideBay == "HANGAR_BAY" || hubRequestedSideBay == "RIFT_FRAME_BAY")
+                if (isHangarBayOpen) {
                   isNexusShellOpen = false
                 } else {
                   openNexusNode(NexusCoreNode.HANGAR_DECK)
@@ -2675,7 +2676,11 @@ fun RiftArenaScreen(
             localPrefs.setCameraZoom(nextZoom)
           },
           onGamepadToggleHangar = {
-            if (isNexusShellOpen && activeNexusNode == NexusCoreNode.HANGAR_DECK) {
+            val isHangarBayOpen =
+              isNexusShellOpen &&
+                activeNexusNode == NexusCoreNode.ORBITAL_HUB &&
+                (hubRequestedSideBay == "HANGAR_BAY" || hubRequestedSideBay == "RIFT_FRAME_BAY")
+            if (isHangarBayOpen) {
               isNexusShellOpen = false
             } else {
               openNexusNode(NexusCoreNode.HANGAR_DECK)
@@ -3400,10 +3405,6 @@ fun RiftArenaScreen(
             }
 
             var callsignRenameRefreshTick by remember { mutableIntStateOf(0) }
-            val currentCallsignChangeCount =
-              remember(currentUserId, isGoogleAuthenticated, callsignRenameRefreshTick) {
-                if (isGoogleAuthenticated) localPrefs.getCallsignChangeCount(currentUserId) else 0
-              }
             val applyUnifiedCallsignRename: (String) -> Pair<Boolean, String> = { rawRequested ->
               val trimmedReq = rawRequested.trim()
               if (trimmedReq.equals(callsign, ignoreCase = true) && callsign.isNotBlank()) {
@@ -3441,277 +3442,13 @@ fun RiftArenaScreen(
               }
             }
 
-            val stagedTargetTitle: String? =
-              remember(pendingStagedLaunch, frameTick) {
-                when (val staged = pendingStagedLaunch) {
-                  is StagedRiftLaunch.Ranked -> {
-                    val bracketBadge =
-                      when (staged.mode) {
-                        RankedGameMode.RIFT_SKIRMISH,
-                        RankedGameMode.RIFT_CONTROL,
-                        RankedGameMode.SYNDICATE_WARS -> " (${staged.teamSizeBracket}V${staged.teamSizeBracket})"
-                        else -> " (${staged.mode.teamFormatBadge})"
-                      }
-                    "${staged.mode.title}$bracketBadge"
-                  }
-                  is StagedRiftLaunch.NewCustom ->
-                    "CUSTOM RIFT: ${staged.config.title} (${staged.config.baseMode.title})"
-                  is StagedRiftLaunch.ExistingCustom -> {
-                    val found = engine.activeCustomGames.firstOrNull { it.instanceId == staged.instanceId }
-                    if (found != null) {
-                      "CUSTOM RIFT: ${found.title} (${found.baseMode.title})"
-                    } else {
-                      "CUSTOM RIFT [${staged.instanceId}]"
-                    }
-                  }
-                  null -> null
-                }
-              }
-
-            val stagedHullLockNotice: Boolean =
-              remember(pendingStagedLaunch, frameTick) {
-                when (val staged = pendingStagedLaunch) {
-                  is StagedRiftLaunch.Ranked -> engine.doesModeLockShipSelection(staged.mode)
-                  is StagedRiftLaunch.NewCustom -> engine.doesModeLockShipSelection(staged.config.baseMode)
-                  is StagedRiftLaunch.ExistingCustom -> {
-                    val found = engine.activeCustomGames.firstOrNull { it.instanceId == staged.instanceId }
-                    found != null && engine.doesModeLockShipSelection(found.baseMode)
-                  }
-                  null -> engine.hasJoinedMatch && engine.doesModeLockShipSelection()
-                }
-              }
-
             val renderModuleForNode: @Composable (NexusCoreNode) -> Unit = { targetNode ->
               when (targetNode) {
                 NexusCoreNode.HANGAR_DECK -> {
-                        val (_, _, hangarLvlFrac) =
-                          remember(frameTick) { engine.getXpProgressInCurrentLevel() }
-                        val currentSectorModeId =
-                          when (val staged = pendingStagedLaunch) {
-                            is StagedRiftLaunch.Ranked -> staged.mode.id
-                            is StagedRiftLaunch.NewCustom -> staged.config.baseMode.id
-                            is StagedRiftLaunch.ExistingCustom ->
-                              engine.activeCustomGames
-                                .firstOrNull { it.instanceId == staged.instanceId }
-                                ?.baseMode
-                                ?.id ?: engine.activeRankedMode.id
-                            null ->
-                              engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
-                          }
-                        HangarModal(
-                          initialCallsign = callsign,
-                          syndicateTag = syndicateTag,
-                          syndicateName = syndicateName,
-                          selectedShipId = selectedShipId,
-                          bestShipId = bestShipId,
-                          selectedMode = currentSectorModeId,
-                          pilotLevel = engine.pilotLevel,
-                          xpProgressFraction = hangarLvlFrac,
-                          customizationPointsTotal = engine.getCustomizationPointsTotal(),
-                          spentCustomizationPoints = activeCustomSlot.totalAllocatedPoints(),
-                          riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
-                          unlockFullNinthShipOverride = RiftCalibrationState.unlockFullNinthShipOverride,
-                          activeCustomSlot = activeCustomSlot,
-                          slot9BUnlocked = slot9BUnlocked,
-                          slot9CUnlocked = slot9CUnlocked,
-                          slot9DUnlocked = slot9DUnlocked,
-                          slot9EUnlocked = slot9EUnlocked,
-                          liveResonance = engine.liveResonance,
-                          peakResonance = engine.peakResonance,
-                          shipResonances = shipResonancesState,
-                          callsignChangeCount = currentCallsignChangeCount,
-                          isGuestDrifter = !isGoogleAuthenticated || localPrefs.isGuestBypassEnabled(),
-                          onRenameCallsign = applyUnifiedCallsignRename,
-                          stagedTargetTitle = stagedTargetTitle,
-                          stagedHullLockNotice = stagedHullLockNotice,
-                          onCancelStagedModeToGate =
-                            if (pendingStagedLaunch != null) {
-                              {
-                                pendingStagedLaunch = null
-                                sfx.playMutedClick()
-                                activeNexusNode = NexusCoreNode.CONVERGENCE_GATE
-                                isNexusShellOpen = true
-                              }
-                            } else {
-                              null
-                            },
-                          onOpenRiftShardsStore = {
-                            previousNodeBeforeConduit = NexusCoreNode.HANGAR_DECK
-                            openNexusNode(NexusCoreNode.RIFT_CONDUIT)
-                          },
-                          onOpenSyndicatesModal = {
-                            syndicateStatusBanner = null
-                            syndicateSubDeck = SyndicateCitadelSubDeck.SYNDICATES_WARS
-                            openNexusNode(NexusCoreNode.SYNDICATE_CITADEL)
-                          },
-                          onSaveCustomSlot = saveCustomSlotShared,
-                          onSwitchCustomSlot = switchCustomSlotShared,
-                          onUnlockCustomSlot = unlockCustomSlotShared,
-                          onRespecCustomSlot = {
-                            if (
-                              RiftBillingManager.canAffordShardSpend(engine.riftShards, 50L) &&
-                                activeCustomSlot.totalAllocatedPoints() > 0
-                            ) {
-                              engine.riftShards =
-                                RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, 50L)
-                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                              val zeroed =
-                                activeCustomSlot.copy(
-                                  speedPts = 0,
-                                  thrustPts = 0,
-                                  turnPts = 0,
-                                  maxFluxPts = 0,
-                                  rechargePts = 0,
-                                  primaryArchetype = "LIGHT_PULSE",
-                                  secondaryType = "NONE",
-                                )
-                              saveCustomSlotShared(zeroed)
-                              engine.onStatsUpdated()
-                              sfx.playPrize()
-                              true
-                            } else false
-                          },
-                          onForgeAiHullDesign = forgeAiHullShared,
-                          isNexusStreaming = isNexusStreaming,
-                          onOpenNexus = { openNexusNode(NexusCoreNode.ORBITAL_HUB) },
-                          onOpenShipForge = {
-                            forgeInitialTab = NexusForgeTab.SHIP_COSMETICS
-                            isForgeFullScreenStage = false
-                            openNexusNode(NexusCoreNode.STAR_FORGE)
-                          },
-                          onDeployPilot = { newCallsign, newShipId, _, asGuest ->
-                            if (asGuest) localPrefs.setGuestBypassEnabled(true)
-                            val cleanCallsign =
-                              if (!newCallsign.trim().equals(callsign, ignoreCase = true)) {
-                                val (renamedOk, renameMsg) = applyUnifiedCallsignRename(newCallsign)
-                                if (!renamedOk) {
-                                  toastMessage = renameMsg
-                                  toastVersion++
-                                }
-                                callsign
-                              } else {
-                                callsign
-                              }
-                            val clampedShipId = newShipId.coerceIn(1, 10)
-                            callsign = cleanCallsign
-                            selectedShipId = clampedShipId
-                            hasExplicitHangarLock = true
-                            syndicateTag =
-                              if (isGoogleAuthenticated) localPrefs.getSyndicateTag(currentUserId)
-                              else localPrefs.getSyndicateTag()
-                            syndicateName =
-                              if (isGoogleAuthenticated) localPrefs.getSyndicateName(currentUserId)
-                              else localPrefs.getSyndicateName()
-                            localPrefs.setPreferredShipId(clampedShipId)
-                            engine.localPlayer.callsign = cleanCallsign
-                            engine.localPlayer.syndicateTag = syndicateTag
-                            engine.syncLocalArmadaSelfSlot()
-
-                            val staged = pendingStagedLaunch
-                            val finalizeHangarLaunch: () -> Unit = {
-                              if (staged != null) {
-                                suspendedActiveMatch = null
-                              }
-                              if (staged != null || !engine.hasJoinedMatch) {
-                                engine.isShipLockedForMatch = false
-                              }
-                              engine.switchLocalPlayerShip(clampedShipId, forceFromHangar = true)
-                              syncEquippedCosmeticsToEngine(engine)
-
-                              when (staged) {
-                                is StagedRiftLaunch.Ranked -> {
-                                  selectedMode = staged.mode.id
-                                  localPrefs.setPreferredMode(staged.mode.id)
-                                  engine.deployToRankedMode(
-                                    staged.mode,
-                                    staged.teamSizeBracket,
-                                    sectorInstanceOverride = staged.sectorInstanceOverride,
-                                  )
-                                }
-                                is StagedRiftLaunch.NewCustom -> {
-                                  selectedMode = staged.config.baseMode.id
-                                  localPrefs.setPreferredMode(staged.config.baseMode.id)
-                                  engine.createAndJoinCustomGame(staged.config)
-                                  RiftCalibrationState.botsEnabled = staged.config.botsEnabled
-                                  RiftCalibrationState.applyCalibrationChangesLive(engine, context)
-                                  if (isGoogleAuthenticated && isDeviceOnline && currentUserId.isNotBlank()) {
-                                    viewModel.publishCustomGameRoom(
-                                      staged.config.toCloudCustomGameRoom(currentUserId)
-                                    )
-                                  }
-                                }
-                                is StagedRiftLaunch.ExistingCustom -> {
-                                  engine.joinCustomGame(staged.instanceId)
-                                  engine.currentCustomGame?.let { joinedCfg ->
-                                    RiftCalibrationState.botsEnabled = joinedCfg.botsEnabled
-                                    RiftCalibrationState.applyCalibrationChangesLive(engine, context)
-                                  }
-                                  val resolvedModeId =
-                                    engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
-                                  selectedMode = resolvedModeId
-                                  localPrefs.setPreferredMode(resolvedModeId)
-                                }
-                                null -> {
-                                  val activeModeId =
-                                    engine.currentCustomGame?.baseMode?.id ?: engine.activeRankedMode.id
-                                  selectedMode = activeModeId
-                                  localPrefs.setPreferredMode(activeModeId)
-                                    if (!engine.hasJoinedMatch) {
-                                      engine.deployToRankedMode(
-                                        engine.activeRankedMode,
-                                        engine.activeTeamSizeBracket,
-                                        sectorInstanceOverride = engine.activeSectorInstanceOverride,
-                                      )
-                                    }
-                                  }
-                                }
-
-                                syncEquippedCosmeticsToEngine(engine)
-                                engine.onStatsUpdated()
-                                if (engine.hasJoinedMatch) {
-                                  viewModel.setActiveSector(engine.activeMatchSectorTag())
-                                  engine.updateRemotePilots(mergedLivePilots, currentUserId)
-                                  pushLivePilotHeartbeatNow()
-                                  pendingStagedLaunch = null
-                                  isNexusShellOpen = false
-                                }
-                              }
-
-                              when (staged) {
-                                is StagedRiftLaunch.Ranked -> {
-                                  enqueueOrExecuteResonanceMatchmaking(
-                                    modeTitle = staged.mode.title.uppercase(Locale.US),
-                                    riftLabel = "${staged.teamSizeBracket}V${staged.teamSizeBracket}",
-                                    targetSectorKey = staged.sectorInstanceOverride ?: staged.mode.id,
-                                    rankedMode = staged.mode,
-                                    isCustomInstance = false,
-                                    onExecuteLaunch = finalizeHangarLaunch,
-                                  )
-                                }
-                                is StagedRiftLaunch.NewCustom,
-                                is StagedRiftLaunch.ExistingCustom -> {
-                                  finalizeHangarLaunch()
-                                }
-                                null -> {
-                                  if (!engine.hasJoinedMatch && engine.currentCustomGame == null) {
-                                    enqueueOrExecuteResonanceMatchmaking(
-                                      modeTitle = engine.activeRankedMode.title.uppercase(Locale.US),
-                                      riftLabel = engine.activeRankedMode.teamFormatBadge,
-                                      targetSectorKey =
-                                        engine.activeSectorInstanceOverride ?: engine.activeRankedMode.id,
-                                      rankedMode = engine.activeRankedMode,
-                                      isCustomInstance = false,
-                                      onExecuteLaunch = finalizeHangarLaunch,
-                                    )
-                                  } else {
-                                    finalizeHangarLaunch()
-                                  }
-                                }
-                            }
-                          },
-                          onCloseModal = closeEmbeddedModal,
-                        )
-                      }
+                  LaunchedEffect(Unit) {
+                    openNexusNode(NexusCoreNode.HANGAR_DECK)
+                  }
+                }
 
                       NexusCoreNode.RIFT_CONDUIT -> {
                         val (curLvlXp, nextLvlSpan, lvlFrac) =
@@ -3904,8 +3641,8 @@ fun RiftArenaScreen(
                               engine.switchLocalPlayerShip(10, forceFromHangar = true)
                               syncEquippedCosmeticsToEngine(engine)
                               engine.onStatsUpdated()
-                              openNexusNode(NexusCoreNode.HANGAR_DECK)
-                              true to "SELECTED ${normSlotId.uppercase(Locale.US)} // OPENING HANGAR DECK"
+                              openNexusNode(NexusCoreNode.HANGAR_DECK, sideBayOverride = "RIFT_FRAME_BAY")
+                              true to "SELECTED ${normSlotId.uppercase(Locale.US)} // OPENING RIFT FRAME"
                             } else if (normSlotId == "Frame B" && unlockCustomSlotShared("Frame B")) {
                               selectedShipId = 10
                               localPrefs.setPreferredShipId(10)
@@ -3982,7 +3719,7 @@ fun RiftArenaScreen(
                             engine.switchLocalPlayerShip(10, forceFromHangar = true)
                             syncEquippedCosmeticsToEngine(engine)
                             engine.onStatsUpdated()
-                            openNexusNode(NexusCoreNode.HANGAR_DECK)
+                            openNexusNode(NexusCoreNode.HANGAR_DECK, sideBayOverride = "RIFT_FRAME_BAY")
                           },
                           onCloseModal = { openNexusNode(previousNodeBeforeConduit) },
                         )

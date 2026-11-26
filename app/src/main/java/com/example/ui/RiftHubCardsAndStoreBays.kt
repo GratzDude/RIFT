@@ -2,9 +2,11 @@ package com.example.ui
 
 import android.app.Activity
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,7 +50,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -118,6 +125,7 @@ internal fun RiftVerticalCard(
   statusColor: Color = accent,
   @Suppress("UNUSED_PARAMETER") isTabletDeck: Boolean = false,
   minHeightDp: Dp = 96.dp,
+  titleMaxLines: Int = 1,
   testTag: String = "",
   visualContent: @Composable (Dp) -> Unit,
   onClick: () -> Unit,
@@ -274,13 +282,13 @@ internal fun RiftVerticalCard(
       Text(
         text = title,
         color = Color(0xFFF8FAFC),
-        fontSize = 12.0.sp,
+        fontSize = if (titleMaxLines > 1 && title.length > 14) 10.2.sp else 12.0.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         textAlign = TextAlign.Center,
-        lineHeight = 13.5.sp,
-        maxLines = 1,
-        softWrap = false,
+        lineHeight = if (titleMaxLines > 1) 11.8.sp else 13.5.sp,
+        maxLines = titleMaxLines,
+        softWrap = titleMaxLines > 1,
         overflow = TextOverflow.Ellipsis,
         style =
           TextStyle(
@@ -701,6 +709,53 @@ internal fun HangarVerticalWingBay(
   }
 }
 
+internal data class DraggedRiftFrameItem(
+  val isPrimary: Boolean,
+  val itemId: String,
+  val label: String,
+  val pointCost: Int,
+  val accentColor: Color,
+)
+
+private fun concisePrimaryWeaponSubtitle(pri: PrimaryWeaponOption): String =
+  when (pri.id.uppercase(Locale.US)) {
+    "LIGHT_PULSE" -> "Fast balanced twin laser"
+    "RAPID_GATLING" -> "High-speed triple plasma stream"
+    "HEAVY_PLASMA" -> "Hard-hitting heavy plasma bolts"
+    "SCATTER_FAN" -> "Wide close-range spread fan"
+    "BOUNCING_PULSE" -> "Wall-bouncing energy bolts"
+    "LANCE_BEAM" -> "Piercing long-range thermal beam"
+    "TWIN_RAILGUN" -> "High-velocity dual kinetic slugs"
+    "SEEKER_PODS" -> "Guided micro-missile volleys"
+    "NOVA_MORTAR" -> "Explosive area plasma shells"
+    else -> pri.summary.split(" ").take(4).joinToString(" ")
+  }
+
+private fun conciseSecondaryAbilitySubtitle(sec: SecondaryAbilityOption): String =
+  when (sec.id.uppercase(Locale.US)) {
+    "NONE" -> "Save points for hull stats"
+    "PHASE_DASH" -> "Instant forward warp burst"
+    "CLOAK" -> "Brief radar stealth cloak"
+    "STASIS_SHIELD" -> "Absorbs incoming weapon fire"
+    "CLUSTER_BOMB" -> "Splits into plasma sub-bombs"
+    "PROXIMITY_MINE" -> "Triggered corridor blast mine"
+    "EMP_BURST" -> "Drains nearby enemy Flux"
+    "GRAVITY_WELL" -> "Pulls rival hulls inward"
+    "REPEL_NOVA" -> "Radial 360 shockwave pulse"
+    "SCATTER_SHOTGUN" -> "Point-blank kinetic fan blast"
+    "SEEKER_TORPEDO" -> "Predictive homing heavy warhead"
+    "DECOY_HOLOGRAM" -> "Stealth decoy with EMP"
+    "HARDLIGHT_BARRIER" -> "Deployable hard-light shield wall"
+    "AFTERBURNER" -> "Zero-Flux supersonic speed burst"
+    "FLUX_BATTERY" -> "Instant emergency Flux surge"
+    "SWARM_DRONES" -> "Five hunter micro-drones"
+    "SNARE_LASER" -> "Gravimetric snare beam toggle"
+    "PATROL_TORPEDO" -> "Re-locking corridor warhead"
+    "THERMAL_CUTTER" -> "Stacking thermal cutting beam"
+    "RICOCHET_DISC" -> "Four-bounce serrated disc"
+    else -> sec.summary.split(" ").take(4).joinToString(" ")
+  }
+
 @Composable
 internal fun RiftFrameLoadoutSideBay(
   isTabletDeck: Boolean,
@@ -719,6 +774,10 @@ internal fun RiftFrameLoadoutSideBay(
   onPreviewWeaponStage: (OverwatchCircularPrompt.InfoStageInspect) -> Unit,
   onPreviewInOverwatch: () -> Unit,
   onChargeRiftFrame: () -> Unit,
+  onStartDragItem: (DraggedRiftFrameItem, Offset) -> Unit = { _, _ -> },
+  onUpdateDragRootOffset: (Offset) -> Unit = {},
+  onEndDragItem: () -> Unit = {},
+  onOpenFrameRenamePrompt: (() -> Unit)? = null,
 ) {
   val density = LocalDensity.current
   val keyboardController = LocalSoftwareKeyboardController.current
@@ -779,7 +838,7 @@ internal fun RiftFrameLoadoutSideBay(
       isTabletDeck = isTabletDeck,
       sectionTitle = "RIFT FRAME • $usedPoints/$effectiveBudget PTS",
       accent = Color(0xFFC084FC),
-      trailingLabel = "INSPECT >",
+      trailingLabel = "DRYDOCK",
       trailingTag = "rift_frame_preview_overwatch",
       onTrailingClick = onPreviewInOverwatch,
       onBackToHub = onBackToHub,
@@ -886,12 +945,12 @@ internal fun RiftFrameLoadoutSideBay(
               secondaryBorder = Color(0xFF091528),
             )
             .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
       ) {
         Text(
-          text = "USED: $usedPoints / $effectiveBudget PTS • REMAINING: $remainingPoints PTS",
+          text = "USED: $usedPoints / $effectiveBudget PTS • FREE: $remainingPoints PTS",
           color = if (remainingPoints == 0) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          fontSize = 9.5.sp,
+          fontSize = 8.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -911,7 +970,7 @@ internal fun RiftFrameLoadoutSideBay(
               textStyle =
                 TextStyle(
                   color = Color.White,
-                  fontSize = 10.5.sp,
+                  fontSize = 10.0.sp,
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.Monospace,
                 ),
@@ -945,7 +1004,7 @@ internal fun RiftFrameLoadoutSideBay(
                 Text(
                   text = "SAVE",
                   color = Color.White,
-                  fontSize = 9.5.sp,
+                  fontSize = 9.0.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -961,7 +1020,7 @@ internal fun RiftFrameLoadoutSideBay(
             Text(
               text = draftSlot.customName.ifBlank { normalizedActiveId }.uppercase(Locale.US),
               color = Color.White,
-              fontSize = 11.5.sp,
+              fontSize = 10.8.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -973,8 +1032,12 @@ internal fun RiftFrameLoadoutSideBay(
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
                   .clickable {
-                    renameDraft = draftSlot.customName.ifBlank { normalizedActiveId }
-                    isEditingName = true
+                    if (onOpenFrameRenamePrompt != null) {
+                      onOpenFrameRenamePrompt()
+                    } else {
+                      renameDraft = draftSlot.customName.ifBlank { normalizedActiveId }
+                      isEditingName = true
+                    }
                   }
                   .testTag("rift_frame_rename_btn"),
               contentAlignment = Alignment.Center,
@@ -989,7 +1052,7 @@ internal fun RiftFrameLoadoutSideBay(
                 Text(
                   text = "RENAME",
                   color = Color(0xFF38BDF8),
-                  fontSize = 9.5.sp,
+                  fontSize = 8.6.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -1016,7 +1079,7 @@ internal fun RiftFrameLoadoutSideBay(
                 Text(
                   text = "RESET",
                   color = Color(0xFFFB7185),
-                  fontSize = 9.5.sp,
+                  fontSize = 8.6.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -1024,66 +1087,19 @@ internal fun RiftFrameLoadoutSideBay(
             }
           }
         }
+
+        Text(
+          text = "HOLD & DRAG CARDS TO OVERWATCH SOCKETS OR TAP TO EQUIP",
+          color = Color(0xFF94A3B8),
+          fontSize = 7.2.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
       }
 
-      // 5 Hull Stat Point Steppers (strictly <= 100 pts)
-      HelmStepperControlRow(
-        label = "TOP SPEED",
-        valueText = "${draftSlot.speedPts} PT",
-        onMinus = { commitDraftClamped(draftSlot.copy(speedPts = (draftSlot.speedPts - 1).coerceAtLeast(0))) },
-        onPlus = {
-          if (remainingPoints > 0 && draftSlot.speedPts < 30) {
-            val step = minOf(2, remainingPoints, 30 - draftSlot.speedPts)
-            commitDraftClamped(draftSlot.copy(speedPts = draftSlot.speedPts + step))
-          }
-        },
-      )
-      HelmStepperControlRow(
-        label = "THRUST",
-        valueText = "${draftSlot.thrustPts} PT",
-        onMinus = { commitDraftClamped(draftSlot.copy(thrustPts = (draftSlot.thrustPts - 1).coerceAtLeast(0))) },
-        onPlus = {
-          if (remainingPoints > 0 && draftSlot.thrustPts < 30) {
-            val step = minOf(2, remainingPoints, 30 - draftSlot.thrustPts)
-            commitDraftClamped(draftSlot.copy(thrustPts = draftSlot.thrustPts + step))
-          }
-        },
-      )
-      HelmStepperControlRow(
-        label = "TURN RATE",
-        valueText = "${draftSlot.turnPts} PT",
-        onMinus = { commitDraftClamped(draftSlot.copy(turnPts = (draftSlot.turnPts - 1).coerceAtLeast(0))) },
-        onPlus = {
-          if (remainingPoints > 0 && draftSlot.turnPts < 30) {
-            val step = minOf(2, remainingPoints, 30 - draftSlot.turnPts)
-            commitDraftClamped(draftSlot.copy(turnPts = draftSlot.turnPts + step))
-          }
-        },
-      )
-      HelmStepperControlRow(
-        label = "MAX FLUX",
-        valueText = "${draftSlot.maxFluxPts} PT",
-        onMinus = { commitDraftClamped(draftSlot.copy(maxFluxPts = (draftSlot.maxFluxPts - 1).coerceAtLeast(0))) },
-        onPlus = {
-          if (remainingPoints > 0 && draftSlot.maxFluxPts < 30) {
-            val step = minOf(2, remainingPoints, 30 - draftSlot.maxFluxPts)
-            commitDraftClamped(draftSlot.copy(maxFluxPts = draftSlot.maxFluxPts + step))
-          }
-        },
-      )
-      HelmStepperControlRow(
-        label = "FLUX REGEN",
-        valueText = "${draftSlot.rechargePts} PT",
-        onMinus = { commitDraftClamped(draftSlot.copy(rechargePts = (draftSlot.rechargePts - 1).coerceAtLeast(0))) },
-        onPlus = {
-          if (remainingPoints > 0 && draftSlot.rechargePts < 30) {
-            val step = minOf(2, remainingPoints, 30 - draftSlot.rechargePts)
-            commitDraftClamped(draftSlot.copy(rechargePts = draftSlot.rechargePts + step))
-          }
-        },
-      )
-
-      // Primary vs Secondary Weapon Selector Deck
+      // Primary vs Secondary / Buff Vertical Card Selector Tabs
       Row(
         modifier = Modifier.fillMaxWidth().height(48.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1091,7 +1107,7 @@ internal fun RiftFrameLoadoutSideBay(
       ) {
         listOf(
           "PRI" to "PRIMARY (${draftSlot.primaryPointCost()}P)",
-          "SEC" to "SECONDARY (${draftSlot.secondaryPointCost()}P)",
+          "SEC" to "BUFF / SEC (${draftSlot.secondaryPointCost()}P)",
         ).forEach { (key, label) ->
           val active = weaponTab == key
           Box(
@@ -1115,7 +1131,7 @@ internal fun RiftFrameLoadoutSideBay(
               Text(
                 text = label,
                 color = if (active) Color.White else Color(0xFF94A3B8),
-                fontSize = 9.5.sp,
+                fontSize = 8.6.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
@@ -1129,118 +1145,142 @@ internal fun RiftFrameLoadoutSideBay(
       if (weaponTab == "PRI") {
         primaryOptions.forEach { pri: PrimaryWeaponOption ->
           val selected = draftSlot.primaryArchetype == pri.id
-          Row(
+          var cardRootOrigin by remember { mutableStateOf(Offset.Zero) }
+          var dragPointerRoot by remember { mutableStateOf(Offset.Zero) }
+          val iconBmp =
+            remember(pri.id, RiftSpriteBaker.spriteVisualRevision) {
+              RiftSpriteBaker.getPrimaryWeaponIconBitmap(pri.id).asImageBitmap()
+            }
+
+          Box(
             modifier =
               Modifier.fillMaxWidth()
-                .minimumInteractiveComponentSize()
-                .chamferedSciFiPodSurface(
-                  isRightSide = false,
-                  primaryBorder = if (selected) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-                  secondaryBorder = if (selected) Color(0xFFFFD700) else Color(0xFF091528),
-                )
-                .clickable {
-                  commitDraftClamped(draftSlot.copy(primaryArchetype = pri.id))
-                  onPreviewWeaponStage(
-                    OverwatchCircularPrompt.InfoStageInspect(
-                      kicker = "PRIMARY WEAPON EQUIPPED",
-                      title = pri.title.uppercase(Locale.US),
-                      badge = "${pri.pointCost} POINTS",
-                      summary = pri.summary,
-                      tacticalNote = "Automatically balanced within your 100-Point Rift Frame parity budget.",
-                      accentHex = 0xFF00F5D4L,
-                      shipId = 10,
-                    )
+                .onGloballyPositioned { coords -> cardRootOrigin = coords.positionInRoot() }
+                .pointerInput(pri.id) {
+                  detectDragGesturesAfterLongPress(
+                    onDragStart = { localOffset ->
+                      val rootStart = cardRootOrigin + localOffset
+                      dragPointerRoot = rootStart
+                      onStartDragItem(
+                        DraggedRiftFrameItem(
+                          isPrimary = true,
+                          itemId = pri.id,
+                          label = pri.title.uppercase(Locale.US),
+                          pointCost = pri.pointCost,
+                          accentColor = Color(0xFF00F5D4),
+                        ),
+                        rootStart,
+                      )
+                    },
+                    onDrag = { change, dragAmount ->
+                      change.consume()
+                      dragPointerRoot += dragAmount
+                      onUpdateDragRootOffset(dragPointerRoot)
+                    },
+                    onDragEnd = { onEndDragItem() },
+                    onDragCancel = { onEndDragItem() },
                   )
                 }
-                .padding(horizontal = 8.dp, vertical = 6.dp)
-                .testTag("rift_frame_pri_${pri.id.lowercase(Locale.US)}"),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
           ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
-              Text(
-                text = pri.title.uppercase(Locale.US),
-                color = if (selected) Color(0xFF00F5D4) else Color.White,
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-              Text(
-                text = pri.summary,
-                color = Color(0xFFCBD5E1),
-                fontSize = 9.5.sp,
-                fontFamily = FontFamily.SansSerif,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-            Text(
-              text = if (selected) "${pri.pointCost}P ON" else "${pri.pointCost}P",
-              color = if (selected) Color(0xFF00F5D4) else Color(0xFFFACC15),
-              fontSize = 9.5.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
+            RiftVerticalCard(
+              modifier = Modifier.fillMaxWidth(),
+              title = pri.title.uppercase(Locale.US),
+              subtitle = concisePrimaryWeaponSubtitle(pri),
+              accent = if (selected) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+              secondaryAccent = if (selected) Color(0xFFFFD700) else Color(0xFF00F5D4),
+              isRightColumn = false,
+              isHighlighted = selected,
+              badgeText = if (selected) "${pri.pointCost} PTS ON" else "${pri.pointCost} PTS",
+              badgeColor = if (selected) Color(0xFF00F5D4) else Color(0xFFFACC15),
+              statusLabel = if (selected) "MOUNTED IN PRIMARY" else "DRAG OR TAP TO MOUNT",
+              statusColor = if (selected) Color(0xFF00F5D4) else Color(0xFF94A3B8),
+              isTabletDeck = isTabletDeck,
+              minHeightDp = if (isTabletDeck) 104.dp else 94.dp,
+              titleMaxLines = 2,
+              testTag = "rift_frame_pri_${pri.id.lowercase(Locale.US)}",
+              visualContent = { visualDp ->
+                Image(
+                  bitmap = iconBmp,
+                  contentDescription = pri.title,
+                  contentScale = ContentScale.Fit,
+                  modifier = Modifier.size((visualDp * 0.94f).coerceAtLeast(32.dp)),
+                )
+              },
+              onClick = {
+                commitDraftClamped(draftSlot.copy(primaryArchetype = pri.id))
+                onPreviewInOverwatch()
+              },
             )
           }
         }
       } else {
         secondaryOptions.forEach { sec: SecondaryAbilityOption ->
           val selected = draftSlot.secondaryType == sec.id
-          Row(
+          var cardRootOrigin by remember { mutableStateOf(Offset.Zero) }
+          var dragPointerRoot by remember { mutableStateOf(Offset.Zero) }
+          val iconBmp =
+            remember(sec.id, RiftSpriteBaker.spriteVisualRevision, RiftSpriteBaker.customShip9Version) {
+              RiftSpriteBaker.getSecondaryAbilityIconBitmap(sec.id).asImageBitmap()
+            }
+
+          Box(
             modifier =
               Modifier.fillMaxWidth()
-                .minimumInteractiveComponentSize()
-                .chamferedSciFiPodSurface(
-                  isRightSide = false,
-                  primaryBorder = if (selected) Color(0xFFC084FC) else Color(0xFF38BDF8),
-                  secondaryBorder = if (selected) Color(0xFF00F5D4) else Color(0xFF091528),
-                )
-                .clickable {
-                  commitDraftClamped(draftSlot.copy(secondaryType = sec.id))
-                  onPreviewWeaponStage(
-                    OverwatchCircularPrompt.InfoStageInspect(
-                      kicker = "SECONDARY ABILITY EQUIPPED",
-                      title = sec.title.uppercase(Locale.US),
-                      badge = "${sec.pointCost} POINTS",
-                      summary = sec.summary,
-                      tacticalNote = "${sec.fluxCostLabel} • Auto-balanced to 100-Point budget.",
-                      accentHex = 0xFFC084FCL,
-                      shipId = 10,
-                    )
+                .onGloballyPositioned { coords -> cardRootOrigin = coords.positionInRoot() }
+                .pointerInput(sec.id) {
+                  detectDragGesturesAfterLongPress(
+                    onDragStart = { localOffset ->
+                      val rootStart = cardRootOrigin + localOffset
+                      dragPointerRoot = rootStart
+                      onStartDragItem(
+                        DraggedRiftFrameItem(
+                          isPrimary = false,
+                          itemId = sec.id,
+                          label = sec.title.uppercase(Locale.US),
+                          pointCost = sec.pointCost,
+                          accentColor = Color(0xFFC084FC),
+                        ),
+                        rootStart,
+                      )
+                    },
+                    onDrag = { change, dragAmount ->
+                      change.consume()
+                      dragPointerRoot += dragAmount
+                      onUpdateDragRootOffset(dragPointerRoot)
+                    },
+                    onDragEnd = { onEndDragItem() },
+                    onDragCancel = { onEndDragItem() },
                   )
                 }
-                .padding(horizontal = 8.dp, vertical = 6.dp)
-                .testTag("rift_frame_sec_${sec.id.lowercase(Locale.US)}"),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
           ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
-              Text(
-                text = sec.title.uppercase(Locale.US),
-                color = if (selected) Color(0xFFC084FC) else Color.White,
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-              Text(
-                text = "${sec.fluxCostLabel} • ${sec.summary}",
-                color = Color(0xFFCBD5E1),
-                fontSize = 9.5.sp,
-                fontFamily = FontFamily.SansSerif,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-            Text(
-              text = if (selected) "${sec.pointCost}P ON" else "${sec.pointCost}P",
-              color = if (selected) Color(0xFFC084FC) else Color(0xFFFACC15),
-              fontSize = 9.5.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
+            RiftVerticalCard(
+              modifier = Modifier.fillMaxWidth(),
+              title = sec.title.uppercase(Locale.US),
+              subtitle = conciseSecondaryAbilitySubtitle(sec),
+              accent = if (selected) Color(0xFFC084FC) else Color(0xFF38BDF8),
+              secondaryAccent = if (selected) Color(0xFF00F5D4) else Color(0xFFC084FC),
+              isRightColumn = false,
+              isHighlighted = selected,
+              badgeText = if (selected) "${sec.pointCost} PTS ON" else "${sec.pointCost} PTS",
+              badgeColor = if (selected) Color(0xFFC084FC) else Color(0xFFFACC15),
+              statusLabel = if (selected) "MOUNTED IN SECONDARY" else "DRAG OR TAP TO MOUNT",
+              statusColor = if (selected) Color(0xFFC084FC) else Color(0xFF94A3B8),
+              isTabletDeck = isTabletDeck,
+              minHeightDp = if (isTabletDeck) 104.dp else 94.dp,
+              titleMaxLines = 2,
+              testTag = "rift_frame_sec_${sec.id.lowercase(Locale.US)}",
+              visualContent = { visualDp ->
+                Image(
+                  bitmap = iconBmp,
+                  contentDescription = sec.title,
+                  contentScale = ContentScale.Fit,
+                  modifier = Modifier.size((visualDp * 0.94f).coerceAtLeast(32.dp)),
+                )
+              },
+              onClick = {
+                commitDraftClamped(draftSlot.copy(secondaryType = sec.id))
+                onPreviewInOverwatch()
+              },
             )
           }
         }

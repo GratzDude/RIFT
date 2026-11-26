@@ -24,7 +24,7 @@ fun configureAppCheck(context: Context, intent: Intent?) {
     }
 
     if (BuildConfig.DEBUG) {
-      // 2. Debug: Install DebugAppCheckProviderFactory only when a registered debug token is supplied
+      // 2. Debug: Read debug token from Intent extra and persist synchronously
       val debugToken = intent?.getStringExtra(DEBUG_TOKEN_EXTRA)
 
       if (!debugToken.isNullOrEmpty()) {
@@ -34,18 +34,21 @@ fun configureAppCheck(context: Context, intent: Intent?) {
             "$DEBUG_STORE_PREFIX$persistenceKey",
             Context.MODE_PRIVATE,
           )
-        // CRITICAL: Use synchronous commit() so DebugAppCheckProviderFactory reads the token immediately.
+        // CRITICAL: MUST use commit() instead of apply() so the secret is written
+        // synchronously before DebugAppCheckProviderFactory reads it.
         prefs
           .edit()
           .putString(DEBUG_SECRET_KEY, debugToken)
           .commit()
-        FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
-          DebugAppCheckProviderFactory.getInstance()
-        )
-        Log.d(TAG, "App Check debug secret and DebugAppCheckProviderFactory configured.")
+        Log.d(TAG, "App Check debug secret configured successfully.")
       } else {
-        Log.d(TAG, "No debug token in Intent extra; skipping DebugAppCheckProviderFactory.")
+        Log.w(TAG, "No debug token found in Intent extra.")
       }
+
+      FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+        DebugAppCheckProviderFactory.getInstance()
+      )
+      Log.d(TAG, "DebugAppCheckProviderFactory installed.")
     } else {
       // 3. Release: Look up recaptcha_site_key safely without throwing Resources.NotFoundException
       val resId =
