@@ -13,6 +13,8 @@ class LocalPilotPrefs(context: Context) {
     context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
   private val userSettingsPrefs: SharedPreferences =
     context.applicationContext.getSharedPreferences(USER_SETTINGS_PREFS_NAME, Context.MODE_PRIVATE)
+  private val chargedShipPrefs: SharedPreferences =
+    context.applicationContext.getSharedPreferences("rift_hub_charged_ship_prefs", Context.MODE_PRIVATE)
 
   /**
    * Returns a permanent device-bound UID stored in local storage so guest stats and leaderboard
@@ -880,8 +882,17 @@ class LocalPilotPrefs(context: Context) {
       .apply()
   }
 
-  fun getRiftShards(uid: String? = null): Long =
-    prefs.getLong(uidKey(KEY_RIFT_SHARDS, uid), prefs.getLong(KEY_RIFT_SHARDS, 0L))
+  fun getRiftShards(uid: String? = null): Long {
+    val defaultSeed = RiftBillingManager.effectiveShardBalance(150L)
+    val scopedKey = uidKey(KEY_RIFT_SHARDS, uid)
+    if (!uid.isNullOrBlank() && prefs.contains(scopedKey)) {
+      return prefs.getLong(scopedKey, defaultSeed)
+    }
+    if (canUseLegacyUnscopedFallback(uid) && prefs.contains(KEY_RIFT_SHARDS)) {
+      return prefs.getLong(KEY_RIFT_SHARDS, defaultSeed)
+    }
+    return defaultSeed
+  }
 
   fun setRiftShards(shards: Long, uid: String? = null) {
     val clean = shards.coerceAtLeast(0L)
@@ -2361,9 +2372,10 @@ class LocalPilotPrefs(context: Context) {
 
   /**
    * Master Fresh-Start Wipe:
-   * Clears all combat stats, 5 XP sources, peak bounty snapshots, Armada tiers, active Armada,
+   * Clears all combat stats, 5 XP sources, peak snapshots, Squadron tiers, active Squadron,
    * custom friends, custom Syndicates, Syndicate service history, custom Syndicate channels/guests/crests,
-   * Syndicate War Trophy records, and custom modular ship slots (Frame A..E) while resetting Rift Shards to 150.
+   * Syndicate War Trophy records, and custom modular ship slots (Frame A..E) while resetting Rift Shards
+   * to RiftBillingManager.effectiveShardBalance(150L).
    * Preserves Sworn Pilot callsigns and all user audio/BPM/Music Forge preferences in userSettingsPrefs.
    */
   fun wipeAllStatsArmadasAndSyndicates(uid: String? = null) {
@@ -2393,7 +2405,9 @@ class LocalPilotPrefs(context: Context) {
           key.startsWith(KEY_CAREER_SHOTS_FIRED) ||
           key.startsWith(KEY_CAREER_SHOTS_HIT) ||
           key.startsWith(KEY_RIFT_CAPTURES) ||
-          key.startsWith(KEY_SHIP_RESONANCE_PREFIX)
+          key.startsWith(KEY_SHIP_RESONANCE_PREFIX) ||
+          key.startsWith("cosmetic_unlocked_") ||
+          key.startsWith("cosmetic_equipped_")
       }
 
     val editor = prefs.edit()
@@ -2434,7 +2448,8 @@ class LocalPilotPrefs(context: Context) {
       .putLong(KEY_RIFT_CAPTURES, 0L)
       .putLong(uidKey(KEY_RIFT_CAPTURES, uid), 0L)
 
-    // 5 XP sources + progression + Rift Shards (150)
+    // 5 XP sources + progression + Rift Shards (effectiveShardBalance(150L))
+    val effectiveShards = RiftBillingManager.effectiveShardBalance(150L)
     editor
       .putLong(KEY_XP_BUFFS, 0L)
       .putLong(uidKey(KEY_XP_BUFFS, uid), 0L)
@@ -2446,8 +2461,8 @@ class LocalPilotPrefs(context: Context) {
       .putLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), 0L)
       .putLong(KEY_XP_BOUNTY_KILLED, 0L)
       .putLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), 0L)
-      .putLong(KEY_RIFT_SHARDS, 150L)
-      .putLong(uidKey(KEY_RIFT_SHARDS, uid), 150L)
+      .putLong(KEY_RIFT_SHARDS, effectiveShards)
+      .putLong(uidKey(KEY_RIFT_SHARDS, uid), effectiveShards)
       .putInt(KEY_HIGHEST_MILESTONE_LVL, 1)
       .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), 1)
       .putInt(KEY_SPENT_CUSTOM_POINTS, 0)
@@ -2528,6 +2543,7 @@ class LocalPilotPrefs(context: Context) {
 
     clearHubTapTelemetryHistory()
     userSettingsPrefs.edit().putString(KEY_HUB_TAP_BUFFER, "").apply()
+    chargedShipPrefs.edit().clear().apply()
   }
 
   /**
@@ -2567,6 +2583,7 @@ class LocalPilotPrefs(context: Context) {
       }
 
     prefs.edit().clear().apply()
+    chargedShipPrefs.edit().clear().apply()
     clearHubTapTelemetryHistory()
     userSettingsPrefs.edit().putString(KEY_HUB_TAP_BUFFER, "").apply()
     setLastSeenChangelogBuild(seenBuild)
@@ -2582,6 +2599,7 @@ class LocalPilotPrefs(context: Context) {
     setPlayfieldTextScale(preservedTextScale)
     setGuestBypassEnabled(guestBypass)
     getOrCreatePermanentDeviceUid()
+    setRiftShards(RiftBillingManager.effectiveShardBalance(150L), uid)
 
     if (!guestBypass) {
       val restoreEditor = prefs.edit()

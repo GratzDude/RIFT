@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 129
+const val CURRENT_RIFT_BUILD_VERSION = 130
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 130,
+      versionTag = "v1.0.130 // BUILD #130",
+      releaseDate = "Nov 26, 2026",
+      headline = "Star Forge Ranked & Frame Economy Sync, Full 6-Skin Turntable Cycling, Direct Overwatch Drydock Build Loading, Post-Wipe Tester Shard Retention & Rift AI Telemetry Polish",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Star Forge Ranked Cosmetic & Frame C-E Economy Gate Fix: Closed the legacy unlock leak inside Star Forge so Ranked Kill Finishers, Warp Signatures, and Resonance Leader Halos activate strictly from current Live Resonance with Resonance crest readouts and zero Shard purchase buttons, while Frame B unlocks permanently for 250 Rift Shards and Frame C (650), Frame D (1100), and Frame E (1600) activate strictly from Live Resonance with non-destructive fallback to Frame A.",
+          "Full 6-Skin Star Forge Turntable Preview & Ownership Sync: Widened Star Forge hull skin clamping from 0..3 to 0..5 across all 10 starfighters including Rift Frame so Skin 4 (Crimson Forge Anodized) and Skin 5 (Cryo-Titanium Stealth) preview, cycle, and equip cleanly, gated strictly by persisted Rift Shard ownership in lockstep with the Shard Store.",
+          "Direct Overwatch Drydock Routing for Shared Builds: Tapping Load Into Bay on any shared build card in Subspace Comms #shipwright-meta now clamps the 100-Point loadout, charges Rift Frame as the active hull, closes Subspace Comms, and opens the Orbital Hub directly inside the interactive Overwatch Rift Frame Drydock.",
+          "Post-Wipe Tester Shard Retention & Plain-English Rift AI Telemetry: Preserved the 999,999 tester Rift Shard balance immediately across local profile, dossier, and fresh-start telemetry wipes while live Play Billing is dormant, and replaced all remaining abbreviated Resonance unit suffixes and special glyphs in Rift AI live snapshots with full plain-English Resonance readouts.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 129,
       versionTag = "v1.0.129 // BUILD #129",
       releaseDate = "Nov 26, 2026",
       headline = "Overwatch Drydock Bottom-Chord Clearance, Unoccluded Live Sector Switcher & Bezel Margin, Enlarged 10-Hull Cosmetic Showcase, 2.5D Skinned Ship Store Previews & 2-Line Shard Pack Bonuses, and Star Forge 6-Skin Parity",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "PREVIOUS BUILD",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

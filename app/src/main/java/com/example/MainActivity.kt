@@ -3734,11 +3734,19 @@ fun RiftArenaScreen(
                           },
                           onOpenHangarShip10 = {
                             selectedShipId = 10
+                            hasExplicitHangarLock = true
                             localPrefs.setPreferredShipId(10)
+                            val chargedKey = "charged_ship_${currentUserId.trim().ifBlank { "local" }}"
+                            context
+                              .getSharedPreferences("rift_hub_charged_ship_prefs", Context.MODE_PRIVATE)
+                              .edit()
+                              .putInt(chargedKey, 10)
+                              .apply()
                             engine.switchLocalPlayerShip(10, forceFromHangar = true)
                             syncEquippedCosmeticsToEngine(engine)
                             engine.onStatsUpdated()
-                            openNexusNode(NexusCoreNode.HANGAR_DECK, sideBayOverride = "RIFT_FRAME_BAY")
+                            hubRequestedSideBay = "RIFT_FRAME_BAY"
+                            openNexusNode(NexusCoreNode.ORBITAL_HUB, sideBayOverride = "RIFT_FRAME_BAY")
                           },
                           onCloseModal = { openNexusNode(previousNodeBeforeConduit) },
                         )
@@ -4325,9 +4333,13 @@ fun RiftArenaScreen(
                               openNexusNode(NexusCoreNode.RIFT_CONDUIT)
                             },
                             onResetLocalPilotData = {
-                              localPrefs.resetAllLocalPilotData(
-                                if (isGoogleAuthenticated) currentUserId else null
-                              )
+                              val activeUid = if (isGoogleAuthenticated) currentUserId else null
+                              localPrefs.resetAllLocalPilotData(activeUid)
+                              context
+                                .getSharedPreferences("rift_hub_charged_ship_prefs", Context.MODE_PRIVATE)
+                                .edit()
+                                .clear()
+                                .apply()
                               callsign =
                                 if (isGoogleAuthenticated) localPrefs.getCallsign(currentUserId)
                                 else localPrefs.getCallsign()
@@ -4335,10 +4347,13 @@ fun RiftArenaScreen(
                               syndicateName = localPrefs.getSyndicateName()
                               hasExplicitHangarLock = false
                               selectedShipId = 1
-                              slot9BUnlocked = localPrefs.isCustomSlotUnlocked("Frame B", currentUserId)
-                              slot9CUnlocked = localPrefs.isCustomSlotUnlocked("Frame C", currentUserId)
-                              slot9DUnlocked = localPrefs.isCustomSlotUnlocked("Frame D", currentUserId)
-                              slot9EUnlocked = localPrefs.isCustomSlotUnlocked("Frame E", currentUserId)
+                              activeCustomSlotId = "Frame A"
+                              activeCustomSlot = localPrefs.getCustomShipSlot("Frame A", currentUserId)
+                              RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
+                              slot9BUnlocked = false
+                              slot9CUnlocked = false
+                              slot9DUnlocked = false
+                              slot9EUnlocked = false
                               engine.pvpKills = 0L
                               engine.pvpDeaths = 0L
                               engine.pvpBountyPeak = 100L
@@ -4354,8 +4369,12 @@ fun RiftArenaScreen(
                               engine.xpFromBountyEarned = 0f
                               engine.xpFromBountyKilled = 0f
                               engine.pilotLevel = 1
-                              engine.riftShards = RiftBillingManager.effectiveShardBalance(0L)
-                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                              val effectiveShards = RiftBillingManager.effectiveShardBalance(150L)
+                              engine.riftShards = effectiveShards
+                              localPrefs.setRiftShards(effectiveShards, activeUid)
+                              if (currentUserId.isNotBlank()) {
+                                localPrefs.setRiftShards(effectiveShards, currentUserId)
+                              }
                               engine.liveResonance = 0
                               engine.peakResonance = 0
                               shipResonancesState = localPrefs.getAllShipResonances(currentUserId)
@@ -5000,10 +5019,20 @@ fun RiftArenaScreen(
                       secondaryType = sec,
                     )
                   }
-                saveCustomSlotShared(loadedSlot)
+                val clampedSlot =
+                  loadedSlot
+                    .copy(slotId = activeCustomSlotId)
+                    .clampToPointBudget(100)
+                saveCustomSlotShared(clampedSlot)
                 selectedShipId = 10
                 hasExplicitHangarLock = true
                 localPrefs.setPreferredShipId(10)
+                val chargedKey = "charged_ship_${currentUserId.trim().ifBlank { "local" }}"
+                context
+                  .getSharedPreferences("rift_hub_charged_ship_prefs", Context.MODE_PRIVATE)
+                  .edit()
+                  .putInt(chargedKey, 10)
+                  .apply()
                 if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
                   engine.switchLocalPlayerShip(10, forceFromHangar = true)
                 } else {
@@ -5016,8 +5045,9 @@ fun RiftArenaScreen(
                 syncEquippedCosmeticsToEngine(engine)
                 engine.onStatsUpdated()
                 sfx.playPrize()
-                openNexusNode(NexusCoreNode.HANGAR_DECK)
-                toastMessage = "LOADED [${loadedSlot.customName}] INTO $activeCustomSlotId"
+                hubRequestedSideBay = "RIFT_FRAME_BAY"
+                openNexusNode(NexusCoreNode.ORBITAL_HUB, sideBayOverride = "RIFT_FRAME_BAY")
+                toastMessage = "LOADED [${clampedSlot.customName}] INTO $activeCustomSlotId"
                 toastVersion++
               },
               onPostStrikeWingInvite = {
@@ -5625,9 +5655,13 @@ fun RiftArenaScreen(
               cloudLeaderboardEntries = realSwornCloudLeaderboard,
               onRenamePilotCallsign = applyUnifiedCallsignRename,
               onResetLocalPilotTelemetry = {
-                localPrefs.resetAllLocalPilotData(
-                  if (isGoogleAuthenticated) currentUserId else null
-                )
+                val activeUid = if (isGoogleAuthenticated) currentUserId else null
+                localPrefs.resetAllLocalPilotData(activeUid)
+                context
+                  .getSharedPreferences("rift_hub_charged_ship_prefs", Context.MODE_PRIVATE)
+                  .edit()
+                  .clear()
+                  .apply()
                 callsign =
                   if (isGoogleAuthenticated) localPrefs.getCallsign(currentUserId)
                   else localPrefs.getCallsign()
@@ -5635,6 +5669,9 @@ fun RiftArenaScreen(
                 syndicateName = localPrefs.getSyndicateName()
                 hasExplicitHangarLock = false
                 selectedShipId = 1
+                activeCustomSlotId = "Frame A"
+                activeCustomSlot = localPrefs.getCustomShipSlot("Frame A", currentUserId)
+                RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
                 slot9BUnlocked = false
                 slot9CUnlocked = false
                 slot9DUnlocked = false
@@ -5654,8 +5691,12 @@ fun RiftArenaScreen(
                 engine.xpFromBountyEarned = 0f
                 engine.xpFromBountyKilled = 0f
                 engine.pilotLevel = 1
-                engine.riftShards = RiftBillingManager.effectiveShardBalance(0L)
-                localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                val effectiveShards = RiftBillingManager.effectiveShardBalance(150L)
+                engine.riftShards = effectiveShards
+                localPrefs.setRiftShards(effectiveShards, activeUid)
+                if (currentUserId.isNotBlank()) {
+                  localPrefs.setRiftShards(effectiveShards, currentUserId)
+                }
                 engine.liveResonance = 0
                 engine.peakResonance = 0
                 shipResonancesState = localPrefs.getAllShipResonances(currentUserId)

@@ -33,9 +33,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -384,9 +386,9 @@ fun NexusForgeModal(
   selectedShipId: Int,
   activeCustomSlot: CustomShipLoadoutSlot,
   slot9BUnlocked: Boolean,
-  slot9CUnlocked: Boolean,
-  slot9DUnlocked: Boolean,
-  slot9EUnlocked: Boolean,
+  @Suppress("UNUSED_PARAMETER") slot9CUnlocked: Boolean,
+  @Suppress("UNUSED_PARAMETER") slot9DUnlocked: Boolean,
+  @Suppress("UNUSED_PARAMETER") slot9EUnlocked: Boolean,
   unlockFullNinthShipOverride: Boolean,
   sfxEnabled: Boolean,
   musicEnabled: Boolean,
@@ -470,9 +472,6 @@ fun NexusForgeModal(
         selectedShipId = selectedShipId,
         activeCustomSlot = activeCustomSlot,
         slot9BUnlocked = slot9BUnlocked,
-        slot9CUnlocked = slot9CUnlocked,
-        slot9DUnlocked = slot9DUnlocked,
-        slot9EUnlocked = slot9EUnlocked,
         unlockFullNinthShipOverride = unlockFullNinthShipOverride,
         sfxEnabled = sfxEnabled,
         musicEnabled = musicEnabled,
@@ -608,6 +607,8 @@ fun NexusForgeModal(
       when (activeTab) {
         NexusForgeTab.SHIP_COSMETICS ->
           ShipAndCosmeticTurntableBay(
+            engine = engine,
+            liveResonance = engine.liveResonance,
             localPrefs = localPrefs,
             currentUserId = currentUserId,
             pilotLevel = pilotLevel,
@@ -615,9 +616,6 @@ fun NexusForgeModal(
             selectedShipId = selectedShipId,
             activeCustomSlot = activeCustomSlot,
             slot9BUnlocked = slot9BUnlocked,
-            slot9CUnlocked = slot9CUnlocked,
-            slot9DUnlocked = slot9DUnlocked,
-            slot9EUnlocked = slot9EUnlocked,
             unlockFullNinthShipOverride = unlockFullNinthShipOverride,
             isCompactPhone = isCompactPhone,
             onSelectShipForDeploy = onSelectShipForDeploy,
@@ -664,9 +662,6 @@ fun NexusForgeModal(
             selectedShipId = selectedShipId,
             activeCustomSlot = activeCustomSlot,
             slot9BUnlocked = slot9BUnlocked,
-            slot9CUnlocked = slot9CUnlocked,
-            slot9DUnlocked = slot9DUnlocked,
-            slot9EUnlocked = slot9EUnlocked,
             unlockFullNinthShipOverride = unlockFullNinthShipOverride,
             sfxEnabled = sfxEnabled,
             musicEnabled = musicEnabled,
@@ -710,6 +705,8 @@ fun NexusForgeModal(
 
 @Composable
 private fun ShipAndCosmeticTurntableBay(
+  engine: RiftGameEngine,
+  liveResonance: Int,
   localPrefs: LocalPilotPrefs,
   currentUserId: String,
   pilotLevel: Int,
@@ -717,9 +714,6 @@ private fun ShipAndCosmeticTurntableBay(
   selectedShipId: Int,
   activeCustomSlot: CustomShipLoadoutSlot,
   slot9BUnlocked: Boolean,
-  slot9CUnlocked: Boolean,
-  slot9DUnlocked: Boolean,
-  slot9EUnlocked: Boolean,
   unlockFullNinthShipOverride: Boolean,
   isCompactPhone: Boolean,
   onSelectShipForDeploy: (Int) -> Unit,
@@ -730,6 +724,7 @@ private fun ShipAndCosmeticTurntableBay(
   onSpendRiftShards: (Long) -> Boolean,
   onShowToast: (String) -> Unit,
 ) {
+  val uidOrNull = currentUserId.takeIf { it.isNotBlank() }
   var inspectedShipId by remember(selectedShipId) { mutableIntStateOf(selectedShipId.coerceIn(1, 10)) }
   var turntableAngleDeg by remember { mutableFloatStateOf(-90f) }
   var autoSpin by remember { mutableStateOf(true) }
@@ -749,17 +744,42 @@ private fun ShipAndCosmeticTurntableBay(
     )
 
   val spriteVer = RiftSpriteBaker.customShip9Version
-  val allShips = remember(activeCustomSlot, spriteVer) { RiftCodex.getAllNineShips() }
+  val allShips = remember(activeCustomSlot, spriteVer) { RiftCodex.getAllTenShips() }
   val currentSpec = allShips.firstOrNull { it.id == inspectedShipId } ?: allShips.first()
   val cleanShipName =
     if (currentSpec.id == 10) "RIFT FRAME"
     else currentSpec.name.replace(Regex("^[0-9]+-"), "").uppercase(Locale.US)
+
   val equippedTrimId =
-    remember(cosmeticRefreshTick, currentUserId) {
-      localPrefs.getEquippedCosmeticId("HULL_TRIM", currentUserId)
+    remember(cosmeticRefreshTick, currentUserId, pilotLevel) {
+      val raw = localPrefs.getEquippedCosmeticId("HULL_TRIM", uidOrNull).coerceIn(0, 5)
+      if (raw == 0 || localPrefs.isCosmeticUnlocked("HULL_TRIM", raw, pilotLevel, uidOrNull)) raw else 0
     }
-  val activeTrimStyleIndex = equippedTrimId.coerceIn(0, 3)
+  val activeTrimStyleIndex = equippedTrimId.coerceIn(0, 5)
   RiftSpriteBaker.activeHullTrimStyle = activeTrimStyleIndex
+
+  var previewTrimIndex by
+    remember(activeTrimStyleIndex) { mutableIntStateOf(activeTrimStyleIndex.coerceIn(0, 5)) }
+  val turntableTrimIndex = previewTrimIndex.coerceIn(0, 5)
+  val previewSkinItem =
+    remember(turntableTrimIndex) {
+      RiftProgressionCatalog.hullTrims.firstOrNull { it.id == turntableTrimIndex }
+        ?: RiftProgressionCatalog.hullTrims.first()
+    }
+
+  val normSlot = CustomShipLoadoutSlot.normalizeSlotId(activeCustomSlot.slotId)
+  val isFrameBPurchased =
+    remember(slot9BUnlocked, cosmeticRefreshTick, currentUserId) {
+      slot9BUnlocked ||
+        localPrefs.isCosmeticUnlocked("FRAME_SLOT_PURCHASE", 2, 1, uidOrNull) ||
+        localPrefs.isCustomSlotUnlocked("Frame B", uidOrNull)
+    }
+
+  LaunchedEffect(normSlot, liveResonance, isFrameBPurchased) {
+    if (!RiftProgressionCatalog.isFrameSlotActive(normSlot, liveResonance, isFrameBPurchased)) {
+      onSwitchCustomSlot("Frame A")
+    }
+  }
 
   Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
     Column(
@@ -778,14 +798,14 @@ private fun ShipAndCosmeticTurntableBay(
       ) {
         Column(modifier = Modifier.weight(1f)) {
           Text(
-            "360° HOLOGRAPHIC TURNTABLE",
+            "360-DEGREE HOLOGRAPHIC TURNTABLE",
             color = Color(0xFF00F5D4),
             fontSize = 9.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
           Text(
-            "$cleanShipName • ${currentSpec.role.uppercase(Locale.US)}",
+            "$cleanShipName | ${currentSpec.role.uppercase(Locale.US)}",
             color = Color.White,
             fontSize = if (isCompactPhone) 12.sp else 14.sp,
             fontWeight = FontWeight.Black,
@@ -793,13 +813,30 @@ private fun ShipAndCosmeticTurntableBay(
             overflow = TextOverflow.Ellipsis,
           )
         }
-        ForgeChip(
-          text = if (autoSpin) "[AUTO-SPIN]" else "[DRAG SPIN]",
-          bg = if (autoSpin) Color(0xFF0E4F5C) else Color(0xFF132238),
-          border = Color(0xFF00F5D4),
-          textColor = Color(0xFF00F5D4),
-          px = 7.dp,
-        ) { autoSpin = !autoSpin }
+        Box(
+          modifier =
+            Modifier.heightIn(min = 48.dp)
+              .clickable { autoSpin = !autoSpin }
+              .testTag("forge_btn_toggle_autospin"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Box(
+            modifier =
+              Modifier.clip(RoundedCornerShape(6.dp))
+                .background(if (autoSpin) Color(0xFF0E4F5C) else Color(0xFF132238))
+                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = if (autoSpin) "[AUTO-SPIN]" else "[DRAG SPIN]",
+              color = Color(0xFF00F5D4),
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+        }
       }
 
       val effectiveHeadingDeg = if (autoSpin) spinPhase else turntableAngleDeg
@@ -807,7 +844,7 @@ private fun ShipAndCosmeticTurntableBay(
         modifier =
           Modifier.fillMaxWidth()
             .weight(1f)
-            .padding(vertical = 6.dp)
+            .padding(vertical = 4.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(Color(0xFF040914))
             .border(1.dp, Color(0x5538BDF8), RoundedCornerShape(10.dp))
@@ -823,12 +860,16 @@ private fun ShipAndCosmeticTurntableBay(
       ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
           val cx = size.width * 0.5f
-          val cy = size.height * 0.52f
+          val cy = size.height * 0.50f
           val ringR = size.minDimension * 0.38f
           drawCircle(
             brush =
               Brush.radialGradient(
-                listOf(Color(0x3800F5D4), Color(0x1438BDF8), Color.Transparent),
+                listOf(
+                  Color(previewSkinItem.accentColorHex).copy(alpha = 0.24f),
+                  Color(0x1438BDF8),
+                  Color.Transparent,
+                ),
                 center = Offset(cx, cy),
                 radius = ringR * 1.35f,
               ),
@@ -836,7 +877,12 @@ private fun ShipAndCosmeticTurntableBay(
             center = Offset(cx, cy),
           )
           drawCircle(Color(0x4438BDF8), ringR, Offset(cx, cy), style = Stroke(1.5.dp.toPx()))
-          drawCircle(Color(0x8800F5D4), ringR * 0.72f, Offset(cx, cy), style = Stroke(1.dp.toPx()))
+          drawCircle(
+            Color(previewSkinItem.accentColorHex).copy(alpha = 0.65f),
+            ringR * 0.72f,
+            Offset(cx, cy),
+            style = Stroke(1.dp.toPx()),
+          )
           for (tick in 0 until 24) {
             val a = (tick * 15f + effectiveHeadingDeg * 0.25f) * (PI.toFloat() / 180f)
             val r0 = if (tick % 3 == 0) ringR * 0.88f else ringR * 0.94f
@@ -852,26 +898,35 @@ private fun ShipAndCosmeticTurntableBay(
             nc.save()
             nc.translate(cx, cy)
             nc.rotate(effectiveHeadingDeg)
-            val shipRadius = (size.minDimension * 0.27f).coerceIn(28f, 78f)
-            if (currentSpec.id == 10) {
-              val bmp = RiftSpriteBaker.customShip9AlliedBitmap
-              nc.drawBitmap(bmp, null, android.graphics.RectF(-shipRadius, -shipRadius, shipRadius, shipRadius), null)
-            } else {
-              RiftSpriteBaker.drawMetallicShipOnCanvas(
-                nc,
-                0f,
-                0f,
-                shipRadius,
-                currentSpec,
+            val shipRadius = (size.minDimension * 0.28f).coerceIn(28f, 82f)
+            val shipBmp =
+              RiftSpriteBaker.getShipSprite(
+                shipId = currentSpec.id.coerceIn(1, 10),
                 isAllied = true,
-                hullTrimStyle = activeTrimStyleIndex,
+                isHitFlashing = false,
+                trimStyleOverride = turntableTrimIndex,
               )
-            }
+            nc.drawBitmap(
+              shipBmp,
+              null,
+              android.graphics.RectF(-shipRadius, -shipRadius, shipRadius, shipRadius),
+              null,
+            )
             nc.restore()
           }
         }
         Text(
-          "DRAG HORIZONTALLY TO ROTATE 360°",
+          "SKIN #${turntableTrimIndex}: ${previewSkinItem.name.uppercase(Locale.US)}",
+          color = Color(previewSkinItem.accentColorHex),
+          fontSize = 8.2.sp,
+          fontWeight = FontWeight.Bold,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp, start = 8.dp, end = 8.dp),
+        )
+        Text(
+          "DRAG HORIZONTALLY TO ROTATE 360 DEGREES",
           color = Color(0xFF64748B),
           fontSize = 8.sp,
           fontFamily = FontFamily.Monospace,
@@ -879,23 +934,96 @@ private fun ShipAndCosmeticTurntableBay(
         )
       }
 
-      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+          modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          RiftProgressionCatalog.hullTrims.forEach { skin ->
+            val skinIdx = skin.id.coerceIn(0, 5)
+            val isPreviewed = turntableTrimIndex == skinIdx
+            val isOwned =
+              skinIdx == 0 || localPrefs.isCosmeticUnlocked("HULL_TRIM", skinIdx, pilotLevel, uidOrNull)
+            Box(
+              modifier =
+                Modifier.heightIn(min = 48.dp)
+                  .widthIn(min = 48.dp)
+                  .clickable { previewTrimIndex = skinIdx }
+                  .testTag("forge_skin_preview_chip_$skinIdx"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Row(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(6.dp))
+                    .background(if (isPreviewed) Color(0xFF102A45) else Color(0xFF0A1426))
+                    .border(
+                      1.dp,
+                      if (isPreviewed) Color(skin.accentColorHex) else Color(0xFF334155),
+                      RoundedCornerShape(6.dp),
+                    )
+                    .padding(horizontal = 7.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                Box(
+                  modifier =
+                    Modifier.size(8.dp)
+                      .clip(CircleShape)
+                      .background(Color(skin.accentColorHex))
+                )
+                Text(
+                  text = if (isOwned) "SKIN $skinIdx" else "SKIN $skinIdx (${skin.shardCost})",
+                  color = if (isPreviewed) Color.White else Color(0xFFCBD5E1),
+                  fontSize = 7.8.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                )
+              }
+            }
+          }
+        }
         Row(
           modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(5.dp),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
           allShips.forEach { ship ->
             val shortLbl =
-              if (ship.id == 10) "10 FRAME"
-              else "${ship.id} ${ship.name.replace(Regex("^[0-9]+-"), "").take(6).uppercase(Locale.US)}"
+              if (ship.id == 10) "RIFT FRAME"
+              else ship.name.replace(Regex("^[0-9]+-"), "").take(8).uppercase(Locale.US)
             val sel = ship.id == inspectedShipId
-            ForgeChip(
-              text = shortLbl,
-              bg = if (sel) Color(0xFF0E3A5D) else Color(0xFF0A1426),
-              border = if (sel) Color(0xFF00F5D4) else Color(0xFF334155),
-              textColor = if (sel) Color.White else Color(0xFF94A3B8),
-              px = 7.dp,
-            ) { inspectedShipId = ship.id }
+            Box(
+              modifier =
+                Modifier.heightIn(min = 48.dp)
+                  .widthIn(min = 48.dp)
+                  .clickable { inspectedShipId = ship.id }
+                  .testTag("forge_ship_chip_${ship.id}"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(6.dp))
+                    .background(if (sel) Color(0xFF0E3A5D) else Color(0xFF0A1426))
+                    .border(
+                      1.dp,
+                      if (sel) Color(0xFF00F5D4) else Color(0xFF334155),
+                      RoundedCornerShape(6.dp),
+                    )
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = shortLbl,
+                  color = if (sel) Color.White else Color(0xFF94A3B8),
+                  fontSize = 8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                )
+              }
+            }
           }
         }
         Button(
@@ -906,12 +1034,12 @@ private fun ShipAndCosmeticTurntableBay(
             ),
           border = BorderStroke(1.dp, Color(0xFF00F5D4)),
           shape = RoundedCornerShape(8.dp),
-          modifier = Modifier.fillMaxWidth().height(34.dp).testTag("forge_btn_equip_ship"),
+          modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("forge_btn_equip_ship"),
         ) {
           Text(
             text =
-              if (inspectedShipId == selectedShipId) "[$cleanShipName STAGED FOR DEPLOY]"
-              else "[STAGE $cleanShipName FOR DEPLOY]",
+              if (inspectedShipId == selectedShipId) "[$cleanShipName CHARGED FOR DEPLOY]"
+              else "[CHARGE $cleanShipName FOR DEPLOY]",
             color = Color.White,
             fontSize = 10.sp,
             fontWeight = FontWeight.Black,
@@ -939,8 +1067,11 @@ private fun ShipAndCosmeticTurntableBay(
             .padding(9.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
-        val normSlot = CustomShipLoadoutSlot.normalizeSlotId(activeCustomSlot.slotId)
-        val budget = RiftProgressionCatalog.getRiftFramePointBudget(pilotLevel.coerceAtLeast(20), unlockFullNinthShipOverride || true)
+        val budget =
+          RiftProgressionCatalog.getRiftFramePointBudget(
+            pilotLevel.coerceAtLeast(20),
+            unlockFullNinthShipOverride || true,
+          )
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -964,34 +1095,83 @@ private fun ShipAndCosmeticTurntableBay(
         Row(
           modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(5.dp),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          val frames =
-            listOf(
-              "Frame A" to true,
-              "Frame B" to slot9BUnlocked,
-              "Frame C" to slot9CUnlocked,
-              "Frame D" to slot9DUnlocked,
-              "Frame E" to slot9EUnlocked,
-            )
-          frames.forEach { (slotName, unlocked) ->
+          CustomShipLoadoutSlot.ALL_SLOT_IDS.forEach { slotName ->
             val isAct = normSlot.equals(slotName, ignoreCase = true)
             val gate = RiftProgressionCatalog.getFrameSlotGate(slotName)
-            val lockedLabel =
-              if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) {
-                "[UNLOCK ${slotName.uppercase(Locale.US)} • 0]"
-              } else {
-                "[UNLOCK ${slotName.uppercase(Locale.US)} • ${gate.shardCost} SHARDS]"
-              }
-            ForgeChip(
-              text = if (unlocked) slotName.uppercase(Locale.US) else lockedLabel,
-              bg = if (isAct) Color(0xFF4C1D95) else Color(0xFF0B1324),
-              border = if (isAct) Color(0xFFEC4899) else Color(0xFF475569),
-              textColor = if (isAct) Color.White else Color(0xFFCBD5E1),
+            val isSlotActive =
+              RiftProgressionCatalog.isFrameSlotActive(slotName, liveResonance, isFrameBPurchased)
+            val isFrameB = slotName.equals("Frame B", ignoreCase = true)
+            Box(
+              modifier =
+                Modifier.heightIn(min = 48.dp)
+                  .widthIn(min = 48.dp)
+                  .clickable {
+                    inspectedShipId = 10
+                    when {
+                      isSlotActive -> onSwitchCustomSlot(slotName)
+                      isFrameB -> {
+                        if (onUnlockCustomSlot("Frame B")) {
+                          cosmeticRefreshTick++
+                          onShowToast("Unlocked Frame B")
+                        } else {
+                          onShowToast("Requires ${gate.shardCost} Rift Shards")
+                        }
+                      }
+                      else -> onShowToast("Active at ${gate.freeAtResonance} Live Resonance")
+                    }
+                  }
+                  .testTag("forge_frame_slot_${slotName.replace(" ", "_").lowercase(Locale.US)}"),
+              contentAlignment = Alignment.Center,
             ) {
-              inspectedShipId = 10
-              if (unlocked) onSwitchCustomSlot(slotName)
-              else if (!onUnlockCustomSlot(slotName)) {
-                onShowToast("Requires ${gate.shardCost} Rift Shards")
+              Row(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(6.dp))
+                    .background(
+                      when {
+                        isAct -> Color(0xFF4C1D95)
+                        isSlotActive -> Color(0xFF0B1324)
+                        isFrameB -> Color(0xFF281247)
+                        else -> Color(0xFF091220)
+                      }
+                    )
+                    .border(
+                      1.dp,
+                      when {
+                        isAct -> Color(0xFFEC4899)
+                        isSlotActive -> Color(0xFF475569)
+                        isFrameB -> Color(0xFFA855F7)
+                        else -> Color(0xFF334155)
+                      },
+                      RoundedCornerShape(6.dp),
+                    )
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                if (!isSlotActive && !isFrameB) {
+                  ResonanceCrestIcon(sizeDp = 12.dp)
+                }
+                Text(
+                  text =
+                    when {
+                      isSlotActive -> slotName.uppercase(Locale.US)
+                      isFrameB -> "[UNLOCK FRAME B | ${gate.shardCost} SHARDS]"
+                      else -> "${slotName.uppercase(Locale.US)} | ${gate.freeAtResonance} LIVE RESONANCE"
+                    },
+                  color =
+                    when {
+                      isAct -> Color.White
+                      isSlotActive -> Color(0xFFCBD5E1)
+                      isFrameB -> Color(0xFFE9D5FF)
+                      else -> Color(0xFFFDE68A)
+                    },
+                  fontSize = 8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                )
               }
             }
           }
@@ -1042,9 +1222,7 @@ private fun ShipAndCosmeticTurntableBay(
           val isFirstFree = activeCustomSlot.aiGenerationsCount == 0 || RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE
           Box(
             modifier =
-              Modifier.clip(RoundedCornerShape(7.dp))
-                .background(Brush.horizontalGradient(listOf(Color(0xFF6D28D9), Color(0xFFBE185D))))
-                .border(1.dp, Color(0xFFEC4899), RoundedCornerShape(7.dp))
+              Modifier.heightIn(min = 48.dp)
                 .clickable {
                   inspectedShipId = 10
                   val (ok, msg) =
@@ -1055,16 +1233,25 @@ private fun ShipAndCosmeticTurntableBay(
                   hullStatusBanner = msg
                   if (ok) onSaveCustomSlot(RiftCodex.activeCustomShipSlot)
                 }
-                .padding(horizontal = 10.dp, vertical = 6.dp)
                 .testTag("forge_btn_synthesize_hull"),
+            contentAlignment = Alignment.Center,
           ) {
-            Text(
-              if (isFirstFree) "[FORGE HULL • FREE]" else "[FORGE • 150 SHARDS]",
-              color = Color.White,
-              fontSize = 8.5.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
+            Box(
+              modifier =
+                Modifier.clip(RoundedCornerShape(7.dp))
+                  .background(Brush.horizontalGradient(listOf(Color(0xFF6D28D9), Color(0xFFBE185D))))
+                  .border(1.dp, Color(0xFFEC4899), RoundedCornerShape(7.dp))
+                  .padding(horizontal = 10.dp, vertical = 6.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                if (isFirstFree) "[FORGE HULL | FREE]" else "[FORGE | 150 SHARDS]",
+                color = Color.White,
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
           }
         }
         if (!hullStatusBanner.isNullOrBlank()) {
@@ -1090,22 +1277,48 @@ private fun ShipAndCosmeticTurntableBay(
         Row(
           modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(5.dp),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
           listOf(
-            "HULL_TRIM" to "HULL TRIMS",
+            "HULL_TRIM" to "SHIP SKINS",
             "KILL_FINISHER" to "KILL FINISHERS",
             "WARP_SIGNATURE" to "WARP TRAILS",
-            "HVT_HALO" to "LEADER HALOS",
+            "HVT_HALO" to "RESONANCE HALOS",
           ).forEach { (cat, title) ->
             val sel = cosmeticCategory == cat
-            ForgeChip(
-              title,
-              if (sel) Color(0xFF0E4F5C) else Color(0xFF07101E),
-              if (sel) Color(0xFF00F5D4) else Color(0xFF334155),
-              if (sel) Color.White else Color(0xFF94A3B8),
-            ) { cosmeticCategory = cat }
+            Box(
+              modifier =
+                Modifier.heightIn(min = 48.dp)
+                  .widthIn(min = 48.dp)
+                  .clickable { cosmeticCategory = cat }
+                  .testTag("forge_cosmetic_cat_${cat.lowercase(Locale.US)}"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.clip(RoundedCornerShape(6.dp))
+                    .background(if (sel) Color(0xFF0E4F5C) else Color(0xFF07101E))
+                    .border(
+                      1.dp,
+                      if (sel) Color(0xFF00F5D4) else Color(0xFF334155),
+                      RoundedCornerShape(6.dp),
+                    )
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = title,
+                  color = if (sel) Color.White else Color(0xFF94A3B8),
+                  fontSize = 8.2.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                )
+              }
+            }
           }
         }
+        val isRankedCategory = RiftProgressionCatalog.isRankedCosmeticCategory(cosmeticCategory)
         val items: List<CosmeticCatalogItem> =
           remember(cosmeticCategory) {
             when (cosmeticCategory) {
@@ -1117,24 +1330,49 @@ private fun ShipAndCosmeticTurntableBay(
             }
           }
         val equippedForCat =
-          remember(cosmeticCategory, cosmeticRefreshTick, currentUserId) {
-            localPrefs.getEquippedCosmeticId(cosmeticCategory, currentUserId)
+          remember(cosmeticCategory, cosmeticRefreshTick, currentUserId, liveResonance, pilotLevel) {
+            val storedId = localPrefs.getEquippedCosmeticId(cosmeticCategory, uidOrNull)
+            if (isRankedCategory) {
+              val storedItem = items.firstOrNull { it.id == storedId }
+              if (storedItem != null && RiftProgressionCatalog.isRankedCosmeticActive(storedItem, liveResonance)) {
+                storedId
+              } else {
+                0
+              }
+            } else {
+              val clamped = storedId.coerceIn(0, 5)
+              if (clamped == 0 || localPrefs.isCosmeticUnlocked("HULL_TRIM", clamped, pilotLevel, uidOrNull)) {
+                clamped
+              } else {
+                0
+              }
+            }
           }
         for (item in items) {
-          val unlockedByLvl = pilotLevel >= item.freeAtLevel || item.shardCost <= 0L
-          val unlockedSaved =
-            remember(cosmeticCategory, item.id, cosmeticRefreshTick, pilotLevel, currentUserId) {
-              localPrefs.isCosmeticUnlocked(cosmeticCategory, item.id, pilotLevel, currentUserId)
+          val isUnlocked =
+            if (isRankedCategory) {
+              RiftProgressionCatalog.isRankedCosmeticActive(item, liveResonance)
+            } else {
+              item.id == 0 ||
+                remember(item.id, cosmeticRefreshTick, pilotLevel, currentUserId) {
+                  localPrefs.isCosmeticUnlocked("HULL_TRIM", item.id, pilotLevel, uidOrNull)
+                }
             }
-          val isUnlocked = unlockedByLvl || unlockedSaved
           val isEquipped = equippedForCat == item.id
           Row(
             modifier =
               Modifier.fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .clip(RoundedCornerShape(7.dp))
                 .background(if (isEquipped) Color(0xFF0D283A) else Color(0xFF060E1B))
                 .border(1.dp, if (isEquipped) Color(0xFF00F5D4) else Color(0xFF1E293B), RoundedCornerShape(7.dp))
-                .padding(horizontal = 9.dp, vertical = 6.dp),
+                .clickable {
+                  if (!isRankedCategory) {
+                    previewTrimIndex = item.id.coerceIn(0, 5)
+                  }
+                }
+                .padding(horizontal = 9.dp, vertical = 6.dp)
+                .testTag("forge_cosmetic_row_${cosmeticCategory.lowercase(Locale.US)}_${item.id}"),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
           ) {
@@ -1143,13 +1381,36 @@ private fun ShipAndCosmeticTurntableBay(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-              Box(
-                modifier =
-                  Modifier.size(16.dp)
-                    .clip(CircleShape)
-                    .background(Color(item.accentColorHex))
-                    .border(1.dp, Color.White.copy(alpha = 0.7f), CircleShape)
-              )
+              if (!isRankedCategory) {
+                val skinThumb =
+                  remember(inspectedShipId, item.id, spriteVer) {
+                    RiftSpriteBaker.getShipSprite(
+                        shipId = inspectedShipId.coerceIn(1, 10),
+                        isAllied = true,
+                        isHitFlashing = false,
+                        trimStyleOverride = item.id.coerceIn(0, 5),
+                      )
+                      .asImageBitmap()
+                  }
+                Image(
+                  bitmap = skinThumb,
+                  contentDescription = item.name,
+                  modifier =
+                    Modifier.size(28.dp)
+                      .clip(RoundedCornerShape(6.dp))
+                      .background(Color(0xFF040914))
+                      .border(1.dp, Color(item.accentColorHex).copy(alpha = 0.75f), RoundedCornerShape(6.dp))
+                      .padding(2.dp),
+                )
+              } else {
+                Box(
+                  modifier =
+                    Modifier.size(16.dp)
+                      .clip(CircleShape)
+                      .background(Color(item.accentColorHex))
+                      .border(1.dp, Color.White.copy(alpha = 0.7f), CircleShape)
+                )
+              }
               Column {
                 Text(item.name, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Text(
@@ -1159,49 +1420,161 @@ private fun ShipAndCosmeticTurntableBay(
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
                 )
+                if (isRankedCategory && !isUnlocked) {
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                  ) {
+                    ResonanceCrestIcon(sizeDp = 11.dp)
+                    Text(
+                      text = "Active at ${item.freeAtResonance} Live Resonance",
+                      color = Color(0xFFFACC15),
+                      fontSize = 8.sp,
+                      fontWeight = FontWeight.SemiBold,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                    )
+                  }
+                }
               }
             }
-            val unlockBtnLabel =
-              when {
-                isEquipped -> "[EQUIPPED]"
-                isUnlocked -> "[EQUIP]"
-                RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE -> "[UNLOCK • 0]"
-                else -> "[UNLOCK ${item.shardCost} SHARDS]"
-              }
-            ForgeChip(
-              text = unlockBtnLabel,
-              bg = when {
-                isEquipped -> Color(0xFF065F46)
-                isUnlocked -> Color(0xFF0E7490)
-                else -> Color(0xFF3B1366)
-              },
-              border = when {
-                isEquipped -> Color(0xFF34D399)
-                isUnlocked -> Color(0xFF00F5D4)
-                else -> Color(0xFFA855F7)
-              },
-              fontSize = 8.sp,
-            ) {
-              if (isEquipped) {
-                if (item.id != 0) {
-                  localPrefs.setEquippedCosmeticId(cosmeticCategory, 0, currentUserId)
-                  cosmeticRefreshTick++
-                }
-              } else if (isUnlocked) {
-                localPrefs.setCosmeticUnlocked(cosmeticCategory, item.id, true, currentUserId)
-                localPrefs.setEquippedCosmeticId(cosmeticCategory, item.id, currentUserId)
-                cosmeticRefreshTick++
-                onShowToast("Equipped ${item.name}")
-              } else if (
-                RiftBillingManager.canAffordShardSpend(riftShards, item.shardCost) &&
-                  onSpendRiftShards(item.shardCost)
+            if (isRankedCategory && !isUnlocked) {
+              Box(
+                modifier =
+                  Modifier.heightIn(min = 48.dp)
+                    .clickable {
+                      onShowToast("Active at ${item.freeAtResonance} Live Resonance")
+                    }
+                    .testTag("forge_ranked_locked_${cosmeticCategory.lowercase(Locale.US)}_${item.id}"),
+                contentAlignment = Alignment.Center,
               ) {
-                localPrefs.setCosmeticUnlocked(cosmeticCategory, item.id, true, currentUserId)
-                localPrefs.setEquippedCosmeticId(cosmeticCategory, item.id, currentUserId)
-                cosmeticRefreshTick++
-                onShowToast("Unlocked & Equipped ${item.name}")
-              } else {
-                onShowToast("Requires ${item.shardCost} Rift Shards")
+                Row(
+                  modifier =
+                    Modifier.clip(RoundedCornerShape(6.dp))
+                      .background(Color(0xFF17130A))
+                      .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(6.dp))
+                      .padding(horizontal = 8.dp, vertical = 4.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                  ResonanceCrestIcon(sizeDp = 12.dp)
+                  Text(
+                    text = "Active at ${item.freeAtResonance} Live Resonance",
+                    color = Color(0xFFFDE68A),
+                    fontSize = 7.8.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                  )
+                }
+              }
+            } else {
+              val actionBtnLabel =
+                when {
+                  isEquipped -> "[EQUIPPED]"
+                  isUnlocked -> "[EQUIP]"
+                  else -> "[UNLOCK ${item.shardCost} SHARDS]"
+                }
+              Box(
+                modifier =
+                  Modifier.heightIn(min = 48.dp)
+                    .widthIn(min = 48.dp)
+                    .clickable {
+                      if (isRankedCategory) {
+                        if (!RiftProgressionCatalog.isRankedCosmeticActive(item, liveResonance)) {
+                          onShowToast("Active at ${item.freeAtResonance} Live Resonance")
+                        } else if (isEquipped) {
+                          if (item.id != 0) {
+                            localPrefs.setEquippedCosmeticId(cosmeticCategory, 0, uidOrNull)
+                            when (cosmeticCategory) {
+                              "KILL_FINISHER" -> engine.localPlayer.equippedKillFinisher = 0
+                              "WARP_SIGNATURE" -> engine.localPlayer.equippedWarpStyle = 0
+                              "HVT_HALO" -> engine.localPlayer.equippedHvtHaloStyle = 0
+                            }
+                            localPrefs.exportCloudProgressionJson(currentUserId)
+                            cosmeticRefreshTick++
+                          }
+                        } else {
+                          localPrefs.setEquippedCosmeticId(cosmeticCategory, item.id, uidOrNull)
+                          when (cosmeticCategory) {
+                            "KILL_FINISHER" -> engine.localPlayer.equippedKillFinisher = item.id
+                            "WARP_SIGNATURE" -> engine.localPlayer.equippedWarpStyle = item.id
+                            "HVT_HALO" -> engine.localPlayer.equippedHvtHaloStyle = item.id
+                          }
+                          localPrefs.exportCloudProgressionJson(currentUserId)
+                          cosmeticRefreshTick++
+                          onShowToast("Equipped ${item.name}")
+                        }
+                      } else {
+                        val clampedSkinId = item.id.coerceIn(0, 5)
+                        previewTrimIndex = clampedSkinId
+                        if (isEquipped) {
+                          if (clampedSkinId != 0) {
+                            localPrefs.setEquippedCosmeticId("HULL_TRIM", 0, uidOrNull)
+                            previewTrimIndex = 0
+                            RiftSpriteBaker.activeHullTrimStyle = 0
+                            RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
+                            localPrefs.exportCloudProgressionJson(currentUserId)
+                            cosmeticRefreshTick++
+                          }
+                        } else if (isUnlocked) {
+                          localPrefs.setEquippedCosmeticId("HULL_TRIM", clampedSkinId, uidOrNull)
+                          RiftSpriteBaker.activeHullTrimStyle = clampedSkinId
+                          RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
+                          localPrefs.exportCloudProgressionJson(currentUserId)
+                          cosmeticRefreshTick++
+                          onShowToast("Equipped ${item.name}")
+                        } else if (
+                          item.shardCost > 0L &&
+                            RiftBillingManager.canAffordShardSpend(riftShards, item.shardCost) &&
+                            onSpendRiftShards(item.shardCost)
+                        ) {
+                          localPrefs.setCosmeticUnlocked("HULL_TRIM", clampedSkinId, true, uidOrNull)
+                          localPrefs.setCosmeticUnlocked("SHIP_SKIN_PURCHASE", clampedSkinId, true, uidOrNull)
+                          localPrefs.setEquippedCosmeticId("HULL_TRIM", clampedSkinId, uidOrNull)
+                          RiftSpriteBaker.activeHullTrimStyle = clampedSkinId
+                          RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
+                          localPrefs.exportCloudProgressionJson(currentUserId)
+                          cosmeticRefreshTick++
+                          onShowToast("Unlocked and equipped ${item.name}")
+                        } else {
+                          onShowToast("Requires ${item.shardCost} Rift Shards")
+                        }
+                      }
+                    }
+                    .testTag("forge_cosmetic_action_${cosmeticCategory.lowercase(Locale.US)}_${item.id}"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Box(
+                  modifier =
+                    Modifier.clip(RoundedCornerShape(6.dp))
+                      .background(
+                        when {
+                          isEquipped -> Color(0xFF065F46)
+                          isUnlocked -> Color(0xFF0E7490)
+                          else -> Color(0xFF3B1366)
+                        }
+                      )
+                      .border(
+                        1.dp,
+                        when {
+                          isEquipped -> Color(0xFF34D399)
+                          isUnlocked -> Color(0xFF00F5D4)
+                          else -> Color(0xFFA855F7)
+                        },
+                        RoundedCornerShape(6.dp),
+                      )
+                      .padding(horizontal = 8.dp, vertical = 4.dp),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Text(
+                    text = actionBtnLabel,
+                    color = Color.White,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                  )
+                }
               }
             }
           }
@@ -1261,7 +1634,7 @@ private fun SoundtrackAndSfxForgeBay(
             fontFamily = FontFamily.Monospace,
           )
           Text(
-            sfx.currentMusicRecipe.customPromptSummary.replace("\u26A1", "Flux"),
+            sfx.currentMusicRecipe.customPromptSummary.replace(Char(0x26A1).toString(), "Flux"),
             color = Color(0xFF7DD3FC),
             fontSize = 8.8.sp,
             fontFamily = FontFamily.Monospace,
@@ -1397,7 +1770,7 @@ private fun SoundtrackAndSfxForgeBay(
         MusicSynthArchetype.entries.forEach { arch ->
           val sel = sfx.currentMusicRecipe.archetype == arch
           ForgeChip(
-            text = "${arch.label.replace("\u26A1", "")} (${arch.defaultBpm})",
+            text = "${arch.label.replace(Char(0x26A1).toString(), "")} (${arch.defaultBpm})",
             bg = if (sel) Color(0xFF0E4F5C) else Color(0xFF0A1426),
             border = if (sel) Color(0xFF00F5D4) else Color(0xFF334155),
             textColor = if (sel) Color(0xFF00F5D4) else Color(0xFFE2E8F0),
@@ -1464,7 +1837,7 @@ private fun SoundtrackAndSfxForgeBay(
             fontFamily = FontFamily.Monospace,
           )
           Text(
-            sfxRecipeState.promptUsed.replace("\u26A1", "Flux"),
+            sfxRecipeState.promptUsed.replace(Char(0x26A1).toString(), "Flux"),
             color = Color(0xFF94A3B8),
             fontSize = 8.5.sp,
             fontFamily = FontFamily.Monospace,
@@ -2088,9 +2461,6 @@ private fun DevPlayfieldAndHudStudioBay(
   selectedShipId: Int,
   activeCustomSlot: CustomShipLoadoutSlot,
   slot9BUnlocked: Boolean,
-  slot9CUnlocked: Boolean,
-  slot9DUnlocked: Boolean,
-  slot9EUnlocked: Boolean,
   unlockFullNinthShipOverride: Boolean,
   sfxEnabled: Boolean,
   musicEnabled: Boolean,
@@ -3375,6 +3745,8 @@ private fun DevPlayfieldAndHudStudioBay(
             when (activeStarForgeTab) {
               StarForgeCreationTab.SHIPS_RIFT_FRAME ->
                 ShipAndCosmeticTurntableBay(
+                  engine = engine,
+                  liveResonance = engine.liveResonance,
                   localPrefs = localPrefs,
                   currentUserId = currentUserId,
                   pilotLevel = pilotLevel,
@@ -3382,9 +3754,6 @@ private fun DevPlayfieldAndHudStudioBay(
                   selectedShipId = selectedShipId,
                   activeCustomSlot = activeCustomSlot,
                   slot9BUnlocked = slot9BUnlocked,
-                  slot9CUnlocked = slot9CUnlocked,
-                  slot9DUnlocked = slot9DUnlocked,
-                  slot9EUnlocked = slot9EUnlocked,
                   unlockFullNinthShipOverride = unlockFullNinthShipOverride,
                   isCompactPhone = isCompactPhone,
                   onSelectShipForDeploy = onSelectShipForDeploy,
