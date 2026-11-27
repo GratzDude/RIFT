@@ -4083,6 +4083,76 @@ class RiftGameEngine(
     }
   }
 
+  private data class DecodedRemoteCosmetics(
+    val baseSecondaryType: String,
+    val hullSkin: Int,
+    val killFinisher: Int,
+    val warpStyle: Int,
+    val hvtHaloStyle: Int,
+  )
+
+  private fun decodeRemoteCosmetics(
+    rawSecondaryType: String,
+    remoteLiveRes: Int,
+  ): DecodedRemoteCosmetics {
+    val cleanRes = remoteLiveRes.coerceAtLeast(0)
+    val upper = rawSecondaryType.trim().uppercase()
+    val markerIdx = upper.lastIndexOf("__C")
+    val baseSecondary =
+      (if (markerIdx >= 0) upper.substring(0, markerIdx) else upper).ifEmpty { "NONE" }
+    if (markerIdx < 0) {
+      return DecodedRemoteCosmetics(
+        baseSecondaryType = baseSecondary,
+        hullSkin = 0,
+        killFinisher = 0,
+        warpStyle = 0,
+        hvtHaloStyle = 0,
+      )
+    }
+    val suffix = upper.substring(markerIdx + 3)
+    val d0 = suffix.getOrNull(0)?.digitToIntOrNull()
+    val d1 = suffix.getOrNull(1)?.digitToIntOrNull()
+    val d2 = suffix.getOrNull(2)?.digitToIntOrNull()
+    val d3 = suffix.getOrNull(3)?.digitToIntOrNull()
+
+    val skin = if (d0 != null && d0 in 0..5) d0 else 0
+
+    val finCandidate = if (d1 != null && d1 in 0..4) d1 else 0
+    val finItem = RiftProgressionCatalog.killFinishers.firstOrNull { it.id == finCandidate }
+    val fin =
+      if (finItem != null && RiftProgressionCatalog.isRankedCosmeticActive(finItem, cleanRes)) {
+        finCandidate
+      } else {
+        0
+      }
+
+    val warpCandidate = if (d2 != null && d2 in 0..3) d2 else 0
+    val warpItem = RiftProgressionCatalog.warpSignatures.firstOrNull { it.id == warpCandidate }
+    val warp =
+      if (warpItem != null && RiftProgressionCatalog.isRankedCosmeticActive(warpItem, cleanRes)) {
+        warpCandidate
+      } else {
+        0
+      }
+
+    val haloCandidate = if (d3 != null && d3 in 0..3) d3 else 0
+    val haloItem = RiftProgressionCatalog.hvtHalos.firstOrNull { it.id == haloCandidate }
+    val halo =
+      if (haloItem != null && RiftProgressionCatalog.isRankedCosmeticActive(haloItem, cleanRes)) {
+        haloCandidate
+      } else {
+        0
+      }
+
+    return DecodedRemoteCosmetics(
+      baseSecondaryType = baseSecondary,
+      hullSkin = skin,
+      killFinisher = fin,
+      warpStyle = warp,
+      hvtHaloStyle = halo,
+    )
+  }
+
   fun updateRemotePilots(states: List<LivePilotState>, currentUid: String) {
     val liveOnlineUids = mutableSetOf<String>()
     for (st in states) {
@@ -4119,6 +4189,8 @@ class RiftGameEngine(
       val remoteEntityId = "remote_$uid"
       val existing = remotePilots[uid]
       val spec = RiftCodex.getShipById(st.shipId.toInt())
+      val remoteLiveRes = st.liveResonance.toInt().coerceAtLeast(0)
+      val remoteCosmetics = decodeRemoteCosmetics(st.secondaryType, remoteLiveRes)
       val cleanRemoteSyn =
         st.syndicateTag.trim().uppercase().let { raw ->
           if (
@@ -4192,11 +4264,16 @@ class RiftGameEngine(
             flux = st.energy.toFloat(),
             maxFlux = st.maxEnergy.toFloat().coerceAtLeast(100f),
             bounty = st.bounty.toInt(),
-            liveResonanceRating = st.liveResonance.toInt().coerceAtLeast(0),
+            liveResonanceRating = remoteLiveRes,
+            equippedHullSkin = remoteCosmetics.hullSkin,
+            equippedKillFinisher = remoteCosmetics.killFinisher,
+            equippedWarpStyle = remoteCosmetics.warpStyle,
+            equippedHvtHaloStyle = remoteCosmetics.hvtHaloStyle,
             afterburning = st.isAfterburning,
             isCloaked = st.isCloaked,
             remoteFiringPrimary = st.isFiringPrimary,
             respawnTimer = if (st.isRespawning) 2.5f else 0f,
+            warpInAnimTimer = if (st.isRespawning) 0f else 0.65f,
             isInStasisBrig = st.isInStasisBrig,
             lastRemoteSecondarySeq = st.secondarySeq,
             netTargetX = targetX,
@@ -4243,7 +4320,11 @@ class RiftGameEngine(
         existing.independentAimActive = true
         existing.maxFlux = st.maxEnergy.toFloat().coerceAtLeast(100f)
         existing.bounty = st.bounty.toInt()
-        existing.liveResonanceRating = st.liveResonance.toInt().coerceAtLeast(0)
+        existing.liveResonanceRating = remoteLiveRes
+        existing.equippedHullSkin = remoteCosmetics.hullSkin
+        existing.equippedKillFinisher = remoteCosmetics.killFinisher
+        existing.equippedWarpStyle = remoteCosmetics.warpStyle
+        existing.equippedHvtHaloStyle = remoteCosmetics.hvtHaloStyle
         existing.afterburning = st.isAfterburning
         existing.isCloaked = st.isCloaked
         existing.remoteFiringPrimary = st.isFiringPrimary
@@ -4284,6 +4365,9 @@ class RiftGameEngine(
               (!isSkirmishRulesActive() || skirmishReadyCountdownSec > 0f || justFinishedRespawn)
           ) {
             existing.respawnTimer = 0f
+            existing.deathLingerTimer = 0f
+            existing.warpInAnimTimer = 0.65f
+          } else if (justFinishedRespawn) {
             existing.deathLingerTimer = 0f
             existing.warpInAnimTimer = 0.65f
           }

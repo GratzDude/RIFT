@@ -318,14 +318,14 @@ object RiftSpriteBaker {
   private val sharedCosmeticArcRect = RectF()
   private val sharedCosmeticPath = Path()
 
-  // Pre-allocated 2.5D Normal-Spec Relighting caches, 48-slot AGSL pool & API 24-32 fallback state
+  // Pre-allocated 2.5D Normal-Spec Relighting caches, 160-slot AGSL pool & API 24-32 fallback state
   private val shipRelightBundleCache = mutableMapOf<Int, RelightableSpriteBundle>()
   private val obstacleRelightBundleCache = mutableMapOf<Int, RelightableSpriteBundle>()
   private var stationRelightBundle: RelightableSpriteBundle? = null
   private var supplyPodRelightBundle: RelightableSpriteBundle? = null
   private val pbrRelightShaderPool: Array<Any?> =
     if (Build.VERSION.SDK_INT >= 33) {
-      Array(48) { runCatching { RuntimeShader(PBR_RELIGHT_AGSL) }.getOrNull() }
+      Array(160) { runCatching { RuntimeShader(PBR_RELIGHT_AGSL) }.getOrNull() }
     } else {
       emptyArray()
     }
@@ -645,7 +645,7 @@ object RiftSpriteBaker {
   }
 
   /**
-   * Resets the 48-slot `PBR_RELIGHT_AGSL` `RuntimeShader` pool cursor at the start of a render frame.
+   * Resets the 160-slot `PBR_RELIGHT_AGSL` `RuntimeShader` pool cursor at the start of a render frame.
    * When `forceReset` is false (e.g. inside multi-Canvas Compose screens), resets at most once every 6ms
    * so sibling Compose `Canvas` draw passes within the same VSync never overwrite active DisplayList uniforms.
    */

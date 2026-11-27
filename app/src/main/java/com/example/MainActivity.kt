@@ -1395,6 +1395,7 @@ fun RiftArenaScreen(
     val rawHullTrim = localPrefs.getEquippedCosmeticId("HULL_TRIM", currentUserId).coerceIn(0, 5)
     val hullTrim = if (isPaidSkinOwnedNow(rawHullTrim)) rawHullTrim else 0
 
+    targetEngine.localPlayer.equippedHullSkin = hullTrim
     targetEngine.localPlayer.equippedKillFinisher = killFin
     targetEngine.localPlayer.equippedWarpStyle = warpSig
     targetEngine.localPlayer.equippedHvtHaloStyle = hvtHalo
@@ -2035,7 +2036,14 @@ fun RiftArenaScreen(
 
   fun pushLivePilotHeartbeatNow() {
     if (!isGoogleAuthenticated || !isDeviceOnline) return
+    syncEquippedCosmeticsToEngine(engine)
     val suspended = suspendedActiveMatch
+    if (suspended != null) {
+      suspended.localPlayerSnapshot.equippedHullSkin = engine.localPlayer.equippedHullSkin
+      suspended.localPlayerSnapshot.equippedKillFinisher = engine.localPlayer.equippedKillFinisher
+      suspended.localPlayerSnapshot.equippedWarpStyle = engine.localPlayer.equippedWarpStyle
+      suspended.localPlayerSnapshot.equippedHvtHaloStyle = engine.localPlayer.equippedHvtHaloStyle
+    }
     val queueTargetSector =
       matchmakingQueueState.targetSectorKey.takeIf { matchmakingQueueState.isQueueActive }
     val p = suspended?.localPlayerSnapshot ?: engine.localPlayer
@@ -2053,6 +2061,18 @@ fun RiftArenaScreen(
       }
     viewModel.setActiveSector(broadcastSector)
     val cleanLiveSynTag = localPrefs.sanitizeSyndicateTag(p.syndicateTag)
+    val baseBomb =
+      p.spec.bombType
+        .trim()
+        .uppercase(Locale.US)
+        .replace(Regex("[^A-Z0-9_-]"), "")
+        .take(18)
+        .ifEmpty { "NONE" }
+    val skin = p.equippedHullSkin.coerceIn(0, 5)
+    val fin = p.equippedKillFinisher.coerceIn(0, 4)
+    val warp = p.equippedWarpStyle.coerceIn(0, 3)
+    val halo = p.equippedHvtHaloStyle.coerceIn(0, 3)
+    val encodedSecondaryType = "${baseBomb}__C${skin}${fin}${warp}${halo}"
     viewModel.syncNativeLiveState(
       sectorId = broadcastSector,
       callsign = safeCallsign,
@@ -2078,7 +2098,7 @@ fun RiftArenaScreen(
       isRespawning = activeLiveMatch && p.respawnTimer > 0f,
       isInStasisBrig = activeLiveMatch && p.isInStasisBrig,
       secondarySeq = engine.localSecondaryFireSeq,
-      secondaryType = p.spec.bombType,
+      secondaryType = encodedSecondaryType,
       secondaryAim = p.weaponAngle.coerceIn(-99f, 99f),
       flux = p.flux.coerceIn(0f, 10000f),
       maxFlux = p.maxFlux.coerceIn(100f, 10000f),

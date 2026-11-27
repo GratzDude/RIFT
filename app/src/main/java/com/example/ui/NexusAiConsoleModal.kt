@@ -3984,18 +3984,13 @@ private fun OrbitalHubSpatialStage(
     val openCornerAnchorDp = outerPadH + wingWidthDp + 4.dp
     val openCornerMaxWidthDp =
       ((safeW * 0.5f) - openCornerAnchorDp - overwatchStageDiameterDp * 0.08f).coerceIn(112.dp, 224.dp)
-    val topReadoutBottomYDp = 44.dp
-    val topReadoutDyVal = (safeH.value * 0.5f - topReadoutBottomYDp.value).coerceAtLeast(0f)
-    val overwatchOuterCollarRadiusVal = overwatchStageDiameterDp.value * 0.498f
-    val topReadoutDxVal =
-      kotlin.math.sqrt(
-        (overwatchOuterCollarRadiusVal * overwatchOuterCollarRadiusVal - topReadoutDyVal * topReadoutDyVal)
-          .coerceAtLeast(0f)
-      )
+    val overwatchRadiusDp = overwatchStageDiameterDp * 0.5f
+    val outerR = overwatchRadiusDp * 1.09f
+    val dy = (overwatchRadiusDp - 26.dp).coerceIn(0.dp, outerR * 0.96f)
+    val chordDx =
+      kotlin.math.sqrt((outerR.value * outerR.value - dy.value * dy.value).coerceAtLeast(0f)).dp
     val topLeftCornerMaxWidthDp =
-      ((safeW.value * 0.5f - topReadoutDxVal - 6f) - openCornerAnchorDp.value)
-        .dp
-        .coerceIn(158.dp, 260.dp)
+      (safeW * 0.5f - chordDx - openCornerAnchorDp - 8.dp).coerceIn(108.dp, 260.dp)
 
     var stageRootOrigin by remember { mutableStateOf(Offset.Zero) }
     var activeDraggedFrameItem by remember { mutableStateOf<DraggedRiftFrameItem?>(null) }
@@ -4103,8 +4098,15 @@ private fun OrbitalHubSpatialStage(
           onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
         },
         onExecuteInfoStageAction = { infoPrompt ->
+          val hasCosmeticPreview =
+            infoPrompt.previewHullSkinId != null ||
+              infoPrompt.previewFinisherId != null ||
+              infoPrompt.previewWarpStyleId != null ||
+              infoPrompt.previewHaloStyleId != null
           infoPrompt.onPrimaryAction?.invoke()
-          onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+          if (!hasCosmeticPreview) {
+            onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+          }
         },
         onSaveCallsignRename = { rawDraft ->
           val clean = rawDraft.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(14)
@@ -4554,6 +4556,9 @@ private fun OrbitalHubSpatialStage(
                 },
                 onInspectPaidSkin = { skin, isOwned, isEquipped ->
                   val skinStyleId = skin.id.coerceIn(0, 5)
+                  val skinNote =
+                    if (skin.shardCost <= 0L) "Standard factory equipment"
+                    else "Applies to all 10 ships"
                   onChangeOverwatchPrompt(
                     OverwatchCircularPrompt.InfoStageInspect(
                       kicker = "PAID SHIP SKIN",
@@ -4565,8 +4570,7 @@ private fun OrbitalHubSpatialStage(
                           else -> "${skin.shardCost} SHARDS"
                         },
                       summary = skin.summary,
-                      tacticalNote =
-                        "Permanent hull livery across your Hangar fleet. Finishers, Warp Trails, and Halos remain strictly Ranked Live Resonance rewards.",
+                      tacticalNote = skinNote,
                       accentHex = if (isOwned) 0xFF00F5D4L else 0xFFFACC15L,
                       shipId = hangarIndicatedShipId,
                       previewHullSkinId = skinStyleId,
@@ -4588,8 +4592,7 @@ private fun OrbitalHubSpatialStage(
                                 title = skin.name.uppercase(Locale.US),
                                 badge = "EQUIPPED",
                                 summary = skin.summary,
-                                tacticalNote =
-                                  "Permanent hull livery across your Hangar fleet. Finishers, Warp Trails, and Halos remain strictly Ranked Live Resonance rewards.",
+                                tacticalNote = skinNote,
                                 accentHex = 0xFF00F5D4L,
                                 shipId = hangarIndicatedShipId,
                                 previewHullSkinId = skinStyleId,
@@ -4891,6 +4894,12 @@ private fun OrbitalHubSpatialStage(
                   val previewFinisher = if (item.category == "KILL_FINISHER") item.id.coerceIn(0, 4) else null
                   val previewWarp = if (item.category == "WARP_SIGNATURE") item.id.coerceIn(0, 3) else null
                   val previewHalo = if (item.category == "HVT_HALO") item.id.coerceIn(0, 3) else null
+                  val rankedNote =
+                    if (item.freeAtResonance <= 0) "Standard factory equipment"
+                    else "Active at ${formatOverwatchResonance(item.freeAtResonance)}+ Live Resonance"
+                  val hullSkinNote =
+                    if (item.shardCost <= 0L) "Standard factory equipment"
+                    else "Applies to all 10 ships"
                   onChangeOverwatchPrompt(
                     if (isRankedReward) {
                       OverwatchCircularPrompt.InfoStageInspect(
@@ -4903,9 +4912,7 @@ private fun OrbitalHubSpatialStage(
                             else -> "${formatOverwatchResonance(item.freeAtResonance)} LIVE"
                           },
                         summary = item.summary,
-                        tacticalNote =
-                          if (item.freeAtResonance <= 0) "Standard Ranked equipment."
-                          else "Active while maintaining ${formatOverwatchResonance(item.freeAtResonance)} Live Resonance. Never sold for Shards.",
+                        tacticalNote = rankedNote,
                         accentHex = if (isUnlocked) 0xFF00F5D4L else 0xFFFFD700L,
                         shipId = hangarIndicatedShipId,
                         showResonanceCrest = true,
@@ -4923,9 +4930,7 @@ private fun OrbitalHubSpatialStage(
                                   title = item.name.uppercase(Locale.US),
                                   badge = "EQUIPPED",
                                   summary = item.summary,
-                                  tacticalNote =
-                                    if (item.freeAtResonance <= 0) "Standard Ranked equipment."
-                                    else "Active while maintaining ${formatOverwatchResonance(item.freeAtResonance)} Live Resonance. Never sold for Shards.",
+                                  tacticalNote = rankedNote,
                                   accentHex = 0xFF00F5D4L,
                                   shipId = hangarIndicatedShipId,
                                   showResonanceCrest = true,
@@ -4949,9 +4954,7 @@ private fun OrbitalHubSpatialStage(
                             else -> "${item.shardCost} SHARDS"
                           },
                         summary = item.summary,
-                        tacticalNote =
-                          if (item.shardCost <= 0L) "Standard anodized hull finish."
-                          else "Permanent Ship Skin unlock (${item.shardCost} Rift Shards).",
+                        tacticalNote = hullSkinNote,
                         accentHex = if (isUnlocked) 0xFF00F5D4L else 0xFFFFD700L,
                         shipId = hangarIndicatedShipId,
                         previewHullSkinId = previewSkin,
@@ -4973,9 +4976,7 @@ private fun OrbitalHubSpatialStage(
                                   title = item.name.uppercase(Locale.US),
                                   badge = "EQUIPPED",
                                   summary = item.summary,
-                                  tacticalNote =
-                                    if (item.shardCost <= 0L) "Standard anodized hull finish."
-                                    else "Permanent Ship Skin unlock (${item.shardCost} Rift Shards).",
+                                  tacticalNote = hullSkinNote,
                                   accentHex = 0xFF00F5D4L,
                                   shipId = hangarIndicatedShipId,
                                   previewHullSkinId = previewSkin,
@@ -5275,8 +5276,15 @@ private fun OrbitalHubSpatialStage(
               onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
             }
             is OverwatchCircularPrompt.InfoStageInspect -> {
+              val hasCosmeticPreview =
+                p.previewHullSkinId != null ||
+                  p.previewFinisherId != null ||
+                  p.previewWarpStyleId != null ||
+                  p.previewHaloStyleId != null
               p.onPrimaryAction?.invoke()
-              onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+              if (!hasCosmeticPreview) {
+                onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+              }
             }
             OverwatchCircularPrompt.ResonanceLeaderboard -> {
               onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
@@ -6529,7 +6537,7 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
   activeShipTitle: String,
   activeShipState: String,
   sideBayMode: RiftHubSideBayMode,
-  @Suppress("UNUSED_PARAMETER") overwatchPrompt: OverwatchCircularPrompt,
+  overwatchPrompt: OverwatchCircularPrompt,
   @Suppress("UNUSED_PARAMETER") chargedShipId: Int,
   @Suppress("UNUSED_PARAMETER") renameDraft: String,
   @Suppress("UNUSED_PARAMETER") density: androidx.compose.ui.unit.Density,
@@ -6542,169 +6550,177 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
   @Suppress("UNUSED_PARAMETER") onBottomLeftBackOrCancel: () -> Unit,
   @Suppress("UNUSED_PARAMETER") onBottomRightConfirmOrCharge: () -> Unit,
 ) {
-  val totalInstances = overwatchInstances.size.coerceAtLeast(1)
-  val currentIdx =
-    remember(overwatchInstances, activeInstance.key) {
-      overwatchInstances.indexOfFirst { it.key == activeInstance.key }.let { if (it < 0) 0 else it }
-    }
-  val countdownText = remember(liveRemainingSec) { formatOverwatchTimerMmSs(liveRemainingSec) }
-  val humanCount = activeInstance.pilotCount.coerceAtLeast(0)
-  val modeHeaderLine = activeInstance.modeTitle.uppercase(Locale.US)
-  val isInspectBayOpen = sideBayMode == RiftHubSideBayMode.OVERWATCH_INSPECT_BAY
+  val showTopLeftSectorSwitcher =
+    overwatchPrompt == OverwatchCircularPrompt.None &&
+      sideBayMode != RiftHubSideBayMode.RIFT_FRAME_BAY
 
-  // 1. TOP-LEFT OPEN SPACE: 2-Line Untruncated Sensor Readout at top chord + Compact Prev/Next Chevrons below
-  Column(
-    modifier =
-      Modifier.align(Alignment.TopStart)
-        .padding(start = openCornerAnchorDp, top = 3.dp)
-        .widthIn(max = topLeftCornerMaxWidthDp),
-    horizontalAlignment = Alignment.Start,
-    verticalArrangement = Arrangement.spacedBy(2.dp),
-  ) {
+  // 1. TOP-LEFT OPEN SPACE: 2-Line Sensor Readout at top chord + Compact Prev/Next Chevrons below
+  if (showTopLeftSectorSwitcher) {
+    val totalInstances = overwatchInstances.size.coerceAtLeast(1)
+    val currentIdx =
+      remember(overwatchInstances, activeInstance.key) {
+        overwatchInstances.indexOfFirst { it.key == activeInstance.key }.let { if (it < 0) 0 else it }
+      }
+    val countdownText = remember(liveRemainingSec) { formatOverwatchTimerMmSs(liveRemainingSec) }
+    val humanCount = activeInstance.pilotCount.coerceAtLeast(0)
+    val modeHeaderLine = activeInstance.modeTitle.uppercase(Locale.US)
+    val isInspectBayOpen = sideBayMode == RiftHubSideBayMode.OVERWATCH_INSPECT_BAY
+
     Column(
       modifier =
-        Modifier.minimumInteractiveComponentSize()
-          .drawBehind {
-            drawRect(color = if (isInspectBayOpen) Color(0xD807192E) else Color(0xBD020611))
-            drawLine(
-              brush = Brush.verticalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
-              start = Offset(0f, 0f),
-              end = Offset(0f, size.height),
-              strokeWidth = if (isInspectBayOpen) 2.6.dp.toPx() else 2.0.dp.toPx(),
-            )
-          }
-          .clickable { onToggleOverwatchInspectBay() }
-          .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp)
-          .testTag("nexus_overwatch_terminal_readout"),
+        Modifier.align(Alignment.TopStart)
+          .padding(start = openCornerAnchorDp, top = 3.dp)
+          .widthIn(max = topLeftCornerMaxWidthDp),
+      horizontalAlignment = Alignment.Start,
       verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+      Column(
+        modifier =
+          Modifier.minimumInteractiveComponentSize()
+            .drawBehind {
+              drawRect(color = if (isInspectBayOpen) Color(0xD807192E) else Color(0xBD020611))
+              drawLine(
+                brush = Brush.verticalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
+                start = Offset(0f, 0f),
+                end = Offset(0f, size.height),
+                strokeWidth = if (isInspectBayOpen) 2.6.dp.toPx() else 2.0.dp.toPx(),
+              )
+            }
+            .clickable { onToggleOverwatchInspectBay() }
+            .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp)
+            .testTag("nexus_overwatch_terminal_readout"),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
       ) {
-        Text(
-          text = modeHeaderLine,
-          color = if (isInspectBayOpen) Color(0xFF00F5D4) else Color.White,
-          fontSize = 8.8.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-        Text(
-          text = if (isInspectBayOpen) "[<]" else "[>]",
-          color = Color(0xFF38BDF8),
-          fontSize = 7.8.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-      }
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          Text(
+            text = modeHeaderLine,
+            modifier = Modifier.weight(1f, fill = false),
+            color = if (isInspectBayOpen) Color(0xFF00F5D4) else Color.White,
+            fontSize = 8.8.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          )
+          Text(
+            text = if (isInspectBayOpen) "[<]" else "[>]",
+            color = Color(0xFF38BDF8),
+            fontSize = 7.8.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            softWrap = false,
+            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          )
+        }
 
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-      ) {
-        Text(
-          text = "$countdownText ·",
-          color = Color(0xFF00F5D4),
-          fontSize = 7.8.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-        ResonanceCrestIcon(sizeDp = 9.5.dp)
-        Text(
-          text = "${formatOverwatchResonance(liveAvgResonance)} ·",
-          color = Color(0xFFFFD700),
-          fontSize = 7.8.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-        Text(
-          text = if (humanCount == 1) "1 PILOT" else "$humanCount PILOTS",
-          color = if (humanCount > 0) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-          fontSize = 7.8.sp,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-        if (overwatchZoom > 1.03f) {
-          Box(
-            modifier =
-              Modifier.clickable { onResetOverwatchCamera() }
-                .padding(horizontal = 2.dp, vertical = 1.dp)
-                .testTag("nexus_overwatch_zoom_reset"),
-          ) {
-            Text(
-              text = "[1x]",
-              color = Color(0xFF00F5D4),
-              fontSize = 7.6.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              softWrap = false,
-            )
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+          Text(
+            text = "$countdownText ·",
+            color = Color(0xFF00F5D4),
+            fontSize = 7.8.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            softWrap = false,
+            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          )
+          ResonanceCrestIcon(sizeDp = 9.5.dp)
+          Text(
+            text = "${formatOverwatchResonance(liveAvgResonance)} ·",
+            color = Color(0xFFFFD700),
+            fontSize = 7.8.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            softWrap = false,
+            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          )
+          Text(
+            text = if (humanCount == 1) "1 PILOT" else "$humanCount PILOTS",
+            color = if (humanCount > 0) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+            fontSize = 7.8.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            softWrap = false,
+            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          )
+          if (overwatchZoom > 1.03f) {
+            Box(
+              modifier =
+                Modifier.clickable { onResetOverwatchCamera() }
+                  .padding(horizontal = 2.dp, vertical = 1.dp)
+                  .testTag("nexus_overwatch_zoom_reset"),
+            ) {
+              Text(
+                text = "[1x]",
+                color = Color(0xFF00F5D4),
+                fontSize = 7.6.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                softWrap = false,
+              )
+            }
           }
         }
       }
-    }
 
-    Row(
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-      Box(
-        modifier =
-          Modifier.minimumInteractiveComponentSize()
-            .size(width = 48.dp, height = 48.dp)
-            .clickable {
-              val prevIdx = if (currentIdx <= 0) totalInstances - 1 else currentIdx - 1
-              onSelectOverwatchKey(overwatchInstances[prevIdx].key)
-            }
-            .testTag("nexus_overwatch_prev"),
-        contentAlignment = Alignment.Center,
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
       ) {
-        Canvas(modifier = Modifier.size(width = 14.dp, height = 8.dp)) {
-          val p =
-            Path().apply {
-              moveTo(0f, size.height)
-              lineTo(size.width * 0.5f, 0f)
-              lineTo(size.width, size.height)
-            }
-          drawPath(p, color = Color(0xFF00F5D4), style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round))
+        Box(
+          modifier =
+            Modifier.minimumInteractiveComponentSize()
+              .size(width = 48.dp, height = 48.dp)
+              .clickable {
+                val prevIdx = if (currentIdx <= 0) totalInstances - 1 else currentIdx - 1
+                onSelectOverwatchKey(overwatchInstances[prevIdx].key)
+              }
+              .testTag("nexus_overwatch_prev"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Canvas(modifier = Modifier.size(width = 14.dp, height = 8.dp)) {
+            val p =
+              Path().apply {
+                moveTo(0f, size.height)
+                lineTo(size.width * 0.5f, 0f)
+                lineTo(size.width, size.height)
+              }
+            drawPath(p, color = Color(0xFF00F5D4), style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round))
+          }
         }
-      }
 
-      Box(
-        modifier =
-          Modifier.minimumInteractiveComponentSize()
-            .size(width = 48.dp, height = 48.dp)
-            .clickable {
-              val nextIdx = (currentIdx + 1) % totalInstances
-              onSelectOverwatchKey(overwatchInstances[nextIdx].key)
-            }
-            .testTag("nexus_overwatch_next"),
-        contentAlignment = Alignment.Center,
-      ) {
-        Canvas(modifier = Modifier.size(width = 14.dp, height = 8.dp)) {
-          val p =
-            Path().apply {
-              moveTo(0f, 0f)
-              lineTo(size.width * 0.5f, size.height)
-              lineTo(size.width, 0f)
-            }
-          drawPath(p, color = Color(0xFF00F5D4), style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round))
+        Box(
+          modifier =
+            Modifier.minimumInteractiveComponentSize()
+              .size(width = 48.dp, height = 48.dp)
+              .clickable {
+                val nextIdx = (currentIdx + 1) % totalInstances
+                onSelectOverwatchKey(overwatchInstances[nextIdx].key)
+              }
+              .testTag("nexus_overwatch_next"),
+          contentAlignment = Alignment.Center,
+        ) {
+          Canvas(modifier = Modifier.size(width = 14.dp, height = 8.dp)) {
+            val p =
+              Path().apply {
+                moveTo(0f, 0f)
+                lineTo(size.width * 0.5f, size.height)
+                lineTo(size.width, 0f)
+              }
+            drawPath(p, color = Color(0xFF00F5D4), style = Stroke(width = 2.0.dp.toPx(), cap = StrokeCap.Round))
+          }
         }
       }
     }
@@ -7337,8 +7353,29 @@ private fun OverwatchCircularGlassPromptOverlay(
           )
         }
         .padding(
-          horizontal = if (prompt is OverwatchCircularPrompt.ShipInspect && prompt.shipId == 10) 12.dp else 16.dp,
-          vertical = if (prompt is OverwatchCircularPrompt.ShipInspect && prompt.shipId == 10) 8.dp else 16.dp,
+          horizontal =
+            if (
+              (prompt is OverwatchCircularPrompt.ShipInspect && prompt.shipId == 10) ||
+                prompt == OverwatchCircularPrompt.RiftFrameDrydock
+            ) {
+              12.dp
+            } else {
+              16.dp
+            },
+          vertical =
+            if (
+              (prompt is OverwatchCircularPrompt.ShipInspect && prompt.shipId == 10) ||
+                prompt == OverwatchCircularPrompt.RiftFrameDrydock ||
+                (prompt is OverwatchCircularPrompt.InfoStageInspect &&
+                  (prompt.previewHullSkinId != null ||
+                    prompt.previewFinisherId != null ||
+                    prompt.previewWarpStyleId != null ||
+                    prompt.previewHaloStyleId != null))
+            ) {
+              8.dp
+            } else {
+              16.dp
+            },
         )
         .testTag("overwatch_circular_glass_prompt"),
     contentAlignment = Alignment.Center,
@@ -7999,19 +8036,56 @@ private fun OverwatchCircularGlassPromptOverlay(
 
       is OverwatchCircularPrompt.InfoStageInspect -> {
         val accentCol = Color(prompt.accentHex)
+        val hasLiveCosmeticPreview =
+          prompt.previewHullSkinId != null ||
+            prompt.previewFinisherId != null ||
+            prompt.previewWarpStyleId != null ||
+            prompt.previewHaloStyleId != null
+        var previewShipId by
+          remember(
+            prompt.title,
+            prompt.previewHullSkinId,
+            prompt.previewFinisherId,
+            prompt.previewWarpStyleId,
+            prompt.previewHaloStyleId,
+          ) {
+            mutableIntStateOf(
+              (if (prompt.shipId in 1..10) prompt.shipId else activeShipId).coerceIn(1, 10)
+            )
+          }
+        val previewHullName =
+          remember(previewShipId, RiftSpriteBaker.customShip9Version) {
+            if (previewShipId == 10) {
+              "RIFT FRAME"
+            } else {
+              RiftCodex.getShipById(previewShipId)
+                .name
+                .replace(Regex("^[0-9]+-"), "")
+                .trim()
+                .uppercase(Locale.US)
+                .ifEmpty { "SHIP $previewShipId" }
+            }
+          }
         val stationBmp =
           remember(RiftSpriteBaker.spriteVisualRevision, RiftVisualForgeState.visualRevision) {
             RiftSpriteBaker.safeZoneStationBitmap.asImageBitmap()
           }
         Column(
-          modifier = Modifier.fillMaxWidth(0.86f).testTag("overwatch_info_stage_overlay"),
+          modifier =
+            Modifier.fillMaxWidth(0.86f)
+              .padding(bottom = if (hasLiveCosmeticPreview) 6.dp else 0.dp)
+              .testTag("overwatch_info_stage_overlay"),
           horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 5.dp else 3.5.dp),
+          verticalArrangement =
+            Arrangement.spacedBy(
+              if (hasLiveCosmeticPreview) (if (isTabletDeck) 2.5.dp else 1.5.dp)
+              else (if (isTabletDeck) 5.dp else 3.5.dp)
+            ),
         ) {
           Text(
             text = prompt.kicker.uppercase(Locale.US),
             color = accentCol,
-            fontSize = if (isTabletDeck) 9.2.sp else 8.2.sp,
+            fontSize = if (isTabletDeck) 9.0.sp else 8.0.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             letterSpacing = 0.7.sp,
@@ -8020,12 +8094,100 @@ private fun OverwatchCircularGlassPromptOverlay(
           )
 
           when {
+            hasLiveCosmeticPreview -> {
+              Spinning25dShipWithOrbitingFlux(
+                shipId = previewShipId,
+                shipSpinDeg = shipSpinDeg,
+                fluxOrbitRad = fluxOrbitRad,
+                isCharged = chargedShipId == previewShipId,
+                isBestShip = bestShipId in 1..10 && bestShipId == previewShipId,
+                isSelected = true,
+                sizeDp = if (isTabletDeck) 118.dp else 108.dp,
+                trimStyleOverride = prompt.previewHullSkinId,
+                previewFinisherId = prompt.previewFinisherId,
+                previewWarpStyleId = prompt.previewWarpStyleId,
+                previewHaloStyleId = prompt.previewHaloStyleId,
+              )
+
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+              ) {
+                Box(
+                  modifier =
+                    Modifier.minimumInteractiveComponentSize()
+                      .size(48.dp)
+                      .clickable {
+                        previewShipId = if (previewShipId <= 1) 10 else previewShipId - 1
+                      }
+                      .testTag("overwatch_cosmetic_prev_ship"),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Box(
+                    modifier =
+                      Modifier.clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xCC061121))
+                        .border(1.dp, accentCol.copy(alpha = 0.65f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Text(
+                      text = "<",
+                      color = accentCol,
+                      fontSize = 9.2.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                      maxLines = 1,
+                      style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                    )
+                  }
+                }
+
+                Text(
+                  text = previewHullName,
+                  color = Color.White,
+                  fontSize = if (isTabletDeck) 9.2.sp else 8.4.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                  softWrap = false,
+                  modifier = Modifier.widthIn(min = 84.dp),
+                  textAlign = TextAlign.Center,
+                  style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                )
+
+                Box(
+                  modifier =
+                    Modifier.minimumInteractiveComponentSize()
+                      .size(48.dp)
+                      .clickable {
+                        previewShipId = if (previewShipId >= 10) 1 else previewShipId + 1
+                      }
+                      .testTag("overwatch_cosmetic_next_ship"),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Box(
+                    modifier =
+                      Modifier.clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xCC061121))
+                        .border(1.dp, accentCol.copy(alpha = 0.65f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Text(
+                      text = ">",
+                      color = accentCol,
+                      fontSize = 9.2.sp,
+                      fontWeight = FontWeight.Black,
+                      fontFamily = FontFamily.Monospace,
+                      maxLines = 1,
+                      style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                    )
+                  }
+                }
+              }
+            }
             prompt.shipId in 1..10 -> {
-              val hasLiveCosmeticPreview =
-                prompt.previewHullSkinId != null ||
-                  prompt.previewFinisherId != null ||
-                  prompt.previewWarpStyleId != null ||
-                  prompt.previewHaloStyleId != null
               Spinning25dShipWithOrbitingFlux(
                 shipId = prompt.shipId,
                 shipSpinDeg = shipSpinDeg,
@@ -8033,11 +8195,7 @@ private fun OverwatchCircularGlassPromptOverlay(
                 isCharged = chargedShipId == prompt.shipId,
                 isBestShip = bestShipId in 1..10 && bestShipId == prompt.shipId,
                 isSelected = true,
-                sizeDp = if (hasLiveCosmeticPreview) 72.dp else 52.dp,
-                trimStyleOverride = prompt.previewHullSkinId,
-                previewFinisherId = prompt.previewFinisherId,
-                previewWarpStyleId = prompt.previewWarpStyleId,
-                previewHaloStyleId = prompt.previewHaloStyleId,
+                sizeDp = 52.dp,
               )
             }
             prompt.buffTypeIndex != Int.MIN_VALUE -> {
@@ -8093,11 +8251,11 @@ private fun OverwatchCircularGlassPromptOverlay(
           Text(
             text = prompt.title,
             color = Color.White,
-            fontSize = 11.4.sp,
+            fontSize = if (hasLiveCosmeticPreview) 10.6.sp else 11.4.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             textAlign = TextAlign.Center,
-            maxLines = 2,
+            maxLines = if (hasLiveCosmeticPreview) 1 else 2,
             overflow = TextOverflow.Ellipsis,
           )
 
@@ -8107,7 +8265,7 @@ private fun OverwatchCircularGlassPromptOverlay(
                 Modifier.clip(RoundedCornerShape(5.dp))
                   .background(accentCol.copy(alpha = 0.16f))
                   .border(1.dp, accentCol.copy(alpha = 0.85f), RoundedCornerShape(5.dp))
-                  .padding(horizontal = 7.dp, vertical = 2.5.dp),
+                  .padding(horizontal = 7.dp, vertical = if (hasLiveCosmeticPreview) 1.5.dp else 2.5.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -8117,7 +8275,7 @@ private fun OverwatchCircularGlassPromptOverlay(
               Text(
                 text = prompt.badge,
                 color = accentCol,
-                fontSize = 8.6.sp,
+                fontSize = 8.4.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
@@ -8125,32 +8283,73 @@ private fun OverwatchCircularGlassPromptOverlay(
             }
           }
 
-          Column(
-            modifier =
-              Modifier.fillMaxWidth()
-                .heightIn(max = if (isTabletDeck) 118.dp else 82.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-          ) {
-            Text(
-              text = prompt.summary,
-              color = Color(0xFFE2E8F0),
-              fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
-              lineHeight = if (isTabletDeck) 12.6.sp else 11.2.sp,
-              fontFamily = FontFamily.SansSerif,
-              textAlign = TextAlign.Center,
-            )
-            if (prompt.tacticalNote.isNotBlank()) {
+          if (hasLiveCosmeticPreview) {
+            Column(
+              modifier = Modifier.fillMaxWidth(0.92f),
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
               Text(
-                text = prompt.tacticalNote,
-                color = Color(0xFFCBD5E1),
-                fontSize = if (isTabletDeck) 9.6.sp else 8.6.sp,
+                text = prompt.summary,
+                color = Color(0xFFE2E8F0),
+                fontSize = if (isTabletDeck) 8.8.sp else 8.0.sp,
+                lineHeight = if (isTabletDeck) 11.2.sp else 10.2.sp,
+                fontFamily = FontFamily.SansSerif,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+              if (prompt.tacticalNote.isNotBlank()) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                ) {
+                  if (prompt.showResonanceCrest && !prompt.tacticalNote.startsWith("Standard")) {
+                    ResonanceCrestIcon(sizeDp = 10.dp)
+                  }
+                  Text(
+                    text = prompt.tacticalNote,
+                    color = Color(0xFFCBD5E1),
+                    fontSize = if (isTabletDeck) 8.6.sp else 7.8.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                  )
+                }
+              }
+            }
+          } else {
+            Column(
+              modifier =
+                Modifier.fillMaxWidth()
+                  .heightIn(max = if (isTabletDeck) 118.dp else 82.dp)
+                  .verticalScroll(rememberScrollState()),
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+              Text(
+                text = prompt.summary,
+                color = Color(0xFFE2E8F0),
+                fontSize = if (isTabletDeck) 9.4.sp else 8.4.sp,
                 lineHeight = if (isTabletDeck) 12.6.sp else 11.2.sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = FontFamily.SansSerif,
                 textAlign = TextAlign.Center,
               )
+              if (prompt.tacticalNote.isNotBlank()) {
+                Text(
+                  text = prompt.tacticalNote,
+                  color = Color(0xFFCBD5E1),
+                  fontSize = if (isTabletDeck) 9.6.sp else 8.6.sp,
+                  lineHeight = if (isTabletDeck) 12.6.sp else 11.2.sp,
+                  fontWeight = FontWeight.SemiBold,
+                  fontFamily = FontFamily.Monospace,
+                  textAlign = TextAlign.Center,
+                )
+              }
             }
           }
 
@@ -8599,10 +8798,10 @@ private fun OverwatchRiftFrameDrydockView(
   Column(
     modifier =
       Modifier.fillMaxWidth(0.86f)
-        .padding(bottom = 14.dp)
+        .padding(top = 2.dp, bottom = 22.dp)
         .testTag("overwatch_rift_frame_drydock"),
     horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(2.dp),
+    verticalArrangement = Arrangement.spacedBy(1.5.dp),
   ) {
     // 1. Top Slot Identity + 100-Point Budget Readout
     Row(
@@ -8610,7 +8809,7 @@ private fun OverwatchRiftFrameDrydockView(
         Modifier.clip(RoundedCornerShape(8.dp))
           .background(Color(0xCC061121))
           .clickable { onOpenFrameRenamePrompt() }
-          .padding(horizontal = 8.dp, vertical = 2.5.dp),
+          .padding(horizontal = 8.dp, vertical = 2.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -8648,7 +8847,7 @@ private fun OverwatchRiftFrameDrydockView(
         }
       Column(
         modifier =
-          Modifier.width(if (isTabletDeck) 80.dp else 70.dp)
+          Modifier.width(if (isTabletDeck) 78.dp else 68.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (isPriHovered) Color(0xCC0D2E42) else Color(0xB8071326))
             .border(if (isPriDragActive) 1.6.dp else 1.dp, priBorderCol, RoundedCornerShape(8.dp))
@@ -8657,15 +8856,15 @@ private fun OverwatchRiftFrameDrydockView(
               priBounds = b
               onUpdatePrimarySocketBounds(b)
             }
-            .padding(horizontal = 4.dp, vertical = 3.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
             .testTag("overwatch_drydock_primary_socket"),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(1.dp),
+        verticalArrangement = Arrangement.spacedBy(0.5.dp),
       ) {
         Text(
           text = "PRIMARY",
           color = priBorderCol,
-          fontSize = 6.6.sp,
+          fontSize = 6.4.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -8675,12 +8874,12 @@ private fun OverwatchRiftFrameDrydockView(
           bitmap = primaryBmp,
           contentDescription = primaryOpt.title,
           contentScale = ContentScale.Fit,
-          modifier = Modifier.size(if (isTabletDeck) 26.dp else 22.dp),
+          modifier = Modifier.size(if (isTabletDeck) 24.dp else 20.dp),
         )
         Text(
           text = primaryOpt.shortLabel.uppercase(Locale.US),
           color = Color.White,
-          fontSize = 7.0.sp,
+          fontSize = 6.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -8689,7 +8888,7 @@ private fun OverwatchRiftFrameDrydockView(
         Text(
           text = "${primaryOpt.pointCost} PTS",
           color = Color(0xFF00F5D4),
-          fontSize = 6.6.sp,
+          fontSize = 6.4.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -8699,7 +8898,7 @@ private fun OverwatchRiftFrameDrydockView(
 
       Box(
         modifier =
-          Modifier.size(if (isTabletDeck) 72.dp else 62.dp)
+          Modifier.size(if (isTabletDeck) 66.dp else 56.dp)
             .drawBehind {
               val r = size.minDimension * 0.47f
               val arcTopLeft = Offset(center.x - r, center.y - r)
@@ -8738,7 +8937,7 @@ private fun OverwatchRiftFrameDrydockView(
           isCharged = isCharged,
           isBestShip = false,
           isSelected = true,
-          sizeDp = if (isTabletDeck) 50.dp else 44.dp,
+          sizeDp = if (isTabletDeck) 46.dp else 40.dp,
         )
       }
 
@@ -8750,7 +8949,7 @@ private fun OverwatchRiftFrameDrydockView(
         }
       Column(
         modifier =
-          Modifier.width(if (isTabletDeck) 80.dp else 70.dp)
+          Modifier.width(if (isTabletDeck) 78.dp else 68.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (isSecHovered) Color(0xCC24123D) else Color(0xB8071326))
             .border(if (isSecDragActive) 1.6.dp else 1.dp, secBorderCol, RoundedCornerShape(8.dp))
@@ -8759,15 +8958,15 @@ private fun OverwatchRiftFrameDrydockView(
               secBounds = b
               onUpdateSecondarySocketBounds(b)
             }
-            .padding(horizontal = 4.dp, vertical = 3.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
             .testTag("overwatch_drydock_secondary_socket"),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(1.dp),
+        verticalArrangement = Arrangement.spacedBy(0.5.dp),
       ) {
         Text(
           text = "MOD / BUFF",
           color = secBorderCol,
-          fontSize = 6.6.sp,
+          fontSize = 6.4.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -8777,12 +8976,12 @@ private fun OverwatchRiftFrameDrydockView(
           bitmap = secondaryBmp,
           contentDescription = secondaryOpt.title,
           contentScale = ContentScale.Fit,
-          modifier = Modifier.size(if (isTabletDeck) 26.dp else 22.dp),
+          modifier = Modifier.size(if (isTabletDeck) 24.dp else 20.dp),
         )
         Text(
           text = secondaryOpt.shortLabel.uppercase(Locale.US),
           color = Color.White,
-          fontSize = 7.0.sp,
+          fontSize = 6.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -8791,7 +8990,7 @@ private fun OverwatchRiftFrameDrydockView(
         Text(
           text = "${secondaryOpt.pointCost} PTS",
           color = Color(0xFFC084FC),
-          fontSize = 6.6.sp,
+          fontSize = 6.4.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -8907,10 +9106,10 @@ private fun OverwatchRiftFrameDrydockView(
       },
     )
 
-    // 4. Charge Rift Frame Action Safely Inside Bottom Circular Chord (>= 48dp touch target)
+    // 4. Charge Rift Frame Action Safely Inside Bottom Circular Chord (>= 48dp touch target, 0.48f visual pill)
     Box(
       modifier =
-        Modifier.fillMaxWidth(0.64f)
+        Modifier.fillMaxWidth(0.48f)
           .minimumInteractiveComponentSize()
           .heightIn(min = 48.dp)
           .clickable { onChargeRiftFrame() }
@@ -8919,7 +9118,8 @@ private fun OverwatchRiftFrameDrydockView(
     ) {
       Row(
         modifier =
-          Modifier.heightIn(min = 38.dp)
+          Modifier.fillMaxWidth()
+            .height(if (isTabletDeck) 34.dp else 32.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(
               Brush.horizontalGradient(
@@ -8932,21 +9132,21 @@ private fun OverwatchRiftFrameDrydockView(
               if (isCharged) Color(0xFF00F5D4) else Color(0xFFFFD700),
               RoundedCornerShape(16.dp),
             )
-            .padding(horizontal = 11.dp, vertical = 5.dp),
+            .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
       ) {
         Text(
           text = if (isCharged) "RIFT FRAME CHARGED" else "CHARGE RIFT FRAME",
           color = Color.White,
-          fontSize = if (isTabletDeck) 8.4.sp else 7.8.sp,
+          fontSize = if (isTabletDeck) 8.0.sp else 7.4.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
           softWrap = false,
           style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
-        FluxToroidIcon(sizeDp = 11.dp)
+        FluxToroidIcon(sizeDp = 10.5.dp)
       }
     }
   }
@@ -8963,7 +9163,7 @@ private fun DrydockInteractiveStatBar(
 ) {
   var trackWidthPx by remember { mutableFloatStateOf(1f) }
   Row(
-    modifier = Modifier.fillMaxWidth(widthFraction).height(13.5.dp),
+    modifier = Modifier.fillMaxWidth(widthFraction).height(12.5.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(5.dp),
   ) {

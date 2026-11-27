@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 132
+const val CURRENT_RIFT_BUILD_VERSION = 133
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 133,
+      versionTag = "v1.0.133 // BUILD #133",
+      releaseDate = "Nov 26, 2026",
+      headline = "160-Slot Full-Arena 2.5D Ship Relighting Pool, Live Multiplayer Cosmetic Sync & Overwatch Workbench Polish",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "160-Slot Hardware 2.5D Point-Light Shader Pool: Expanded the pre-allocated hardware normal-mapped point-light shader pool from 48 to 160 slots with zero per-frame allocations so the rotating Rift Station, Space Obstacles, Supply Pods, and all 20 starfighters retain crisp per-pixel metallic bevel and specular relighting simultaneously even at wide Overwatch and arena zoom.",
+          "Live Multiplayer Cosmetic Synchronization & Resonance Gate Validation: Added Firestore-safe outbound and inbound multiplayer cosmetic synchronization across Ship Skins 0 through 5, Kill Finishers 0 through 4, Warp Signatures 0 through 3, and Resonance Leader Halos 0 through 3, validating Ranked cosmetics against each remote pilot's active Live Resonance, triggering arrival Warp Signatures on spawn and respawn, and applying Resonance-gated cosmetics to backfill bots.",
+          "Overwatch Sector Switcher Visibility & Circular Bezel Clearance: Hid the top-left live sector switcher whenever an Overwatch circular workbench, Rift Frame Drydock, or inspect stage is open, and computed its maximum width from exact upper-left circular bezel chord geometry so the readout never touches the radar collar.",
+          "Enlarged 10-Hull Overwatch Cosmetic Showcase & Drydock Chord Fit: Upgraded Overwatch cosmetic inspection with a 108dp/118dp spinning 2.5D starfighter centerpiece, a live 10-hull switcher cycling across all 10 ships including Rift Frame, single-line plain-English status notes with Resonance crest icons, and tightened Rift Frame Drydock spacing with a compact Charge Rift Frame pill seated cleanly inside the circular bottom chord.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 132,
       versionTag = "v1.0.132 // BUILD #132",
       releaseDate = "Nov 26, 2026",
       headline = "Normal-Mapped 2.5D Metallic & Specular Point-Light Relighting Across Ships, Rift Station, Supply Pods & Space Obstacles",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "2.5D NORMAL RELIGHTING",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
