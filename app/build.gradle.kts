@@ -17,8 +17,8 @@ android {
     applicationId = "com.game.rift"
     minSdk = 24
     targetSdk = 36
-    versionCode = 130
-    versionName = "1.0.130"
+    versionCode = 131
+    versionName = "1.0.131"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

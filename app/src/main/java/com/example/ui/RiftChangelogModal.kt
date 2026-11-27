@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 130
+const val CURRENT_RIFT_BUILD_VERSION = 131
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 131,
+      versionTag = "v1.0.131 // BUILD #131",
+      releaseDate = "Nov 26, 2026",
+      headline = "Dead Legacy Modal Purge, Exhaustive Hub Routing, Unified Squadron Nomenclature & Resonance-Gated Bot Arena Cosmetics",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Dead Standalone Hub Modal Branch Purge: Removed over 1,000 lines of unreachable duplicate standalone modal rendering branches in MainActivity while keeping OrbitalHubSpatialStage, full-screen Subspace Comms, 1:1 Star Forge, and all live cockpit overlays intact with exhaustive NexusCoreNode routing.",
+          "Legacy Convergence Gate Deck Cleanup: Removed the unreachable ConvergenceGateZeroScrollDeck and its exclusive private helpers in NexusAiConsoleModal while preserving all live Orbital Hub shelves, circular Overwatch workbenches, guided tutorial coachmarks, and Subspace Comms channels.",
+          "Unified Squadron & Rift Station Nomenclature Polish: Updated the Auth screen competitive briefing line to Solo, Syndicate, and Squadron, updated RiftGameEngine formation tier labels to 2-Pilot through 5-Pilot Squadron, aligned Squadron Wars eligibility and profile reset notices, and renamed the legacy bot callsign to RIFT 7.",
+          "Resonance-Gated Bot Arena Cosmetics in Live 2.5D Matches: Equipped AI bots in live matches and Overwatch feeds with deterministic Ship Skins 0 through 5 (Cadet bots mostly standard trim, Regular, Veteran, and Ace bots varied across Skins 1 through 5) alongside Live Resonance-gated Warp Signatures, Kill Finishers, and Resonance Leader Halos strictly matching RiftProgressionCatalog Resonance thresholds.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 130,
       versionTag = "v1.0.130 // BUILD #130",
       releaseDate = "Nov 26, 2026",
       headline = "Star Forge Ranked & Frame Economy Sync, Full 6-Skin Turntable Cycling, Direct Overwatch Drydock Build Loading, Post-Wipe Tester Shard Retention & Rift AI Telemetry Polish",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "PREVIOUS BUILD",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

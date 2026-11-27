@@ -723,7 +723,7 @@ class RiftGameEngine(
         "NOVA ACE",
         "SOLARIS IX",
         "IRON WOLF",
-        "NEXUS 7",
+        "RIFT 7",
         "VIPER 09",
         "CHRONO X",
         "VALKYRIE Z",
@@ -1293,12 +1293,93 @@ class RiftGameEngine(
         phaseShieldTimer = 1.0f,
         warpInAnimTimer = 0.65f,
       )
+    syncBotArenaCosmetics(bot, skillTierOverride = 1)
     ships.add(bot)
     shockwaves.add(ShockwaveEntity(spawnX, spawnY, 16f, 165f, Color.parseColor("#00F5D4")))
     sfx.playWarp()
     onPrizeToast("PRACTICE BOT DEPLOYED // ${activePracticeBotCount()} IN SECTOR")
     onStatsUpdated()
     return bot
+  }
+
+  /**
+   * Deterministically assigns AI bot Live Resonance (seeded by bot skill tier when uninitialized)
+   * and equips Resonance-gated Ranked Cosmetics (Kill Finisher, Warp Signature, Leader Halo) plus
+   * tier-appropriate 0..5 Ship Skins (reserving Sovereign Solar Gold #2 for high-Resonance Ace bots).
+   */
+  private fun syncBotArenaCosmetics(bot: ShipEntity, skillTierOverride: Int? = null) {
+    if (bot.isHuman || bot.isLocalPlayer) return
+    val seedHash = ((bot.callsign.hashCode() * 31) xor (bot.shipId * 7919)) and 0x7FFFFFFF
+    val effectiveTier =
+      when {
+        skillTierOverride != null -> skillTierOverride.coerceIn(0, 3)
+        currentCustomGame != null -> currentCustomGame!!.botSkillLevel.coerceIn(0, 3)
+        else ->
+          when (seedHash % 10) {
+            in 0..2 -> 0
+            in 3..5 -> 1
+            in 6..8 -> 2
+            else -> 3
+          }
+      }
+
+    if (bot.liveResonanceRating <= 0) {
+      bot.liveResonanceRating =
+        when (effectiveTier) {
+          0 -> 45 + (seedHash % 131) // Cadet: 45..175
+          1 -> 220 + (seedHash % 461) // Regular: 220..680
+          2 -> 720 + (seedHash % 601) // Veteran: 720..1320
+          else -> 1420 + (seedHash % 501) // Ace: 1420..1920
+        }
+    }
+
+    val res = bot.liveResonanceRating
+    bot.equippedHullSkin =
+      when {
+        effectiveTier == 0 || res < 180 -> if ((seedHash / 7) % 4 == 0) 1 else 0
+        res < 700 -> intArrayOf(0, 1, 5, 3, 0, 4)[(seedHash / 11) % 6]
+        res < 1500 -> intArrayOf(1, 3, 4, 5, 3, 0)[(seedHash / 13) % 6]
+        else -> intArrayOf(2, 2, 3, 4, 5, 1)[(seedHash / 17) % 6]
+      }.coerceIn(0, 5)
+
+    bot.equippedKillFinisher =
+      selectBotRankedCosmeticId(
+        catalog = RiftProgressionCatalog.killFinishers,
+        liveResonance = res,
+        salt = seedHash / 19,
+      ).coerceIn(0, 4)
+    bot.equippedWarpStyle =
+      selectBotRankedCosmeticId(
+        catalog = RiftProgressionCatalog.warpSignatures,
+        liveResonance = res,
+        salt = seedHash / 23,
+      ).coerceIn(0, 3)
+    bot.equippedHvtHaloStyle =
+      selectBotRankedCosmeticId(
+        catalog = RiftProgressionCatalog.hvtHalos,
+        liveResonance = res,
+        salt = seedHash / 29,
+      ).coerceIn(0, 3)
+  }
+
+  private fun selectBotRankedCosmeticId(
+    catalog: List<CosmeticCatalogItem>,
+    liveResonance: Int,
+    salt: Int,
+  ): Int {
+    val unlocked = catalog.filter { RiftProgressionCatalog.isRankedCosmeticActive(it, liveResonance) }
+    if (unlocked.size <= 1) return 0
+    val nonDefault = unlocked.filter { it.id != 0 }
+    if (nonDefault.isEmpty()) return 0
+    val safeSalt = salt and 0x7FFFFFFF
+    return if (liveResonance >= 1000) {
+      val topPool = nonDefault.takeLast(min(2, nonDefault.size))
+      topPool[safeSalt % topPool.size].id
+    } else if (safeSalt % 5 == 0) {
+      0
+    } else {
+      nonDefault[safeSalt % nonDefault.size].id
+    }
   }
 
   fun clearPracticeBots(): Int {
@@ -1933,7 +2014,9 @@ class RiftGameEngine(
         s.armadaName = ""
         s.syndicateTag = "BOT"
         s.bounty = 100
+        s.liveResonanceRating = 0
         s.isInStasisBrig = false
+        syncBotArenaCosmetics(s)
       }
     }
 
@@ -1942,7 +2025,7 @@ class RiftGameEngine(
     resetCurrentLifeStats()
     sfx.playPrize()
     onStatsUpdated()
-    onPrizeToast("MASTER WIPE COMPLETE: ALL STATS, ARMADAS & SYNDICATES RESET!")
+    onPrizeToast("MASTER WIPE COMPLETE: ALL STATS, SQUADRONS & SYNDICATES RESET!")
   }
 
   /**
@@ -2061,7 +2144,7 @@ class RiftGameEngine(
 
   /**
    * Evaluates public FFA match / Sector Convergence conclusion:
-   * 1. Awards +100❖ Rift Shards & +1 Public Game Win if the #1 top-bounty player was present for >50% of total match duration.
+   * 1. Awards +100 Rift Shards & +1 Public Game Win if the #1 top-bounty player was present for >50% of total match duration.
    * 2. Procedurally resets the sector into a brand-new map (new seed, fresh walls, anomalies, Supply Crates, and radar map),
    *    clears projectiles, resets bounties to 100, restores full Flux, and starts a new 60-minute FFA match cycle.
    */
@@ -2099,6 +2182,9 @@ class RiftGameEngine(
           s.y = sp.second
           s.vx = 0f
           s.vy = 0f
+          if (!s.isHuman) {
+            syncBotArenaCosmetics(s)
+          }
         }
       }
       return
@@ -2238,6 +2324,7 @@ class RiftGameEngine(
         s.y = sp.second
         s.inSafeZone = false
         s.wasInSafeZone = false
+        syncBotArenaCosmetics(s)
       }
     }
     reattachRemotePilotsToRoster()
@@ -2348,10 +2435,10 @@ class RiftGameEngine(
     val sz = getCurrentArmadaSize()
     return when {
       activeArmadaName.isEmpty() || sz <= 1 -> "SOLO RIFT"
-      sz == 2 -> "2-MAN ARMADA [$activeArmadaName]"
-      sz == 3 -> "3-MAN ARMADA [$activeArmadaName]"
-      sz == 4 -> "4-MAN ARMADA [$activeArmadaName]"
-      else -> "5-MAN ARMADA [$activeArmadaName]"
+      sz == 2 -> "2-PILOT SQUADRON [$activeArmadaName]"
+      sz == 3 -> "3-PILOT SQUADRON [$activeArmadaName]"
+      sz == 4 -> "4-PILOT SQUADRON [$activeArmadaName]"
+      else -> "5-PILOT SQUADRON [$activeArmadaName]"
     }
   }
 
@@ -2919,7 +3006,7 @@ class RiftGameEngine(
   }
 
   /**
-   * Validates whether the local pilot and their active Armada wingmen are eligible for Ranked Syndicate Wars.
+   * Validates whether the local pilot and their active Squadron wingmen are eligible for Ranked Syndicate Wars.
    */
   fun canQueueSyndicateWars(): Pair<Boolean, String> {
     val myTag = localPlayer.syndicateTag.trim().uppercase()
@@ -2935,7 +3022,7 @@ class RiftGameEngine(
         !it.isLeader && !it.syndicateTag.trim().equals(myTag, ignoreCase = true)
       }
     if (mismatched != null) {
-      return false to "All Armada wingmen must belong to Syndicate [$myTag] (${mismatched.callsign} is [${mismatched.syndicateTag}])."
+      return false to "All Squadron wingmen must belong to Syndicate [$myTag] (${mismatched.callsign} is [${mismatched.syndicateTag}])."
     }
     return true to "ELIGIBLE FOR [$myTag] SYNDICATE WARS"
   }
@@ -3855,7 +3942,7 @@ class RiftGameEngine(
           val shipId = ((botIdx * 3) % 9) + 1
           val spec = RiftCodex.getShipById(shipId)
           val pos = getSkirmishGateSpawnPosition(0)
-          updated.add(
+          val bot =
             ShipEntity(
               id = "bot_ally_$botIdx",
               callsign = BOT_CALLSIGNS[botIdx % BOT_CALLSIGNS.size],
@@ -3874,7 +3961,8 @@ class RiftGameEngine(
               phaseShieldTimer = 3.0f,
               warpInAnimTimer = 0.65f,
             )
-          )
+          syncBotArenaCosmetics(bot)
+          updated.add(bot)
           friendlyCount++
           botIdx++
         }
@@ -3883,7 +3971,7 @@ class RiftGameEngine(
           val shipId = ((botIdx * 5 + 1) % 9) + 1
           val spec = RiftCodex.getShipById(shipId)
           val pos = getSkirmishGateSpawnPosition(1)
-          updated.add(
+          val bot =
             ShipEntity(
               id = "bot_rival_$botIdx",
               callsign = BOT_CALLSIGNS[(botIdx + 7) % BOT_CALLSIGNS.size],
@@ -3902,7 +3990,8 @@ class RiftGameEngine(
               phaseShieldTimer = 3.0f,
               warpInAnimTimer = 0.65f,
             )
-          )
+          syncBotArenaCosmetics(bot)
+          updated.add(bot)
           rivalCount++
           botIdx++
         }
@@ -3917,7 +4006,7 @@ class RiftGameEngine(
           val shipId = ((botIdx * 5 + 1) % 9) + 1
           val spec = RiftCodex.getShipById(shipId)
           val pos = getOuterGateSpawnPosition(1)
-          updated.add(
+          val bot =
             ShipEntity(
               id = "bot_rival_$botIdx",
               callsign = BOT_CALLSIGNS[(botIdx + 7) % BOT_CALLSIGNS.size],
@@ -3935,7 +4024,8 @@ class RiftGameEngine(
               bounty = 100,
               warpInAnimTimer = 0.65f,
             )
-          )
+          syncBotArenaCosmetics(bot)
+          updated.add(bot)
           rivalCount++
           botIdx++
         }
@@ -4300,7 +4390,7 @@ class RiftGameEngine(
           val spawnPos =
             if (isTeamBasedRankedMode()) getSkirmishGateSpawnPosition(botFreq)
             else getOuterGateSpawnPosition(1)
-          ships.add(
+          val backfillBot =
             ShipEntity(
               id = "bot_backfill_${System.nanoTime()}",
               callsign = BOT_CALLSIGNS[backfillIdx % BOT_CALLSIGNS.size],
@@ -4318,7 +4408,8 @@ class RiftGameEngine(
               bounty = 100,
               warpInAnimTimer = 0.65f,
             )
-          )
+          syncBotArenaCosmetics(backfillBot)
+          ships.add(backfillBot)
         }
       }
     }
@@ -7798,6 +7889,11 @@ class RiftGameEngine(
         attacker.kills++
         attacker.currentLifeKills++
         attacker.bounty += bountyAward
+        if (!attacker.isHuman) {
+          attacker.liveResonanceRating =
+            (attacker.liveResonanceRating + max(14, bountyAward / 4)).coerceAtMost(2400)
+          syncBotArenaCosmetics(attacker)
+        }
       }
       recordAndResetShipLife(
         ship = target,
@@ -7812,6 +7908,11 @@ class RiftGameEngine(
         if (isEnemyStationTriggerKill) max(1, (bountyAward * 0.10f).roundToInt()) else 0
       if (triggerShip != null && stationAssistBounty > 0) {
         triggerShip.bounty += stationAssistBounty
+        if (!triggerShip.isHuman) {
+          triggerShip.liveResonanceRating =
+            (triggerShip.liveResonanceRating + max(4, stationAssistBounty / 4)).coerceAtMost(2400)
+          syncBotArenaCosmetics(triggerShip)
+        }
       }
 
       // Self-Triggered Station Counter-Attack Death Penalty: deduct Bounty now & on next respawn
@@ -7820,6 +7921,10 @@ class RiftGameEngine(
       if (isSelfStationTriggerDeath) {
         target.bounty = max(50, target.bounty - selfStationBountyPenalty)
         target.pendingRespawnBountyPenalty = min(50, selfStationBountyPenalty)
+      }
+      if (!target.isHuman) {
+        target.liveResonanceRating = max(35, target.liveResonanceRating - 14)
+        syncBotArenaCosmetics(target)
       }
 
       val explosionFallbackName =
@@ -10493,6 +10598,9 @@ class RiftGameEngine(
         if (s.respawnTimer <= 0f) {
           s.respawnTimer = 0f
           s.deathLingerTimer = 0f
+          if (!s.isHuman) {
+            syncBotArenaCosmetics(s)
+          }
           s.warpInAnimTimer = 0.65f
           s.hullImpactJoltTimer = 0f
           s.lastBarrelRollCooldown = 0f

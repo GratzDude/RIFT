@@ -638,7 +638,7 @@ fun AuthScreen(
 
 /**
  * Left Column (`weight(0.46f)`): Live Gameplay-Honest Circular Safe-Harbor Radar Showcase.
- * Renders a round rippling cyan/gold digitized aperture framing the real `5x` `Nexus Station`
+ * Renders a round rippling cyan/gold digitized aperture framing the real `5x` `Rift Station`
  * sprite (`RiftSpriteBaker.safeZoneStationBitmap` + `drawSafeZoneStationHoloRing`) and
  * 3 real `128x128` ship sprites (`getShipSprite`) banking along orbital patrol arcs with thruster trails.
  */
@@ -734,7 +734,7 @@ private fun AuthSafeHarborRadarShowcase(modifier: Modifier = Modifier) {
         style = Stroke(width = 1.6.dp.toPx()),
       )
 
-      // 2. Real 5x Nexus Station Sprite + Revolving Ops Holo-Ring + 3 Real 128x128 Patrol Ships
+      // 2. Real 5x Rift Station Sprite + Revolving Ops Holo-Ring + 3 Real 128x128 Patrol Ships
       val stationR = apertureR * 0.34f
       val patrolSpecs =
         arrayOf(
@@ -764,7 +764,7 @@ private fun AuthSafeHarborRadarShowcase(modifier: Modifier = Modifier) {
 
       drawIntoCanvas { composeCanvas ->
         val nc = composeCanvas.nativeCanvas
-        // Center 5x Nexus Station
+        // Center 5x Rift Station
         nc.save()
         nc.translate(cx, cy)
         nc.rotate((orbitPhaseRad * 180f / PI.toFloat()) * 0.25f)
@@ -916,7 +916,7 @@ private fun AuthCommandBriefingColumn(
         fontFamily = FontFamily.Monospace,
       )
       Text(
-        text = "Solo • Syndicate • Strike Wing — 6 Competitive Modes + Custom Arenas",
+        text = "Solo • Syndicate • Squadron — 6 Competitive Modes + Custom Arenas",
         color = Color(0xFF38BDF8),
         fontSize = 10.2.sp,
         fontWeight = FontWeight.Bold,

@@ -94,7 +94,6 @@ import com.example.data.CloudSyncHealth
 import com.example.data.FriendPilotEntry
 import com.example.data.LivePilotState
 import com.example.data.LocalPilotPrefs
-import com.example.data.PilotAchievement
 import com.example.data.RiftAvailableUpdate
 import com.example.data.RiftBillingManager
 import com.example.data.RiftRepository
@@ -125,11 +124,8 @@ import com.example.engine.SpatialAnomalyEntity
 import com.example.engine.SyndicateCrestRecipe
 import com.example.engine.WallRect
 import com.example.ui.ArchiveCodexSubDeck
-import com.example.ui.ArmadaFleetModal
 import com.example.ui.AuthScreen
 import com.example.ui.CURRENT_RIFT_BUILD_VERSION
-import com.example.ui.CodexModal
-import com.example.ui.DossierModal
 import com.example.ui.MatchmakingQueueStatus
 import com.example.ui.MatchmakingQueueViewModel
 import com.example.ui.NexusAiConsoleModal
@@ -144,11 +140,8 @@ import com.example.ui.ResonanceCrestIcon
 import com.example.ui.RiftCalibrationDialog
 import com.example.ui.RiftChangelogModal
 import com.example.ui.RiftHudOverlay
-import com.example.ui.RiftShardsStoreModal
 import com.example.ui.RiftViewModel
-import com.example.ui.SettingsModal
 import com.example.ui.SyndicateCitadelSubDeck
-import com.example.ui.SyndicatesModal
 import com.example.ui.UiState
 import com.example.ui.extractCustomRoomCode
 import com.example.ui.isPrivateCustomGame
@@ -163,7 +156,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
 import java.util.Locale
-import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -1266,7 +1258,6 @@ fun RiftArenaScreen(
   var syndicateSubDeck by remember { mutableStateOf(SyndicateCitadelSubDeck.SYNDICATES_WARS) }
   var archiveSubDeck by remember { mutableStateOf(ArchiveCodexSubDeck.PILOT_DOSSIER) }
   var helmInitialSubDeck by remember { mutableIntStateOf(0) }
-  var previousNodeBeforeConduit by remember { mutableStateOf(NexusCoreNode.ORBITAL_HUB) }
   var nexusInitialLayoutMode by remember { mutableStateOf(NexusHubLayoutMode.DECK_ONLY) }
   var forgeInitialTab by remember { mutableStateOf(NexusForgeTab.DEV_STUDIO_STAGE) }
   var isForgeFullScreenStage by remember { mutableStateOf(false) }
@@ -1339,14 +1330,11 @@ fun RiftArenaScreen(
     mutableFloatStateOf(localPrefs.getPlayfieldTextScale().coerceIn(0.75f, 1.75f))
   }
   var syndicateStatusBanner by remember { mutableStateOf<String?>(null) }
-  var armadaStatusBanner by remember { mutableStateOf<String?>(null) }
   var friendsRefreshKey by remember { mutableIntStateOf(0) }
   var syndicateChannelsRefreshKey by remember { mutableIntStateOf(0) }
-  var directivesRefreshKey by remember { mutableIntStateOf(0) }
-  var cosmeticsRefreshKey by remember { mutableIntStateOf(0) }
   var lastAppliedCloudCrestJson by remember { mutableStateOf("") }
-  var blockedPilotUids by remember(currentUserId) {
-    mutableStateOf(localPrefs.getBlockedPilotUids())
+  val blockedPilotUids = remember(currentUserId, friendsRefreshKey) {
+    localPrefs.getBlockedPilotUids()
   }
   var allTimePeakSnapshot by remember(currentUserId) {
     mutableStateOf(localPrefs.getAllTimePeakBountySnapshot(currentUserId))
@@ -1592,7 +1580,7 @@ fun RiftArenaScreen(
     engine.onDailyDirectiveEvent = { metric, amount, isAbsolutePeak ->
       if (!engine.isEphemeralPracticeRift) {
         localPrefs.recordDailyDirectiveProgress(metric, amount, isAbsolutePeak, currentUserId)
-        directivesRefreshKey++
+        frameTick++
       }
     }
     engine.onExtraCareerStatsDelta = { matches, losses, assists, fired, hit, captures ->
@@ -2757,7 +2745,6 @@ fun RiftArenaScreen(
           openNexusNode(NexusCoreNode.SYNDICATE_CITADEL)
         },
         onOpenArmadaFleet = {
-          armadaStatusBanner = null
           syndicateSubDeck = SyndicateCitadelSubDeck.STRIKE_WING
           openNexusNode(NexusCoreNode.SYNDICATE_CITADEL)
         },
@@ -2770,7 +2757,6 @@ fun RiftArenaScreen(
           openNexusNode(NexusCoreNode.ARCHIVE_CODEX)
         },
         onOpenProgression = {
-          previousNodeBeforeConduit = NexusCoreNode.ORBITAL_HUB
           openNexusNode(NexusCoreNode.RIFT_CONDUIT)
         },
         onOpenSettings = { openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 0) },
@@ -3166,9 +3152,6 @@ fun RiftArenaScreen(
                   if (helmInitialSubDeck == 3) "CODEX" else "SETTINGS"
               }
 
-            val closeEmbeddedModal: () -> Unit = {
-              activeNexusNode = NexusCoreNode.ORBITAL_HUB
-            }
             val saveCustomSlotShared: (CustomShipLoadoutSlot) -> Unit = { updatedSlot ->
               activeCustomSlot = updatedSlot
               localPrefs.saveCustomShipSlot(updatedSlot, currentUserId)
@@ -3412,11 +3395,6 @@ fun RiftArenaScreen(
                 }
               }
 
-            val stageRankedModeIntoHangar: (RankedGameMode, Int) -> Unit = { mode, bracket ->
-              deployDirectlyWithHangarShip(mode, bracket, null)
-            }
-
-            var callsignRenameRefreshTick by remember { mutableIntStateOf(0) }
             val applyUnifiedCallsignRename: (String) -> Pair<Boolean, String> = { rawRequested ->
               val trimmedReq = rawRequested.trim()
               if (trimmedReq.equals(callsign, ignoreCase = true) && callsign.isNotBlank()) {
@@ -3434,7 +3412,7 @@ fun RiftArenaScreen(
                   engine.syncLocalArmadaSelfSlot()
                   renamedCallsignInCurrentSession = true
                   needsInitialSwornCallsign = false
-                  callsignRenameRefreshTick++
+                  frameTick++
                   engine.onStatsUpdated()
                   pushLivePilotHeartbeatNow()
                   toastMessage = "SWORN PILOT CALLSIGN UPDATED TO $savedOrError"
@@ -3448,7 +3426,7 @@ fun RiftArenaScreen(
                 callsign = cleanGuest
                 engine.localPlayer.callsign = cleanGuest
                 engine.syncLocalArmadaSelfSlot()
-                callsignRenameRefreshTick++
+                frameTick++
                 engine.onStatsUpdated()
                 Pair(true, "Drifter callsign updated to $cleanGuest")
               }
@@ -3456,1201 +3434,120 @@ fun RiftArenaScreen(
 
             val renderModuleForNode: @Composable (NexusCoreNode) -> Unit = { targetNode ->
               when (targetNode) {
-                NexusCoreNode.HANGAR_DECK -> {
-                  LaunchedEffect(Unit) {
-                    openNexusNode(NexusCoreNode.HANGAR_DECK)
+                NexusCoreNode.ORBITAL_HUB,
+                NexusCoreNode.CONVERGENCE_GATE,
+                NexusCoreNode.HANGAR_DECK,
+                NexusCoreNode.RIFT_CONDUIT,
+                NexusCoreNode.SYNDICATE_CITADEL,
+                NexusCoreNode.ARCHIVE_CODEX,
+                NexusCoreNode.HELM_SYSTEMS -> {
+                  LaunchedEffect(targetNode) {
+                    openNexusNode(targetNode)
                   }
                 }
 
-                      NexusCoreNode.RIFT_CONDUIT -> {
-                        val (curLvlXp, nextLvlSpan, lvlFrac) =
-                          remember(frameTick) { engine.getXpProgressInCurrentLevel() }
-                        val presencePct =
-                          remember(frameTick) {
-                            (engine.getMatchPresenceRatio() * 100f).toInt().coerceIn(0, 100)
-                          }
-                        val conduitDirectives =
-                          remember(directivesRefreshKey, frameTick, currentUserId) {
-                            localPrefs.getDailyDirectives(currentUserId)
-                          }
-                        val conduitCanReroll =
-                          remember(directivesRefreshKey, currentUserId) {
-                            localPrefs.canRerollDailyDirectiveToday(currentUserId)
-                          }
-                        val conduitSweepClaimed =
-                          remember(directivesRefreshKey, currentUserId) {
-                            localPrefs.isDailySweepBonusClaimed(currentUserId)
-                          }
+                NexusCoreNode.SUBSPACE_COMMS -> Unit
 
-                        RiftShardsStoreModal(
-                          pilotLevel = engine.pilotLevel,
-                          currentLevelXp = curLvlXp,
-                          nextLevelXpSpan = nextLvlSpan,
-                          levelProgressFraction = lvlFrac,
-                          totalCustomizationPoints = engine.getCustomizationPointsTotal(),
-                          spentCustomizationPoints = activeCustomSlot.totalAllocatedPoints(),
-                          riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
-                          publicGameWins = engine.convergencesWon,
-                          matchPresencePct = presencePct,
-                          unlockedExtraSlots = engine.unlockedExtraSlots,
-                          aiShipDesignTokens = engine.aiShipDesignTokens,
-                          liveResonance = engine.liveResonance,
-                          peakResonance = engine.peakResonance,
-                          startingBounty = engine.getLocalStartingBounty(),
-                          dailyDirectives = conduitDirectives,
-                          canRerollDirectiveToday = conduitCanReroll,
-                          dailySweepClaimed = conduitSweepClaimed,
-                          activeShipId = selectedShipId,
-                          activeCustomSlotId = activeCustomSlotId,
-                          onTopUpRiftShards = { delta ->
-                            engine.riftShards =
-                              RiftBillingManager.effectiveShardBalance(engine.riftShards + delta)
-                            localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                            engine.onStatsUpdated()
-                          },
-                          equippedCosmeticByCategory = { category ->
-                            val _unused = cosmeticsRefreshKey
-                            localPrefs.getEquippedCosmeticId(category, currentUserId)
-                          },
-                          isCosmeticUnlocked = { category, item ->
-                            val _unused = cosmeticsRefreshKey
-                            when {
-                              item.id == 0 -> true
-                              category == "HULL_TRIM" || (item.shardCost > 0L && item.freeAtResonance <= 0) ->
-                                localPrefs.isCosmeticUnlocked("HULL_TRIM", item.id, 1, currentUserId)
-                              else ->
-                                RiftProgressionCatalog.isRankedCosmeticActive(item, engine.liveResonance)
-                            }
-                          },
-                          isFrameSlotUnlocked = { slotId ->
-                            val normSlot = CustomShipLoadoutSlot.normalizeSlotId(slotId)
-                            RiftProgressionCatalog.isFrameSlotActive(
-                              normSlot,
-                              engine.liveResonance,
-                              isFrameBPurchasedNow(),
-                            )
-                          },
-                          onClaimDailyDirective = { slotIdx ->
-                            val claimed =
-                              localPrefs.claimDailyDirectiveReward(slotIdx, currentUserId)
-                            if (claimed != null) {
-                              engine.riftShards =
-                                RiftBillingManager.effectiveShardBalance(
-                                  engine.riftShards + claimed.first
-                                )
-                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                              engine.xpFromAccuracy =
-                                localPrefs.getXpFromAccuracy(currentUserId).toFloat()
-                              engine.pilotLevel = localPrefs.getPilotLevel(currentUserId)
-                              engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
-                              engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
-                              if (!engine.hasJoinedMatch) {
-                                engine.localPlayer.bounty = engine.getLocalStartingBounty()
-                              }
-                              directivesRefreshKey++
-                              sfx.playPrize()
-                              engine.onStatsUpdated()
-                              claimed.first
-                            } else {
-                              0L
-                            }
-                          },
-                          onRerollDailyDirective = { slotIdx ->
-                            val ok = localPrefs.rerollDailyDirective(slotIdx, currentUserId)
-                            if (ok) {
-                              directivesRefreshKey++
-                              sfx.playMutedClick()
-                            }
-                            ok
-                          },
-                          onClaimDailySweep = {
-                            val sweep = localPrefs.claimDailySweepBonus(currentUserId)
-                            if (sweep != null) {
-                              engine.riftShards =
-                                RiftBillingManager.effectiveShardBalance(
-                                  engine.riftShards + sweep.first
-                                )
-                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                              engine.xpFromAccuracy =
-                                localPrefs.getXpFromAccuracy(currentUserId).toFloat()
-                              engine.pilotLevel = localPrefs.getPilotLevel(currentUserId)
-                              engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
-                              engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
-                              if (!engine.hasJoinedMatch) {
-                                engine.localPlayer.bounty = engine.getLocalStartingBounty()
-                              }
-                              directivesRefreshKey++
-                              sfx.playPrize()
-                              engine.onStatsUpdated()
-                              sweep.first
-                            } else {
-                              0L
-                            }
-                          },
-                          onUnlockOrEquipCosmetic = { category, item ->
-                            val isPaidHullSkin =
-                              category == "HULL_TRIM" || (item.shardCost > 0L && item.freeAtResonance <= 0)
-                            if (!isPaidHullSkin) {
-                              if (item.id == 0 || RiftProgressionCatalog.isRankedCosmeticActive(item, engine.liveResonance)) {
-                                localPrefs.setEquippedCosmeticId(category, item.id, currentUserId)
-                                syncEquippedCosmeticsToEngine(engine)
-                                localPrefs.exportCloudProgressionJson(currentUserId)
-                                cosmeticsRefreshKey++
-                                sfx.playPrize()
-                                engine.onStatsUpdated()
-                                true to "EQUIPPED ${item.name.uppercase(Locale.US)}"
-                              } else {
-                                false to "ACTIVE AT ${item.freeAtResonance} LIVE RESONANCE"
-                              }
-                            } else {
-                              val alreadyOwned =
-                                item.id <= 0 ||
-                                  localPrefs.isCosmeticUnlocked("HULL_TRIM", item.id, 1, currentUserId)
-                              if (alreadyOwned) {
-                                localPrefs.setEquippedCosmeticId("HULL_TRIM", item.id, currentUserId)
-                                RiftSpriteBaker.activeHullTrimStyle = item.id.coerceIn(0, 5)
-                                RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
-                                syncEquippedCosmeticsToEngine(engine)
-                                localPrefs.exportCloudProgressionJson(currentUserId)
-                                cosmeticsRefreshKey++
-                                sfx.playPrize()
-                                engine.onStatsUpdated()
-                                true to "EQUIPPED ${item.name.uppercase(Locale.US)}"
-                              } else if (
-                                item.shardCost > 0L &&
-                                  RiftBillingManager.canAffordShardSpend(engine.riftShards, item.shardCost)
-                              ) {
-                                engine.riftShards =
-                                  RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, item.shardCost)
-                                localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                                localPrefs.setCosmeticUnlocked("HULL_TRIM", item.id, true, currentUserId)
-                                localPrefs.setEquippedCosmeticId("HULL_TRIM", item.id, currentUserId)
-                                RiftSpriteBaker.activeHullTrimStyle = item.id.coerceIn(0, 5)
-                                RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
-                                syncEquippedCosmeticsToEngine(engine)
-                                localPrefs.exportCloudProgressionJson(currentUserId)
-                                cosmeticsRefreshKey++
-                                sfx.playPrize()
-                                engine.onStatsUpdated()
-                                val spendNote =
-                                  if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) {
-                                    "TESTER 0 SHARDS DEPLETED"
-                                  } else {
-                                    "-${item.shardCost} SHARDS"
-                                  }
-                                true to "UNLOCKED & EQUIPPED ${item.name.uppercase(Locale.US)} ($spendNote)"
-                              } else {
-                                false to "REQUIRES ${item.shardCost} RIFT SHARDS"
-                              }
-                            }
-                          },
-                          onUnlockOrSelectFrameSlot = { slotId ->
-                            val normSlotId = CustomShipLoadoutSlot.normalizeSlotId(slotId)
-                            val gate = RiftProgressionCatalog.getFrameSlotGate(normSlotId)
-                            val activeNow =
-                              RiftProgressionCatalog.isFrameSlotActive(
-                                normSlotId,
-                                engine.liveResonance,
-                                isFrameBPurchasedNow(),
-                              )
-                            if (activeNow) {
-                              switchCustomSlotShared(normSlotId)
-                              selectedShipId = 10
-                              localPrefs.setPreferredShipId(10)
-                              engine.switchLocalPlayerShip(10, forceFromHangar = true)
-                              syncEquippedCosmeticsToEngine(engine)
-                              engine.onStatsUpdated()
-                              openNexusNode(NexusCoreNode.HANGAR_DECK, sideBayOverride = "RIFT_FRAME_BAY")
-                              true to "SELECTED ${normSlotId.uppercase(Locale.US)} // OPENING RIFT FRAME"
-                            } else if (normSlotId == "Frame B" && unlockCustomSlotShared("Frame B")) {
-                              selectedShipId = 10
-                              localPrefs.setPreferredShipId(10)
-                              engine.switchLocalPlayerShip(10, forceFromHangar = true)
-                              syncEquippedCosmeticsToEngine(engine)
-                              engine.onStatsUpdated()
-                              val spendNote =
-                                if (RiftBillingManager.TESTER_INFINITE_SHARDS_ACTIVE) {
-                                  "TESTER 0 SHARDS DEPLETED"
-                                } else {
-                                  "-${gate.shardCost} RIFT SHARDS"
-                                }
-                              true to "UNLOCKED ${normSlotId.uppercase(Locale.US)} ($spendNote)"
-                            } else if (normSlotId == "Frame B") {
-                              false to "REQUIRES ${gate.shardCost} RIFT SHARDS IN SHARD STORE"
-                            } else {
-                              false to "ACTIVE AT ${gate.freeAtResonance} LIVE RESONANCE"
-                            }
-                          },
-                          onSpendRiftShards = { cost ->
-                            if (RiftBillingManager.canAffordShardSpend(engine.riftShards, cost)) {
-                              engine.riftShards =
-                                RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, cost)
-                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                              sfx.playPrize()
-                              engine.onStatsUpdated()
-                              true
-                            } else {
-                              false
-                            }
-                          },
-                          onRespecCustomizationPoints = {
-                            if (
-                              RiftBillingManager.canAffordShardSpend(engine.riftShards, 50L) &&
-                                activeCustomSlot.totalAllocatedPoints() > 0
-                            ) {
-                              engine.riftShards =
-                                RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, 50L)
-                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                              val zeroed =
-                                activeCustomSlot.copy(
-                                  speedPts = 0,
-                                  thrustPts = 0,
-                                  turnPts = 0,
-                                  maxFluxPts = 0,
-                                  rechargePts = 0,
-                                  primaryArchetype = "LIGHT_PULSE",
-                                  secondaryType = "NONE",
-                                )
-                              saveCustomSlotShared(zeroed)
-                              sfx.playPrize()
-                              engine.onStatsUpdated()
-                              true
-                            } else {
-                              false
-                            }
-                          },
-                          onPurchaseAiDesignToken = {
-                            if (RiftBillingManager.canAffordShardSpend(engine.riftShards, 150L)) {
-                              engine.riftShards =
-                                RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, 150L)
-                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                              engine.aiShipDesignTokens++
-                              sfx.playPrize()
-                              engine.onStatsUpdated()
-                              true
-                            } else {
-                              false
-                            }
-                          },
-                          onOpenHangarShip10 = {
-                            selectedShipId = 10
-                            hasExplicitHangarLock = true
-                            localPrefs.setPreferredShipId(10)
-                            val chargedKey = "charged_ship_${currentUserId.trim().ifBlank { "local" }}"
-                            context
-                              .getSharedPreferences("rift_hub_charged_ship_prefs", Context.MODE_PRIVATE)
-                              .edit()
-                              .putInt(chargedKey, 10)
-                              .apply()
-                            engine.switchLocalPlayerShip(10, forceFromHangar = true)
-                            syncEquippedCosmeticsToEngine(engine)
-                            engine.onStatsUpdated()
-                            hubRequestedSideBay = "RIFT_FRAME_BAY"
-                            openNexusNode(NexusCoreNode.ORBITAL_HUB, sideBayOverride = "RIFT_FRAME_BAY")
-                          },
-                          onCloseModal = { openNexusNode(previousNodeBeforeConduit) },
-                        )
+                NexusCoreNode.STAR_FORGE -> {
+                  NexusForgeModal(
+                    engine = engine,
+                    sfx = sfx,
+                    localPrefs = localPrefs,
+                    currentUserId = currentUserId,
+                    callsign = callsign,
+                    syndicateTag = syndicateTag,
+                    pilotLevel = engine.pilotLevel,
+                    riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
+                    selectedShipId = selectedShipId,
+                    activeCustomSlot = activeCustomSlot,
+                    slot9BUnlocked = slot9BUnlocked,
+                    slot9CUnlocked = slot9CUnlocked,
+                    slot9DUnlocked = slot9DUnlocked,
+                    slot9EUnlocked = slot9EUnlocked,
+                    unlockFullNinthShipOverride = RiftCalibrationState.unlockFullNinthShipOverride,
+                    sfxEnabled = sfxEnabled,
+                    musicEnabled = musicEnabled,
+                    musicBpm = musicBpm,
+                    musicVolume = musicVolume,
+                    sfxVolume = sfxVolume,
+                    initialTab = forgeInitialTab,
+                    isFullScreenStage = isForgeFullScreenStage,
+                    onToggleFullScreenStage = { expanded -> isForgeFullScreenStage = expanded },
+                    onExitToNexusHub = {
+                      RiftCalibrationState.isDraggingAnySlider = false
+                      isForgeFullScreenStage = false
+                      forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+                      openNexusNode(NexusCoreNode.ORBITAL_HUB)
+                    },
+                    onSelectShipForDeploy = { targetShipId ->
+                      val clamped = targetShipId.coerceIn(1, 10)
+                      selectedShipId = clamped
+                      hasExplicitHangarLock = true
+                      localPrefs.setPreferredShipId(clamped)
+                      if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
+                        engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
+                      } else {
+                        val chosenSpec = RiftCodex.getShipById(clamped)
+                        engine.localPlayer.shipId = clamped
+                        engine.localPlayer.spec = chosenSpec
+                        engine.localPlayer.liveResonanceRating = engine.getShipResonance(clamped)
+                        engine.syncLocalArmadaSelfSlot()
                       }
-
-                      NexusCoreNode.SYNDICATE_CITADEL -> {
-                        if (syndicateSubDeck == SyndicateCitadelSubDeck.STRIKE_WING) {
-                          val rawFriendsList =
-                            remember(syndicateTag, frameTick, friendsRefreshKey) {
-                              localPrefs.getFriendsList()
-                            }
-                          val enrichedFriendsList =
-                            remember(
-                              rawFriendsList,
-                              mergedLivePilots,
-                              realSwornCloudLeaderboard,
-                              frameTick,
-                            ) {
-                              rawFriendsList.map { friend ->
-                                val liveMatch =
-                                  mergedLivePilots.firstOrNull { p ->
-                                    val pUid = p.userId.ifBlank { p.id }
-                                    (friend.uid.isNotBlank() && pUid == friend.uid) ||
-                                      p.callsign.equals(friend.callsign, ignoreCase = true)
-                                  }
-                                val cloudEntry =
-                                  realSwornCloudLeaderboard.firstOrNull { e ->
-                                    (friend.uid.isNotBlank() && e.userId == friend.uid) ||
-                                      e.callsign.equals(friend.callsign, ignoreCase = true)
-                                  }
-                                val derivedCloudRes =
-                                  cloudEntry?.let {
-                                    ((it.pvpBounty - 100L).coerceAtLeast(0L) +
-                                        it.pvpKills * 12L +
-                                        it.convergencesWon * 35L)
-                                      .coerceIn(0L, 50_000L)
-                                      .toInt()
-                                  } ?: 0
-                                val resolvedRes =
-                                  when {
-                                    liveMatch != null && liveMatch.liveResonance > 0L ->
-                                      liveMatch.liveResonance.toInt()
-                                    derivedCloudRes > 0 -> derivedCloudRes
-                                    else -> friend.bounty.coerceAtLeast(0)
-                                  }
-                                val isPilotOnline = liveMatch != null
-                                val resolvedActivity =
-                                  when {
-                                    liveMatch == null -> "OFFLINE"
-                                    liveMatch.sectorId.equals("NEXUS_LOBBY", ignoreCase = true) ||
-                                      liveMatch.sectorId.equals("RIFT_LOBBY", ignoreCase = true) ->
-                                      "ONLINE • RIFT HUB"
-                                    else -> "IN COMBAT • ${liveMatch.sectorId}"
-                                  }
-                                friend.copy(
-                                  shipId = liveMatch?.shipId?.toInt()?.coerceIn(1, 10) ?: friend.shipId,
-                                  syndicateTag =
-                                    liveMatch?.syndicateTag?.takeIf { it.isNotBlank() }
-                                      ?: friend.syndicateTag,
-                                  isOnline = isPilotOnline,
-                                  statusText = resolvedActivity,
-                                  currentArmadaName =
-                                    liveMatch?.armadaName?.takeIf { !it.equals("SOLO", ignoreCase = true) }
-                                      ?: friend.currentArmadaName,
-                                  bounty = resolvedRes,
-                                )
-                              }
-                            }
-                          val enrichedArmadaSlots =
-                            remember(
-                              engine.activeArmadaSlots.size,
-                              mergedLivePilots,
-                              realSwornCloudLeaderboard,
-                              engine.liveResonance,
-                              isDeviceOnline,
-                              frameTick,
-                            ) {
-                              engine.activeArmadaSlots.toList().map { slot ->
-                                val isLocalSelf =
-                                  (currentUserId.isNotBlank() && slot.uid == currentUserId) ||
-                                    (slot.isLeader && slot.callsign.equals(callsign, ignoreCase = true))
-                                if (isLocalSelf) {
-                                  val selfActivity =
-                                    when {
-                                      !isDeviceOnline -> "OFFLINE"
-                                      engine.hasJoinedMatch && !engine.isEphemeralPracticeRift ->
-                                        "IN COMBAT • ${engine.activeMatchSectorTag()}"
-                                      else -> "ONLINE • RIFT HUB"
-                                    }
-                                  slot.copy(
-                                    resonance = engine.liveResonance.coerceAtLeast(0),
-                                    isOnline = isDeviceOnline,
-                                    activityLabel = selfActivity,
-                                  )
-                                } else {
-                                  val liveMatch =
-                                    mergedLivePilots.firstOrNull { p ->
-                                      val pUid = p.userId.ifBlank { p.id }
-                                      (slot.uid.isNotBlank() && pUid == slot.uid) ||
-                                        p.callsign.equals(slot.callsign, ignoreCase = true)
-                                    }
-                                  val cloudEntry =
-                                    realSwornCloudLeaderboard.firstOrNull { e ->
-                                      (slot.uid.isNotBlank() && e.userId == slot.uid) ||
-                                        e.callsign.equals(slot.callsign, ignoreCase = true)
-                                    }
-                                  val derivedCloudRes =
-                                    cloudEntry?.let {
-                                      ((it.pvpBounty - 100L).coerceAtLeast(0L) +
-                                          it.pvpKills * 12L +
-                                          it.convergencesWon * 35L)
-                                        .coerceIn(0L, 50_000L)
-                                        .toInt()
-                                    } ?: 0
-                                  val resolvedRes =
-                                    when {
-                                      liveMatch != null && liveMatch.liveResonance > 0L ->
-                                        liveMatch.liveResonance.toInt()
-                                      derivedCloudRes > 0 -> derivedCloudRes
-                                      else -> slot.resonance.coerceAtLeast(0)
-                                    }
-                                  val resolvedActivity =
-                                    when {
-                                      liveMatch == null -> "OFFLINE"
-                                      liveMatch.sectorId.equals("NEXUS_LOBBY", ignoreCase = true) ||
-                                        liveMatch.sectorId.equals("RIFT_LOBBY", ignoreCase = true) ->
-                                        "ONLINE • RIFT HUB"
-                                      else -> "IN COMBAT • ${liveMatch.sectorId}"
-                                    }
-                                  slot.copy(
-                                    shipId = liveMatch?.shipId?.toInt()?.coerceIn(1, 10) ?: slot.shipId,
-                                    resonance = resolvedRes,
-                                    isOnline = liveMatch != null,
-                                    activityLabel = resolvedActivity,
-                                  )
-                                }
-                              }
-                            }
-
-                          ArmadaFleetModal(
-                            currentSyndicateTag = syndicateTag,
-                            activeArmadaName = engine.activeArmadaName,
-                            armadaTierLabel = engine.getCurrentArmadaTierLabel(),
-                            armadaSlots = enrichedArmadaSlots,
-                            friendsList = enrichedFriendsList,
-                            blockedPilotUids = blockedPilotUids,
-                            statusBannerMessage = armadaStatusBanner,
-                            onCreateOrRenameArmada = { newArmadaName ->
-                              val trimmedWing =
-                                newArmadaName
-                                  .trim()
-                                  .uppercase(Locale.US)
-                                  .replace(Regex("[^A-Z0-9_-]"), "")
-                                  .take(14)
-                              if (trimmedWing.isEmpty() || UgcModeration.containsProfanity(trimmedWing)) {
-                                armadaStatusBanner = "SQUADRON TAG REJECTED BY SAFETY FILTER."
-                              } else {
-                                engine.formOrJoinArmada(
-                                  trimmedWing,
-                                  if (engine.activeArmadaSlots.size <= 1) enrichedFriendsList.take(1)
-                                  else emptyList(),
-                                )
-                                armadaStatusBanner =
-                                  "SQUADRON [${engine.activeArmadaName}] DEPLOYED (${engine.getCurrentArmadaSize()}/5 PILOTS)"
-                                friendsRefreshKey++
-                              }
-                            },
-                            onInviteFriendToArmada = { friend ->
-                              val added = engine.addMemberToArmada(friend)
-                              if (added) {
-                                armadaStatusBanner =
-                                  "${friend.callsign} JOINED SQUADRON [${engine.activeArmadaName}] (${engine.getCurrentArmadaSize()}/5)"
-                              }
-                              friendsRefreshKey++
-                            },
-                            onRequestJoinFriendArmada = { friend ->
-                              val targetArmada =
-                                friend.currentArmadaName
-                                  .ifEmpty { "${friend.syndicateTag}_SQD" }
-                                  .take(14)
-                              engine.formOrJoinArmada(targetArmada, listOf(friend))
-                              armadaStatusBanner =
-                                "JOINED SQUADRON [$targetArmada] WITH ${friend.callsign} (${engine.getCurrentArmadaSize()}/5)."
-                              friendsRefreshKey++
-                            },
-                            onRemoveArmadaMember = { callsignToDrop ->
-                              engine.removeMemberFromArmada(callsignToDrop)
-                              armadaStatusBanner =
-                                "ROSTER UPDATED -> NOW IN ${engine.getCurrentArmadaTierLabel()} TIER."
-                              friendsRefreshKey++
-                            },
-                            onLeaveArmadaToSolo = {
-                              engine.leaveArmadaToSolo()
-                              armadaStatusBanner = "LEFT SQUADRON -> OPERATING INDEPENDENTLY."
-                              friendsRefreshKey++
-                            },
-                            onAddFriendByCallsign = { rawCallsign ->
-                              viewModel.lookupAndAddRealFriendByCallsign(
-                                rawCallsign = rawCallsign,
-                                localPrefs = localPrefs,
-                              ) { _, statusMsg ->
-                                armadaStatusBanner = statusMsg
-                                toastMessage = statusMsg
-                                toastVersion++
-                                friendsRefreshKey++
-                              }
-                            },
-                            onBlockPilot = { pilotUid, pilotCallsign ->
-                              localPrefs.blockPilot(pilotUid)
-                              blockedPilotUids = localPrefs.getBlockedPilotUids()
-                              armadaStatusBanner = "BLOCKED PILOT $pilotCallsign."
-                            },
-                            onReportPilot = { pilotUid, pilotCallsign ->
-                              localPrefs.reportPilot(pilotUid, pilotCallsign, "Squadron Roster Report")
-                              armadaStatusBanner = "REPORT SUBMITTED FOR $pilotCallsign."
-                            },
-                            onCloseModal = closeEmbeddedModal,
-                          )
-                        } else {
-                          val directoryList =
-                            remember(syndicateTag, frameTick, cloudSyndicatesState) {
-                              val cloudList =
-                                (cloudSyndicatesState as? UiState.Success)?.data ?: emptyList()
-                              localPrefs.mergeCloudSyndicates(cloudList)
-                              localPrefs.getAllSyndicates()
-                            }
-                          val rosterMembers =
-                            remember(
-                              syndicateTag,
-                              callsign,
-                              selectedShipId,
-                              frameTick,
-                              syndicateChannelsRefreshKey,
-                              friendsRefreshKey,
-                            ) {
-                              localPrefs.getMySyndicateRoster(
-                                currentUid = currentUserId,
-                                callsign = callsign,
-                                shipId = selectedShipId,
-                                bounty = engine.localPlayer.bounty.toLong(),
-                                kills = engine.allTimeKills,
-                              )
-                            }
-                          val dismissedSyndicateInviteIds = remember { mutableStateListOf<String>() }
-                          val pendingSyndicateInvites =
-                            remember(sectorCommsState, callsign, syndicateTag, dismissedSyndicateInviteIds.size) {
-                              val remoteComms =
-                                (sectorCommsState as? UiState.Success)?.data ?: emptyList()
-                              val byTag = linkedMapOf<String, com.example.ui.PendingSyndicateInvite>()
-                              for (msg in remoteComms) {
-                                if (!msg.armadaObjective.startsWith("SYNINV|", ignoreCase = true)) continue
-                                val parts = msg.armadaObjective.split("|")
-                                val invTag = parts.getOrNull(1)?.trim()?.uppercase(Locale.US).orEmpty()
-                                val invName = parts.getOrNull(2)?.trim().orEmpty().ifBlank { "Syndicate $invTag" }
-                                val targetCs = parts.getOrNull(3)?.trim()?.uppercase(Locale.US).orEmpty()
-                                val invId = msg.id.ifBlank { "${invTag}_${msg.senderCallsign}" }
-                                if (
-                                  invTag.length in 1..4 &&
-                                    !invTag.equals(syndicateTag, ignoreCase = true) &&
-                                    targetCs.equals(callsign.trim(), ignoreCase = true) &&
-                                    invId !in dismissedSyndicateInviteIds
-                                ) {
-                                  byTag[invTag] =
-                                    com.example.ui.PendingSyndicateInvite(
-                                      id = invId,
-                                      syndicateTag = invTag,
-                                      syndicateName = invName,
-                                      inviterCallsign = msg.senderCallsign,
-                                    )
-                                }
-                              }
-                              byTag.values.toList()
-                            }
-                          val activeSynOfficers =
-                            remember(syndicateTag, syndicateChannelsRefreshKey) {
-                              localPrefs.getSyndicateOfficers(syndicateTag)
-                            }
-                          val isInviteOnlySyn =
-                            remember(syndicateTag, syndicateChannelsRefreshKey) {
-                              localPrefs.isSyndicateInviteOnly(syndicateTag)
-                            }
-                          val isLocalSynFounder =
-                            remember(rosterMembers, directoryList, syndicateTag, currentUserId) {
-                              rosterMembers.any {
-                                it.isLocalPlayer &&
-                                  (it.role.contains("Leader", ignoreCase = true) ||
-                                    it.role.contains("Founder", ignoreCase = true))
-                              } ||
-                                directoryList.any {
-                                  it.tag.equals(syndicateTag, ignoreCase = true) &&
-                                    it.ownerId.isNotBlank() &&
-                                    it.ownerId == currentUserId
-                                }
-                            }
-                          val canManageSynRoster =
-                            remember(isLocalSynFounder, activeSynOfficers, callsign) {
-                              isLocalSynFounder ||
-                                activeSynOfficers.any { it.equals(callsign, ignoreCase = true) }
-                            }
-                          val achievements =
-                            remember(frameTick, syndicateTag) {
-                              listOf(
-                                PilotAchievement(
-                                  id = "apex_hunter",
-                                  title = "APEX HUNTER",
-                                  description = "Eliminate an above-average Resonance rival (Resonance >= 250).",
-                                  unlocked =
-                                    engine.hvtEliminations >= 1L || engine.allTimeBountyPeak >= 250L,
-                                  progressText = "${engine.hvtEliminations} LEADER KILLS",
-                                ),
-                                PilotAchievement(
-                                  id = "trench_runner",
-                                  title = "TRENCH RUNNER",
-                                  description =
-                                    "Achieve 10+ total eliminations across sector skirmishes.",
-                                  unlocked = engine.allTimeKills >= 10L,
-                                  progressText = "${engine.allTimeKills} / 10 KILLS",
-                                ),
-                                PilotAchievement(
-                                  id = "first_convergence",
-                                  title = "FIRST CONVERGENCE",
-                                  description = "Reach 250+ Resonance in open Rift combat.",
-                                  unlocked = engine.allTimeBountyPeak >= 250L,
-                                  progressText = "${engine.allTimeBountyPeak} / 250 PEAK",
-                                ),
-                                PilotAchievement(
-                                  id = "flux_overlord",
-                                  title = "FLUX OVERLORD",
-                                  description = "Collect 5+ Supply Crates in open space.",
-                                  unlocked = engine.greensCollected >= 5L,
-                                  progressText = "${engine.greensCollected} / 5 CRATES",
-                                ),
-                                PilotAchievement(
-                                  id = "phase_striker",
-                                  title = "SYNDICATE VANGUARD",
-                                  description = "Charter or pledge allegiance to an active Syndicate.",
-                                  unlocked =
-                                    syndicateTag.isNotEmpty() &&
-                                      syndicateTag !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS,
-                                  progressText =
-                                    if (
-                                      syndicateTag.isNotBlank() &&
-                                        syndicateTag !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS
-                                    ) {
-                                      "[$syndicateTag] ACTIVE"
-                                    } else {
-                                      "UNAFFILIATED"
-                                    },
-                                ),
-                              )
-                            }
-
-                          SyndicatesModal(
-                            currentSyndicateTag = syndicateTag,
-                            currentSyndicateName = syndicateName,
-                            remainingLockDays = localPrefs.getRemainingSyndicateLockDays(),
-                            remainingLockFormatted = localPrefs.getRemainingSyndicateLockFormatted(),
-                            directoryList = directoryList,
-                            rosterMembers = rosterMembers,
-                            activeShipsInSector = engine.ships.filter { it.isHuman },
-                            achievements = achievements,
-                            statusBannerMessage = syndicateStatusBanner,
-                            onJoinSyndicate = { info ->
-                              val invOnly = localPrefs.isSyndicateInviteOnly(info.tag)
-                              val hasPass =
-                                localPrefs.getSyndicateInvitedGuests(info.tag).any {
-                                  it.equals(callsign, ignoreCase = true)
-                                } ||
-                                  pendingSyndicateInvites.any {
-                                    it.syndicateTag.equals(info.tag, ignoreCase = true)
-                                  }
-                              if (invOnly && !hasPass && info.ownerId != currentUserId) {
-                                syndicateStatusBanner =
-                                  "[${info.tag}] IS INVITE-ONLY. REQUEST AN INVITE FROM A SYNDICATE OFFICER."
-                              } else {
-                                val joined = localPrefs.joinOfficialSyndicate(info.tag, info.name)
-                                if (joined) {
-                                  syndicateTag = localPrefs.getSyndicateTag()
-                                  syndicateName = localPrefs.getSyndicateName()
-                                  syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
-                                  engine.localPlayer.syndicateTag = syndicateTag
-                                  engine.syncLocalArmadaSelfSlot()
-                                  syndicateStatusBanner =
-                                    "JOINED [$syndicateTag] $syndicateName! 15-DAY LOCK COOLDOWN (15d 00h) ACTIVE."
-                                  engine.onStatsUpdated()
-                                } else {
-                                  syndicateStatusBanner =
-                                    "CANNOT SWITCH SYNDICATES YET: ${localPrefs.getRemainingSyndicateLockFormatted()} REMAINING."
-                                }
-                              }
-                            },
-                            onLeaveSyndicate = {
-                              val left = localPrefs.leaveSyndicate()
-                              if (left) {
-                                syndicateTag = localPrefs.getSyndicateTag()
-                                syndicateName = localPrefs.getSyndicateName()
-                                syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
-                                engine.localPlayer.syndicateTag = syndicateTag
-                                engine.syncLocalArmadaSelfSlot()
-                                syndicateStatusBanner =
-                                  "LEFT SYNDICATE -> UNAFFILIATED. 15-DAY LOCK COOLDOWN TRIGGERED."
-                                engine.onStatsUpdated()
-                              } else {
-                                syndicateStatusBanner =
-                                  "CANNOT LEAVE SYNDICATE YET: ${localPrefs.getRemainingSyndicateLockFormatted()} REMAINING."
-                              }
-                            },
-                            onCreateCustomSyndicate = { rawTag, rawName, rawMotto ->
-                              val res =
-                                localPrefs.createCustomSyndicate(
-                                  tag = rawTag,
-                                  name = rawName,
-                                  motto = rawMotto,
-                                  ownerUid = currentUserId.ifBlank { "local_founder" },
-                                )
-                              res
-                                .onSuccess { created ->
-                                  syndicateTag = created.tag
-                                  syndicateName = created.name
-                                  syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
-                                  engine.localPlayer.syndicateTag = syndicateTag
-                                  engine.syncLocalArmadaSelfSlot()
-                                  if (isGoogleAuthenticated) {
-                                    viewModel.createCloudSyndicate(created)
-                                  }
-                                  syndicateChannelsRefreshKey++
-                                  syndicateStatusBanner =
-                                    "CHARTERED [${created.tag}] ${created.name}! LOCKED FOR 15d 00h."
-                                  engine.onStatsUpdated()
-                                }
-                                .onFailure { err ->
-                                  syndicateStatusBanner = err.message ?: "INVALID SYNDICATE CHARTER."
-                                }
-                            },
-                            pendingSyndicateInvites = pendingSyndicateInvites,
-                            isInviteOnlySyndicate = isInviteOnlySyn,
-                            officerCallsigns = activeSynOfficers,
-                            canManageSyndicateRoster = canManageSynRoster,
-                            isSyndicateFounder = isLocalSynFounder,
-                            onAcceptSyndicateInvite = { inv ->
-                              val joined =
-                                localPrefs.joinOfficialSyndicate(inv.syndicateTag, inv.syndicateName)
-                              if (joined) {
-                                dismissedSyndicateInviteIds.add(inv.id)
-                                syndicateTag = localPrefs.getSyndicateTag()
-                                syndicateName = localPrefs.getSyndicateName()
-                                syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
-                                engine.localPlayer.syndicateTag = syndicateTag
-                                engine.syncLocalArmadaSelfSlot()
-                                syndicateStatusBanner =
-                                  "ACCEPTED INVITE -> ENLISTED IN [$syndicateTag] $syndicateName!"
-                                engine.onStatsUpdated()
-                              } else {
-                                syndicateStatusBanner =
-                                  "CANNOT ACCEPT INVITE YET: ${localPrefs.getRemainingSyndicateLockFormatted()} REMAINING."
-                              }
-                            },
-                            onDeclineSyndicateInvite = { inv ->
-                              dismissedSyndicateInviteIds.add(inv.id)
-                              syndicateStatusBanner =
-                                "DECLINED INVITE FROM [${inv.syndicateTag}] ${inv.syndicateName}."
-                            },
-                            onInvitePilotToSyndicate = { rawTargetCallsign ->
-                              val cleanTarget =
-                                rawTargetCallsign
-                                  .trim()
-                                  .uppercase(Locale.US)
-                                  .replace(Regex("[^A-Z0-9_\\-]"), "")
-                                  .take(14)
-                              if (cleanTarget.length >= 2) {
-                                localPrefs.inviteGuestToSyndicateChannels(syndicateTag, cleanTarget)
-                                syndicateChannelsRefreshKey++
-                                if (isGoogleAuthenticated && isDeviceOnline) {
-                                  val cleanSynName =
-                                    syndicateName.replace("|", " ").trim().take(24).ifBlank { syndicateTag }
-                                  viewModel.sendSectorComm(
-                                    SyndicateChatMessage(
-                                      senderUid = currentUserId,
-                                      senderCallsign = callsign,
-                                      senderSyndicateTag = syndicateTag,
-                                      timestampLabel = "#SQUADRON-LFG",
-                                      messageText =
-                                        "SYNDICATE INVITE: [$syndicateTag] $cleanSynName invited $cleanTarget.",
-                                      isArmadaRecruitBanner = false,
-                                      armadaName = syndicateTag.take(16),
-                                      armadaCurrentSize = 1,
-                                      armadaMaxSize = 5,
-                                      armadaObjective =
-                                        "SYNINV|$syndicateTag|$cleanSynName|$cleanTarget".take(120),
-                                      requestSent = false,
-                                      createdAtMs = System.currentTimeMillis(),
-                                    )
-                                  )
-                                }
-                                syndicateStatusBanner =
-                                  "SYNDICATE INVITE DISPATCHED TO $cleanTarget FOR [$syndicateTag]."
-                              }
-                            },
-                            onToggleInviteOnlySyndicate = { inviteOnly ->
-                              localPrefs.setSyndicateInviteOnly(syndicateTag, inviteOnly)
-                              syndicateChannelsRefreshKey++
-                              syndicateStatusBanner =
-                                if (inviteOnly) "[$syndicateTag] SET TO INVITE-ONLY RECRUITMENT."
-                                else "[$syndicateTag] SET TO OPEN DIRECTORY ENLISTMENT."
-                            },
-                            onToggleSyndicateOfficer = { memberCallsign, _ ->
-                              val nowOfficer =
-                                localPrefs.toggleSyndicateOfficer(syndicateTag, memberCallsign)
-                              syndicateChannelsRefreshKey++
-                              syndicateStatusBanner =
-                                if (nowOfficer) "PROMOTED $memberCallsign TO [$syndicateTag] OFFICER."
-                                else "UPDATED $memberCallsign TO [$syndicateTag] MEMBER."
-                            },
-                            onKickSyndicateMember = { memberCallsign ->
-                              localPrefs.kickSyndicateMember(syndicateTag, memberCallsign)
-                              syndicateChannelsRefreshKey++
-                              syndicateStatusBanner =
-                                "REMOVED $memberCallsign FROM [$syndicateTag] ROSTER."
-                            },
-                            onCloseModal = closeEmbeddedModal,
-                          )
-                        }
-                      }
-
-                      NexusCoreNode.ARCHIVE_CODEX -> {
-                        if (archiveSubDeck == ArchiveCodexSubDeck.TACTICAL_CODEX) {
-                          LaunchedEffect(Unit) {
-                            archiveSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER
-                            openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 3)
-                          }
-                        } else {
-                          val (curLvlXp, nextLvlSpan, lvlFrac) =
-                            remember(frameTick) { engine.getXpProgressInCurrentLevel() }
-                          val presencePct =
-                            remember(frameTick) {
-                              (engine.getMatchPresenceRatio() * 100f).toInt().coerceIn(0, 100)
-                            }
-
-                          DossierModal(
-                            permanentUid = currentUserId,
-                            callsign = callsign,
-                            syndicateTag = syndicateTag,
-                            activeArmadaName = engine.activeArmadaName,
-                            activeArmadaSize = engine.getCurrentArmadaSize(),
-                            shipId = selectedShipId,
-                            pvpKills = engine.pvpKills,
-                            pvpDeaths = engine.pvpDeaths,
-                            pvpBountyPeak = engine.pvpBountyPeak,
-                            allTimeKills = engine.allTimeKills,
-                            allTimeDeaths = engine.allTimeDeaths,
-                            allTimeBountyPeak = engine.allTimeBountyPeak,
-                            convergencesWon = engine.convergencesWon,
-                            pilotLevel = engine.pilotLevel,
-                            currentLevelXp = curLvlXp,
-                            nextLevelXpSpan = nextLvlSpan,
-                            levelProgressFraction = lvlFrac,
-                            customizationPointsTotal = engine.getCustomizationPointsTotal(),
-                            spentCustomizationPoints = activeCustomSlot.totalAllocatedPoints(),
-                            riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
-                            xpFromBuffs = engine.xpFromBuffs.toLong(),
-                            xpFromDamage = engine.xpFromDamage.toLong(),
-                            xpFromAccuracy = engine.xpFromAccuracy.toLong(),
-                            xpFromBountyEarned = engine.xpFromBountyEarned.toLong(),
-                            xpFromBountyKilled = engine.xpFromBountyKilled.toLong(),
-                            matchPresencePct = presencePct,
-                            fps = currentFps,
-                            cloudLeaderboardEntries = realSwornCloudLeaderboard,
-                            allTimePeakSnapshot = allTimePeakSnapshot,
-                            pvpPeakSnapshot = pvpPeakSnapshot,
-                            currentLifeSnapshot =
-                              remember(frameTick) {
-                                if (engine.localPlayer.respawnTimer <= 0f) {
-                                  engine.currentLifeStats.toSnapshot()
-                                } else {
-                                  null
-                                }
-                              },
-                            syndicateServiceHistory = syndicateHistory,
-                            liveResonance = engine.liveResonance,
-                            peakResonance = engine.peakResonance,
-                            startingBounty = engine.getLocalStartingBounty(),
-                            onOpenRiftShardsStore = {
-                              previousNodeBeforeConduit = NexusCoreNode.ARCHIVE_CODEX
-                              openNexusNode(NexusCoreNode.RIFT_CONDUIT)
-                            },
-                            onResetLocalPilotData = {
-                              val activeUid = if (isGoogleAuthenticated) currentUserId else null
-                              localPrefs.resetAllLocalPilotData(activeUid)
-                              context
-                                .getSharedPreferences("rift_hub_charged_ship_prefs", Context.MODE_PRIVATE)
-                                .edit()
-                                .clear()
-                                .apply()
-                              callsign =
-                                if (isGoogleAuthenticated) localPrefs.getCallsign(currentUserId)
-                                else localPrefs.getCallsign()
-                              syndicateTag = localPrefs.getSyndicateTag()
-                              syndicateName = localPrefs.getSyndicateName()
-                              hasExplicitHangarLock = false
-                              selectedShipId = 1
-                              activeCustomSlotId = "Frame A"
-                              activeCustomSlot = localPrefs.getCustomShipSlot("Frame A", currentUserId)
-                              RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
-                              slot9BUnlocked = false
-                              slot9CUnlocked = false
-                              slot9DUnlocked = false
-                              slot9EUnlocked = false
-                              engine.pvpKills = 0L
-                              engine.pvpDeaths = 0L
-                              engine.pvpBountyPeak = 100L
-                              engine.allTimeKills = 0L
-                              engine.allTimeDeaths = 0L
-                              engine.allTimeBountyPeak = 100L
-                              engine.convergencesWon = 0L
-                              engine.hvtEliminations = 0L
-                              engine.greensCollected = 0L
-                              engine.xpFromBuffs = 0f
-                              engine.xpFromDamage = 0f
-                              engine.xpFromAccuracy = 0f
-                              engine.xpFromBountyEarned = 0f
-                              engine.xpFromBountyKilled = 0f
-                              engine.pilotLevel = 1
-                              val effectiveShards = RiftBillingManager.effectiveShardBalance(150L)
-                              engine.riftShards = effectiveShards
-                              localPrefs.setRiftShards(effectiveShards, activeUid)
-                              if (currentUserId.isNotBlank()) {
-                                localPrefs.setRiftShards(effectiveShards, currentUserId)
-                              }
-                              engine.liveResonance = 0
-                              engine.peakResonance = 0
-                              shipResonancesState = localPrefs.getAllShipResonances(currentUserId)
-                              engine.loadShipResonances(shipResonancesState, 0)
-                              engine.highestMilestoneLevelClaimed = 0
-                              engine.spentCustomizationPoints = 0
-                              engine.unlockedExtraSlots = 0
-                              engine.aiShipDesignTokens = 0
-                              engine.localPlayer.callsign = callsign
-                              engine.localPlayer.syndicateTag = syndicateTag
-                              engine.localPlayer.bounty = 100
-                              engine.leaveArmadaToSolo()
-                              engine.switchLocalPlayerShip(1, forceFromHangar = true)
-                              syncEquippedCosmeticsToEngine(engine)
-                              engine.resetCurrentLifeStats()
-                              engine.sessionPilotLivesCompleted = 0
-                              engine.sessionPilotTotalAliveSec = 0f
-                              engine.sessionBotLivesCompleted = 0
-                              engine.sessionBotTotalAliveSec = 0f
-                              allTimePeakSnapshot = null
-                              pvpPeakSnapshot = null
-                              syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
-                              friendsRefreshKey++
-                              directivesRefreshKey++
-                              cosmeticsRefreshKey++
-                              engine.onStatsUpdated()
-                              toastMessage = "PILOT TELEMETRY RESET TO 0 RESONANCE (CALLSIGN PRESERVED)"
-                              toastVersion++
-                            },
-                            onCallsignChanged = { updatedCallsign ->
-                              val saved =
-                                if (isGoogleAuthenticated) {
-                                  renamedCallsignInCurrentSession = true
-                                  localPrefs.setHasChosenInitialCallsign(true, currentUserId)
-                                  localPrefs.setCallsign(updatedCallsign, currentUserId)
-                                } else {
-                                  localPrefs.setCallsign(updatedCallsign)
-                                }
-                              callsign = saved
-                              engine.localPlayer.callsign = saved
-                              engine.onStatsUpdated()
-                              toastMessage = "SWORN PILOT CALLSIGN UPDATED TO $saved"
-                              toastVersion++
-                            },
-                            onUpdateRiftShards = { remainingShards ->
-                              val effective = RiftBillingManager.effectiveShardBalance(remainingShards)
-                              engine.riftShards = effective
-                              localPrefs.setRiftShards(effective, currentUserId)
-                              engine.onStatsUpdated()
-                            },
-                            onRenameCallsign = applyUnifiedCallsignRename,
-                            onCloseModal = closeEmbeddedModal,
-                          )
-                        }
-                      }
-
-                      NexusCoreNode.HELM_SYSTEMS -> {
-                        SettingsModal(
-                          fps = currentFps,
-                          sfxEnabled = sfxEnabled,
-                          musicEnabled = musicEnabled,
-                          musicBpm = musicBpm,
-                          musicVolume = musicVolume,
-                          sfxVolume = sfxVolume,
-                          activeMusicArchetypeId = activeMusicArchetypeId,
-                          activeMusicSummary = activeMusicSummary,
-                          initialMusicPrompt = musicForgePrompt,
-                          cameraZoom = cameraZoom,
-                          playfieldTextScale = playfieldTextScale,
-                          isGoogleAuthenticated = isGoogleAuthenticated,
-                          initialSubDeck = helmInitialSubDeck,
-                          onSubDeckChanged = { helmInitialSubDeck = it },
-                          isNexusStreaming = isNexusStreaming,
-                          onOpenNexusFromCodex = { openNexusNode(NexusCoreNode.ORBITAL_HUB) },
-                          onToggleSfx = toggleSfxShared,
-                          onToggleMusic = toggleMusicShared,
-                          onChangeMusicBpm = changeMusicBpmShared,
-                          onChangeMusicVolume = changeMusicVolShared,
-                          onChangeSfxVolume = changeSfxVolShared,
-                          onSelectMusicArchetype = selectMusicArchetypeShared,
-                          onForgeCustomMusicPrompt = { forgeMusicPromptShared(it, true) },
-                          onChangeCameraZoom = { newZoom ->
-                            val clamped = newZoom.coerceIn(0.5f, 1.5f)
-                            cameraZoom = clamped; engine.cameraZoom = clamped; localPrefs.setCameraZoom(clamped)
-                          },
-                          onChangePlayfieldTextScale = { newScale ->
-                            val clamped = newScale.coerceIn(0.75f, 1.75f)
-                            playfieldTextScale = clamped; engine.playfieldTextScale = clamped
-                            localPrefs.setPlayfieldTextScale(clamped); frameTick++
-                          },
-                          onRequestGoogleSignIn = {
-                            val cm = credentialManager
-                            if (cm != null) {
-                              onGoogleSignInClicked(
-                                context = context,
-                                credentialManager = cm,
-                                onAuthSuccess = { toastMessage = "GOOGLE CLOUD ACCOUNT LINKED"; toastVersion++ },
-                                onAuthError = { msg -> toastMessage = "SIGN-IN: $msg"; toastVersion++ },
-                                scope = scope,
-                              )
-                            } else {
-                              toastMessage = "GOOGLE SIGN-IN UNAVAILABLE ON THIS DEVICE"
-                              toastVersion++
-                            }
-                          },
-                          onRequestSignOut = {
-                            pendingStagedLaunch = null
-                            suspendedActiveMatch = null
-                            matchmakingQueueViewModel.resetForAccountSwitch()
-                            engine.leaveActiveMatchToNexusOrbit()
-                            isNexusShellOpen = false
-                            localPrefs.clearUnscopedCallsignOnAccountSwitch()
-                            localPrefs.setGuestBypassEnabled(false)
-                            onSwitchAccount()
-                            val cm = credentialManager
-                            if (cm != null) {
-                              signOut(credentialManager = cm, scope = scope)
-                            } else {
-                              runCatching { safeDefaultFirebaseAuth(context).signOut() }
-                            }
-                          },
-                          onSwitchAccount = {
-                            pendingStagedLaunch = null
-                            suspendedActiveMatch = null
-                            matchmakingQueueViewModel.resetForAccountSwitch()
-                            engine.leaveActiveMatchToNexusOrbit()
-                            isNexusShellOpen = false
-                            localPrefs.clearUnscopedCallsignOnAccountSwitch()
-                            localPrefs.setGuestBypassEnabled(false)
-                            onSwitchAccount()
-                            if (isGoogleAuthenticated) {
-                              val cm = credentialManager
-                              if (cm != null) {
-                                signOut(credentialManager = cm, scope = scope)
-                              } else {
-                                runCatching { safeDefaultFirebaseAuth(context).signOut() }
-                              }
-                            }
-                          },
-                          updateStatusLabel = updateStatusLabel,
-                          hasUpdateAvailable = hasUpdateAvailable,
-                          onCheckOrApplyUpdate = onCheckOrApplyUpdate,
-                          onCloseModal = closeEmbeddedModal,
-                          onOpenChangelog = { showFullChangelogModal = true },
-                          onOpenAudioForge = {
-                            forgeInitialTab = NexusForgeTab.AUDIO_SFX
-                            isForgeFullScreenStage = false
-                            openNexusNode(NexusCoreNode.STAR_FORGE)
-                          },
-                          onOpenStarForge = {
-                            forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
-                            isForgeFullScreenStage = true
-                            openNexusNode(NexusCoreNode.STAR_FORGE)
-                          },
-                          onStartTutorial = {
-                            if (
-                              engine.hasJoinedMatch &&
-                                !engine.isEphemeralPracticeRift &&
-                                suspendedActiveMatch == null
-                            ) {
-                              suspendedActiveMatch =
-                                captureActiveMatchSnapshot(engine, hangarCardShipId, selectedMode)
-                            }
-                            pendingStagedLaunch = null
-                            showExitTutorialConfirmModal = false
-                            engine.isShipLockedForMatch = false
-                            engine.switchLocalPlayerShip(hangarCardShipId, forceFromHangar = true)
-                            syncEquippedCosmeticsToEngine(engine)
-                            engine.enterEphemeralPracticeRift(startTutorial = true)
-                            isNexusShellOpen = false
-                            toastMessage = "TUTORIAL INITIALIZED // SOLO FLIGHT BRIEFING"
-                            toastVersion++
-                            frameTick++
-                          },
-                          currentUserId = currentUserId,
-                          activeSectorTag = engine.activeMatchSectorTag(),
-                          cloudSyncHealth = cloudSyncHealth,
-                        )
-                      }
-
-                      NexusCoreNode.STAR_FORGE -> {
-                        NexusForgeModal(
-                          engine = engine,
-                          sfx = sfx,
-                          localPrefs = localPrefs,
-                          currentUserId = currentUserId,
-                          callsign = callsign,
-                          syndicateTag = syndicateTag,
-                          pilotLevel = engine.pilotLevel,
-                          riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards),
-                          selectedShipId = selectedShipId,
-                          activeCustomSlot = activeCustomSlot,
-                          slot9BUnlocked = slot9BUnlocked,
-                          slot9CUnlocked = slot9CUnlocked,
-                          slot9DUnlocked = slot9DUnlocked,
-                          slot9EUnlocked = slot9EUnlocked,
-                          unlockFullNinthShipOverride = RiftCalibrationState.unlockFullNinthShipOverride,
-                          sfxEnabled = sfxEnabled,
-                          musicEnabled = musicEnabled,
-                          musicBpm = musicBpm,
-                          musicVolume = musicVolume,
-                          sfxVolume = sfxVolume,
-                          initialTab = forgeInitialTab,
-                          isFullScreenStage = isForgeFullScreenStage,
-                          onToggleFullScreenStage = { expanded -> isForgeFullScreenStage = expanded },
-                          onExitToNexusHub = {
-                            RiftCalibrationState.isDraggingAnySlider = false
-                            isForgeFullScreenStage = false
-                            forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
-                            openNexusNode(NexusCoreNode.ORBITAL_HUB)
-                          },
-                          onSelectShipForDeploy = { targetShipId ->
-                            val clamped = targetShipId.coerceIn(1, 10)
-                            selectedShipId = clamped
-                            hasExplicitHangarLock = true
-                            localPrefs.setPreferredShipId(clamped)
-                            if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
-                              engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
-                            } else {
-                              val chosenSpec = RiftCodex.getShipById(clamped)
-                              engine.localPlayer.shipId = clamped
-                              engine.localPlayer.spec = chosenSpec
-                              engine.localPlayer.liveResonanceRating = engine.getShipResonance(clamped)
-                              engine.syncLocalArmadaSelfSlot()
-                            }
-                            syncEquippedCosmeticsToEngine(engine)
-                            engine.onStatsUpdated()
-                            sfx.playPrize()
-                          },
-                          onSaveCustomSlot = saveCustomSlotShared,
-                          onSwitchCustomSlot = switchCustomSlotShared,
-                          onUnlockCustomSlot = unlockCustomSlotShared,
-                          onForgeAiHullDesign = forgeAiHullShared,
-                          onSpendRiftShards = { cost ->
-                            if (RiftBillingManager.canAffordShardSpend(engine.riftShards, cost)) {
-                              engine.riftShards =
-                                RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, cost)
-                              localPrefs.setRiftShards(engine.riftShards, currentUserId)
-                              sfx.playPrize()
-                              engine.onStatsUpdated()
-                              true
-                            } else false
-                          },
-                          onToggleSfx = toggleSfxShared,
-                          onToggleMusic = toggleMusicShared,
-                          onChangeMusicBpm = changeMusicBpmShared,
-                          onChangeMusicVolume = changeMusicVolShared,
-                          onChangeSfxVolume = changeSfxVolShared,
-                          onSelectMusicArchetype = selectMusicArchetypeShared,
-                          onForgeCustomMusicPrompt = { forgeMusicPromptShared(it, false) },
-                          onEnterHudDragArenaMode = {
-                            RiftCalibrationState.isUiUnlockedForDragging = true
-                            RiftCalibrationState.isCalibrationModalOpen = true
-                            isNexusShellOpen = false
-                          },
-                          onSyncCalibrationToTesters = {
-                            val customGameId = engine.currentCustomGame?.instanceId ?: "global_custom"
-                            val json = RiftCalibrationState.exportGameplaySyncPayloadJson(engine)
-                            viewModel.broadcastCalibrationToCustomGame(customGameId, callsign, json)
-                            toastMessage = "CUSTOM GAME CALIBRATION SYNCED TO ALL TESTERS"
-                            toastVersion++
-                          },
-                          onShowToast = { msg -> toastMessage = msg; toastVersion++ },
-                        )
-                      }
-
-                      else -> Unit
-                    }
-                  }
+                      syncEquippedCosmeticsToEngine(engine)
+                      engine.onStatsUpdated()
+                      sfx.playPrize()
+                    },
+                    onSaveCustomSlot = saveCustomSlotShared,
+                    onSwitchCustomSlot = switchCustomSlotShared,
+                    onUnlockCustomSlot = unlockCustomSlotShared,
+                    onForgeAiHullDesign = forgeAiHullShared,
+                    onSpendRiftShards = { cost ->
+                      if (RiftBillingManager.canAffordShardSpend(engine.riftShards, cost)) {
+                        engine.riftShards =
+                          RiftBillingManager.computeBalanceAfterSpend(engine.riftShards, cost)
+                        localPrefs.setRiftShards(engine.riftShards, currentUserId)
+                        sfx.playPrize()
+                        engine.onStatsUpdated()
+                        true
+                      } else false
+                    },
+                    onToggleSfx = toggleSfxShared,
+                    onToggleMusic = toggleMusicShared,
+                    onChangeMusicBpm = changeMusicBpmShared,
+                    onChangeMusicVolume = changeMusicVolShared,
+                    onChangeSfxVolume = changeSfxVolShared,
+                    onSelectMusicArchetype = selectMusicArchetypeShared,
+                    onForgeCustomMusicPrompt = { forgeMusicPromptShared(it, false) },
+                    onEnterHudDragArenaMode = {
+                      RiftCalibrationState.isUiUnlockedForDragging = true
+                      RiftCalibrationState.isCalibrationModalOpen = true
+                      isNexusShellOpen = false
+                    },
+                    onSyncCalibrationToTesters = {
+                      val customGameId = engine.currentCustomGame?.instanceId ?: "global_custom"
+                      val json = RiftCalibrationState.exportGameplaySyncPayloadJson(engine)
+                      viewModel.broadcastCalibrationToCustomGame(customGameId, callsign, json)
+                      toastMessage = "CUSTOM GAME CALIBRATION SYNCED TO ALL TESTERS"
+                      toastVersion++
+                    },
+                    onShowToast = { msg -> toastMessage = msg; toastVersion++ },
+                  )
+                }
+              }
+            }
             val embeddedModuleContent: (@Composable () -> Unit)? =
               when (activeNexusNode) {
                 NexusCoreNode.ORBITAL_HUB,
                 NexusCoreNode.SUBSPACE_COMMS,
-                NexusCoreNode.CONVERGENCE_GATE -> null
-                else -> {
-                  { renderModuleForNode(activeNexusNode) }
+                NexusCoreNode.CONVERGENCE_GATE,
+                NexusCoreNode.HANGAR_DECK,
+                NexusCoreNode.RIFT_CONDUIT,
+                NexusCoreNode.SYNDICATE_CITADEL,
+                NexusCoreNode.ARCHIVE_CODEX,
+                NexusCoreNode.HELM_SYSTEMS -> null
+
+                NexusCoreNode.STAR_FORGE -> {
+                  { renderModuleForNode(NexusCoreNode.STAR_FORGE) }
                 }
               }
 
@@ -4772,7 +3669,6 @@ fun RiftArenaScreen(
                 frameTick++
               },
               onOpenArmadaModal = {
-                armadaStatusBanner = null
                 syndicateSubDeck = SyndicateCitadelSubDeck.STRIKE_WING
                 openNexusNode(NexusCoreNode.SYNDICATE_CITADEL)
               },
@@ -4811,7 +3707,6 @@ fun RiftArenaScreen(
               },
               onOpenHangar = { openNexusNode(NexusCoreNode.HANGAR_DECK) },
               onOpenProgression = {
-                previousNodeBeforeConduit = activeNexusNode
                 openNexusNode(NexusCoreNode.RIFT_CONDUIT)
               },
               onOpenDossier = {
@@ -5136,7 +4031,6 @@ fun RiftArenaScreen(
                   rawCallsign = targetCallsign,
                   localPrefs = localPrefs,
                 ) { _, statusMsg ->
-                  armadaStatusBanner = statusMsg
                   toastMessage = statusMsg
                   toastVersion++
                   friendsRefreshKey++
@@ -5497,7 +4391,7 @@ fun RiftArenaScreen(
                   if (!engine.hasJoinedMatch) {
                     engine.localPlayer.bounty = engine.getLocalStartingBounty()
                   }
-                  directivesRefreshKey++
+                  frameTick++
                   sfx.playPrize()
                   engine.onStatsUpdated()
                   claimed.first
@@ -5508,7 +4402,7 @@ fun RiftArenaScreen(
               onRerollDailyDirectiveSlot = { slotIdx ->
                 val ok = localPrefs.rerollDailyDirective(slotIdx, currentUserId)
                 if (ok) {
-                  directivesRefreshKey++
+                  frameTick++
                   sfx.playMutedClick()
                 }
                 ok
@@ -5526,7 +4420,7 @@ fun RiftArenaScreen(
                   if (!engine.hasJoinedMatch) {
                     engine.localPlayer.bounty = engine.getLocalStartingBounty()
                   }
-                  directivesRefreshKey++
+                  frameTick++
                   sfx.playPrize()
                   engine.onStatsUpdated()
                   sweep.first
@@ -5542,7 +4436,7 @@ fun RiftArenaScreen(
                     localPrefs.setEquippedCosmeticId(category, item.id, currentUserId)
                     syncEquippedCosmeticsToEngine(engine)
                     localPrefs.exportCloudProgressionJson(currentUserId)
-                    cosmeticsRefreshKey++
+                    frameTick++
                     sfx.playPrize()
                     engine.onStatsUpdated()
                     true to "EQUIPPED ${item.name.uppercase(Locale.US)}"
@@ -5559,7 +4453,7 @@ fun RiftArenaScreen(
                     RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
                     syncEquippedCosmeticsToEngine(engine)
                     localPrefs.exportCloudProgressionJson(currentUserId)
-                    cosmeticsRefreshKey++
+                    frameTick++
                     sfx.playPrize()
                     engine.onStatsUpdated()
                     true to "EQUIPPED ${item.name.uppercase(Locale.US)}"
@@ -5576,7 +4470,7 @@ fun RiftArenaScreen(
                     RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
                     syncEquippedCosmeticsToEngine(engine)
                     localPrefs.exportCloudProgressionJson(currentUserId)
-                    cosmeticsRefreshKey++
+                    frameTick++
                     sfx.playPrize()
                     engine.onStatsUpdated()
                     val spendNote =
@@ -5728,8 +4622,7 @@ fun RiftArenaScreen(
                 pvpPeakSnapshot = null
                 syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
                 friendsRefreshKey++
-                directivesRefreshKey++
-                cosmeticsRefreshKey++
+                frameTick++
                 engine.onStatsUpdated()
                 toastMessage = "PILOT TELEMETRY RESET TO 0 RESONANCE (CALLSIGN PRESERVED)"
                 toastVersion++
