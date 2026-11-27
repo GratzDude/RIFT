@@ -894,25 +894,45 @@ private fun ShipAndCosmeticTurntableBay(
             )
           }
           drawIntoCanvas { canvas ->
+            RiftSpriteBaker.beginFrameRelightPass()
             val nc = canvas.nativeCanvas
-            nc.save()
-            nc.translate(cx, cy)
-            nc.rotate(effectiveHeadingDeg)
             val shipRadius = (size.minDimension * 0.28f).coerceIn(28f, 82f)
-            val shipBmp =
-              RiftSpriteBaker.getShipSprite(
+            val shipAuraRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SHIP_AURA_LABELS)
+            val shipBundle =
+              RiftSpriteBaker.getShipRelightBundle(
                 shipId = currentSpec.id.coerceIn(1, 10),
                 isAllied = true,
-                isHitFlashing = false,
                 trimStyleOverride = turntableTrimIndex,
               )
-            nc.drawBitmap(
-              shipBmp,
-              null,
-              android.graphics.RectF(-shipRadius, -shipRadius, shipRadius, shipRadius),
-              null,
+            val skinAccentArgb = (previewSkinItem.accentColorHex.toInt() and 0x00FFFFFF) or -0x1000000
+            val lightScale =
+              if (RiftVisualForgeState.pointLightEnabled) {
+                RiftVisualForgeState.dynamicLightIntensity.coerceIn(0.35f, 2.2f)
+              } else {
+                0.75f
+              }
+            val keyIntensity =
+              (0.92f * shipAuraRec.glowIntensity.coerceIn(0.30f, 2.0f) * lightScale).coerceIn(0.18f, 1.55f)
+            val fillIntensity =
+              (0.56f * shipAuraRec.glowIntensity.coerceIn(0.30f, 2.0f) * lightScale).coerceIn(0.12f, 1.15f)
+            RiftSpriteBaker.drawNormalMappedSprite(
+              canvas = nc,
+              bundle = shipBundle,
+              cx = cx,
+              cy = cy,
+              drawSize = shipRadius * 2f,
+              rotationRad = effectiveHeadingDeg * (PI.toFloat() / 180f),
+              paintAlpha = 255,
+              rimDepth = shipAuraRec.rimLightDepth,
+              light1WorldX = cx - shipRadius * 1.45f,
+              light1WorldY = cy - shipRadius * 1.15f,
+              light1Color = skinAccentArgb,
+              light1Intensity = keyIntensity,
+              light2WorldX = cx + shipRadius * 1.35f,
+              light2WorldY = cy + shipRadius * 1.05f,
+              light2Color = shipAuraRec.glowColorInt,
+              light2Intensity = fillIntensity,
             )
-            nc.restore()
           }
         }
         Text(
@@ -2938,23 +2958,44 @@ private fun DevPlayfieldAndHudStudioBay(
               timeSec = timeSec,
               isSelected = showStarForgeCreationOverlay,
             )
+          val studioLightGain =
+            if (RiftVisualForgeState.pointLightEnabled) {
+              RiftVisualForgeState.dynamicLightIntensity.coerceIn(0f, 2.2f)
+            } else {
+              0f
+            }
           drawIntoCanvas { canvas ->
+            RiftSpriteBaker.beginFrameRelightPass()
             val nc = canvas.nativeCanvas
-            // Clickable Rift Station Safe-Zone Specimen (north of Star Core at 4000, 3420)
+            // Clickable Normal-Mapped Rift Station Safe-Zone Specimen (north of Star Core at 4000, 3420)
             val riftStationCx = w2sX(4000f)
             val riftStationCy = w2sY(3420f)
             val riftStationR = (118f * padRec.pixelScale.coerceIn(0.65f, 1.45f) * worldScale).coerceAtLeast(14f)
-            val bmp = RiftSpriteBaker.safeZoneStationBitmap
-            nc.save()
-            nc.translate(riftStationCx, riftStationCy)
-            nc.rotate((timeSec * 8f) % 360f)
-            nc.drawBitmap(
-              bmp,
-              null,
-              android.graphics.RectF(-riftStationR, -riftStationR, riftStationR, riftStationR),
-              null,
+            val stationBundle = RiftSpriteBaker.getSafeZoneStationRelightBundle()
+            val stationSpinDeg = (timeSec * 8f) % 360f
+            val holoSpinRad = ((timeSec * 46f) % 360f) * (PI.toFloat() / 180f)
+            val holoLocalX = cos(holoSpinRad) * (riftStationR * 0.38f)
+            val holoLocalY = sin(holoSpinRad) * (riftStationR * 0.38f) * 0.72f
+            val holoScreenX = riftStationCx + (holoLocalX * 0.96126f - holoLocalY * (-0.27564f))
+            val holoScreenY = riftStationCy + (holoLocalX * (-0.27564f) + holoLocalY * 0.96126f)
+            RiftSpriteBaker.drawNormalMappedSprite(
+              canvas = nc,
+              bundle = stationBundle,
+              cx = riftStationCx,
+              cy = riftStationCy,
+              drawSize = riftStationR * 2f,
+              rotationRad = stationSpinDeg * (PI.toFloat() / 180f),
+              paintAlpha = (padRec.surfaceOpacity.coerceIn(0.35f, 1f) * 255f).roundToInt().coerceIn(85, 255),
+              rimDepth = padRec.rimLightDepth,
+              light1WorldX = holoScreenX,
+              light1WorldY = holoScreenY,
+              light1Color = padRec.glowColorInt,
+              light1Intensity = (0.85f * padRec.glowIntensity.coerceIn(0.3f, 2.0f) * studioLightGain).coerceIn(0f, 1.55f),
+              light2WorldX = szCx,
+              light2WorldY = szCy,
+              light2Color = android.graphics.Color.rgb(250, 204, 21),
+              light2Intensity = (0.68f * studioLightGain).coerceIn(0f, 1.25f),
             )
-            nc.restore()
             RiftSpriteBaker.drawSafeZoneStationHoloRing(
               c = nc,
               cx = riftStationCx,
@@ -3005,16 +3046,40 @@ private fun DevPlayfieldAndHudStudioBay(
           }
           hitEntriesState += StageHitEntry(ForgeElementTarget.SAFE_ZONE_WALL, szCx + szScreenR, szCy, 44.dp.toPx())
 
-          // 4. True 1:1 Obstacles & Unified True-Centered Volumetric Storm-Cloud Playfield Rifts
+          // 4. True 1:1 Normal-Mapped Obstacles & Unified True-Centered Volumetric Storm-Cloud Playfield Rifts
           drawIntoCanvas { canvas ->
             val nc = canvas.nativeCanvas
+            val plasmaSx = w2sX(4640f)
+            val plasmaSy = w2sY(3340f)
+            val gravitySx = w2sX(4640f)
+            val gravitySy = w2sY(3760f)
+            val fluxCoreStageSx = w2sX(4000f)
+            val fluxCoreStageSy = w2sY(4560f)
             fun drawObstacle1To1(target: ForgeElementTarget, type: SpaceObstacleType, wx: Float, wy: Float, worldRadius: Float) {
               val rec = RiftVisualForgeState.getRecipe(target)
               val sx = w2sX(wx)
               val sy = w2sY(wy)
-              val sr = worldRadius * rec.pixelScale * worldScale
-              val bmp = RiftSpriteBaker.getSpaceObstacleBitmap(type, 0)
-              nc.drawBitmap(bmp, null, android.graphics.RectF(sx - sr, sy - sr, sx + sr, sy + sr), null)
+              val sr = (worldRadius * rec.pixelScale * worldScale).coerceAtLeast(12f)
+              val obsBundle = RiftSpriteBaker.getSpaceObstacleRelightBundle(type, 0)
+              val obsRotDeg = if (type == SpaceObstacleType.ORBITAL_STATION) (timeSec * 5f) % 360f else 0f
+              RiftSpriteBaker.drawNormalMappedSprite(
+                canvas = nc,
+                bundle = obsBundle,
+                cx = sx,
+                cy = sy,
+                drawSize = sr * 2f,
+                rotationRad = obsRotDeg * (PI.toFloat() / 180f),
+                paintAlpha = (rec.surfaceOpacity.coerceIn(0.35f, 1f) * 255f).roundToInt().coerceIn(85, 255),
+                rimDepth = rec.rimLightDepth,
+                light1WorldX = szCx,
+                light1WorldY = szCy,
+                light1Color = padRec.glowColorInt,
+                light1Intensity = (0.88f * studioLightGain).coerceIn(0f, 1.45f),
+                light2WorldX = plasmaSx,
+                light2WorldY = plasmaSy,
+                light2Color = android.graphics.Color.rgb(251, 113, 133),
+                light2Intensity = (0.48f * studioLightGain).coerceIn(0f, 0.95f),
+              )
               hitEntriesState += StageHitEntry(target, sx, sy, max(sr, 28.dp.toPx()))
             }
             drawObstacle1To1(ForgeElementTarget.OBSTACLE_ORBITAL_STATION, SpaceObstacleType.ORBITAL_STATION, 2920f, 3360f, 115f)
@@ -3074,8 +3139,31 @@ private fun DevPlayfieldAndHudStudioBay(
             val shipAuraRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SHIP_AURA_LABELS)
             val shipSx = w2sX(4320f)
             val shipSy = w2sY(4080f)
-            val shipR = 36f * RiftCalibrationState.shipScale * shipAuraRec.pixelScale * worldScale
-            RiftSpriteBaker.drawMetallicShipOnCanvas(nc, shipSx, shipSy, shipR.coerceAtLeast(14f), engine.localPlayer.spec, isAllied = true)
+            val shipR = (36f * RiftCalibrationState.shipScale * shipAuraRec.pixelScale * worldScale).coerceAtLeast(14f)
+            val stageShipBundle =
+              RiftSpriteBaker.getShipRelightBundle(
+                shipId = engine.localPlayer.shipId.coerceIn(1, 10),
+                isAllied = true,
+                trimStyleOverride = RiftSpriteBaker.activeHullTrimStyle.coerceIn(0, 5),
+              )
+            RiftSpriteBaker.drawNormalMappedSprite(
+              canvas = nc,
+              bundle = stageShipBundle,
+              cx = shipSx,
+              cy = shipSy,
+              drawSize = shipR * 2.25f,
+              rotationRad = ((timeSec * 20f) % 360f) * (PI.toFloat() / 180f),
+              paintAlpha = 255,
+              rimDepth = shipAuraRec.rimLightDepth,
+              light1WorldX = gravitySx,
+              light1WorldY = gravitySy,
+              light1Color = android.graphics.Color.rgb(192, 132, 252),
+              light1Intensity = (0.95f * studioLightGain).coerceIn(0f, 1.50f),
+              light2WorldX = fluxCoreStageSx,
+              light2WorldY = fluxCoreStageSy,
+              light2Color = android.graphics.Color.rgb(250, 204, 21),
+              light2Intensity = (0.68f * studioLightGain).coerceIn(0f, 1.20f),
+            )
             hitEntriesState += StageHitEntry(ForgeElementTarget.SHIP_AURA_LABELS, shipSx, shipSy, max(shipR * 1.5f, 30.dp.toPx()))
           }
 
@@ -3189,14 +3277,28 @@ private fun DevPlayfieldAndHudStudioBay(
           )
           drawIntoCanvas { c ->
             val nc = c.nativeCanvas
-            val podBmp = RiftSpriteBaker.supplyPodFrameBitmap
+            val podBundle = RiftSpriteBaker.getSupplyPodRelightBundle()
             val podR = crateR * 1.12f
             val iconR = crateR * 0.78f
-            nc.save()
-            nc.translate(crateCx, crateCy)
-            nc.rotate((timeSec * 36f) % 360f)
-            nc.drawBitmap(podBmp, null, android.graphics.RectF(-podR, -podR, podR, podR), null)
-            nc.restore()
+            val podAlpha = (crateRec.surfaceOpacity.coerceIn(0.35f, 1f) * 255f).roundToInt().coerceIn(85, 255)
+            RiftSpriteBaker.drawNormalMappedSprite(
+              canvas = nc,
+              bundle = podBundle,
+              cx = crateCx,
+              cy = crateCy,
+              drawSize = podR * 2f,
+              rotationRad = ((timeSec * 36f) % 360f) * (PI.toFloat() / 180f),
+              paintAlpha = podAlpha,
+              rimDepth = crateRec.rimLightDepth,
+              light1WorldX = coreCx,
+              light1WorldY = coreCy,
+              light1Color = coreRec.glowColorInt,
+              light1Intensity = (0.95f * studioLightGain).coerceIn(0f, 1.50f),
+              light2WorldX = stasisCx,
+              light2WorldY = stasisCy,
+              light2Color = stasisRec.glowColorInt,
+              light2Intensity = (0.62f * studioLightGain).coerceIn(0f, 1.10f),
+            )
             val buffBmp = RiftSpriteBaker.getBuffIconBitmap(0)
             nc.drawBitmap(buffBmp, null, android.graphics.RectF(crateCx - iconR, crateCy - iconR, crateCx + iconR, crateCy + iconR), null)
           }
@@ -3215,7 +3317,8 @@ private fun DevPlayfieldAndHudStudioBay(
             }
           drawIntoCanvas { c ->
             val nc = c.nativeCanvas
-            val podBmp = RiftSpriteBaker.supplyPodFrameBitmap
+            val podBundle = RiftSpriteBaker.getSupplyPodRelightBundle()
+            val podAlpha = (crateRec.surfaceOpacity.coerceIn(0.35f, 1f) * 255f).roundToInt().coerceIn(85, 255)
             for (idx in 0 until totalBuffCount) {
               val row = idx / colsPerRow
               val col = idx % colsPerRow
@@ -3236,11 +3339,24 @@ private fun DevPlayfieldAndHudStudioBay(
                   else -> RiftSpriteBaker.getBuffIconBitmap(0)
                 }
 
-              nc.save()
-              nc.translate(bx, by)
-              nc.rotate(((timeSec * 32f) + idx * 24f) % 360f)
-              nc.drawBitmap(podBmp, null, android.graphics.RectF(-podR, -podR, podR, podR), null)
-              nc.restore()
+              RiftSpriteBaker.drawNormalMappedSprite(
+                canvas = nc,
+                bundle = podBundle,
+                cx = bx,
+                cy = by,
+                drawSize = podR * 2f,
+                rotationRad = (((timeSec * 32f) + idx * 24f) % 360f) * (PI.toFloat() / 180f),
+                paintAlpha = podAlpha,
+                rimDepth = crateRec.rimLightDepth,
+                light1WorldX = coreCx,
+                light1WorldY = coreCy,
+                light1Color = coreRec.glowColorInt,
+                light1Intensity = (0.82f * studioLightGain).coerceIn(0f, 1.35f),
+                light2WorldX = brigCx,
+                light2WorldY = brigCy,
+                light2Color = brigRec.glowColorInt,
+                light2Intensity = (0.55f * studioLightGain).coerceIn(0f, 1.05f),
+              )
               nc.drawBitmap(buffBmp, null, android.graphics.RectF(bx - iconR, by - iconR, bx + iconR, by + iconR), null)
 
               if (worldScale >= 0.44f) {
@@ -4032,19 +4148,34 @@ private fun CrateBuffGlassInspectorModal(
             val iconR = podR * 0.72f
             drawCircle(Color(0x2834D399), podR * 1.32f, Offset(cx, cy))
             drawIntoCanvas { c ->
+              RiftSpriteBaker.beginFrameRelightPass()
               val nc = c.nativeCanvas
-              val podBmp = RiftSpriteBaker.supplyPodFrameBitmap
+              val podBundle = RiftSpriteBaker.getSupplyPodRelightBundle()
+              val crateRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SUPPLY_CRATE)
               val buffBmp =
                 when {
                   codexEntry != null -> RiftSpriteBaker.getBuffIconBitmap(codexEntry.buffTypeIndex)
                   editableCustom != null -> RiftSpriteBaker.bakeCustomBuffIconBitmap(editableCustom!!, 96)
                   else -> RiftSpriteBaker.getBuffIconBitmap(0)
                 }
-              nc.save()
-              nc.translate(cx, cy)
-              nc.rotate((t * 34f) % 360f)
-              nc.drawBitmap(podBmp, null, android.graphics.RectF(-podR, -podR, podR, podR), null)
-              nc.restore()
+              RiftSpriteBaker.drawNormalMappedSprite(
+                canvas = nc,
+                bundle = podBundle,
+                cx = cx,
+                cy = cy,
+                drawSize = podR * 2f,
+                rotationRad = ((t * 34f) % 360f) * (PI.toFloat() / 180f),
+                paintAlpha = 255,
+                rimDepth = crateRec.rimLightDepth,
+                light1WorldX = cx - podR * 1.35f,
+                light1WorldY = cy - podR * 1.20f,
+                light1Color = crateRec.glowColorInt,
+                light1Intensity = 0.96f,
+                light2WorldX = cx + podR * 1.30f,
+                light2WorldY = cy + podR * 1.05f,
+                light2Color = android.graphics.Color.rgb(250, 204, 21),
+                light2Intensity = 0.56f,
+              )
               nc.drawBitmap(buffBmp, null, android.graphics.RectF(cx - iconR, cy - iconR, cx + iconR, cy + iconR), null)
             }
           }
@@ -4997,18 +5128,32 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
       )
       val stationR = span * 0.88f
       drawIntoCanvas { c ->
+        RiftSpriteBaker.beginFrameRelightPass()
         val nc = c.nativeCanvas
-        val bmp = RiftSpriteBaker.safeZoneStationBitmap
-        nc.save()
-        nc.translate(cx, cy)
-        nc.rotate((timeSec * 12f) % 360f)
-        nc.drawBitmap(
-          bmp,
-          null,
-          android.graphics.RectF(-stationR, -stationR, stationR, stationR),
-          null,
+        val stationBundle = RiftSpriteBaker.getSafeZoneStationRelightBundle()
+        val holoSpinRad = ((timeSec * 46f) % 360f) * (PI.toFloat() / 180f)
+        val holoLocalX = cos(holoSpinRad) * (stationR * 0.38f)
+        val holoLocalY = sin(holoSpinRad) * (stationR * 0.38f) * 0.72f
+        val holoX = cx + (holoLocalX * 0.96126f - holoLocalY * (-0.27564f))
+        val holoY = cy + (holoLocalX * (-0.27564f) + holoLocalY * 0.96126f)
+        RiftSpriteBaker.drawNormalMappedSprite(
+          canvas = nc,
+          bundle = stationBundle,
+          cx = cx,
+          cy = cy,
+          drawSize = stationR * 2f,
+          rotationRad = ((timeSec * 12f) % 360f) * (PI.toFloat() / 180f),
+          paintAlpha = (recipe.surfaceOpacity.coerceIn(0.35f, 1f) * 255f).roundToInt().coerceIn(85, 255),
+          rimDepth = recipe.rimLightDepth,
+          light1WorldX = holoX,
+          light1WorldY = holoY,
+          light1Color = recipe.glowColorInt,
+          light1Intensity = (0.95f * recipe.glowIntensity.coerceIn(0.30f, 2.0f)).coerceIn(0.20f, 1.55f),
+          light2WorldX = cx - stationR * 1.45f,
+          light2WorldY = cy - stationR * 1.15f,
+          light2Color = recipe.trimColorInt,
+          light2Intensity = (0.58f * recipe.glowIntensity.coerceIn(0.30f, 2.0f)).coerceIn(0.15f, 1.15f),
         )
-        nc.restore()
         RiftSpriteBaker.drawSafeZoneStationHoloRing(
           c = nc,
           cx = cx,
@@ -5041,8 +5186,28 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
           else -> SpaceObstacleType.FLOATING_DEBRIS
         }
       drawIntoCanvas { c ->
-        val bmp = RiftSpriteBaker.getSpaceObstacleBitmap(type, 0)
-        c.nativeCanvas.drawBitmap(bmp, null, android.graphics.RectF(cx - span, cy - span, cx + span, cy + span), null)
+        RiftSpriteBaker.beginFrameRelightPass()
+        val obsBundle = RiftSpriteBaker.getSpaceObstacleRelightBundle(type, 0)
+        val keyAngle = timeSec * 0.72f
+        val rotDeg = if (type == SpaceObstacleType.ORBITAL_STATION) (timeSec * 8f) % 360f else 0f
+        RiftSpriteBaker.drawNormalMappedSprite(
+          canvas = c.nativeCanvas,
+          bundle = obsBundle,
+          cx = cx,
+          cy = cy,
+          drawSize = span * 2f,
+          rotationRad = rotDeg * (PI.toFloat() / 180f),
+          paintAlpha = (recipe.surfaceOpacity.coerceIn(0.35f, 1f) * 255f).roundToInt().coerceIn(85, 255),
+          rimDepth = recipe.rimLightDepth,
+          light1WorldX = cx + cos(keyAngle) * span * 1.45f,
+          light1WorldY = cy + sin(keyAngle) * span * 1.25f,
+          light1Color = recipe.glowColorInt,
+          light1Intensity = (0.96f * recipe.glowIntensity.coerceIn(0.30f, 2.0f)).coerceIn(0.20f, 1.55f),
+          light2WorldX = cx - cos(keyAngle) * span * 1.35f,
+          light2WorldY = cy - sin(keyAngle) * span * 1.15f,
+          light2Color = recipe.trimColorInt,
+          light2Intensity = (0.52f * recipe.glowIntensity.coerceIn(0.30f, 2.0f)).coerceIn(0.12f, 1.10f),
+        )
       }
     }
     ForgeElementTarget.RIFT_PLASMA,
@@ -5126,7 +5291,31 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
     }
     ForgeElementTarget.SHIP_AURA_LABELS -> {
       drawIntoCanvas { c ->
-        RiftSpriteBaker.drawMetallicShipOnCanvas(c.nativeCanvas, cx, cy, span * 0.58f, engine.localPlayer.spec, isAllied = true)
+        RiftSpriteBaker.beginFrameRelightPass()
+        val shipBundle =
+          RiftSpriteBaker.getShipRelightBundle(
+            shipId = engine.localPlayer.shipId.coerceIn(1, 10),
+            isAllied = true,
+            trimStyleOverride = RiftSpriteBaker.activeHullTrimStyle.coerceIn(0, 5),
+          )
+        RiftSpriteBaker.drawNormalMappedSprite(
+          canvas = c.nativeCanvas,
+          bundle = shipBundle,
+          cx = cx,
+          cy = cy,
+          drawSize = span * 1.36f,
+          rotationRad = ((timeSec * 24f) % 360f) * (PI.toFloat() / 180f),
+          paintAlpha = 255,
+          rimDepth = recipe.rimLightDepth,
+          light1WorldX = cx - span * 1.35f,
+          light1WorldY = cy - span * 1.15f,
+          light1Color = recipe.glowColorInt,
+          light1Intensity = (0.95f * recipe.glowIntensity.coerceIn(0.30f, 2.0f)).coerceIn(0.20f, 1.55f),
+          light2WorldX = cx + span * 1.30f,
+          light2WorldY = cy + span * 1.10f,
+          light2Color = recipe.trimColorInt,
+          light2Intensity = (0.55f * recipe.glowIntensity.coerceIn(0.30f, 2.0f)).coerceIn(0.12f, 1.10f),
+        )
       }
       drawArc(
         Color(recipe.glowColorInt),
@@ -5145,15 +5334,29 @@ private fun DrawScope.drawIsolatedTargetSpecimen(
         Offset(cx, cy),
       )
       drawIntoCanvas { c ->
+        RiftSpriteBaker.beginFrameRelightPass()
         val nc = c.nativeCanvas
-        val podBmp = RiftSpriteBaker.supplyPodFrameBitmap
+        val podBundle = RiftSpriteBaker.getSupplyPodRelightBundle()
         val podR = span * 0.88f
         val iconR = span * 0.60f
-        nc.save()
-        nc.translate(cx, cy)
-        nc.rotate((timeSec * 36f) % 360f)
-        nc.drawBitmap(podBmp, null, android.graphics.RectF(-podR, -podR, podR, podR), null)
-        nc.restore()
+        RiftSpriteBaker.drawNormalMappedSprite(
+          canvas = nc,
+          bundle = podBundle,
+          cx = cx,
+          cy = cy,
+          drawSize = podR * 2f,
+          rotationRad = ((timeSec * 36f) % 360f) * (PI.toFloat() / 180f),
+          paintAlpha = (recipe.surfaceOpacity.coerceIn(0.35f, 1f) * 255f).roundToInt().coerceIn(85, 255),
+          rimDepth = recipe.rimLightDepth,
+          light1WorldX = cx - podR * 1.40f,
+          light1WorldY = cy - podR * 1.20f,
+          light1Color = recipe.glowColorInt,
+          light1Intensity = (0.95f * recipe.glowIntensity.coerceIn(0.30f, 2.0f)).coerceIn(0.20f, 1.55f),
+          light2WorldX = cx + podR * 1.30f,
+          light2WorldY = cy + podR * 1.10f,
+          light2Color = recipe.trimColorInt,
+          light2Intensity = (0.55f * recipe.glowIntensity.coerceIn(0.30f, 2.0f)).coerceIn(0.12f, 1.10f),
+        )
         val buffBmp = RiftSpriteBaker.getBuffIconBitmap(0)
         nc.drawBitmap(buffBmp, null, android.graphics.RectF(cx - iconR, cy - iconR, cx + iconR, cy + iconR), null)
       }

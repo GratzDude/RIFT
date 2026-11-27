@@ -606,7 +606,21 @@ class RiftArenaView(
           android.graphics.PorterDuff.Mode.SRC_IN,
         )
     }
-  private val obstacleSpritePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+  // Pre-allocated 24-light flat world emitter buffers & top-2 resolved light scratch state (zero per-frame allocations)
+  private val sceneLightX = FloatArray(24)
+  private val sceneLightY = FloatArray(24)
+  private val sceneLightRange = FloatArray(24)
+  private val sceneLightBaseIntensity = FloatArray(24)
+  private val sceneLightColor = IntArray(24)
+  private var activeSceneLightCount: Int = 0
+  private var resolvedLight1X: Float = 0f
+  private var resolvedLight1Y: Float = 0f
+  private var resolvedLight1Color: Int = Color.WHITE
+  private var resolvedLight1Intensity: Float = 0f
+  private var resolvedLight2X: Float = 0f
+  private var resolvedLight2Y: Float = 0f
+  private var resolvedLight2Color: Int = Color.WHITE
+  private var resolvedLight2Intensity: Float = 0f
   private val nebulaPrimaryPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
   private val nebulaSecondaryPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
   private val nebulaTertiaryPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -1259,6 +1273,16 @@ class RiftArenaView(
     val viewTop = effectiveCamY - halfWorldH
     val viewBottom = effectiveCamY + halfWorldH
 
+    // 3b. Reset 48-slot AGSL relight shader pool & collect dynamic world point-light emitters once per frame
+    collectScenePointLights(
+      p = p,
+      monoTimeSec = monoTimeSec,
+      viewLeft = viewLeft,
+      viewRight = viewRight,
+      viewTop = viewTop,
+      viewBottom = viewBottom,
+    )
+
     // 4. Wall-less Circular Volumetric Safe-Zone Rift Aperture & 5x Rift Station (active ONLY in SECTOR_CONVERGENCE & FLUX_CORE)
     if (engine.hasActiveSafeZone()) {
       drawCircularNexusSafeRift(
@@ -1301,10 +1325,10 @@ class RiftArenaView(
     val crateRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SUPPLY_CRATE)
     val buffDrawSize = 88f * 0.89f * RiftCalibrationState.crateScale * crateRec.pixelScale.coerceIn(0.70f, 1.35f)
     val buffHalf = buffDrawSize * 0.5f
-    val podBmp = RiftSpriteBaker.supplyPodFrameBitmap
+    val podBundle = RiftSpriteBaker.getSupplyPodRelightBundle()
     val podHalf = buffHalf * 1.10f
     val iconHalf = buffHalf * 0.78f
-    val podBmpHalfSrc = podBmp.width * 0.5f
+    val podAlpha = (255f * crateRec.surfaceOpacity.coerceIn(0.35f, 1.0f)).roundToInt().coerceIn(90, 255)
     for (g in engine.greens) {
       g.spinPhase += dt * 1.85f
       if (g.x < viewLeft - 95f || g.x > viewRight + 95f || g.y < viewTop - 95f || g.y > viewBottom + 95f) {
@@ -1326,15 +1350,27 @@ class RiftArenaView(
       )
       canvas.drawBitmap(RiftSpriteBaker.emeraldGlowStamp, null, nebulaDstRect, buffGlowPaint)
 
-      // Smoothly Rotating Beveled Gunmetal/Emerald Containment Pod Frame
-      val podScale = (podHalf / podBmpHalfSrc.coerceAtLeast(1f))
-      shipMatrix.reset()
-      shipMatrix.postTranslate(-podBmpHalfSrc, -podBmpHalfSrc)
-      shipMatrix.postRotate((g.spinPhase * 22f) % 360f)
-      shipMatrix.postScale(podScale, podScale)
-      shipMatrix.postTranslate(g.x, gy)
-      obstacleSpritePaint.alpha = (255f * crateRec.surfaceOpacity.coerceIn(0.35f, 1.0f)).roundToInt().coerceIn(90, 255)
-      canvas.drawBitmap(podBmp, shipMatrix, obstacleSpritePaint)
+      // Smoothly Rotating Normal-Mapped Beveled Gunmetal/Emerald Containment Pod Frame
+      selectTopTwoLightsAt(g.x, gy)
+      val podRotRad = ((g.spinPhase * 22f) % 360f) * (PI.toFloat() / 180f)
+      RiftSpriteBaker.drawNormalMappedSprite(
+        canvas = canvas,
+        bundle = podBundle,
+        cx = g.x,
+        cy = gy,
+        drawSize = podHalf * 2f,
+        rotationRad = podRotRad,
+        paintAlpha = podAlpha,
+        rimDepth = crateRec.rimLightDepth,
+        light1WorldX = resolvedLight1X,
+        light1WorldY = resolvedLight1Y,
+        light1Color = resolvedLight1Color,
+        light1Intensity = resolvedLight1Intensity,
+        light2WorldX = resolvedLight2X,
+        light2WorldY = resolvedLight2Y,
+        light2Color = resolvedLight2Color,
+        light2Intensity = resolvedLight2Intensity,
+      )
 
       // Crisp Centered Rounded Buff Icon inside the Supply Pod
       val buffBmp = RiftSpriteBaker.getBuffIconBitmap(g.buffType)
@@ -1346,7 +1382,6 @@ class RiftArenaView(
       )
       canvas.drawBitmap(buffBmp, null, nebulaDstRect, null)
     }
-    obstacleSpritePaint.alpha = 255
 
     // 6b. 4-Layer 3D Playfield Rift Obstacles + Multicolored Unstable Merged Rift (10.0s Collapse)
     for (anom in engine.anomalies) {
@@ -2493,6 +2528,8 @@ class RiftArenaView(
       topResonanceLeaderId = null
     }
 
+    val shipAuraRec = RiftVisualForgeState.getRecipe(ForgeElementTarget.SHIP_AURA_LABELS)
+
     for (s in shipsToRender) {
       if (s.respawnTimer > 0f) continue
       if (s.x < viewLeft - 110f || s.x > viewRight + 110f || s.y < viewTop - 110f || s.y > viewBottom + 110f) {
@@ -2621,22 +2658,47 @@ class RiftArenaView(
         canvas.drawBitmap(bmp, shadowMatrix, shipShadowPaint)
       }
 
-      // 10b. Foreshortened & Perspective-Skewed 3D Ship Hull (inverted cool-steel belly tint when cosRoll < 0f)
-      shipMatrix.reset()
-      shipMatrix.postTranslate(-halfBmp, -halfBmp)
-      shipMatrix.postScale(drawScale, lateralScaleY)
-      shipMatrix.postSkew(0f, rollSkewY)
-      shipMatrix.postRotate(renderHeadingDeg)
-      shipMatrix.postTranslate(s.x, s.y)
+      // 10b. Foreshortened, Perspective-Skewed & Normal-Mapped 2.5D Ship Hull (inverted cool-steel belly tint when cosRoll < 0f)
       if (s.isCloaked) {
+        shipMatrix.reset()
+        shipMatrix.postTranslate(-halfBmp, -halfBmp)
+        shipMatrix.postScale(drawScale, lateralScaleY)
+        shipMatrix.postSkew(0f, rollSkewY)
+        shipMatrix.postRotate(renderHeadingDeg)
+        shipMatrix.postTranslate(s.x, s.y)
         buffGlowPaint.alpha = 78
         canvas.drawBitmap(bmp, shipMatrix, buffGlowPaint)
         bombRingPaint.color = Color.argb(165, 179, 136, 255)
         canvas.drawCircle(s.x, s.y, 44f * RiftCalibrationState.shipScale, bombRingPaint)
-      } else if (cosRoll < 0f) {
-        canvas.drawBitmap(bmp, shipMatrix, shipBellyTintPaint)
       } else {
-        canvas.drawBitmap(bmp, shipMatrix, null)
+        val shipBundle =
+          RiftSpriteBaker.getShipRelightBundle(
+            shipId = s.shipId,
+            isAllied = isFriendly,
+            trimStyleOverride = resolvedSkin,
+          )
+        selectTopTwoLightsAt(s.x, s.y)
+        RiftSpriteBaker.drawNormalMappedSprite(
+          canvas = canvas,
+          bundle = shipBundle,
+          cx = s.x,
+          cy = s.y,
+          drawSize = 88f * RiftCalibrationState.shipScale,
+          rotationRad = renderHeadingRad,
+          paintAlpha = 255,
+          rimDepth = shipAuraRec.rimLightDepth,
+          light1WorldX = resolvedLight1X,
+          light1WorldY = resolvedLight1Y,
+          light1Color = resolvedLight1Color,
+          light1Intensity = resolvedLight1Intensity,
+          light2WorldX = resolvedLight2X,
+          light2WorldY = resolvedLight2Y,
+          light2Color = resolvedLight2Color,
+          light2Intensity = resolvedLight2Intensity,
+          lateralScaleYFactor = kotlin.math.abs(cosRoll).coerceAtLeast(0.28f),
+          rollSkewY = rollSkewY,
+          colorFilter = if (cosRoll < 0f) shipBellyTintPaint.colorFilter else null,
+        )
       }
 
       // 10c. Specular Wing-Ridge Glint on Steep Bank/Roll + Swirling 360° Wingtip Vortex Helices on Bounce Barrel Roll
@@ -2668,9 +2730,6 @@ class RiftArenaView(
           vortexRibbonPaint.color = Color.argb((205 * fade).toInt(), 250, 204, 21)
           canvas.drawArc(arcRect, spinDeg + 180f, 105f, false, vortexRibbonPaint)
         }
-
-        // 10c-2. Dynamic 2.5D Rim Relighting facing nearest active Playfield Rift (within 680f) or central Rift Station
-        drawDynamicShipRiftRimLight(canvas, s)
       }
 
       // 10c-3. Live Resonance Leader Halo (equippedHvtHaloStyle 0..3) on the sector's top-Resonance ship
@@ -3882,8 +3941,9 @@ class RiftArenaView(
         .coerceAtMost(szR * 0.86f)
         .coerceAtLeast(48f)
 
-    // Smoothly Rotating 5x Metallic Rift Station Sprite (diameter = stationR * 2f)
-    val stationBmp = RiftSpriteBaker.safeZoneStationBitmap
+    // Smoothly Rotating 5x Normal-Mapped Metallic Rift Station Sprite (diameter = stationR * 2f)
+    val stationBundle = RiftSpriteBaker.getSafeZoneStationRelightBundle()
+    val stationBmp = stationBundle.albedoBitmap
     val halfBmp = stationBmp.width * 0.5f
     val stationScale = (stationR * 2f) / stationBmp.width.toFloat().coerceAtLeast(1f)
     val stationSpinDeg = (tSec * 7.5f) % 360f
@@ -3896,18 +3956,41 @@ class RiftArenaView(
     shadowMatrix.postTranslate(szCX + 10f, szCY + 14f)
     canvas.drawBitmap(stationBmp, shadowMatrix, shipShadowPaint)
 
-    shipMatrix.reset()
-    shipMatrix.postTranslate(-halfBmp, -halfBmp)
-    shipMatrix.postScale(stationScale, stationScale)
-    shipMatrix.postRotate(stationSpinDeg)
-    shipMatrix.postTranslate(szCX, szCY)
-    if (opScale < 0.99f) {
-      buffGlowPaint.alpha = (opScale * 255f).toInt().coerceIn(75, 255)
-      canvas.drawBitmap(stationBmp, shipMatrix, buffGlowPaint)
-      buffGlowPaint.alpha = 255
-    } else {
-      canvas.drawBitmap(stationBmp, shipMatrix, null)
-    }
+    // Revolving Ops Holo-Ring key light (orbiting at 46 deg/s on -16 deg tilted 0.38r ring) + strongest external Rift light
+    val holoSpinRad = ((tSec * 46f) % 360f) * (PI.toFloat() / 180f)
+    val holoLocalX = cos(holoSpinRad) * (stationR * 0.38f)
+    val holoLocalY = sin(holoSpinRad) * (stationR * 0.38f) * 0.72f
+    val holoWorldX = szCX + (holoLocalX * 0.96126f - holoLocalY * (-0.27564f))
+    val holoWorldY = szCY + (holoLocalX * (-0.27564f) + holoLocalY * 0.96126f)
+    val holoLightCol = if (isLockedOut) Color.rgb(244, 63, 94) else szPadRec.glowColorInt
+    val holoLightIntensity =
+      if (RiftVisualForgeState.pointLightEnabled) {
+        (0.82f *
+            szPadRec.glowIntensity.coerceIn(0.30f, 2.0f) *
+            RiftVisualForgeState.dynamicLightIntensity.coerceIn(0f, 2.2f))
+          .coerceIn(0f, 1.55f)
+      } else {
+        0f
+      }
+    selectTopTwoLightsAt(szCX, szCY, skipCenterNearX = szCX, skipCenterNearY = szCY)
+    RiftSpriteBaker.drawNormalMappedSprite(
+      canvas = canvas,
+      bundle = stationBundle,
+      cx = szCX,
+      cy = szCY,
+      drawSize = stationR * 2f,
+      rotationRad = stationSpinDeg * (PI.toFloat() / 180f),
+      paintAlpha = (opScale * 255f).roundToInt().coerceIn(75, 255),
+      rimDepth = szPadRec.rimLightDepth,
+      light1WorldX = holoWorldX,
+      light1WorldY = holoWorldY,
+      light1Color = holoLightCol,
+      light1Intensity = holoLightIntensity,
+      light2WorldX = resolvedLight1X,
+      light2WorldY = resolvedLight1Y,
+      light2Color = resolvedLight1Color,
+      light2Intensity = resolvedLight1Intensity,
+    )
 
     // Revolving 3D-Tilted Cyan/Gold Holographic Ring Orbiting Central Ops Spire (stationR * 0.34f)
     RiftSpriteBaker.drawSafeZoneStationHoloRing(
@@ -4351,61 +4434,215 @@ class RiftArenaView(
     }
   }
 
-  private fun findNearestPointLightEmitter(cx: Float, cy: Float): Triple<Float, Float, Int>? {
-    val maxRange = RiftVisualForgeState.projectileLightRadius.coerceIn(120f, 950f)
-    var bestDistSq = maxRange * maxRange
-    var bestX = 0f
-    var bestY = 0f
-    var bestColor = 0
-    var found = false
+  private fun pushSceneLight(
+    lx: Float,
+    ly: Float,
+    range: Float,
+    intensity: Float,
+    color: Int,
+  ) {
+    val idx = activeSceneLightCount
+    if (idx >= sceneLightX.size || intensity <= 0.01f || range <= 10f) return
+    sceneLightX[idx] = lx
+    sceneLightY[idx] = ly
+    sceneLightRange[idx] = range
+    sceneLightBaseIntensity[idx] = intensity
+    sceneLightColor[idx] = color
+    activeSceneLightCount = idx + 1
+  }
 
+  private fun collectScenePointLights(
+    p: ShipEntity,
+    monoTimeSec: Float,
+    viewLeft: Float,
+    viewRight: Float,
+    viewTop: Float,
+    viewBottom: Float,
+  ) {
+    RiftSpriteBaker.beginFrameRelightPass(forceReset = true)
+    activeSceneLightCount = 0
+    if (!RiftVisualForgeState.pointLightEnabled) return
+    val masterGain = RiftVisualForgeState.dynamicLightIntensity.coerceIn(0f, 2.5f)
+    if (masterGain <= 0.02f) return
+
+    // 1. Star Forge Interactive Point-Light Test Orb (when spawned on stage)
     val testOrb = RiftVisualForgeState.pointLightTestOrbWorldPos
     if (testOrb != null) {
-      val dx = testOrb.x - cx
-      val dy = testOrb.y - cy
-      val dSq = dx * dx + dy * dy
-      if (dSq < bestDistSq) {
-        bestDistSq = dSq
-        bestX = testOrb.x
-        bestY = testOrb.y
-        bestColor = Color.parseColor("#FACC15")
-        found = true
-      }
+      val orbRange = RiftVisualForgeState.projectileLightRadius.coerceIn(240f, 980f)
+      pushSceneLight(testOrb.x, testOrb.y, orbRange, 1.38f * masterGain, Color.rgb(250, 204, 21))
     }
 
-    for (b in engine.bullets) {
-      val dx = b.x - cx
-      val dy = b.y - cy
-      val dSq = dx * dx + dy * dy
-      if (dSq < bestDistSq) {
-        bestDistSq = dSq
-        bestX = b.x
-        bestY = b.y
-        bestColor = b.color
-        found = true
+    // 2. Playfield Rifts & Unstable Merged Rifts (fixed canonical palettes)
+    val anomalies = engine.anomalies
+    for (i in 0 until anomalies.size) {
+      if (activeSceneLightCount >= sceneLightX.size) break
+      val anom = anomalies[i]
+      val r = anom.physicalRadius * RiftCalibrationState.anomalyScale
+      val reach =
+        if (anom.isUnstableMergedRift) (r * 6.8f).coerceIn(580f, 1180f)
+        else (r * 5.6f).coerceIn(480f, 940f)
+      if (
+        anom.x + reach < viewLeft ||
+          anom.x - reach > viewRight ||
+          anom.y + reach < viewTop ||
+          anom.y - reach > viewBottom
+      ) {
+        continue
       }
-    }
-
-    for (anom in engine.anomalies) {
-      val dx = anom.x - cx
-      val dy = anom.y - cy
-      val dSq = dx * dx + dy * dy
-      if (dSq < bestDistSq) {
-        bestDistSq = dSq
-        bestX = anom.x
-        bestY = anom.y
-        bestColor =
+      val col =
+        if (anom.isUnstableMergedRift) {
+          val phase = 0.5f + 0.5f * sin(monoTimeSec * 2.6f + anom.x * 0.002f)
+          blendColorsInt(Color.rgb(0, 245, 212), Color.rgb(192, 132, 252), phase)
+        } else {
           when (anom.type) {
-            AnomalyType.PLASMA_RIFT -> Color.parseColor("#FB7185")
-            AnomalyType.REPULSOR_RIFT -> Color.parseColor("#7DD3FC")
-            AnomalyType.GRAVITY_RIFT -> Color.parseColor("#C084FC")
-            AnomalyType.PHASE_RIFT_A, AnomalyType.PHASE_RIFT_B -> Color.parseColor("#2DD4BF")
+            AnomalyType.PLASMA_RIFT -> Color.rgb(251, 113, 133)
+            AnomalyType.REPULSOR_RIFT -> Color.rgb(125, 211, 252)
+            AnomalyType.GRAVITY_RIFT -> Color.rgb(192, 132, 252)
+            AnomalyType.PHASE_RIFT_A, AnomalyType.PHASE_RIFT_B -> Color.rgb(0, 245, 212)
           }
-        found = true
+        }
+      val baseInt = (if (anom.isUnstableMergedRift) 1.48f else 1.24f) * masterGain
+      pushSceneLight(anom.x, anom.y, reach, baseInt, col)
+    }
+
+    // 3. Central Safe-Zone Rift Harbor (when active in SECTOR_CONVERGENCE or FLUX_CORE)
+    if (engine.hasActiveSafeZone() && activeSceneLightCount < sceneLightX.size) {
+      val szReach = 1080f * RiftCalibrationState.safeZoneScale.coerceIn(0.6f, 1.5f)
+      val cx = engine.arenaCenterX
+      val cy = engine.arenaCenterY
+      if (cx + szReach >= viewLeft && cx - szReach <= viewRight && cy + szReach >= viewTop && cy - szReach <= viewBottom) {
+        val isLockedOut = p.safeZoneLockoutTimer > 0f && p.respawnTimer <= 0f
+        val szCol = if (isLockedOut) Color.rgb(244, 63, 94) else Color.rgb(0, 245, 212)
+        pushSceneLight(cx, cy, szReach, 1.12f * masterGain, szCol)
       }
     }
 
-    return if (found) Triple(bestX, bestY, bestColor) else null
+    // 4. Active Flux Core Singularity Orb (free or carried)
+    if (engine.isFluxCoreRulesActive() && activeSceneLightCount < sceneLightX.size) {
+      val carrierId = engine.fluxCoreCarrierEntityId
+      var ox = engine.fluxCoreOrb.x
+      var oy = engine.fluxCoreOrb.y
+      if (carrierId.isNotEmpty()) {
+        if (p.id == carrierId) {
+          ox = p.x
+          oy = p.y
+        } else {
+          val ships = engine.ships
+          for (sIdx in 0 until ships.size) {
+            val ship = ships[sIdx]
+            if (ship.id == carrierId) {
+              ox = ship.x
+              oy = ship.y
+              break
+            }
+          }
+        }
+      }
+      val coreReach = 680f
+      if (ox + coreReach >= viewLeft && ox - coreReach <= viewRight && oy + coreReach >= viewTop && oy - coreReach <= viewBottom) {
+        val pulse = 0.88f + 0.12f * sin(engine.fluxCoreOrb.pulsePhase * 1.8f)
+        pushSceneLight(ox, oy, coreReach, 1.28f * pulse * masterGain, Color.rgb(250, 204, 21))
+      }
+    }
+
+    // 5. High-Energy Explosions (shockwaves), Kill Finisher Bursts & Goliath Siege Nuclear Cores
+    val shockwaves = engine.shockwaves
+    for (i in 0 until shockwaves.size) {
+      if (activeSceneLightCount >= sceneLightX.size) break
+      val sw = shockwaves[i]
+      val lifeFrac = (1f - sw.r / sw.maxR.coerceAtLeast(1f)).coerceIn(0f, 1f)
+      if (lifeFrac <= 0.08f) continue
+      val swReach = (sw.maxR * 2.5f).coerceIn(260f, 680f)
+      if (sw.x + swReach < viewLeft || sw.x - swReach > viewRight || sw.y + swReach < viewTop || sw.y - swReach > viewBottom) {
+        continue
+      }
+      pushSceneLight(sw.x, sw.y, swReach, 1.34f * lifeFrac * masterGain, sw.color)
+    }
+
+    val finishers = engine.finisherBursts
+    for (i in 0 until finishers.size) {
+      if (activeSceneLightCount >= sceneLightX.size) break
+      val fb = finishers[i]
+      val inv = (1f - fb.ageSec / fb.maxLifeSec.coerceAtLeast(0.01f)).coerceIn(0f, 1f)
+      if (inv <= 0.06f) continue
+      val fbReach = 620f
+      if (fb.x + fbReach < viewLeft || fb.x - fbReach > viewRight || fb.y + fbReach < viewTop || fb.y - fbReach > viewBottom) {
+        continue
+      }
+      val fbCol =
+        when (fb.style.coerceIn(0, 4)) {
+          1 -> Color.rgb(168, 85, 247)
+          2 -> Color.rgb(250, 204, 21)
+          3 -> Color.rgb(0, 245, 212)
+          4 -> Color.rgb(244, 63, 94)
+          else -> Color.rgb(56, 189, 248)
+        }
+      pushSceneLight(fb.x, fb.y, fbReach, 1.42f * inv * masterGain, fbCol)
+    }
+
+    val bombs = engine.bombs
+    for (i in 0 until bombs.size) {
+      if (activeSceneLightCount >= sceneLightX.size) break
+      val bm = bombs[i]
+      if (bm.type != "SIEGE") continue
+      val siegeReach = 460f
+      if (bm.x + siegeReach < viewLeft || bm.x - siegeReach > viewRight || bm.y + siegeReach < viewTop || bm.y - siegeReach > viewBottom) {
+        continue
+      }
+      pushSceneLight(bm.x, bm.y, siegeReach, 1.16f * masterGain, Color.rgb(251, 146, 60))
+    }
+  }
+
+  private fun selectTopTwoLightsAt(
+    wx: Float,
+    wy: Float,
+    skipCenterNearX: Float = Float.NaN,
+    skipCenterNearY: Float = Float.NaN,
+  ) {
+    resolvedLight1X = wx
+    resolvedLight1Y = wy
+    resolvedLight1Color = Color.WHITE
+    resolvedLight1Intensity = 0f
+    resolvedLight2X = wx
+    resolvedLight2Y = wy
+    resolvedLight2Color = Color.WHITE
+    resolvedLight2Intensity = 0f
+
+    val hasSkip = !skipCenterNearX.isNaN() && !skipCenterNearY.isNaN()
+    val count = activeSceneLightCount
+    for (i in 0 until count) {
+      val lx = sceneLightX[i]
+      val ly = sceneLightY[i]
+      if (hasSkip) {
+        val sdx = lx - skipCenterNearX
+        val sdy = ly - skipCenterNearY
+        if (sdx * sdx + sdy * sdy < 256f) continue
+      }
+      val dx = lx - wx
+      val dy = ly - wy
+      val range = sceneLightRange[i]
+      val dSq = dx * dx + dy * dy
+      if (dSq >= range * range) continue
+      val dist = kotlin.math.sqrt(dSq)
+      val falloff = (1f - dist / range).coerceIn(0f, 1f)
+      val effIntensity = sceneLightBaseIntensity[i] * falloff * (0.45f + 0.55f * falloff)
+      if (effIntensity > resolvedLight1Intensity) {
+        resolvedLight2X = resolvedLight1X
+        resolvedLight2Y = resolvedLight1Y
+        resolvedLight2Color = resolvedLight1Color
+        resolvedLight2Intensity = resolvedLight1Intensity
+
+        resolvedLight1X = lx
+        resolvedLight1Y = ly
+        resolvedLight1Color = sceneLightColor[i]
+        resolvedLight1Intensity = effIntensity
+      } else if (effIntensity > resolvedLight2Intensity) {
+        resolvedLight2X = lx
+        resolvedLight2Y = ly
+        resolvedLight2Color = sceneLightColor[i]
+        resolvedLight2Intensity = effIntensity
+      }
+    }
   }
 
   private fun drawSpaceObstacle3D(
@@ -4460,7 +4697,8 @@ class RiftArenaView(
     // 1. Soft 2.5D Camera-Offset Drop Shadow on the Sector Plane (away from camera)
     val ex = ((wCx - camX) * 0.045f).coerceIn(-22f, 22f)
     val ey = ((wCy - camY) * 0.045f).coerceIn(-22f, 22f)
-    val bmp = RiftSpriteBaker.getSpaceObstacleBitmap(w.style, w.variantSeed)
+    val obsBundle = RiftSpriteBaker.getSpaceObstacleRelightBundle(w.style, w.variantSeed)
+    val bmp = obsBundle.albedoBitmap
     val bmpHalf = (bmp.width * 0.5f).coerceAtLeast(1f)
     val spriteScale = visR / bmpHalf
 
@@ -4471,15 +4709,27 @@ class RiftArenaView(
     shadowMatrix.postTranslate(wCx + ex, wCy + ey)
     canvas.drawBitmap(bmp, shadowMatrix, shipShadowPaint)
 
-    // 2. Crisp 224x224 5-Stop Metallic / Sunlit-Basalt Obstacle Sprite centered at (wCx, wCy)
-    shipMatrix.reset()
-    shipMatrix.postTranslate(-bmpHalf, -bmpHalf)
-    shipMatrix.postRotate(rotDeg)
-    shipMatrix.postScale(spriteScale, spriteScale)
-    shipMatrix.postTranslate(wCx, wCy)
-    obstacleSpritePaint.alpha = (255f * obsRec.surfaceOpacity.coerceIn(0.35f, 1.0f)).roundToInt().coerceIn(90, 255)
-    canvas.drawBitmap(bmp, shipMatrix, obstacleSpritePaint)
-    obstacleSpritePaint.alpha = 255
+    // 2. Crisp 224x224 Normal-Mapped 5-Stop Metallic / Sunlit-Basalt Obstacle Sprite centered at (wCx, wCy)
+    val obsAlpha = (255f * obsRec.surfaceOpacity.coerceIn(0.35f, 1.0f)).roundToInt().coerceIn(90, 255)
+    selectTopTwoLightsAt(wCx, wCy)
+    RiftSpriteBaker.drawNormalMappedSprite(
+      canvas = canvas,
+      bundle = obsBundle,
+      cx = wCx,
+      cy = wCy,
+      drawSize = visR * 2f,
+      rotationRad = rotDeg * (PI.toFloat() / 180f),
+      paintAlpha = obsAlpha,
+      rimDepth = obsRec.rimLightDepth,
+      light1WorldX = resolvedLight1X,
+      light1WorldY = resolvedLight1Y,
+      light1Color = resolvedLight1Color,
+      light1Intensity = resolvedLight1Intensity,
+      light2WorldX = resolvedLight2X,
+      light2WorldY = resolvedLight2Y,
+      light2Color = resolvedLight2Color,
+      light2Intensity = resolvedLight2Intensity,
+    )
 
     // 3. Ship-Style Expanding Directional Impact Ripple Arcs + Radial Armor Sparks at w.lastHitAngle (Zero White-Washing)
     if (w.hitFlashTimer > 0f) {
@@ -4589,31 +4839,6 @@ class RiftArenaView(
           else -> Color.parseColor("#EF4444")
         }
       canvas.drawArc(arcRect, -90f, hpFrac * 360f, false, anomalyRingPaint)
-    }
-
-    // 6. Dynamic Point-Light Directional Rim-Lighting Arc facing nearby Projectiles, Rifts, or Test Orb
-    if (RiftVisualForgeState.pointLightEnabled && RiftVisualForgeState.dynamicLightIntensity > 0.05f) {
-      val emitter = findNearestPointLightEmitter(wCx, wCy)
-      if (emitter != null) {
-        val (lx, ly, lColor) = emitter
-        val dx = lx - wCx
-        val dy = ly - wCy
-        val dist = hypot(dx, dy).coerceAtLeast(1f)
-        val maxRange = RiftVisualForgeState.projectileLightRadius.coerceIn(120f, 950f)
-        val falloff = (1f - dist / maxRange).coerceIn(0f, 1f)
-        val rimAlpha =
-          (falloff * falloff * 225f * RiftVisualForgeState.dynamicLightIntensity.coerceIn(0f, 2.5f))
-            .toInt()
-            .coerceIn(0, 245)
-        if (rimAlpha >= 14) {
-          val lightDeg = atan2(dy, dx) * (180f / PI.toFloat())
-          val rimR = visR * 0.88f
-          arcRect.set(wCx - rimR, wCy - rimR, wCx + rimR, wCy + rimR)
-          dynamicRimPaint.strokeWidth = 3.2f
-          dynamicRimPaint.color = Color.argb(rimAlpha, Color.red(lColor), Color.green(lColor), Color.blue(lColor))
-          canvas.drawArc(arcRect, lightDeg - 46f, 92f, false, dynamicRimPaint)
-        }
-      }
     }
   }
 
@@ -6174,67 +6399,6 @@ class RiftArenaView(
       strokeWeight = (borderWeight * 0.56f).coerceIn(0.45f, 1.15f),
       seedOffset = ((outerColor shr 8) and 0xFF) * 0.041f + cx * 0.0017f,
     )
-  }
-
-  private fun drawDynamicShipRiftRimLight(canvas: Canvas, s: ShipEntity) {
-    var bestDistSq = 680f * 680f
-    var lightX = 0f
-    var lightY = 0f
-    var lightColor = Color.parseColor("#00F5D4")
-    var found = false
-
-    for (anom in engine.anomalies) {
-      val dx = anom.x - s.x
-      val dy = anom.y - s.y
-      val dSq = dx * dx + dy * dy
-      if (dSq < bestDistSq) {
-        bestDistSq = dSq
-        lightX = anom.x
-        lightY = anom.y
-        lightColor =
-          when (anom.type) {
-            AnomalyType.PLASMA_RIFT -> Color.parseColor("#FB7185")
-            AnomalyType.REPULSOR_RIFT -> Color.parseColor("#7DD3FC")
-            AnomalyType.GRAVITY_RIFT -> Color.parseColor("#C084FC")
-            AnomalyType.PHASE_RIFT_A, AnomalyType.PHASE_RIFT_B -> Color.parseColor("#2DD4BF")
-          }
-        found = true
-      }
-    }
-
-    var maxRange = 680f
-    if (!found) {
-      val dx = engine.arenaCenterX - s.x
-      val dy = engine.arenaCenterY - s.y
-      val dSq = dx * dx + dy * dy
-      if (dSq < 980f * 980f) {
-        bestDistSq = dSq
-        lightX = engine.arenaCenterX
-        lightY = engine.arenaCenterY
-        lightColor = Color.parseColor("#00F5D4")
-        maxRange = 980f
-        found = true
-      }
-    }
-    if (!found) return
-
-    val dist = kotlin.math.sqrt(bestDistSq)
-    val falloff = (1f - (dist / maxRange)).coerceIn(0f, 1f)
-    if (falloff <= 0.04f) return
-
-    val lightAngDeg = atan2(lightY - s.y, lightX - s.x) * 180f / PI.toFloat()
-    val rimR = 37f * RiftCalibrationState.shipScale
-    cosmeticRect.set(s.x - rimR, s.y - rimR, s.x + rimR, s.y + rimR)
-    val outerAlpha = (145f * falloff).roundToInt().coerceIn(12, 165)
-    cosmeticStrokePaint.strokeWidth = 3.2f * RiftCalibrationState.shipScale
-    cosmeticStrokePaint.color =
-      Color.argb(outerAlpha, Color.red(lightColor), Color.green(lightColor), Color.blue(lightColor))
-    canvas.drawArc(cosmeticRect, lightAngDeg - 48f, 96f, false, cosmeticStrokePaint)
-
-    val coreAlpha = (165f * falloff).roundToInt().coerceIn(14, 185)
-    cosmeticStrokePaint.strokeWidth = 1.45f * RiftCalibrationState.shipScale
-    cosmeticStrokePaint.color = Color.argb(coreAlpha, 248, 250, 252)
-    canvas.drawArc(cosmeticRect, lightAngDeg - 28f, 56f, false, cosmeticStrokePaint)
   }
 
   private fun drawWarpSignatureEffect(

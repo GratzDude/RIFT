@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 131
+const val CURRENT_RIFT_BUILD_VERSION = 132
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 132,
+      versionTag = "v1.0.132 // BUILD #132",
+      releaseDate = "Nov 26, 2026",
+      headline = "Normal-Mapped 2.5D Metallic & Specular Point-Light Relighting Across Ships, Rift Station, Supply Pods & Space Obstacles",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "2.5D Tangent-Space Normal & Specular Baker: Added multi-radius bevel and armor-detail normal and metallic specular map generation with premultiply-safe opaque channels and background startup prewarming for all 10 starfighter hulls across Skins 0 through 5, the 180px Rift Station, Supply Pods, and all 16 Space Obstacle variants.",
+          "Hardware AGSL Metallic Point-Light Shader & Multi-Device Fallback: Added a 48-slot GPU point-light relighting shader pipeline with counter-rotated local light vectors, Lambertian metallic bounce, crisp Blinn-Phong bevel catchlights, smooth highlight roll-off with zero flat-white washout, and a zero-allocation additive radial crescent fallback for older Android devices.",
+          "Live Arena Multi-Light Collector & Hardware Relighting: Wired zero-allocation scene light collection across Playfield Rifts, Unstable Merged Rifts, Rift Station Safe Harbor, the Flux Core orb, explosions, Kill Finisher bursts, and airborne Goliath Siege Bombs to relight nearby starfighters, the rotating Rift Station, Supply Pods, and Space Obstacles while keeping all weapon projectile graphics untouched.",
+          "1:1 Star Forge Playfield Studio & Turntable Relighting Parity: Connected live normal-mapped metallic point-light relighting to the 1:1 Star Forge Playfield Studio and interactive ship and specimen turntables so Rim Light Depth and Glow Intensity adjustments preview in real time.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 131,
       versionTag = "v1.0.131 // BUILD #131",
       releaseDate = "Nov 26, 2026",
       headline = "Dead Legacy Modal Purge, Exhaustive Hub Routing, Unified Squadron Nomenclature & Resonance-Gated Bot Arena Cosmetics",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "PREVIOUS BUILD",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

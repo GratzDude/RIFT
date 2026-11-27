@@ -4,12 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
 import android.graphics.CornerPathEffect
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
+import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.RuntimeShader
@@ -119,6 +121,99 @@ private const val VOLUMETRIC_RIFT_AGSL =
   }
   """
 
+private const val PBR_RELIGHT_AGSL =
+  """
+  uniform shader uAlbedo;
+  uniform shader uNormalSpec;
+  uniform float2 uSpriteSize;
+  uniform float2 uLight1LocalXY;
+  uniform float3 uLight1RGB;
+  uniform float uLight1Intensity;
+  uniform float2 uLight2LocalXY;
+  uniform float3 uLight2RGB;
+  uniform float uLight2Intensity;
+  uniform float uRimDepth;
+
+  float3 evalRelightLobe(
+    float2 localPos,
+    float3 N,
+    float3 baseRGB,
+    float specMask,
+    float2 lightLocalXY,
+    float3 lightRGB,
+    float intensity,
+    float rimScale
+  ) {
+    if (intensity <= 0.005) {
+      return float3(0.0);
+    }
+    float2 deltaXY = lightLocalXY - localPos;
+    float distLocal = length(deltaXY);
+    float intraFalloff = 1.0 / (1.0 + 0.14 * min(distLocal, 2.8) * min(distLocal, 2.8));
+    float2 clampedXY = (distLocal > 2.6) ? (deltaXY * (2.6 / max(distLocal, 0.0001))) : deltaXY;
+    float3 L = normalize(float3(clampedXY.x, clampedXY.y, 0.72));
+    float3 H = normalize(L + float3(0.0, 0.0, 1.0));
+
+    float ndotl = max(dot(N, L), 0.0);
+    float ndoth = max(dot(N, H), 0.0);
+
+    float2 nHoriz = float2(N.x, N.y);
+    float nHorizLen = length(nHoriz);
+    float2 nDir2D = (nHorizLen > 0.001) ? (nHoriz / nHorizLen) : float2(0.0);
+    float lightLen2D = length(clampedXY);
+    float2 lDir2D = (lightLen2D > 0.001) ? (clampedXY / lightLen2D) : float2(0.0);
+    float facingRim = max(dot(nDir2D, lDir2D), 0.0);
+    float fresnelEdge = pow(clamp(1.0 - N.z, 0.0, 1.0), 1.50) * (0.25 + 0.75 * facingRim);
+
+    float diffTerm = ndotl * (0.34 + 0.24 * (1.0 - specMask));
+    float specSharp = pow(ndoth, 28.0) * 0.92;
+    float specBroad = pow(ndoth, 7.0) * 0.34;
+    float specTerm = (specSharp + specBroad) * (0.28 + 0.96 * specMask);
+    float rimTerm = fresnelEdge * (0.50 + 0.50 * specMask) * rimScale;
+
+    float3 metalTint = mix(lightRGB, lightRGB * (0.52 + 0.68 * baseRGB), 0.34 * specMask);
+    return (baseRGB * lightRGB * diffTerm + metalTint * (specTerm + rimTerm)) * (intensity * intraFalloff);
+  }
+
+  half4 main(float2 fragCoord) {
+    half4 albedoSample = uAlbedo.eval(fragCoord);
+    float a = float(albedoSample.a);
+    if (a < 0.015) {
+      return half4(0.0);
+    }
+    float3 baseRGB = float3(albedoSample.rgb) / max(a, 0.015);
+    half4 nsSample = uNormalSpec.eval(fragCoord);
+
+    float rimScale = clamp(uRimDepth, 0.25, 2.25);
+    float2 rawXY = (float2(nsSample.rg) * 2.0 - 1.0) * rimScale;
+    float xySq = min(0.92, dot(rawXY, rawXY));
+    float nz = sqrt(max(0.08, 1.0 - xySq));
+    float3 N = normalize(float3(rawXY.x, rawXY.y, nz));
+    float specMask = clamp(float(nsSample.b), 0.0, 1.0);
+
+    float2 halfSize = max(uSpriteSize * 0.5, float2(1.0));
+    float2 localPos = (fragCoord - halfSize) / halfSize;
+
+    float3 c1 = evalRelightLobe(localPos, N, baseRGB, specMask, uLight1LocalXY, uLight1RGB, uLight1Intensity, rimScale);
+    float3 c2 = evalRelightLobe(localPos, N, baseRGB, specMask, uLight2LocalXY, uLight2RGB, uLight2Intensity, rimScale);
+
+    float3 litRGB = baseRGB + c1 + c2;
+    float peak = max(litRGB.r, max(litRGB.g, litRGB.b));
+    if (peak > 0.98) {
+      float compressed = 0.98 + 0.02 * (1.0 - exp(-(peak - 0.98) * 3.0));
+      litRGB *= (compressed / peak);
+    }
+    return half4(half3(litRGB * a), half(a));
+  }
+  """
+
+class RelightableSpriteBundle(
+  val albedoBitmap: Bitmap,
+  val normalSpecBitmap: Bitmap,
+  val albedoShader: BitmapShader,
+  val normalSpecShader: BitmapShader,
+)
+
 object RiftSpriteBaker {
   private val cacheLock = Any()
   private val bakerStartElapsedNanos: Long = SystemClock.elapsedRealtimeNanos()
@@ -222,6 +317,63 @@ object RiftSpriteBaker {
     }
   private val sharedCosmeticArcRect = RectF()
   private val sharedCosmeticPath = Path()
+
+  // Pre-allocated 2.5D Normal-Spec Relighting caches, 48-slot AGSL pool & API 24-32 fallback state
+  private val shipRelightBundleCache = mutableMapOf<Int, RelightableSpriteBundle>()
+  private val obstacleRelightBundleCache = mutableMapOf<Int, RelightableSpriteBundle>()
+  private var stationRelightBundle: RelightableSpriteBundle? = null
+  private var supplyPodRelightBundle: RelightableSpriteBundle? = null
+  private val pbrRelightShaderPool: Array<Any?> =
+    if (Build.VERSION.SDK_INT >= 33) {
+      Array(48) { runCatching { RuntimeShader(PBR_RELIGHT_AGSL) }.getOrNull() }
+    } else {
+      emptyArray()
+    }
+  private var pbrRelightShaderCursor: Int = 0
+  private var lastRelightFrameResetUptimeMs: Long = -1L
+  private val pbrRelightShaderPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { style = Paint.Style.FILL }
+  private val pbrFallbackBasePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+  private val pbrFallbackAddPaint =
+    Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      style = Paint.Style.FILL
+      xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD)
+    }
+  private val pbrFallbackShaderMatrix = Matrix()
+  private val pbrSpriteDstRect = RectF()
+  private val unitSpecularFallbackShaderCache = HashMap<Int, RadialGradient>(64)
+
+  private fun getUnitSpecularFallbackShader(rgbColor: Int): RadialGradient {
+    val qR = ((rgbColor ushr 16) and 0xFF) ushr 4
+    val qG = ((rgbColor ushr 8) and 0xFF) ushr 4
+    val qB = (rgbColor and 0xFF) ushr 4
+    val qKey = (qR shl 8) or (qG shl 4) or qB
+    unitSpecularFallbackShaderCache[qKey]?.let { return it }
+    val r = (qR * 17).coerceIn(0, 255)
+    val g = (qG * 17).coerceIn(0, 255)
+    val b = (qB * 17).coerceIn(0, 255)
+    val hr = min(255, r + ((255 - r) * 35) / 100)
+    val hg = min(255, g + ((255 - g) * 35) / 100)
+    val hb = min(255, b + ((255 - b) * 35) / 100)
+    val created =
+      RadialGradient(
+        0f,
+        0f,
+        1f,
+        intArrayOf(
+          Color.argb(230, hr, hg, hb),
+          Color.argb(136, r, g, b),
+          Color.argb(44, r, g, b),
+          Color.argb(0, r, g, b),
+        ),
+        floatArrayOf(0f, 0.36f, 0.72f, 1f),
+        Shader.TileMode.CLAMP,
+      )
+    if (unitSpecularFallbackShaderCache.size < 96) {
+      unitSpecularFallbackShaderCache[qKey] = created
+    }
+    return created
+  }
 
   var spriteVisualRevision: Int = 1
     private set
@@ -395,12 +547,14 @@ object RiftSpriteBaker {
         ForgeElementTarget.OBSTACLE_FLOATING_DEBRIS,
         ForgeElementTarget.PLACED_STASIS_BARRIER -> {
           spaceObstacleBitmapCache.clear()
+          obstacleRelightBundleCache.clear()
         }
         ForgeElementTarget.SAFE_ZONE_WALL,
         ForgeElementTarget.SAFE_ZONE_PAD -> {
           wallTileBitmap = bakeWallTile()
           wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
           safeZoneStationBitmap = bakeSafeZoneNexusStationBitmap(384)
+          stationRelightBundle = null
         }
         ForgeElementTarget.CURRENCY_FLUX_ICON -> {
           fluxIconBitmap = bake3dFluxReactorIcon(64)
@@ -416,6 +570,7 @@ object RiftSpriteBaker {
         }
         ForgeElementTarget.SUPPLY_CRATE -> {
           supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(160)
+          supplyPodRelightBundle = null
         }
         else -> Unit
       }
@@ -427,25 +582,32 @@ object RiftSpriteBaker {
   fun invalidateAllVisualTargets() {
     synchronized(cacheLock) {
       spaceObstacleBitmapCache.clear()
+      obstacleRelightBundleCache.clear()
       nexusHubModuleEmblemCache.clear()
       wallTileBitmap = bakeWallTile()
       wallShader = BitmapShader(wallTileBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
       safeZoneStationBitmap = bakeSafeZoneNexusStationBitmap(384)
+      stationRelightBundle = null
       supplyPodFrameBitmap = bakeSupplyPodFrameBitmap(160)
+      supplyPodRelightBundle = null
       fluxIconBitmap = bake3dFluxReactorIcon(64)
       resonanceIconBitmap = bake3dResonanceCrestIcon(64)
       riftShardIconBitmap = bake3dRiftShardIcon(64)
       riftAnomalyIconBitmaps = buildRiftAnomalyIconMap()
       trimmedShipSpriteCache.clear()
+      shipRelightBundleCache.clear()
       prebakeWeaponEmblemCachesLocked()
       spriteVisualRevision++
     }
   }
 
+  fun rebuildAllForgeSprites() = invalidateAllVisualTargets()
+
   /**
-   * Prewarms heavy procedural sprites (all 224x224 Space Obstacle variants, active hull trim sprites,
-   * and all 6 192x192 Rift Hub metallic module emblems) on a background worker thread after Frame #1
-   * commits, eliminating main-thread SurfaceSyncGroup stalls.
+   * Prewarms heavy procedural sprites (all 224x224 Space Obstacle variants + normal maps, active hull
+   * relight bundle, Safe-Zone Rift Station + Supply Pod relight bundles, and all 6 192x192 Rift Hub
+   * metallic module emblems) on a background worker thread after Frame #1 commits, eliminating
+   * main-thread SurfaceSyncGroup stalls.
    */
   fun prewarmStartupAssets(
     activeShipId: Int = 1,
@@ -454,9 +616,11 @@ object RiftSpriteBaker {
   ) {
     val clampedShip = activeShipId.coerceIn(1, 10)
     val clampedTrim = trimStyle.coerceIn(0, 5)
-    if (clampedTrim != 0 && clampedShip in 1..10) {
-      getShipSprite(clampedShip, isAllied = true, trimStyleOverride = clampedTrim)
+    if (clampedShip in 1..10) {
+      getShipRelightBundle(clampedShip, isAllied = true, trimStyleOverride = clampedTrim)
     }
+    getSafeZoneStationRelightBundle()
+    getSupplyPodRelightBundle()
     val obstacleTypes =
       arrayOf(
         SpaceObstacleType.CRYSTAL_ASTEROID,
@@ -466,7 +630,7 @@ object RiftSpriteBaker {
       )
     for (type in obstacleTypes) {
       for (variant in 0..3) {
-        getSpaceObstacleBitmap(type, variant)
+        getSpaceObstacleRelightBundle(type, variant)
       }
     }
     val hubModules = arrayOf("HANGAR", "CONDUIT", "FORGE", "COMMS", "CITADEL", "ARCHIVE")
@@ -478,6 +642,457 @@ object RiftSpriteBaker {
         sizePx = 192,
       )
     }
+  }
+
+  /**
+   * Resets the 48-slot `PBR_RELIGHT_AGSL` `RuntimeShader` pool cursor at the start of a render frame.
+   * When `forceReset` is false (e.g. inside multi-Canvas Compose screens), resets at most once every 6ms
+   * so sibling Compose `Canvas` draw passes within the same VSync never overwrite active DisplayList uniforms.
+   */
+  fun beginFrameRelightPass(forceReset: Boolean = false) {
+    val nowMs = SystemClock.uptimeMillis()
+    if (forceReset || lastRelightFrameResetUptimeMs < 0L || (nowMs - lastRelightFrameResetUptimeMs) >= 6L) {
+      pbrRelightShaderCursor = 0
+      lastRelightFrameResetUptimeMs = nowMs
+    }
+  }
+
+  /**
+   * Generates a tangent-space normal + metallic specular map (`ARGB_8888`, `Alpha = 255` on every texel
+   * to prevent Skia premultiplication clamping of `R`/`G`/`B`) from a baked 2.5D albedo sprite:
+   * - `R`: `nx * 0.5 + 0.5` (`0..255`)
+   * - `G`: `ny * 0.5 + 0.5` (`0..255`)
+   * - `B`: Metallic specular mask (`0..255`, `0` where albedo alpha `< 8`)
+   * - `A`: `255` (`0xFF`)
+   */
+  fun bakeNormalSpecMapFromAlbedo(
+    albedo: Bitmap,
+    bevelStrength: Float = 2.35f,
+    baseSpec: Float = 0.58f,
+  ): Bitmap {
+    val w = albedo.width.coerceAtLeast(2)
+    val h = albedo.height.coerceAtLeast(2)
+    val total = w * h
+    val pixels = IntArray(total)
+    albedo.getPixels(pixels, 0, w, 0, 0, w, h)
+
+    val alphaNorm = FloatArray(total)
+    val lumaArr = FloatArray(total)
+    val satArr = FloatArray(total)
+
+    for (i in 0 until total) {
+      val px = pixels[i]
+      val a = (px ushr 24) and 0xFF
+      if (a < 4) {
+        alphaNorm[i] = 0f
+        lumaArr[i] = 0f
+        satArr[i] = 0f
+      } else {
+        val aF = a / 255f
+        val r = ((px ushr 16) and 0xFF) / 255f
+        val g = ((px ushr 8) and 0xFF) / 255f
+        val b = (px and 0xFF) / 255f
+        alphaNorm[i] = aF
+        lumaArr[i] = 0.299f * r + 0.587f * g + 0.114f * b
+        val maxC = max(r, max(g, b))
+        val minC = min(r, min(g, b))
+        satArr[i] = if (maxC > 0.01f) (maxC - minC) / maxC else 0f
+      }
+    }
+
+    // Separable 7-tap silhouette bevel chamfer + 3-tap crisp rim chamfer
+    val tempBlur = FloatArray(total)
+    val wideChamfer = FloatArray(total)
+    val tightChamfer = FloatArray(total)
+
+    for (y in 0 until h) {
+      val rowOff = y * w
+      for (x in 0 until w) {
+        val xm3 = max(0, x - 3)
+        val xm2 = max(0, x - 2)
+        val xm1 = max(0, x - 1)
+        val xp1 = min(w - 1, x + 1)
+        val xp2 = min(w - 1, x + 2)
+        val xp3 = min(w - 1, x + 3)
+        tempBlur[rowOff + x] =
+          (alphaNorm[rowOff + xm3] +
+            alphaNorm[rowOff + xm2] * 2f +
+            alphaNorm[rowOff + xm1] * 3f +
+            alphaNorm[rowOff + x] * 4f +
+            alphaNorm[rowOff + xp1] * 3f +
+            alphaNorm[rowOff + xp2] * 2f +
+            alphaNorm[rowOff + xp3]) * 0.0625f
+        tightChamfer[rowOff + x] =
+          (alphaNorm[rowOff + xm1] + alphaNorm[rowOff + x] * 2f + alphaNorm[rowOff + xp1]) * 0.25f
+      }
+    }
+
+    val heightField = FloatArray(total)
+    for (y in 0 until h) {
+      val ym3 = max(0, y - 3) * w
+      val ym2 = max(0, y - 2) * w
+      val ym1 = max(0, y - 1) * w
+      val y0 = y * w
+      val yp1 = min(h - 1, y + 1) * w
+      val yp2 = min(h - 1, y + 2) * w
+      val yp3 = min(h - 1, y + 3) * w
+      for (x in 0 until w) {
+        val wide =
+          (tempBlur[ym3 + x] +
+            tempBlur[ym2 + x] * 2f +
+            tempBlur[ym1 + x] * 3f +
+            tempBlur[y0 + x] * 4f +
+            tempBlur[yp1 + x] * 3f +
+            tempBlur[yp2 + x] * 2f +
+            tempBlur[yp3 + x]) * 0.0625f
+        val tight =
+          (tightChamfer[ym1 + x] + tightChamfer[y0 + x] * 2f + tightChamfer[yp1 + x]) * 0.25f
+        val idx = y0 + x
+        wideChamfer[idx] = wide
+        heightField[idx] = wide * 0.58f + tight * 0.24f + lumaArr[idx] * 0.36f * alphaNorm[idx]
+      }
+    }
+
+    val outPixels = IntArray(total)
+    val clampedBevel = bevelStrength.coerceIn(0.6f, 4.5f)
+    val clampedSpec = baseSpec.coerceIn(0.12f, 1.0f)
+
+    for (y in 0 until h) {
+      val ym1 = max(0, y - 1) * w
+      val y0 = y * w
+      val yp1 = min(h - 1, y + 1) * w
+      for (x in 0 until w) {
+        val idx = y0 + x
+        val aRaw = (pixels[idx] ushr 24) and 0xFF
+        if (aRaw < 8) {
+          outPixels[idx] = -0x1000000 or (128 shl 16) or (128 shl 8)
+          continue
+        }
+        val xm1 = max(0, x - 1)
+        val xp1 = min(w - 1, x + 1)
+
+        val hTL = heightField[ym1 + xm1]
+        val hTC = heightField[ym1 + x]
+        val hTR = heightField[ym1 + xp1]
+        val hML = heightField[y0 + xm1]
+        val hMR = heightField[y0 + xp1]
+        val hBL = heightField[yp1 + xm1]
+        val hBC = heightField[yp1 + x]
+        val hBR = heightField[yp1 + xp1]
+
+        // Outward-facing surface gradients (+X points right on right bevel, +Y points down on bottom bevel)
+        val gx = ((hTL + 2f * hML + hBL) - (hTR + 2f * hMR + hBR)) * clampedBevel
+        val gy = ((hTL + 2f * hTC + hTR) - (hBL + 2f * hBC + hBR)) * clampedBevel
+        val invLen = 1f / kotlin.math.sqrt(gx * gx + gy * gy + 1f)
+        val nx = gx * invLen
+        val ny = gy * invLen
+
+        val rByte = ((nx * 0.5f + 0.5f) * 255f).roundToInt().coerceIn(0, 255)
+        val gByte = ((ny * 0.5f + 0.5f) * 255f).roundToInt().coerceIn(0, 255)
+
+        val slopeMag = min(1f, hypot(gx, gy) * 0.38f)
+        val luma = lumaArr[idx]
+        val sat = satArr[idx]
+        val specVal =
+          (clampedSpec * (0.42f + 0.74f * luma - 0.16f * sat) + slopeMag * 0.34f)
+            .coerceIn(0.08f, 1.0f)
+        val specByte = (specVal * (aRaw / 255f) * 255f).roundToInt().coerceIn(0, 255)
+
+        outPixels[idx] = -0x1000000 or (rByte shl 16) or (gByte shl 8) or specByte
+      }
+    }
+
+    val normalSpecBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    normalSpecBmp.setPixels(outPixels, 0, w, 0, 0, w, h)
+    return normalSpecBmp
+  }
+
+  private fun createRelightableBundle(
+    albedo: Bitmap,
+    bevelStrength: Float,
+    baseSpec: Float,
+  ): RelightableSpriteBundle {
+    val normalSpec = bakeNormalSpecMapFromAlbedo(albedo, bevelStrength, baseSpec)
+    val albedoShader = BitmapShader(albedo, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+    val normalSpecShader = BitmapShader(normalSpec, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+    if (Build.VERSION.SDK_INT >= 33) {
+      albedoShader.filterMode = BitmapShader.FILTER_MODE_LINEAR
+      normalSpecShader.filterMode = BitmapShader.FILTER_MODE_LINEAR
+    }
+    return RelightableSpriteBundle(
+      albedoBitmap = albedo,
+      normalSpecBitmap = normalSpec,
+      albedoShader = albedoShader,
+      normalSpecShader = normalSpecShader,
+    )
+  }
+
+  fun getShipRelightBundle(
+    shipId: Int,
+    isAllied: Boolean = true,
+    trimStyleOverride: Int = if (isAllied) activeHullTrimStyle else 0,
+  ): RelightableSpriteBundle {
+    val effectiveTrim = trimStyleOverride.coerceIn(0, 5)
+    val normalizedShip = if (shipId == 10 || shipId > 9) 10 else shipId.coerceIn(1, 9)
+    val versionSalt = if (normalizedShip == 10) (customShip9Version and 0xFFF) else 0
+    val cacheKey = (versionSalt shl 16) or (normalizedShip shl 8) or (effectiveTrim shl 1) or (if (isAllied) 1 else 0)
+    synchronized(cacheLock) {
+      shipRelightBundleCache[cacheKey]?.let { return it }
+    }
+    val albedo = getShipSprite(normalizedShip, isAllied = isAllied, trimStyleOverride = effectiveTrim)
+    val specBoost =
+      when (effectiveTrim) {
+        2, 5 -> 0.74f // Sovereign Solar Gold & Cryo-Titanium high-luster chrome/gold finish
+        1, 3, 4 -> 0.66f
+        else -> 0.60f
+      }
+    val bundle = createRelightableBundle(albedo, bevelStrength = 2.45f, baseSpec = specBoost)
+    synchronized(cacheLock) {
+      shipRelightBundleCache[cacheKey]?.let { return it }
+      shipRelightBundleCache[cacheKey] = bundle
+      return bundle
+    }
+  }
+
+  fun getSafeZoneStationRelightBundle(): RelightableSpriteBundle {
+    synchronized(cacheLock) {
+      stationRelightBundle?.let { return it }
+    }
+    val albedo = synchronized(cacheLock) { safeZoneStationBitmap }
+    val bundle = createRelightableBundle(albedo, bevelStrength = 2.60f, baseSpec = 0.68f)
+    synchronized(cacheLock) {
+      stationRelightBundle?.let { return it }
+      stationRelightBundle = bundle
+      return bundle
+    }
+  }
+
+  fun getSupplyPodRelightBundle(): RelightableSpriteBundle {
+    synchronized(cacheLock) {
+      supplyPodRelightBundle?.let { return it }
+    }
+    val albedo = synchronized(cacheLock) { supplyPodFrameBitmap }
+    val bundle = createRelightableBundle(albedo, bevelStrength = 2.50f, baseSpec = 0.70f)
+    synchronized(cacheLock) {
+      supplyPodRelightBundle?.let { return it }
+      supplyPodRelightBundle = bundle
+      return bundle
+    }
+  }
+
+  fun getSpaceObstacleRelightBundle(type: SpaceObstacleType, variant: Int): RelightableSpriteBundle {
+    val v = variant and 3
+    val key = (type.ordinal shl 4) or v
+    synchronized(cacheLock) {
+      obstacleRelightBundleCache[key]?.let { return it }
+    }
+    val albedo = getSpaceObstacleBitmap(type, v)
+    val (bevel, spec) =
+      when (type) {
+        SpaceObstacleType.ORBITAL_STATION -> 2.55f to 0.72f
+        SpaceObstacleType.ASTEROID_STATION -> 2.45f to 0.56f
+        SpaceObstacleType.CRYSTAL_ASTEROID -> 2.65f to 0.64f
+        SpaceObstacleType.FLOATING_DEBRIS,
+        SpaceObstacleType.PERMANENT_BARRIER -> 2.50f to 0.66f
+      }
+    val bundle = createRelightableBundle(albedo, bevelStrength = bevel, baseSpec = spec)
+    synchronized(cacheLock) {
+      obstacleRelightBundleCache[key]?.let { return it }
+      obstacleRelightBundleCache[key] = bundle
+      return bundle
+    }
+  }
+
+  /**
+   * Draws a baked 2.5D sprite (`256x256` ship, `384x384` Rift Station, `160x160` Supply Pod frame,
+   * or `224x224` Space Obstacle) with dynamic per-pixel normal-mapped metallic & specular relighting
+   * from up to 2 world/canvas-space point lights (`light1`, `light2`).
+   *
+   * - Fast path: when `(light1Intensity + light2Intensity) <= 0.02f`, draws `albedoBitmap` directly.
+   * - API 33+ Hardware Canvas: binds `uAlbedo` + `uNormalSpec` onto a pooled `PBR_RELIGHT_AGSL`
+   *   `RuntimeShader` with counter-rotated local light vectors (`-rotationRad`).
+   * - API 24–32 / Software Canvas / Pool-overflow fallback: draws `albedoBitmap` followed by up to
+   *   2 zero-allocation feathered `PorterDuff.Mode.ADD` `RadialGradient` specular crescents.
+   */
+  fun drawNormalMappedSprite(
+    canvas: Canvas,
+    bundle: RelightableSpriteBundle,
+    cx: Float,
+    cy: Float,
+    drawSize: Float,
+    rotationRad: Float = 0f,
+    paintAlpha: Int = 255,
+    rimDepth: Float = 1.0f,
+    light1WorldX: Float = cx,
+    light1WorldY: Float = cy,
+    light1Color: Int = Color.WHITE,
+    light1Intensity: Float = 0f,
+    light2WorldX: Float = cx,
+    light2WorldY: Float = cy,
+    light2Color: Int = Color.WHITE,
+    light2Intensity: Float = 0f,
+    lateralScaleYFactor: Float = 1f,
+    rollSkewY: Float = 0f,
+    colorFilter: ColorFilter? = null,
+  ) {
+    val clampedAlpha = paintAlpha.coerceIn(0, 255)
+    if (clampedAlpha <= 1 || drawSize <= 1f) return
+
+    val w = bundle.albedoBitmap.width.toFloat().coerceAtLeast(1f)
+    val h = bundle.albedoBitmap.height.toFloat().coerceAtLeast(1f)
+    val halfDraw = max(drawSize * 0.5f, 1f)
+    val i1 = light1Intensity.coerceIn(0f, 1.85f)
+    val i2 = light2Intensity.coerceIn(0f, 1.85f)
+    val totalLight = i1 + i2
+
+    val rotDeg = (rotationRad * (180f / PI.toFloat()))
+    val hasSpatialTransform =
+      kotlin.math.abs(rotationRad) > 0.0005f ||
+        kotlin.math.abs(lateralScaleYFactor - 1f) > 0.001f ||
+        kotlin.math.abs(rollSkewY) > 0.0005f
+
+    // Fast path when no meaningful dynamic point light reaches this sprite
+    if (totalLight <= 0.02f) {
+      pbrFallbackBasePaint.alpha = clampedAlpha
+      pbrFallbackBasePaint.colorFilter = colorFilter
+      if (!hasSpatialTransform) {
+        pbrSpriteDstRect.set(cx - halfDraw, cy - halfDraw, cx + halfDraw, cy + halfDraw)
+        canvas.drawBitmap(bundle.albedoBitmap, null, pbrSpriteDstRect, pbrFallbackBasePaint)
+      } else {
+        canvas.save()
+        canvas.translate(cx, cy)
+        if (kotlin.math.abs(rotationRad) > 0.0005f) canvas.rotate(rotDeg)
+        val sx = drawSize / w
+        val sy = (drawSize / h) * lateralScaleYFactor
+        canvas.scale(sx, sy)
+        if (kotlin.math.abs(rollSkewY) > 0.0005f) canvas.skew(0f, rollSkewY)
+        canvas.drawBitmap(bundle.albedoBitmap, -w * 0.5f, -h * 0.5f, pbrFallbackBasePaint)
+        canvas.restore()
+      }
+      pbrFallbackBasePaint.colorFilter = null
+      pbrFallbackBasePaint.alpha = 255
+      return
+    }
+
+    // Counter-rotate world light vectors by -rotationRad into normalized sprite-radius space
+    val cosR = cos(rotationRad)
+    val sinR = sin(rotationRad)
+    val dx1 = light1WorldX - cx
+    val dy1 = light1WorldY - cy
+    val l1LocalX = (dx1 * cosR + dy1 * sinR) / halfDraw
+    val l1LocalY = (-dx1 * sinR + dy1 * cosR) / halfDraw
+
+    val dx2 = light2WorldX - cx
+    val dy2 = light2WorldY - cy
+    val l2LocalX = (dx2 * cosR + dy2 * sinR) / halfDraw
+    val l2LocalY = (-dx2 * sinR + dy2 * cosR) / halfDraw
+
+    if (
+      Build.VERSION.SDK_INT >= 33 &&
+        canvas.isHardwareAccelerated &&
+        pbrRelightShaderCursor < pbrRelightShaderPool.size
+    ) {
+      val shader = pbrRelightShaderPool[pbrRelightShaderCursor] as? RuntimeShader
+      if (shader != null) {
+        pbrRelightShaderCursor++
+        shader.setInputBuffer("uAlbedo", bundle.albedoShader)
+        shader.setInputBuffer("uNormalSpec", bundle.normalSpecShader)
+        shader.setFloatUniform("uSpriteSize", w, h)
+        shader.setFloatUniform("uLight1LocalXY", l1LocalX, l1LocalY)
+        shader.setFloatUniform(
+          "uLight1RGB",
+          Color.red(light1Color) / 255f,
+          Color.green(light1Color) / 255f,
+          Color.blue(light1Color) / 255f,
+        )
+        shader.setFloatUniform("uLight1Intensity", i1)
+        shader.setFloatUniform("uLight2LocalXY", l2LocalX, l2LocalY)
+        shader.setFloatUniform(
+          "uLight2RGB",
+          Color.red(light2Color) / 255f,
+          Color.green(light2Color) / 255f,
+          Color.blue(light2Color) / 255f,
+        )
+        shader.setFloatUniform("uLight2Intensity", i2)
+        shader.setFloatUniform("uRimDepth", rimDepth.coerceIn(0.25f, 2.25f))
+
+        pbrRelightShaderPaint.shader = shader
+        pbrRelightShaderPaint.alpha = clampedAlpha
+        pbrRelightShaderPaint.colorFilter = colorFilter
+
+        canvas.save()
+        canvas.translate(cx, cy)
+        if (kotlin.math.abs(rotationRad) > 0.0005f) canvas.rotate(rotDeg)
+        val sx = drawSize / w
+        val sy = (drawSize / h) * lateralScaleYFactor
+        canvas.scale(sx, sy)
+        if (kotlin.math.abs(rollSkewY) > 0.0005f) canvas.skew(0f, rollSkewY)
+        canvas.translate(-w * 0.5f, -h * 0.5f)
+        canvas.drawRect(0f, 0f, w, h, pbrRelightShaderPaint)
+        canvas.restore()
+
+        pbrRelightShaderPaint.shader = null
+        pbrRelightShaderPaint.colorFilter = null
+        pbrRelightShaderPaint.alpha = 255
+        return
+      }
+    }
+
+    // API 24-32 / Software Canvas / Pool-overflow zero-allocation feathered additive specular fallback
+    canvas.save()
+    canvas.translate(cx, cy)
+    if (kotlin.math.abs(rotationRad) > 0.0005f) canvas.rotate(rotDeg)
+    val sx = drawSize / w
+    val sy = (drawSize / h) * lateralScaleYFactor
+    canvas.scale(sx, sy)
+    if (kotlin.math.abs(rollSkewY) > 0.0005f) canvas.skew(0f, rollSkewY)
+
+    pbrFallbackBasePaint.alpha = clampedAlpha
+    pbrFallbackBasePaint.colorFilter = colorFilter
+    canvas.drawBitmap(bundle.albedoBitmap, -w * 0.5f, -h * 0.5f, pbrFallbackBasePaint)
+    pbrFallbackBasePaint.colorFilter = null
+    pbrFallbackBasePaint.alpha = 255
+
+    if (colorFilter == null) {
+      val rimClamp = rimDepth.coerceIn(0.4f, 1.85f)
+      val halfW = w * 0.5f
+      val halfH = h * 0.5f
+      val alphaNorm = clampedAlpha / 255f
+
+      if (i1 > 0.02f) {
+        val len1 = hypot(l1LocalX, l1LocalY).coerceAtLeast(0.001f)
+        val shift1 = min(1f, len1 / 1.4f) * 0.34f
+        val offX1 = (l1LocalX / len1) * shift1 * halfW
+        val offY1 = (l1LocalY / len1) * shift1 * halfH
+        val lobeR1 = halfW * 0.58f
+        val grad1 = getUnitSpecularFallbackShader(light1Color)
+        pbrFallbackShaderMatrix.reset()
+        pbrFallbackShaderMatrix.postScale(lobeR1, lobeR1)
+        pbrFallbackShaderMatrix.postTranslate(offX1, offY1)
+        grad1.setLocalMatrix(pbrFallbackShaderMatrix)
+        pbrFallbackAddPaint.shader = grad1
+        pbrFallbackAddPaint.alpha = (i1 * 88f * rimClamp * alphaNorm).roundToInt().coerceIn(0, 138)
+        canvas.drawCircle(offX1, offY1, lobeR1, pbrFallbackAddPaint)
+      }
+
+      if (i2 > 0.02f) {
+        val len2 = hypot(l2LocalX, l2LocalY).coerceAtLeast(0.001f)
+        val shift2 = min(1f, len2 / 1.4f) * 0.34f
+        val offX2 = (l2LocalX / len2) * shift2 * halfW
+        val offY2 = (l2LocalY / len2) * shift2 * halfH
+        val lobeR2 = halfW * 0.54f
+        val grad2 = getUnitSpecularFallbackShader(light2Color)
+        pbrFallbackShaderMatrix.reset()
+        pbrFallbackShaderMatrix.postScale(lobeR2, lobeR2)
+        pbrFallbackShaderMatrix.postTranslate(offX2, offY2)
+        grad2.setLocalMatrix(pbrFallbackShaderMatrix)
+        pbrFallbackAddPaint.shader = grad2
+        pbrFallbackAddPaint.alpha = (i2 * 76f * rimClamp * alphaNorm).roundToInt().coerceIn(0, 124)
+        canvas.drawCircle(offX2, offY2, lobeR2, pbrFallbackAddPaint)
+      }
+      pbrFallbackAddPaint.shader = null
+    }
+    canvas.restore()
   }
 
   fun getRiftAnomalyIconBitmap(riftId: String): Bitmap {
@@ -2278,6 +2893,13 @@ object RiftSpriteBaker {
         val k = iter.next()
         if (((k ushr 8) and 0xFF) == 10) {
           iter.remove()
+        }
+      }
+      val relightIter = shipRelightBundleCache.keys.iterator()
+      while (relightIter.hasNext()) {
+        val k = relightIter.next()
+        if (((k ushr 8) and 0xFF) == 10) {
+          relightIter.remove()
         }
       }
       customShip9Version++
