@@ -33,6 +33,7 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -143,10 +144,10 @@ internal fun RiftVerticalCard(
     }
   val targetScale =
     when {
-      heroHubMode && isHighlighted -> 1.04f
+      heroHubMode && isHighlighted -> 1.08f
       heroHubMode -> 1.0f
-      isHighlighted -> 1.05f
-      isCompactPeer -> 0.95f
+      isHighlighted && !isCompactPeer -> 1.08f
+      isCompactPeer -> 0.92f
       else -> 1.0f
     }
   val spotlightScale by
@@ -299,7 +300,7 @@ internal fun RiftVerticalCard(
           Text(
             text = title,
             color = Color(0xFFE2E8F0),
-            fontSize = 10.6.sp,
+            fontSize = 10.4.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             textAlign = if (isRightColumn) TextAlign.End else TextAlign.Start,
@@ -374,21 +375,21 @@ internal fun RiftVerticalCard(
     } else {
       val visualDp =
         when {
-          heroHubMode && maxHeight >= 156.dp -> 70.dp
-          heroHubMode && maxHeight >= 126.dp -> 62.dp
-          heroHubMode -> 52.dp
-          isHighlighted -> 62.dp
-          maxHeight >= 120.dp -> 50.dp
-          else -> 44.dp
+          heroHubMode && maxHeight >= 156.dp -> 84.dp
+          heroHubMode && maxHeight >= 126.dp -> 78.dp
+          heroHubMode -> 74.dp
+          isHighlighted -> 76.dp
+          maxHeight >= 120.dp -> 54.dp
+          else -> 46.dp
         }
       val titleFontSp =
         when {
-          heroHubMode -> 13.6.sp
-          isHighlighted -> 12.6.sp
-          titleMaxLines > 1 && title.length > 14 -> 10.6.sp
-          else -> 11.8.sp
+          heroHubMode -> 14.6.sp
+          isHighlighted -> 13.4.sp
+          titleMaxLines > 1 && title.length > 14 -> 10.8.sp
+          else -> 12.0.sp
         }
-      val subtitleFontSp = if (heroHubMode) 10.0.sp else 9.4.sp
+      val subtitleFontSp = if (heroHubMode) 10.4.sp else 9.6.sp
 
       Column(
         modifier = Modifier.fillMaxWidth().align(Alignment.Center),
@@ -766,8 +767,8 @@ internal fun HangarVerticalWingBay(
       )
     }
 
-    // Dynamic Spotlight Enlargement: spotlight ship steps forward at 62dp while the 4 peer ships
-    // stay compact (52dp min height) so all 5 ships per wing fit 100% inside 540dp without bottom clipping.
+    // Dynamic Spotlight Enlargement: spotlight ship steps forward at 120dp (76dp spinning 2.5D hull)
+    // while the 4 peer ships stay compact (50dp min height, 4dp gap) so all 5 ships per wing fit 100% on screen.
     val spotlightShipId =
       when {
         ships.any { it.id == inspectedShipId } -> inspectedShipId
@@ -777,8 +778,15 @@ internal fun HangarVerticalWingBay(
       }
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(3.dp),
+      modifier =
+        Modifier.weight(1f)
+          .fillMaxWidth()
+          .padding(
+            start = if (isRightSide) 18.dp else 0.dp,
+            end = if (isRightSide) 0.dp else 18.dp,
+          )
+          .verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       ships.forEach { ship ->
         val isCharged = chargedShipId == ship.id
@@ -830,7 +838,7 @@ internal fun HangarVerticalWingBay(
           badgeText = badgeText,
           badgeColor = if (isCharged) Color(0xFF00F5D4) else Color(0xFFFACC15),
           showBadgeResonanceIcon = !isSpotlight,
-          minHeightDp = if (isSpotlight) 88.dp else 52.dp,
+          minHeightDp = if (isSpotlight) 120.dp else 50.dp,
           testTag = "hangar_bay_ship_${ship.id}",
           visualContent = { visualDp ->
             if (isSpotlight) {
@@ -1021,6 +1029,7 @@ internal fun RiftFrameLoadoutSideBay(
     Row(
       modifier =
         Modifier.fillMaxWidth()
+          .padding(end = 18.dp)
           .height(48.dp)
           .chamferedSciFiPodSurface(
             isRightSide = false,
@@ -1093,7 +1102,7 @@ internal fun RiftFrameLoadoutSideBay(
     }
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       // Exact 100-Point Budget Readout + Borderless Frame Rename & Reset Points Controls
@@ -1487,6 +1496,7 @@ internal fun RiftFrameCosmeticsSideBay(
   isCharged: Boolean,
   localPrefs: LocalPilotPrefs,
   currentUserId: String,
+  indicatedShipId: Int = 10,
   onShareBuild: () -> Unit,
   onInspectCosmetic: (CosmeticCatalogItem, Boolean, Boolean) -> Unit,
 ) {
@@ -1528,6 +1538,7 @@ internal fun RiftFrameCosmeticsSideBay(
     Row(
       modifier =
         Modifier.fillMaxWidth()
+          .padding(start = 18.dp)
           .chamferedSciFiPodSurface(
             isRightSide = true,
             primaryBorder = Color(0xFFC084FC),
@@ -1580,6 +1591,7 @@ internal fun RiftFrameCosmeticsSideBay(
     Row(
       modifier =
         Modifier.fillMaxWidth()
+          .padding(start = 18.dp)
           .height(48.dp)
           .chamferedSciFiPodSurface(
             isRightSide = true,
@@ -1622,7 +1634,7 @@ internal fun RiftFrameCosmeticsSideBay(
     }
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       filteredCosmetics.forEach { item ->
@@ -1675,10 +1687,23 @@ internal fun RiftFrameCosmeticsSideBay(
               else -> null
             },
           statusColor = if (equipped) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          minHeightDp = if (equipped) 96.dp else 54.dp,
+          minHeightDp = if (equipped) 112.dp else 52.dp,
           testTag = "rift_frame_cosmetic_${item.category.lowercase(Locale.US)}_${item.id}",
           visualContent = { visualDp ->
-            CosmeticSwatchEmblem(item = item, sizeDp = visualDp)
+            if (item.category == "HULL_TRIM") {
+              Spinning25dShipWithOrbitingFlux(
+                shipId = indicatedShipId,
+                shipSpinDeg = shipSpinDeg,
+                fluxOrbitRad = fluxOrbitRad,
+                isCharged = false,
+                isBestShip = false,
+                isSelected = equipped,
+                sizeDp = visualDp,
+                trimStyleOverride = item.id.coerceIn(0, 5),
+              )
+            } else {
+              CosmeticSwatchEmblem(item = item, sizeDp = visualDp)
+            }
           },
           onClick = { onInspectCosmetic(item, unlocked, equipped) },
         )
@@ -1710,7 +1735,7 @@ internal fun ConduitRankTrackSideBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       RiftProgressionCatalog.CONDUIT_RANK_TIERS.forEach { tier ->
@@ -1737,7 +1762,7 @@ internal fun ConduitRankTrackSideBay(
           showBadgeResonanceIcon = !isCurrent && !isReached,
           statusLabel = "MIN ${formatOverwatchResonance(tier.minResonance)} LIVE RESONANCE",
           statusColor = if (isReached) Color(0xFFFACC15) else Color(0xFF94A3B8),
-          minHeightDp = if (isCurrent) 96.dp else 54.dp,
+          minHeightDp = if (isCurrent) 112.dp else 52.dp,
           testTag = "conduit_tier_${tier.title.lowercase(Locale.US).replace(" ", "_")}",
           visualContent = { visualDp ->
             Box(
@@ -1793,12 +1818,13 @@ internal fun ConduitRankTrackSideBay(
             accent = if (active) Color(0xFF00F5D4) else Color(0xFFC084FC),
             isRightColumn = true,
             isHighlighted = active,
+            isCompactPeer = !active,
             badgeText = if (active) "ACTIVE" else "${gate.freeAtResonance}+",
             badgeColor = if (active) Color(0xFF00F5D4) else Color(0xFFC084FC),
             showBadgeResonanceIcon = !active,
             statusLabel = gate.archetypeTitle.uppercase(Locale.US),
             statusColor = Color(0xFFCBD5E1),
-            minHeightDp = 98.dp,
+            minHeightDp = if (active) 108.dp else 52.dp,
             testTag = "conduit_milestone_${gate.slotId.lowercase(Locale.US).replace(" ", "_")}",
             visualContent = { visualDp ->
               ResonanceCrestIcon(sizeDp = visualDp * 0.72f)
@@ -1837,6 +1863,9 @@ internal fun ShardStoreLeftTreasuryBay(
   purchaseStatusMessage: String?,
   localPrefs: LocalPilotPrefs,
   currentUserId: String,
+  indicatedShipId: Int = 1,
+  shipSpinDeg: Float = 0f,
+  fluxOrbitRad: Float = 0f,
   onBackToHub: () -> Unit,
   onInspectFrameB: (FrameSlotGateInfo, Boolean, Boolean) -> Unit,
   onInspectPaidSkin: (CosmeticCatalogItem, Boolean, Boolean) -> Unit,
@@ -1851,6 +1880,8 @@ internal fun ShardStoreLeftTreasuryBay(
   val isFrameBSelected = isFrameBOwned && normalizedActiveId == "Frame B"
   val paidSkins = remember { RiftProgressionCatalog.hullTrims.filter { it.id >= 1 } }
   val equippedSkinId = localPrefs.getEquippedCosmeticId("HULL_TRIM", uidOrNull)
+  val spotlightSkinId =
+    paidSkins.firstOrNull { it.id == equippedSkinId }?.id ?: paidSkins.firstOrNull()?.id ?: 1
 
   Column(
     modifier = Modifier.fillMaxSize().testTag("shard_store_left_summary_bay"),
@@ -1869,8 +1900,8 @@ internal fun ShardStoreLeftTreasuryBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 18.dp).verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       // Live Treasury & Billing Status Shelf
       Column(
@@ -1954,10 +1985,11 @@ internal fun ShardStoreLeftTreasuryBay(
         onClick = { onInspectFrameB(frameBGate, isFrameBOwned, isFrameBSelected) },
       )
 
-      // Permanent Purchasable Ship Skins (HULL_TRIM 1..5)
+      // Permanent Purchasable Ship Skins (HULL_TRIM 1..5 rendered as live spinning 2.5D skinned hulls)
       paidSkins.forEach { skin ->
         val owned = isPaidHullSkinOwnedInPrefs(skin.id, localPrefs, uidOrNull)
         val equipped = owned && equippedSkinId == skin.id
+        val isSpotlightSkin = skin.id == spotlightSkinId
         val skinAccent = Color(skin.accentColorHex)
 
         RiftVerticalCard(
@@ -1967,7 +1999,8 @@ internal fun ShardStoreLeftTreasuryBay(
           accent = if (equipped) Color(0xFF00F5D4) else skinAccent,
           secondaryAccent = if (owned) Color(0xFFFACC15) else Color(0xFF38BDF8),
           isRightColumn = false,
-          isHighlighted = equipped,
+          isHighlighted = isSpotlightSkin,
+          isCompactPeer = !isSpotlightSkin,
           badgeText =
             when {
               equipped -> "EQUIPPED"
@@ -1983,10 +2016,19 @@ internal fun ShardStoreLeftTreasuryBay(
               else -> null
             },
           statusColor = if (equipped) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          minHeightDp = 98.dp,
+          minHeightDp = if (isSpotlightSkin) 114.dp else 54.dp,
           testTag = "shard_store_skin_${skin.id}",
           visualContent = { visualDp ->
-            CosmeticSwatchEmblem(item = skin, sizeDp = visualDp)
+            Spinning25dShipWithOrbitingFlux(
+              shipId = indicatedShipId,
+              shipSpinDeg = shipSpinDeg,
+              fluxOrbitRad = fluxOrbitRad,
+              isCharged = false,
+              isBestShip = false,
+              isSelected = isSpotlightSkin || equipped,
+              sizeDp = visualDp,
+              trimStyleOverride = skin.id.coerceIn(0, 5),
+            )
           },
           onClick = { onInspectPaidSkin(skin, owned, equipped) },
         )
@@ -2033,6 +2075,7 @@ internal fun ShardStoreRightPacksBay(
   val activity = context as? Activity
   val coroutineScope = rememberCoroutineScope()
   var purchaseBusyProductId by remember { mutableStateOf<String?>(null) }
+  var selectedPackIndex by remember { mutableIntStateOf(2) }
 
   Column(
     modifier = Modifier.fillMaxSize().testTag("shard_store_right_packs_bay"),
@@ -2047,7 +2090,7 @@ internal fun ShardStoreRightPacksBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       RiftBillingManager.OFFICIAL_SKU_CATALOG.forEachIndexed { idx, sku ->
@@ -2065,7 +2108,7 @@ internal fun ShardStoreRightPacksBay(
             "${formatOverwatchResonance(sku.shardAmount.toInt())} Rift Shards pack"
           }
         val isBusy = purchaseBusyProductId == sku.productId
-        val isFeaturedPack = idx == 2 || idx == 3
+        val isFeaturedPack = idx == selectedPackIndex
 
         RiftVerticalCard(
           modifier = Modifier.fillMaxWidth(),
@@ -2080,7 +2123,7 @@ internal fun ShardStoreRightPacksBay(
           badgeColor = packAccent,
           statusLabel = if (isBusy) "PROCESSING..." else "${sku.displayPriceUsd} • BUY PACK",
           statusColor = if (isBusy) Color(0xFF00F5D4) else Color.White,
-          minHeightDp = if (isFeaturedPack) 96.dp else 58.dp,
+          minHeightDp = if (isFeaturedPack) 112.dp else 52.dp,
           testTag = "shard_store_pack_${sku.productId}",
           visualContent = { visualDp ->
             PrismaticShardClusterEmblem(
@@ -2090,6 +2133,7 @@ internal fun ShardStoreRightPacksBay(
             )
           },
           onClick = {
+            selectedPackIndex = idx
             if (purchaseBusyProductId == null) {
               onInspectSkuPack(sku) {
                 purchaseBusyProductId = sku.productId

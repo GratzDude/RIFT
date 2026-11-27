@@ -3036,74 +3036,69 @@ private fun DrawScope.drawNexusOrbitalChassisBackdrop(
     drawContext.canvas.clipPath(maskPath)
   }
 
-  drawRect(
-    brush = Brush.verticalGradient(colors = listOf(Color(0xFF060D1A), Color(0xFF030711), Color(0xFF02050B))),
-    size = size,
-  )
+  // Zero opaque dark backdrop fill: let the live playfield deep-space starfield, nebulae,
+  // crescent moon, and spiral galaxy shine edge-to-edge behind the entire cockpit HUD.
+  // 1. Soft corner-only outer canopy vignette (0f alpha across center & wings, <= 0.26f at extreme corners)
+  val cornerRadius = maxOf(w, h) * 0.78f
   drawRect(
     brush =
       Brush.radialGradient(
-        colors = listOf(Color(0xFF0B192E), Color(0xFF091528), Color(0xFF060D1A), Color(0xFF02050B)),
+        colorStops =
+          arrayOf(
+            0.00f to Color.Transparent,
+            0.64f to Color.Transparent,
+            0.88f to Color(0xFF01040B).copy(alpha = 0.14f),
+            1.00f to Color(0xFF01040B).copy(alpha = 0.26f),
+          ),
         center = Offset(localCx, localCy),
-        radius = maxOf(w, h) * 0.64f,
+        radius = cornerRadius,
       ),
     size = size,
   )
-  for (spoke in 0 until 12) {
-    val rad = spoke * (PI.toFloat() / 6f)
-    val r0 = cutR * 1.05f
-    val r1 = maxOf(w, h) * 0.74f
-    drawLine(
-      color = if (spoke % 3 == 0) Color(0x1E00F5D4) else Color(0x1438BDF8),
-      start = Offset(localCx + cos(rad) * r0, localCy + sin(rad) * r0),
-      end = Offset(localCx + cos(rad) * r1, localCy + sin(rad) * r1),
-      strokeWidth = 0.85.dp.toPx(),
-    )
-  }
 
-  val ring1 = cutR * 1.10f
-  val ring2 = cutR * 1.28f
-  val ring3 = cutR * 1.52f
-  drawCircle(
-    brush = Brush.verticalGradient(listOf(Color(0x4500F5D4), Color(0x2438BDF8), Color(0x32FACC15)), startY = localCy - ring1, endY = localCy + ring1),
-    radius = ring1,
-    center = Offset(localCx, localCy),
-    style = Stroke(width = 1.25.dp.toPx()),
-  )
-  drawCircle(
-    brush = Brush.verticalGradient(listOf(Color(0x28FFD700), Color(0x1838BDF8), Color(0x2600F5D4)), startY = localCy - ring2, endY = localCy + ring2),
-    radius = ring2,
-    center = Offset(localCx, localCy),
-    style = Stroke(width = 0.95.dp.toPx()),
-  )
-  drawCircle(
-    color = Color(0x1438BDF8),
-    radius = ring3,
-    center = Offset(localCx, localCy),
-    style = Stroke(width = 0.8.dp.toPx()),
+  // 2. Ultra-subtle curved pilot-helmet visor horizon hairlines (1.dp cyan/ice-blue alpha <= 0.16f)
+  val horizonStroke = 1.dp.toPx()
+  val topVisorPath =
+    Path().apply {
+      moveTo(w * 0.04f, h * 0.095f)
+      quadraticTo(w * 0.50f, h * 0.025f, w * 0.96f, h * 0.095f)
+    }
+  drawPath(
+    path = topVisorPath,
+    brush =
+      Brush.horizontalGradient(
+        colorStops =
+          arrayOf(
+            0.00f to Color.Transparent,
+            0.22f to Color(0xFF38BDF8).copy(alpha = 0.14f),
+            0.50f to Color(0xFF00F5D4).copy(alpha = 0.16f),
+            0.78f to Color(0xFF38BDF8).copy(alpha = 0.14f),
+            1.00f to Color.Transparent,
+          )
+      ),
+    style = Stroke(width = horizonStroke, cap = StrokeCap.Round),
   )
 
-  val conduitAnglesDeg = floatArrayOf(-148f, 148f, -32f, 32f)
-  for (i in conduitAnglesDeg.indices) {
-    val rad = conduitAnglesDeg[i] * (PI.toFloat() / 180f)
-    val p0 = Offset(localCx + cos(rad) * (cutR * 1.045f), localCy + sin(rad) * (cutR * 1.045f))
-    val p1 = Offset(localCx + cos(rad) * (ring2 * 1.26f), localCy + sin(rad) * (ring2 * 1.26f))
-    val coreCol =
-      when (i) {
-        0 -> Color(0x4838BDF8)
-        1 -> Color(0x4800F5D4)
-        2 -> Color(0x48FFD700)
-        else -> Color(0x4600F5D4)
-      }
-    drawLine(color = Color(0xC002050B), start = p0, end = p1, strokeWidth = 4.0.dp.toPx(), cap = StrokeCap.Round)
-    drawLine(
-      brush = Brush.linearGradient(listOf(coreCol, Color.Transparent), start = p0, end = p1),
-      start = p0,
-      end = p1,
-      strokeWidth = 1.65.dp.toPx(),
-      cap = StrokeCap.Round,
-    )
-  }
+  val bottomVisorPath =
+    Path().apply {
+      moveTo(w * 0.04f, h * 0.905f)
+      quadraticTo(w * 0.50f, h * 0.975f, w * 0.96f, h * 0.905f)
+    }
+  drawPath(
+    path = bottomVisorPath,
+    brush =
+      Brush.horizontalGradient(
+        colorStops =
+          arrayOf(
+            0.00f to Color.Transparent,
+            0.22f to Color(0xFF38BDF8).copy(alpha = 0.13f),
+            0.50f to Color(0xFF00F5D4).copy(alpha = 0.15f),
+            0.78f to Color(0xFF38BDF8).copy(alpha = 0.13f),
+            1.00f to Color.Transparent,
+          )
+      ),
+    style = Stroke(width = horizonStroke, cap = StrokeCap.Round),
+  )
 
   drawContext.canvas.restore()
 }
@@ -4526,6 +4521,9 @@ private fun OrbitalHubSpatialStage(
                 purchaseStatusMessage = storePurchaseBanner,
                 localPrefs = localPrefs,
                 currentUserId = currentUserId,
+                indicatedShipId = hangarIndicatedShipId,
+                shipSpinDeg = shipSpinDeg,
+                fluxOrbitRad = fluxOrbitRad,
                 onBackToHub = {
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
@@ -4903,6 +4901,7 @@ private fun OrbitalHubSpatialStage(
                 isCharged = chargedShipId == 10,
                 localPrefs = localPrefs,
                 currentUserId = currentUserId,
+                indicatedShipId = hangarIndicatedShipId,
                 onShareBuild = onShareActiveRiftFrameBuild,
                 onInspectCosmetic = { item, isUnlocked, isEquipped ->
                   val isRankedReward = RiftProgressionCatalog.isRankedCosmeticCategory(item.category)
@@ -7137,66 +7136,78 @@ private fun RoundRipplingOverwatchAperture(
           )
         }
 
-        // 1. Sleek Sculpted 2.5D Gunmetal/Cyan (#091528 / #0B192E + #00F5D4 / #38BDF8) Outer Radar Collar (1.002r .. 1.044r)
-        val outerCollarMidR = apertureR * 1.023f
-        val outerCollarWidth = (apertureR * 0.042f).coerceAtLeast(4.5.dp.toPx())
-        drawCircle(
-          color = Color(0xE002050B),
-          radius = apertureR * 1.046f,
-          center = Offset(cx, cy + 1.8.dp.toPx()),
-          style = Stroke(width = 2.4.dp.toPx()),
-        )
+        // 1. Translucent Optical HUD Visor Lens Collar (#38050D1C glass meniscus + calibrated 72-tick vernier ring)
+        val outerCollarMidR = apertureR * 1.022f
+        val outerCollarWidth = (apertureR * 0.036f).coerceAtLeast(3.8.dp.toPx())
         drawCircle(
           brush =
             Brush.verticalGradient(
               colors =
                 listOf(
-                  Color(0xFF0B192E),
-                  Color(0xFF091528),
-                  Color(0xFF060D1A),
-                  Color(0xFF030711),
-                  Color(0xFF0B192E),
+                  Color(0x46071428),
+                  Color(0x38050D1C),
+                  Color(0x2E040A16),
+                  Color(0x38050D1C),
+                  Color(0x46071428),
                 ),
-              startY = cy - apertureR * 1.046f,
-              endY = cy + apertureR * 1.046f,
+              startY = cy - apertureR * 1.044f,
+              endY = cy + apertureR * 1.044f,
             ),
           radius = outerCollarMidR,
           center = center,
           style = Stroke(width = outerCollarWidth),
         )
+        // Thin specular glass meniscus outer & inner lens rims
         drawCircle(
           brush =
             Brush.verticalGradient(
               listOf(
-                Color.White.copy(alpha = 0.44f),
-                Color(0xFF00F5D4).copy(alpha = 0.58f),
-                Color(0xFF38BDF8).copy(alpha = 0.36f),
-                Color(0xFF030711),
+                Color.White.copy(alpha = 0.56f),
+                Color(0xFF00F5D4).copy(alpha = 0.62f),
+                Color(0xFF38BDF8).copy(alpha = 0.42f),
+                Color(0xFF00F5D4).copy(alpha = 0.52f),
               ),
-              startY = cy - apertureR * 1.044f,
-              endY = cy + apertureR * 1.044f,
+              startY = cy - apertureR * 1.042f,
+              endY = cy + apertureR * 1.042f,
             ),
-          radius = apertureR * 1.044f,
+          radius = apertureR * 1.042f,
           center = center,
-          style = Stroke(width = 1.25.dp.toPx()),
+          style = Stroke(width = 1.15.dp.toPx()),
+        )
+        drawCircle(
+          color = Color(0xFF00F5D4).copy(alpha = 0.36f),
+          radius = apertureR * 1.003f,
+          center = center,
+          style = Stroke(width = 0.85.dp.toPx()),
         )
 
-        // 2. Four Diagonal Optical Lock Clamps (45, 135, 225, 315 deg) + Port/Starboard Coupling Nodes
-        val clampMidR = apertureR * 1.026f
-        val clampRect = Rect(cx - clampMidR, cy - clampMidR, cx + clampMidR, cy + clampMidR)
+        // Calibrated 72-tick optical vernier ring around the glass collar
+        for (tick in 0 until 72) {
+          val rad = tick * (2f * PI.toFloat() / 72f)
+          val isCardinal = tick % 18 == 0
+          val isMajor = tick % 6 == 0
+          val rIn = apertureR * (if (isCardinal) 1.004f else if (isMajor) 1.009f else 1.016f)
+          val rOut = apertureR * (if (isCardinal) 1.042f else if (isMajor) 1.038f else 1.030f)
+          val tickColor =
+            when {
+              isCardinal -> Color(0xFFFFD700).copy(alpha = 0.86f)
+              isMajor -> Color(0xFF00F5D4).copy(alpha = 0.66f)
+              else -> Color(0xFF38BDF8).copy(alpha = 0.34f)
+            }
+          drawLine(
+            color = tickColor,
+            start = Offset(cx + cos(rad) * rIn, cy + sin(rad) * rIn),
+            end = Offset(cx + cos(rad) * rOut, cy + sin(rad) * rOut),
+            strokeWidth = (if (isCardinal) 1.35.dp else if (isMajor) 0.95.dp else 0.65.dp).toPx(),
+            cap = StrokeCap.Round,
+          )
+        }
+
+        // 2. Four Translucent Diagonal Optical Lock Arcs (45, 135, 225, 315 deg) + Luminous Port/Starboard Optical Nodes
         val outerClampLipR = apertureR * 1.044f
         for (diag in intArrayOf(45, 135, 225, 315)) {
           drawArc(
-            color = Color(0xFF091528),
-            startAngle = diag - 9f,
-            sweepAngle = 18f,
-            useCenter = false,
-            topLeft = clampRect.topLeft,
-            size = clampRect.size,
-            style = Stroke(width = outerCollarWidth * 0.90f, cap = StrokeCap.Butt),
-          )
-          drawArc(
-            color = if (diag == 135 || diag == 315) Color(0xFFFFD700).copy(alpha = 0.90f) else Color(0xFFFB7185).copy(alpha = 0.78f),
+            color = if (diag == 135 || diag == 315) Color(0xFFFFD700).copy(alpha = 0.86f) else Color(0xFF00F5D4).copy(alpha = 0.72f),
             startAngle = diag - 7.5f,
             sweepAngle = 15f,
             useCenter = false,
@@ -7206,15 +7217,15 @@ private fun RoundRipplingOverwatchAperture(
           )
         }
         for (wingSide in intArrayOf(-1, 1)) {
-          val nodeX = cx + wingSide * (apertureR * 1.032f)
-          drawCircle(color = Color(0xFF060D1A), radius = 3.8.dp.toPx(), center = Offset(nodeX, cy))
+          val nodeX = cx + wingSide * (apertureR * 1.034f)
+          drawCircle(color = Color(0x4400F5D4), radius = 4.6.dp.toPx(), center = Offset(nodeX, cy))
           drawCircle(
-            color = Color(0xFF00F5D4),
-            radius = 3.8.dp.toPx(),
+            color = Color(0xFF00F5D4).copy(alpha = 0.90f),
+            radius = 3.2.dp.toPx(),
             center = Offset(nodeX, cy),
-            style = Stroke(width = 1.2.dp.toPx()),
+            style = Stroke(width = 1.05.dp.toPx()),
           )
-          drawCircle(color = Color.White, radius = 1.4.dp.toPx(), center = Offset(nodeX, cy))
+          drawCircle(color = Color.White, radius = 1.3.dp.toPx(), center = Offset(nodeX, cy))
         }
 
         // 3. Harmonic Polar Resonance Matrix (1.006r .. 1.030r) Reacting to Combined Sector Resonance
@@ -7759,105 +7770,93 @@ private fun OverwatchCircularGlassPromptOverlay(
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
+                  .heightIn(min = 48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFFC084FC),
+                    isSelected = true,
+                    drawCornerTicks = true,
+                    featherAlpha = 0.44f,
+                  )
                   .clickable { onCustomizeRiftFrame() }
+                  .padding(horizontal = 12.dp, vertical = 4.dp)
                   .testTag("overwatch_customize_rift_frame_btn"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
+              Text(
+                text = "CUSTOMIZE RIFT FRAME >",
+                color = Color(0xFFE9D5FF),
+                fontSize = 9.0.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                softWrap = false,
+                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+              )
+            }
+          }
+
+          // 2-Button Bottom Row Centered Safely Above Bottom Circular Chord (>= 48dp touch targets)
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+          ) {
+            if (!prompt.hideChargeButton) {
+              Row(
                 modifier =
-                  Modifier.clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF1A1038))
-                    .border(1.15.dp, Color(0xFFC084FC), RoundedCornerShape(14.dp))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center,
+                  Modifier.minimumInteractiveComponentSize()
+                    .heightIn(min = 48.dp)
+                    .cockpitReticleSurface(
+                      accent = if (isAlreadyCharged) Color(0xFF00F5D4) else Color(0xFFFFD700),
+                      isSelected = true,
+                      drawCornerTicks = true,
+                      featherAlpha = 0.50f,
+                    )
+                    .clickable { onChargeShip(ship.id) }
+                    .padding(horizontal = 12.dp, vertical = if (isRiftFrameWithActions) 4.dp else 5.dp)
+                    .testTag("overwatch_ship_charge_button"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
               ) {
                 Text(
-                  text = "CUSTOMIZE RIFT FRAME >",
-                  color = Color(0xFFE9D5FF),
-                  fontSize = 9.0.sp,
+                  text = if (isAlreadyCharged) "CHARGED" else "CHARGE",
+                  color = Color.White,
+                  fontSize = actionFontSp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                   maxLines = 1,
                   softWrap = false,
                   style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                 )
-              }
-            }
-          }
-
-          // 2-Button Bottom Row Centered Safely Above Bottom Circular Chord (>= 48dp touch targets)
-          Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-          ) {
-            if (!prompt.hideChargeButton) {
-              Box(
-                modifier =
-                  Modifier.minimumInteractiveComponentSize()
-                    .clickable { onChargeShip(ship.id) }
-                    .testTag("overwatch_ship_charge_button"),
-                contentAlignment = Alignment.Center,
-              ) {
-                Row(
-                  modifier =
-                    Modifier.clip(RoundedCornerShape(15.dp))
-                      .background(
-                        Brush.horizontalGradient(
-                          if (isAlreadyCharged) listOf(Color(0xFF0A363D), Color(0xFF091528))
-                          else listOf(Color(0xFF0D3554), Color(0xFF0B192E))
-                        )
-                      )
-                      .border(
-                        1.25.dp,
-                        Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
-                        RoundedCornerShape(15.dp),
-                      )
-                      .padding(horizontal = 9.dp, vertical = if (isRiftFrameWithActions) 4.dp else 5.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                  Text(
-                    text = if (isAlreadyCharged) "CHARGED" else "CHARGE",
-                    color = Color.White,
-                    fontSize = actionFontSp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                    softWrap = false,
-                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                  )
-                  FluxToroidIcon(sizeDp = fluxExactDp)
-                }
+                FluxToroidIcon(sizeDp = fluxExactDp)
               }
             }
 
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
+                  .heightIn(min = 48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF94A3B8),
+                    isSelected = false,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.30f,
+                  )
                   .clickable { onDismissPrompt() }
+                  .padding(horizontal = 12.dp, vertical = if (isRiftFrameWithActions) 4.dp else 5.dp)
                   .testTag("overwatch_prompt_close_button"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(CircleShape)
-                    .background(Color(0xCC060D1A))
-                    .border(1.dp, Color(0xFF64748B), CircleShape)
-                    .padding(horizontal = 9.dp, vertical = if (isRiftFrameWithActions) 4.dp else 5.dp),
-                contentAlignment = Alignment.Center,
-              ) {
-                Text(
-                  text = "CLOSE",
-                  color = Color(0xFFCBD5E1),
-                  fontSize = 9.4.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                  softWrap = false,
-                  style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                )
-              }
+              Text(
+                text = "CLOSE",
+                color = Color(0xFFCBD5E1),
+                fontSize = 9.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                softWrap = false,
+                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+              )
             }
           }
         }
@@ -7917,32 +7916,30 @@ private fun OverwatchCircularGlassPromptOverlay(
 
           Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF00F5D4),
+                    isSelected = true,
+                    drawCornerTicks = true,
+                    featherAlpha = 0.48f,
+                  )
                   .clickable { onSquadUpPilot(pilot) }
-                  .padding(vertical = 5.dp)
+                  .padding(horizontal = 12.dp)
                   .testTag("overwatch_pilot_squad_up_button"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(16.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF0D3554), Color(0xFF091528))))
-                    .border(1.25.dp, Color(0xFF00F5D4), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 11.dp, vertical = 6.dp),
-              ) {
-                Text(
-                  text = if (pilot.isInSquadron) "IN SQUADRON" else "SQUAD UP",
-                  color = Color.White,
-                  fontSize = if (isTabletDeck) 9.8.sp else 8.6.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = if (pilot.isInSquadron) "IN SQUADRON" else "SQUAD UP",
+                color = Color.White,
+                fontSize = if (isTabletDeck) 9.8.sp else 8.6.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
 
             if (!pilot.isFriend) {
@@ -7950,26 +7947,24 @@ private fun OverwatchCircularGlassPromptOverlay(
                 modifier =
                   Modifier.minimumInteractiveComponentSize()
                     .height(48.dp)
+                    .cockpitReticleSurface(
+                      accent = Color(0xFFFACC15),
+                      isSelected = true,
+                      drawCornerTicks = false,
+                      featherAlpha = 0.40f,
+                    )
                     .clickable { onAddFriendPilot(pilot) }
-                    .padding(vertical = 5.dp)
+                    .padding(horizontal = 10.dp)
                     .testTag("overwatch_pilot_add_friend_button"),
                 contentAlignment = Alignment.Center,
               ) {
-                Box(
-                  modifier =
-                    Modifier.clip(RoundedCornerShape(16.dp))
-                      .background(Color(0xFF091528))
-                      .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(16.dp))
-                      .padding(horizontal = 9.dp, vertical = 6.dp),
-                ) {
-                  Text(
-                    text = "+ FRIEND",
-                    color = Color(0xFFFFD700),
-                    fontSize = 8.0.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                  )
-                }
+                Text(
+                  text = "+ FRIEND",
+                  color = Color(0xFFFFD700),
+                  fontSize = 8.2.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
               }
             }
 
@@ -7977,26 +7972,24 @@ private fun OverwatchCircularGlassPromptOverlay(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF94A3B8),
+                    isSelected = false,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.28f,
+                  )
                   .clickable { onDismissPrompt() }
-                  .padding(vertical = 5.dp)
+                  .padding(horizontal = 10.dp)
                   .testTag("overwatch_pilot_close_button"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(CircleShape)
-                    .background(Color(0xCC060D1A))
-                    .border(1.dp, Color(0xFF64748B), CircleShape)
-                    .padding(horizontal = 9.dp, vertical = 6.dp),
-              ) {
-                Text(
-                  text = "CLOSE",
-                  color = Color(0xFFCBD5E1),
-                  fontSize = 7.8.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "CLOSE",
+                color = Color(0xFFCBD5E1),
+                fontSize = 8.0.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
           }
         }
@@ -8033,64 +8026,60 @@ private fun OverwatchCircularGlassPromptOverlay(
             color = Color(0xFFCBD5E1),
             fontSize = if (isTabletDeck) 8.4.sp else 7.4.sp,
             fontWeight = FontWeight.Medium,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = FontFamily.SansSerif,
             textAlign = TextAlign.Center,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
           )
           Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = accentCol,
+                    isSelected = true,
+                    drawCornerTicks = true,
+                    featherAlpha = 0.48f,
+                  )
                   .clickable { onConfirmActionPrompt(prompt) }
-                  .padding(vertical = 5.dp)
+                  .padding(horizontal = 14.dp)
                   .testTag("overwatch_action_confirm_button"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(16.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF0D3554), Color(0xFF091528))))
-                    .border(1.25.dp, accentCol, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-              ) {
-                Text(
-                  text = prompt.confirmLabel,
-                  color = Color.White,
-                  fontSize = if (isTabletDeck) 9.8.sp else 8.6.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = prompt.confirmLabel,
+                color = Color.White,
+                fontSize = if (isTabletDeck) 9.8.sp else 8.6.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF94A3B8),
+                    isSelected = false,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.28f,
+                  )
                   .clickable { onDismissPrompt() }
-                  .padding(vertical = 5.dp)
+                  .padding(horizontal = 12.dp)
                   .testTag("overwatch_action_cancel_button"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(CircleShape)
-                    .background(Color(0xCC060D1A))
-                    .border(1.dp, Color(0xFF64748B), CircleShape)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-              ) {
-                Text(
-                  text = "CANCEL",
-                  color = Color(0xFFCBD5E1),
-                  fontSize = 7.8.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "CANCEL",
+                color = Color(0xFFCBD5E1),
+                fontSize = 8.0.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
           }
         }
@@ -8112,10 +8101,13 @@ private fun OverwatchCircularGlassPromptOverlay(
           Box(
             modifier =
               Modifier.fillMaxWidth(0.86f)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xEE02050B))
-                .border(1.1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 7.dp),
+                .cockpitReticleSurface(
+                  accent = Color(0xFF00F5D4),
+                  isSelected = true,
+                  drawCornerTicks = false,
+                  featherAlpha = 0.50f,
+                )
+                .padding(horizontal = 10.dp, vertical = 8.dp),
           ) {
             BasicTextField(
               value = renameDraft,
@@ -8144,57 +8136,53 @@ private fun OverwatchCircularGlassPromptOverlay(
           )
           Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF00F5D4),
+                    isSelected = true,
+                    drawCornerTicks = true,
+                    featherAlpha = 0.48f,
+                  )
                   .clickable { onSaveCallsignRename(renameDraft) }
-                  .padding(vertical = 5.dp)
+                  .padding(horizontal = 14.dp)
                   .testTag("overwatch_callsign_save_button"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(16.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF0D3554), Color(0xFF091528))))
-                    .border(1.25.dp, Color(0xFF00F5D4), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-              ) {
-                Text(
-                  text = "SAVE NAME",
-                  color = Color.White,
-                  fontSize = if (isTabletDeck) 9.6.sp else 8.4.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "SAVE NAME",
+                color = Color.White,
+                fontSize = if (isTabletDeck) 9.6.sp else 8.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF94A3B8),
+                    isSelected = false,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.28f,
+                  )
                   .clickable { onDismissPrompt() }
-                  .padding(vertical = 5.dp)
+                  .padding(horizontal = 12.dp)
                   .testTag("overwatch_callsign_cancel_button"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(CircleShape)
-                    .background(Color(0xCC060D1A))
-                    .border(1.dp, Color(0xFF64748B), CircleShape)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-              ) {
-                Text(
-                  text = "CANCEL",
-                  color = Color(0xFFCBD5E1),
-                  fontSize = 8.4.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "CANCEL",
+                color = Color(0xFFCBD5E1),
+                fontSize = 8.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
           }
         }
@@ -8283,30 +8271,27 @@ private fun OverwatchCircularGlassPromptOverlay(
                   modifier =
                     Modifier.minimumInteractiveComponentSize()
                       .size(48.dp)
+                      .cockpitReticleSurface(
+                        accent = accentCol,
+                        isSelected = true,
+                        drawCornerTicks = false,
+                        featherAlpha = 0.34f,
+                      )
                       .clickable {
                         previewShipId = if (previewShipId <= 1) 10 else previewShipId - 1
                       }
                       .testTag("overwatch_cosmetic_prev_ship"),
                   contentAlignment = Alignment.Center,
                 ) {
-                  Box(
-                    modifier =
-                      Modifier.clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xCC061121))
-                        .border(1.dp, accentCol.copy(alpha = 0.65f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 7.dp, vertical = 3.dp),
-                    contentAlignment = Alignment.Center,
-                  ) {
-                    Text(
-                      text = "<",
-                      color = accentCol,
-                      fontSize = 9.2.sp,
-                      fontWeight = FontWeight.Black,
-                      fontFamily = FontFamily.Monospace,
-                      maxLines = 1,
-                      style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                    )
-                  }
+                  Text(
+                    text = "<",
+                    color = accentCol,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                  )
                 }
 
                 Text(
@@ -8326,30 +8311,27 @@ private fun OverwatchCircularGlassPromptOverlay(
                   modifier =
                     Modifier.minimumInteractiveComponentSize()
                       .size(48.dp)
+                      .cockpitReticleSurface(
+                        accent = accentCol,
+                        isSelected = true,
+                        drawCornerTicks = false,
+                        featherAlpha = 0.34f,
+                      )
                       .clickable {
                         previewShipId = if (previewShipId >= 10) 1 else previewShipId + 1
                       }
                       .testTag("overwatch_cosmetic_next_ship"),
                   contentAlignment = Alignment.Center,
                 ) {
-                  Box(
-                    modifier =
-                      Modifier.clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xCC061121))
-                        .border(1.dp, accentCol.copy(alpha = 0.65f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 7.dp, vertical = 3.dp),
-                    contentAlignment = Alignment.Center,
-                  ) {
-                    Text(
-                      text = ">",
-                      color = accentCol,
-                      fontSize = 9.2.sp,
-                      fontWeight = FontWeight.Black,
-                      fontFamily = FontFamily.Monospace,
-                      maxLines = 1,
-                      style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                    )
-                  }
+                  Text(
+                    text = ">",
+                    color = accentCol,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                  )
                 }
               }
             }
@@ -8428,10 +8410,13 @@ private fun OverwatchCircularGlassPromptOverlay(
           if (prompt.badge.isNotBlank()) {
             Row(
               modifier =
-                Modifier.clip(RoundedCornerShape(5.dp))
-                  .background(accentCol.copy(alpha = 0.16f))
-                  .border(1.dp, accentCol.copy(alpha = 0.85f), RoundedCornerShape(5.dp))
-                  .padding(horizontal = 7.dp, vertical = if (hasLiveCosmeticPreview) 1.5.dp else 2.5.dp),
+                Modifier.cockpitReticleSurface(
+                  accent = accentCol,
+                  isSelected = true,
+                  drawCornerTicks = false,
+                  featherAlpha = 0.30f,
+                )
+                  .padding(horizontal = 8.dp, vertical = if (hasLiveCosmeticPreview) 1.5.dp else 2.5.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -8521,60 +8506,56 @@ private fun OverwatchCircularGlassPromptOverlay(
 
           Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             if (prompt.primaryActionLabel.isNotBlank() && prompt.onPrimaryAction != null) {
               Box(
                 modifier =
                   Modifier.minimumInteractiveComponentSize()
                     .height(48.dp)
+                    .cockpitReticleSurface(
+                      accent = accentCol,
+                      isSelected = true,
+                      drawCornerTicks = true,
+                      featherAlpha = 0.48f,
+                    )
                     .clickable { onExecuteInfoStageAction(prompt) }
-                    .padding(vertical = 5.dp)
+                    .padding(horizontal = 14.dp)
                     .testTag("overwatch_info_primary_button"),
                 contentAlignment = Alignment.Center,
               ) {
-                Box(
-                  modifier =
-                    Modifier.clip(RoundedCornerShape(16.dp))
-                      .background(Brush.horizontalGradient(listOf(Color(0xFF0D3554), Color(0xFF091528))))
-                      .border(1.25.dp, accentCol, RoundedCornerShape(16.dp))
-                      .padding(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                  Text(
-                    text = prompt.primaryActionLabel,
-                    color = Color.White,
-                    fontSize = if (isTabletDeck) 9.8.sp else 8.8.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                  )
-                }
+                Text(
+                  text = prompt.primaryActionLabel,
+                  color = Color.White,
+                  fontSize = if (isTabletDeck) 9.8.sp else 8.8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                )
               }
             }
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF94A3B8),
+                    isSelected = false,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.28f,
+                  )
                   .clickable { onDismissPrompt() }
-                  .padding(vertical = 5.dp)
+                  .padding(horizontal = 12.dp)
                   .testTag("overwatch_info_close_button"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(CircleShape)
-                    .background(Color(0xCC060D1A))
-                    .border(1.dp, Color(0xFF64748B), CircleShape)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-              ) {
-                Text(
-                  text = "CLOSE",
-                  color = Color(0xFFCBD5E1),
-                  fontSize = 8.4.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "CLOSE",
+                color = Color(0xFFCBD5E1),
+                fontSize = 8.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
           }
         }
@@ -8625,128 +8606,118 @@ private fun OverwatchCircularGlassPromptOverlay(
             }
           }
           Row(
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF38BDF8),
+                    isSelected = true,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.36f,
+                  )
                   .clickable {
                     crestDraft = crestDraft.copy(shieldShape = (crestDraft.shieldShape + 1) % 4)
                   }
-                  .padding(vertical = 7.dp),
+                  .padding(horizontal = 9.dp),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF0D253B))
-                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
-              ) {
-                Text(
-                  text = "SHAPE: ${crestDraft.shieldShapeLabel.uppercase(Locale.US)}",
-                  color = Color.White,
-                  fontSize = 7.0.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "SHAPE: ${crestDraft.shieldShapeLabel.uppercase(Locale.US)}",
+                color = Color.White,
+                fontSize = 7.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF00F5D4),
+                    isSelected = true,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.36f,
+                  )
                   .clickable {
                     crestDraft = crestDraft.copy(emblemGlyph = (crestDraft.emblemGlyph + 1) % 6)
                   }
-                  .padding(vertical = 7.dp),
+                  .padding(horizontal = 9.dp),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF0D253B))
-                    .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
-              ) {
-                Text(
-                  text = "GLYPH: ${crestDraft.emblemGlyphLabel.uppercase(Locale.US)}",
-                  color = Color.White,
-                  fontSize = 7.0.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "GLYPH: ${crestDraft.emblemGlyphLabel.uppercase(Locale.US)}",
+                color = Color.White,
+                fontSize = 7.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
           }
           Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFFFACC15),
+                    isSelected = true,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.36f,
+                  )
                   .clickable {
                     val curIdx = palettes.indexOfFirst { it.second == crestDraft.trimHex }
                     val next = palettes[(curIdx + 1) % palettes.size]
                     crestDraft = crestDraft.copy(primaryHex = next.first, trimHex = next.second, glowHex = next.third)
                   }
-                  .padding(vertical = 7.dp),
+                  .padding(horizontal = 9.dp),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF091528))
-                    .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
-              ) {
-                Text("COLORS", color = Color(0xFFFACC15), fontSize = 7.2.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-              }
+              Text("COLORS", color = Color(0xFFFACC15), fontSize = 7.4.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
             }
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF00F5D4),
+                    isSelected = true,
+                    drawCornerTicks = true,
+                    featherAlpha = 0.48f,
+                  )
                   .clickable {
                     RiftVisualForgeState.updateSyndicateCrest(crestDraft, context)
                     localPrefs.setSyndicateCrestJson(prompt.syndicateTag, crestDraft.toJson().toString())
                     onDismissPrompt()
                   }
-                  .padding(vertical = 7.dp)
+                  .padding(horizontal = 11.dp)
                   .testTag("overwatch_crest_save_button"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF065F46))
-                    .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(14.dp))
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-              ) {
-                Text("SAVE CREST", color = Color.White, fontSize = 7.6.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-              }
+              Text("SAVE CREST", color = Color.White, fontSize = 7.8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
             }
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF94A3B8),
+                    isSelected = false,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.28f,
+                  )
                   .clickable { onDismissPrompt() }
-                  .padding(vertical = 7.dp),
+                  .padding(horizontal = 9.dp),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(CircleShape)
-                    .background(Color(0xCC060D1A))
-                    .border(1.dp, Color(0xFF64748B), CircleShape)
-                    .padding(horizontal = 9.dp, vertical = 5.dp),
-              ) {
-                Text("CLOSE", color = Color(0xFFCBD5E1), fontSize = 7.4.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-              }
+              Text("CLOSE", color = Color(0xFFCBD5E1), fontSize = 7.6.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
             }
           }
         }
@@ -8789,10 +8760,13 @@ private fun OverwatchCircularGlassPromptOverlay(
           Box(
             modifier =
               Modifier.fillMaxWidth(0.88f)
-                .height(38.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF0B1528))
-                .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(8.dp))
+                .height(42.dp)
+                .cockpitReticleSurface(
+                  accent = Color(0xFF00F5D4),
+                  isSelected = true,
+                  drawCornerTicks = false,
+                  featherAlpha = 0.50f,
+                )
                 .padding(horizontal = 10.dp),
             contentAlignment = Alignment.CenterStart,
           ) {
@@ -8829,64 +8803,60 @@ private fun OverwatchCircularGlassPromptOverlay(
             )
           }
           Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF00F5D4),
+                    isSelected = true,
+                    drawCornerTicks = true,
+                    featherAlpha = 0.48f,
+                  )
                   .clickable {
                     keyboardController?.hide()
                     onSaveFrameSlotRename(frameRenameDraft)
                   }
-                  .padding(vertical = 6.dp)
+                  .padding(horizontal = 14.dp)
                   .testTag("overwatch_frame_rename_save"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF065F46))
-                    .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(14.dp))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-              ) {
-                Text(
-                  text = "SAVE NAME",
-                  color = Color.White,
-                  fontSize = 8.4.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "SAVE NAME",
+                color = Color.White,
+                fontSize = 8.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF94A3B8),
+                    isSelected = false,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.28f,
+                  )
                   .clickable {
                     keyboardController?.hide()
                     onDismissPrompt()
                   }
-                  .padding(vertical = 6.dp)
+                  .padding(horizontal = 12.dp)
                   .testTag("overwatch_frame_rename_cancel"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(CircleShape)
-                    .background(Color(0xCC060D1A))
-                    .border(1.dp, Color(0xFF64748B), CircleShape)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-              ) {
-                Text(
-                  text = "CANCEL",
-                  color = Color(0xFFCBD5E1),
-                  fontSize = 8.2.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "CANCEL",
+                color = Color(0xFFCBD5E1),
+                fontSize = 8.2.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
           }
         }
@@ -8969,13 +8939,17 @@ private fun OverwatchRiftFrameDrydockView(
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.spacedBy(1.5.dp),
   ) {
-    // 1. Top Slot Identity + 100-Point Budget Readout
+    // 1. Top Slot Identity + 100-Point Budget Readout (pure-light reticle)
     Row(
       modifier =
-        Modifier.clip(RoundedCornerShape(8.dp))
-          .background(Color(0xCC061121))
+        Modifier.cockpitReticleSurface(
+          accent = Color(0xFF00F5D4),
+          isSelected = true,
+          drawCornerTicks = false,
+          featherAlpha = 0.34f,
+        )
           .clickable { onOpenFrameRenamePrompt() }
-          .padding(horizontal = 8.dp, vertical = 2.dp),
+          .padding(horizontal = 10.dp, vertical = 3.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -9272,48 +9246,35 @@ private fun OverwatchRiftFrameDrydockView(
       },
     )
 
-    // 4. Charge Rift Frame Action Safely Inside Bottom Circular Chord (>= 48dp touch target, 0.48f visual pill)
-    Box(
+    // 4. Charge Rift Frame Action Safely Inside Bottom Circular Chord (>= 48dp touch target, pure-light reticle)
+    Row(
       modifier =
-        Modifier.fillMaxWidth(0.48f)
+        Modifier.fillMaxWidth(0.56f)
           .minimumInteractiveComponentSize()
           .heightIn(min = 48.dp)
+          .cockpitReticleSurface(
+            accent = if (isCharged) Color(0xFF00F5D4) else Color(0xFFFFD700),
+            isSelected = true,
+            drawCornerTicks = true,
+            featherAlpha = 0.50f,
+          )
           .clickable { onChargeRiftFrame() }
+          .padding(horizontal = 10.dp)
           .testTag("overwatch_drydock_charge_button"),
-      contentAlignment = Alignment.Center,
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
     ) {
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .height(if (isTabletDeck) 34.dp else 32.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-              Brush.horizontalGradient(
-                if (isCharged) listOf(Color(0xFF065F46), Color(0xFF09253A))
-                else listOf(Color(0xFF0D3554), Color(0xFF091528))
-              )
-            )
-            .border(
-              1.25.dp,
-              if (isCharged) Color(0xFF00F5D4) else Color(0xFFFFD700),
-              RoundedCornerShape(16.dp),
-            )
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
-      ) {
-        Text(
-          text = if (isCharged) "RIFT FRAME CHARGED" else "CHARGE RIFT FRAME",
-          color = Color.White,
-          fontSize = if (isTabletDeck) 8.0.sp else 7.4.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-        FluxToroidIcon(sizeDp = 10.5.dp)
-      }
+      Text(
+        text = if (isCharged) "RIFT FRAME CHARGED" else "CHARGE RIFT FRAME",
+        color = Color.White,
+        fontSize = if (isTabletDeck) 8.2.sp else 7.6.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        softWrap = false,
+        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+      )
+      FluxToroidIcon(sizeDp = 10.5.dp)
     }
   }
 }
@@ -10339,7 +10300,7 @@ private fun ConduitLeftDirectivesBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       // Rank Tier Progress Pod
@@ -10579,7 +10540,7 @@ private fun OverwatchInspectLeftInfoBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       Column(
@@ -10713,7 +10674,7 @@ private fun OverwatchInspectRightPilotsBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       if (pilots.isEmpty()) {

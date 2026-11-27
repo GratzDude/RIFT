@@ -1104,13 +1104,8 @@ class RiftArenaView(
     currentRenderCamY = effectiveCamY
 
     val clippedToOverwatchCircle = isHubOverwatchMode
-    if (clippedToOverwatchCircle) {
-      canvas.drawColor(Color.parseColor("#010308"))
-      canvas.save()
-      overwatchClipPath.reset()
-      overwatchClipPath.addCircle(pivotScreenX, pivotScreenY, effectiveOverwatchR, Path.Direction.CW)
-      canvas.clipPath(overwatchClipPath)
-    }
+    val bgCamX = if (isHubOverwatchMode) effectiveCamX + monoTimeSec * 24f else effectiveCamX
+    val bgCamY = if (isHubOverwatchMode) effectiveCamY + sin(monoTimeSec * 0.16f) * 34f else effectiveCamY
 
     // [Z-0] Deep Abyssal Space Gradient (#010308 -> #040917) — Zero background lines, grid ticks, or wireframe arcs
     val abyssalBlend = if (isHubOverwatchMode) 0f else engine.skirmishAbyssalBlend.coerceIn(0f, 1f)
@@ -1152,8 +1147,8 @@ class RiftArenaView(
       val pad = cRad + 48f
       val wrapW = (vw + pad * 2f).coerceAtLeast(cRad * 4f)
       val wrapH = (vh + pad * 2f).coerceAtLeast(cRad * 4f)
-      val cxScreen = (((cf.x - effectiveCamX * cf.parallax) % wrapW + wrapW) % wrapW) - pad
-      val cyScreen = (((cf.y - effectiveCamY * cf.parallax) % wrapH + wrapH) % wrapH) - pad
+      val cxScreen = (((cf.x - bgCamX * cf.parallax) % wrapW + wrapW) % wrapW) - pad
+      val cyScreen = (((cf.y - bgCamY * cf.parallax) % wrapH + wrapH) % wrapH) - pad
       celestialBodyPaint.alpha = (cf.alpha * celestialOpacity).roundToInt().coerceIn(40, 225)
       nebulaDstRect.set(cxScreen - cRad, cyScreen - cRad, cxScreen + cRad, cyScreen + cRad)
       val stamp = if (cf.isSpiralGalaxy) RiftSpriteBaker.spiralGalaxyStamp else RiftSpriteBaker.distantCelestialMoonStamp
@@ -1206,8 +1201,8 @@ class RiftArenaView(
       val pad = scaledR + 36f
       val wrapW = (vw + pad * 2f).coerceAtLeast(1f)
       val wrapH = (vh + pad * 2f).coerceAtLeast(1f)
-      val nx = (((nb.x - effectiveCamX * nb.parallax) % wrapW + wrapW) % wrapW) - pad
-      val ny = (((nb.y - effectiveCamY * nb.parallax) % wrapH + wrapH) % wrapH) - pad
+      val nx = (((nb.x - bgCamX * nb.parallax) % wrapW + wrapW) % wrapW) - pad
+      val ny = (((nb.y - bgCamY * nb.parallax) % wrapH + wrapH) % wrapH) - pad
       nebulaDstRect.set(nx - scaledR, ny - scaledR, nx + scaledR, ny + scaledR)
       when (nb.variant) {
         0 -> canvas.drawBitmap(RiftSpriteBaker.nebulaIndigoStamp, null, nebulaDstRect, nebulaSecondaryPaint)
@@ -1219,9 +1214,9 @@ class RiftArenaView(
     // 1v1 Bioluminescent Stardust Motes (pinpoint stars only — zero concentric coordinate rings)
     if (abyssalBlend > 0.01f) {
       for (spIdx in 0 until 22) {
-        val baseX = ((spIdx * 317f + monoTimeSec * (10f + (spIdx % 5) * 2.5f) - effectiveCamX * 0.11f) % vw + vw) % vw
+        val baseX = ((spIdx * 317f + monoTimeSec * (10f + (spIdx % 5) * 2.5f) - bgCamX * 0.11f) % vw + vw) % vw
         val baseY =
-          ((spIdx * 193f + sin(monoTimeSec * 0.9f + spIdx) * 22f - effectiveCamY * 0.11f) % vh + vh) % vh
+          ((spIdx * 193f + sin(monoTimeSec * 0.9f + spIdx) * 22f - bgCamY * 0.11f) % vh + vh) % vh
         val sporePulse = 0.5f + 0.5f * sin(monoTimeSec * 2.2f + spIdx * 1.3f)
         val spAlpha = (abyssalBlend * (60f + 105f * sporePulse)).roundToInt().coerceIn(0, 185)
         starPaint.color =
@@ -1236,8 +1231,8 @@ class RiftArenaView(
 
     // [Z-3] Crisp 3-Plane Parallax Pinpoint Stars (0.04x, 0.09x, 0.16x)
     for (st in stars) {
-      val sx = ((st.x - effectiveCamX * st.parallax) % vw + vw) % vw
-      val sy = ((st.y - effectiveCamY * st.parallax) % vh + vh) % vh
+      val sx = ((st.x - bgCamX * st.parallax) % vw + vw) % vw
+      val sy = ((st.y - bgCamY * st.parallax) % vh + vh) % vh
       if (st.hasHalo) {
         val baseCol = st.color
         starPaint.color = Color.argb(42, Color.red(baseCol), Color.green(baseCol), Color.blue(baseCol))
@@ -1252,6 +1247,13 @@ class RiftArenaView(
     if (ambientDark > 0.01f) {
       ambientDarknessPaint.color = Color.argb((ambientDark * 220f).toInt().coerceIn(0, 220), 2, 4, 10)
       canvas.drawRect(0f, 0f, vw, vh, ambientDarknessPaint)
+    }
+
+    if (clippedToOverwatchCircle) {
+      canvas.save()
+      overwatchClipPath.reset()
+      overwatchClipPath.addCircle(pivotScreenX, pivotScreenY, effectiveOverwatchR, Path.Direction.CW)
+      canvas.clipPath(overwatchClipPath)
     }
 
     // 3. World-Space Camera Transform (Zoomable/Pannable Orbital Overwatch when isHubOverwatchMode, else Pilot Camera)

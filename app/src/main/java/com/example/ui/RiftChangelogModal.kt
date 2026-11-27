@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 137
+const val CURRENT_RIFT_BUILD_VERSION = 138
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 138,
+      versionTag = "v1.0.138 // BUILD #138",
+      releaseDate = "Nov 27, 2026",
+      headline = "Full-Screen Deep-Space Cockpit Canopy Backdrop, 1.28x Hero Spotlight Blossom, Equator Chord Clearance, Pure-Light Overwatch Reticles & 2.5D Skinned Store Hulls",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Full-Screen Live Deep-Space Cockpit Backdrop & Optical Visor Collar: Expanded the live starfield, feathered nebulae, crescent moon, and spiral galaxy edge-to-edge behind the entire Rift Hub with gentle ambient drift, stripped opaque dark backdrop slabs in favor of translucent pilot-helmet visor horizon hairlines and a soft corner vignette, and lightened the circular Overwatch bezel into a translucent optical glass collar with calibrated 72-tick vernier markings.",
+          "1.28x Hero Spotlight Blossom & Equator Chord Clearance: Enlarged Hub station art and active spotlights across Hangar, Ranked Modes, Tactical Codex, Conduit Rank Track, Rift Frame Cosmetics, and Shard Packs with smooth scale-up animations while compacting unfocused peers for full-wing simultaneous visibility, and added inner equator clearance below sub-bay headers so content never overlaps the circular Overwatch ring.",
+          "Pure-Light Overwatch Reticles & Live 2.5D Skinned Store Hulls: Converted remaining boxed action pills inside circular Overwatch prompts into borderless glowing targeting reticles with accessible 48dp targets, and upgraded Shard Store and Rift Frame ship skin previews from flat color swatches to live spinning 256x256 normal-mapped 2.5D starfighters.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 137,
       versionTag = "v1.0.137 // BUILD #137",
       releaseDate = "Nov 27, 2026",
       headline = "3D Cockpit Holographic HUD Overhaul: Inward-Tilted Canopy Perspective, Zero Bounding Boxes, Chord-Aware Space Reclamation & Dynamic Spotlight Enlargement",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "3D COCKPIT HUD",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

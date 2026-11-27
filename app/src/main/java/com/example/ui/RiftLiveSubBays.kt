@@ -486,7 +486,7 @@ internal fun DossierLeftIdentityBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       // Pilot Identity + Conduit Rank Tier & Live Resonance Header Pod
@@ -868,7 +868,7 @@ internal fun DossierRightCareerBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       // Full Career Stats Grid (Matches, Wins, Losses, Win %, Elims, Deaths, Assists, Accuracy, Crates, Rifts)
@@ -1263,7 +1263,7 @@ internal fun SyndicateLeftDirectoryBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       // War Standings Readout Pod
@@ -1492,7 +1492,7 @@ internal fun SyndicateRightCitadelBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       if (isAffiliatedSyndicate) {
@@ -1938,6 +1938,7 @@ internal fun SquadronLeftPilotListBay(
     Row(
       modifier =
         Modifier.fillMaxWidth()
+          .padding(end = 18.dp)
           .height(48.dp)
           .chamferedSciFiPodSurface(
             isRightSide = false,
@@ -2020,7 +2021,7 @@ internal fun SquadronLeftPilotListBay(
 
     // Add Friend by Callsign + Quick Search Bar
     Row(
-      modifier = Modifier.fillMaxWidth(),
+      modifier = Modifier.fillMaxWidth().padding(end = 18.dp),
       horizontalArrangement = Arrangement.spacedBy(4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2106,7 +2107,7 @@ internal fun SquadronLeftPilotListBay(
     }
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       if (filteredList.isEmpty()) {
@@ -2259,7 +2260,7 @@ internal fun SquadronRightPlayfieldShipBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       Box(
@@ -2544,8 +2545,8 @@ internal fun GameModesLeftRankedBay(
     )
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(3.dp),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 18.dp).verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       RankedGameMode.entries.forEach { mode ->
         val isActive = mode == activeRankedMode
@@ -2582,14 +2583,12 @@ internal fun GameModesLeftRankedBay(
           badgeText = if (humanCount == 1) "1 PILOT" else "$humanCount LIVE",
           badgeColor = accentCol,
           isTabletDeck = isTabletDeck,
-          minHeightDp =
-            if (isActive) (if (isTabletDeck) 94.dp else 86.dp)
-            else (if (isTabletDeck) 56.dp else 52.dp),
+          minHeightDp = if (isActive) 106.dp else 48.dp,
           testTag = "game_mode_card_${mode.name}",
           visualContent = { sizeDp ->
             RankedModeDistinctEmblem(
               modeIndex = mode.ordinal,
-              sizeDp = (sizeDp * 0.80f).coerceAtLeast(24.dp),
+              sizeDp = if (isActive) (sizeDp * 0.88f).coerceAtLeast(52.dp) else (sizeDp * 0.86f).coerceAtLeast(28.dp),
             )
           },
           onClick = {
@@ -2740,6 +2739,7 @@ internal fun GameModesRightCustomBay(
     Row(
       modifier =
         Modifier.fillMaxWidth()
+          .padding(start = 18.dp)
           .height(48.dp)
           .chamferedSciFiPodSurface(
             isRightSide = true,
@@ -2787,7 +2787,7 @@ internal fun GameModesRightCustomBay(
     }
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       // Join Private Room by 6-Character Code (Edge-Free Laser Input)
@@ -3624,6 +3624,7 @@ internal fun HelmLeftSystemsBay(
     Row(
       modifier =
         Modifier.fillMaxWidth()
+          .padding(end = 18.dp)
           .height(48.dp)
           .chamferedSciFiPodSurface(
             isRightSide = false,
@@ -3670,7 +3671,7 @@ internal fun HelmLeftSystemsBay(
     }
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 18.dp).verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
       when (activeSubTab) {
@@ -5132,6 +5133,7 @@ internal fun HelmRightCodexBay(
   onInspectShipStage: (Int) -> Unit,
 ) {
   var selectedCategory by remember(initialSubDeck) { mutableIntStateOf(initialSubDeck.coerceIn(0, 4)) }
+  var selectedCardIndex by remember(selectedCategory) { mutableIntStateOf(0) }
   val categories = remember {
     listOf(
       "BASICS" to Color(0xFF00F5D4),
@@ -5268,6 +5270,7 @@ internal fun HelmRightCodexBay(
     Row(
       modifier =
         Modifier.fillMaxWidth()
+          .padding(start = 18.dp)
           .height(48.dp)
           .chamferedSciFiPodSurface(
             isRightSide = true,
@@ -5315,30 +5318,34 @@ internal fun HelmRightCodexBay(
     }
 
     Column(
-      modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+      modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 18.dp).verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       when (selectedCategory) {
         0 -> {
           basicsCards.forEachIndexed { idx, card ->
+            val isSel = selectedCardIndex == idx
             RiftVerticalCard(
               modifier = Modifier.fillMaxWidth(),
               title = card.heading,
               subtitle = card.shortSubtitle,
               accent = card.accentColor,
               isRightColumn = true,
+              isHighlighted = isSel,
+              isCompactPeer = !isSel,
               badgeText = card.badge,
               badgeColor = card.accentColor,
               isTabletDeck = isTabletDeck,
-              minHeightDp = 82.dp,
+              minHeightDp = if (isSel) 108.dp else 52.dp,
               testTag = "codex_basics_card_$idx",
               visualContent = { sizeDp ->
                 CodexBasicEmblem(
                   basicIndex = idx,
-                  sizeDp = (sizeDp * 0.72f).coerceAtLeast(24.dp),
+                  sizeDp = if (isSel) 64.dp else (sizeDp * 0.84f).coerceAtLeast(28.dp),
                 )
               },
               onClick = {
+                selectedCardIndex = idx
                 onInspectCodexStage(
                   OverwatchCircularPrompt.InfoStageInspect(
                     kicker = "CODEX • FLIGHT BASICS",
@@ -5357,24 +5364,28 @@ internal fun HelmRightCodexBay(
         }
         1 -> {
           modeCards.forEachIndexed { idx, card ->
+            val isSel = selectedCardIndex == idx
             RiftVerticalCard(
               modifier = Modifier.fillMaxWidth(),
               title = card.heading,
               subtitle = card.shortSubtitle,
               accent = card.accentColor,
               isRightColumn = true,
+              isHighlighted = isSel,
+              isCompactPeer = !isSel,
               badgeText = card.badge,
               badgeColor = card.accentColor,
               isTabletDeck = isTabletDeck,
-              minHeightDp = 82.dp,
+              minHeightDp = if (isSel) 108.dp else 52.dp,
               testTag = "codex_modes_card_$idx",
               visualContent = { sizeDp ->
                 RankedModeDistinctEmblem(
                   modeIndex = idx,
-                  sizeDp = (sizeDp * 0.76f).coerceAtLeast(24.dp),
+                  sizeDp = if (isSel) 64.dp else (sizeDp * 0.84f).coerceAtLeast(28.dp),
                 )
               },
               onClick = {
+                selectedCardIndex = idx
                 onInspectCodexStage(
                   OverwatchCircularPrompt.InfoStageInspect(
                     kicker = "CODEX • GAME MODES",
@@ -5391,7 +5402,8 @@ internal fun HelmRightCodexBay(
           }
         }
         2 -> {
-          RiftCodex.POWERUP_CODEX.forEach { buff ->
+          RiftCodex.POWERUP_CODEX.forEachIndexed { idx, buff ->
+            val isSel = selectedCardIndex == idx
             val cleanTitle = cleanCodexBuffHeading(buff.buffTypeIndex, buff.title)
             val shortSub = cleanCodexBuffShortSubtitle(buff.buffTypeIndex)
             val cleanSummary = sanitizeCodexBodyCopy(buff.effectSummary)
@@ -5402,19 +5414,22 @@ internal fun HelmRightCodexBay(
               subtitle = shortSub,
               accent = Color(0xFF34D399),
               isRightColumn = true,
+              isHighlighted = isSel,
+              isCompactPeer = !isSel,
               badgeText = "${buff.dropRatePercent}% DROP",
               badgeColor = Color(0xFF34D399),
               isTabletDeck = isTabletDeck,
-              minHeightDp = 86.dp,
+              minHeightDp = if (isSel) 108.dp else 52.dp,
               testTag = "codex_buff_card_${buff.buffTypeIndex}",
               visualContent = { sizeDp ->
                 BuffIconPreview(
                   buffType = buff.buffTypeIndex,
-                  sizeDp = sizeDp.value.roundToInt().coerceAtLeast(26),
+                  sizeDp = if (isSel) 64 else sizeDp.value.roundToInt().coerceAtLeast(30),
                   accentColor = Color(0xFF34D399),
                 )
               },
               onClick = {
+                selectedCardIndex = idx
                 onInspectCodexStage(
                   OverwatchCircularPrompt.InfoStageInspect(
                     kicker = "SUPPLY CRATE BUFF",
@@ -5431,7 +5446,8 @@ internal fun HelmRightCodexBay(
           }
         }
         3 -> {
-          RiftCodex.RIFT_ANOMALIES_CODEX.forEach { rift ->
+          RiftCodex.RIFT_ANOMALIES_CODEX.forEachIndexed { idx, rift ->
+            val isSel = selectedCardIndex == idx
             val riftAccent =
               when (rift.id) {
                 "plasma_rift" -> Color(0xFFEC4899)
@@ -5448,21 +5464,23 @@ internal fun HelmRightCodexBay(
               subtitle = cleanCodexRiftShortSubtitle(rift.id),
               accent = riftAccent,
               isRightColumn = true,
+              isHighlighted = isSel,
+              isCompactPeer = !isSel,
               badgeText = rift.specBadge.uppercase(Locale.US),
               badgeColor = riftAccent,
               isTabletDeck = isTabletDeck,
-              minHeightDp = 88.dp,
+              minHeightDp = if (isSel) 108.dp else 52.dp,
               testTag = "codex_rift_card_${rift.id}",
               visualContent = { sizeDp ->
                 val phase = ((fluxOrbitRad / (2.0 * PI)).toFloat() % 1f).let { if (it < 0f) it + 1f else it }
-                Canvas(modifier = Modifier.size(sizeDp)) {
+                Canvas(modifier = Modifier.size(if (isSel) 64.dp else sizeDp)) {
                   drawIntoCanvas { canvas ->
                     RiftSpriteBaker.drawAnimatedCodexRiftPreview(
                       canvas = canvas.nativeCanvas,
                       riftId = rift.id,
                       cx = size.width * 0.5f,
                       cy = size.height * 0.5f,
-                      radiusPx = min(size.width, size.height) * 0.37f,
+                      radiusPx = min(size.width, size.height) * 0.40f,
                       pulsePhase = phase,
                       spinAngle = shipSpinDeg * 0.01745f,
                     )
@@ -5470,6 +5488,7 @@ internal fun HelmRightCodexBay(
                 }
               },
               onClick = {
+                selectedCardIndex = idx
                 onInspectCodexStage(
                   OverwatchCircularPrompt.InfoStageInspect(
                     kicker = "PLAYFIELD RIFT",
@@ -5493,7 +5512,8 @@ internal fun HelmRightCodexBay(
           }
         }
         else -> {
-          allShips.forEach { ship ->
+          allShips.forEachIndexed { idx, ship ->
+            val isSel = selectedCardIndex == idx
             val cleanName = cleanDisplayShipTitle(ship.id, ship.name)
             val shipSubtitle =
               if (ship.id == 10) "Modular 100-point custom hull"
@@ -5504,10 +5524,12 @@ internal fun HelmRightCodexBay(
               subtitle = shipSubtitle,
               accent = if (ship.id == 10) Color(0xFF00F5D4) else Color(0xFF38BDF8),
               isRightColumn = true,
+              isHighlighted = isSel,
+              isCompactPeer = !isSel,
               badgeText = "100 PT",
               badgeColor = Color(0xFF00F5D4),
               isTabletDeck = isTabletDeck,
-              minHeightDp = 90.dp,
+              minHeightDp = if (isSel) 108.dp else 52.dp,
               testTag = "codex_ship_card_${ship.id}",
               visualContent = { sizeDp ->
                 Spinning25dShipWithOrbitingFlux(
@@ -5515,11 +5537,14 @@ internal fun HelmRightCodexBay(
                   shipSpinDeg = shipSpinDeg,
                   fluxOrbitRad = fluxOrbitRad,
                   isCharged = false,
-                  isSelected = true,
-                  sizeDp = (sizeDp * 0.90f).coerceAtLeast(32.dp),
+                  isSelected = isSel,
+                  sizeDp = if (isSel) 64.dp else (sizeDp * 0.92f).coerceAtLeast(34.dp),
                 )
               },
-              onClick = { onInspectShipStage(ship.id) },
+              onClick = {
+                selectedCardIndex = idx
+                onInspectShipStage(ship.id)
+              },
             )
           }
         }
