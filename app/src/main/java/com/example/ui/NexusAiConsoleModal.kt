@@ -112,6 +112,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -5462,26 +5463,102 @@ private fun HubGuidedTutorialCoachmarkCard(
     }
   val isFinalStep = step >= 6
 
-  Surface(
+  val textShadow =
+    remember {
+      Shadow(color = Color(0xE601040B), offset = Offset(0f, 1f), blurRadius = 6f)
+    }
+
+  Box(
     modifier =
       modifier
-        .border(
-          1.4.dp,
-          Brush.horizontalGradient(
-            listOf(
-              Color(0xFFFFD700).copy(alpha = pulseAlpha),
-              Color(0xFF00F5D4),
-              Color(0xFFFFD700).copy(alpha = pulseAlpha),
+        .drawBehind {
+          val w = size.width
+          val h = size.height
+          if (w <= 8f || h <= 8f) return@drawBehind
+          val safePulse = pulseAlpha.coerceIn(0.45f, 1f)
+
+          // (a) Edge-free elliptical radial legibility feather (zero opaque rectangular slab)
+          val sx = if (w >= h) 1f else (w / h).coerceIn(0.35f, 1f)
+          val sy = if (w >= h) (h / w).coerceIn(0.35f, 1f) else 1f
+          val baseR = maxOf(w, h) * 0.58f
+          scale(scaleX = sx, scaleY = sy, pivot = center) {
+            drawCircle(
+              brush =
+                Brush.radialGradient(
+                  colorStops =
+                    arrayOf(
+                      0.00f to Color(0xD8020714),
+                      0.62f to Color(0x80040D1E),
+                      1.00f to Color.Transparent,
+                    ),
+                  center = center,
+                  radius = baseR,
+                ),
+              radius = baseR,
+              center = center,
             )
-          ),
-          RoundedCornerShape(12.dp),
-        )
+          }
+
+          // (b) Pulsing open 4-corner solar-gold and cyan targeting reticle brackets (8.dp L-ticks)
+          val tick = minOf(8.dp.toPx(), w * 0.12f, h * 0.24f)
+          val sw = 1.4.dp.toPx()
+          val goldCol = Color(0xFFFFD700).copy(alpha = safePulse)
+          val cyanCol = Color(0xFF00F5D4).copy(alpha = safePulse)
+          val pad = 1.5.dp.toPx()
+          // Top-left (solar gold)
+          drawLine(goldCol, Offset(pad, pad + tick), Offset(pad, pad), sw, StrokeCap.Round)
+          drawLine(goldCol, Offset(pad, pad), Offset(pad + tick, pad), sw, StrokeCap.Round)
+          // Top-right (cyan)
+          drawLine(cyanCol, Offset(w - pad - tick, pad), Offset(w - pad, pad), sw, StrokeCap.Round)
+          drawLine(cyanCol, Offset(w - pad, pad), Offset(w - pad, pad + tick), sw, StrokeCap.Round)
+          // Bottom-left (cyan)
+          drawLine(cyanCol, Offset(pad, h - pad - tick), Offset(pad, h - pad), sw, StrokeCap.Round)
+          drawLine(cyanCol, Offset(pad, h - pad), Offset(pad + tick, h - pad), sw, StrokeCap.Round)
+          // Bottom-right (solar gold)
+          drawLine(goldCol, Offset(w - pad - tick, h - pad), Offset(w - pad, h - pad), sw, StrokeCap.Round)
+          drawLine(goldCol, Offset(w - pad, h - pad - tick), Offset(w - pad, h - pad), sw, StrokeCap.Round)
+
+          // (c) Tapered top and bottom horizontal laser filaments fading to transparent at both ends
+          val laserStroke = 1.2.dp.toPx()
+          drawLine(
+            brush =
+              Brush.horizontalGradient(
+                colorStops =
+                  arrayOf(
+                    0.00f to Color.Transparent,
+                    0.18f to Color(0xFFFFD700).copy(alpha = safePulse * 0.82f),
+                    0.50f to Color(0xFF00F5D4).copy(alpha = 0.90f),
+                    0.82f to Color(0xFFFFD700).copy(alpha = safePulse * 0.82f),
+                    1.00f to Color.Transparent,
+                  )
+              ),
+            start = Offset(w * 0.06f, pad),
+            end = Offset(w * 0.94f, pad),
+            strokeWidth = laserStroke,
+            cap = StrokeCap.Round,
+          )
+          drawLine(
+            brush =
+              Brush.horizontalGradient(
+                colorStops =
+                  arrayOf(
+                    0.00f to Color.Transparent,
+                    0.18f to Color(0xFF00F5D4).copy(alpha = 0.80f),
+                    0.50f to Color(0xFFFFD700).copy(alpha = safePulse * 0.86f),
+                    0.82f to Color(0xFF00F5D4).copy(alpha = 0.80f),
+                    1.00f to Color.Transparent,
+                  )
+              ),
+            start = Offset(w * 0.06f, h - pad),
+            end = Offset(w * 0.94f, h - pad),
+            strokeWidth = laserStroke,
+            cap = StrokeCap.Round,
+          )
+        }
         .testTag("hub_guided_tutorial_card"),
-    color = Color(0xF5040A16),
-    shape = RoundedCornerShape(12.dp),
   ) {
     Column(
-      modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
       verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
       Row(
@@ -5495,24 +5572,29 @@ private fun HubGuidedTutorialCoachmarkCard(
           fontSize = if (isTabletDeck) 8.6.sp else 7.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
+          style = TextStyle(shadow = textShadow),
         )
         Row(
           horizontalArrangement = Arrangement.spacedBy(4.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           for (i in 1..6) {
-            Box(
-              modifier =
-                Modifier.size(width = if (i == step) 14.dp else 6.dp, height = 5.dp)
-                  .clip(RoundedCornerShape(50))
-                  .background(
-                    when {
-                      i == step -> Color(0xFFFFD700)
-                      i < step -> Color(0xFF00F5D4)
-                      else -> Color(0xFF334155)
-                    }
-                  ),
-            )
+            val pipCol =
+              when {
+                i == step -> Color(0xFFFFD700)
+                i < step -> Color(0xFF00F5D4)
+                else -> Color(0xFF475569)
+              }
+            Canvas(modifier = Modifier.size(width = if (i == step) 14.dp else 6.dp, height = 5.dp)) {
+              val cy = size.height * 0.5f
+              drawLine(
+                color = pipCol,
+                start = Offset(1.dp.toPx(), cy),
+                end = Offset((size.width - 1.dp.toPx()).coerceAtLeast(1.dp.toPx()), cy),
+                strokeWidth = if (i == step) 3.dp.toPx() else 2.2.dp.toPx(),
+                cap = StrokeCap.Round,
+              )
+            }
           }
         }
       }
@@ -5525,6 +5607,7 @@ private fun HubGuidedTutorialCoachmarkCard(
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
+        style = TextStyle(shadow = textShadow),
       )
       Text(
         text = summary,
@@ -5532,6 +5615,7 @@ private fun HubGuidedTutorialCoachmarkCard(
         fontSize = if (isTabletDeck) 8.8.sp else 8.0.sp,
         lineHeight = if (isTabletDeck) 11.8.sp else 10.8.sp,
         fontFamily = FontFamily.SansSerif,
+        style = TextStyle(shadow = textShadow),
       )
 
       Row(
@@ -5542,85 +5626,78 @@ private fun HubGuidedTutorialCoachmarkCard(
         Box(
           modifier =
             Modifier.minimumInteractiveComponentSize()
-              .height(48.dp)
+              .heightIn(min = 48.dp)
+              .cockpitReticleSurface(
+                accent = Color(0xFF38BDF8),
+                isSelected = true,
+                drawCornerTicks = false,
+                featherAlpha = 0.34f,
+              )
               .clickable { onBack() }
-              .padding(vertical = 7.dp)
+              .padding(horizontal = 10.dp)
               .testTag("hub_tutorial_btn_back"),
           contentAlignment = Alignment.Center,
         ) {
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF0B192C))
-                .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
-                .padding(horizontal = 9.dp, vertical = 5.dp),
-          ) {
-            Text(
-              text = if (step == 1) "CLOSE" else "< BACK",
-              color = Color(0xFFCBD5E1),
-              fontSize = 7.8.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
+          Text(
+            text = if (step == 1) "CLOSE" else "< BACK",
+            color = Color(0xFFCBD5E1),
+            fontSize = 8.0.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            style = TextStyle(shadow = textShadow),
+          )
         }
 
         if (!isFinalStep) {
           Box(
             modifier =
               Modifier.minimumInteractiveComponentSize()
-                .height(48.dp)
+                .heightIn(min = 48.dp)
+                .cockpitReticleSurface(
+                  accent = Color(0xFF00F5D4),
+                  isSelected = true,
+                  drawCornerTicks = false,
+                  featherAlpha = 0.38f,
+                )
                 .clickable { onSkipToFlight() }
-                .padding(vertical = 7.dp)
+                .padding(horizontal = 10.dp)
                 .testTag("hub_tutorial_btn_skip_to_flight"),
             contentAlignment = Alignment.Center,
           ) {
-            Box(
-              modifier =
-                Modifier.clip(RoundedCornerShape(6.dp))
-                  .background(Color(0xFF092234))
-                  .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
-                  .padding(horizontal = 9.dp, vertical = 5.dp),
-            ) {
-              Text(
-                text = "SKIP TO FLIGHT >",
-                color = Color(0xFF00F5D4),
-                fontSize = 7.8.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-              )
-            }
+            Text(
+              text = "SKIP TO FLIGHT >",
+              color = Color(0xFF00F5D4),
+              fontSize = 8.0.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              style = TextStyle(shadow = textShadow),
+            )
           }
         }
 
         Box(
           modifier =
             Modifier.minimumInteractiveComponentSize()
-              .height(48.dp)
+              .heightIn(min = 48.dp)
+              .cockpitReticleSurface(
+                accent = if (isFinalStep) Color(0xFF00F5D4) else Color(0xFFFFD700),
+                isSelected = true,
+                drawCornerTicks = true,
+                featherAlpha = 0.48f,
+              )
               .clickable { onNextOrStartFlight() }
-              .padding(vertical = 7.dp)
+              .padding(horizontal = 12.dp)
               .testTag("hub_tutorial_btn_next"),
           contentAlignment = Alignment.Center,
         ) {
-          Box(
-            modifier =
-              Modifier.clip(RoundedCornerShape(6.dp))
-                .background(if (isFinalStep) Color(0xFF0E392D) else Color(0xFF2B2208))
-                .border(
-                  1.2.dp,
-                  if (isFinalStep) Color(0xFF00F5D4) else Color(0xFFFFD700),
-                  RoundedCornerShape(6.dp),
-                )
-                .padding(horizontal = 10.dp, vertical = 5.dp),
-          ) {
-            Text(
-              text = if (isFinalStep) "START FLIGHT TRAINING >" else "NEXT >",
-              color = if (isFinalStep) Color(0xFF00F5D4) else Color(0xFFFEF08A),
-              fontSize = 8.0.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
+          Text(
+            text = if (isFinalStep) "START FLIGHT TRAINING >" else "NEXT >",
+            color = if (isFinalStep) Color(0xFF00F5D4) else Color(0xFFFEF08A),
+            fontSize = 8.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            style = TextStyle(shadow = textShadow),
+          )
         }
       }
     }
@@ -8988,9 +9065,32 @@ private fun OverwatchRiftFrameDrydockView(
       Column(
         modifier =
           Modifier.width(if (isTabletDeck) 78.dp else 68.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isPriHovered) Color(0xCC0D2E42) else Color(0xB8071326))
-            .border(if (isPriDragActive) 1.6.dp else 1.dp, priBorderCol, RoundedCornerShape(8.dp))
+            .cockpitReticleSurface(
+              accent = priBorderCol,
+              isSelected = true,
+              drawCornerTicks = true,
+              featherAlpha =
+                when {
+                  isPriHovered -> 0.66f
+                  isPriDragActive -> 0.54f
+                  else -> 0.42f
+                },
+            )
+            .drawBehind {
+              if (isPriHovered) {
+                val bloomR = size.maxDimension * 0.65f
+                drawCircle(
+                  brush =
+                    Brush.radialGradient(
+                      colors = listOf(Color(0xFFFFD700).copy(alpha = 0.28f), Color.Transparent),
+                      center = center,
+                      radius = bloomR,
+                    ),
+                  radius = bloomR,
+                  center = center,
+                )
+              }
+            }
             .onGloballyPositioned { coords ->
               val b = coords.boundsInRoot()
               priBounds = b
@@ -9090,9 +9190,32 @@ private fun OverwatchRiftFrameDrydockView(
       Column(
         modifier =
           Modifier.width(if (isTabletDeck) 78.dp else 68.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isSecHovered) Color(0xCC24123D) else Color(0xB8071326))
-            .border(if (isSecDragActive) 1.6.dp else 1.dp, secBorderCol, RoundedCornerShape(8.dp))
+            .cockpitReticleSurface(
+              accent = secBorderCol,
+              isSelected = true,
+              drawCornerTicks = true,
+              featherAlpha =
+                when {
+                  isSecHovered -> 0.66f
+                  isSecDragActive -> 0.54f
+                  else -> 0.42f
+                },
+            )
+            .drawBehind {
+              if (isSecHovered) {
+                val bloomR = size.maxDimension * 0.65f
+                drawCircle(
+                  brush =
+                    Brush.radialGradient(
+                      colors = listOf(Color(0xFFFFD700).copy(alpha = 0.28f), Color.Transparent),
+                      center = center,
+                      radius = bloomR,
+                    ),
+                  radius = bloomR,
+                  center = center,
+                )
+              }
+            }
             .onGloballyPositioned { coords ->
               val b = coords.boundsInRoot()
               secBounds = b
@@ -9320,23 +9443,44 @@ private fun DrydockInteractiveStatBar(
             }
           }
           .drawBehind {
-            val trackH = 6.dp.toPx()
-            val yTop = (size.height - trackH) * 0.5f
-            drawRect(
-              color = Color(0xCC040B16),
-              topLeft = Offset(0f, yTop),
-              size = Size(size.width, trackH),
+            val cy = size.height * 0.5f
+            val minFill = 2.dp.toPx()
+            val fillW = (size.width * fraction.coerceIn(0f, 1f)).coerceIn(minFill, size.width.coerceAtLeast(minFill))
+            // Base laser track hairline
+            drawLine(
+              color = barColor.copy(alpha = 0.22f),
+              start = Offset(0f, cy),
+              end = Offset(size.width, cy),
+              strokeWidth = 2.4.dp.toPx(),
+              cap = StrokeCap.Round,
             )
-            val fillW = (size.width * fraction.coerceIn(0f, 1f)).coerceAtLeast(2.dp.toPx())
-            drawRect(
-              brush = Brush.horizontalGradient(listOf(barColor.copy(alpha = 0.55f), barColor)),
-              topLeft = Offset(0f, yTop),
-              size = Size(fillW, trackH),
+            // Soft luminous glow pass beneath active filament
+            drawLine(
+              color = barColor.copy(alpha = 0.34f),
+              start = Offset(0f, cy),
+              end = Offset(fillW, cy),
+              strokeWidth = 5.4.dp.toPx(),
+              cap = StrokeCap.Round,
+            )
+            // Crisp active gradient laser filament
+            drawLine(
+              brush = Brush.horizontalGradient(listOf(barColor.copy(alpha = 0.85f), Color.White)),
+              start = Offset(0f, cy),
+              end = Offset(fillW, cy),
+              strokeWidth = 3.2.dp.toPx(),
+              cap = StrokeCap.Round,
+            )
+            // Glowing endpoint reticle bead
+            val beadX = fillW.coerceIn(2.6.dp.toPx(), (size.width - 2.6.dp.toPx()).coerceAtLeast(2.6.dp.toPx()))
+            drawCircle(
+              color = barColor.copy(alpha = 0.44f),
+              radius = 4.4.dp.toPx(),
+              center = Offset(beadX, cy),
             )
             drawCircle(
               color = Color.White,
-              radius = 3.6.dp.toPx(),
-              center = Offset(fillW.coerceIn(3.dp.toPx(), size.width - 3.dp.toPx()), size.height * 0.5f),
+              radius = 2.6.dp.toPx(),
+              center = Offset(beadX, cy),
             )
           },
     )

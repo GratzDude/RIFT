@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 138
+const val CURRENT_RIFT_BUILD_VERSION = 139
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 139,
+      versionTag = "v1.0.139 // BUILD #139",
+      releaseDate = "Nov 27, 2026",
+      headline = "Pure-Light Cockpit Reticle Polish for Overwatch Rift Frame Drydock Sockets, Laser Stat Filaments & Hub Guide Hologram",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Pure-Light Rift Frame Drydock Sockets: Replaced the boxed Primary and Mod/Buff drop sockets inside the circular Overwatch Drydock with open 4-corner glowing cockpit targeting reticles and radial gold hover blooms while preserving exact drag-and-drop hit-testing.",
+          "Laser Stat Filaments in Drydock: Upgraded all five 100-Point hull allocation bars (Flux, Regen, Speed, Thrust, and Turn) from boxy rectangles to sleek luminous laser filaments with glowing endpoint beads and identical tap-and-drag budget scrubbing.",
+          "Borderless Hub Guide Hologram: Restyled the 6-step Hub Guided Tour coachmark from an opaque rounded card into a floating 3D cockpit hologram with an elliptical radial legibility feather, pulsing corner targeting brackets, tapered top and bottom laser hairlines, and 48dp borderless reticle actions.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 138,
       versionTag = "v1.0.138 // BUILD #138",
       releaseDate = "Nov 27, 2026",
       headline = "Full-Screen Deep-Space Cockpit Canopy Backdrop, 1.28x Hero Spotlight Blossom, Equator Chord Clearance, Pure-Light Overwatch Reticles & 2.5D Skinned Store Hulls",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "DEEP-SPACE CANOPY & SPOTLIGHTS",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
