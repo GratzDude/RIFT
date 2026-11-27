@@ -7,11 +7,11 @@
     <string name="enter_as_drifter">PLAY AS DRIFTER (OFFLINE OR QUICK SESSION)</string>
     <string name="signing_in">Connecting to RIFT…</string>
     <string name="auth_feature_physics">10 Distinct Ships • Fair Balanced Loadouts From Day One</string>
-    <string name="auth_feature_ships">Solo • Syndicate • Strike Wing — 6 Modes + Custom Arenas</string>
+    <string name="auth_feature_ships">100-Point Parity • Drag-and-Drop Rift Frame • Normal-Lit 2.5D Hulls</string>
     <string name="auth_feature_cloud">Cloud Save • Syndicates • Live Sector Overwatch</string>
     <string name="sign_out">Sign Out</string>
     <string name="nexus_orb_content_desc">Open Rift Hub &amp; Live Overwatch</string>
-    <string name="nexus_console_title">RIFT // COMMAND TABLET HUB</string>
+    <string name="nexus_console_title">RIFT HUB // LIVE OVERWATCH</string>
     <string name="nexus_input_placeholder">Ask Rift AI anything (ship builds, Gravity Rifts, Rift Station…)</string>
     <string name="nexus_transmit">TRANSMIT</string>
     <string name="nexus_clear">CLEAR</string>

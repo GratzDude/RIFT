@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 133
+const val CURRENT_RIFT_BUILD_VERSION = 134
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 134,
+      versionTag = "v1.0.134 // BUILD #134",
+      releaseDate = "Nov 27, 2026",
+      headline = "Auth & Star Forge Copy Polish, Accessible Emoji-Free HUD Drag Banner With Full 17-Offset Reset & Rift AI Build #134 Ground-Truth Sync",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Auth Feature & Console Copy Polish: Updated the sign-in feature showcase line to highlight 100-Point Parity, Drag-and-Drop Rift Frame, and Normal-Lit 2.5D Hulls, and updated the console title string to RIFT HUB // LIVE OVERWATCH while keeping every resource key intact.",
+          "Accessible Emoji-Free HUD Drag Banner & Complete 17-Offset Reset: Stripped all Unicode icon glyphs and legacy console labels from the live Arena HUD drag banner, upgraded Lock & Return to Star Forge and Reset HUD Offsets to full 48dp minimum touch targets, and added Spectator Box and Tactical Warning Banner offsets so Reset HUD Offsets restores all 17 persisted HUD elements.",
+          "Star Forge Target & Preset Nomenclature Polish: Updated Star Forge HUD target titles, subtitles, and preset prompts for the Rift Hub Button, Tactical Kill Feed, and Teammate Spectator Switcher to canonical Rift Hub, Solar Gold Resonance, and Squadron terminology without altering saved target keys.",
+          "Rift AI Build #134 Ground-Truth Knowledge & Telemetry Sync: Synchronized the Subspace Comms #rift-ai system prompt and live telemetry snapshot with dynamic build stamping, the 960x540 borderless 4-shelf Rift Hub, Overwatch Rift Frame Drydock and circular workbenches, strict Live-Resonance vs. Shard Store Frame A-E and cosmetic activation gates, 160-slot 256x256 normal-mapped 2.5D relighting with multiplayer cosmetic sync, and complete arena combat mechanics.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 133,
       versionTag = "v1.0.133 // BUILD #133",
       releaseDate = "Nov 26, 2026",
       headline = "160-Slot Full-Arena 2.5D Ship Relighting Pool, Live Multiplayer Cosmetic Sync & Overwatch Workbench Polish",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "160-SLOT RELIGHT & MP COSMETICS",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

@@ -151,10 +151,10 @@ enum class ForgeElementTarget(
   "Minimal Ghost" to "Ultra-translucent low-profile status bar with hairline teal rim",
   "Violet Tactics" to "Deep space-indigo header bar with glowing amethyst edge",
  )),
- HUD_NEXUS_BUTTON("hud_nexus_button", "NEXUS Command Button", "Top-left NEXUS console launcher button", ForgeElementLayer.HUD, listOf(
-  "Cyan Command" to "Beveled obsidian NEXUS button with electric-cyan emblem glow",
+ HUD_NEXUS_BUTTON("hud_nexus_button", "Rift Hub Button", "Top-left Rift Hub & Overwatch launcher button", ForgeElementLayer.HUD, listOf(
+  "Cyan Command" to "Beveled obsidian Rift Hub button with electric-cyan emblem glow",
   "Gold Crest" to "Armored command button with sovereign gold border and bright core",
-  "Violet Singularity" to "Rift-violet command launcher with glowing magenta trim",
+  "Violet Singularity" to "Rift-violet Overwatch launcher with glowing magenta trim",
   "Stealth Slate" to "Compact dark titanium button with subtle sky-blue rim",
  )),
  HUD_MINIMAP_CONSOLE("hud_minimap_console", "Circular Radar & Telemetry", "1:1 circular minimap, Flux readout & pilot LVL bar", ForgeElementLayer.HUD, listOf(
@@ -169,9 +169,9 @@ enum class ForgeElementTarget(
   "Violet Foundry" to "Sleek indigo buff bar with amethyst slot highlights",
   "Compact Ghost" to "Minimal translucent buff strip with crisp thin outlines",
  )),
- HUD_KILL_FEED("hud_kill_feed", "Tactical Kill Feed", "Top-right elimination & bounty payout log", ForgeElementLayer.HUD, listOf(
+ HUD_KILL_FEED("hud_kill_feed", "Tactical Kill Feed", "Top-right elimination & Resonance payout log", ForgeElementLayer.HUD, listOf(
   "Clean Obsidian" to "Crisp dark obsidian kill cards with cyan and crimson accents",
-  "Bounty Gold" to "Elimination feed highlighted with warm gold bounty trim",
+  "Solar Gold" to "Elimination feed highlighted with warm solar-gold Resonance trim",
   "Ghost Feed" to "Ultra-light translucent kill log pills with zero visual clutter",
   "Cyber Violet" to "Sharp neon-violet bordered combat log entries",
  )),
@@ -181,7 +181,7 @@ enum class ForgeElementTarget(
   "Amber Thruster" to "High-visibility amber-gold flight stick with bright core",
   "Emerald Vector" to "Bio-teal vector flight ring with glowing directional ticks",
  )),
- HUD_FIRE_STICK("hud_fire_stick", "Right Aim & Fire Stick", "360° turret aim & primary trigger stick", ForgeElementLayer.HUD, listOf(
+ HUD_FIRE_STICK("hud_fire_stick", "Right Aim & Fire Stick", "360-degree turret aim & primary trigger stick", ForgeElementLayer.HUD, listOf(
   "Crimson Reticle" to "Tactical crimson-cyan weapon aim ring with precision crosshair",
   "Cyan Lance" to "Electric-cyan turret fire ring with glowing white reticle",
   "Gold Ordnance" to "Sovereign gold weapon gimbal with crisp degree marks",
@@ -199,7 +199,7 @@ enum class ForgeElementTarget(
   "Rift Violet" to "Glowing violet Special Buff button with crisp white glyph frame",
   "Minimal Tactician" to "Low-glare dark slate buff trigger with sharp cyan border",
  )),
- HUD_REPEL_BTN("hud_repel_btn", "Repel Shockwave Button", "360° defensive Repel pulse button", ForgeElementLayer.HUD, listOf(
+ HUD_REPEL_BTN("hud_repel_btn", "Repel Shockwave Button", "360-degree defensive Repel pulse button", ForgeElementLayer.HUD, listOf(
   "Shockwave Cyan" to "Concentric electric-cyan Repel shockwave button with bright rim",
   "Aegis Gold" to "Golden defensive shockwave trigger with radiant pulse ring",
   "Violet Push" to "Gravimetric violet Repel button with twin wave rings",
@@ -219,7 +219,7 @@ enum class ForgeElementTarget(
  )),
  HUD_SPECTATOR_BOX("hud_spectator_box", "Teammate Spectator Switcher", "Living ally camera cycling HUD panel", ForgeElementLayer.HUD, listOf(
   "Command Link" to "Obsidian tactical spectator switcher with cyan uplink border",
-  "Squad Gold" to "Armada gold-trimmed ally camera bar with crisp arrows",
+  "Squad Gold" to "Squadron gold-trimmed ally camera bar with crisp arrows",
   "Violet Feed" to "Deep-indigo spectator telemetry pill with violet glow",
   "Ghost Uplink" to "Low-profile translucent spectator switcher pill",
  )),

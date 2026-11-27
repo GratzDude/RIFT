@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
@@ -48,6 +50,8 @@ private fun resetAllHudElementOffsets(context: Context) {
   RiftCalibrationState.calibrationBtnOffset = Offset.Zero
   RiftCalibrationState.nexusBtnOffset = Offset.Zero
   RiftCalibrationState.toastContainerOffset = Offset.Zero
+  RiftCalibrationState.spectatorBoxOffset = Offset.Zero
+  RiftCalibrationState.idleWarningBannerOffset = Offset.Zero
   RiftCalibrationState.calibrationRevision++
   RiftCalibrationState.savePersistedLayout(context)
 }
@@ -100,13 +104,13 @@ fun RiftCalibrationDialog(
     ) {
       Row(
         modifier =
-          Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+          Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
             .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(
-          text = "🔓 DRAG ANY HUD BUTTON OR STICK DIRECTLY ON ARENA",
+          text = "DRAG ANY HUD CONTROL DIRECTLY ON ARENA",
           color = Color(0xFF00E676),
           fontSize = if (isCompactPhone) 9.5.sp else 10.5.sp,
           fontWeight = FontWeight.ExtraBold,
@@ -114,7 +118,7 @@ fun RiftCalibrationDialog(
           maxLines = 1,
         )
         CalibrationHeaderActionBtn(
-          label = "✓ LOCK & RETURN TO NEXUS",
+          label = "LOCK & RETURN TO STAR FORGE",
           bgColor = Color(0xFF063A28),
           borderColor = Color(0xFF00E676),
           textColor = Color(0xFF6EE7B7),
@@ -127,7 +131,7 @@ fun RiftCalibrationDialog(
           },
         )
         CalibrationHeaderActionBtn(
-          label = "↺ RESET HUD OFFSETS",
+          label = "RESET HUD OFFSETS",
           bgColor = Color(0xFF2B1810),
           borderColor = Color(0xFFF59E0B),
           textColor = Color(0xFFFBBF24),
@@ -135,7 +139,7 @@ fun RiftCalibrationDialog(
           testTag = "calibration_reset_hud_offsets_button",
           onClick = {
             resetAllHudElementOffsets(context)
-            engine?.onPrizeToast("↺ HUD OFFSETS RESET TO DEFAULT POSITIONS")
+            engine?.onPrizeToast("HUD OFFSETS RESET TO DEFAULT POSITIONS")
           },
         )
       }
@@ -155,21 +159,29 @@ private fun CalibrationHeaderActionBtn(
 ) {
   Box(
     modifier =
-      Modifier.clip(RoundedCornerShape(8.dp))
-        .background(bgColor)
-        .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+      Modifier.minimumInteractiveComponentSize()
+        .heightIn(min = 48.dp)
         .clickable(onClick = onClick)
-        .padding(horizontal = 9.dp, vertical = if (isCompactPhone) 4.dp else 5.dp)
+        .padding(vertical = 6.dp)
         .testTag(testTag),
     contentAlignment = Alignment.Center,
   ) {
-    Text(
-      text = label,
-      color = textColor,
-      fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
-      fontWeight = FontWeight.ExtraBold,
-      fontFamily = FontFamily.Monospace,
-      maxLines = 1,
-    )
+    Box(
+      modifier =
+        Modifier.clip(RoundedCornerShape(8.dp))
+          .background(bgColor)
+          .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+          .padding(horizontal = 9.dp, vertical = if (isCompactPhone) 4.dp else 5.dp),
+      contentAlignment = Alignment.Center,
+    ) {
+      Text(
+        text = label,
+        color = textColor,
+        fontSize = if (isCompactPhone) 8.5.sp else 9.5.sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+      )
+    }
   }
 }
