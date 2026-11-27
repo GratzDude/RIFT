@@ -321,18 +321,24 @@ fun RiftHudOverlay(
  val armadaSuffix = if (engine.activeArmadaName.isNotEmpty()) "${engine.activeArmadaName} ${engine.getCurrentArmadaSize()}/5" else "SOLO"
  val armadaBadge = if (cleanTagCore.isNotEmpty()) "[$cleanTagCore] • $armadaSuffix" else armadaSuffix
 
- val (_, _, xpProgressFraction) = engine.getXpProgressInCurrentLevel()
- var lastObservedPilotLevel by remember { mutableIntStateOf(engine.pilotLevel) }
- var levelUpBannerLevel by remember { mutableIntStateOf(0) }
- LaunchedEffect(engine.pilotLevel) {
-  if (engine.pilotLevel > lastObservedPilotLevel) {
-   levelUpBannerLevel = engine.pilotLevel
-   lastObservedPilotLevel = engine.pilotLevel
-   delay(2600L)
-   if (levelUpBannerLevel == engine.pilotLevel) levelUpBannerLevel = 0
-  } else if (engine.pilotLevel < lastObservedPilotLevel) {
-   lastObservedPilotLevel = engine.pilotLevel
-   levelUpBannerLevel = 0
+ val conduitProgressFraction = RiftProgressionCatalog.getConduitProgressFraction(engine.liveResonance)
+ val activeConduitTierIndex =
+  RiftProgressionCatalog.CONDUIT_RANK_TIERS.indexOfFirst {
+   engine.liveResonance in it.minResonance..it.maxResonance
+  }.let { if (it < 0) RiftProgressionCatalog.CONDUIT_RANK_TIERS.lastIndex else it }
+ var lastObservedTierIndex by remember { mutableIntStateOf(activeConduitTierIndex) }
+ var promotedBannerTierIndex by remember { mutableIntStateOf(-1) }
+ LaunchedEffect(activeConduitTierIndex, engine.isEphemeralPracticeRift, engine.hasJoinedMatch) {
+  if (activeConduitTierIndex > lastObservedTierIndex) {
+   lastObservedTierIndex = activeConduitTierIndex
+   if (!engine.isEphemeralPracticeRift && engine.hasJoinedMatch) {
+    promotedBannerTierIndex = activeConduitTierIndex
+    delay(2800L)
+    if (promotedBannerTierIndex == activeConduitTierIndex) promotedBannerTierIndex = -1
+   }
+  } else if (activeConduitTierIndex < lastObservedTierIndex) {
+   lastObservedTierIndex = activeConduitTierIndex
+   promotedBannerTierIndex = -1
   }
  }
 
@@ -913,20 +919,43 @@ fun RiftHudOverlay(
    }
   }
 
-  if (levelUpBannerLevel > 1) {
+  if (promotedBannerTierIndex in RiftProgressionCatalog.CONDUIT_RANK_TIERS.indices) {
+   val promotedTier = RiftProgressionCatalog.CONDUIT_RANK_TIERS[promotedBannerTierIndex]
+   val promotedAccent = Color(promotedTier.accentColorHex)
+   val promoResonanceIcon = remember(visualRev) { RiftSpriteBaker.resonanceIconBitmap.asImageBitmap() }
    Box(
-    modifier = Modifier.align(Alignment.TopCenter).padding(top = if (showPracticeTutorialPanel) 172.dp else 48.dp).zIndex(22f).clip(RoundedCornerShape(10.dp))
-     .background(Brush.horizontalGradient(listOf(Color(0xEE081B33), Color(0xEE1A2B12), Color(0xEE081B33))))
-     .border(1.3.dp, Color(0xFFFFD700), RoundedCornerShape(10.dp))
-     .clickable { onOpenProgression() }.padding(horizontal = (12f * textScale).dp, vertical = (4.5f * textScale).dp)
+    modifier = Modifier.align(Alignment.TopCenter)
+     .padding(top = if (showPracticeTutorialPanel) 172.dp else 48.dp)
+     .zIndex(22f)
+     .minimumInteractiveComponentSize()
+     .clip(RoundedCornerShape(10.dp))
+     .background(Brush.horizontalGradient(listOf(Color(0xEE081B33), Color(0xEE102438), Color(0xEE081B33))))
+     .border(1.3.dp, promotedAccent, RoundedCornerShape(10.dp))
+     .clickable { onOpenProgression() }
+     .padding(horizontal = (12f * textScale).dp, vertical = (5f * textScale).dp)
      .testTag("hud_level_up_banner"),
     contentAlignment = Alignment.Center,
    ) {
-    Text(
-     if (levelUpBannerLevel == 20) "PILOT LVL 20 REACHED — FULL 100-PT RIFT FRAME UNLOCKED"
-     else "PILOT LEVEL $levelUpBannerLevel UNLOCKED — TAP TO VIEW REWARDS",
-     color = Color(0xFFFFD700), fontSize = (9.5f * textScale).sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1,
-    )
+    Row(
+     verticalAlignment = Alignment.CenterVertically,
+     horizontalArrangement = Arrangement.spacedBy((5f * textScale).dp),
+    ) {
+     Image(
+      bitmap = promoResonanceIcon,
+      contentDescription = "Resonance",
+      filterQuality = FilterQuality.High,
+      modifier = Modifier.size((13f * textScale).dp),
+     )
+     Text(
+      "CONDUIT RANK ACHIEVED: ${promotedTier.title} — TAP FOR RESONANCE",
+      color = Color(0xFFFFD700),
+      fontSize = (9.5f * textScale).sp,
+      fontWeight = FontWeight.Black,
+      fontFamily = FontFamily.Monospace,
+      style = WingTelemetryTextStyle,
+      maxLines = 1,
+     )
+    }
    }
   }
 
@@ -1039,8 +1068,8 @@ fun RiftHudOverlay(
     modifier = Modifier.align(Alignment.TopCenter).padding(
      top =
       when {
-       levelUpBannerLevel > 1 && showPracticeTutorialPanel -> 200.dp
-       levelUpBannerLevel > 1 -> 76.dp
+       promotedBannerTierIndex >= 0 && showPracticeTutorialPanel -> 200.dp
+       promotedBannerTierIndex >= 0 -> 76.dp
        showPracticeTutorialPanel -> 170.dp
        else -> 44.dp
       }
@@ -1175,7 +1204,7 @@ fun RiftHudOverlay(
 
    SymmetricBottomConsoleLayout(
     engine = engine, player = player, speed = speed, sectorCode = sectorCode,
-    armadaBadge = armadaBadge, xpProgressFraction = xpProgressFraction,
+    armadaBadge = armadaBadge, conduitProgressFraction = conduitProgressFraction,
     textScale = textScale, uiUnlocked = uiUnlocked, isNexusStreaming = isNexusStreaming,
     onOpenHangar = onOpenHangar, onOpenNexus = onOpenNexus, onOpenModes = onOpenModes,
     onOpenProgression = onOpenProgression, frameTick = tickRead, rootScreenSize = rootScreenSize,
@@ -1726,7 +1755,7 @@ private fun SymmetricBottomConsoleLayout(
  speed: Int,
  sectorCode: String,
  armadaBadge: String,
- xpProgressFraction: Float,
+ conduitProgressFraction: Float,
  textScale: Float,
  uiUnlocked: Boolean,
  isNexusStreaming: Boolean,
@@ -1880,7 +1909,7 @@ private fun SymmetricBottomConsoleLayout(
      )
      Text(shardDisplay, color = Color(0xFFF0ABFC), fontSize = (7.4f * textScale).sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = WingTelemetryTextStyle, maxLines = 1)
      Box(modifier = Modifier.width((24f * textScale).dp).height((2.6f * textScale).dp).clip(RoundedCornerShape(1.3.dp)).background(Color(0xFF142844))) {
-      Box(modifier = Modifier.fillMaxWidth(xpProgressFraction.coerceIn(0.08f, 1f)).height((2.6f * textScale).dp).background(Color(0xFF00F5D4), RoundedCornerShape(1.3.dp)))
+      Box(modifier = Modifier.fillMaxWidth(conduitProgressFraction.coerceIn(0.08f, 1f)).height((2.6f * textScale).dp).background(Color(0xFF00F5D4), RoundedCornerShape(1.3.dp)))
      }
     }
    }

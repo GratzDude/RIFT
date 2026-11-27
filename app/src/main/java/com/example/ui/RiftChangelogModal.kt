@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 134
+const val CURRENT_RIFT_BUILD_VERSION = 135
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 135,
+      versionTag = "v1.0.135 // BUILD #135",
+      releaseDate = "Nov 27, 2026",
+      headline = "100% Resonance Progression Purge Across Pilot Dossier, Arena HUD, Engine & Telemetry Exports + Post-Life Accuracy Resonance Callout",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Pilot Dossier Conduit Rank Tier & 10-Ship Resonance Breakdown: Replaced the legacy Pilot Level badge and 5-XP progression tracks in the live Pilot Dossier side-bay with an active Conduit Rank Tier badge, smooth tier progress bar with plain-English next-tier thresholds, a Live, Peak, and Starting Match Resonance readout, and a 10-Ship Resonance Breakdown across all 10 numberless hulls including Rift Frame.",
+          "Arena HUD Conduit Rank Tier Promotion Banner & Console Progress Bar: Replaced legacy Pilot Level HUD banners and XP bar wiring with real-time Conduit Rank Tier promotion detection driven by Live Resonance, displaying a clickable top-center promotion pill with the Resonance crest icon and wiring the bottom-right console progress bar to active Conduit tier progress.",
+          "Engine Legacy XP Neutralization & Post-Life Accuracy Resonance Callout: Disabled legacy XP accumulation, level-up state mutations, and milestone Shard payouts in the engine while keeping binary-compatible method signatures, and surfaced Ranked post-life Accuracy Resonance adjustments (+4 ACC at 45%+ accuracy or -2 ACC below 15% with 8+ shots fired) directly on hull loss.",
+          "Resonance-Only Telemetry Exports & Migration Cleanup: Removed legacy Pilot Level and XP fields from HTML, CSV, and JSON telemetry exports as well as legacy level-seeded Resonance migration, stamping dynamic Build #135 metadata and exporting Live Resonance, Peak Resonance, Conduit Rank Tier, Starting Match Resonance, and 10-Hull Resonance breakdowns.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 134,
       versionTag = "v1.0.134 // BUILD #134",
       releaseDate = "Nov 27, 2026",
       headline = "Auth & Star Forge Copy Polish, Accessible Emoji-Free HUD Drag Banner With Full 17-Offset Reset & Rift AI Build #134 Ground-Truth Sync",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "COPY SCRUB & RIFT AI SYNC",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

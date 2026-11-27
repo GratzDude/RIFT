@@ -750,14 +750,9 @@ class LocalPilotPrefs(context: Context) {
 
   fun getDailyDirectivesXp(uid: String? = null): Long = getXpFromAccuracy(uid)
 
+  @Suppress("UNUSED_PARAMETER")
   fun awardDailyDirectivesXp(amount: Long, uid: String? = null) {
-    if (amount <= 0L) return
-    val next = getXpFromAccuracy(uid) + amount
-    val ed = prefs.edit().putLong(uidKey(KEY_XP_ACCURACY, uid), next)
-    if (canUseLegacyUnscopedFallback(uid)) {
-      ed.putLong(KEY_XP_ACCURACY, next)
-    }
-    ed.apply()
+    // Progression uses Live Resonance & Daily Directives; legacy XP accumulation is disabled.
   }
 
   fun getMatchesPlayed(uid: String? = null): Long {
@@ -1072,30 +1067,8 @@ class LocalPilotPrefs(context: Context) {
     ed.apply()
   }
 
-  fun claimPendingMilestoneShards(currentLevel: Int, uid: String? = null): Long {
-    val highestClaimed = getHighestMilestoneLevelClaimed(uid).coerceAtLeast(1)
-    val clampedLevel = currentLevel.coerceIn(1, 100)
-    val reward =
-      com.example.engine.RiftProgressionCatalog.calculateUnclaimedMilestoneShards(
-        highestClaimedLevel = highestClaimed,
-        currentLevel = clampedLevel,
-      )
-    if (reward > 0L || clampedLevel > highestClaimed) {
-      val nextShards = getRiftShards(uid) + reward
-      val ed =
-        prefs
-          .edit()
-          .putLong(uidKey(KEY_RIFT_SHARDS, uid), nextShards)
-          .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), clampedLevel)
-      if (canUseLegacyUnscopedFallback(uid)) {
-        ed
-          .putLong(KEY_RIFT_SHARDS, nextShards)
-          .putInt(KEY_HIGHEST_MILESTONE_LVL, clampedLevel)
-      }
-      ed.apply()
-    }
-    return reward
-  }
+  @Suppress("UNUSED_PARAMETER")
+  fun claimPendingMilestoneShards(currentLevel: Int, uid: String? = null): Long = 0L
 
   fun isCosmeticUnlocked(
     category: String,
@@ -1288,10 +1261,10 @@ class LocalPilotPrefs(context: Context) {
     val hasLiveKey =
       prefs.contains(uidKey(KEY_LIVE_RESONANCE, uid)) ||
         (canUseLegacyUnscopedFallback(uid) && prefs.contains(KEY_LIVE_RESONANCE))
-    val lvl = getPilotLevel(uid)
     val careerKills = getAllTimeKills(uid)
-    if (!hasLiveKey && (careerKills > 0L || lvl > 1)) {
-      val seeded = ((lvl - 1) * 18).coerceAtLeast(0)
+    val careerWins = getConvergencesWon(uid)
+    if (!hasLiveKey && (careerKills > 0L || careerWins > 0L)) {
+      val seeded = (careerKills * 6L + careerWins * 25L).coerceIn(0L, 1500L).toInt()
       val ed =
         prefs
           .edit()
@@ -3117,10 +3090,18 @@ class LocalPilotPrefs(context: Context) {
     liveResonance: Int,
     uid: String? = null,
   ): String {
+    val buildVer = com.example.ui.CURRENT_RIFT_BUILD_VERSION
     val summary = getPilotSurvivalTelemetrySummary(uid)
+    val peakResonance = kotlin.math.max(liveResonance, getPeakResonance(uid))
+    val conduitRankTier =
+      com.example.engine.RiftProgressionCatalog.getConduitTierForResonance(liveResonance).title
+    val startingMatchResonance =
+      com.example.engine.RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
     val sb = StringBuilder()
-    sb.appendLine("# RIFT SHIP SURVIVAL & COMBAT TELEMETRY EXPORT (BUILD #103)")
-    sb.appendLine("# Pilot,${callsign.replace(",", " ")},LiveResonance,$liveResonance,PilotLives,${summary.pilotCompletedLives},PilotAvgSec,${String.format(java.util.Locale.US, "%.2f", summary.pilotAvgSurvivalSec)},BotLives,${summary.botCompletedLives},BotAvgSec,${String.format(java.util.Locale.US, "%.2f", summary.botAvgSurvivalSec)}")
+    sb.appendLine("# RIFT SHIP SURVIVAL & COMBAT TELEMETRY EXPORT (BUILD #$buildVer)")
+    sb.appendLine(
+      "# Pilot,${callsign.replace(",", " ")},LiveResonance,$liveResonance,PeakResonance,$peakResonance,ConduitRankTier,$conduitRankTier,StartingMatchResonance,$startingMatchResonance,PilotLives,${summary.pilotCompletedLives},PilotAvgSec,${String.format(java.util.Locale.US, "%.2f", summary.pilotAvgSurvivalSec)},BotLives,${summary.botCompletedLives},BotAvgSec,${String.format(java.util.Locale.US, "%.2f", summary.botAvgSurvivalSec)}"
+    )
     sb.appendLine()
     sb.appendLine("Section,ShipId,ShipName,PilotLives,PilotAvgSec,PilotLastSec,PilotMaxSec,PilotMinSec,PilotTotalSec,BotLives,BotAvgSec,BotMaxSec,ShipResonance")
     for (entry in summary.perShip) {
@@ -3197,21 +3178,29 @@ class LocalPilotPrefs(context: Context) {
     liveResonance: Int,
     uid: String? = null,
   ): String {
+    val buildVer = com.example.ui.CURRENT_RIFT_BUILD_VERSION
     val summary = getPilotSurvivalTelemetrySummary(uid)
     val career = getPilotCareerStatsSummary(uid)
     val hubTaps = getHubTapTelemetryHistory()
+    val peakResonance = kotlin.math.max(liveResonance, getPeakResonance(uid))
+    val conduitRankTier =
+      com.example.engine.RiftProgressionCatalog.getConduitTierForResonance(liveResonance).title
+    val startingMatchResonance =
+      com.example.engine.RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
     val root = JSONObject()
-    root.put("schemaVersion", 115)
+    root.put("schemaVersion", buildVer)
+    root.put("buildTag", "BUILD #$buildVer")
     root.put("exportedAtMs", System.currentTimeMillis())
     root.put("callsign", callsign)
     root.put("liveResonance", liveResonance)
-    root.put("pilotLevel", career.pilotLevel)
-    root.put("totalXp", career.totalXp)
-    root.put("combatXp", career.combatXp)
-    root.put("survivalXp", career.survivalXp)
-    root.put("objectiveXp", career.objectiveXp)
-    root.put("supportCratesXp", career.supportCratesXp)
-    root.put("dailyDirectivesXp", career.dailyDirectivesXp)
+    root.put("peakResonance", peakResonance)
+    root.put("conduitRankTier", conduitRankTier)
+    root.put("startingMatchResonance", startingMatchResonance)
+    val perShipResObj = JSONObject()
+    for (entry in summary.perShip) {
+      perShipResObj.put(entry.shipName, getShipResonance(entry.shipId, uid))
+    }
+    root.put("perShipResonance", perShipResObj)
     root.put("matchesPlayed", career.matchesPlayed)
     root.put("wins", career.wins)
     root.put("losses", career.losses)
@@ -3265,9 +3254,15 @@ class LocalPilotPrefs(context: Context) {
     liveResonance: Int,
     uid: String? = null,
   ): String {
+    val buildVer = com.example.ui.CURRENT_RIFT_BUILD_VERSION
     val summary = getPilotSurvivalTelemetrySummary(uid)
     val career = getPilotCareerStatsSummary(uid)
     val hubTaps = getHubTapTelemetryHistory()
+    val peakResonance = kotlin.math.max(liveResonance, getPeakResonance(uid))
+    val conduitRankTier =
+      com.example.engine.RiftProgressionCatalog.getConduitTierForResonance(liveResonance).title
+    val startingMatchResonance =
+      com.example.engine.RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
     fun esc(raw: String): String =
       raw
         .replace("&", "&amp;")
@@ -3302,9 +3297,11 @@ class LocalPilotPrefs(context: Context) {
     sb.appendLine(".warn{color:#FB7185;font-weight:700;}")
     sb.appendLine(".good{color:#34D399;font-weight:700;}")
     sb.appendLine("</style></head><body>")
-    sb.appendLine("<h1>RIFT FULL PILOT, SURVIVAL &amp; HUB TAP TELEMETRY SHEET</h1>")
-    sb.appendLine("<div class=\"sub\">PILOT: ${esc(callsign)} &bull; LEVEL ${career.pilotLevel} (${career.totalXp} XP) &bull; LIVE RESONANCE: $liveResonance &bull; GENERATED: ${esc(nowStr)}</div>")
+    sb.appendLine("<h1>RIFT FULL PILOT, SURVIVAL &amp; HUB TAP TELEMETRY SHEET (BUILD #$buildVer)</h1>")
+    sb.appendLine("<div class=\"sub\">PILOT: ${esc(callsign)} &bull; CONDUIT TIER: ${esc(conduitRankTier)} &bull; LIVE RESONANCE: $liveResonance &bull; PEAK RESONANCE: $peakResonance &bull; START RESONANCE: $startingMatchResonance &bull; GENERATED: ${esc(nowStr)}</div>")
     sb.appendLine("<div class=\"kpis\">")
+    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">CONDUIT RANK TIER</div><div class=\"val\">${esc(conduitRankTier)}</div></div>")
+    sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">LIVE / PEAK / START RESONANCE</div><div class=\"val\">$liveResonance / $peakResonance / $startingMatchResonance</div></div>")
     sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">PILOT AVG SURVIVAL</div><div class=\"val\">${formatSurvivalDurationSec(summary.pilotAvgSurvivalSec)}</div></div>")
     sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">LATEST COMPLETED LIFE</div><div class=\"val\">${formatSurvivalDurationSec(summary.pilotLastSurvivalSec)}</div></div>")
     sb.appendLine("<div class=\"kpi\"><div class=\"lbl\">LONGEST PILOT LIFE</div><div class=\"val\">${formatSurvivalDurationSec(summary.pilotMaxSurvivalSec)}</div></div>")
@@ -3329,7 +3326,7 @@ class LocalPilotPrefs(context: Context) {
     sb.appendLine("<button type=\"button\" onclick=\"resetFilters()\">RESET</button>")
     sb.appendLine("<span id=\"fCount\" class=\"count\">SHOWING ${summary.perShip.size} HULLS &bull; ${summary.recentLives.size} LIVES &bull; ${hubTaps.size} HUB TAPS</span>")
     sb.appendLine("</div>")
-    sb.appendLine("<h2>PER-SHIP SURVIVAL BREAKDOWN (10 HULLS)</h2>")
+    sb.appendLine("<h2>PER-SHIP SURVIVAL &amp; RESONANCE BREAKDOWN (10 HULLS)</h2>")
     sb.appendLine("<table id=\"hullTable\"><thead><tr><th>HULL</th><th class=\"num\">RESONANCE</th><th class=\"num\">PILOT LIVES</th><th class=\"num\">AVG ALIVE</th><th class=\"num\">LAST LIFE</th><th class=\"num\">MAX LIFE</th><th class=\"num\">MIN LIFE</th><th class=\"num\">BOT LIVES</th><th class=\"num\">BOT AVG</th></tr></thead><tbody>")
     for (entry in summary.perShip) {
       val res = getShipResonance(entry.shipId, uid)

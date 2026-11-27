@@ -92,6 +92,7 @@ import com.example.engine.RankedGameMode
 import com.example.engine.RiftCalibrationState
 import com.example.engine.RiftCodex
 import com.example.engine.RiftGameEngine
+import com.example.engine.RiftProgressionCatalog
 import com.example.engine.RiftSoundSynthesizer
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.RiftVisualForgeState
@@ -100,6 +101,7 @@ import java.io.File
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -432,24 +434,43 @@ internal fun DossierLeftIdentityBay(
   onOpenSurvivalSpreadsheet: () -> Unit,
 ) {
   val uidOrNull = currentUserId.ifBlank { null }
-  val career =
+  val effectivePeakResonance = max(liveResonance, peakResonance)
+  val conduitTier =
+    remember(liveResonance) {
+      RiftProgressionCatalog.getConduitTierForResonance(liveResonance)
+    }
+  val conduitProgress =
+    remember(liveResonance) {
+      RiftProgressionCatalog.getConduitProgressFraction(liveResonance)
+    }
+  val nextTier =
+    remember(liveResonance) {
+      RiftProgressionCatalog.getNextConduitTierThreshold(liveResonance)
+    }
+  val startingResonance =
+    remember(liveResonance) {
+      RiftProgressionCatalog.computeStartingBountyForResonance(liveResonance)
+    }
+  val tierAccent = Color(conduitTier.accentColorHex)
+  val shipResonanceRows =
     remember(currentUserId, liveResonance, dossierRefreshNonce) {
-      localPrefs.getPilotCareerStatsSummary(uidOrNull)
+      RiftCodex.getAllTenShips().map { ship ->
+        Triple(
+          ship.id,
+          cleanDisplayShipTitle(ship.id, ship.name),
+          localPrefs.getShipResonance(ship.id, uidOrNull),
+        )
+      }
+    }
+  val maxShipResonance =
+    remember(shipResonanceRows) {
+      (shipResonanceRows.maxOfOrNull { it.third } ?: 0).coerceAtLeast(100)
     }
   val callsignChangeCount =
     remember(currentUserId, liveResonance, dossierRefreshNonce, callsign) {
       localPrefs.getCallsignChangeCount(uidOrNull)
     }
   val isFirstRenameFree = callsignChangeCount == 0
-  val maxXpTrack =
-    maxOf(
-      1L,
-      career.combatXp,
-      career.survivalXp,
-      career.objectiveXp,
-      career.supportCratesXp,
-      career.dailyDirectivesXp,
-    )
 
   Column(
     modifier = Modifier.fillMaxSize().testTag("dossier_left_identity_bay"),
@@ -468,7 +489,7 @@ internal fun DossierLeftIdentityBay(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
-      // Pilot Identity + Level 1..100 Header Pod
+      // Pilot Identity + Conduit Rank Tier & Live Resonance Header Pod
       Column(
         modifier =
           Modifier.fillMaxWidth()
@@ -498,48 +519,52 @@ internal fun DossierLeftIdentityBay(
           Box(
             modifier =
               Modifier.clip(RoundedCornerShape(5.dp))
-                .background(Color(0x2800F5D4))
-                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(5.dp))
+                .background(tierAccent.copy(alpha = 0.18f))
+                .border(1.dp, tierAccent, RoundedCornerShape(5.dp))
                 .padding(horizontal = 6.dp, vertical = 2.dp)
-                .testTag("dossier_pilot_level_badge"),
+                .testTag("dossier_conduit_tier_badge"),
           ) {
             Text(
-              text = "LVL ${career.pilotLevel.coerceIn(1, 100)}",
-              color = Color(0xFF00F5D4),
-              fontSize = 8.0.sp,
+              text = conduitTier.title,
+              color = tierAccent,
+              fontSize = 7.4.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
+              maxLines = 1,
             )
           }
         }
 
-        // Level Progress Bar
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
+        // Conduit Rank Tier Progress Bar + Next-Tier Threshold Readout
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
           Box(
             modifier =
-              Modifier.weight(1f)
+              Modifier.fillMaxWidth()
                 .height(6.dp)
                 .clip(RoundedCornerShape(3.dp))
                 .background(Color(0xFF02050B))
-                .border(0.6.dp, Color(0x4400F5D4), RoundedCornerShape(3.dp)),
+                .border(0.6.dp, tierAccent.copy(alpha = 0.45f), RoundedCornerShape(3.dp)),
           ) {
             Box(
               modifier =
-                Modifier.fillMaxWidth(career.levelProgressFraction.coerceIn(0.04f, 1f))
+                Modifier.fillMaxWidth(conduitProgress.coerceIn(0.05f, 1f))
                   .fillMaxHeight()
-                  .background(Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700)))),
+                  .background(Brush.horizontalGradient(listOf(tierAccent, Color(0xFFFFD700)))),
             )
           }
           Text(
-            text = "${career.xpIntoLevel}/${career.xpSpanForLevel} XP",
-            color = Color(0xFF94A3B8),
+            text =
+              if (liveResonance >= 1500) {
+                "APEX ARCHON • MAX TIER"
+              } else {
+                "${String.format(Locale.US, "%,d", liveResonance)} / ${String.format(Locale.US, "%,d", nextTier.first)} TO ${nextTier.second}"
+              },
+            color = Color(0xFFCBD5E1),
             fontSize = 7.2.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
         }
 
@@ -549,9 +574,10 @@ internal fun DossierLeftIdentityBay(
         ) {
           ResonanceCrestIcon(sizeDp = 12.dp)
           Text(
-            text = "LIVE ${String.format(Locale.US, "%,d", liveResonance)} • PEAK ${String.format(Locale.US, "%,d", peakResonance)}",
+            text =
+              "LIVE ${String.format(Locale.US, "%,d", liveResonance)} • PEAK ${String.format(Locale.US, "%,d", effectivePeakResonance)} • START $startingResonance",
             color = Color(0xFFFFD700),
-            fontSize = 8.2.sp,
+            fontSize = 7.8.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -560,7 +586,7 @@ internal fun DossierLeftIdentityBay(
         }
       }
 
-      // 5 Dedicated XP Bars (Combat, Survival, Objective, Support & Crates, Daily Directives)
+      // 10-Ship Resonance Breakdown across all 10 numberless hulls (including Rift Frame)
       Column(
         modifier =
           Modifier.fillMaxWidth()
@@ -570,39 +596,52 @@ internal fun DossierLeftIdentityBay(
               secondaryBorder = Color(0xFF091528),
             )
             .padding(horizontal = 9.dp, vertical = 7.dp)
-            .testTag("dossier_five_xp_tracks"),
+            .testTag("dossier_ship_resonance_breakdown"),
         verticalArrangement = Arrangement.spacedBy(4.dp),
       ) {
-        Text(
-          text = "5 XP PROGRESSION TRACKS (${String.format(Locale.US, "%,d", career.totalXp)} TOTAL)",
-          color = Color(0xFF38BDF8),
-          fontSize = 7.6.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-        listOf(
-          Triple("COMBAT XP", career.combatXp, Color(0xFFEF4444)),
-          Triple("SURVIVAL XP", career.survivalXp, Color(0xFF10B981)),
-          Triple("OBJECTIVE XP", career.objectiveXp, Color(0xFFFACC15)),
-          Triple("SUPPORT & CRATES XP", career.supportCratesXp, Color(0xFF38BDF8)),
-          Triple("DAILY DIRECTIVES XP", career.dailyDirectivesXp, Color(0xFFC084FC)),
-        ).forEach { (label, xpVal, barCol) ->
-          val frac = (xpVal.toFloat() / maxXpTrack.toFloat()).coerceIn(0.05f, 1f)
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          ResonanceCrestIcon(sizeDp = 10.dp)
+          Text(
+            text = "10-SHIP RESONANCE BREAKDOWN",
+            color = Color(0xFF38BDF8),
+            fontSize = 7.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+        shipResonanceRows.forEach { (shipId, hullTitle, shipRes) ->
+          val barCol =
+            when {
+              shipId == 10 -> Color(0xFFFFD700)
+              shipRes > 0 -> Color(0xFF00F5D4)
+              else -> Color(0xFF475569)
+            }
+          val frac =
+            if (shipRes <= 0) 0.03f
+            else (shipRes.toFloat() / maxShipResonance.toFloat()).coerceIn(0.05f, 1f)
           Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
             ) {
               Text(
-                text = label,
-                color = Color(0xFFCBD5E1),
+                text = hullTitle,
+                color = if (shipId == 10) Color(0xFFFFD700) else Color(0xFFCBD5E1),
                 fontSize = 7.0.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
               )
               Text(
-                text = String.format(Locale.US, "%,d", xpVal),
-                color = barCol,
+                text = String.format(Locale.US, "%,d", shipRes),
+                color = if (shipRes > 0 || shipId == 10) barCol else Color(0xFF94A3B8),
                 fontSize = 7.2.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
@@ -611,7 +650,7 @@ internal fun DossierLeftIdentityBay(
             Box(
               modifier =
                 Modifier.fillMaxWidth()
-                  .height(4.dp)
+                  .height(3.6.dp)
                   .clip(RoundedCornerShape(2.dp))
                   .background(Color(0xFF02050B)),
             ) {

@@ -2048,12 +2048,7 @@ class RiftGameEngine(
     onPrizeToast("BUFF FORGED & EQUIPPED: ${entry.officialName} (${localPlayer.specialWeaponCharges} CHARGES)")
   }
 
-  fun getTotalXp(): Long =
-    xpFromBuffs.toLong() +
-      xpFromDamage.toLong() +
-      xpFromAccuracy.toLong() +
-      xpFromBountyEarned.toLong() +
-      xpFromBountyKilled.toLong()
+  fun getTotalXp(): Long = 0L
 
   fun isNinthShipUnlocked(): Boolean = true
 
@@ -2063,13 +2058,14 @@ class RiftGameEngine(
     (getCustomizationPointsTotal() - spentCustomizationPoints).coerceAtLeast(0)
 
   fun getXpProgressInCurrentLevel(): Triple<Long, Long, Float> =
-    com.example.data.LocalPilotPrefs.getXpProgressInLevel(getTotalXp())
+    Triple(0L, 1L, RiftProgressionCatalog.getConduitProgressFraction(liveResonance))
 
   fun getMatchPresenceRatio(ship: ShipEntity = localPlayer): Float {
     if (publicMatchDurationSec <= 0.01f) return 1.0f
     return (ship.matchPresenceTimeSec / publicMatchDurationSec).coerceIn(0f, 1f)
   }
 
+  @Suppress("UNUSED_PARAMETER")
   fun awardPilotXp(
     buffXp: Float = 0f,
     damageXp: Float = 0f,
@@ -2079,67 +2075,13 @@ class RiftGameEngine(
     notifyChange: Boolean = true,
   ) {
     if (isEphemeralPracticeRift) return
-    xpFromBuffs += buffXp.coerceAtLeast(0f)
-    xpFromDamage += damageXp.coerceAtLeast(0f)
-    xpFromAccuracy += accuracyXp.coerceAtLeast(0f)
-    xpFromBountyEarned += bountyEarnedXp.coerceAtLeast(0f)
-    xpFromBountyKilled += bountyKilledXp.coerceAtLeast(0f)
-
-    val computedLvl = com.example.data.LocalPilotPrefs.computeLevelFromTotalXp(getTotalXp())
-    if (computedLvl > pilotLevel) {
-      pilotLevel = computedLvl
-      var milestoneBonusShards = 0L
-      while (highestMilestoneLevelClaimed + 5 <= pilotLevel && highestMilestoneLevelClaimed + 5 <= 100) {
-        highestMilestoneLevelClaimed += 5
-        milestoneBonusShards += 50L
-      }
-      if (milestoneBonusShards > 0L) {
-        riftShards += milestoneBonusShards
-        sfx.playPrize()
-        spawnPooledFct(
-          text = "LVL $pilotLevel! +$milestoneBonusShards SHARDS",
-          x = localPlayer.x,
-          y = localPlayer.y - 38f,
-          color = Color.parseColor("#FFD700"),
-          maxLife = 1.45f,
-        )
-        onPrizeToast("MILESTONE PILOT LVL $pilotLevel: +1 CUSTOM PT & +$milestoneBonusShards RIFT SHARDS!")
-      } else {
-        sfx.playPrize()
-        spawnPooledFct(
-          text = "PILOT LVL $pilotLevel (+1 PT)",
-          x = localPlayer.x,
-          y = localPlayer.y - 36f,
-          color = Color.parseColor("#00F0FF"),
-          maxLife = 1.25f,
-        )
-        onPrizeToast("PILOT LEVEL UP! LVL $pilotLevel (+1 CUSTOMIZATION POINT • ${pilotLevel}/100 PTS)")
-      }
-      if (notifyChange) {
-        onStatsUpdated()
-      }
-    } else if (notifyChange) {
+    if (notifyChange) {
       onStatsUpdated()
     }
   }
 
   fun simulatePilotLevelUp() {
-    if (pilotLevel >= 100) {
-      onPrizeToast("MAX PILOT LEVEL 100 REACHED (100/100 CUSTOMIZATION POINTS)")
-      return
-    }
-    val nextLvl = (pilotLevel + 1).coerceAtMost(100)
-    val neededTotal = com.example.data.LocalPilotPrefs.xpForLevelStart(nextLvl)
-    val deficit = (neededTotal - getTotalXp()).coerceAtLeast(50L).toFloat()
-    val perSource = deficit / 5f
-    awardPilotXp(
-      buffXp = perSource,
-      damageXp = perSource,
-      accuracyXp = perSource,
-      bountyEarnedXp = perSource,
-      bountyKilledXp = perSource,
-      notifyChange = true,
-    )
+    onPrizeToast("PROGRESSION USES LIVE RESONANCE & DAILY DIRECTIVES")
   }
 
   /**
@@ -8202,7 +8144,7 @@ class RiftGameEngine(
           }
           else -> {
             val shots = currentLifeStats.shotsFired
-            val accMod =
+            val accBonus =
               if (shots >= 8) {
                 val accPct = (currentLifeStats.shotsHit * 100) / shots.coerceAtLeast(1)
                 when {
@@ -8214,7 +8156,17 @@ class RiftGameEngine(
                 0
               }
             val baseDeathPenalty = if (liveResonance >= 200) -10 else -5
-            adjustLocalResonance(baseDeathPenalty + accMod, "HULL LOST")
+            val lossReasonLabel =
+              when {
+                accBonus > 0 -> "HULL LOST • +4 ACC"
+                accBonus < 0 -> "HULL LOST • -2 ACC"
+                else -> "HULL LOST"
+              }
+            adjustLocalResonance(
+              baseDeathPenalty + accBonus,
+              lossReasonLabel,
+              showFctEvenIfRespawning = true,
+            )
           }
         }
         currentLifeStats.bountyReached = max(currentLifeStats.bountyReached, victimPreDeathBounty)
