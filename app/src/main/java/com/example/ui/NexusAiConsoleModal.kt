@@ -145,6 +145,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -3975,22 +3976,24 @@ private fun OrbitalHubSpatialStage(
     val cornerPodHeight = (safeH * 0.215f).coerceIn(minPodH, 86.dp)
     val bayHeaderHeight = 48.dp
 
-    // Capped Overwatch Stage Diameter (`minOf(safeH * 0.94f, safeW * 0.48f)`) so left/right wings never narrow below 25% viewport width
+    // Chord-aware 3D Cockpit geometry: Overwatch ring floats cleanly over wing inner edges (zIndex 2 vs 1),
+    // reclaiming open upper/lower space around the circle for wider wings and untruncated top-left readouts.
     val minWingReserveTotal = 280.dp
     val overwatchStageDiameterDp =
-      minOf(safeH * 0.94f, safeW * 0.48f, (safeW - minWingReserveTotal).coerceAtLeast(156.dp))
-    val sideSpanEachDp = ((safeW - overwatchStageDiameterDp) * 0.5f - outerPadH).coerceAtLeast(128.dp)
-    val wingWidthDp = sideSpanEachDp
-    val openCornerAnchorDp = outerPadH + wingWidthDp + 4.dp
-    val openCornerMaxWidthDp =
-      ((safeW * 0.5f) - openCornerAnchorDp - overwatchStageDiameterDp * 0.08f).coerceIn(112.dp, 224.dp)
+      minOf(safeH * 0.88f, safeW * 0.48f, (safeW - minWingReserveTotal).coerceAtLeast(156.dp))
+        .coerceAtLeast(220.dp)
+    val sideSpanEachDp = ((safeW - overwatchStageDiameterDp) * 0.5f - outerPadH).coerceAtLeast(138.dp)
+    val wingWidthDp = (sideSpanEachDp + 18.dp).coerceAtLeast(156.dp)
+    val openCornerAnchorDp = outerPadH + sideSpanEachDp + 2.dp
     val overwatchRadiusDp = overwatchStageDiameterDp * 0.5f
-    val outerR = overwatchRadiusDp * 1.09f
-    val dy = (overwatchRadiusDp - 26.dp).coerceIn(0.dp, outerR * 0.96f)
+    val outerR = overwatchRadiusDp * 1.07f
+    val topReadoutDy = (safeH * 0.5f - 32.dp).coerceIn(0.dp, outerR * 0.96f)
     val chordDx =
-      kotlin.math.sqrt((outerR.value * outerR.value - dy.value * dy.value).coerceAtLeast(0f)).dp
+      kotlin.math.sqrt((outerR.value * outerR.value - topReadoutDy.value * topReadoutDy.value).coerceAtLeast(0f)).dp
     val topLeftCornerMaxWidthDp =
-      (safeW * 0.5f - chordDx - openCornerAnchorDp - 8.dp).coerceIn(108.dp, 260.dp)
+      (safeW * 0.5f - chordDx - openCornerAnchorDp - 4.dp).coerceIn(136.dp, 280.dp)
+    val openCornerMaxWidthDp =
+      (safeW * 0.5f - chordDx.coerceAtMost(overwatchRadiusDp * 0.34f) - openCornerAnchorDp - 4.dp).coerceIn(124.dp, 240.dp)
 
     var stageRootOrigin by remember { mutableStateOf(Offset.Zero) }
     var activeDraggedFrameItem by remember { mutableStateOf<DraggedRiftFrameItem?>(null) }
@@ -4017,12 +4020,13 @@ private fun OrbitalHubSpatialStage(
             stageRootOrigin = coords.positionInRoot()
           },
     ) {
-      // 1. CIRCULAR OVERWATCH CENTERPIECE
+      // 1. CIRCULAR OVERWATCH CENTERPIECE (Elevated above wing inner chords so touch gestures stay 100% unobstructed)
       val centerFocused = focusedOrbitalIndex == 0 || hubTutorialStep in listOf(1, 2, 4)
       val tutorialPulseAlpha = 0.55f + 0.45f * (0.5f + 0.5f * kotlin.math.sin(fluxOrbitRad * 2f))
       RoundRipplingOverwatchAperture(
         modifier =
           Modifier.align(Alignment.Center)
+            .zIndex(2f)
             .size(overwatchStageDiameterDp)
             .then(
               if (hubTutorialStep in listOf(1, 2, 4)) {
@@ -4124,24 +4128,27 @@ private fun OrbitalHubSpatialStage(
         },
       )
 
-      // 2. PORT FLANKING HARDWARE WING (All Non-Full-Screen Windows Digitize Into Flanking Side-Bays)
+      // 2. PORT FLANKING 3D COCKPIT WING
       HubDigitizingScanlineBox(
         modifier =
           Modifier.align(Alignment.CenterStart)
+            .zIndex(1f)
             .padding(start = outerPadH, top = 2.dp, bottom = 2.dp)
             .width(wingWidthDp)
             .fillMaxHeight()
             .then(
               if (hubTutorialStep in listOf(2, 3, 4, 6)) {
-                Modifier.border(
-                  1.5.dp,
-                  Color(0xFFFFD700).copy(alpha = tutorialPulseAlpha),
-                  RoundedCornerShape(10.dp),
+                Modifier.cockpitReticleSurface(
+                  accent = Color(0xFFFFD700).copy(alpha = tutorialPulseAlpha),
+                  isSelected = true,
+                  drawCornerTicks = true,
+                  featherAlpha = 0.0f,
                 )
               } else Modifier
             ),
         scanProgress = digitizeScanProgress.value,
         isRightSide = false,
+        isDragging = activeDraggedFrameItem != null,
       ) {
         AnimatedContent(
           targetState = sideBayMode,
@@ -4164,6 +4171,7 @@ private fun OrbitalHubSpatialStage(
                 verticalArrangement = Arrangement.spacedBy(wingStackGap),
               ) {
                 PortTopPilotPod(
+                  modifier = Modifier.fillMaxWidth().padding(end = 18.dp),
                   heightDp = cornerPodHeight,
                   isTabletDeck = isTabletDeck,
                   pilotIdentityLabel = pilotIdentityLabel,
@@ -4175,7 +4183,7 @@ private fun OrbitalHubSpatialStage(
                 )
 
                 RiftVerticalCard(
-                  modifier = Modifier.weight(1f).fillMaxWidth(),
+                  modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 10.dp),
                   title = "HANGAR DECK",
                   subtitle = "Choose ships and Rift Frame",
                   accent = if (hasChargedShip) Color(0xFF00F5D4) else Color(0xFF38BDF8),
@@ -4185,6 +4193,7 @@ private fun OrbitalHubSpatialStage(
                   badgeText = "$hangarPrimaryStat • $hangarBadgeText",
                   badgeColor = if (hasChargedShip) Color(0xFF00F5D4) else Color(0xFFFACC15),
                   isTabletDeck = isTabletDeck,
+                  heroHubMode = true,
                   testTag = "nexus_node_hangar_deck",
                   visualContent = { sizeDp ->
                     Spinning25dShipWithOrbitingFlux(
@@ -4204,7 +4213,7 @@ private fun OrbitalHubSpatialStage(
                 )
 
                 RiftVerticalCard(
-                  modifier = Modifier.weight(1f).fillMaxWidth(),
+                  modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 10.dp),
                   title = "RESONANCE",
                   subtitle = "Leaderboards, ranks and quests",
                   accent = Color(0xFFFFD700),
@@ -4215,6 +4224,7 @@ private fun OrbitalHubSpatialStage(
                   badgeColor = Color(0xFFFFD700),
                   showBadgeResonanceIcon = true,
                   isTabletDeck = isTabletDeck,
+                  heroHubMode = true,
                   testTag = "nexus_node_resonance",
                   visualContent = { sizeDp ->
                     Box(
@@ -4737,24 +4747,27 @@ private fun OrbitalHubSpatialStage(
         }
       }
 
-      // 3. STARBOARD FLANKING HARDWARE WING (All Non-Full-Screen Windows Digitize Into Flanking Side-Bays)
+      // 3. STARBOARD FLANKING 3D COCKPIT WING
       HubDigitizingScanlineBox(
         modifier =
           Modifier.align(Alignment.CenterEnd)
+            .zIndex(1f)
             .padding(end = outerPadH, top = 2.dp, bottom = 2.dp)
             .width(wingWidthDp)
             .fillMaxHeight()
             .then(
               if (hubTutorialStep in listOf(3, 4, 5, 6)) {
-                Modifier.border(
-                  1.5.dp,
-                  Color(0xFF00F5D4).copy(alpha = tutorialPulseAlpha),
-                  RoundedCornerShape(10.dp),
+                Modifier.cockpitReticleSurface(
+                  accent = Color(0xFF00F5D4).copy(alpha = tutorialPulseAlpha),
+                  isSelected = true,
+                  drawCornerTicks = true,
+                  featherAlpha = 0.0f,
                 )
               } else Modifier
             ),
         scanProgress = digitizeScanProgress.value,
         isRightSide = true,
+        isDragging = activeDraggedFrameItem != null,
       ) {
         AnimatedContent(
           targetState = sideBayMode,
@@ -4781,6 +4794,7 @@ private fun OrbitalHubSpatialStage(
                 verticalArrangement = Arrangement.spacedBy(wingStackGap),
               ) {
                 StarboardTopCommandPod(
+                  modifier = Modifier.fillMaxWidth().padding(start = 18.dp),
                   heightDp = cornerPodHeight,
                   isTabletDeck = isTabletDeck,
                   isInMatch = isInMatch,
@@ -4794,7 +4808,7 @@ private fun OrbitalHubSpatialStage(
                 )
 
                 RiftVerticalCard(
-                  modifier = Modifier.weight(1f).fillMaxWidth(),
+                  modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 10.dp),
                   title = "SUBSPACE COMMS",
                   subtitle = "Live chat, voice, AI",
                   accent = Color(0xFF00F5D4),
@@ -4804,6 +4818,7 @@ private fun OrbitalHubSpatialStage(
                   badgeText = if (unreadCommsCount > 0) "$unreadCommsCount NEW" else null,
                   badgeColor = Color(0xFFFB7185),
                   isTabletDeck = isTabletDeck,
+                  heroHubMode = true,
                   testTag = "nexus_node_subspace_comms",
                   visualContent = { sizeDp ->
                     SubspaceWaveformEmblem(
@@ -4815,7 +4830,7 @@ private fun OrbitalHubSpatialStage(
                 )
 
                 RiftVerticalCard(
-                  modifier = Modifier.weight(1f).fillMaxWidth(),
+                  modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 10.dp),
                   title = "ACTIVE RIFTS",
                   subtitle = "Ranked modes, custom arenas",
                   accent = Color(0xFFFFD700),
@@ -4825,6 +4840,7 @@ private fun OrbitalHubSpatialStage(
                   badgeText = if (activeRiftsLiveCount == 1) "1 PILOT" else "$activeRiftsLiveCount LIVE",
                   badgeColor = Color(0xFF00F5D4),
                   isTabletDeck = isTabletDeck,
+                  heroHubMode = true,
                   testTag = "nexus_node_convergence_gate",
                   visualContent = { sizeDp ->
                     ActiveRiftsEmblem(sizeDp = sizeDp)
@@ -5322,6 +5338,7 @@ private fun OrbitalHubSpatialStage(
         HubGuidedTutorialCoachmarkCard(
           modifier =
             Modifier.align(Alignment.BottomCenter)
+              .zIndex(4f)
               .padding(bottom = 8.dp, start = 12.dp, end = 12.dp)
               .widthIn(min = 276.dp, max = if (isTabletDeck) 468.dp else 404.dp),
           step = hubTutorialStep,
@@ -5374,15 +5391,19 @@ private fun OrbitalHubSpatialStage(
         val localY = dragPointerRootOffset.y - stageRootOrigin.y
         Column(
           modifier =
-            Modifier.offset {
+            Modifier.zIndex(5f)
+              .offset {
                 IntOffset(
                   (localX - with(density) { 42.dp.toPx() }).roundToInt(),
                   (localY - with(density) { 48.dp.toPx() }).roundToInt(),
                 )
               }
-              .clip(RoundedCornerShape(10.dp))
-              .background(Color(0xEB071426))
-              .border(1.5.dp, draggedItem.accentColor, RoundedCornerShape(10.dp))
+              .cockpitReticleSurface(
+                accent = draggedItem.accentColor,
+                isSelected = true,
+                drawCornerTicks = true,
+                featherAlpha = 0.72f,
+              )
               .padding(horizontal = 8.dp, vertical = 5.dp),
           horizontalAlignment = Alignment.CenterHorizontally,
           verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -5612,45 +5633,53 @@ private fun HubDigitizingScanlineBox(
   modifier: Modifier,
   scanProgress: Float,
   isRightSide: Boolean,
+  isDragging: Boolean = false,
   content: @Composable BoxScope.() -> Unit,
 ) {
+  val targetTiltDeg =
+    when {
+      isDragging -> 0f
+      isRightSide -> -9.5f
+      else -> 9.5f
+    }
+  val animatedTiltDeg by
+    animateFloatAsState(
+      targetValue = targetTiltDeg,
+      animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+      label = "cockpit_wing_tilt",
+    )
   Box(
     modifier =
-      modifier.drawWithContent {
-        drawContent()
-        if (scanProgress < 0.99f) {
-          val sweepY = size.height * scanProgress
-          val alpha = (1f - scanProgress).coerceIn(0f, 1f)
-          val bandH = (size.height * 0.16f).coerceAtLeast(18.dp.toPx())
-          drawRect(
-            brush =
-              Brush.verticalGradient(
-                colors =
-                  listOf(
-                    Color.Transparent,
-                    Color(0xFF00F5D4).copy(alpha = 0.28f * alpha),
-                    Color(0xFF38BDF8).copy(alpha = 0.14f * alpha),
-                    Color.Transparent,
-                  ),
-                startY = (sweepY - bandH * 0.5f).coerceAtLeast(0f),
-                endY = (sweepY + bandH * 0.5f).coerceAtMost(size.height),
-              ),
-          )
-          drawLine(
-            brush =
-              Brush.horizontalGradient(
-                if (!isRightSide) {
-                  listOf(Color.White.copy(alpha = 0.85f * alpha), Color(0xFF00F5D4).copy(alpha = 0.90f * alpha), Color.Transparent)
-                } else {
-                  listOf(Color.Transparent, Color(0xFF00F5D4).copy(alpha = 0.90f * alpha), Color.White.copy(alpha = 0.85f * alpha))
-                }
-              ),
-            start = Offset(0f, sweepY),
-            end = Offset(size.width, sweepY),
-            strokeWidth = 1.8.dp.toPx(),
-          )
+      modifier
+        .graphicsLayer {
+          rotationY = animatedTiltDeg
+          cameraDistance = 16f * density
+          clip = false
         }
-      },
+        .drawWithContent {
+          drawContent()
+          if (scanProgress < 0.99f) {
+            val sweepY = size.height * scanProgress
+            val alpha = (1f - scanProgress).coerceIn(0f, 1f)
+            drawLine(
+              brush =
+                Brush.horizontalGradient(
+                  colors =
+                    listOf(
+                      Color.Transparent,
+                      Color(0xFF00F5D4).copy(alpha = 0.85f * alpha),
+                      Color.White.copy(alpha = 0.90f * alpha),
+                      Color(0xFF38BDF8).copy(alpha = 0.72f * alpha),
+                      Color.Transparent,
+                    ),
+                ),
+              start = Offset(0f, sweepY),
+              end = Offset(size.width, sweepY),
+              strokeWidth = 1.8.dp.toPx(),
+              cap = StrokeCap.Round,
+            )
+          }
+        },
     content = content,
   )
 }
@@ -5750,52 +5779,186 @@ internal fun Modifier.chamferedSciFiPodSurface(
     val w = size.width
     val h = size.height
     if (w <= 8f || h <= 8f) return@drawBehind
-    drawRect(
+    val cx = if (!isRightSide) w * 0.46f else w * 0.54f
+    val cy = h * 0.5f
+    val featherR = maxOf(w * 0.62f, h * 0.78f)
+    // Edge-free radial contrast feather behind floating cockpit HUD telemetry (zero dark slab / zero closed box)
+    drawCircle(
       brush =
-        Brush.horizontalGradient(
-          colors =
-            if (!isRightSide) {
-              listOf(Color(0xC6050D1C), Color(0x96071326), Color(0x5208162B))
-            } else {
-              listOf(Color(0x5208162B), Color(0x96071326), Color(0xC6050D1C))
-            }
-        )
+        Brush.radialGradient(
+          colorStops =
+            arrayOf(
+              0.00f to Color(0x8A020714),
+              0.52f to Color(0x42040D1E),
+              1.00f to Color.Transparent,
+            ),
+          center = Offset(cx, cy),
+          radius = featherR,
+        ),
+      radius = featherR,
+      center = Offset(cx, cy),
     )
-    // Subtle top holographic glint hairline (no boxy octagonal border)
+    // Tapered bottom accent laser filament (fades cleanly to transparent at both ends; zero vertical equator rails)
+    val yLine = (h - 1.dp.toPx()).coerceAtLeast(1f)
     drawLine(
       brush =
         Brush.horizontalGradient(
-          colors =
+          colorStops =
             if (!isRightSide) {
-              listOf(primaryBorder.copy(alpha = 0.44f), secondaryBorder.copy(alpha = 0.22f), Color.Transparent)
+              arrayOf(
+                0.00f to Color.Transparent,
+                0.20f to primaryBorder.copy(alpha = 0.62f),
+                0.68f to secondaryBorder.copy(alpha = 0.34f),
+                1.00f to Color.Transparent,
+              )
             } else {
-              listOf(Color.Transparent, secondaryBorder.copy(alpha = 0.22f), primaryBorder.copy(alpha = 0.44f))
-            }
+              arrayOf(
+                0.00f to Color.Transparent,
+                0.32f to secondaryBorder.copy(alpha = 0.34f),
+                0.80f to primaryBorder.copy(alpha = 0.62f),
+                1.00f to Color.Transparent,
+              )
+            },
         ),
-      start = Offset(0f, 0.5.dp.toPx()),
-      end = Offset(w, 0.5.dp.toPx()),
-      strokeWidth = 0.75.dp.toPx(),
+      start = Offset(0f, yLine),
+      end = Offset(w, yLine),
+      strokeWidth = 1.0.dp.toPx(),
+      cap = StrokeCap.Round,
     )
-    // Inner Overwatch-facing luminous 2.dp accent rail
-    val railX = if (!isRightSide) w - 1.dp.toPx() else 1.dp.toPx()
+  }
+
+internal fun Modifier.cockpitReticleSurface(
+  accent: Color,
+  isSelected: Boolean = true,
+  drawCornerTicks: Boolean = isSelected,
+  featherAlpha: Float = if (isSelected) 0.52f else 0.24f,
+): Modifier =
+  this.drawBehind {
+    val w = size.width
+    val h = size.height
+    if (w <= 6f || h <= 6f) return@drawBehind
+    val centerPt = Offset(w * 0.5f, h * 0.5f)
+    val featherR = maxOf(w * 0.58f, h * 0.72f)
+    if (featherAlpha > 0.01f) {
+      drawCircle(
+        brush =
+          Brush.radialGradient(
+            colorStops =
+              arrayOf(
+                0.00f to Color(0xFF020714).copy(alpha = featherAlpha),
+                0.60f to Color(0xFF040D1E).copy(alpha = featherAlpha * 0.45f),
+                1.00f to Color.Transparent,
+              ),
+            center = centerPt,
+            radius = featherR,
+          ),
+        radius = featherR,
+        center = centerPt,
+      )
+    }
+    if (isSelected) {
+      drawCircle(
+        brush =
+          Brush.radialGradient(
+            colorStops =
+              arrayOf(
+                0.00f to accent.copy(alpha = 0.18f),
+                0.62f to accent.copy(alpha = 0.05f),
+                1.00f to Color.Transparent,
+              ),
+            center = centerPt,
+            radius = featherR * 0.92f,
+          ),
+        radius = featherR * 0.92f,
+        center = centerPt,
+      )
+      if (drawCornerTicks) {
+        val tick = minOf(5.5.dp.toPx(), w * 0.16f, h * 0.30f)
+        val sw = 1.15.dp.toPx()
+        val c = accent.copy(alpha = 0.92f)
+        // Top-left open bracket
+        drawLine(c, Offset(1f, tick), Offset(1f, 1f), sw, StrokeCap.Round)
+        drawLine(c, Offset(1f, 1f), Offset(tick, 1f), sw, StrokeCap.Round)
+        // Top-right open bracket
+        drawLine(c, Offset(w - tick, 1f), Offset(w - 1f, 1f), sw, StrokeCap.Round)
+        drawLine(c, Offset(w - 1f, 1f), Offset(w - 1f, tick), sw, StrokeCap.Round)
+        // Bottom-left open bracket
+        drawLine(c, Offset(1f, h - tick), Offset(1f, h - 1f), sw, StrokeCap.Round)
+        drawLine(c, Offset(1f, h - 1f), Offset(tick, h - 1f), sw, StrokeCap.Round)
+        // Bottom-right open bracket
+        drawLine(c, Offset(w - tick, h - 1f), Offset(w - 1f, h - 1f), sw, StrokeCap.Round)
+        drawLine(c, Offset(w - 1f, h - tick), Offset(w - 1f, h - 1f), sw, StrokeCap.Round)
+      }
+      val lineY = (h - 1.dp.toPx()).coerceAtLeast(1f)
+      drawLine(
+        brush =
+          Brush.horizontalGradient(
+            colorStops =
+              arrayOf(
+                0.00f to Color.Transparent,
+                0.22f to accent.copy(alpha = 0.82f),
+                0.50f to Color.White.copy(alpha = 0.88f),
+                0.78f to accent.copy(alpha = 0.82f),
+                1.00f to Color.Transparent,
+              ),
+          ),
+        start = Offset(w * 0.08f, lineY),
+        end = Offset(w * 0.92f, lineY),
+        strokeWidth = 1.4.dp.toPx(),
+        cap = StrokeCap.Round,
+      )
+    }
+  }
+
+internal fun Modifier.cockpitLaserInputSurface(
+  accent: Color = Color(0xFF00F5D4),
+): Modifier =
+  this.drawBehind {
+    val w = size.width
+    val h = size.height
+    if (w <= 6f || h <= 6f) return@drawBehind
+    val centerPt = Offset(w * 0.5f, h * 0.5f)
+    val featherR = maxOf(w * 0.58f, h * 0.85f)
+    drawCircle(
+      brush =
+        Brush.radialGradient(
+          colorStops =
+            arrayOf(
+              0.00f to Color(0x78020714),
+              0.62f to Color(0x36040D1E),
+              1.00f to Color.Transparent,
+            ),
+          center = centerPt,
+          radius = featherR,
+        ),
+      radius = featherR,
+      center = centerPt,
+    )
+    val tick = minOf(4.5.dp.toPx(), h * 0.28f)
+    val sw = 1.15.dp.toPx()
+    val yB = (h - 1.dp.toPx()).coerceAtLeast(1f)
+    drawLine(accent.copy(alpha = 0.85f), Offset(1f, yB - tick), Offset(1f, yB), sw, StrokeCap.Round)
+    drawLine(accent.copy(alpha = 0.85f), Offset(w - 1f, yB - tick), Offset(w - 1f, yB), sw, StrokeCap.Round)
     drawLine(
       brush =
-        Brush.verticalGradient(
-          listOf(
-            primaryBorder.copy(alpha = 0.92f),
-            secondaryBorder.copy(alpha = 0.72f),
-            primaryBorder.copy(alpha = 0.36f),
-          )
+        Brush.horizontalGradient(
+          colorStops =
+            arrayOf(
+              0.00f to accent.copy(alpha = 0.72f),
+              0.50f to Color.White.copy(alpha = 0.82f),
+              1.00f to accent.copy(alpha = 0.72f),
+            ),
         ),
-      start = Offset(railX, 2.dp.toPx()),
-      end = Offset(railX, (h - 2.dp.toPx()).coerceAtLeast(2.dp.toPx())),
-      strokeWidth = 2.0.dp.toPx(),
+      start = Offset(1f, yB),
+      end = Offset(w - 1f, yB),
+      strokeWidth = 1.25.dp.toPx(),
       cap = StrokeCap.Round,
     )
   }
 
 @Composable
 private fun PortTopPilotPod(
+  modifier: Modifier = Modifier.fillMaxWidth(),
   heightDp: Dp,
   @Suppress("UNUSED_PARAMETER") isTabletDeck: Boolean,
   pilotIdentityLabel: String,
@@ -5805,13 +5968,14 @@ private fun PortTopPilotPod(
   onClickCallsign: () -> Unit,
   onSwitchAccount: () -> Unit,
 ) {
-  val callsignFontSize = if (pilotIdentityLabel.length > 15) 9.8.sp else 10.8.sp
+  val callsignFontSize = if (pilotIdentityLabel.length > 15) 10.2.sp else 11.4.sp
   val subtitleText =
     if (conduitRankLabel.isNotBlank()) "DOSSIER • $conduitRankLabel"
     else "PILOT DOSSIER"
+  val hudShadow = remember { Shadow(color = Color(0xE6020611), offset = Offset(0f, 1f), blurRadius = 6f) }
   Row(
     modifier =
-      Modifier.fillMaxWidth()
+      modifier
         .height(heightDp)
         .chamferedSciFiPodSurface(
           isRightSide = false,
@@ -5834,7 +5998,7 @@ private fun PortTopPilotPod(
       horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
       SwirlingRiftVortexGlyph(
-        modifier = Modifier.size(21.dp),
+        modifier = Modifier.size(22.dp),
         isStreaming = isStreaming,
       )
       Column(
@@ -5859,30 +6023,23 @@ private fun PortTopPilotPod(
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
           )
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
           text = subtitleText,
           color = Color(0xFF38BDF8),
-          fontSize = 8.0.sp,
-          letterSpacing = (-0.15).sp,
+          fontSize = 8.8.sp,
+          letterSpacing = (-0.1).sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
     }
-
-    Box(
-      modifier =
-        Modifier.width(1.dp)
-          .fillMaxHeight(0.68f)
-          .background(Color(0x4438BDF8))
-    )
 
     Box(
       modifier =
@@ -5892,7 +6049,7 @@ private fun PortTopPilotPod(
           .testTag("nexus_top_switch_account"),
       contentAlignment = Alignment.Center,
     ) {
-      Canvas(modifier = Modifier.size(18.dp)) {
+      Canvas(modifier = Modifier.size(19.dp)) {
         val w = size.width
         val h = size.height
         val accent = if (isGoogleAuthenticated) Color(0xFF00F5D4) else Color(0xFFFACC15)
@@ -5903,7 +6060,7 @@ private fun PortTopPilotPod(
           useCenter = false,
           topLeft = Offset(w * 0.10f, h * 0.12f),
           size = Size(w * 0.80f, h * 0.76f),
-          style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+          style = Stroke(width = 1.9.dp.toPx(), cap = StrokeCap.Round),
         )
         drawArc(
           color = Color(0xFF38BDF8),
@@ -5912,7 +6069,7 @@ private fun PortTopPilotPod(
           useCenter = false,
           topLeft = Offset(w * 0.10f, h * 0.12f),
           size = Size(w * 0.80f, h * 0.76f),
-          style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+          style = Stroke(width = 1.9.dp.toPx(), cap = StrokeCap.Round),
         )
         drawCircle(
           color = Color.White,
@@ -5937,6 +6094,7 @@ private fun PortBottomTelemetryPod(
   onClickShards: () -> Unit,
   onClickOnline: () -> Unit,
 ) {
+  val hudShadow = remember { Shadow(color = Color(0xE6020611), offset = Offset(0f, 1f), blurRadius = 6f) }
   Row(
     modifier =
       Modifier.fillMaxWidth()
@@ -5952,11 +6110,11 @@ private fun PortBottomTelemetryPod(
   ) {
     Column(
       modifier =
-        Modifier.weight(0.96f)
+        Modifier.weight(0.98f)
           .fillMaxHeight()
           .minimumInteractiveComponentSize()
           .clickable { onClickResonance() }
-          .padding(horizontal = 1.5.dp)
+          .padding(horizontal = 2.dp)
           .testTag("nexus_top_resonance"),
       verticalArrangement = Arrangement.Center,
       horizontalAlignment = Alignment.CenterHorizontally,
@@ -5965,32 +6123,30 @@ private fun PortBottomTelemetryPod(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp),
       ) {
-        ResonanceCrestIcon(sizeDp = 13.dp)
+        ResonanceCrestIcon(sizeDp = 14.dp)
         Text(
           text = formattedLiveResonance,
           color = Color(0xFFFFD700),
-          fontSize = 10.0.sp,
+          fontSize = 10.6.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
           softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
       Spacer(modifier = Modifier.height(2.dp))
       Text(
         text = conduitBadge.ifBlank { "CONDUIT" },
         color = Color(0xFFFACC15),
-        fontSize = 7.8.sp,
+        fontSize = 8.4.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
         softWrap = false,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
     }
-
-    Box(modifier = Modifier.width(1.dp).fillMaxHeight(0.68f).background(Color(0x3D38BDF8)))
 
     Column(
       modifier =
@@ -5998,7 +6154,7 @@ private fun PortBottomTelemetryPod(
           .fillMaxHeight()
           .minimumInteractiveComponentSize()
           .clickable { onClickShards() }
-          .padding(horizontal = 1.5.dp)
+          .padding(horizontal = 2.dp)
           .testTag("nexus_top_shards"),
       verticalArrangement = Arrangement.Center,
       horizontalAlignment = Alignment.CenterHorizontally,
@@ -6007,32 +6163,30 @@ private fun PortBottomTelemetryPod(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp),
       ) {
-        RiftShardGemIcon(sizeDp = 13.dp)
+        RiftShardGemIcon(sizeDp = 14.dp)
         Text(
           text = shardText,
           color = Color(0xFF38BDF8),
-          fontSize = 9.8.sp,
+          fontSize = 10.4.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
           softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
       Spacer(modifier = Modifier.height(2.dp))
       Text(
         text = "SHARD STORE",
         color = Color(0xFF00F5D4),
-        fontSize = 7.8.sp,
+        fontSize = 8.4.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
         softWrap = false,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
     }
-
-    Box(modifier = Modifier.width(1.dp).fillMaxHeight(0.68f).background(Color(0x3D38BDF8)))
 
     Column(
       modifier =
@@ -6040,7 +6194,7 @@ private fun PortBottomTelemetryPod(
           .fillMaxHeight()
           .minimumInteractiveComponentSize()
           .clickable { onClickOnline() }
-          .padding(horizontal = 1.5.dp)
+          .padding(horizontal = 2.dp)
           .testTag("nexus_top_online"),
       verticalArrangement = Arrangement.Center,
       horizontalAlignment = Alignment.CenterHorizontally,
@@ -6058,24 +6212,24 @@ private fun PortBottomTelemetryPod(
         Text(
           text = onlineShortLabel,
           color = onlineAccent,
-          fontSize = 9.0.sp,
+          fontSize = 9.6.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
           softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
       Spacer(modifier = Modifier.height(2.dp))
       Text(
         text = "ROSTER",
         color = Color(0xFF94A3B8),
-        fontSize = 7.8.sp,
+        fontSize = 8.4.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
         softWrap = false,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
     }
   }
@@ -6083,6 +6237,7 @@ private fun PortBottomTelemetryPod(
 
 @Composable
 private fun StarboardTopCommandPod(
+  modifier: Modifier = Modifier.fillMaxWidth(),
   heightDp: Dp,
   @Suppress("UNUSED_PARAMETER") isTabletDeck: Boolean,
   isInMatch: Boolean,
@@ -6092,9 +6247,10 @@ private fun StarboardTopCommandPod(
   onLeaveMatch: () -> Unit,
   onPrimaryRightAction: () -> Unit,
 ) {
+  val hudShadow = remember { Shadow(color = Color(0xE6020611), offset = Offset(0f, 1f), blurRadius = 6f) }
   Row(
     modifier =
-      Modifier.fillMaxWidth()
+      modifier
         .height(heightDp)
         .chamferedSciFiPodSurface(
           isRightSide = true,
@@ -6118,25 +6274,23 @@ private fun StarboardTopCommandPod(
       Text(
         text = if (isInMatch) "TUTORIAL" else "TUTORIAL >",
         color = Color(0xFFFACC15),
-        fontSize = 10.8.sp,
+        fontSize = 11.2.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
       Spacer(modifier = Modifier.height(2.dp))
       Text(
         text = if (isInMatch) "FLIGHT GUIDE" else "HUB + FLIGHT",
         color = Color(0xFFCBD5E1),
-        fontSize = 8.8.sp,
+        fontSize = 9.0.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
     }
-
-    Box(modifier = Modifier.width(1.dp).fillMaxHeight(0.68f).background(Color(0x3D38BDF8)))
 
     Column(
       modifier =
@@ -6151,26 +6305,25 @@ private fun StarboardTopCommandPod(
       Text(
         text = if (!isInMatch) "HELM SYSTEMS" else "HELM",
         color = if (helmFocused) Color.White else Color(0xFF38BDF8),
-        fontSize = 10.8.sp,
+        fontSize = 11.2.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
       Spacer(modifier = Modifier.height(2.dp))
       Text(
         text = "CODEX & FORGE",
         color = Color(0xFF00F5D4),
-        fontSize = 8.8.sp,
+        fontSize = 9.0.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
     }
 
     if (isInMatch) {
-      Box(modifier = Modifier.width(1.dp).fillMaxHeight(0.68f).background(Color(0x55FB7185)))
       Column(
         modifier =
           Modifier.weight(0.92f)
@@ -6184,25 +6337,23 @@ private fun StarboardTopCommandPod(
         Text(
           text = "RIFT OUT",
           color = Color(0xFFFB7185),
-          fontSize = 10.2.sp,
+          fontSize = 10.6.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
           text = "EXIT RIFT",
           color = Color(0xFFCBD5E1),
-          fontSize = 8.4.sp,
+          fontSize = 8.6.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
-
-      Box(modifier = Modifier.width(1.dp).fillMaxHeight(0.68f).background(Color(0x4400F5D4)))
 
       Column(
         modifier =
@@ -6217,21 +6368,21 @@ private fun StarboardTopCommandPod(
         Text(
           text = "RETURN >",
           color = Color(0xFF00F5D4),
-          fontSize = 10.2.sp,
+          fontSize = 10.6.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
           text = "ACTIVE MATCH",
           color = Color(0xFFCBD5E1),
-          fontSize = 8.4.sp,
+          fontSize = 8.6.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
     }
@@ -6251,6 +6402,7 @@ private fun StarboardBottomUplinkPod(
   onClickSyn: () -> Unit,
   onClickWing: () -> Unit,
 ) {
+  val hudShadow = remember { Shadow(color = Color(0xE6020611), offset = Offset(0f, 1f), blurRadius = 6f) }
   Row(
     modifier =
       Modifier.fillMaxWidth()
@@ -6296,12 +6448,12 @@ private fun StarboardBottomUplinkPod(
             if (hasPodSyndicate) "[$cleanPodSynTag] • ${syndicateOnlineCount.coerceAtLeast(1)} ON"
             else "SYNDICATES",
           color = Color(0xFFFACC15),
-          fontSize = 10.4.sp,
+          fontSize = 10.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
       Spacer(modifier = Modifier.height(2.dp))
@@ -6310,16 +6462,14 @@ private fun StarboardBottomUplinkPod(
           if (hasPodSyndicate) syndicateDisplayName.ifBlank { "[$cleanPodSynTag]" }
           else "CHARTER / JOIN >",
         color = Color(0xFFCBD5E1),
-        fontSize = 8.6.sp,
+        fontSize = 8.8.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
     }
-
-    Box(modifier = Modifier.width(1.dp).fillMaxHeight(0.68f).background(Color(0x3D38BDF8)))
 
     Column(
       modifier =
@@ -6345,23 +6495,23 @@ private fun StarboardBottomUplinkPod(
         Text(
           text = "SQUADRON • ${maxOf(strikeWingOnlineCount, armadaCount)}/5",
           color = Color(0xFF00F5D4),
-          fontSize = 10.4.sp,
+          fontSize = 10.8.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
       Spacer(modifier = Modifier.height(2.dp))
       Text(
         text = activeArmadaName.ifBlank { "SQUAD UP >" },
         color = Color(0xFF38BDF8),
-        fontSize = 8.6.sp,
+        fontSize = 8.8.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
     }
   }
@@ -6379,58 +6529,16 @@ internal fun HubDigitizedReturnBar(
   onTrailingClick: (() -> Unit)? = null,
   onBackToHub: (() -> Unit)? = null,
 ) {
+  val hudShadow = remember { Shadow(color = Color(0xE6020611), offset = Offset(0f, 1f), blurRadius = 6f) }
   Row(
     modifier =
       Modifier.fillMaxWidth()
         .height(heightDp)
-        .drawBehind {
-          val w = size.width
-          val h = size.height
-          if (w <= 4f || h <= 4f) return@drawBehind
-          val outerPlate = Color(0xB8030812)
-          val midPlate = Color(0x88061224)
-          val innerFade = Color(0x42071528)
-          drawRect(
-            brush =
-              Brush.horizontalGradient(
-                colors =
-                  if (!isRightSide) listOf(outerPlate, midPlate, innerFade)
-                  else listOf(innerFade, midPlate, outerPlate),
-              ),
-          )
-          // 0.75.dp top holographic glint hairline
-          drawLine(
-            brush =
-              Brush.horizontalGradient(
-                colors =
-                  if (!isRightSide) {
-                    listOf(Color.White.copy(alpha = 0.24f), accent.copy(alpha = 0.38f), Color(0xFF00F5D4).copy(alpha = 0.28f))
-                  } else {
-                    listOf(Color(0xFF00F5D4).copy(alpha = 0.28f), accent.copy(alpha = 0.38f), Color.White.copy(alpha = 0.24f))
-                  },
-              ),
-            start = Offset(0f, 0.5.dp.toPx()),
-            end = Offset(w, 0.5.dp.toPx()),
-            strokeWidth = 0.75.dp.toPx(),
-          )
-          // 2.dp luminous Overwatch-facing inner vertical accent bar
-          val innerX = if (!isRightSide) w - 1.dp.toPx() else 1.dp.toPx()
-          drawLine(
-            brush =
-              Brush.verticalGradient(
-                listOf(
-                  accent.copy(alpha = 0.22f),
-                  accent.copy(alpha = 0.90f),
-                  Color(0xFF00F5D4).copy(alpha = 0.75f),
-                  accent.copy(alpha = 0.22f),
-                )
-              ),
-            start = Offset(innerX, 2.dp.toPx()),
-            end = Offset(innerX, (h - 2.dp.toPx()).coerceAtLeast(3.dp.toPx())),
-            strokeWidth = 2.dp.toPx(),
-            cap = StrokeCap.Round,
-          )
-        }
+        .chamferedSciFiPodSurface(
+          isRightSide = isRightSide,
+          primaryBorder = accent,
+          secondaryBorder = Color(0xFF00F5D4),
+        )
         .padding(horizontal = 4.dp, vertical = 2.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.SpaceBetween,
@@ -6447,9 +6555,9 @@ internal fun HubDigitizedReturnBar(
       }
     val titleFontSize =
       when {
-        cleanSectionTitle.length > 15 -> 9.0.sp
-        cleanSectionTitle.length > 11 -> 9.8.sp
-        else -> 10.4.sp
+        cleanSectionTitle.length > 15 -> 9.6.sp
+        cleanSectionTitle.length > 11 -> 10.4.sp
+        else -> 11.0.sp
       }
 
     if (onBackToHub != null) {
@@ -6457,23 +6565,28 @@ internal fun HubDigitizedReturnBar(
         modifier =
           Modifier.minimumInteractiveComponentSize()
             .fillMaxHeight()
+            .cockpitReticleSurface(
+              accent = Color(0xFF00F5D4),
+              isSelected = true,
+              drawCornerTicks = false,
+              featherAlpha = 0.25f,
+            )
             .clickable { onBackToHub() }
-            .padding(horizontal = 4.dp)
+            .padding(horizontal = 6.dp)
             .testTag("nexus_btn_back_to_hub"),
         contentAlignment = Alignment.Center,
       ) {
         Text(
           text = "< HUB",
           color = Color(0xFF00F5D4),
-          fontSize = 9.4.sp,
+          fontSize = 10.0.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
           softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
-      Box(modifier = Modifier.width(1.dp).height(18.dp).background(Color(0x4438BDF8)))
     }
 
     Text(
@@ -6484,30 +6597,35 @@ internal fun HubDigitizedReturnBar(
       fontFamily = FontFamily.Monospace,
       maxLines = 1,
       softWrap = false,
-      style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-      modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+      style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+      modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
     )
 
     if (trailingLabel != null && onTrailingClick != null) {
-      Box(modifier = Modifier.width(1.dp).height(18.dp).background(Color(0x4438BDF8)))
       Box(
         modifier =
           Modifier.minimumInteractiveComponentSize()
             .fillMaxHeight()
+            .cockpitReticleSurface(
+              accent = Color(0xFFFACC15),
+              isSelected = true,
+              drawCornerTicks = false,
+              featherAlpha = 0.25f,
+            )
             .clickable { onTrailingClick() }
-            .padding(horizontal = 4.dp)
+            .padding(horizontal = 6.dp)
             .let { mod -> if (trailingTag != null) mod.testTag(trailingTag) else mod },
         contentAlignment = Alignment.Center,
       ) {
         Text(
           text = trailingLabel,
           color = Color(0xFFFACC15),
-          fontSize = 9.0.sp,
+          fontSize = 9.6.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
           softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         )
       }
     }
@@ -6516,10 +6634,8 @@ internal fun HubDigitizedReturnBar(
 
 /**
  * Renders the open-space corner regions outside the curved Circular Overwatch aperture:
- * 1. Top-Left (between Port Wing & Overwatch): Up/Down sector chevrons + 2-line tappable sensor readout.
- * 2. Top-Right: Primary `RIFT IN >` launch trigger + active ship status badge.
- * (Outer bottom-left/bottom-right prompt buttons are intentionally suppressed whenever an Overwatch
- * prompt is active so inner prompt buttons are never duplicated outside the Overwatch circle.)
+ * 1. Top-Left (between Port Wing & Overwatch): Borderless 2-line sensor readout + Up/Down sector chevrons.
+ * 2. Top-Right: Blazing luminous cockpit reticle `RIFT IN >>` trigger + floating active ship telemetry.
  */
 @Composable
 private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
@@ -6553,8 +6669,9 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
   val showTopLeftSectorSwitcher =
     overwatchPrompt == OverwatchCircularPrompt.None &&
       sideBayMode != RiftHubSideBayMode.RIFT_FRAME_BAY
+  val hudShadow = remember { Shadow(color = Color(0xF0020611), offset = Offset(0f, 1f), blurRadius = 7f) }
 
-  // 1. TOP-LEFT OPEN SPACE: 2-Line Sensor Readout at top chord + Compact Prev/Next Chevrons below
+  // 1. TOP-LEFT OPEN SPACE: Edge-free radial-feathered 2-line sensor readout + Prev/Next Chevrons
   if (showTopLeftSectorSwitcher) {
     val totalInstances = overwatchInstances.size.coerceAtLeast(1)
     val currentIdx =
@@ -6569,7 +6686,8 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
     Column(
       modifier =
         Modifier.align(Alignment.TopStart)
-          .padding(start = openCornerAnchorDp, top = 3.dp)
+          .zIndex(3f)
+          .padding(start = openCornerAnchorDp, top = 6.dp)
           .widthIn(max = topLeftCornerMaxWidthDp),
       horizontalAlignment = Alignment.Start,
       verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -6577,17 +6695,14 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
       Column(
         modifier =
           Modifier.minimumInteractiveComponentSize()
-            .drawBehind {
-              drawRect(color = if (isInspectBayOpen) Color(0xD807192E) else Color(0xBD020611))
-              drawLine(
-                brush = Brush.verticalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
-                start = Offset(0f, 0f),
-                end = Offset(0f, size.height),
-                strokeWidth = if (isInspectBayOpen) 2.6.dp.toPx() else 2.0.dp.toPx(),
-              )
-            }
+            .cockpitReticleSurface(
+              accent = if (isInspectBayOpen) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+              isSelected = isInspectBayOpen,
+              drawCornerTicks = isInspectBayOpen,
+              featherAlpha = if (isInspectBayOpen) 0.72f else 0.58f,
+            )
             .clickable { onToggleOverwatchInspectBay() }
-            .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
             .testTag("nexus_overwatch_terminal_readout"),
         verticalArrangement = Arrangement.spacedBy(2.dp),
       ) {
@@ -6599,23 +6714,23 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
             text = modeHeaderLine,
             modifier = Modifier.weight(1f, fill = false),
             color = if (isInspectBayOpen) Color(0xFF00F5D4) else Color.White,
-            fontSize = 8.8.sp,
+            fontSize = 10.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
           )
           Text(
             text = if (isInspectBayOpen) "[<]" else "[>]",
             color = Color(0xFF38BDF8),
-            fontSize = 7.8.sp,
+            fontSize = 9.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
             softWrap = false,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
           )
         }
 
@@ -6624,51 +6739,52 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
           horizontalArrangement = Arrangement.spacedBy(3.dp),
         ) {
           Text(
-            text = "$countdownText ·",
+            text = "$countdownText •",
             color = Color(0xFF00F5D4),
-            fontSize = 7.8.sp,
+            fontSize = 9.4.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
             softWrap = false,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
           )
-          ResonanceCrestIcon(sizeDp = 9.5.dp)
+          ResonanceCrestIcon(sizeDp = 11.dp)
           Text(
-            text = "${formatOverwatchResonance(liveAvgResonance)} ·",
+            text = "${formatOverwatchResonance(liveAvgResonance)} •",
             color = Color(0xFFFFD700),
-            fontSize = 7.8.sp,
+            fontSize = 9.4.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
             softWrap = false,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
           )
           Text(
             text = if (humanCount == 1) "1 PILOT" else "$humanCount PILOTS",
             color = if (humanCount > 0) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-            fontSize = 7.8.sp,
+            fontSize = 9.4.sp,
             fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
             softWrap = false,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
           )
           if (overwatchZoom > 1.03f) {
             Box(
               modifier =
                 Modifier.clickable { onResetOverwatchCamera() }
-                  .padding(horizontal = 2.dp, vertical = 1.dp)
+                  .padding(horizontal = 3.dp, vertical = 1.dp)
                   .testTag("nexus_overwatch_zoom_reset"),
             ) {
               Text(
-                text = "[1x]",
+                text = "1x",
                 color = Color(0xFF00F5D4),
-                fontSize = 7.6.sp,
+                fontSize = 9.2.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
                 softWrap = false,
+                style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
               )
             }
           }
@@ -6726,22 +6842,23 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
     }
   }
 
-  // 2. TOP-RIGHT OPEN SPACE: Primary [ RIFT IN > ] Launch Trigger + Active Ship Badge
+  // 2. TOP-RIGHT OPEN SPACE: Blazing Luminous Cockpit Reticle RIFT IN >> + Borderless Floating Ship Telemetry
   val riftInGlow =
     remember(isFocused) {
       Shadow(
-        color = if (isFocused) Color.White else Color(0xFF00F5D4),
+        color = if (isFocused) Color(0xFFFFD700) else Color(0xFF00F5D4),
         offset = Offset.Zero,
-        blurRadius = 9f,
+        blurRadius = 12f,
       )
     }
   Column(
     modifier =
       Modifier.align(Alignment.TopEnd)
-        .padding(end = openCornerAnchorDp, top = 3.dp)
+        .zIndex(3f)
+        .padding(end = openCornerAnchorDp, top = 6.dp)
         .widthIn(max = openCornerMaxWidthDp),
     horizontalAlignment = Alignment.End,
-    verticalArrangement = Arrangement.spacedBy(3.dp),
+    verticalArrangement = Arrangement.spacedBy(2.dp),
   ) {
     Box(
       modifier =
@@ -6750,39 +6867,84 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
           .drawBehind {
             val w = size.width
             val h = size.height
-            val cut = 9.dp.toPx()
-            val p =
-              Path().apply {
-                moveTo(cut, 0f)
-                lineTo(w, 0f)
-                lineTo(w, h - cut)
-                lineTo(w - cut, h)
-                lineTo(0f, h)
-                lineTo(0f, cut)
-                close()
-              }
-            drawPath(
-              path = p,
-              brush = Brush.verticalGradient(listOf(Color(0xFF0D2D46), Color(0xFF091528), Color(0xFF030711))),
+            if (w <= 8f || h <= 8f) return@drawBehind
+            val centerPt = Offset(w * 0.5f, h * 0.5f)
+            val glowR = maxOf(w * 0.64f, h * 0.85f)
+            // Radial dark contrast + cyan/gold plasma core glow (zero closed box or chamfered dark slab)
+            drawCircle(
+              brush =
+                Brush.radialGradient(
+                  colorStops =
+                    arrayOf(
+                      0.00f to Color(0xA8020B1A),
+                      0.55f to Color(0x4C041428),
+                      1.00f to Color.Transparent,
+                    ),
+                  center = centerPt,
+                  radius = glowR,
+                ),
+              radius = glowR,
+              center = centerPt,
             )
-            drawPath(
-              path = p,
-              brush = Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700), Color(0xFF38BDF8))),
-              style = Stroke(width = if (isFocused) 1.7.dp.toPx() else 1.35.dp.toPx()),
+            drawCircle(
+              brush =
+                Brush.radialGradient(
+                  colorStops =
+                    arrayOf(
+                      0.00f to Color(0xFF00F5D4).copy(alpha = if (isFocused) 0.34f else 0.24f),
+                      0.50f to Color(0xFFFFD700).copy(alpha = if (isFocused) 0.16f else 0.10f),
+                      1.00f to Color.Transparent,
+                    ),
+                  center = centerPt,
+                  radius = glowR * 0.92f,
+                ),
+              radius = glowR * 0.92f,
+              center = centerPt,
+            )
+            // Open 4-corner targeting reticle ticks
+            val tick = 7.dp.toPx()
+            val sw = (if (isFocused) 1.7.dp else 1.4.dp).toPx()
+            val cyanTick = Color(0xFF00F5D4)
+            val goldTick = Color(0xFFFFD700)
+            drawLine(cyanTick, Offset(2f, tick), Offset(2f, 2f), sw, StrokeCap.Round)
+            drawLine(cyanTick, Offset(2f, 2f), Offset(tick, 2f), sw, StrokeCap.Round)
+            drawLine(goldTick, Offset(w - tick, 2f), Offset(w - 2f, 2f), sw, StrokeCap.Round)
+            drawLine(goldTick, Offset(w - 2f, 2f), Offset(w - 2f, tick), sw, StrokeCap.Round)
+            drawLine(goldTick, Offset(2f, h - tick), Offset(2f, h - 2f), sw, StrokeCap.Round)
+            drawLine(goldTick, Offset(2f, h - 2f), Offset(tick, h - 2f), sw, StrokeCap.Round)
+            drawLine(cyanTick, Offset(w - tick, h - 2f), Offset(w - 2f, h - 2f), sw, StrokeCap.Round)
+            drawLine(cyanTick, Offset(w - 2f, h - tick), Offset(w - 2f, h - 2f), sw, StrokeCap.Round)
+            // Tapered luminous bottom launch filament
+            drawLine(
+              brush =
+                Brush.horizontalGradient(
+                  colorStops =
+                    arrayOf(
+                      0.00f to Color.Transparent,
+                      0.18f to Color(0xFF00F5D4),
+                      0.50f to Color(0xFFFFD700),
+                      0.82f to Color(0xFF38BDF8),
+                      1.00f to Color.Transparent,
+                    ),
+                ),
+              start = Offset(w * 0.06f, h - 2.dp.toPx()),
+              end = Offset(w * 0.94f, h - 2.dp.toPx()),
+              strokeWidth = 1.6.dp.toPx(),
+              cap = StrokeCap.Round,
             )
           }
           .clickable { onQuickZoneIntoOverwatch(activeInstance) }
-          .padding(horizontal = 12.dp)
+          .padding(horizontal = 14.dp)
           .testTag("nexus_overwatch_rift_in"),
       contentAlignment = Alignment.Center,
     ) {
       Text(
-        text = "RIFT IN >",
+        text = "RIFT IN >>",
         color = Color.White,
-        fontSize = 11.4.sp,
+        fontSize = 12.2.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
-        letterSpacing = 0.8.sp,
+        letterSpacing = 0.9.sp,
         maxLines = 1,
         style = TextStyle(shadow = riftInGlow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
@@ -6790,19 +6952,23 @@ private fun BoxScope.OverwatchOpenSpaceCornerOverlays(
 
     Box(
       modifier =
-        Modifier.clip(RoundedCornerShape(5.dp))
-          .background(Color(0xCC060D1A))
-          .border(0.9.dp, if (activeShipState == "CHARGED") Color(0xFF00F5D4) else Color(0xFF38BDF8), RoundedCornerShape(5.dp))
-          .padding(horizontal = 7.dp, vertical = 3.dp),
+        Modifier.cockpitReticleSurface(
+          accent = if (activeShipState == "CHARGED") Color(0xFF00F5D4) else Color(0xFFFACC15),
+          isSelected = false,
+          drawCornerTicks = false,
+          featherAlpha = 0.44f,
+        )
+        .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
       Text(
         text = "$activeShipTitle • $activeShipState",
         color = if (activeShipState == "CHARGED") Color(0xFF00F5D4) else Color(0xFFFACC15),
-        fontSize = 8.4.sp,
+        fontSize = 9.0.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
+        style = TextStyle(shadow = hudShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
       )
     }
   }
@@ -9277,17 +9443,16 @@ private fun OverwatchSliderWorkbenchView(
     }
   val normFrac = ((liveVal - safeMin) / span).coerceIn(0f, 1f)
   var dialBoxSize by remember { mutableStateOf(IntSize.Zero) }
-  var linearWidthPx by remember { mutableFloatStateOf(1f) }
 
   Column(
     modifier = Modifier.fillMaxWidth(0.88f).testTag("overwatch_slider_workbench"),
     horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 5.dp else 3.dp),
+    verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 6.dp else 4.dp),
   ) {
     Text(
       text = prompt.title.uppercase(Locale.US),
       color = accent,
-      fontSize = if (isTabletDeck) 9.8.sp else 8.6.sp,
+      fontSize = if (isTabletDeck) 10.6.sp else 9.6.sp,
       fontWeight = FontWeight.Black,
       fontFamily = FontFamily.Monospace,
       maxLines = 1,
@@ -9296,15 +9461,15 @@ private fun OverwatchSliderWorkbenchView(
     Text(
       text = prompt.subtitle,
       color = Color(0xFFCBD5E1),
-      fontSize = if (isTabletDeck) 8.2.sp else 7.4.sp,
+      fontSize = if (isTabletDeck) 8.6.sp else 8.0.sp,
       maxLines = 1,
       overflow = TextOverflow.Ellipsis,
     )
 
-    // 270-Degree Circular Arc Dial
+    // Pure Radial 270-Degree Circular Cockpit Dial (no redundant straight horizontal bar)
     Box(
       modifier =
-        Modifier.size(if (isTabletDeck) 114.dp else 94.dp)
+        Modifier.size(if (isTabletDeck) 136.dp else 118.dp)
           .onGloballyPositioned { dialBoxSize = it.size }
           .pointerInput(prompt.key) {
             detectTapGestures { pos ->
@@ -9321,9 +9486,38 @@ private fun OverwatchSliderWorkbenchView(
       contentAlignment = Alignment.Center,
     ) {
       Canvas(modifier = Modifier.fillMaxSize()) {
-        val r = size.minDimension * 0.43f
+        val r = size.minDimension * 0.42f
         val topLeft = Offset(center.x - r, center.y - r)
         val arcSize = Size(r * 2f, r * 2f)
+        drawCircle(
+          brush =
+            Brush.radialGradient(
+              colorStops =
+                arrayOf(
+                  0.00f to accent.copy(alpha = 0.16f),
+                  0.65f to Color(0x36020814),
+                  1.00f to Color.Transparent,
+                ),
+              center = center,
+              radius = r * 1.18f,
+            ),
+          radius = r * 1.18f,
+          center = center,
+        )
+        // Radial cockpit tick marks around outer arc
+        for (i in 0..12) {
+          val frac = i / 12f
+          val rad = Math.toRadians(135.0 + 270.0 * frac).toFloat()
+          val innerR = r + 5.dp.toPx()
+          val outerR = r + (if (i % 3 == 0) 9.5.dp else 7.dp).toPx()
+          drawLine(
+            color = if (frac <= normFrac + 0.01f) accent.copy(alpha = 0.85f) else Color(0x55475569),
+            start = Offset(center.x + cos(rad) * innerR, center.y + sin(rad) * innerR),
+            end = Offset(center.x + cos(rad) * outerR, center.y + sin(rad) * outerR),
+            strokeWidth = (if (i % 3 == 0) 1.5.dp else 1.0.dp).toPx(),
+            cap = StrokeCap.Round,
+          )
+        }
         drawArc(
           color = Color(0x661E293B),
           startAngle = 135f,
@@ -9331,7 +9525,7 @@ private fun OverwatchSliderWorkbenchView(
           useCenter = false,
           topLeft = topLeft,
           size = arcSize,
-          style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round),
+          style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round),
         )
         drawArc(
           brush =
@@ -9346,17 +9540,17 @@ private fun OverwatchSliderWorkbenchView(
           useCenter = false,
           topLeft = topLeft,
           size = arcSize,
-          style = Stroke(width = 6.5.dp.toPx(), cap = StrokeCap.Round),
+          style = Stroke(width = 7.2.dp.toPx(), cap = StrokeCap.Round),
         )
         val knobRad = Math.toRadians((135.0 + 270.0 * normFrac)).toFloat()
         val knobCenter = Offset(center.x + cos(knobRad) * r, center.y + sin(knobRad) * r)
-        drawCircle(color = accent.copy(alpha = 0.36f), radius = 8.dp.toPx(), center = knobCenter)
-        drawCircle(color = Color.White, radius = 4.6.dp.toPx(), center = knobCenter)
+        drawCircle(color = accent.copy(alpha = 0.40f), radius = 9.dp.toPx(), center = knobCenter)
+        drawCircle(color = Color.White, radius = 5.dp.toPx(), center = knobCenter)
       }
       Text(
         text = formattedValue,
         color = Color.White,
-        fontSize = if (isTabletDeck) 14.sp else 12.sp,
+        fontSize = if (isTabletDeck) 16.sp else 14.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         textAlign = TextAlign.Center,
@@ -9364,70 +9558,36 @@ private fun OverwatchSliderWorkbenchView(
       )
     }
 
-    // Wide Horizontal Fine-Scrub Track
-    Box(
-      modifier =
-        Modifier.fillMaxWidth(0.84f)
-          .height(22.dp)
-          .onGloballyPositioned { linearWidthPx = it.size.width.toFloat().coerceAtLeast(1f) }
-          .pointerInput(prompt.key) {
-            detectTapGestures { pos ->
-              snapAndCommit(pos.x / linearWidthPx)
-            }
-          }
-          .pointerInput(prompt.key) {
-            detectHorizontalDragGestures { change, _ ->
-              change.consume()
-              snapAndCommit(change.position.x / linearWidthPx)
-            }
-          }
-          .drawBehind {
-            val hBar = 7.dp.toPx()
-            val yTop = (size.height - hBar) * 0.5f
-            drawRect(
-              color = Color(0xCC050D1C),
-              topLeft = Offset(0f, yTop),
-              size = Size(size.width, hBar),
-            )
-            val fillW = (size.width * normFrac).coerceAtLeast(2.dp.toPx())
-            drawRect(
-              brush = Brush.horizontalGradient(listOf(accent.copy(alpha = 0.55f), accent)),
-              topLeft = Offset(0f, yTop),
-              size = Size(fillW, hBar),
-            )
-            drawCircle(
-              color = Color.White,
-              radius = 5.dp.toPx(),
-              center = Offset(fillW.coerceIn(5.dp.toPx(), size.width - 5.dp.toPx()), size.height * 0.5f),
-            )
-          }
-          .testTag("overwatch_slider_horizontal_track"),
-    )
-
-    // Quick Preset Chips Row
+    // Borderless Glowing Reticle Preset Nodes
     if (prompt.presets.isNotEmpty()) {
       Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         prompt.presets.forEach { (presetLabel, presetVal) ->
           val isSelected = abs(liveVal - presetVal) <= (prompt.stepSize * 0.45f).coerceAtLeast(0.01f)
           Box(
             modifier =
-              Modifier.clip(RoundedCornerShape(8.dp))
-                .background(if (isSelected) accent.copy(alpha = 0.25f) else Color(0xCC060D1A))
-                .border(1.dp, if (isSelected) accent else Color(0x66475569), RoundedCornerShape(8.dp))
+              Modifier.minimumInteractiveComponentSize()
+                .height(48.dp)
+                .cockpitReticleSurface(
+                  accent = accent,
+                  isSelected = isSelected,
+                  drawCornerTicks = false,
+                  featherAlpha = if (isSelected) 0.44f else 0.16f,
+                )
                 .clickable {
                   liveVal = presetVal.coerceIn(safeMin, safeMax)
                   prompt.onValueChange(liveVal)
                 }
-                .padding(horizontal = 7.dp, vertical = 4.dp),
+                .padding(horizontal = 8.dp),
+            contentAlignment = Alignment.Center,
           ) {
             Text(
-              text = presetLabel,
-              color = if (isSelected) Color.White else Color(0xFFCBD5E1),
-              fontSize = 7.4.sp,
+              text = if (isSelected) "< $presetLabel >" else presetLabel,
+              color = if (isSelected) Color.White else Color(0xFF7C93B0),
+              fontSize = 8.6.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -9437,59 +9597,59 @@ private fun OverwatchSliderWorkbenchView(
       }
     }
 
-    // Reset Default + Done Actions
+    // Borderless Reticle Reset Default + Done Actions (>= 48.dp targets)
     Row(
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Box(
         modifier =
           Modifier.minimumInteractiveComponentSize()
+            .height(48.dp)
+            .cockpitReticleSurface(
+              accent = Color(0xFFFACC15),
+              isSelected = true,
+              drawCornerTicks = false,
+              featherAlpha = 0.36f,
+            )
             .clickable {
               liveVal = prompt.defaultValue.coerceIn(safeMin, safeMax)
               prompt.onValueChange(liveVal)
             }
+            .padding(horizontal = 10.dp)
             .testTag("overwatch_slider_reset_default"),
         contentAlignment = Alignment.Center,
       ) {
-        Box(
-          modifier =
-            Modifier.clip(RoundedCornerShape(12.dp))
-              .background(Color(0xCC060D1A))
-              .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(12.dp))
-              .padding(horizontal = 9.dp, vertical = 4.dp),
-        ) {
-          Text(
-            text = "RESET DEFAULT",
-            color = Color(0xFFFACC15),
-            fontSize = 7.4.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
+        Text(
+          text = "RESET DEFAULT",
+          color = Color(0xFFFACC15),
+          fontSize = 8.4.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
       }
       Box(
         modifier =
           Modifier.minimumInteractiveComponentSize()
+            .height(48.dp)
+            .cockpitReticleSurface(
+              accent = accent,
+              isSelected = true,
+              drawCornerTicks = true,
+              featherAlpha = 0.48f,
+            )
             .clickable { onDismissPrompt() }
+            .padding(horizontal = 14.dp)
             .testTag("overwatch_slider_done_button"),
         contentAlignment = Alignment.Center,
       ) {
-        Box(
-          modifier =
-            Modifier.clip(RoundedCornerShape(12.dp))
-              .background(Color(0xFF065F46))
-              .border(1.1.dp, accent, RoundedCornerShape(12.dp))
-              .padding(horizontal = 11.dp, vertical = 4.dp),
-        ) {
-          Text(
-            text = "DONE",
-            color = Color.White,
-            fontSize = 7.6.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
+        Text(
+          text = "< DONE >",
+          color = Color.White,
+          fontSize = 8.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
       }
     }
   }
@@ -9505,30 +9665,34 @@ internal fun CircularPromptStatBar(
   Row(
     modifier = modifier,
     verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(4.dp),
+    horizontalArrangement = Arrangement.spacedBy(5.dp),
   ) {
     Text(
       text = label,
       color = Color(0xFF94A3B8),
-      fontSize = 7.0.sp,
+      fontSize = 7.6.sp,
       fontWeight = FontWeight.Black,
       fontFamily = FontFamily.Monospace,
       maxLines = 1,
     )
-    Box(
-      modifier =
-        Modifier.weight(1f)
-          .height(4.5.dp)
-          .clip(RoundedCornerShape(3.dp))
-          .background(Color(0xFF02050B))
-          .border(0.6.dp, Color(0x5538BDF8), RoundedCornerShape(3.dp)),
-    ) {
-      Box(
-        modifier =
-          Modifier.fillMaxWidth(fraction.coerceIn(0.08f, 1f))
-            .fillMaxHeight()
-            .background(color),
+    Canvas(modifier = Modifier.weight(1f).height(6.dp)) {
+      val cy = size.height * 0.5f
+      val fillX = (size.width * fraction.coerceIn(0.06f, 1f)).coerceAtLeast(3.dp.toPx())
+      drawLine(
+        color = Color(0x4438BDF8),
+        start = Offset(0f, cy),
+        end = Offset(size.width, cy),
+        strokeWidth = 1.6.dp.toPx(),
+        cap = StrokeCap.Round,
       )
+      drawLine(
+        brush = Brush.horizontalGradient(listOf(color.copy(alpha = 0.55f), color, Color.White)),
+        start = Offset(0f, cy),
+        end = Offset(fillX, cy),
+        strokeWidth = 2.6.dp.toPx(),
+        cap = StrokeCap.Round,
+      )
+      drawCircle(color = Color.White, radius = 2.0.dp.toPx(), center = Offset(fillX, cy))
     }
   }
 }
@@ -9808,7 +9972,7 @@ private fun OverwatchResonanceLeaderboardView(
       )
     }
 
-    // Top Filter Tabs (>= 48.dp touch targets): GLOBAL TOP | BY SHIP | SYNDICATES
+    // Borderless Laser-Underlined Filter Tabs (>= 48.dp touch targets): GLOBAL TOP | BY SHIP | SYNDICATES
     Row(
       modifier = Modifier.fillMaxWidth(),
       horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -9827,39 +9991,31 @@ private fun OverwatchResonanceLeaderboardView(
             Modifier.weight(1f)
               .minimumInteractiveComponentSize()
               .height(48.dp)
+              .cockpitReticleSurface(
+                accent = Color(0xFF00F5D4),
+                isSelected = active,
+                drawCornerTicks = false,
+                featherAlpha = if (active) 0.42f else 0.14f,
+              )
               .clickable { selectedTab = tab }
-              .padding(vertical = 6.dp)
+              .padding(horizontal = 4.dp)
               .testTag(tag),
           contentAlignment = Alignment.Center,
         ) {
-          Box(
-            modifier =
-              Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (active) Color(0xFF0D3554) else Color(0xCC060D1A))
-                .border(
-                  1.dp,
-                  if (active) Color(0xFF00F5D4) else Color(0x5538BDF8),
-                  RoundedCornerShape(12.dp),
-                )
-                .padding(horizontal = 4.dp, vertical = 5.dp),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = label,
-              color = if (active) Color.White else Color(0xFF94A3B8),
-              fontSize = 8.0.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
+          Text(
+            text = label,
+            color = if (active) Color.White else Color(0xFF7C93B0),
+            fontSize = 8.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
         }
       }
     }
 
-    // Compact Hull Selector Row when BY SHIP is active (>= 48.dp touch targets)
+    // Borderless Hull Selector Row when BY SHIP is active (>= 48.dp touch targets)
     if (selectedTab == OverwatchLeaderboardTab.BY_SHIP) {
       Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -9873,37 +10029,31 @@ private fun OverwatchResonanceLeaderboardView(
             modifier =
               Modifier.minimumInteractiveComponentSize()
                 .height(48.dp)
+                .cockpitReticleSurface(
+                  accent = Color(0xFFFFD700),
+                  isSelected = selectedHull,
+                  drawCornerTicks = false,
+                  featherAlpha = if (selectedHull) 0.44f else 0.14f,
+                )
                 .clickable { selectedShipFilter = hullId }
-                .padding(vertical = 7.dp)
+                .padding(horizontal = 7.dp)
                 .testTag("overwatch_lb_ship_chip_$hullId"),
             contentAlignment = Alignment.Center,
           ) {
-            Box(
-              modifier =
-                Modifier.clip(RoundedCornerShape(10.dp))
-                  .background(if (selectedHull) Color(0xFF132E4A) else Color(0xB8040B16))
-                  .border(
-                    1.dp,
-                    if (selectedHull) Color(0xFFFFD700) else Color(0x4438BDF8),
-                    RoundedCornerShape(10.dp),
-                  )
-                  .padding(horizontal = 7.dp, vertical = 4.dp),
-            ) {
-              Text(
-                text = "$hullId $shortHull",
-                color = if (selectedHull) Color(0xFFFFD700) else Color(0xFFCBD5E1),
-                fontSize = 7.8.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-              )
-            }
+            Text(
+              text = if (selectedHull) "< $shortHull >" else shortHull,
+              color = if (selectedHull) Color(0xFFFFD700) else Color(0xFF7C93B0),
+              fontSize = 8.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
           }
         }
       }
     }
 
-    // Scrollable Holographic Standings List (#1..#25)
+    // Scrollable Borderless Tapered Light-Sweep Standings List (#1..#25)
     Column(
       modifier =
         Modifier.fillMaxWidth()
@@ -9934,26 +10084,50 @@ private fun OverwatchResonanceLeaderboardView(
                   row.isLocalPilot -> Color(0xFF00F5D4)
                   else -> Color(0xFFE2E8F0)
                 }
+              val sweepTint =
+                when {
+                  rankNum == 1 -> Color(0x34FACC15)
+                  row.isLocalPilot -> Color(0x2C00F5D4)
+                  else -> Color(0x5A040C1C)
+                }
               val synPrefix = if (row.syndicateTag.isNotBlank()) "[${row.syndicateTag}] " else ""
               Row(
                 modifier =
                   Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(
-                      when {
-                        rankNum == 1 -> Color(0x38FACC15)
-                        row.isLocalPilot -> Color(0x2E00F5D4)
-                        else -> Color(0x99040A16)
+                    .drawBehind {
+                      drawRect(
+                        brush =
+                          Brush.horizontalGradient(
+                            colorStops =
+                              arrayOf(
+                                0.00f to Color.Transparent,
+                                0.14f to sweepTint,
+                                0.86f to sweepTint,
+                                1.00f to Color.Transparent,
+                              ),
+                          ),
+                      )
+                      if (rankNum == 1 || row.isLocalPilot) {
+                        val yB = size.height - 1.dp.toPx()
+                        drawLine(
+                          brush =
+                            Brush.horizontalGradient(
+                              listOf(Color.Transparent, rowAccent.copy(alpha = 0.72f), Color.Transparent),
+                            ),
+                          start = Offset(0f, yB),
+                          end = Offset(size.width, yB),
+                          strokeWidth = 1.0.dp.toPx(),
+                        )
                       }
-                    )
-                    .padding(horizontal = 7.dp, vertical = 4.dp),
+                    }
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
               ) {
                 Text(
                   text = "#$rankNum",
                   color = if (rankNum == 1) Color(0xFFFACC15) else Color(0xFF38BDF8),
-                  fontSize = 8.4.sp,
+                  fontSize = 8.6.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                   modifier = Modifier.width(26.dp),
@@ -9962,7 +10136,7 @@ private fun OverwatchResonanceLeaderboardView(
                   Text(
                     text = "$synPrefix${row.callsign}",
                     color = rowAccent,
-                    fontSize = 8.8.sp,
+                    fontSize = 9.0.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -9971,7 +10145,7 @@ private fun OverwatchResonanceLeaderboardView(
                   Text(
                     text = canonicalLeaderboardShipLabel(row.shipId),
                     color = Color(0xFF94A3B8),
-                    fontSize = 7.4.sp,
+                    fontSize = 7.6.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -9986,7 +10160,7 @@ private fun OverwatchResonanceLeaderboardView(
                   Text(
                     text = formatOverwatchResonance(row.resonance),
                     color = if (rankNum == 1) Color(0xFFFACC15) else Color(0xFF00F5D4),
-                    fontSize = 8.8.sp,
+                    fontSize = 9.0.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -10016,25 +10190,49 @@ private fun OverwatchResonanceLeaderboardView(
                   syn.isLocalSyndicate -> Color(0xFF00F5D4)
                   else -> Color.White
                 }
+              val sweepTint =
+                when {
+                  rankNum == 1 -> Color(0x34FACC15)
+                  syn.isLocalSyndicate -> Color(0x2C00F5D4)
+                  else -> Color(0x5A040C1C)
+                }
               Row(
                 modifier =
                   Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(
-                      when {
-                        rankNum == 1 -> Color(0x38FACC15)
-                        syn.isLocalSyndicate -> Color(0x2E00F5D4)
-                        else -> Color(0x99040A16)
+                    .drawBehind {
+                      drawRect(
+                        brush =
+                          Brush.horizontalGradient(
+                            colorStops =
+                              arrayOf(
+                                0.00f to Color.Transparent,
+                                0.14f to sweepTint,
+                                0.86f to sweepTint,
+                                1.00f to Color.Transparent,
+                              ),
+                          ),
+                      )
+                      if (rankNum == 1 || syn.isLocalSyndicate) {
+                        val yB = size.height - 1.dp.toPx()
+                        drawLine(
+                          brush =
+                            Brush.horizontalGradient(
+                              listOf(Color.Transparent, synAccent.copy(alpha = 0.72f), Color.Transparent),
+                            ),
+                          start = Offset(0f, yB),
+                          end = Offset(size.width, yB),
+                          strokeWidth = 1.0.dp.toPx(),
+                        )
                       }
-                    )
-                    .padding(horizontal = 7.dp, vertical = 4.dp),
+                    }
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
               ) {
                 Text(
                   text = "#$rankNum",
                   color = if (rankNum == 1) Color(0xFFFACC15) else Color(0xFF38BDF8),
-                  fontSize = 8.4.sp,
+                  fontSize = 8.6.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                   modifier = Modifier.width(26.dp),
@@ -10043,7 +10241,7 @@ private fun OverwatchResonanceLeaderboardView(
                   Text(
                     text = "[${syn.tag}] ${syn.name}",
                     color = synAccent,
-                    fontSize = 8.6.sp,
+                    fontSize = 8.8.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -10052,7 +10250,7 @@ private fun OverwatchResonanceLeaderboardView(
                   Text(
                     text = if (syn.memberCount == 1) "1 PILOT" else "${syn.memberCount} PILOTS",
                     color = Color(0xFF94A3B8),
-                    fontSize = 7.4.sp,
+                    fontSize = 7.6.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -10066,7 +10264,7 @@ private fun OverwatchResonanceLeaderboardView(
                   Text(
                     text = String.format(Locale.US, "%,d", syn.combinedResonance),
                     color = if (rankNum == 1) Color(0xFFFACC15) else Color(0xFF00F5D4),
-                    fontSize = 8.8.sp,
+                    fontSize = 9.0.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -10083,26 +10281,24 @@ private fun OverwatchResonanceLeaderboardView(
       modifier =
         Modifier.minimumInteractiveComponentSize()
           .height(48.dp)
+          .cockpitReticleSurface(
+            accent = Color(0xFF38BDF8),
+            isSelected = true,
+            drawCornerTicks = false,
+            featherAlpha = 0.36f,
+          )
           .clickable { onDismissPrompt() }
-          .padding(vertical = 6.dp)
+          .padding(horizontal = 16.dp)
           .testTag("overwatch_leaderboard_close_button"),
       contentAlignment = Alignment.Center,
     ) {
-      Box(
-        modifier =
-          Modifier.clip(CircleShape)
-            .background(Color(0xCC060D1A))
-            .border(1.dp, Color(0xFF64748B), CircleShape)
-            .padding(horizontal = 12.dp, vertical = 5.dp),
-      ) {
-        Text(
-          text = "CLOSE",
-          color = Color(0xFFCBD5E1),
-          fontSize = 8.4.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-        )
-      }
+      Text(
+        text = "< CLOSE >",
+        color = Color(0xFFE2E8F0),
+        fontSize = 8.8.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+      )
     }
   }
 }
@@ -10259,38 +10455,33 @@ private fun ConduitLeftDirectivesBay(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
           ) {
+            val canClaim = dir.isComplete && !dir.claimed
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
-                  .clickable(enabled = dir.isComplete && !dir.claimed) { onClaimDirective(dir.slotIndex) }
-                  .padding(vertical = 6.dp)
+                  .cockpitReticleSurface(
+                    accent = if (canClaim) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+                    isSelected = canClaim,
+                    drawCornerTicks = canClaim,
+                    featherAlpha = if (canClaim) 0.48f else 0.16f,
+                  )
+                  .clickable(enabled = canClaim) { onClaimDirective(dir.slotIndex) }
+                  .padding(horizontal = 10.dp)
                   .testTag("conduit_claim_slot_${dir.slotIndex}"),
               contentAlignment = Alignment.CenterStart,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(6.dp))
-                    .background(if (dir.isComplete && !dir.claimed) Color(0xFF0D3554) else Color(0xFF091528))
-                    .border(
-                      1.dp,
-                      if (dir.isComplete && !dir.claimed) Color(0xFF00F5D4) else Color(0xFF475569),
-                      RoundedCornerShape(6.dp),
-                    )
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-              ) {
-                Text(
-                  text = when {
-                    dir.claimed -> "CLAIMED"
-                    dir.isComplete -> "CLAIM >"
-                    else -> "IN PROGRESS"
-                  },
-                  color = if (dir.isComplete && !dir.claimed) Color.White else Color(0xFF94A3B8),
-                  fontSize = 7.6.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = when {
+                  dir.claimed -> "CLAIMED"
+                  dir.isComplete -> "CLAIM >"
+                  else -> "IN PROGRESS"
+                },
+                color = if (canClaim) Color.White else Color(0xFF7C93B0),
+                fontSize = 8.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
             if (!dir.claimed && !dir.isComplete) {
               Box(
@@ -10298,14 +10489,14 @@ private fun ConduitLeftDirectivesBay(
                   Modifier.minimumInteractiveComponentSize()
                     .height(48.dp)
                     .clickable { onRerollDirective(dir.slotIndex) }
-                    .padding(vertical = 6.dp)
+                    .padding(horizontal = 6.dp)
                     .testTag("conduit_reroll_slot_${dir.slotIndex}"),
                 contentAlignment = Alignment.CenterEnd,
               ) {
                 Text(
                   text = "REROLL",
                   color = Color(0xFFFACC15),
-                  fontSize = 7.6.sp,
+                  fontSize = 8.2.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -10321,28 +10512,23 @@ private fun ConduitLeftDirectivesBay(
             Modifier.fillMaxWidth()
               .minimumInteractiveComponentSize()
               .height(48.dp)
+              .cockpitReticleSurface(
+                accent = Color(0xFFFFD700),
+                isSelected = true,
+                drawCornerTicks = true,
+                featherAlpha = 0.52f,
+              )
               .clickable { onClaimSweep() }
-              .padding(vertical = 4.dp)
               .testTag("conduit_claim_sweep_bonus"),
           contentAlignment = Alignment.Center,
         ) {
-          Box(
-            modifier =
-              Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF0D3554))
-                .border(1.2.dp, Color(0xFFFFD700), RoundedCornerShape(8.dp))
-                .padding(vertical = 6.dp),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = "CLAIM DAILY SWEEP BONUS >",
-              color = Color(0xFFFFD700),
-              fontSize = 8.2.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
+          Text(
+            text = "CLAIM DAILY SWEEP BONUS >>",
+            color = Color(0xFFFFD700),
+            fontSize = 9.0.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
         }
       }
     }
@@ -10477,32 +10663,24 @@ private fun OverwatchInspectLeftInfoBay(
           Modifier.fillMaxWidth()
             .minimumInteractiveComponentSize()
             .height(48.dp)
+            .cockpitReticleSurface(
+              accent = Color(0xFF00F5D4),
+              isSelected = true,
+              drawCornerTicks = true,
+              featherAlpha = 0.56f,
+            )
             .clickable { onRiftIn() }
-            .padding(vertical = 3.dp)
             .testTag("overwatch_inspect_rift_in"),
         contentAlignment = Alignment.Center,
       ) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth()
-              .clip(RoundedCornerShape(8.dp))
-              .background(Brush.horizontalGradient(listOf(Color(0xFF0D3349), Color(0xFF091A2E))))
-              .border(
-                1.2.dp,
-                Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
-                RoundedCornerShape(8.dp),
-              )
-              .padding(vertical = 8.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = "RIFT IN >",
-            color = Color.White,
-            fontSize = if (isTabletDeck) 10.2.sp else 9.2.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
+        Text(
+          text = "RIFT IN >>",
+          color = Color.White,
+          fontSize = if (isTabletDeck) 10.8.sp else 9.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          letterSpacing = 0.7.sp,
+        )
       }
     }
   }
@@ -10645,53 +10823,91 @@ internal fun HelmStepperControlRow(
   onPlus: () -> Unit,
   onTapRow: (() -> Unit)? = null,
 ) {
-  Row(
+  Column(
     modifier =
       Modifier.fillMaxWidth()
-        .height(48.dp)
+        .heightIn(min = 48.dp)
         .chamferedSciFiPodSurface(
           isRightSide = false,
-          primaryBorder = Color(0xFF38BDF8),
-          secondaryBorder = Color(0xFF091528),
+          primaryBorder = Color(0xFF00F5D4),
+          secondaryBorder = Color(0xFF38BDF8),
         )
         .let { mod -> if (onTapRow != null) mod.clickable { onTapRow() } else mod }
-        .padding(horizontal = 6.dp),
-    horizontalArrangement = Arrangement.SpaceBetween,
-    verticalAlignment = Alignment.CenterVertically,
+        .padding(horizontal = 6.dp, vertical = 2.dp),
+    verticalArrangement = Arrangement.Center,
   ) {
-    Text(
-      text = label,
-      color = Color(0xFFE2E8F0),
-      fontSize = 8.6.sp,
-      fontWeight = FontWeight.Black,
-      fontFamily = FontFamily.Monospace,
-    )
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-      Box(
-        modifier =
-          Modifier.minimumInteractiveComponentSize()
-            .size(48.dp)
-            .clickable { onMinus() },
-        contentAlignment = Alignment.Center,
+    Row(
+      modifier = Modifier.fillMaxWidth().height(48.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Column(
+        modifier = Modifier.weight(1f).padding(end = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
       ) {
-        Text("[-]", color = Color(0xFF00F5D4), fontSize = 9.6.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+        Text(
+          text = label,
+          color = Color(0xFFF1F5F9),
+          fontSize = 10.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Canvas(modifier = Modifier.fillMaxWidth(0.72f).height(2.5.dp)) {
+          val cy = size.height * 0.5f
+          drawLine(
+            brush =
+              Brush.horizontalGradient(
+                listOf(Color(0xFF00F5D4), Color(0xFF38BDF8).copy(alpha = 0.72f), Color.Transparent),
+              ),
+            start = Offset(0f, cy),
+            end = Offset(size.width, cy),
+            strokeWidth = 1.6.dp.toPx(),
+            cap = StrokeCap.Round,
+          )
+        }
       }
-      Text(
-        text = valueText,
-        color = Color(0xFFFFD700),
-        fontSize = 9.0.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-        modifier = Modifier.let { mod -> if (onTapRow != null) mod.clickable { onTapRow() } else mod },
-      )
-      Box(
-        modifier =
-          Modifier.minimumInteractiveComponentSize()
-            .size(48.dp)
-            .clickable { onPlus() },
-        contentAlignment = Alignment.Center,
-      ) {
-        Text("[+]", color = Color(0xFF00F5D4), fontSize = 9.6.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+        Box(
+          modifier =
+            Modifier.minimumInteractiveComponentSize()
+              .size(width = 48.dp, height = 48.dp)
+              .clickable { onMinus() },
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = "<",
+            color = Color(0xFF38BDF8),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
+        Text(
+          text = valueText,
+          color = Color(0xFFFFD700),
+          fontSize = 12.0.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+          maxLines = 1,
+          modifier = Modifier.let { mod -> if (onTapRow != null) mod.clickable { onTapRow() } else mod },
+        )
+        Box(
+          modifier =
+            Modifier.minimumInteractiveComponentSize()
+              .size(width = 48.dp, height = 48.dp)
+              .clickable { onPlus() },
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = ">",
+            color = Color(0xFF38BDF8),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+        }
       }
     }
   }

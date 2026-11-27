@@ -1,10 +1,11 @@
 package com.example.ui
 
 import android.app.Activity
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
@@ -23,8 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -40,7 +39,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -52,6 +50,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -99,14 +98,12 @@ internal fun isPaidHullSkinOwnedInPrefs(
 ): Boolean = itemId <= 0 || localPrefs.isCosmeticUnlocked("SHIP_SKIN_PURCHASE", itemId, 1, uidOrNull)
 
 /**
- * Borderless Holographic Projection Shelf used across Rift Hub, Hangar, Rift Frame Cosmetics,
- * Conduit Rank Track, and Shard Store packs:
- * - Zero closed rectangular box borders
- * - Soft dark-glass gradient veil (#B8030812 at outer edge fading to #42071528 toward Overwatch)
- * - Crisp 2.dp luminous accent bar along the Overwatch-facing inner vertical edge
- * - Subtle top horizontal holo-glint hairline (0.75.dp, accent.copy(alpha = 0.38f))
- * - Soft cyan/gold radial glow behind the top visual when highlighted/charged
- * - Unified logical typography scaled cleanly via the 960x540 virtual reference viewport
+ * 3D Cockpit Pure-Light Holographic Projection used across Rift Hub, Hangar, Rift Frame,
+ * Conduit Rank Track, Ranked Modes, and Shard Store:
+ * - Zero dark rectangular slabs, zero vertical equator walls, zero closed borders, zero boxed corner badges
+ * - Edge-free elliptical radial contrast feather behind floating art and typography
+ * - Open 4-corner targeting reticle ticks + tapered center-outward laser underline when highlighted
+ * - Dynamic spotlight scaling (hero Hub enlarged 66..74dp; spotlight 62dp; compact peer 38dp row)
  */
 @Composable
 internal fun RiftVerticalCard(
@@ -126,218 +123,362 @@ internal fun RiftVerticalCard(
   @Suppress("UNUSED_PARAMETER") isTabletDeck: Boolean = false,
   minHeightDp: Dp = 96.dp,
   titleMaxLines: Int = 1,
+  isCompactPeer: Boolean = false,
+  heroHubMode: Boolean = false,
   testTag: String = "",
   visualContent: @Composable (Dp) -> Unit,
   onClick: () -> Unit,
 ) {
   val titleGlow =
-    remember(accent, isHighlighted) {
+    remember(accent, isHighlighted, heroHubMode) {
       Shadow(
-        color = if (isHighlighted) Color.White.copy(alpha = 0.52f) else accent.copy(alpha = 0.32f),
-        offset = Offset.Zero,
-        blurRadius = 5f,
+        color = if (isHighlighted || heroHubMode) accent.copy(alpha = 0.65f) else Color(0xE6020611),
+        offset = Offset(0f, 1f),
+        blurRadius = if (isHighlighted || heroHubMode) 8f else 5f,
       )
     }
+  val bodyShadow =
+    remember {
+      Shadow(color = Color(0xE6020611), offset = Offset(0f, 1f), blurRadius = 5f)
+    }
+  val targetScale =
+    when {
+      heroHubMode && isHighlighted -> 1.04f
+      heroHubMode -> 1.0f
+      isHighlighted -> 1.05f
+      isCompactPeer -> 0.95f
+      else -> 1.0f
+    }
+  val spotlightScale by
+    animateFloatAsState(
+      targetValue = targetScale,
+      animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+      label = "spotlight_card_scale",
+    )
 
   BoxWithConstraints(
     modifier =
       modifier
         .minimumInteractiveComponentSize()
         .heightIn(min = minHeightDp.coerceAtLeast(48.dp))
+        .graphicsLayer {
+          scaleX = spotlightScale
+          scaleY = spotlightScale
+          clip = false
+        }
         .drawBehind {
           val w = size.width
           val h = size.height
           if (w <= 8f || h <= 8f) return@drawBehind
 
-          // 1. Soft dark-glass gradient veil (#B8030812 at outer edge fading to #42071528 toward Overwatch)
-          val outerVeil = if (isHighlighted) Color(0xC4050E1E) else Color(0xB8030812)
-          val innerVeil = if (isHighlighted) Color(0x660B223E) else Color(0x42071528)
-          drawRect(
+          val cx = w * 0.5f
+          val cy = h * 0.5f
+          val featherR = maxOf(w * 0.60f, h * 0.74f)
+
+          // 1. Edge-free radial contrast feather (zero dark rectangular slab or vertical rail)
+          drawCircle(
             brush =
-              Brush.horizontalGradient(
-                colors =
-                  if (isRightColumn) {
-                    listOf(innerVeil, outerVeil)
-                  } else {
-                    listOf(outerVeil, innerVeil)
-                  },
-                startX = 0f,
-                endX = w,
+              Brush.radialGradient(
+                colorStops =
+                  arrayOf(
+                    0.00f to Color(if (isHighlighted || heroHubMode) 0x94020611 else 0x6E020611),
+                    0.56f to Color(if (isHighlighted || heroHubMode) 0x3C040C1D else 0x26040C1D),
+                    1.00f to Color.Transparent,
+                  ),
+                center = Offset(cx, cy),
+                radius = featherR,
               ),
-            size = size,
+            radius = featherR,
+            center = Offset(cx, cy),
           )
 
-          // 2. Soft cyan/gold radial glow behind top visual when highlighted/charged
-          if (isHighlighted) {
-            val glowCenter = Offset(w * 0.5f, h * 0.35f)
-            val glowRadius = (min(w, h) * 0.48f).coerceAtLeast(16f)
+          // 2. Luminous radial aura behind hero / spotlight visuals
+          if (isHighlighted || heroHubMode) {
+            val auraCenter = if (isCompactPeer) Offset(w * 0.22f, cy) else Offset(cx, h * 0.36f)
+            val auraRadius = (min(w, h) * if (heroHubMode) 0.62f else 0.54f).coerceAtLeast(22f)
             drawCircle(
               brush =
                 Brush.radialGradient(
                   colors =
                     listOf(
-                      accent.copy(alpha = 0.30f),
-                      secondaryAccent.copy(alpha = 0.12f),
+                      accent.copy(alpha = if (isHighlighted) 0.28f else 0.14f),
+                      secondaryAccent.copy(alpha = if (isHighlighted) 0.11f else 0.05f),
                       Color.Transparent,
                     ),
-                  center = glowCenter,
-                  radius = glowRadius,
+                  center = auraCenter,
+                  radius = auraRadius,
                 ),
-              radius = glowRadius,
-              center = glowCenter,
+              radius = auraRadius,
+              center = auraCenter,
             )
           }
 
-          // 3. Subtle top horizontal holo-glint hairline (0.75.dp, accent.copy(alpha = 0.38f))
-          val glintY = 0.5.dp.toPx()
-          drawLine(
-            brush =
-              Brush.horizontalGradient(
-                colors =
-                  if (isRightColumn) {
-                    listOf(
-                      accent.copy(alpha = 0.38f),
-                      secondaryAccent.copy(alpha = 0.22f),
-                      Color.Transparent,
-                    )
-                  } else {
-                    listOf(
-                      Color.Transparent,
-                      secondaryAccent.copy(alpha = 0.22f),
-                      accent.copy(alpha = 0.38f),
-                    )
-                  },
-                startX = 0f,
-                endX = w,
-              ),
-            start = Offset(0f, glintY),
-            end = Offset(w, glintY),
-            strokeWidth = 0.75.dp.toPx(),
-          )
+          // 3. Open 4-corner targeting reticle ticks + tapered laser underline when highlighted
+          if (isHighlighted) {
+            val tick = minOf(6.dp.toPx(), w * 0.12f, h * 0.24f)
+            val sw = 1.2.dp.toPx()
+            val c = accent.copy(alpha = 0.92f)
+            drawLine(c, Offset(2f, tick), Offset(2f, 2f), sw, StrokeCap.Round)
+            drawLine(c, Offset(2f, 2f), Offset(tick, 2f), sw, StrokeCap.Round)
+            drawLine(c, Offset(w - tick, 2f), Offset(w - 2f, 2f), sw, StrokeCap.Round)
+            drawLine(c, Offset(w - 2f, 2f), Offset(w - 2f, tick), sw, StrokeCap.Round)
+            drawLine(c, Offset(2f, h - tick), Offset(2f, h - 2f), sw, StrokeCap.Round)
+            drawLine(c, Offset(2f, h - 2f), Offset(tick, h - 2f), sw, StrokeCap.Round)
+            drawLine(c, Offset(w - tick, h - 2f), Offset(w - 2f, h - 2f), sw, StrokeCap.Round)
+            drawLine(c, Offset(w - 2f, h - tick), Offset(w - 2f, h - 2f), sw, StrokeCap.Round)
 
-          // 4. Crisp 2.dp luminous accent bar along the Overwatch-facing inner vertical edge
-          val barW = 2.dp.toPx()
-          val barLeft = if (isRightColumn) 0f else (w - barW).coerceAtLeast(0f)
-          drawRect(
-            brush =
-              Brush.verticalGradient(
-                colors =
-                  listOf(
-                    accent.copy(alpha = if (isHighlighted) 0.72f else 0.42f),
-                    if (isHighlighted) Color.White else accent,
-                    secondaryAccent.copy(alpha = if (isHighlighted) 0.85f else 0.52f),
-                  ),
-                startY = 0f,
-                endY = h,
-              ),
-            topLeft = Offset(barLeft, 0f),
-            size = Size(barW, h),
-          )
+            val yLine = (h - 1.2.dp.toPx()).coerceAtLeast(1f)
+            drawLine(
+              brush =
+                Brush.horizontalGradient(
+                  colorStops =
+                    arrayOf(
+                      0.00f to Color.Transparent,
+                      0.18f to accent.copy(alpha = 0.85f),
+                      0.50f to Color.White.copy(alpha = 0.90f),
+                      0.82f to secondaryAccent.copy(alpha = 0.80f),
+                      1.00f to Color.Transparent,
+                    ),
+                ),
+              start = Offset(w * 0.06f, yLine),
+              end = Offset(w * 0.94f, yLine),
+              strokeWidth = 1.5.dp.toPx(),
+              cap = StrokeCap.Round,
+            )
+          } else {
+            val yLine = (h - 0.8.dp.toPx()).coerceAtLeast(1f)
+            drawLine(
+              brush =
+                Brush.horizontalGradient(
+                  colorStops =
+                    if (isRightColumn) {
+                      arrayOf(
+                        0.00f to Color.Transparent,
+                        0.30f to accent.copy(alpha = if (isCompactPeer) 0.22f else 0.34f),
+                        0.82f to secondaryAccent.copy(alpha = if (isCompactPeer) 0.14f else 0.24f),
+                        1.00f to Color.Transparent,
+                      )
+                    } else {
+                      arrayOf(
+                        0.00f to Color.Transparent,
+                        0.18f to secondaryAccent.copy(alpha = if (isCompactPeer) 0.14f else 0.24f),
+                        0.70f to accent.copy(alpha = if (isCompactPeer) 0.22f else 0.34f),
+                        1.00f to Color.Transparent,
+                      )
+                    },
+                ),
+              start = Offset(w * 0.08f, yLine),
+              end = Offset(w * 0.92f, yLine),
+              strokeWidth = 0.85.dp.toPx(),
+              cap = StrokeCap.Round,
+            )
+          }
         }
         .clickable { onClick() }
-        .padding(horizontal = 8.dp, vertical = 6.dp)
+        .padding(
+          horizontal = if (isCompactPeer) 6.dp else 8.dp,
+          vertical = if (isCompactPeer) 2.dp else 5.dp,
+        )
         .let { base -> if (testTag.isNotBlank()) base.testTag(testTag) else base },
   ) {
-    val compactHeight = maxHeight < 108.dp
-    val visualDp =
-      when {
-        maxHeight >= 152.dp -> 48.dp
-        maxHeight >= 114.dp -> 40.dp
-        else -> 34.dp
-      }
-
-    if (!badgeText.isNullOrBlank()) {
+    if (isCompactPeer) {
+      val compactVisualDp = 38.dp
       Row(
-        modifier =
-          Modifier.align(Alignment.TopEnd)
-            .clip(RoundedCornerShape(4.dp))
-            .background(badgeColor.copy(alpha = 0.18f))
-            .padding(horizontal = 5.dp, vertical = 1.5.dp),
+        modifier = Modifier.fillMaxWidth().align(Alignment.Center),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        if (showBadgeResonanceIcon) {
-          ResonanceCrestIcon(sizeDp = 9.5.dp)
+        if (!isRightColumn) {
+          visualContent(compactVisualDp)
         }
-        Text(
-          text = badgeText,
-          color = badgeColor,
-          fontSize = 9.5.sp,
-          fontWeight = FontWeight.Black,
-          fontFamily = FontFamily.Monospace,
-          maxLines = 1,
-          softWrap = false,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-        )
-      }
-    }
-
-    Column(
-      modifier = Modifier.fillMaxWidth().align(Alignment.Center),
-      horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.spacedBy(if (compactHeight) 2.5.dp else 4.dp),
-    ) {
-      visualContent(visualDp)
-
-      Text(
-        text = title,
-        color = Color(0xFFF8FAFC),
-        fontSize = if (titleMaxLines > 1 && title.length > 14) 10.2.sp else 12.0.sp,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-        textAlign = TextAlign.Center,
-        lineHeight = if (titleMaxLines > 1) 11.8.sp else 13.5.sp,
-        maxLines = titleMaxLines,
-        softWrap = titleMaxLines > 1,
-        overflow = TextOverflow.Ellipsis,
-        style =
-          TextStyle(
-            shadow = titleGlow,
-            platformStyle = PlatformTextStyle(includeFontPadding = false),
-          ),
-      )
-
-      Text(
-        text = subtitle,
-        color = Color(0xFFCBD5E1),
-        fontSize = 9.5.sp,
-        fontWeight = FontWeight.SemiBold,
-        fontFamily = FontFamily.SansSerif,
-        textAlign = TextAlign.Center,
-        lineHeight = 11.5.sp,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-      )
-
-      if (shardCost != null && shardCost > 0L) {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(4.dp),
+        Column(
+          modifier = Modifier.weight(1f),
+          horizontalAlignment = if (isRightColumn) Alignment.End else Alignment.Start,
+          verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-          RiftShardGemIcon(sizeDp = 12.dp)
           Text(
-            text = formatOverwatchResonance(shardCost.toInt()),
-            color = Color(0xFF38BDF8),
-            fontSize = 10.0.sp,
+            text = title,
+            color = Color(0xFFE2E8F0),
+            fontSize = 10.6.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
+            textAlign = if (isRightColumn) TextAlign.End else TextAlign.Start,
             maxLines = 1,
-            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(shadow = bodyShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
           )
+          if (!badgeText.isNullOrBlank()) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+              if (showBadgeResonanceIcon) {
+                ResonanceCrestIcon(sizeDp = 9.5.dp)
+              }
+              Text(
+                text = badgeText,
+                color = badgeColor,
+                fontSize = 8.6.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = TextStyle(shadow = bodyShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+              )
+            }
+          } else if (shardCost != null && shardCost > 0L) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+              RiftShardGemIcon(sizeDp = 10.dp)
+              Text(
+                text = formatOverwatchResonance(shardCost.toInt()),
+                color = Color(0xFF38BDF8),
+                fontSize = 8.8.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                style = TextStyle(shadow = bodyShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+              )
+            }
+          } else if (!statusLabel.isNullOrBlank()) {
+            Text(
+              text = statusLabel,
+              color = statusColor,
+              fontSize = 8.4.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              style = TextStyle(shadow = bodyShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            )
+          } else {
+            Text(
+              text = subtitle,
+              color = Color(0xFF94A3B8),
+              fontSize = 8.4.sp,
+              fontWeight = FontWeight.Medium,
+              fontFamily = FontFamily.SansSerif,
+              textAlign = if (isRightColumn) TextAlign.End else TextAlign.Start,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              style = TextStyle(shadow = bodyShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            )
+          }
         }
-      } else if (!statusLabel.isNullOrBlank()) {
+        if (isRightColumn) {
+          visualContent(compactVisualDp)
+        }
+      }
+    } else {
+      val visualDp =
+        when {
+          heroHubMode && maxHeight >= 156.dp -> 70.dp
+          heroHubMode && maxHeight >= 126.dp -> 62.dp
+          heroHubMode -> 52.dp
+          isHighlighted -> 62.dp
+          maxHeight >= 120.dp -> 50.dp
+          else -> 44.dp
+        }
+      val titleFontSp =
+        when {
+          heroHubMode -> 13.6.sp
+          isHighlighted -> 12.6.sp
+          titleMaxLines > 1 && title.length > 14 -> 10.6.sp
+          else -> 11.8.sp
+        }
+      val subtitleFontSp = if (heroHubMode) 10.0.sp else 9.4.sp
+
+      Column(
+        modifier = Modifier.fillMaxWidth().align(Alignment.Center),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(if (heroHubMode) 3.dp else 2.5.dp),
+      ) {
+        visualContent(visualDp)
+
         Text(
-          text = statusLabel,
-          color = statusColor,
-          fontSize = 9.5.sp,
+          text = title,
+          color = Color(0xFFF8FAFC),
+          fontSize = titleFontSp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           textAlign = TextAlign.Center,
-          maxLines = 1,
+          lineHeight = if (titleMaxLines > 1) 12.2.sp else (titleFontSp.value + 1.5f).sp,
+          maxLines = titleMaxLines,
+          softWrap = titleMaxLines > 1,
           overflow = TextOverflow.Ellipsis,
-          style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          style =
+            TextStyle(
+              shadow = titleGlow,
+              platformStyle = PlatformTextStyle(includeFontPadding = false),
+            ),
         )
+
+        Text(
+          text = subtitle,
+          color = Color(0xFFCBD5E1),
+          fontSize = subtitleFontSp,
+          fontWeight = FontWeight.SemiBold,
+          fontFamily = FontFamily.SansSerif,
+          textAlign = TextAlign.Center,
+          lineHeight = 11.6.sp,
+          maxLines = if (heroHubMode) 1 else 2,
+          overflow = TextOverflow.Ellipsis,
+          style = TextStyle(shadow = bodyShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        )
+
+        // Borderless inline HUD telemetry (badge / shard cost / status — zero boxed corner tags)
+        if (!badgeText.isNullOrBlank()) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            if (showBadgeResonanceIcon) {
+              ResonanceCrestIcon(sizeDp = 10.5.dp)
+            }
+            Text(
+              text = badgeText,
+              color = badgeColor,
+              fontSize = 9.4.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              style = TextStyle(shadow = bodyShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            )
+          }
+        }
+
+        if (shardCost != null && shardCost > 0L) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            RiftShardGemIcon(sizeDp = 12.dp)
+            Text(
+              text = formatOverwatchResonance(shardCost.toInt()),
+              color = Color(0xFF38BDF8),
+              fontSize = 10.0.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              style = TextStyle(shadow = bodyShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            )
+          }
+        } else if (!statusLabel.isNullOrBlank()) {
+          Text(
+            text = statusLabel,
+            color = statusColor,
+            fontSize = 9.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(shadow = bodyShadow, platformStyle = PlatformTextStyle(includeFontPadding = false)),
+          )
+        }
       }
     }
   }
@@ -625,14 +766,25 @@ internal fun HangarVerticalWingBay(
       )
     }
 
+    // Dynamic Spotlight Enlargement: spotlight ship steps forward at 62dp while the 4 peer ships
+    // stay compact (52dp min height) so all 5 ships per wing fit 100% inside 540dp without bottom clipping.
+    val spotlightShipId =
+      when {
+        ships.any { it.id == inspectedShipId } -> inspectedShipId
+        ships.any { it.id == chargedShipId } -> chargedShipId
+        ships.any { it.id == bestShipId } -> bestShipId
+        else -> ships.firstOrNull()?.id ?: 1
+      }
+
     Column(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+      verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
       ships.forEach { ship ->
         val isCharged = chargedShipId == ship.id
         val isBest = bestShipId in 1..10 && bestShipId == ship.id
         val isInspected = inspectedShipId == ship.id
+        val isSpotlight = ship.id == spotlightShipId
         val cleanName =
           remember(ship.id, ship.name) {
             if (ship.id == 10) "RIFT FRAME"
@@ -650,13 +802,20 @@ internal fun HangarVerticalWingBay(
           when {
             isCharged -> Color(0xFF38BDF8)
             isBest -> Color(0xFFFFD700)
-            else -> Color(0xFF091528)
+            else -> Color(0xFF00F5D4)
           }
-        val badgeText =
+        val statusSuffix =
           when {
             isCharged -> "CHARGED"
             isBest -> "BEST"
             else -> null
+          }
+        val badgeText =
+          if (!isSpotlight) {
+            if (statusSuffix != null) "${formatOverwatchResonance(shipRes)} • $statusSuffix"
+            else formatOverwatchResonance(shipRes)
+          } else {
+            statusSuffix
           }
 
         RiftVerticalCard(
@@ -666,16 +825,45 @@ internal fun HangarVerticalWingBay(
           accent = primaryBorder,
           secondaryAccent = secondaryBorder,
           isRightColumn = isRightSide,
-          isHighlighted = isCharged || isBest || isInspected,
+          isHighlighted = isSpotlight,
+          isCompactPeer = !isSpotlight,
           badgeText = badgeText,
           badgeColor = if (isCharged) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          minHeightDp = 108.dp,
+          showBadgeResonanceIcon = !isSpotlight,
+          minHeightDp = if (isSpotlight) 88.dp else 52.dp,
           testTag = "hangar_bay_ship_${ship.id}",
           visualContent = { visualDp ->
-            Column(
-              horizontalAlignment = Alignment.CenterHorizontally,
-              verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
+            if (isSpotlight) {
+              Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+              ) {
+                Spinning25dShipWithOrbitingFlux(
+                  shipId = ship.id,
+                  shipSpinDeg = shipSpinDeg,
+                  fluxOrbitRad = fluxOrbitRad,
+                  isCharged = isCharged,
+                  isBestShip = isBest,
+                  isSelected = isInspected || isSpotlight,
+                  sizeDp = visualDp,
+                )
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                  ResonanceCrestIcon(sizeDp = 10.5.dp)
+                  Text(
+                    text = formatOverwatchResonance(shipRes),
+                    color = Color(0xFFFACC15),
+                    fontSize = 9.6.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                  )
+                }
+              }
+            } else {
               Spinning25dShipWithOrbitingFlux(
                 shipId = ship.id,
                 shipSpinDeg = shipSpinDeg,
@@ -685,21 +873,6 @@ internal fun HangarVerticalWingBay(
                 isSelected = isInspected,
                 sizeDp = visualDp,
               )
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-              ) {
-                ResonanceCrestIcon(sizeDp = 10.dp)
-                Text(
-                  text = formatOverwatchResonance(shipRes),
-                  color = Color(0xFFFACC15),
-                  fontSize = 9.5.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                  maxLines = 1,
-                  style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                )
-              }
             }
           },
           onClick = { onTapShip(ship.id) },
@@ -844,7 +1017,7 @@ internal fun RiftFrameLoadoutSideBay(
       onBackToHub = onBackToHub,
     )
 
-    // Frame A..E Loadout Selector Pills (Frame B via Shard Store; Frame C..E strictly via Live Resonance)
+    // Borderless Cockpit Reticle Frame A..E Selector (Frame B via Shard Store; Frame C..E strictly via Live Resonance)
     Row(
       modifier =
         Modifier.fillMaxWidth()
@@ -864,11 +1037,23 @@ internal fun RiftFrameLoadoutSideBay(
         val isActiveSlot =
           RiftProgressionCatalog.isFrameSlotActive(fullSlotId, liveResonance, isFrameBPurchased)
         val gate = RiftProgressionCatalog.getFrameSlotGate(fullSlotId)
+        val slotAccent =
+          when {
+            isSelected -> Color(0xFF00F5D4)
+            isActiveSlot -> Color(0xFF38BDF8)
+            else -> Color(0xFFFACC15)
+          }
         Box(
           modifier =
             Modifier.weight(1f)
               .fillMaxHeight()
               .minimumInteractiveComponentSize()
+              .cockpitReticleSurface(
+                accent = slotAccent,
+                isSelected = isSelected,
+                drawCornerTicks = isSelected,
+                featherAlpha = if (isSelected) 0.48f else 0.16f,
+              )
               .clickable {
                 if (isActiveSlot || fullSlotId == "Frame B") {
                   onSelectFrameSlot(fullSlotId)
@@ -888,45 +1073,21 @@ internal fun RiftFrameLoadoutSideBay(
                   )
                 }
               }
-              .padding(vertical = 5.dp)
               .testTag("rift_frame_slot_$shortKey"),
           contentAlignment = Alignment.Center,
         ) {
-          Box(
-            modifier =
-              Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(6.dp))
-                .background(
-                  when {
-                    isSelected -> Color(0x44C084FC)
-                    isActiveSlot -> Color(0x66060D1A)
-                    else -> Color(0x6602050B)
-                  }
-                )
-                .border(
-                  1.dp,
-                  when {
-                    isSelected -> Color(0xFF00F5D4)
-                    isActiveSlot -> Color(0xFF38BDF8)
-                    else -> Color(0x66FACC15)
-                  },
-                  RoundedCornerShape(6.dp),
-                ),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = if (isActiveSlot) shortKey else "${shortKey}*",
-              color =
-                when {
-                  isSelected -> Color.White
-                  isActiveSlot -> Color(0xFFE2E8F0)
-                  else -> Color(0xFFFACC15)
-                },
-              fontSize = 9.5.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-            )
-          }
+          Text(
+            text = if (isActiveSlot) shortKey else "${shortKey}*",
+            color =
+              when {
+                isSelected -> Color.White
+                isActiveSlot -> Color(0xFFCBD5E1)
+                else -> Color(0xFFFACC15)
+              },
+            fontSize = 10.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
         }
       }
     }
@@ -935,14 +1096,14 @@ internal fun RiftFrameLoadoutSideBay(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
-      // Exact 100-Point Budget Readout + Frame Rename & Reset Points Controls
+      // Exact 100-Point Budget Readout + Borderless Frame Rename & Reset Points Controls
       Column(
         modifier =
           Modifier.fillMaxWidth()
             .chamferedSciFiPodSurface(
               isRightSide = false,
               primaryBorder = if (remainingPoints == 0) Color(0xFF00F5D4) else Color(0xFFFFD700),
-              secondaryBorder = Color(0xFF091528),
+              secondaryBorder = Color(0xFF38BDF8),
             )
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -950,7 +1111,7 @@ internal fun RiftFrameLoadoutSideBay(
         Text(
           text = "USED: $usedPoints / $effectiveBudget PTS • FREE: $remainingPoints PTS",
           color = if (remainingPoints == 0) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          fontSize = 8.8.sp,
+          fontSize = 9.0.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -970,7 +1131,7 @@ internal fun RiftFrameLoadoutSideBay(
               textStyle =
                 TextStyle(
                   color = Color.White,
-                  fontSize = 10.0.sp,
+                  fontSize = 10.2.sp,
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.Monospace,
                 ),
@@ -980,9 +1141,7 @@ internal fun RiftFrameLoadoutSideBay(
               modifier =
                 Modifier.weight(1f)
                   .heightIn(min = 38.dp)
-                  .clip(RoundedCornerShape(6.dp))
-                  .background(Color(0xFF02050B))
-                  .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+                  .cockpitLaserInputSurface(Color(0xFF00F5D4))
                   .padding(horizontal = 8.dp, vertical = 8.dp)
                   .testTag("rift_frame_rename_input"),
             )
@@ -990,25 +1149,24 @@ internal fun RiftFrameLoadoutSideBay(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF00F5D4),
+                    isSelected = true,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.42f,
+                  )
                   .clickable { commitRename() }
+                  .padding(horizontal = 10.dp)
                   .testTag("rift_frame_rename_save"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF0D3554))
-                    .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 9.dp, vertical = 6.dp),
-              ) {
-                Text(
-                  text = "SAVE",
-                  color = Color.White,
-                  fontSize = 9.0.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "SAVE",
+                color = Color.White,
+                fontSize = 9.2.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
           }
         } else {
@@ -1031,6 +1189,12 @@ internal fun RiftFrameLoadoutSideBay(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF38BDF8),
+                    isSelected = true,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.30f,
+                  )
                   .clickable {
                     if (onOpenFrameRenamePrompt != null) {
                       onOpenFrameRenamePrompt()
@@ -1039,51 +1203,43 @@ internal fun RiftFrameLoadoutSideBay(
                       isEditingName = true
                     }
                   }
+                  .padding(horizontal = 8.dp)
                   .testTag("rift_frame_rename_btn"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(5.dp))
-                    .background(Color(0xFF091528))
-                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(5.dp))
-                    .padding(horizontal = 7.dp, vertical = 5.dp),
-              ) {
-                Text(
-                  text = "RENAME",
-                  color = Color(0xFF38BDF8),
-                  fontSize = 8.6.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "RENAME",
+                color = Color(0xFF38BDF8),
+                fontSize = 8.8.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
             Spacer(modifier = Modifier.width(4.dp))
             Box(
               modifier =
                 Modifier.minimumInteractiveComponentSize()
                   .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFFFB7185),
+                    isSelected = true,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.30f,
+                  )
                   .clickable {
                     commitDraftClamped(draftSlot.resetToZeroedFrame(resetVisuals = false))
                   }
+                  .padding(horizontal = 8.dp)
                   .testTag("rift_frame_reset_points_btn"),
               contentAlignment = Alignment.Center,
             ) {
-              Box(
-                modifier =
-                  Modifier.clip(RoundedCornerShape(5.dp))
-                    .background(Color(0xFF1F0C18))
-                    .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(5.dp))
-                    .padding(horizontal = 7.dp, vertical = 5.dp),
-              ) {
-                Text(
-                  text = "RESET",
-                  color = Color(0xFFFB7185),
-                  fontSize = 8.6.sp,
-                  fontWeight = FontWeight.Black,
-                  fontFamily = FontFamily.Monospace,
-                )
-              }
+              Text(
+                text = "RESET",
+                color = Color(0xFFFB7185),
+                fontSize = 8.8.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
             }
           }
         }
@@ -1091,7 +1247,7 @@ internal fun RiftFrameLoadoutSideBay(
         Text(
           text = "HOLD & DRAG CARDS TO OVERWATCH SOCKETS OR TAP TO EQUIP",
           color = Color(0xFF94A3B8),
-          fontSize = 7.2.sp,
+          fontSize = 7.4.sp,
           fontWeight = FontWeight.Bold,
           fontFamily = FontFamily.Monospace,
           maxLines = 1,
@@ -1099,7 +1255,7 @@ internal fun RiftFrameLoadoutSideBay(
         )
       }
 
-      // Primary vs Secondary / Buff Vertical Card Selector Tabs
+      // Borderless Primary vs Secondary / Buff Reticle Tabs
       Row(
         modifier = Modifier.fillMaxWidth().height(48.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1115,29 +1271,26 @@ internal fun RiftFrameLoadoutSideBay(
               Modifier.weight(1f)
                 .fillMaxHeight()
                 .minimumInteractiveComponentSize()
+                .cockpitReticleSurface(
+                  accent = if (key == "PRI") Color(0xFF00F5D4) else Color(0xFFC084FC),
+                  isSelected = active,
+                  drawCornerTicks = false,
+                  featherAlpha = if (active) 0.44f else 0.14f,
+                )
                 .clickable { weaponTab = key }
-                .padding(vertical = 4.dp)
+                .padding(horizontal = 4.dp)
                 .testTag("rift_frame_weapon_tab_${key.lowercase(Locale.US)}"),
             contentAlignment = Alignment.Center,
           ) {
-            Box(
-              modifier =
-                Modifier.fillMaxSize()
-                  .clip(RoundedCornerShape(6.dp))
-                  .background(if (active) Color(0x3800F5D4) else Color(0xFF060D1A))
-                  .border(1.dp, if (active) Color(0xFF00F5D4) else Color(0x4438BDF8), RoundedCornerShape(6.dp)),
-              contentAlignment = Alignment.Center,
-            ) {
-              Text(
-                text = label,
-                color = if (active) Color.White else Color(0xFF94A3B8),
-                fontSize = 8.6.sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
+            Text(
+              text = label,
+              color = if (active) Color.White else Color(0xFF7C93B0),
+              fontSize = 8.8.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
           }
         }
       }
@@ -1286,45 +1439,37 @@ internal fun RiftFrameLoadoutSideBay(
         }
       }
 
-      // Charge Rift Frame Button
-      val chargeFontSp = 10.0.sp
+      // Borderless Reticle Charge Rift Frame Button
+      val chargeFontSp = 10.4.sp
       val fluxDp = with(density) { chargeFontSp.toDp() }
-      Box(
+      Row(
         modifier =
           Modifier.fillMaxWidth()
             .minimumInteractiveComponentSize()
             .height(48.dp)
+            .cockpitReticleSurface(
+              accent = Color(0xFF00F5D4),
+              isSelected = true,
+              drawCornerTicks = true,
+              featherAlpha = 0.54f,
+            )
             .clickable {
               commitDraftClamped(draftSlot)
               onChargeRiftFrame()
             }
-            .padding(vertical = 3.dp)
+            .padding(horizontal = 10.dp)
             .testTag("rift_frame_charge_btn"),
-        contentAlignment = Alignment.Center,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
       ) {
-        Row(
-          modifier =
-            Modifier.fillMaxWidth()
-              .clip(RoundedCornerShape(8.dp))
-              .background(Brush.horizontalGradient(listOf(Color(0xFF1A103D), Color(0xFF0D3349))))
-              .border(
-                1.2.dp,
-                Brush.horizontalGradient(listOf(Color(0xFFC084FC), Color(0xFF00F5D4), Color(0xFFFFD700))),
-                RoundedCornerShape(8.dp),
-              )
-              .padding(horizontal = 10.dp, vertical = 7.dp),
-          horizontalArrangement = Arrangement.Center,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Text(
-            text = if (isCharged) "RIFT FRAME CHARGED " else "CHARGE RIFT FRAME ",
-            color = Color.White,
-            fontSize = chargeFontSp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-          FluxToroidIcon(sizeDp = fluxDp)
-        }
+        Text(
+          text = if (isCharged) "RIFT FRAME CHARGED " else "CHARGE RIFT FRAME ",
+          color = Color.White,
+          fontSize = chargeFontSp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+        FluxToroidIcon(sizeDp = fluxDp)
       }
     }
   }
@@ -1431,7 +1576,7 @@ internal fun RiftFrameCosmeticsSideBay(
       }
     }
 
-    // All 4 Untruncated Category Tabs (+ ALL)
+    // Borderless Laser-Underlined Category Reticle Tabs
     Row(
       modifier =
         Modifier.fillMaxWidth()
@@ -1439,7 +1584,7 @@ internal fun RiftFrameCosmeticsSideBay(
           .chamferedSciFiPodSurface(
             isRightSide = true,
             primaryBorder = Color(0xFF38BDF8),
-            secondaryBorder = Color(0xFF091528),
+            secondaryBorder = Color(0xFFC084FC),
           )
           .horizontalScroll(rememberScrollState())
           .padding(horizontal = 4.dp),
@@ -1452,37 +1597,33 @@ internal fun RiftFrameCosmeticsSideBay(
           modifier =
             Modifier.minimumInteractiveComponentSize()
               .fillMaxHeight()
+              .cockpitReticleSurface(
+                accent = Color(0xFFC084FC),
+                isSelected = sel,
+                drawCornerTicks = false,
+                featherAlpha = if (sel) 0.42f else 0.14f,
+              )
               .clickable { categoryFilter = tab }
-              .padding(vertical = 6.dp)
+              .padding(horizontal = 8.dp)
               .testTag("rift_frame_cosmetic_tab_${tab.lowercase(Locale.US)}"),
           contentAlignment = Alignment.Center,
         ) {
-          Box(
-            modifier =
-              Modifier.fillMaxHeight()
-                .clip(RoundedCornerShape(5.dp))
-                .background(if (sel) Color(0x38C084FC) else Color(0x6602050B))
-                .border(1.dp, if (sel) Color(0xFFC084FC) else Color(0x4438BDF8), RoundedCornerShape(5.dp))
-                .padding(horizontal = 7.dp),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = tab,
-              color = if (sel) Color.White else Color(0xFF94A3B8),
-              fontSize = 9.5.sp,
-              fontWeight = FontWeight.Black,
-              fontFamily = FontFamily.Monospace,
-              maxLines = 1,
-              softWrap = false,
-            )
-          }
+          Text(
+            text = tab,
+            color = if (sel) Color.White else Color(0xFF7C93B0),
+            fontSize = 9.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            softWrap = false,
+          )
         }
       }
     }
 
     Column(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       filteredCosmetics.forEach { item ->
         val isRanked = RiftProgressionCatalog.isRankedCosmeticCategory(item.category)
@@ -1515,6 +1656,7 @@ internal fun RiftFrameCosmeticsSideBay(
           secondaryAccent = if (unlocked) Color(0xFFFACC15) else Color(0xFF38BDF8),
           isRightColumn = true,
           isHighlighted = equipped,
+          isCompactPeer = !equipped,
           badgeText =
             when {
               equipped -> "ACTIVE"
@@ -1533,7 +1675,7 @@ internal fun RiftFrameCosmeticsSideBay(
               else -> null
             },
           statusColor = if (equipped) Color(0xFF00F5D4) else Color(0xFFFACC15),
-          minHeightDp = 104.dp,
+          minHeightDp = if (equipped) 96.dp else 54.dp,
           testTag = "rift_frame_cosmetic_${item.category.lowercase(Locale.US)}_${item.id}",
           visualContent = { visualDp ->
             CosmeticSwatchEmblem(item = item, sizeDp = visualDp)
@@ -1569,7 +1711,7 @@ internal fun ConduitRankTrackSideBay(
 
     Column(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       RiftProgressionCatalog.CONDUIT_RANK_TIERS.forEach { tier ->
         val isCurrent = currentTier.title == tier.title
@@ -1584,6 +1726,7 @@ internal fun ConduitRankTrackSideBay(
           secondaryAccent = if (isReached) Color(0xFFFACC15) else Color(0xFF38BDF8),
           isRightColumn = true,
           isHighlighted = isCurrent,
+          isCompactPeer = !isCurrent,
           badgeText =
             when {
               isCurrent -> "ACTIVE"
@@ -1594,15 +1737,26 @@ internal fun ConduitRankTrackSideBay(
           showBadgeResonanceIcon = !isCurrent && !isReached,
           statusLabel = "MIN ${formatOverwatchResonance(tier.minResonance)} LIVE RESONANCE",
           statusColor = if (isReached) Color(0xFFFACC15) else Color(0xFF94A3B8),
-          minHeightDp = 100.dp,
+          minHeightDp = if (isCurrent) 96.dp else 54.dp,
           testTag = "conduit_tier_${tier.title.lowercase(Locale.US).replace(" ", "_")}",
           visualContent = { visualDp ->
             Box(
               modifier =
                 Modifier.size(visualDp)
-                  .clip(CircleShape)
-                  .background(tierAccent.copy(alpha = 0.14f))
-                  .border(1.2.dp, tierAccent, CircleShape),
+                  .drawBehind {
+                    val r = size.minDimension * 0.46f
+                    drawCircle(
+                      brush = Brush.radialGradient(listOf(tierAccent.copy(alpha = 0.24f), Color.Transparent)),
+                      radius = r * 1.1f,
+                      center = center,
+                    )
+                    drawCircle(
+                      color = tierAccent.copy(alpha = 0.85f),
+                      radius = r,
+                      center = center,
+                      style = Stroke(width = 1.25.dp.toPx()),
+                    )
+                  },
               contentAlignment = Alignment.Center,
             ) {
               ResonanceCrestIcon(sizeDp = visualDp * 0.65f)
@@ -1843,28 +1997,23 @@ internal fun ShardStoreLeftTreasuryBay(
           Modifier.fillMaxWidth()
             .minimumInteractiveComponentSize()
             .height(48.dp)
+            .cockpitReticleSurface(
+              accent = Color(0xFFC084FC),
+              isSelected = true,
+              drawCornerTicks = true,
+              featherAlpha = 0.48f,
+            )
             .clickable { onOpenRiftFrameBay() }
-            .padding(vertical = 3.dp)
             .testTag("shard_vault_open_rift_frame"),
         contentAlignment = Alignment.Center,
       ) {
-        Box(
-          modifier =
-            Modifier.fillMaxWidth()
-              .clip(RoundedCornerShape(7.dp))
-              .background(Color(0xFF1A1038))
-              .border(1.dp, Color(0xFFC084FC), RoundedCornerShape(7.dp))
-              .padding(vertical = 7.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            text = "CONFIGURE RIFT FRAME >",
-            color = Color(0xFFE9D5FF),
-            fontSize = 9.5.sp,
-            fontWeight = FontWeight.Black,
-            fontFamily = FontFamily.Monospace,
-          )
-        }
+        Text(
+          text = "CONFIGURE RIFT FRAME >>",
+          color = Color(0xFFE9D5FF),
+          fontSize = 9.8.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
       }
     }
   }
@@ -1899,7 +2048,7 @@ internal fun ShardStoreRightPacksBay(
 
     Column(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       RiftBillingManager.OFFICIAL_SKU_CATALOG.forEachIndexed { idx, sku ->
         val packAccent =
@@ -1916,6 +2065,7 @@ internal fun ShardStoreRightPacksBay(
             "${formatOverwatchResonance(sku.shardAmount.toInt())} Rift Shards pack"
           }
         val isBusy = purchaseBusyProductId == sku.productId
+        val isFeaturedPack = idx == 2 || idx == 3
 
         RiftVerticalCard(
           modifier = Modifier.fillMaxWidth(),
@@ -1924,12 +2074,13 @@ internal fun ShardStoreRightPacksBay(
           accent = packAccent,
           secondaryAccent = Color(0xFF00F5D4),
           isRightColumn = true,
-          isHighlighted = idx >= 2,
+          isHighlighted = isFeaturedPack,
+          isCompactPeer = !isFeaturedPack,
           badgeText = sku.badgeLabel,
           badgeColor = packAccent,
           statusLabel = if (isBusy) "PROCESSING..." else "${sku.displayPriceUsd} • BUY PACK",
           statusColor = if (isBusy) Color(0xFF00F5D4) else Color.White,
-          minHeightDp = 108.dp,
+          minHeightDp = if (isFeaturedPack) 96.dp else 58.dp,
           testTag = "shard_store_pack_${sku.productId}",
           visualContent = { visualDp ->
             PrismaticShardClusterEmblem(

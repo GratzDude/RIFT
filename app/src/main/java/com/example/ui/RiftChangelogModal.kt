@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 136
+const val CURRENT_RIFT_BUILD_VERSION = 137
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 137,
+      versionTag = "v1.0.137 // BUILD #137",
+      releaseDate = "Nov 27, 2026",
+      headline = "3D Cockpit Holographic HUD Overhaul: Inward-Tilted Canopy Perspective, Zero Bounding Boxes, Chord-Aware Space Reclamation & Dynamic Spotlight Enlargement",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Inward-Tilted 3D Starfighter Cockpit HUD & Chord-Aware Expansion: Tilted both flanking Hub and side-bay wings inward in 3D cockpit perspective while automatically flattening during Rift Frame drag-and-drop for exact socket alignment, and reclaimed open upper and lower chord space around the circular Overwatch lens for wider wings and crisp untruncated sector readouts.",
+          "100% Bounding-Box & Dark-Slab Purge: Replaced dark glass rectangles, closed borders, vertical equator dividers, and boxed corner tags across Hub stations, canopy pods, tabs, inputs, and sub-bays with edge-free radial legibility feathers, open targeting reticles, and tapered laser underlines.",
+          "Dynamic Spotlight Enlargement & Full 5-Ship Hangar Fit: Enlarged the four primary Rift Hub stations and active Hangar, Mode, Rank, Cosmetic, and Store spotlights while compacting unfocused peer entries so all five hulls per Hangar wing fit cleanly on screen without bottom-edge clipping.",
+          "Pure Radial Overwatch Workbenches & Dial-First Controls: Removed the redundant straight slider bar from the Overwatch dial workbench so adjustments flow purely through the 270-degree cockpit dial and borderless reticle presets, upgraded Leaderboards to borderless tapered light sweeps, and turned Helm controls into clean dial-first rows without bracket clutter.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 136,
       versionTag = "v1.0.136 // BUILD #136",
       releaseDate = "Nov 27, 2026",
       headline = "Goliath Airborne 0-Flux Detonate Button & Instant Tap, Zero-Legacy-Track Scrub in Rift AI & Star Forge, and Gemini 4 Hydrogen + Offline Rift AI Fallback",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "GOLIATH DETONATE & RIFT AI",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

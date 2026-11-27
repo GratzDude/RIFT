@@ -518,16 +518,19 @@ internal fun DossierLeftIdentityBay(
           )
           Box(
             modifier =
-              Modifier.clip(RoundedCornerShape(5.dp))
-                .background(tierAccent.copy(alpha = 0.18f))
-                .border(1.dp, tierAccent, RoundedCornerShape(5.dp))
+              Modifier.cockpitReticleSurface(
+                  accent = tierAccent,
+                  isSelected = true,
+                  drawCornerTicks = false,
+                  featherAlpha = 0.28f,
+                )
                 .padding(horizontal = 6.dp, vertical = 2.dp)
                 .testTag("dossier_conduit_tier_badge"),
           ) {
             Text(
               text = conduitTier.title,
               color = tierAccent,
-              fontSize = 7.4.sp,
+              fontSize = 8.0.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -535,21 +538,30 @@ internal fun DossierLeftIdentityBay(
           }
         }
 
-        // Conduit Rank Tier Progress Bar + Next-Tier Threshold Readout
+        // Conduit Rank Tier Laser Filament Progress Bar + Next-Tier Threshold Readout
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-          Box(
-            modifier =
-              Modifier.fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(Color(0xFF02050B))
-                .border(0.6.dp, tierAccent.copy(alpha = 0.45f), RoundedCornerShape(3.dp)),
-          ) {
-            Box(
-              modifier =
-                Modifier.fillMaxWidth(conduitProgress.coerceIn(0.05f, 1f))
-                  .fillMaxHeight()
-                  .background(Brush.horizontalGradient(listOf(tierAccent, Color(0xFFFFD700)))),
+          Canvas(modifier = Modifier.fillMaxWidth().height(7.dp)) {
+            val cy = size.height * 0.5f
+            val fillFrac = conduitProgress.coerceIn(0.05f, 1f)
+            val fillX = (size.width * fillFrac).coerceIn(4f, size.width)
+            drawLine(
+              color = tierAccent.copy(alpha = 0.20f),
+              start = Offset(0f, cy),
+              end = Offset(size.width, cy),
+              strokeWidth = 1.6.dp.toPx(),
+              cap = StrokeCap.Round,
+            )
+            drawLine(
+              brush = Brush.horizontalGradient(listOf(tierAccent, Color(0xFFFFD700))),
+              start = Offset(0f, cy),
+              end = Offset(fillX, cy),
+              strokeWidth = 2.8.dp.toPx(),
+              cap = StrokeCap.Round,
+            )
+            drawCircle(
+              color = Color.White,
+              radius = 2.4.dp.toPx(),
+              center = Offset(fillX, cy),
             )
           }
           Text(
@@ -647,18 +659,22 @@ internal fun DossierLeftIdentityBay(
                 fontFamily = FontFamily.Monospace,
               )
             }
-            Box(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .height(3.6.dp)
-                  .clip(RoundedCornerShape(2.dp))
-                  .background(Color(0xFF02050B)),
-            ) {
-              Box(
-                modifier =
-                  Modifier.fillMaxWidth(frac)
-                    .fillMaxHeight()
-                    .background(barCol),
+            Canvas(modifier = Modifier.fillMaxWidth().height(4.dp)) {
+              val cy = size.height * 0.5f
+              val fillX = (size.width * frac).coerceIn(3f, size.width)
+              drawLine(
+                color = barCol.copy(alpha = 0.18f),
+                start = Offset(0f, cy),
+                end = Offset(size.width, cy),
+                strokeWidth = 1.2.dp.toPx(),
+                cap = StrokeCap.Round,
+              )
+              drawLine(
+                color = barCol,
+                start = Offset(0f, cy),
+                end = Offset(fillX, cy),
+                strokeWidth = 2.2.dp.toPx(),
+                cap = StrokeCap.Round,
               )
             }
           }
@@ -985,12 +1001,11 @@ internal fun DossierRightCareerBay(
               Modifier.fillMaxWidth()
                 .minimumInteractiveComponentSize()
                 .heightIn(min = 48.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (isBest) Color(0x22FFD700) else Color(0x6602050B))
-                .border(
-                  0.8.dp,
-                  if (isBest) Color(0xFFFFD700) else Color(0x3338BDF8),
-                  RoundedCornerShape(6.dp),
+                .cockpitReticleSurface(
+                  accent = if (isBest) Color(0xFFFFD700) else Color(0xFF38BDF8),
+                  isSelected = isBest,
+                  drawCornerTicks = isBest,
+                  featherAlpha = if (isBest) 0.44f else 0.22f,
                 )
                 .clickable { onInspectShip(ship.id) }
                 .padding(horizontal = 6.dp, vertical = 4.dp)
@@ -1180,23 +1195,26 @@ internal fun HubTelemetryMiniExportBtn(
         .minimumInteractiveComponentSize()
         .height(48.dp)
         .clickable { onClick() }
-        .padding(vertical = 6.dp)
+        .padding(vertical = 4.dp)
         .testTag(testTag),
     contentAlignment = Alignment.Center,
   ) {
     Box(
       modifier =
-        Modifier.height(36.dp)
-          .clip(RoundedCornerShape(6.dp))
-          .background(accent.copy(alpha = 0.16f))
-          .border(1.dp, accent, RoundedCornerShape(6.dp))
+        Modifier.height(38.dp)
+          .cockpitReticleSurface(
+            accent = accent,
+            isSelected = true,
+            drawCornerTicks = true,
+            featherAlpha = 0.36f,
+          )
           .padding(horizontal = 8.dp),
       contentAlignment = Alignment.Center,
     ) {
       Text(
         text = label,
         color = Color.White,
-        fontSize = 7.2.sp,
+        fontSize = 8.0.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         maxLines = 1,
@@ -1284,11 +1302,7 @@ internal fun SyndicateLeftDirectoryBay(
           Modifier.fillMaxWidth()
             .minimumInteractiveComponentSize()
             .heightIn(min = 48.dp)
-            .chamferedSciFiPodSurface(
-              isRightSide = false,
-              primaryBorder = Color(0xFF38BDF8),
-              secondaryBorder = Color(0xFF091528),
-            )
+            .cockpitLaserInputSurface(Color(0xFF38BDF8))
             .padding(horizontal = 9.dp, vertical = 8.dp),
         contentAlignment = Alignment.CenterStart,
       ) {
@@ -1537,15 +1551,18 @@ internal fun SyndicateRightCitadelBay(
               ) {
                 Box(
                   modifier =
-                    Modifier.clip(RoundedCornerShape(6.dp))
-                      .background(Color(0xFF0D253B))
-                      .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+                    Modifier.cockpitReticleSurface(
+                        accent = Color(0xFF00F5D4),
+                        isSelected = true,
+                        drawCornerTicks = true,
+                        featherAlpha = 0.40f,
+                      )
                       .padding(horizontal = 8.dp, vertical = 6.dp),
                 ) {
                   Text(
                     text = "CUSTOMIZE CREST",
                     color = Color(0xFF00F5D4),
-                    fontSize = 7.2.sp,
+                    fontSize = 7.8.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                   )
@@ -1568,19 +1585,18 @@ internal fun SyndicateRightCitadelBay(
                 ) {
                   Box(
                     modifier =
-                      Modifier.clip(RoundedCornerShape(6.dp))
-                        .background(if (inviteOnly) Color(0xFF3B1A2A) else Color(0xFF072B24))
-                        .border(
-                          1.dp,
-                          if (inviteOnly) Color(0xFFFACC15) else Color(0xFF10B981),
-                          RoundedCornerShape(6.dp),
+                      Modifier.cockpitReticleSurface(
+                          accent = if (inviteOnly) Color(0xFFFACC15) else Color(0xFF10B981),
+                          isSelected = true,
+                          drawCornerTicks = true,
+                          featherAlpha = 0.40f,
                         )
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                   ) {
                     Text(
                       text = if (inviteOnly) "INVITE-ONLY" else "OPEN JOIN",
                       color = Color.White,
-                      fontSize = 7.2.sp,
+                      fontSize = 7.8.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = FontFamily.Monospace,
                     )
@@ -1638,26 +1654,18 @@ internal fun SyndicateRightCitadelBay(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
               ) {
-                Box(
-                  modifier =
-                    Modifier.clip(RoundedCornerShape(4.dp))
-                      .background(Color(0x3338BDF8))
-                      .border(0.8.dp, Color(0xFF38BDF8), RoundedCornerShape(4.dp))
-                      .padding(horizontal = 4.dp, vertical = 1.dp),
-                ) {
-                  Text(
-                    text = memberRoleUp,
-                    color = Color(0xFF7DD3FC),
-                    fontSize = 6.6.sp,
-                    fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Monospace,
-                  )
-                }
+                Text(
+                  text = memberRoleUp,
+                  color = Color(0xFF7DD3FC),
+                  fontSize = 7.0.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
                 ResonanceCrestIcon(sizeDp = 10.dp)
                 Text(
                   text = String.format(Locale.US, "%,d", memberRes),
                   color = Color(0xFFFFD700),
-                  fontSize = 7.0.sp,
+                  fontSize = 7.2.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -1673,21 +1681,24 @@ internal fun SyndicateRightCitadelBay(
                         localPrefs.toggleSyndicateOfficer(cleanSynTag, member.callsign)
                         rosterRefreshTick++
                       }
-                      .padding(vertical = 8.dp)
+                      .padding(vertical = 6.dp)
                       .testTag("syndicate_toggle_officer_${member.callsign}"),
                   contentAlignment = Alignment.Center,
                 ) {
                   Box(
                     modifier =
-                      Modifier.clip(RoundedCornerShape(5.dp))
-                        .background(Color(0xFF0D253B))
-                        .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(5.dp))
+                      Modifier.cockpitReticleSurface(
+                          accent = Color(0xFFFACC15),
+                          isSelected = true,
+                          drawCornerTicks = false,
+                          featherAlpha = 0.34f,
+                        )
                         .padding(horizontal = 6.dp, vertical = 4.dp),
                   ) {
                     Text(
                       text = if (isMemberOfficer) "DEMOTE" else "PROMOTE",
                       color = Color(0xFFFACC15),
-                      fontSize = 6.6.sp,
+                      fontSize = 7.0.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = FontFamily.Monospace,
                     )
@@ -1701,21 +1712,24 @@ internal fun SyndicateRightCitadelBay(
                         localPrefs.kickSyndicateMember(cleanSynTag, member.callsign)
                         rosterRefreshTick++
                       }
-                      .padding(vertical = 8.dp)
+                      .padding(vertical = 6.dp)
                       .testTag("syndicate_kick_${member.callsign}"),
                   contentAlignment = Alignment.Center,
                 ) {
                   Box(
                     modifier =
-                      Modifier.clip(RoundedCornerShape(5.dp))
-                        .background(Color(0xFF3B0A18))
-                        .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(5.dp))
+                      Modifier.cockpitReticleSurface(
+                          accent = Color(0xFFFB7185),
+                          isSelected = true,
+                          drawCornerTicks = false,
+                          featherAlpha = 0.34f,
+                        )
                         .padding(horizontal = 6.dp, vertical = 4.dp),
                   ) {
                     Text(
                       text = "REMOVE",
                       color = Color(0xFFFB7185),
-                      fontSize = 6.6.sp,
+                      fontSize = 7.0.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = FontFamily.Monospace,
                     )
@@ -1754,16 +1768,14 @@ internal fun SyndicateRightCitadelBay(
           Box(
             modifier =
               Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF02050B))
-                .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                .cockpitLaserInputSurface(Color(0xFF38BDF8))
                 .padding(horizontal = 8.dp, vertical = 7.dp),
           ) {
             if (tagDraft.isEmpty()) {
               Text(
                 text = "3-CHAR TAG (e.g. APX)",
                 color = Color(0xFFCBD5E1),
-                fontSize = 7.6.sp,
+                fontSize = 7.8.sp,
                 fontFamily = FontFamily.Monospace,
               )
             }
@@ -1775,7 +1787,7 @@ internal fun SyndicateRightCitadelBay(
               textStyle =
                 TextStyle(
                   color = Color.White,
-                  fontSize = 8.4.sp,
+                  fontSize = 8.6.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 ),
@@ -1785,16 +1797,14 @@ internal fun SyndicateRightCitadelBay(
           Box(
             modifier =
               Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF02050B))
-                .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                .cockpitLaserInputSurface(Color(0xFF38BDF8))
                 .padding(horizontal = 8.dp, vertical = 7.dp),
           ) {
             if (nameDraft.isEmpty()) {
               Text(
                 text = "SYNDICATE NAME",
                 color = Color(0xFFCBD5E1),
-                fontSize = 7.6.sp,
+                fontSize = 7.8.sp,
                 fontFamily = FontFamily.Monospace,
               )
             }
@@ -1806,7 +1816,7 @@ internal fun SyndicateRightCitadelBay(
               textStyle =
                 TextStyle(
                   color = Color.White,
-                  fontSize = 8.2.sp,
+                  fontSize = 8.4.sp,
                   fontWeight = FontWeight.Bold,
                   fontFamily = FontFamily.Monospace,
                 ),
@@ -1816,16 +1826,14 @@ internal fun SyndicateRightCitadelBay(
           Box(
             modifier =
               Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF02050B))
-                .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                .cockpitLaserInputSurface(Color(0xFF38BDF8))
                 .padding(horizontal = 8.dp, vertical = 7.dp),
           ) {
             if (mottoDraft.isEmpty()) {
               Text(
                 text = "MOTTO (OPTIONAL)",
                 color = Color(0xFFCBD5E1),
-                fontSize = 7.6.sp,
+                fontSize = 7.8.sp,
                 fontFamily = FontFamily.Monospace,
               )
             }
@@ -1837,7 +1845,7 @@ internal fun SyndicateRightCitadelBay(
               textStyle =
                 TextStyle(
                   color = Color(0xFFE2E8F0),
-                  fontSize = 7.8.sp,
+                  fontSize = 8.0.sp,
                   fontFamily = FontFamily.Monospace,
                 ),
               modifier = Modifier.fillMaxWidth().testTag("syndicate_charter_motto_input"),
@@ -1860,16 +1868,19 @@ internal fun SyndicateRightCitadelBay(
             Box(
               modifier =
                 Modifier.fillMaxWidth()
-                  .clip(RoundedCornerShape(7.dp))
-                  .background(if (canCharter) Color(0xFF0D2D46) else Color(0xFF0B1322))
-                  .border(1.dp, if (canCharter) Color(0xFF00F5D4) else Color(0xFF475569), RoundedCornerShape(7.dp))
+                  .cockpitReticleSurface(
+                    accent = if (canCharter) Color(0xFF00F5D4) else Color(0xFF475569),
+                    isSelected = canCharter,
+                    drawCornerTicks = canCharter,
+                    featherAlpha = if (canCharter) 0.50f else 0.22f,
+                  )
                   .padding(vertical = 8.dp),
               contentAlignment = Alignment.Center,
             ) {
               Text(
-                text = "CHARTER SYNDICATE >",
-                color = if (canCharter) Color.White else Color(0xFFCBD5E1),
-                fontSize = 8.2.sp,
+                text = "CHARTER SYNDICATE >>",
+                color = if (canCharter) Color.White else Color(0xFF94A3B8),
+                fontSize = 8.8.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
@@ -1956,15 +1967,18 @@ internal fun SquadronLeftPilotListBay(
           Box(
             modifier =
               Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(5.dp))
-                .background(if (sel) Color(0x3000F5D4) else Color(0x6602050B))
-                .border(1.dp, if (sel) Color(0xFF00F5D4) else Color(0x3338BDF8), RoundedCornerShape(5.dp)),
+                .cockpitReticleSurface(
+                  accent = Color(0xFF00F5D4),
+                  isSelected = sel,
+                  drawCornerTicks = false,
+                  featherAlpha = if (sel) 0.42f else 0.14f,
+                ),
             contentAlignment = Alignment.Center,
           ) {
             Text(
               text = label,
-              color = if (sel) Color.White else Color(0xFF94A3B8),
-              fontSize = if (isTabletDeck) 7.8.sp else 6.9.sp,
+              color = if (sel) Color.White else Color(0xFF7C93B0),
+              fontSize = if (isTabletDeck) 8.4.sp else 7.4.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -1983,16 +1997,19 @@ internal fun SquadronLeftPilotListBay(
       ) {
         Box(
           modifier =
-            Modifier.clip(RoundedCornerShape(5.dp))
-              .background(Color(0xFF081426))
-              .border(1.dp, Color(0xFFFACC15), RoundedCornerShape(5.dp))
+            Modifier.cockpitReticleSurface(
+                accent = Color(0xFFFACC15),
+                isSelected = true,
+                drawCornerTicks = false,
+                featherAlpha = 0.34f,
+              )
               .padding(horizontal = 6.dp, vertical = 4.dp),
           contentAlignment = Alignment.Center,
         ) {
           Text(
             text = if (sortMode == SquadronPilotSort.RESONANCE) "SORT: RANK" else "SORT: ACT",
             color = Color(0xFFFACC15),
-            fontSize = 6.8.sp,
+            fontSize = 7.2.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
@@ -2012,11 +2029,7 @@ internal fun SquadronLeftPilotListBay(
           Modifier.weight(1f)
             .minimumInteractiveComponentSize()
             .heightIn(min = 48.dp)
-            .chamferedSciFiPodSurface(
-              isRightSide = false,
-              primaryBorder = Color(0xFF38BDF8),
-              secondaryBorder = Color(0xFF091528),
-            )
+            .cockpitLaserInputSurface(Color(0xFF38BDF8))
             .padding(horizontal = 8.dp, vertical = 8.dp),
         contentAlignment = Alignment.CenterStart,
       ) {
@@ -2062,19 +2075,18 @@ internal fun SquadronLeftPilotListBay(
       ) {
         Box(
           modifier =
-            Modifier.clip(RoundedCornerShape(6.dp))
-              .background(if (friendDraft.length >= 2) Color(0xFF0D2D46) else Color(0xFF0B1322))
-              .border(
-                1.dp,
-                if (friendDraft.length >= 2) Color(0xFFFACC15) else Color(0xFF475569),
-                RoundedCornerShape(6.dp),
+            Modifier.cockpitReticleSurface(
+                accent = if (friendDraft.length >= 2) Color(0xFFFACC15) else Color(0xFF475569),
+                isSelected = friendDraft.length >= 2,
+                drawCornerTicks = friendDraft.length >= 2,
+                featherAlpha = if (friendDraft.length >= 2) 0.42f else 0.18f,
               )
               .padding(horizontal = 8.dp, vertical = 7.dp),
         ) {
           Text(
             text = "+ FRIEND",
-            color = if (friendDraft.length >= 2) Color(0xFFFACC15) else Color(0xFFCBD5E1),
-            fontSize = 7.4.sp,
+            color = if (friendDraft.length >= 2) Color(0xFFFACC15) else Color(0xFF94A3B8),
+            fontSize = 7.8.sp,
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
@@ -2272,9 +2284,12 @@ internal fun SquadronRightPlayfieldShipBay(
         ) {
           Row(
             modifier =
-              Modifier.clip(RoundedCornerShape(8.dp))
-                .background(Color(0xD902050B))
-                .border(1.dp, Color(0xAAFFD700), RoundedCornerShape(8.dp))
+              Modifier.cockpitReticleSurface(
+                  accent = Color(0xFFFFD700),
+                  isSelected = true,
+                  drawCornerTicks = false,
+                  featherAlpha = 0.34f,
+                )
                 .padding(horizontal = 8.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -2283,7 +2298,7 @@ internal fun SquadronRightPlayfieldShipBay(
             Text(
               text = String.format(Locale.US, "%,d", targetResonance),
               color = Color(0xFFFFD700),
-              fontSize = 10.0.sp,
+              fontSize = 10.6.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -2367,15 +2382,18 @@ internal fun SquadronRightPlayfieldShipBay(
           ) {
             Box(
               modifier =
-                Modifier.clip(RoundedCornerShape(5.dp))
-                  .background(if (voiceEnabled) Color(0x2800F5D4) else Color(0xFF091528))
-                  .border(1.dp, if (voiceEnabled) Color(0xFF00F5D4) else Color(0xFF475569), RoundedCornerShape(5.dp))
+                Modifier.cockpitReticleSurface(
+                    accent = if (voiceEnabled) Color(0xFF00F5D4) else Color(0xFF475569),
+                    isSelected = voiceEnabled,
+                    drawCornerTicks = false,
+                    featherAlpha = if (voiceEnabled) 0.38f else 0.18f,
+                  )
                   .padding(horizontal = 6.dp, vertical = 4.dp),
             ) {
               Text(
                 text = if (voiceEnabled) "VOICE ON" else "VOICE OFF",
-                color = if (voiceEnabled) Color(0xFF00F5D4) else Color(0xFFCBD5E1),
-                fontSize = 6.8.sp,
+                color = if (voiceEnabled) Color(0xFF00F5D4) else Color(0xFF94A3B8),
+                fontSize = 7.2.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
@@ -2393,15 +2411,18 @@ internal fun SquadronRightPlayfieldShipBay(
             ) {
               Box(
                 modifier =
-                  Modifier.clip(RoundedCornerShape(5.dp))
-                    .background(Color(0xFF3B0A18))
-                    .border(1.dp, Color(0xFFFB7185), RoundedCornerShape(5.dp))
+                  Modifier.cockpitReticleSurface(
+                      accent = Color(0xFFFB7185),
+                      isSelected = true,
+                      drawCornerTicks = false,
+                      featherAlpha = 0.34f,
+                    )
                     .padding(horizontal = 6.dp, vertical = 4.dp),
               ) {
                 Text(
                   text = "LEAVE",
                   color = Color(0xFFFB7185),
-                  fontSize = 6.8.sp,
+                  fontSize = 7.2.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -2459,16 +2480,13 @@ internal fun SquadronRightPlayfieldShipBay(
             testTag = "squadron_slot_card_$slotNum",
             visualContent = { sizeDp ->
               Box(
-                modifier =
-                  Modifier.size((sizeDp * 0.52f).coerceAtLeast(22.dp))
-                    .clip(CircleShape)
-                    .border(1.dp, Color(0xFF64748B), CircleShape),
+                modifier = Modifier.size((sizeDp * 0.56f).coerceAtLeast(22.dp)),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
                   text = "+",
-                  color = Color(0xFFCBD5E1),
-                  fontSize = 14.sp,
+                  color = Color(0xFF38BDF8),
+                  fontSize = 18.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                 )
@@ -2527,7 +2545,7 @@ internal fun GameModesLeftRankedBay(
 
     Column(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(wingStackGap),
+      verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
       RankedGameMode.entries.forEach { mode ->
         val isActive = mode == activeRankedMode
@@ -2560,15 +2578,18 @@ internal fun GameModesLeftRankedBay(
           secondaryAccent = if (isActive) Color(0xFFFFD700) else Color(0xFF38BDF8),
           isRightColumn = false,
           isHighlighted = isActive,
+          isCompactPeer = !isActive,
           badgeText = if (humanCount == 1) "1 PILOT" else "$humanCount LIVE",
           badgeColor = accentCol,
           isTabletDeck = isTabletDeck,
-          minHeightDp = if (isTabletDeck) 98.dp else 86.dp,
+          minHeightDp =
+            if (isActive) (if (isTabletDeck) 94.dp else 86.dp)
+            else (if (isTabletDeck) 56.dp else 52.dp),
           testTag = "game_mode_card_${mode.name}",
           visualContent = { sizeDp ->
             RankedModeDistinctEmblem(
               modeIndex = mode.ordinal,
-              sizeDp = (sizeDp * 0.78f).coerceAtLeast(24.dp),
+              sizeDp = (sizeDp * 0.80f).coerceAtLeast(24.dp),
             )
           },
           onClick = {
@@ -2581,9 +2602,9 @@ internal fun GameModesLeftRankedBay(
           },
         )
 
-        if (mode == RankedGameMode.RIFT_SKIRMISH ||
+        if (isActive && (mode == RankedGameMode.RIFT_SKIRMISH ||
           mode == RankedGameMode.RIFT_CONTROL ||
-          mode == RankedGameMode.SYNDICATE_WARS
+          mode == RankedGameMode.SYNDICATE_WARS)
         ) {
           val options =
             if (mode == RankedGameMode.RIFT_SKIRMISH) listOf(2, 3, 4, 5)
@@ -2607,23 +2628,26 @@ internal fun GameModesLeftRankedBay(
                         else -> Unit
                       }
                     }
-                    .padding(vertical = 6.dp)
+                    .padding(vertical = 5.dp)
                     .testTag("game_mode_bracket_${mode.name}_$size"),
                 contentAlignment = Alignment.Center,
               ) {
                 Box(
                   modifier =
                     Modifier.fillMaxWidth()
-                      .clip(RoundedCornerShape(5.dp))
-                      .background(if (sel) accentCol.copy(alpha = 0.24f) else Color(0xFF060D1A))
-                      .border(1.dp, if (sel) accentCol else Color(0xFF334155), RoundedCornerShape(5.dp))
+                      .cockpitReticleSurface(
+                        accent = accentCol,
+                        isSelected = sel,
+                        drawCornerTicks = sel,
+                        featherAlpha = if (sel) 0.42f else 0.14f,
+                      )
                       .padding(vertical = 5.dp),
                   contentAlignment = Alignment.Center,
                 ) {
                   Text(
                     text = "${size}V${size}",
-                    color = if (sel) Color.White else Color(0xFF94A3B8),
-                    fontSize = 7.4.sp,
+                    color = if (sel) Color.White else Color(0xFF7C93B0),
+                    fontSize = 8.0.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                   )
@@ -2741,15 +2765,18 @@ internal fun GameModesRightCustomBay(
           Box(
             modifier =
               Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(5.dp))
-                .background(if (sel) Color(0x3000F5D4) else Color(0x6602050B))
-                .border(1.dp, if (sel) Color(0xFF00F5D4) else Color(0x3338BDF8), RoundedCornerShape(5.dp)),
+                .cockpitReticleSurface(
+                  accent = Color(0xFF00F5D4),
+                  isSelected = sel,
+                  drawCornerTicks = false,
+                  featherAlpha = if (sel) 0.44f else 0.14f,
+                ),
             contentAlignment = Alignment.Center,
           ) {
             Text(
               text = label,
-              color = if (sel) Color.White else Color(0xFF94A3B8),
-              fontSize = 7.6.sp,
+              color = if (sel) Color.White else Color(0xFF7C93B0),
+              fontSize = 8.2.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
@@ -2763,7 +2790,7 @@ internal fun GameModesRightCustomBay(
       modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(wingStackGap),
     ) {
-      // Join Private Room by 6-Character Code (High-Contrast #0B1528 Field + #94A3B8 Placeholder)
+      // Join Private Room by 6-Character Code (Edge-Free Laser Input)
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -2774,9 +2801,7 @@ internal fun GameModesRightCustomBay(
             Modifier.weight(1f)
               .minimumInteractiveComponentSize()
               .heightIn(min = 48.dp)
-              .clip(RoundedCornerShape(6.dp))
-              .background(Color(0xFF0B1528))
-              .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+              .cockpitLaserInputSurface(Color(0xFF38BDF8))
               .padding(horizontal = 8.dp, vertical = 8.dp),
           contentAlignment = Alignment.CenterStart,
         ) {
@@ -2797,7 +2822,7 @@ internal fun GameModesRightCustomBay(
             textStyle =
               TextStyle(
                 color = Color.White,
-                fontSize = 8.4.sp,
+                fontSize = 8.6.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               ),
@@ -2815,15 +2840,18 @@ internal fun GameModesRightCustomBay(
         ) {
           Box(
             modifier =
-              Modifier.clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF0D2D46))
-                .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+              Modifier.cockpitReticleSurface(
+                  accent = Color(0xFF00F5D4),
+                  isSelected = joinRoomCodeDraft.length >= 4,
+                  drawCornerTicks = joinRoomCodeDraft.length >= 4,
+                  featherAlpha = if (joinRoomCodeDraft.length >= 4) 0.44f else 0.18f,
+                )
                 .padding(horizontal = 9.dp, vertical = 7.dp),
           ) {
             Text(
               text = "JOIN",
               color = Color.White,
-              fontSize = 7.8.sp,
+              fontSize = 8.2.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -2974,13 +3002,11 @@ internal fun GameModesRightCustomBay(
                     Modifier.weight(1f)
                       .minimumInteractiveComponentSize()
                       .heightIn(min = 38.dp)
-                      .chamferedSciFiPodSurface(
-                        isRightSide = true,
-                        primaryBorder = if (isSelectedMode) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-                        secondaryBorder = if (isSelectedMode) Color(0xFFFFD700) else Color(0xFF091528),
-                      )
-                      .background(
-                        if (isSelectedMode) Color(0x3800F5D4) else Color.Transparent
+                      .cockpitReticleSurface(
+                        accent = if (isSelectedMode) Color(0xFF00F5D4) else Color(0xFF38BDF8),
+                        isSelected = isSelectedMode,
+                        drawCornerTicks = isSelectedMode,
+                        featherAlpha = if (isSelectedMode) 0.46f else 0.16f,
                       )
                       .clickable { onSelectCustomBaseMode(modeItem) }
                       .padding(horizontal = 4.dp, vertical = 5.dp)
@@ -2989,8 +3015,8 @@ internal fun GameModesRightCustomBay(
                 ) {
                   Text(
                     text = shortLabel,
-                    color = if (isSelectedMode) Color(0xFFFFD700) else Color(0xFFE2E8F0),
-                    fontSize = 7.4.sp,
+                    color = if (isSelectedMode) Color(0xFFFFD700) else Color(0xFFCBD5E1),
+                    fontSize = 7.8.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
@@ -3401,16 +3427,19 @@ internal fun GameModesRightCustomBay(
           Box(
             modifier =
               Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(7.dp))
-                .background(Brush.horizontalGradient(listOf(Color(0xFF0D2D46), Color(0xFF061626))))
-                .border(1.2.dp, Color(0xFF00F5D4), RoundedCornerShape(7.dp))
+                .cockpitReticleSurface(
+                  accent = Color(0xFF00F5D4),
+                  isSelected = true,
+                  drawCornerTicks = true,
+                  featherAlpha = 0.54f,
+                )
                 .padding(vertical = 8.dp),
             contentAlignment = Alignment.Center,
           ) {
             Text(
-              text = "CREATE RIFT >",
+              text = "CREATE RIFT >>",
               color = Color.White,
-              fontSize = 8.6.sp,
+              fontSize = 9.4.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -3433,6 +3462,7 @@ internal fun HubCustomFivePercentStepperRow(
   onTapRow: (() -> Unit)? = null,
 ) {
   val snapped = snapCustomFivePercentScale(valuePct)
+  val fillFrac = (snapped / 100f).coerceIn(0.04f, 1f)
   Row(
     modifier =
       Modifier.fillMaxWidth()
@@ -3441,15 +3471,39 @@ internal fun HubCustomFivePercentStepperRow(
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    Text(
-      text = label,
-      color = Color(0xFFCBD5E1),
-      fontSize = 7.4.sp,
-      fontWeight = FontWeight.Black,
-      fontFamily = FontFamily.Monospace,
-      maxLines = 1,
-    )
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(
+      modifier = Modifier.weight(1f).padding(end = 6.dp),
+      verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+      Text(
+        text = label,
+        color = Color(0xFFF1F5F9),
+        fontSize = 9.4.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Canvas(modifier = Modifier.fillMaxWidth(0.78f).height(2.5.dp)) {
+        val cy = size.height * 0.5f
+        val fillX = (size.width * fillFrac).coerceIn(3f, size.width)
+        drawLine(
+          color = Color(0xFF38BDF8).copy(alpha = 0.22f),
+          start = Offset(0f, cy),
+          end = Offset(size.width, cy),
+          strokeWidth = 1.2.dp.toPx(),
+          cap = StrokeCap.Round,
+        )
+        drawLine(
+          brush = Brush.horizontalGradient(listOf(Color(0xFF00F5D4), Color(0xFFFFD700))),
+          start = Offset(0f, cy),
+          end = Offset(fillX, cy),
+          strokeWidth = 2.0.dp.toPx(),
+          cap = StrokeCap.Round,
+        )
+      }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(0.dp)) {
       Box(
         modifier =
           Modifier.minimumInteractiveComponentSize()
@@ -3459,9 +3513,9 @@ internal fun HubCustomFivePercentStepperRow(
         contentAlignment = Alignment.Center,
       ) {
         Text(
-          text = "[-5%]",
+          text = "<",
           color = if (snapped > 0) Color(0xFF00F5D4) else Color(0xFF475569),
-          fontSize = 7.6.sp,
+          fontSize = 12.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
         )
@@ -3469,11 +3523,11 @@ internal fun HubCustomFivePercentStepperRow(
       Text(
         text = "$snapped%",
         color = if (snapped == 100) Color(0xFFE2E8F0) else Color(0xFFFFD700),
-        fontSize = 8.0.sp,
+        fontSize = 10.8.sp,
         fontWeight = FontWeight.Black,
         fontFamily = FontFamily.Monospace,
         modifier =
-          Modifier.width(34.dp)
+          Modifier.width(38.dp)
             .let { mod -> if (onTapRow != null) mod.clickable { onTapRow() } else mod }
             .testTag(valueTag),
         textAlign = TextAlign.Center,
@@ -3487,9 +3541,9 @@ internal fun HubCustomFivePercentStepperRow(
         contentAlignment = Alignment.Center,
       ) {
         Text(
-          text = "[+5%]",
+          text = ">",
           color = if (snapped < 100) Color(0xFF00F5D4) else Color(0xFF475569),
-          fontSize = 7.6.sp,
+          fontSize = 12.sp,
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
         )
@@ -3595,15 +3649,18 @@ internal fun HelmLeftSystemsBay(
           Box(
             modifier =
               Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(5.dp))
-                .background(if (sel) Color(0x3000F5D4) else Color(0x6602050B))
-                .border(1.dp, if (sel) Color(0xFF00F5D4) else Color(0x3338BDF8), RoundedCornerShape(5.dp)),
+                .cockpitReticleSurface(
+                  accent = Color(0xFF00F5D4),
+                  isSelected = sel,
+                  drawCornerTicks = false,
+                  featherAlpha = if (sel) 0.44f else 0.14f,
+                ),
             contentAlignment = Alignment.Center,
           ) {
             Text(
               text = label,
-              color = if (sel) Color.White else Color(0xFF94A3B8),
-              fontSize = 7.6.sp,
+              color = if (sel) Color.White else Color(0xFF7C93B0),
+              fontSize = 8.4.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
             )
@@ -3973,12 +4030,11 @@ internal fun HelmLeftSystemsBay(
                 modifier =
                   Modifier.fillMaxWidth()
                     .minimumInteractiveComponentSize()
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (isEditing) slot.accentColor.copy(alpha = 0.16f) else Color(0x8802050B))
-                    .border(
-                      0.9.dp,
-                      if (isEditing) slot.accentColor else Color(0x3338BDF8),
-                      RoundedCornerShape(6.dp),
+                    .cockpitReticleSurface(
+                      accent = slot.accentColor,
+                      isSelected = isEditing,
+                      drawCornerTicks = isEditing,
+                      featherAlpha = if (isEditing) 0.42f else 0.20f,
                     )
                     .clickable {
                       selectedBindSlotId = if (isEditing) null else slot.slotId
@@ -3994,14 +4050,14 @@ internal fun HelmLeftSystemsBay(
                   Text(
                     text = slot.title,
                     color = Color.White,
-                    fontSize = 7.6.sp,
+                    fontSize = 8.0.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                   )
                   Text(
                     text = if (isEditing) "PICK INPUT v" else currentLabel,
                     color = slot.accentColor,
-                    fontSize = 7.6.sp,
+                    fontSize = 8.0.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                   )
@@ -4028,12 +4084,11 @@ internal fun HelmLeftSystemsBay(
                           Box(
                             modifier =
                               Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(5.dp))
-                                .background(if (code == currentCode) slot.accentColor.copy(alpha = 0.30f) else Color(0xFF060D1A))
-                                .border(
-                                  1.dp,
-                                  if (code == currentCode) slot.accentColor else Color(0xFF38BDF8),
-                                  RoundedCornerShape(5.dp),
+                                .cockpitReticleSurface(
+                                  accent = slot.accentColor,
+                                  isSelected = code == currentCode,
+                                  drawCornerTicks = code == currentCode,
+                                  featherAlpha = if (code == currentCode) 0.44f else 0.16f,
                                 )
                                 .padding(horizontal = 4.dp, vertical = 5.dp),
                             contentAlignment = Alignment.Center,
@@ -4041,7 +4096,7 @@ internal fun HelmLeftSystemsBay(
                             Text(
                               text = chipLabel,
                               color = Color.White,
-                              fontSize = 7.2.sp,
+                              fontSize = 7.6.sp,
                               fontWeight = FontWeight.Black,
                               fontFamily = FontFamily.Monospace,
                               maxLines = 1,
@@ -4231,19 +4286,18 @@ internal fun HelmLeftSystemsBay(
                   Box(
                     modifier =
                       Modifier.fillMaxSize()
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (isTrackSel) Color(0x3800F5D4) else Color(0xFF060D1A))
-                        .border(
-                          1.dp,
-                          if (isTrackSel) Color(0xFF00F5D4) else Color(0xFF38BDF8),
-                          RoundedCornerShape(6.dp),
+                        .cockpitReticleSurface(
+                          accent = Color(0xFF00F5D4),
+                          isSelected = isTrackSel,
+                          drawCornerTicks = isTrackSel,
+                          featherAlpha = if (isTrackSel) 0.44f else 0.16f,
                         ),
                     contentAlignment = Alignment.Center,
                   ) {
                     Text(
                       text = slotLabel,
-                      color = if (isTrackSel) Color.White else Color(0xFFCBD5E1),
-                      fontSize = 7.4.sp,
+                      color = if (isTrackSel) Color.White else Color(0xFF94A3B8),
+                      fontSize = 7.8.sp,
                       fontWeight = FontWeight.Black,
                       fontFamily = FontFamily.Monospace,
                     )
@@ -4279,20 +4333,19 @@ internal fun HelmLeftSystemsBay(
                     Box(
                       modifier =
                         Modifier.fillMaxSize()
-                          .clip(RoundedCornerShape(5.dp))
-                          .background(if (isArchActive) Color(0x33FFD700) else Color(0xFF081324))
-                          .border(
-                            1.dp,
-                            if (isArchActive) Color(0xFFFFD700) else Color(0x5538BDF8),
-                            RoundedCornerShape(5.dp),
+                          .cockpitReticleSurface(
+                            accent = Color(0xFFFFD700),
+                            isSelected = isArchActive,
+                            drawCornerTicks = isArchActive,
+                            featherAlpha = if (isArchActive) 0.44f else 0.16f,
                           )
                           .padding(horizontal = 4.dp),
                       contentAlignment = Alignment.Center,
                     ) {
                       Text(
                         text = arch.label.uppercase(Locale.US),
-                        color = if (isArchActive) Color(0xFFFEF08A) else Color(0xFFE2E8F0),
-                        fontSize = 6.9.sp,
+                        color = if (isArchActive) Color(0xFFFEF08A) else Color(0xFFCBD5E1),
+                        fontSize = 7.4.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 1,
@@ -4318,9 +4371,7 @@ internal fun HelmLeftSystemsBay(
                   Modifier.weight(1f)
                     .minimumInteractiveComponentSize()
                     .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF0B1528))
-                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp))
+                    .cockpitLaserInputSurface(Color(0xFF38BDF8))
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 contentAlignment = Alignment.CenterStart,
               ) {
@@ -4371,15 +4422,18 @@ internal fun HelmLeftSystemsBay(
               ) {
                 Box(
                   modifier =
-                    Modifier.clip(RoundedCornerShape(6.dp))
-                      .background(Color(0xFF0D2D46))
-                      .border(1.dp, Color(0xFF00F5D4), RoundedCornerShape(6.dp))
+                    Modifier.cockpitReticleSurface(
+                        accent = Color(0xFF00F5D4),
+                        isSelected = true,
+                        drawCornerTicks = true,
+                        featherAlpha = 0.42f,
+                      )
                       .padding(horizontal = 7.dp, vertical = 7.dp),
                 ) {
                   Text(
                     text = "FORGE",
                     color = Color(0xFF00F5D4),
-                    fontSize = 7.4.sp,
+                    fontSize = 7.8.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                   )
@@ -4433,15 +4487,18 @@ internal fun HelmLeftSystemsBay(
                     Box(
                       modifier =
                         Modifier.fillMaxSize()
-                          .clip(RoundedCornerShape(6.dp))
-                          .background(padAccent.copy(alpha = 0.16f))
-                          .border(1.dp, padAccent, RoundedCornerShape(6.dp)),
+                          .cockpitReticleSurface(
+                            accent = padAccent,
+                            isSelected = true,
+                            drawCornerTicks = true,
+                            featherAlpha = 0.36f,
+                          ),
                       contentAlignment = Alignment.Center,
                     ) {
                       Text(
                         text = padLabel,
                         color = Color.White,
-                        fontSize = 7.0.sp,
+                        fontSize = 7.4.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 1,
@@ -4584,16 +4641,19 @@ internal fun HelmLeftSystemsBay(
             Box(
               modifier =
                 Modifier.fillMaxWidth()
-                  .clip(RoundedCornerShape(7.dp))
-                  .background(Color(0xFF0D2D46))
-                  .border(1.dp, Color(0xFFFFD700), RoundedCornerShape(7.dp))
+                  .cockpitReticleSurface(
+                    accent = Color(0xFFFFD700),
+                    isSelected = true,
+                    drawCornerTicks = true,
+                    featherAlpha = 0.44f,
+                  )
                   .padding(vertical = 6.dp),
               contentAlignment = Alignment.Center,
             ) {
               Text(
-                text = "FULL AUDIO SYNTH STUDIO >",
+                text = "FULL AUDIO SYNTH STUDIO >>",
                 color = Color(0xFFFFD700),
-                fontSize = 8.0.sp,
+                fontSize = 8.4.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
               )
@@ -4619,16 +4679,19 @@ internal fun HelmLeftSystemsBay(
               Box(
                 modifier =
                   Modifier.fillMaxSize()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF0D2D46), Color(0xFF091A2E))))
-                    .border(1.2.dp, Color(0xFFFACC15), RoundedCornerShape(8.dp))
+                    .cockpitReticleSurface(
+                      accent = Color(0xFFFACC15),
+                      isSelected = true,
+                      drawCornerTicks = true,
+                      featherAlpha = 0.46f,
+                    )
                     .padding(horizontal = 6.dp),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
-                  text = "TUTORIAL >",
+                  text = "TUTORIAL >>",
                   color = Color(0xFFFACC15),
-                  fontSize = 8.4.sp,
+                  fontSize = 8.8.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                   maxLines = 1,
@@ -4648,20 +4711,19 @@ internal fun HelmLeftSystemsBay(
               Box(
                 modifier =
                   Modifier.fillMaxSize()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF23103C), Color(0xFF0D253E))))
-                    .border(
-                      1.2.dp,
-                      Brush.horizontalGradient(listOf(Color(0xFFC084FC), Color(0xFF00F5D4), Color(0xFFFFD700))),
-                      RoundedCornerShape(8.dp),
+                    .cockpitReticleSurface(
+                      accent = Color(0xFFC084FC),
+                      isSelected = true,
+                      drawCornerTicks = true,
+                      featherAlpha = 0.48f,
                     )
                     .padding(horizontal = 6.dp),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
-                  text = "STAR FORGE 1:1 >",
+                  text = "STAR FORGE 1:1 >>",
                   color = Color(0xFFF3E8FF),
-                  fontSize = 8.2.sp,
+                  fontSize = 8.6.sp,
                   fontWeight = FontWeight.Black,
                   fontFamily = FontFamily.Monospace,
                   maxLines = 1,
@@ -5231,15 +5293,18 @@ internal fun HelmRightCodexBay(
           Box(
             modifier =
               Modifier.fillMaxSize()
-                .clip(RoundedCornerShape(5.dp))
-                .background(if (sel) col.copy(alpha = 0.24f) else Color(0x6602050B))
-                .border(1.dp, if (sel) col else Color(0x4438BDF8), RoundedCornerShape(5.dp)),
+                .cockpitReticleSurface(
+                  accent = col,
+                  isSelected = sel,
+                  drawCornerTicks = false,
+                  featherAlpha = if (sel) 0.44f else 0.14f,
+                ),
             contentAlignment = Alignment.Center,
           ) {
             Text(
               text = label,
-              color = if (sel) Color.White else Color(0xFFCBD5E1),
-              fontSize = if (isTabletDeck) 7.8.sp else 7.0.sp,
+              color = if (sel) Color.White else Color(0xFF7C93B0),
+              fontSize = if (isTabletDeck) 8.4.sp else 7.4.sp,
               fontWeight = FontWeight.Black,
               fontFamily = FontFamily.Monospace,
               maxLines = 1,
