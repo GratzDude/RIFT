@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 135
+const val CURRENT_RIFT_BUILD_VERSION = 136
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,26 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 136,
+      versionTag = "v1.0.136 // BUILD #136",
+      releaseDate = "Nov 27, 2026",
+      headline = "Goliath Airborne 0-Flux Detonate Button & Instant Tap, Zero-Legacy-Track Scrub in Rift AI & Star Forge, and Gemini 4 Hydrogen + Offline Rift AI Fallback",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Goliath Airborne 0-Flux Detonate Visual & Instant Finger-Down Air-Burst: Added zero-allocation airborne Siege Bomb detection in the arena overlay so the Secondary button stays at full active opacity, glows blazing solar-orange, displays DETONATE with a 0 Flux badge even during reload cooldown or at zero Flux, and detonates immediately on finger-down without entering aim-drag mode.",
+          "Rift AI Ground-Truth Knowledge & Telemetry Scrub: Removed all remaining legacy progression references from the Subspace Comms #rift-ai system prompt and live telemetry snapshot, emitting Conduit Rank Tier, Next Tier Threshold, Starting Match Resonance, Live and Peak Resonance, 10-Hull Resonance breakdowns, Goliath 0-Flux air-burst detonation, and post-life Ranked Accuracy Resonance callouts.",
+          "Star Forge Minimap Console Copy Polish: Updated the Circular Radar & Telemetry target subtitle in Star Forge to reference the Conduit Rank bar cleanly while keeping all saved target keys intact.",
+          "Rift AI Gemini 4 Hydrogen Primary With Cloud & Offline Fallback: Upgraded #rift-ai streaming to use gemini-4-hydrogen primary with automatic gemini-3.8-flash cloud retry and a complete on-device tactical responder so offline Drifter sessions and unprovisioned sideload builds always receive instant, accurate RIFT tactical answers.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 135,
       versionTag = "v1.0.135 // BUILD #135",
       releaseDate = "Nov 27, 2026",
       headline = "100% Resonance Progression Purge Across Pilot Dossier, Arena HUD, Engine & Telemetry Exports + Post-Life Accuracy Resonance Callout",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "RESONANCE ONLY & TELEMETRY",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

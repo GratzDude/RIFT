@@ -4939,6 +4939,16 @@ class RiftArenaView(
     canvas.drawArc(arcRect, degCenter - 30f, 60f, false, shieldRipplePaint)
   }
 
+  private fun hasActiveAirborneSiegeBomb(p: ShipEntity): Boolean {
+    if (p.spec.id != 4 && p.spec.bombType != "SIEGE") return false
+    val list = engine.bombs
+    for (i in 0 until list.size) {
+      val b = list[i]
+      if (b.ownerId == p.id && b.type == "SIEGE") return true
+    }
+    return false
+  }
+
   private fun drawTouchControlsOverlay(canvas: Canvas, p: ShipEntity) {
     val unlocked = RiftCalibrationState.isUiUnlockedForDragging
     if (!engine.hasJoinedMatch && !unlocked) return
@@ -5141,6 +5151,7 @@ class RiftArenaView(
       val bX = effBombBtnX()
       val bY = effBombBtnY()
       val bR = effBombRadius()
+      val hasAirborneSiege = hasActiveAirborneSiegeBomb(p)
       val isCloakToggleReady = (p.spec.bombType == "CLOAK_EMP" && !p.isCloaked)
       val isCloakEmpPulseReady = (p.spec.bombType == "CLOAK_EMP" && p.isCloaked)
       val isTractorSecActive = (p.spec.bombType == "TRACTOR_BEAM" && p.tractorBeamActive)
@@ -5149,25 +5160,26 @@ class RiftArenaView(
       val isLanceSecReady = (p.spec.bombType == "LANCE_BEAM" && !p.lanceBeamActive)
       val bombCost =
         when {
+          hasAirborneSiege || isCloakEmpPulseReady || isTractorSecActive || isLanceSecActive -> 0f
           !p.spec.hasBomb -> 300f
           isCloakToggleReady -> RiftCalibrationState.cloakDrainPerSec
-          isCloakEmpPulseReady || isTractorSecActive || isLanceSecActive -> 0f
           isTractorSecReady -> 112f
           isLanceSecReady -> 145f
           else -> p.spec.bombCost
         }
       val hasEnoughFluxForSecondary =
         when {
-          isCloakEmpPulseReady || isTractorSecActive || isLanceSecActive -> true
+          hasAirborneSiege || isCloakEmpPulseReady || isTractorSecActive || isLanceSecActive -> true
           isCloakToggleReady || isTractorSecReady || isLanceSecReady -> p.flux > 180f
           else -> (p.flux - bombCost) >= 1f
         }
       val bombAvailable =
-        (p.canFire && p.bombTimer <= 0f && hasEnoughFluxForSecondary) || unlocked
-      val bombAlpha = if (bombAvailable) 255 else 115
+        hasAirborneSiege || (p.canFire && p.bombTimer <= 0f && hasEnoughFluxForSecondary) || unlocked
+      val bombAlpha = if (hasAirborneSiege || bombAvailable) 255 else 115
       val strokeCol =
         when {
           engine.isBombCancelActive -> Color.parseColor("#EF4444")
+          hasAirborneSiege -> Color.rgb(249, 115, 22)
           p.spec.bombType == "PHASE_DASH" || p.spec.bombType == "STASIS_BARRIER" -> Color.parseColor("#38BDF8")
           p.spec.bombType == "CLOAK_EMP" || p.spec.bombType == "LANCE_BEAM" -> Color.parseColor("#B388FF")
           p.spec.bombType == "INTERDICTOR_DOME" || p.spec.bombType == "HYPER_SURGE" -> Color.parseColor("#EC4899")
@@ -5179,6 +5191,7 @@ class RiftArenaView(
       val fillCol =
         when {
           engine.isBombCancelActive -> Color.rgb(127, 29, 29)
+          hasAirborneSiege -> Color.rgb(249, 115, 22)
           p.isCloaked && p.spec.bombType == "CLOAK_EMP" -> Color.rgb(109, 40, 217)
           p.spec.bombType == "PHASE_DASH" -> Color.rgb(12, 74, 110)
           p.spec.bombType == "CLOAK_EMP" -> Color.rgb(76, 29, 149)
@@ -5211,7 +5224,7 @@ class RiftArenaView(
       // Inner Ring 2: Recessed tech ring (bR * 0.88f)
       hudCircleFillPaint.color =
         Color.argb(
-          if (engine.bombStickActive && bombAvailable) 220 else if (bombAvailable) 175 else 75,
+          if ((engine.bombStickActive || hasAirborneSiege) && bombAvailable) 215 else if (bombAvailable) 175 else 75,
           Color.red(fillCol),
           Color.green(fillCol),
           Color.blue(fillCol),
@@ -5243,6 +5256,7 @@ class RiftArenaView(
       val bLabel =
         when {
           engine.isBombCancelActive -> "X"
+          hasAirborneSiege -> "DETONATE"
           p.spec.bombType == "PHASE_DASH" -> "PHASE"
           p.spec.bombType == "CLOAK_EMP" -> if (p.isCloaked) "EMP PULSE" else "CLOAK"
           p.spec.bombType == "TRACTOR_BEAM" -> if (p.tractorBeamActive) "WEB OFF" else "TRACTOR"
@@ -5268,6 +5282,7 @@ class RiftArenaView(
       val bSub =
         when {
           engine.isBombCancelActive -> "CANCEL"
+          hasAirborneSiege -> "0"
           p.bombTimer > 0.1f -> String.format(java.util.Locale.US, "%.1fs", p.bombTimer)
           isCloakToggleReady -> "${RiftCalibrationState.cloakDrainPerSec.toInt()}/S"
           isCloakEmpPulseReady -> "0 EMP"
@@ -5299,7 +5314,7 @@ class RiftArenaView(
 
       hudLabelPaint.textSize = 7.4f * dpDensity * arcScale
       hudLabelPaint.color = Color.argb(bombAlpha, 253, 224, 71)
-      val showPrism = !engine.isBombCancelActive && p.bombTimer <= 0.1f
+      val showPrism = !engine.isBombCancelActive && (hasAirborneSiege || p.bombTimer <= 0.1f)
       val textW = hudLabelPaint.measureText(bSub)
       if (showPrism) {
         val prismR = 4.4f * dpDensity * arcScale
@@ -5595,6 +5610,21 @@ class RiftArenaView(
         }
 
         // 2. Check Secondary / Class Ability Concentric Slot
+        if (
+          p.respawnTimer <= 0f &&
+            hasActiveAirborneSiegeBomb(p) &&
+            hypot(x - bX, y - bY) <= bR * 1.28f
+        ) {
+          bombPointerId = MotionEvent.INVALID_POINTER_ID
+          bombHasExitedDeadzone = false
+          engine.isBombCancelActive = false
+          engine.bombStickActive = false
+          engine.bombStickMag = 0f
+          engine.fireSecondaryBomb(p, p.angle)
+          performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+          invalidate()
+          return true
+        }
         if ((p.spec.hasBomb || RiftCalibrationState.forceAllButtonsVisible) &&
           hypot(x - bX, y - bY) <= bR * 1.18f
         ) {

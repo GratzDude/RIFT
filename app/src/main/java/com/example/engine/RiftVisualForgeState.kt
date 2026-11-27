@@ -157,7 +157,7 @@ enum class ForgeElementTarget(
   "Violet Singularity" to "Rift-violet Overwatch launcher with glowing magenta trim",
   "Stealth Slate" to "Compact dark titanium button with subtle sky-blue rim",
  )),
- HUD_MINIMAP_CONSOLE("hud_minimap_console", "Circular Radar & Telemetry", "1:1 circular minimap, Flux readout & pilot LVL bar", ForgeElementLayer.HUD, listOf(
+ HUD_MINIMAP_CONSOLE("hud_minimap_console", "Circular Radar & Telemetry", "1:1 circular minimap, Flux readout & Conduit Rank bar", ForgeElementLayer.HUD, listOf(
   "Tactical Cyan" to "1:1 circular obsidian radar scope with crisp cyan sweep ring",
   "Emerald Sonar" to "Deep-space tactical radar with emerald-teal grid and crisp rim",
   "Imperial Gold" to "Obsidian command radar framed in burnished gold with cyan core",
