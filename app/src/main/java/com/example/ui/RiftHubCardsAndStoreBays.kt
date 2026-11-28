@@ -45,6 +45,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
@@ -68,6 +69,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.LocalPilotPrefs
@@ -78,8 +81,10 @@ import com.example.engine.CosmeticCatalogItem
 import com.example.engine.CustomShipLoadoutSlot
 import com.example.engine.FrameSlotGateInfo
 import com.example.engine.PrimaryWeaponOption
+import com.example.engine.RiftCodex
 import com.example.engine.RiftProgressionCatalog
 import com.example.engine.RiftSpriteBaker
+import com.example.engine.RiftVisualForgeState
 import com.example.engine.SecondaryAbilityOption
 import com.example.engine.ShipSpec
 import java.util.Locale
@@ -900,41 +905,58 @@ internal data class DraggedRiftFrameItem(
 
 private fun concisePrimaryWeaponSubtitle(pri: PrimaryWeaponOption): String =
   when (pri.id.uppercase(Locale.US)) {
-    "LIGHT_PULSE" -> "Fast balanced twin laser"
-    "RAPID_GATLING" -> "High-speed triple plasma stream"
-    "HEAVY_PLASMA" -> "Hard-hitting heavy plasma bolts"
-    "SCATTER_FAN" -> "Wide close-range spread fan"
-    "BOUNCING_PULSE" -> "Wall-bouncing energy bolts"
-    "LANCE_BEAM" -> "Piercing long-range thermal beam"
-    "TWIN_RAILGUN" -> "High-velocity dual kinetic slugs"
-    "SEEKER_PODS" -> "Guided micro-missile volleys"
-    "NOVA_MORTAR" -> "Explosive area plasma shells"
-    else -> pri.summary.split(" ").take(4).joinToString(" ")
+    "LIGHT_PULSE" -> "Fast balanced pulse repeater"
+    "ION_NEEDLER", "NEEDLER" -> "Rapid twin-stream ion bolts"
+    "TWIN_SCATTER" -> "Wide close-range twin spread"
+    "ANGLED_PULSE" -> "One-bounce bank-shot twin pulse"
+    "QUAD_PULSE" -> "Four-bolt converging flak volley"
+    "HEAVY_PLASMA" -> "High-caliber twin siege bolts"
+    "TRI_PRISM" -> "Three-stream prism splitter volley"
+    "SNIPER_RAIL" -> "One-bounce sniper rail beam"
+    "PARALLEL_AUTOCANNON" -> "Parallel dogfighter twin stream"
+    else ->
+      pri.summary
+        .replace(Regex("\\([^)]*\\)?"), "")
+        .trim()
+        .split(Regex("\\s+"))
+        .take(4)
+        .joinToString(" ")
   }
 
 private fun conciseSecondaryAbilitySubtitle(sec: SecondaryAbilityOption): String =
   when (sec.id.uppercase(Locale.US)) {
     "NONE" -> "Save points for hull stats"
-    "PHASE_DASH" -> "Instant forward warp burst"
-    "CLOAK" -> "Brief radar stealth cloak"
-    "STASIS_SHIELD" -> "Absorbs incoming weapon fire"
-    "CLUSTER_BOMB" -> "Splits into plasma sub-bombs"
-    "PROXIMITY_MINE" -> "Triggered corridor blast mine"
-    "EMP_BURST" -> "Drains nearby enemy Flux"
-    "GRAVITY_WELL" -> "Pulls rival hulls inward"
-    "REPEL_NOVA" -> "Radial 360 shockwave pulse"
-    "SCATTER_SHOTGUN" -> "Point-blank kinetic fan blast"
+    "NATIVE_MULTI" -> "Permanent four-bolt multi-toggle"
+    "PHASE_DASH" -> "Forward warp burst and shield"
+    "MINE" -> "Magnetic proximity mines plus Repel"
+    "BOUNCE" -> "Three-bounce bank plasma torpedo"
+    "PROX" -> "Eight-bolt proximity flak warhead"
+    "CLUSTER" -> "Eight-bolt cluster shrapnel bomb"
+    "NOVA_RING", "BURST" -> "Sixteen-bolt radial plasma ring"
+    "SHATTER_CONE" -> "Seven-pellet kinetic blast cone"
     "SEEKER_TORPEDO" -> "Predictive homing heavy warhead"
-    "DECOY_HOLOGRAM" -> "Stealth decoy with EMP"
-    "HARDLIGHT_BARRIER" -> "Deployable hard-light shield wall"
-    "AFTERBURNER" -> "Zero-Flux supersonic speed burst"
-    "FLUX_BATTERY" -> "Instant emergency Flux surge"
+    "CLOAK_EMP" -> "Stealth cloak with decloak EMP"
+    "SIEGE" -> "Mid-air detonate heavy bomb"
+    "INTERDICTOR_DOME" -> "Two-way six-second Stasis field"
+    "CHAKRAM", "DISC" -> "Four-bounce ricochet saw-disc"
+    "HOLO_PHANTOM" -> "Mirrored clone and brief cloak"
+    "STASIS_BARRIER" -> "Deployable reflective shield wall"
+    "HYPER_SURGE" -> "Supersonic thruster speed burst"
     "SWARM_DRONES" -> "Five hunter micro-drones"
-    "SNARE_LASER" -> "Gravimetric snare beam toggle"
-    "PATROL_TORPEDO" -> "Re-locking corridor warhead"
-    "THERMAL_CUTTER" -> "Stacking thermal cutting beam"
-    "RICOCHET_DISC" -> "Four-bounce serrated disc"
-    else -> sec.summary.split(" ").take(4).joinToString(" ")
+    "TRACTOR_BEAM" -> "Toggleable gravimetric snare beam"
+    "PROX_SEEKER" -> "Infinite-bounce patrol lock missile"
+    "LANCE_BEAM" -> "Toggleable thermal cutting beam"
+    "NATIVE_RICOCHET" -> "Adds one primary wall bounce"
+    "REPEL_PULSE" -> "Flux-powered radial Repel pulse"
+    else ->
+      sec.summary
+        .replace(Regex("\\([^)]*\\)?"), "")
+        .replace("(", "")
+        .replace(")", "")
+        .trim()
+        .split(Regex("\\s+"))
+        .take(4)
+        .joinToString(" ")
   }
 
 @Composable
@@ -2173,3 +2195,52 @@ internal fun ShardStoreRightPacksBay(
     }
   }
 }
+
+@Composable
+fun BuffIconPreview(buffType: Int, sizeDp: Int, accentColor: Color) {
+  val visualRev = RiftVisualForgeState.visualRevision
+  val bmp = remember(buffType, visualRev) { RiftSpriteBaker.getBuffIconBitmap(buffType).asImageBitmap() }
+  Box(
+    modifier =
+      Modifier.size(sizeDp.dp).drawBehind {
+        val radius = size.minDimension * 0.56f
+        drawCircle(
+          brush =
+            Brush.radialGradient(
+              colors = listOf(accentColor.copy(alpha = 0.28f), Color.Transparent),
+              center = center,
+              radius = radius.coerceAtLeast(1f),
+            ),
+          radius = radius,
+          center = center,
+        )
+      },
+    contentAlignment = Alignment.Center,
+  ) {
+    Canvas(modifier = Modifier.size((sizeDp - 6).coerceAtLeast(16).dp)) {
+      drawImage(
+        image = bmp,
+        dstOffset = IntOffset.Zero,
+        dstSize = IntSize(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1)),
+      )
+    }
+  }
+}
+
+@Composable
+fun ShipSpritePreview(shipId: Int, sizeDp: Int = 32, isAllied: Boolean = true) {
+  val customVer = RiftSpriteBaker.customShip9Version
+  val trimVer = RiftSpriteBaker.activeHullTrimStyle
+  val shipName = remember(shipId) { RiftCodex.getShipById(shipId.coerceIn(1, 10)).name }
+  val bmp =
+    remember(shipId, isAllied, customVer, trimVer) {
+      RiftSpriteBaker.getShipSprite(shipId.coerceIn(1, 10), isAllied = isAllied, isHitFlashing = false).asImageBitmap()
+    }
+  Image(
+    bitmap = bmp,
+    contentDescription = shipName,
+    filterQuality = FilterQuality.High,
+    modifier = Modifier.size(sizeDp.dp),
+  )
+}
+

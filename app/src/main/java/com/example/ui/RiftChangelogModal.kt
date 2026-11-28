@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 140
+const val CURRENT_RIFT_BUILD_VERSION = 141
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 141,
+      versionTag = "v1.0.141 // BUILD #141",
+      releaseDate = "Nov 28, 2026",
+      headline = "Rift Frame Drydock Canonical Weapon Subtitles, Pure-Light Buff Preview Hoisting & Cleanup Pass 1",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Canonical Rift Frame Weapon Subtitles: Replaced legacy weapon and ability identifiers in the Rift Frame Drydock with exact canonical mappings across all 9 Primary weapons and all 23 Secondary abilities, with parenthetical-safe fallback phrasing for forged supply crate abilities.",
+          "Pure-Light Buff Preview & Sprite Helper Hoisting: Moved BuffIconPreview and ShipSpritePreview into the live Hub deck module and upgraded BuffIconPreview from a boxed dark frame to a borderless radial light halo matching the 3D cockpit projection style.",
+          "Legacy Standalone Modal Cleanup (Pass 1): Retired the unused standalone Codex, Pilot Dossier, and Hangar modal implementations now that all three decks run live inside the spatial Rift Hub and circular Overwatch stage, reducing dead code while keeping full compatibility.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 140,
       versionTag = "v1.0.140 // BUILD #140",
       releaseDate = "Nov 27, 2026",
       headline = "End-to-End Live Routing Fixes, UGC Block/Report Safety, Squadron Slot Management, Helm HUD Drag & 2.5D Quality Sync, Syndicate Invites & Dossier/Codex Surfacing",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "ROUTING, UGC & DOSSIER",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
