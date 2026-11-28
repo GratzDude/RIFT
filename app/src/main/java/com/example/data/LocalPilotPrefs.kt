@@ -372,6 +372,10 @@ class LocalPilotPrefs(context: Context) {
     }
   }
 
+  fun hasExplicitSyndicateDecision(uid: String? = null): Boolean =
+    prefs.contains(uidKey(KEY_SYNDICATE_TAG, uid)) ||
+      (canUseLegacyUnscopedFallback(uid) && prefs.contains(KEY_SYNDICATE_TAG))
+
   fun getSyndicateLockUntilMs(uid: String? = null): Long {
     val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_SYNDICATE_LOCK_UNTIL_MS, 0L) else 0L
     return prefs.getLong(uidKey(KEY_SYNDICATE_LOCK_UNTIL_MS, uid), fallback)
@@ -495,8 +499,9 @@ class LocalPilotPrefs(context: Context) {
     bounty: Long,
     kills: Long,
   ): List<SyndicateMemberEntry> {
-    if (isGuestBypassEnabled()) return emptyList()
-    val tag = getSyndicateTag()
+    val scopedUid = currentUid.ifBlank { null }
+    if (isGuestBypassEnabled() || isDrifterOrEphemeralUid(scopedUid)) return emptyList()
+    val tag = getSyndicateTag(scopedUid)
     if (tag.uppercase(Locale.US) in NON_PLAYER_SYNDICATE_TAGS) {
       return emptyList()
     }
@@ -505,7 +510,7 @@ class LocalPilotPrefs(context: Context) {
       getAllSyndicates().any {
         it.tag.equals(tag, ignoreCase = true) &&
           (it.ownerId.isBlank() || it.ownerId == currentUid)
-      } || getSyndicateServiceHistory().lastOrNull { it.isActive }?.role?.contains("Founder", ignoreCase = true) == true
+      } || getSyndicateServiceHistory(scopedUid).lastOrNull { it.isActive }?.role?.contains("Founder", ignoreCase = true) == true
     val localRole =
       when {
         isFounder -> "Leader"
@@ -520,7 +525,7 @@ class LocalPilotPrefs(context: Context) {
         shipId = shipId,
         shipName = cleanShipNameForId(shipId),
         role = localRole,
-        bountyContribution = bounty.coerceAtLeast(getAllTimeBountyPeak()),
+        bountyContribution = bounty.coerceAtLeast(getAllTimeBountyPeak(scopedUid)),
         kills = kills,
         isOnline = true,
         isLocalPlayer = true,
@@ -1003,15 +1008,19 @@ class LocalPilotPrefs(context: Context) {
         .putBoolean("cosmetic_unlocked_FRAME_SLOT_PURCHASE_2", unlocked)
     }
     ed.apply()
+    touchProgUpdatedAtMs(uid)
   }
 
   fun getCustomShipSlot(slotId: String, uid: String? = null): com.example.engine.CustomShipLoadoutSlot {
     val cleanId = normalizeCustomSlotId(slotId)
     val baseKey = "${KEY_CUSTOM_SLOT_PREFIX}_$cleanId"
     val legacyBaseKey = "${KEY_CUSTOM_SLOT_PREFIX}_${legacySlotKeySuffix(cleanId)}"
+    val allowLegacy = canUseLegacyUnscopedFallback(uid)
+    val fallbackBase = if (allowLegacy) prefs.getString(baseKey, null) else null
+    val fallbackLegacy = if (allowLegacy) prefs.getString(legacyBaseKey, null) else null
     val raw =
-      prefs.getString(uidKey(baseKey, uid), prefs.getString(baseKey, null))
-        ?: prefs.getString(uidKey(legacyBaseKey, uid), prefs.getString(legacyBaseKey, null))
+      prefs.getString(uidKey(baseKey, uid), fallbackBase)
+        ?: prefs.getString(uidKey(legacyBaseKey, uid), fallbackLegacy)
     return com.example.engine.CustomShipLoadoutSlot.fromJsonString(raw, cleanId)
   }
 
@@ -1020,11 +1029,12 @@ class LocalPilotPrefs(context: Context) {
     val normalizedSlot = slot.copy(slotId = cleanId)
     val baseKey = "${KEY_CUSTOM_SLOT_PREFIX}_$cleanId"
     val json = normalizedSlot.toJsonString()
-    prefs
-      .edit()
-      .putString(baseKey, json)
-      .putString(uidKey(baseKey, uid), json)
-      .apply()
+    val ed = prefs.edit().putString(uidKey(baseKey, uid), json)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putString(baseKey, json)
+    }
+    ed.apply()
+    touchProgUpdatedAtMs(uid)
   }
 
   fun savePilotProgression(
@@ -1144,6 +1154,7 @@ class LocalPilotPrefs(context: Context) {
       }
     }
     ed.apply()
+    touchProgUpdatedAtMs(uid)
   }
 
   fun getEquippedCosmeticId(category: String, uid: String? = null): Int {
@@ -1166,6 +1177,7 @@ class LocalPilotPrefs(context: Context) {
       ed.putInt(baseKey, cleanId)
     }
     ed.apply()
+    touchProgUpdatedAtMs(uid)
   }
 
   // =========================================================================
@@ -1243,6 +1255,7 @@ class LocalPilotPrefs(context: Context) {
       edTot.putInt(KEY_LIVE_RESONANCE, totalLive).putInt(KEY_PEAK_RESONANCE, nextPeak)
     }
     edTot.apply()
+    touchProgUpdatedAtMs(uid)
     return cleanVal to totalLive
   }
 
@@ -1343,6 +1356,7 @@ class LocalPilotPrefs(context: Context) {
       ed.putInt(KEY_LIVE_RESONANCE, clean).putInt(KEY_PEAK_RESONANCE, nextPeak)
     }
     ed.apply()
+    touchProgUpdatedAtMs(uid)
   }
 
   fun getPeakResonance(uid: String? = null): Int {
@@ -1815,11 +1829,11 @@ class LocalPilotPrefs(context: Context) {
       )
     }
     val now = System.currentTimeMillis()
-    val remainingDays = getRemainingSyndicateLockDays(now)
+    val remainingDays = getRemainingSyndicateLockDays(nowMs = now, uid = cleanOwner)
     if (remainingDays > 0) {
       return Result.failure(
         IllegalStateException(
-          "15-Day Syndicate Lock active (${getRemainingSyndicateLockFormatted(now)} remaining)."
+          "15-Day Syndicate Lock active (${getRemainingSyndicateLockFormatted(nowMs = now, uid = cleanOwner)} remaining)."
         )
       )
     }
@@ -1863,12 +1877,12 @@ class LocalPilotPrefs(context: Context) {
         foundryOrigin = "Sworn Pilot Syndicate",
         motto = cleanMotto,
         memberCount = 1,
-        combinedBounty = getAllTimeBountyPeak().coerceAtLeast(100L),
+        combinedBounty = getAllTimeBountyPeak(cleanOwner).coerceAtLeast(100L),
         isCustom = true,
       )
 
     persistSyndicatesJson(existing + newSyndicate)
-    joinOfficialSyndicate(cleanTag, cleanName, apply15DayLock = true, role = "Founder / Commander")
+    joinOfficialSyndicate(cleanTag, cleanName, apply15DayLock = true, role = "Founder / Commander", uid = cleanOwner)
     return Result.success(newSyndicate)
   }
 
@@ -1968,31 +1982,33 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getAllTimePeakBountySnapshot(uid: String? = null): PeakBountyRunSnapshot? {
-    val raw = prefs.getString(uidKey(KEY_ALL_TIME_PEAK_SNAPSHOT, uid), prefs.getString(KEY_ALL_TIME_PEAK_SNAPSHOT, null))
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getString(KEY_ALL_TIME_PEAK_SNAPSHOT, null) else null
+    val raw = prefs.getString(uidKey(KEY_ALL_TIME_PEAK_SNAPSHOT, uid), fallback)
     return PeakBountyRunSnapshot.fromJsonString(raw)
   }
 
   fun saveAllTimePeakBountySnapshot(snapshot: PeakBountyRunSnapshot, uid: String? = null) {
     val json = snapshot.toJsonString()
-    prefs
-      .edit()
-      .putString(KEY_ALL_TIME_PEAK_SNAPSHOT, json)
-      .putString(uidKey(KEY_ALL_TIME_PEAK_SNAPSHOT, uid), json)
-      .apply()
+    val ed = prefs.edit().putString(uidKey(KEY_ALL_TIME_PEAK_SNAPSHOT, uid), json)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putString(KEY_ALL_TIME_PEAK_SNAPSHOT, json)
+    }
+    ed.apply()
   }
 
   fun getPvpPeakBountySnapshot(uid: String? = null): PeakBountyRunSnapshot? {
-    val raw = prefs.getString(uidKey(KEY_PVP_PEAK_SNAPSHOT, uid), prefs.getString(KEY_PVP_PEAK_SNAPSHOT, null))
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getString(KEY_PVP_PEAK_SNAPSHOT, null) else null
+    val raw = prefs.getString(uidKey(KEY_PVP_PEAK_SNAPSHOT, uid), fallback)
     return PeakBountyRunSnapshot.fromJsonString(raw)
   }
 
   fun savePvpPeakBountySnapshot(snapshot: PeakBountyRunSnapshot, uid: String? = null) {
     val json = snapshot.toJsonString()
-    prefs
-      .edit()
-      .putString(KEY_PVP_PEAK_SNAPSHOT, json)
-      .putString(uidKey(KEY_PVP_PEAK_SNAPSHOT, uid), json)
-      .apply()
+    val ed = prefs.edit().putString(uidKey(KEY_PVP_PEAK_SNAPSHOT, uid), json)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putString(KEY_PVP_PEAK_SNAPSHOT, json)
+    }
+    ed.apply()
   }
 
   /**
@@ -2033,8 +2049,8 @@ class LocalPilotPrefs(context: Context) {
   }
 
   fun getSyndicateServiceHistory(uid: String? = null): List<SyndicateServiceEntry> {
-    val raw =
-      prefs.getString(uidKey(KEY_SYNDICATE_HISTORY_JSON, uid), prefs.getString(KEY_SYNDICATE_HISTORY_JSON, null))
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getString(KEY_SYNDICATE_HISTORY_JSON, null) else null
+    val raw = prefs.getString(uidKey(KEY_SYNDICATE_HISTORY_JSON, uid), fallback)
     val parsed = mutableListOf<SyndicateServiceEntry>()
     var mutated = false
     if (!raw.isNullOrBlank()) {
@@ -2059,26 +2075,40 @@ class LocalPilotPrefs(context: Context) {
       saveSyndicateServiceHistory(parsed, uid)
     }
     if (parsed.isEmpty()) {
-      val currentTag = getSyndicateTag()
-      val currentName = getSyndicateName()
+      val currentTag = getSyndicateTag(uid)
+      val currentName = getSyndicateName(uid)
       val isCustomFounder =
-        getAllSyndicates().any { it.isCustom && it.tag.equals(currentTag, ignoreCase = true) }
+        currentTag.isNotEmpty() &&
+          getAllSyndicates().any {
+            it.isCustom &&
+              it.tag.equals(currentTag, ignoreCase = true) &&
+              (uid.isNullOrBlank() || it.ownerId.isBlank() || it.ownerId == uid)
+          }
+      val commissionFallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_FIRST_COMMISSION_MS, 0L) else 0L
+      val joinedMs =
+        prefs.getLong(uidKey(KEY_FIRST_COMMISSION_MS, uid), commissionFallback).let { existingMs ->
+          if (existingMs > 0L) {
+            existingMs
+          } else {
+            val now = System.currentTimeMillis()
+            val ed = prefs.edit().putLong(uidKey(KEY_FIRST_COMMISSION_MS, uid), now)
+            if (canUseLegacyUnscopedFallback(uid)) {
+              ed.putLong(KEY_FIRST_COMMISSION_MS, now)
+            }
+            ed.apply()
+            now
+          }
+        }
       val seed =
         SyndicateServiceEntry(
           syndicateTag = currentTag,
           syndicateName = currentName,
           role = if (isCustomFounder) "Founder / Commander" else "Pilot",
-          joinedTimestamp = prefs.getLong(KEY_FIRST_COMMISSION_MS, 0L).let {
-            if (it > 0L) it else {
-              val now = System.currentTimeMillis()
-              prefs.edit().putLong(KEY_FIRST_COMMISSION_MS, now).apply()
-              now
-            }
-          },
+          joinedTimestamp = joinedMs,
           leftTimestamp = 0L,
-          totalKills = getAllTimeKills(),
-          peakBountyAchieved = getAllTimeBountyPeak(),
-          publicGameWins = getConvergencesWon(),
+          totalKills = getAllTimeKills(uid),
+          peakBountyAchieved = getAllTimeBountyPeak(uid),
+          publicGameWins = getConvergencesWon(uid),
         )
       saveSyndicateServiceHistory(listOf(seed), uid)
       return listOf(seed)
@@ -2090,11 +2120,11 @@ class LocalPilotPrefs(context: Context) {
     val arr = JSONArray()
     entries.forEach { arr.put(it.toJson()) }
     val json = arr.toString()
-    prefs
-      .edit()
-      .putString(KEY_SYNDICATE_HISTORY_JSON, json)
-      .putString(uidKey(KEY_SYNDICATE_HISTORY_JSON, uid), json)
-      .apply()
+    val ed = prefs.edit().putString(uidKey(KEY_SYNDICATE_HISTORY_JSON, uid), json)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putString(KEY_SYNDICATE_HISTORY_JSON, json)
+    }
+    ed.apply()
   }
 
   private fun appendSyndicateServiceTransition(
@@ -2648,10 +2678,30 @@ class LocalPilotPrefs(context: Context) {
     return !hasCompletedSwornPracticeTutorial(uid)
   }
 
+  fun getProgUpdatedAtMs(uid: String? = null): Long {
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_PROG_UPDATED_AT_MS, 0L) else 0L
+    return prefs.getLong(uidKey(KEY_PROG_UPDATED_AT_MS, uid), fallback).coerceAtLeast(0L)
+  }
+
+  private fun touchProgUpdatedAtMs(uid: String? = null, timestampMs: Long = System.currentTimeMillis()): Long {
+    val cleanTs = timestampMs.coerceAtLeast(0L)
+    val ed = prefs.edit().putLong(uidKey(KEY_PROG_UPDATED_AT_MS, uid), cleanTs)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putLong(KEY_PROG_UPDATED_AT_MS, cleanTs)
+    }
+    ed.apply()
+    return cleanTs
+  }
+
   fun exportCloudProgressionJson(uid: String): String {
     if (uid.isBlank() || isDrifterOrEphemeralUid(uid)) return ""
+    val existingProgTs = getProgUpdatedAtMs(uid)
+    val localProgUpdatedAtMs =
+      if (existingProgTs > 0L) existingProgTs else touchProgUpdatedAtMs(uid, System.currentTimeMillis())
     val obj = JSONObject()
     obj.put("uid", uid)
+    obj.put("sessionInstanceId", SESSION_INSTANCE_ID)
+    obj.put("progUpdatedAtMs", localProgUpdatedAtMs)
     obj.put("xpBuffs", getXpFromBuffs(uid))
     obj.put("xpDamage", getXpFromDamage(uid))
     obj.put("xpAccuracy", getXpFromAccuracy(uid))
@@ -2709,7 +2759,7 @@ class LocalPilotPrefs(context: Context) {
       }
     obj.put("equippedCosmetics", equippedCosmeticsObj)
     obj.put("shipSurvival", exportShipSurvivalJsonObject(uid))
-    obj.put("updatedAtMs", System.currentTimeMillis())
+    obj.put("updatedAtMs", localProgUpdatedAtMs)
     return obj.toString()
   }
 
@@ -2717,6 +2767,14 @@ class LocalPilotPrefs(context: Context) {
     if (uid.isBlank() || isDrifterOrEphemeralUid(uid) || rawJson.isBlank()) return false
     return try {
       val obj = JSONObject(rawJson)
+      if (obj.optString("sessionInstanceId") == SESSION_INSTANCE_ID) {
+        return false
+      }
+
+      val localUpdatedAtMs = getProgUpdatedAtMs(uid)
+      val cloudUpdatedAtMs = obj.optLong("progUpdatedAtMs", 0L)
+      val adoptNewerCloudState = localUpdatedAtMs == 0L || cloudUpdatedAtMs > localUpdatedAtMs
+
       val mergedXpBuffs = kotlin.math.max(getXpFromBuffs(uid), obj.optLong("xpBuffs", 0L))
       val mergedXpDamage = kotlin.math.max(getXpFromDamage(uid), obj.optLong("xpDamage", 0L))
       val mergedXpAcc = kotlin.math.max(getXpFromAccuracy(uid), obj.optLong("xpAccuracy", 0L))
@@ -2736,37 +2794,7 @@ class LocalPilotPrefs(context: Context) {
       )
       setUnlockedExtraSlots(kotlin.math.max(getUnlockedExtraSlots(uid), obj.optInt("extraSlots", 0)), uid)
 
-      val shipResObj = obj.optJSONObject("shipRes")
-      var mergedTotalRes = 0
-      if (shipResObj != null) {
-        val allowLegacy = canUseLegacyUnscopedFallback(uid)
-        val ed = prefs.edit()
-        for (id in 1..10) {
-          val cloudR = shipResObj.optInt(id.toString(), 0).coerceAtLeast(0)
-          val localR = getShipResonanceRaw(id, uid)
-          val bestR = kotlin.math.max(localR, cloudR)
-          mergedTotalRes += bestR
-          val base = shipResonanceBaseKey(id)
-          ed.putInt(uidKey(base, uid), bestR)
-          if (allowLegacy) ed.putInt(base, bestR)
-        }
-        ed.putBoolean(uidKey(KEY_SHIP_RESONANCE_MIGRATED, uid), true)
-        ed.putBoolean(uidKey(KEY_RESONANCE_MIGRATED, uid), true)
-        ed.apply()
-      }
-      val cloudLive = obj.optInt("liveRes", 0).coerceAtLeast(0)
-      val cloudPeak = obj.optInt("peakRes", 0).coerceAtLeast(0)
-      val bestLive = kotlin.math.max(getLiveResonance(uid), kotlin.math.max(mergedTotalRes, cloudLive))
-      if (bestLive > getLiveResonance(uid)) {
-        setLiveResonance(bestLive, uid)
-      }
-      val bestPeak = kotlin.math.max(getPeakResonance(uid), kotlin.math.max(bestLive, cloudPeak))
-      val edPeak = prefs.edit().putInt(uidKey(KEY_PEAK_RESONANCE, uid), bestPeak)
-      if (canUseLegacyUnscopedFallback(uid)) {
-        edPeak.putInt(KEY_PEAK_RESONANCE, bestPeak)
-      }
-      edPeak.apply()
-
+      // Permanent Shard unlocks always merge via union (local || cloud).
       val localFrameBOwned =
         isCosmeticUnlocked("FRAME_SLOT_PURCHASE", 2, 1, uid) || isCustomSlotUnlocked("Frame B", uid)
       val cloudFrameBOwned = obj.optBoolean("frameBPurchased", false)
@@ -2785,35 +2813,122 @@ class LocalPilotPrefs(context: Context) {
         }
       }
 
-      val equippedObj = obj.optJSONObject("equippedCosmetics")
-      if (equippedObj != null) {
-        val prevHullTrim = getEquippedCosmeticId("HULL_TRIM", uid)
-        val cloudHullTrim = equippedObj.optInt("HULL_TRIM", 0)
-        if (
-          prevHullTrim == 0 &&
-            cloudHullTrim in 1..5 &&
-            isCosmeticUnlocked("HULL_TRIM", cloudHullTrim, 1, uid)
-        ) {
-          setEquippedCosmeticId("HULL_TRIM", cloudHullTrim, uid)
-        }
-        val nextHullTrim = getEquippedCosmeticId("HULL_TRIM", uid).coerceIn(0, 5)
-        if (nextHullTrim != prevHullTrim) {
-          com.example.engine.RiftSpriteBaker.activeHullTrimStyle = nextHullTrim
+      val cloudLive = obj.optInt("liveRes", 0).coerceAtLeast(0)
+      val cloudPeak = obj.optInt("peakRes", 0).coerceAtLeast(0)
+      val allowLegacy = canUseLegacyUnscopedFallback(uid)
+
+      if (adoptNewerCloudState) {
+        val shipResObj = obj.optJSONObject("shipRes")
+        var adoptedTotalRes = 0
+        if (shipResObj != null) {
+          val ed = prefs.edit()
+          for (id in 1..10) {
+            val cloudR = shipResObj.optInt(id.toString(), 0).coerceAtLeast(0)
+            adoptedTotalRes += cloudR
+            val base = shipResonanceBaseKey(id)
+            ed.putInt(uidKey(base, uid), cloudR)
+            if (allowLegacy) ed.putInt(base, cloudR)
+          }
+          ed.putBoolean(uidKey(KEY_SHIP_RESONANCE_MIGRATED, uid), true)
+          ed.putBoolean(uidKey(KEY_RESONANCE_MIGRATED, uid), true)
+          ed.putInt(uidKey(KEY_LIVE_RESONANCE, uid), adoptedTotalRes)
+          if (allowLegacy) ed.putInt(KEY_LIVE_RESONANCE, adoptedTotalRes)
+          ed.apply()
+          if (adoptedTotalRes == 0 && cloudLive > 0) {
+            setLiveResonance(cloudLive, uid)
+          }
+        } else {
+          setLiveResonance(cloudLive, uid)
         }
 
-        val cloudKillFinisher = equippedObj.optInt("KILL_FINISHER", 0)
-        if (getEquippedCosmeticId("KILL_FINISHER", uid) == 0 && cloudKillFinisher in 1..4) {
-          setEquippedCosmeticId("KILL_FINISHER", cloudKillFinisher, uid)
+        val cloudShipId = obj.optInt("shipId", 0)
+        if (cloudShipId in 1..10) {
+          setPreferredShipId(cloudShipId, uid)
         }
-        val cloudWarpSignature = equippedObj.optInt("WARP_SIGNATURE", 0)
-        if (getEquippedCosmeticId("WARP_SIGNATURE", uid) == 0 && cloudWarpSignature in 1..3) {
-          setEquippedCosmeticId("WARP_SIGNATURE", cloudWarpSignature, uid)
+
+        val slotsObj = obj.optJSONObject("slots")
+        if (slotsObj != null) {
+          for (slotId in com.example.engine.CustomShipLoadoutSlot.ALL_SLOT_IDS) {
+            val slotJson = slotsObj.optString(slotId, "")
+            if (slotJson.isNotBlank()) {
+              saveCustomShipSlot(com.example.engine.CustomShipLoadoutSlot.fromJsonString(slotJson, slotId), uid)
+            }
+          }
         }
-        val cloudHvtHalo = equippedObj.optInt("HVT_HALO", 0)
-        if (getEquippedCosmeticId("HVT_HALO", uid) == 0 && cloudHvtHalo in 1..3) {
-          setEquippedCosmeticId("HVT_HALO", cloudHvtHalo, uid)
+
+        val cloudActiveSlot = obj.optString("activeSlot", "")
+        if (cloudActiveSlot.isNotBlank()) {
+          setActiveCustomSlotId(cloudActiveSlot, uid)
+        }
+
+        val resultingLiveRes = getLiveResonance(uid)
+        val equippedObj = obj.optJSONObject("equippedCosmetics")
+        if (equippedObj != null) {
+          val prevHullTrim = getEquippedCosmeticId("HULL_TRIM", uid)
+          val cloudHullTrim = equippedObj.optInt("HULL_TRIM", 0).coerceIn(0, 5)
+          val validHullTrim =
+            if (cloudHullTrim == 0 || isCosmeticUnlocked("HULL_TRIM", cloudHullTrim, 1, uid)) {
+              cloudHullTrim
+            } else {
+              0
+            }
+          setEquippedCosmeticId("HULL_TRIM", validHullTrim, uid)
+          if (validHullTrim != prevHullTrim) {
+            com.example.engine.RiftSpriteBaker.activeHullTrimStyle = validHullTrim
+          }
+
+          val cloudKillFinisher = equippedObj.optInt("KILL_FINISHER", 0).coerceIn(0, 4)
+          val killFinItem = com.example.engine.RiftProgressionCatalog.getCosmeticItem("KILL_FINISHER", cloudKillFinisher)
+          val validKillFinisher =
+            if (
+              cloudKillFinisher == 0 ||
+                (killFinItem != null &&
+                  com.example.engine.RiftProgressionCatalog.isRankedCosmeticActive(killFinItem, resultingLiveRes))
+            ) {
+              cloudKillFinisher
+            } else {
+              0
+            }
+          setEquippedCosmeticId("KILL_FINISHER", validKillFinisher, uid)
+
+          val cloudWarpSignature = equippedObj.optInt("WARP_SIGNATURE", 0).coerceIn(0, 3)
+          val warpItem = com.example.engine.RiftProgressionCatalog.getCosmeticItem("WARP_SIGNATURE", cloudWarpSignature)
+          val validWarpSignature =
+            if (
+              cloudWarpSignature == 0 ||
+                (warpItem != null &&
+                  com.example.engine.RiftProgressionCatalog.isRankedCosmeticActive(warpItem, resultingLiveRes))
+            ) {
+              cloudWarpSignature
+            } else {
+              0
+            }
+          setEquippedCosmeticId("WARP_SIGNATURE", validWarpSignature, uid)
+
+          val cloudHvtHalo = equippedObj.optInt("HVT_HALO", 0).coerceIn(0, 3)
+          val haloItem = com.example.engine.RiftProgressionCatalog.getCosmeticItem("HVT_HALO", cloudHvtHalo)
+          val validHvtHalo =
+            if (
+              cloudHvtHalo == 0 ||
+                (haloItem != null &&
+                  com.example.engine.RiftProgressionCatalog.isRankedCosmeticActive(haloItem, resultingLiveRes))
+            ) {
+              cloudHvtHalo
+            } else {
+              0
+            }
+          setEquippedCosmeticId("HVT_HALO", validHvtHalo, uid)
         }
       }
+
+      // Peak Resonance, career totals, and ship survival always merge monotonically via max(local, cloud).
+      val currentLive = getLiveResonance(uid)
+      val bestPeak = kotlin.math.max(getPeakResonance(uid), kotlin.math.max(currentLive, cloudPeak))
+      val edPeak = prefs.edit().putInt(uidKey(KEY_PEAK_RESONANCE, uid), bestPeak)
+      if (allowLegacy) {
+        edPeak.putInt(KEY_PEAK_RESONANCE, bestPeak)
+      }
+      edPeak.apply()
 
       saveCombatStats(
         pvpKills = kotlin.math.max(getPvpKills(uid), obj.optLong("pvpKills", 0L)),
@@ -2843,24 +2958,13 @@ class LocalPilotPrefs(context: Context) {
         .putLong(uidKey(KEY_RIFT_CAPTURES, uid), mergedCaps)
         .apply()
 
-      val cloudShipId = obj.optInt("shipId", 0)
-      if (cloudShipId in 1..10 && !prefs.contains(uidKey(KEY_SHIP_ID, uid))) {
-        setPreferredShipId(cloudShipId, uid)
-      }
-      val slotsObj = obj.optJSONObject("slots")
-      if (slotsObj != null) {
-        for (slotId in com.example.engine.CustomShipLoadoutSlot.ALL_SLOT_IDS) {
-          val baseKey = "${KEY_CUSTOM_SLOT_PREFIX}_$slotId"
-          if (!prefs.contains(uidKey(baseKey, uid))) {
-            val slotJson = slotsObj.optString(slotId, "")
-            if (slotJson.isNotBlank()) {
-              saveCustomShipSlot(com.example.engine.CustomShipLoadoutSlot.fromJsonString(slotJson, slotId), uid)
-            }
-          }
-        }
-      }
       obj.optJSONObject("shipSurvival")?.let { survObj ->
         mergeShipSurvivalJsonObject(uid, survObj)
+      }
+
+      val resolvedProgTs = kotlin.math.max(localUpdatedAtMs, cloudUpdatedAtMs)
+      if (resolvedProgTs > 0L) {
+        touchProgUpdatedAtMs(uid, resolvedProgTs)
       }
       true
     } catch (_: Exception) {
@@ -3692,6 +3796,9 @@ class LocalPilotPrefs(context: Context) {
     private const val KEY_CAREER_SHOTS_FIRED = "career_shots_fired_v115"
     private const val KEY_CAREER_SHOTS_HIT = "career_shots_hit_v115"
     private const val KEY_RIFT_CAPTURES = "career_rift_captures_v115"
+    private const val KEY_PROG_UPDATED_AT_MS = "pilot_prog_updated_at_ms"
+
+    val SESSION_INSTANCE_ID: String = UUID.randomUUID().toString()
 
     const val FIFTEEN_DAYS_MS = 15L * 24L * 3600L * 1000L
 

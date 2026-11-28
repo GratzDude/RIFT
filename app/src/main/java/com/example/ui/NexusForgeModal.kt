@@ -414,6 +414,7 @@ fun NexusForgeModal(
   onForgeCustomMusicPrompt: (String) -> Unit = {},
   onEnterHudDragArenaMode: () -> Unit = {},
   onSyncCalibrationToTesters: () -> Unit = {},
+  onSyncCloudProgression: () -> Unit = {},
   onShowToast: (String) -> Unit = {},
 ) {
   val context = LocalContext.current
@@ -624,6 +625,7 @@ fun NexusForgeModal(
             onUnlockCustomSlot = onUnlockCustomSlot,
             onForgeAiHullDesign = onForgeAiHullDesign,
             onSpendRiftShards = onSpendRiftShards,
+            onSyncCloudProgression = onSyncCloudProgression,
             onShowToast = onShowToast,
           )
         NexusForgeTab.AUDIO_SFX ->
@@ -696,6 +698,7 @@ fun NexusForgeModal(
             onToggleFullScreenStage = onToggleFullScreenStage,
             onEnterHudDragArenaMode = onEnterHudDragArenaMode,
             onSyncCalibrationToTesters = onSyncCalibrationToTesters,
+            onSyncCloudProgression = onSyncCloudProgression,
             onShowToast = onShowToast,
           )
       }
@@ -722,6 +725,7 @@ private fun ShipAndCosmeticTurntableBay(
   onUnlockCustomSlot: (String) -> Boolean,
   onForgeAiHullDesign: (String, String) -> Pair<Boolean, String>,
   onSpendRiftShards: (Long) -> Boolean,
+  onSyncCloudProgression: () -> Unit = {},
   onShowToast: (String) -> Unit,
 ) {
   val uidOrNull = currentUserId.takeIf { it.isNotBlank() }
@@ -1510,7 +1514,7 @@ private fun ShipAndCosmeticTurntableBay(
                               "WARP_SIGNATURE" -> engine.localPlayer.equippedWarpStyle = 0
                               "HVT_HALO" -> engine.localPlayer.equippedHvtHaloStyle = 0
                             }
-                            localPrefs.exportCloudProgressionJson(currentUserId)
+                            onSyncCloudProgression()
                             cosmeticRefreshTick++
                           }
                         } else {
@@ -1520,7 +1524,7 @@ private fun ShipAndCosmeticTurntableBay(
                             "WARP_SIGNATURE" -> engine.localPlayer.equippedWarpStyle = item.id
                             "HVT_HALO" -> engine.localPlayer.equippedHvtHaloStyle = item.id
                           }
-                          localPrefs.exportCloudProgressionJson(currentUserId)
+                          onSyncCloudProgression()
                           cosmeticRefreshTick++
                           onShowToast("Equipped ${item.name}")
                         }
@@ -1533,14 +1537,14 @@ private fun ShipAndCosmeticTurntableBay(
                             previewTrimIndex = 0
                             RiftSpriteBaker.activeHullTrimStyle = 0
                             RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
-                            localPrefs.exportCloudProgressionJson(currentUserId)
+                            onSyncCloudProgression()
                             cosmeticRefreshTick++
                           }
                         } else if (isUnlocked) {
                           localPrefs.setEquippedCosmeticId("HULL_TRIM", clampedSkinId, uidOrNull)
                           RiftSpriteBaker.activeHullTrimStyle = clampedSkinId
                           RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
-                          localPrefs.exportCloudProgressionJson(currentUserId)
+                          onSyncCloudProgression()
                           cosmeticRefreshTick++
                           onShowToast("Equipped ${item.name}")
                         } else if (
@@ -1553,7 +1557,7 @@ private fun ShipAndCosmeticTurntableBay(
                           localPrefs.setEquippedCosmeticId("HULL_TRIM", clampedSkinId, uidOrNull)
                           RiftSpriteBaker.activeHullTrimStyle = clampedSkinId
                           RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
-                          localPrefs.exportCloudProgressionJson(currentUserId)
+                          onSyncCloudProgression()
                           cosmeticRefreshTick++
                           onShowToast("Unlocked and equipped ${item.name}")
                         } else {
@@ -2511,6 +2515,7 @@ private fun DevPlayfieldAndHudStudioBay(
   onToggleFullScreenStage: (Boolean) -> Unit,
   onEnterHudDragArenaMode: () -> Unit,
   onSyncCalibrationToTesters: () -> Unit,
+  onSyncCloudProgression: () -> Unit = {},
   onShowToast: (String) -> Unit,
 ) {
   var isTestFlightMode by remember { mutableStateOf(false) }
@@ -3878,6 +3883,7 @@ private fun DevPlayfieldAndHudStudioBay(
                   onUnlockCustomSlot = onUnlockCustomSlot,
                   onForgeAiHullDesign = onForgeAiHullDesign,
                   onSpendRiftShards = onSpendRiftShards,
+                  onSyncCloudProgression = onSyncCloudProgression,
                   onShowToast = onShowToast,
                 )
               StarForgeCreationTab.CUSTOM_BUFF_LAB ->

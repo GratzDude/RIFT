@@ -1148,6 +1148,7 @@ fun RiftArenaScreen(
     )
 
   val dossierState by viewModel.dossierState.collectAsStateWithLifecycle()
+  val cloudProgressionJson by viewModel.cloudProgressionState.collectAsStateWithLifecycle()
   val leaderboardState by viewModel.leaderboardState.collectAsStateWithLifecycle()
   val sectorPilotsState by viewModel.sectorPilotsState.collectAsStateWithLifecycle()
   val allOnlineHumansState by viewModel.allOnlineHumansState.collectAsStateWithLifecycle()
@@ -1406,6 +1407,15 @@ fun RiftArenaScreen(
     }
   }
 
+  fun pushCloudProgressionNow() {
+    if (isGoogleAuthenticated && !localPrefs.isGuestBypassEnabled() && currentUserId.isNotBlank()) {
+      val payload = localPrefs.exportCloudProgressionJson(currentUserId)
+      if (payload.isNotBlank()) {
+        viewModel.syncCloudPilotProgression(payload)
+      }
+    }
+  }
+
   val engine = remember {
     RiftGameEngine(
       sfx = sfx,
@@ -1419,15 +1429,15 @@ fun RiftArenaScreen(
       },
     ).apply {
       try {
-        pvpKills = localPrefs.getPvpKills()
-        pvpDeaths = localPrefs.getPvpDeaths()
-        pvpBountyPeak = localPrefs.getPvpBountyPeak()
-        allTimeKills = localPrefs.getAllTimeKills()
-        allTimeDeaths = localPrefs.getAllTimeDeaths()
-        allTimeBountyPeak = localPrefs.getAllTimeBountyPeak()
-        convergencesWon = localPrefs.getConvergencesWon()
-        hvtEliminations = localPrefs.getHvtEliminations()
-        greensCollected = localPrefs.getGreensCollected()
+        pvpKills = localPrefs.getPvpKills(currentUserId)
+        pvpDeaths = localPrefs.getPvpDeaths(currentUserId)
+        pvpBountyPeak = localPrefs.getPvpBountyPeak(currentUserId)
+        allTimeKills = localPrefs.getAllTimeKills(currentUserId)
+        allTimeDeaths = localPrefs.getAllTimeDeaths(currentUserId)
+        allTimeBountyPeak = localPrefs.getAllTimeBountyPeak(currentUserId)
+        convergencesWon = localPrefs.getConvergencesWon(currentUserId)
+        hvtEliminations = localPrefs.getHvtEliminations(currentUserId)
+        greensCollected = localPrefs.getGreensCollected(currentUserId)
         xpFromBuffs = localPrefs.getXpFromBuffs(currentUserId).toFloat()
         xpFromDamage = localPrefs.getXpFromDamage(currentUserId).toFloat()
         xpFromAccuracy = localPrefs.getXpFromAccuracy(currentUserId).toFloat()
@@ -1577,6 +1587,7 @@ fun RiftArenaScreen(
         localPrefs.setPeakResonance(engine.peakResonance, currentUserId)
         shipResonancesState = localPrefs.getAllShipResonances(currentUserId)
         syncEquippedCosmeticsToEngine(engine)
+        pushCloudProgressionNow()
       }
     }
     engine.onDailyDirectiveEvent = { metric, amount, isAbsolutePeak ->
@@ -1614,6 +1625,7 @@ fun RiftArenaScreen(
         convergencesWon = engine.convergencesWon,
         hvtEliminations = engine.hvtEliminations,
         greensCollected = engine.greensCollected,
+        uid = currentUserId,
       )
       localPrefs.savePilotProgression(
         uid = currentUserId,
@@ -1661,10 +1673,12 @@ fun RiftArenaScreen(
           allTimeBountyPeak = engine.allTimeBountyPeak,
           convergencesWon = engine.convergencesWon,
           syndicateTag = engine.localPlayer.syndicateTag,
+          syndicateName = syndicateName,
           armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
           armadaTierSize = engine.getCurrentArmadaSize(),
         )
       }
+      pushCloudProgressionNow()
       frameTick++
       }
     }
@@ -1686,6 +1700,7 @@ fun RiftArenaScreen(
           record = completedRecord,
           uid = if (isGoogleAuthenticated) currentUserId else null,
         )
+        pushCloudProgressionNow()
         frameTick++
       }
     }
@@ -1906,6 +1921,7 @@ fun RiftArenaScreen(
           convergencesWon = engine.convergencesWon,
           hvtEliminations = engine.hvtEliminations,
           greensCollected = engine.greensCollected,
+          uid = currentUserId,
         )
       }
 
@@ -1924,7 +1940,9 @@ fun RiftArenaScreen(
           cloudSynTag.length in 1..3 &&
             cloudSynTag !in nonPlayerTags &&
             !localPrefs.isGhostSyndicateName(cloudDossier.syndicateName) &&
-            syndicateTag.isBlank()
+            syndicateTag.isBlank() &&
+            !localPrefs.hasExplicitSyndicateDecision(currentUserId) &&
+            localPrefs.getRemainingSyndicateLockDays(uid = currentUserId) == 0
         ) {
           val resolvedSynName =
             cloudDossier.syndicateName
@@ -1972,6 +1990,7 @@ fun RiftArenaScreen(
                   allTimeBountyPeak = engine.allTimeBountyPeak,
                   convergencesWon = engine.convergencesWon,
                   syndicateTag = engine.localPlayer.syndicateTag,
+                  syndicateName = syndicateName,
                   armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
                   armadaTierSize = engine.getCurrentArmadaSize(),
                 )
@@ -1997,6 +2016,7 @@ fun RiftArenaScreen(
               allTimeBountyPeak = engine.allTimeBountyPeak,
               convergencesWon = engine.convergencesWon,
               syndicateTag = engine.localPlayer.syndicateTag,
+              syndicateName = syndicateName,
               armadaTag = engine.activeArmadaName.ifBlank { "SOLO" },
               armadaTierSize = engine.getCurrentArmadaSize(),
             )
@@ -2011,6 +2031,60 @@ fun RiftArenaScreen(
       needsInitialSwornCallsign = !hasValidNameNow
     } else {
       needsInitialSwornCallsign = false
+    }
+  }
+
+  LaunchedEffect(cloudProgressionJson, currentUserId, isGoogleAuthenticated) {
+    val rawJson = cloudProgressionJson
+    if (
+      !rawJson.isNullOrBlank() &&
+        isGoogleAuthenticated &&
+        !localPrefs.isGuestBypassEnabled() &&
+        currentUserId.isNotBlank() &&
+        localPrefs.mergeCloudProgressionJson(currentUserId, rawJson)
+    ) {
+      val syncedShipResMap = localPrefs.getAllShipResonances(currentUserId)
+      val syncedLiveRes = localPrefs.getLiveResonance(currentUserId)
+      val syncedPeakRes = localPrefs.getPeakResonance(currentUserId)
+      shipResonancesState = syncedShipResMap
+      engine.liveResonance = syncedLiveRes
+      engine.peakResonance = syncedPeakRes
+      engine.loadShipResonances(syncedShipResMap, syncedLiveRes)
+      for (id in 1..10) {
+        engine.shipResonanceById[id] = syncedShipResMap[id] ?: 0
+      }
+      engine.localPlayer.liveResonanceRating = engine.getShipResonance(engine.localPlayer.shipId)
+
+      engine.pvpKills = localPrefs.getPvpKills(currentUserId)
+      engine.pvpDeaths = localPrefs.getPvpDeaths(currentUserId)
+      engine.pvpBountyPeak = localPrefs.getPvpBountyPeak(currentUserId)
+      engine.allTimeKills = localPrefs.getAllTimeKills(currentUserId)
+      engine.allTimeDeaths = localPrefs.getAllTimeDeaths(currentUserId)
+      engine.allTimeBountyPeak = localPrefs.getAllTimeBountyPeak(currentUserId)
+      engine.convergencesWon = localPrefs.getConvergencesWon(currentUserId)
+      engine.hvtEliminations = localPrefs.getHvtEliminations(currentUserId)
+      engine.greensCollected = localPrefs.getGreensCollected(currentUserId)
+
+      val bOwned = isFrameBPurchasedNow()
+      slot9BUnlocked = bOwned
+      slot9CUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame C", syncedLiveRes, bOwned)
+      slot9DUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame D", syncedLiveRes, bOwned)
+      slot9EUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame E", syncedLiveRes, bOwned)
+
+      val resolvedSlotId =
+        localPrefs.getActiveCustomSlotId(currentUserId).let { cand ->
+          if (RiftProgressionCatalog.isFrameSlotActive(cand, syncedLiveRes, bOwned)) cand else "Frame A"
+        }
+      activeCustomSlotId = resolvedSlotId
+      localPrefs.setActiveCustomSlotId(resolvedSlotId, currentUserId)
+      val reloadedSlot = localPrefs.getCustomShipSlot(resolvedSlotId, currentUserId)
+      activeCustomSlot = reloadedSlot
+      RiftCodex.updateActiveCustomShipSlot(reloadedSlot)
+      engine.spentCustomizationPoints = reloadedSlot.totalAllocatedPoints()
+      engine.syncLocalPlayerCustomShipSpec()
+
+      syncEquippedCosmeticsToEngine(engine)
+      frameTick++
     }
   }
 
@@ -3184,6 +3258,7 @@ fun RiftArenaScreen(
               RiftCodex.updateActiveCustomShipSlot(updatedSlot)
               engine.spentCustomizationPoints = updatedSlot.totalAllocatedPoints()
               engine.syncLocalPlayerCustomShipSpec()
+              pushCloudProgressionNow()
             }
             val switchCustomSlotShared: (String) -> Unit = { targetSlotId ->
               val normTarget = CustomShipLoadoutSlot.normalizeSlotId(targetSlotId)
@@ -3217,6 +3292,7 @@ fun RiftArenaScreen(
                   localPrefs.setCustomSlotUnlocked("Frame B", true, currentUserId)
                   slot9BUnlocked = true
                   switchCustomSlotShared("Frame B")
+                  pushCloudProgressionNow()
                   engine.onStatsUpdated()
                   true
                 } else {
@@ -3224,6 +3300,7 @@ fun RiftArenaScreen(
                 }
               } else if (RiftProgressionCatalog.isFrameSlotActive(normSlotId, engine.liveResonance, isFrameBPurchasedNow())) {
                 switchCustomSlotShared(normSlotId)
+                pushCloudProgressionNow()
                 engine.onStatsUpdated()
                 true
               } else {
@@ -3338,7 +3415,7 @@ fun RiftArenaScreen(
                         bestShipId.coerceIn(1, 10)
                       }
                     selectedShipId = deployShipId
-                    localPrefs.setPreferredShipId(deployShipId)
+                    localPrefs.setPreferredShipId(deployShipId, currentUserId)
                     enqueueOrExecuteResonanceMatchmaking(
                       modeTitle = mode.title.uppercase(Locale.US),
                       riftLabel = "${bracket}V${bracket}",
@@ -3379,7 +3456,7 @@ fun RiftArenaScreen(
                       bestShipId.coerceIn(1, 10)
                     }
                   selectedShipId = deployShipId
-                  localPrefs.setPreferredShipId(deployShipId)
+                  localPrefs.setPreferredShipId(deployShipId, currentUserId)
                   val formatLabel =
                     when (mode) {
                       RankedGameMode.RIFT_SKIRMISH,
@@ -3509,7 +3586,7 @@ fun RiftArenaScreen(
                       val clamped = targetShipId.coerceIn(1, 10)
                       selectedShipId = clamped
                       hasExplicitHangarLock = true
-                      localPrefs.setPreferredShipId(clamped)
+                      localPrefs.setPreferredShipId(clamped, currentUserId)
                       if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
                         engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
                       } else {
@@ -3556,6 +3633,7 @@ fun RiftArenaScreen(
                       toastMessage = "CUSTOM GAME CALIBRATION SYNCED TO ALL TESTERS"
                       toastVersion++
                     },
+                    onSyncCloudProgression = { pushCloudProgressionNow() },
                     onShowToast = { msg -> toastMessage = msg; toastVersion++ },
                   )
                 }
@@ -3762,7 +3840,7 @@ fun RiftArenaScreen(
                 val changedSelection = selectedShipId != clamped || !hasExplicitHangarLock
                 selectedShipId = clamped
                 hasExplicitHangarLock = true
-                localPrefs.setPreferredShipId(clamped)
+                localPrefs.setPreferredShipId(clamped, currentUserId)
                 if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
                   engine.switchLocalPlayerShip(clamped, forceFromHangar = true)
                 } else {
@@ -4010,7 +4088,7 @@ fun RiftArenaScreen(
                 saveCustomSlotShared(clampedSlot)
                 selectedShipId = 10
                 hasExplicitHangarLock = true
-                localPrefs.setPreferredShipId(10)
+                localPrefs.setPreferredShipId(10, currentUserId)
                 val chargedKey = "charged_ship_${currentUserId.trim().ifBlank { "local" }}"
                 context
                   .getSharedPreferences("rift_hub_charged_ship_prefs", Context.MODE_PRIVATE)
@@ -4264,7 +4342,7 @@ fun RiftArenaScreen(
                 } else {
                   val deployShipId = hangarCardShipId
                   selectedShipId = deployShipId
-                  localPrefs.setPreferredShipId(deployShipId)
+                  localPrefs.setPreferredShipId(deployShipId, currentUserId)
                   val executeDirectRiftIn: () -> Unit = {
                     pendingStagedLaunch = null
                     suspendedActiveMatch = null
@@ -4318,7 +4396,7 @@ fun RiftArenaScreen(
               onStageCustomGameViaHangar = { customCfg ->
                 val deployShipId = hangarCardShipId
                 selectedShipId = deployShipId
-                localPrefs.setPreferredShipId(deployShipId)
+                localPrefs.setPreferredShipId(deployShipId, currentUserId)
                 pendingStagedLaunch = null
                 suspendedActiveMatch = null
                 engine.isShipLockedForMatch = false
@@ -4348,7 +4426,7 @@ fun RiftArenaScreen(
               onStageExistingCustomInstanceViaHangar = { instanceId ->
                 val deployShipId = hangarCardShipId
                 selectedShipId = deployShipId
-                localPrefs.setPreferredShipId(deployShipId)
+                localPrefs.setPreferredShipId(deployShipId, currentUserId)
                 pendingStagedLaunch = null
                 suspendedActiveMatch = null
                 engine.isShipLockedForMatch = false
@@ -4409,35 +4487,41 @@ fun RiftArenaScreen(
                 },
               syndicateStatusMessage = syndicateStatusBanner,
               onJoinOfficialSyndicate = { info ->
-                val joined = localPrefs.joinOfficialSyndicate(info.tag, info.name)
+                val joined = localPrefs.joinOfficialSyndicate(info.tag, info.name, uid = currentUserId)
                 if (joined) {
-                  syndicateTag = localPrefs.getSyndicateTag()
-                  syndicateName = localPrefs.getSyndicateName()
+                  syndicateTag = localPrefs.getSyndicateTag(currentUserId)
+                  syndicateName = localPrefs.getSyndicateName(currentUserId)
                   syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
                   engine.localPlayer.syndicateTag = syndicateTag
                   engine.syncLocalArmadaSelfSlot()
                   syndicateStatusBanner =
                     "JOINED [$syndicateTag] $syndicateName! 15-DAY LOCK COOLDOWN (15d 00h) ACTIVE."
                   engine.onStatsUpdated()
+                  if (isGoogleAuthenticated && isDeviceOnline) {
+                    pushLivePilotHeartbeatNow()
+                  }
                 } else {
                   syndicateStatusBanner =
-                    "CANNOT SWITCH SYNDICATES YET: ${localPrefs.getRemainingSyndicateLockFormatted()} REMAINING."
+                    "CANNOT SWITCH SYNDICATES YET: ${localPrefs.getRemainingSyndicateLockFormatted(uid = currentUserId)} REMAINING."
                 }
               },
               onLeaveCurrentSyndicate = {
-                val left = localPrefs.leaveSyndicate()
+                val left = localPrefs.leaveSyndicate(uid = currentUserId)
                 if (left) {
-                  syndicateTag = localPrefs.getSyndicateTag()
-                  syndicateName = localPrefs.getSyndicateName()
+                  syndicateTag = localPrefs.getSyndicateTag(currentUserId)
+                  syndicateName = localPrefs.getSyndicateName(currentUserId)
                   syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
                   engine.localPlayer.syndicateTag = syndicateTag
                   engine.syncLocalArmadaSelfSlot()
                   syndicateStatusBanner =
                     "LEFT SYNDICATE -> UNAFFILIATED. 15-DAY LOCK COOLDOWN TRIGGERED."
                   engine.onStatsUpdated()
+                  if (isGoogleAuthenticated && isDeviceOnline) {
+                    pushLivePilotHeartbeatNow()
+                  }
                 } else {
                   syndicateStatusBanner =
-                    "CANNOT LEAVE SYNDICATE YET: ${localPrefs.getRemainingSyndicateLockFormatted()} REMAINING."
+                    "CANNOT LEAVE SYNDICATE YET: ${localPrefs.getRemainingSyndicateLockFormatted(uid = currentUserId)} REMAINING."
                 }
               },
               onCharterCustomSyndicate = { rawTag, rawName, rawMotto ->
@@ -4462,6 +4546,9 @@ fun RiftArenaScreen(
                     syndicateStatusBanner =
                       "CHARTERED [${created.tag}] ${created.name}! LOCKED FOR 15d 00h."
                     engine.onStatsUpdated()
+                    if (isGoogleAuthenticated && isDeviceOnline) {
+                      pushLivePilotHeartbeatNow()
+                    }
                   }
                   .onFailure { err ->
                     syndicateStatusBanner = err.message ?: "INVALID SYNDICATE CHARTER."
@@ -4524,7 +4611,7 @@ fun RiftArenaScreen(
                   if (item.id == 0 || RiftProgressionCatalog.isRankedCosmeticActive(item, engine.liveResonance)) {
                     localPrefs.setEquippedCosmeticId(category, item.id, currentUserId)
                     syncEquippedCosmeticsToEngine(engine)
-                    localPrefs.exportCloudProgressionJson(currentUserId)
+                    pushCloudProgressionNow()
                     frameTick++
                     sfx.playPrize()
                     engine.onStatsUpdated()
@@ -4541,7 +4628,7 @@ fun RiftArenaScreen(
                     RiftSpriteBaker.activeHullTrimStyle = item.id.coerceIn(0, 5)
                     RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
                     syncEquippedCosmeticsToEngine(engine)
-                    localPrefs.exportCloudProgressionJson(currentUserId)
+                    pushCloudProgressionNow()
                     frameTick++
                     sfx.playPrize()
                     engine.onStatsUpdated()
@@ -4558,7 +4645,7 @@ fun RiftArenaScreen(
                     RiftSpriteBaker.activeHullTrimStyle = item.id.coerceIn(0, 5)
                     RiftCodex.updateActiveCustomShipSlot(activeCustomSlot)
                     syncEquippedCosmeticsToEngine(engine)
-                    localPrefs.exportCloudProgressionJson(currentUserId)
+                    pushCloudProgressionNow()
                     frameTick++
                     sfx.playPrize()
                     engine.onStatsUpdated()
@@ -4587,7 +4674,7 @@ fun RiftArenaScreen(
                   switchCustomSlotShared(normSlotId)
                   selectedShipId = 10
                   hasExplicitHangarLock = true
-                  localPrefs.setPreferredShipId(10)
+                  localPrefs.setPreferredShipId(10, currentUserId)
                   if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
                     engine.switchLocalPlayerShip(10, forceFromHangar = true)
                   } else {
@@ -4603,7 +4690,7 @@ fun RiftArenaScreen(
                 } else if (normSlotId == "Frame B" && unlockCustomSlotShared("Frame B")) {
                   selectedShipId = 10
                   hasExplicitHangarLock = true
-                  localPrefs.setPreferredShipId(10)
+                  localPrefs.setPreferredShipId(10, currentUserId)
                   if (engine.hasJoinedMatch && !engine.isHubOverwatchActive) {
                     engine.switchLocalPlayerShip(10, forceFromHangar = true)
                   } else {
@@ -4648,8 +4735,8 @@ fun RiftArenaScreen(
                 callsign =
                   if (isGoogleAuthenticated) localPrefs.getCallsign(currentUserId)
                   else localPrefs.getCallsign()
-                syndicateTag = localPrefs.getSyndicateTag()
-                syndicateName = localPrefs.getSyndicateName()
+                syndicateTag = localPrefs.getSyndicateTag(activeUid)
+                syndicateName = localPrefs.getSyndicateName(activeUid)
                 hasExplicitHangarLock = false
                 selectedShipId = 1
                 activeCustomSlotId = "Frame A"

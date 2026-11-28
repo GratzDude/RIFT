@@ -131,6 +131,29 @@ class RiftViewModel(
         initialValue = if (isCloudSessionReady()) UiState.Loading else UiState.Success(null),
       )
 
+  val cloudProgressionState: StateFlow<String?> =
+    cloudReadyFlow
+      .flatMapLatest { ready ->
+        if (!ready) {
+          flowOf(null)
+        } else {
+          val resolvedUid = Firebase.auth.currentUser?.uid?.trim()?.ifEmpty { currentUserId } ?: currentUserId
+          repository
+            .observeCloudPilotProgression(resolvedUid)
+            .distinctUntilChanged()
+            .retryWithExponentialBackoff("pilotProgression")
+            .catch { error ->
+              if (error is CancellationException) throw error
+              emit(null)
+            }
+        }
+      }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = null,
+      )
+
   val leaderboardState: StateFlow<UiState<List<LeaderboardEntry>>> =
     cloudReadyFlow
       .flatMapLatest { ready ->
@@ -342,6 +365,8 @@ class RiftViewModel(
   private val pendingLivePilotState = MutableStateFlow<LivePilotState?>(null)
   private val liveStateRevision = AtomicLong(0L)
   private val liveStateSignal = Channel<Unit>(Channel.CONFLATED)
+  private val pendingCloudProgressionJson = MutableStateFlow<String?>(null)
+  private val cloudProgressionSignal = Channel<Unit>(Channel.CONFLATED)
 
   init {
     viewModelScope.launch {
@@ -349,7 +374,33 @@ class RiftViewModel(
         if (ready) {
           ensureInitialProfile()
           liveStateSignal.trySend(Unit)
+          cloudProgressionSignal.trySend(Unit)
         }
+      }
+    }
+    // Single-flight conflated cloud progression writer paced at >= 1,200ms:
+    // Skips consecutive identical JSON payloads while guaranteeing the latest state flushes cleanly.
+    viewModelScope.launch {
+      var lastWrittenJson: String? = null
+      while (true) {
+        val nextJson = pendingCloudProgressionJson.value
+        if (!isCloudSessionReady() || nextJson.isNullOrBlank() || nextJson == lastWrittenJson) {
+          cloudProgressionSignal.receive()
+          continue
+        }
+        val ok =
+          try {
+            repository.saveCloudPilotProgression(nextJson)
+          } catch (e: CancellationException) {
+            throw e
+          } catch (e: Exception) {
+            Log.w(TAG, "Transient cloud progression sync error", e)
+            false
+          }
+        if (ok) {
+          lastWrittenJson = nextJson
+        }
+        delay(if (ok) 1_200L else 4_000L)
       }
     }
     // Single-flight conflated presence/telemetry writer:
@@ -449,6 +500,13 @@ class RiftViewModel(
         Log.w(TAG, "Initial profile check skipped or offline", e)
       }
     }
+  }
+
+  fun syncCloudPilotProgression(payloadJson: String) {
+    val cleanJson = payloadJson.trim()
+    if (cleanJson.isEmpty() || !isCloudSessionReady()) return
+    pendingCloudProgressionJson.value = cleanJson
+    cloudProgressionSignal.trySend(Unit)
   }
 
   fun observeSyndicateMeta(tag: String): Flow<CloudSyndicateMeta?> {

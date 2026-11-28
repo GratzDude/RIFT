@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 141
+const val CURRENT_RIFT_BUILD_VERSION = 142
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 142,
+      versionTag = "v1.0.142 // BUILD #142",
+      releaseDate = "Nov 28, 2026",
+      headline = "UID-Scoped Syndicate Persistence, Multi-Account Isolation & End-to-End Cloud Progression Sync",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "UID-Scoped Syndicates & Multi-Account Isolation: Scoped Syndicate creation, 15-day lock checks, roster lookups, Syndicate service history, Peak Sortie snapshots, combat stats, and preferred ship storage strictly by pilot UID so secondary Google accounts on the same device never inherit or overwrite another pilot's Syndicate membership or career records.",
+          "Session-Safe Cloud Progression Sync: Added process session instance IDs and per-pilot progression timestamps to cloud progression exports and merges so Firestore self-echoes never revert live Resonance drops or Drydock edits, while newer device snapshots cleanly sync per-ship Resonance, Frame loadouts, and verified cosmetics alongside monotonic career totals and permanent Shard unlock unions.",
+          "Live End-to-End Cloud Progression Pipeline: Wired a conflated 1.2-second paced cloud progression writer and live Firestore stream through the ViewModel, MainActivity, and Star Forge cosmetic turntable, preserving real Syndicate names on cloud Dossiers and preventing cached cloud snapshots from reverting deliberate Syndicate leaves.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 141,
       versionTag = "v1.0.141 // BUILD #141",
       releaseDate = "Nov 28, 2026",
       headline = "Rift Frame Drydock Canonical Weapon Subtitles, Pure-Light Buff Preview Hoisting & Cleanup Pass 1",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "DRYDOCK SUBTITLES & MODAL RETIREMENT",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(
