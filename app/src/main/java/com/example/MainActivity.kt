@@ -1332,6 +1332,7 @@ fun RiftArenaScreen(
   var syndicateStatusBanner by remember { mutableStateOf<String?>(null) }
   var friendsRefreshKey by remember { mutableIntStateOf(0) }
   var syndicateChannelsRefreshKey by remember { mutableIntStateOf(0) }
+  var hudDragOpenedFromHelm by remember { mutableStateOf(false) }
   var lastAppliedCloudCrestJson by remember { mutableStateOf("") }
   val blockedPilotUids = remember(currentUserId, friendsRefreshKey) {
     localPrefs.getBlockedPilotUids()
@@ -1500,7 +1501,7 @@ fun RiftArenaScreen(
     if (resolvedNode == NexusCoreNode.HELM_SYSTEMS) {
       helmInitialSubDeck =
         helmSubDeckOverride
-          ?: if (node == NexusCoreNode.ARCHIVE_CODEX) 3 else helmInitialSubDeck.takeIf { it in 0..3 } ?: 0
+          ?: if (node == NexusCoreNode.ARCHIVE_CODEX) 0 else helmInitialSubDeck.takeIf { it in 0..3 } ?: 0
     }
     if (resolvedNode == NexusCoreNode.ARCHIVE_CODEX) {
       archiveSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER
@@ -2332,8 +2333,13 @@ fun RiftArenaScreen(
     if (RiftCalibrationState.isUiUnlockedForDragging && RiftCalibrationState.isCalibrationModalOpen) {
       RiftCalibrationState.isUiUnlockedForDragging = false
       RiftCalibrationState.isCalibrationModalOpen = false
-      forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
-      openNexusNode(NexusCoreNode.STAR_FORGE)
+      if (hudDragOpenedFromHelm) {
+        hudDragOpenedFromHelm = false
+        openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 0)
+      } else {
+        forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+        openNexusNode(NexusCoreNode.STAR_FORGE)
+      }
     } else if (RiftCalibrationState.isCalibrationModalOpen) {
       RiftCalibrationState.isCalibrationModalOpen = false
     } else if (showFullChangelogModal) {
@@ -2757,7 +2763,7 @@ fun RiftArenaScreen(
         isModalOpen = isAnyModalCoveringArena,
         onOpenHangar = { openNexusNode(NexusCoreNode.HANGAR_DECK) },
         onOpenCodex = {
-          openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 3)
+          openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 0)
         },
         onOpenSyndicateCommand = {
           syndicateStatusBanner = null
@@ -3734,7 +3740,7 @@ fun RiftArenaScreen(
                 openNexusNode(NexusCoreNode.ARCHIVE_CODEX)
               },
               onOpenCodex = {
-                openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 3)
+                openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 0)
               },
               onOpenSettings = { openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 0) },
               onOpenForge = {
@@ -3807,16 +3813,79 @@ fun RiftArenaScreen(
                 toastVersion++
               },
               onInviteSyndicateGuest = { guestCallsign ->
-                localPrefs.inviteGuestToSyndicateChannels(syndicateTag, guestCallsign)
-                syndicateChannelsRefreshKey++
-                toastMessage = "GRANTED [$syndicateTag] GUEST PASS TO $guestCallsign"
-                toastVersion++
+                val cleanGuest =
+                  guestCallsign
+                    .trim()
+                    .uppercase(Locale.US)
+                    .replace(Regex("[^A-Z0-9_\\-]"), "")
+                    .take(14)
+                val cleanSyn = localPrefs.sanitizeSyndicateTag(syndicateTag)
+                if (cleanGuest.length >= 2 && cleanSyn.isNotEmpty() && cleanSyn !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) {
+                  localPrefs.inviteGuestToSyndicateChannels(cleanSyn, cleanGuest)
+                  syndicateChannelsRefreshKey++
+                  val inviteMsg =
+                    viewModel.postStructuredChannelMessage(
+                      senderCallsign = callsign,
+                      senderSyndicateTag = cleanSyn,
+                      channelKey = "#syndicate-invites",
+                      messageText = "SYNDICATE INVITE: [$cleanSyn] $syndicateName invited $cleanGuest",
+                      armadaName = cleanSyn,
+                      armadaObjective = "SYNINVITE|$cleanSyn|$cleanGuest|${syndicateName.take(28)}",
+                    )
+                  if (chatMessages.none { it.id == inviteMsg.id }) {
+                    chatMessages.add(inviteMsg)
+                  }
+                  toastMessage = "SENT [$cleanSyn] SYNDICATE INVITE TO $cleanGuest"
+                  toastVersion++
+                }
               },
               onRevokeSyndicateGuest = { guestCallsign ->
                 localPrefs.revokeGuestFromSyndicateChannels(syndicateTag, guestCallsign)
                 syndicateChannelsRefreshKey++
                 toastMessage = "REVOKED GUEST PASS FOR $guestCallsign"
                 toastVersion++
+              },
+              blockedPilotUids = blockedPilotUids,
+              onToggleBlockPilot = { targetUid, targetCallsign ->
+                val cleanUid = targetUid.trim()
+                if (cleanUid.isNotEmpty() && cleanUid != currentUserId) {
+                  val currentlyBlocked = cleanUid in localPrefs.getBlockedPilotUids()
+                  if (currentlyBlocked) {
+                    localPrefs.unblockPilot(cleanUid)
+                    toastMessage = "UNBLOCKED PILOT ${targetCallsign.uppercase(Locale.US)}"
+                  } else {
+                    localPrefs.blockPilot(cleanUid)
+                    engine.removeMemberFromArmada(cleanUid.ifBlank { targetCallsign })
+                    toastMessage = "BLOCKED PILOT ${targetCallsign.uppercase(Locale.US)}"
+                  }
+                  friendsRefreshKey++
+                  toastVersion++
+                }
+              },
+              onReportPilot = { reportedUid, reportedCallsign ->
+                val cleanReportedCallsign = reportedCallsign.trim().uppercase(Locale.US).ifEmpty { "PILOT" }
+                localPrefs.reportPilot(reportedUid, cleanReportedCallsign, "Pilot Dossier Report")
+                viewModel.submitCloudBugReport(
+                  reporterCallsign = callsign,
+                  syndicateTag = localPrefs.sanitizeSyndicateTag(syndicateTag),
+                  category = "PILOT_REPORT",
+                  description = "Reported pilot $cleanReportedCallsign ($reportedUid)",
+                  buildVersion = CURRENT_RIFT_BUILD_VERSION,
+                  activeMode = engine.activeMatchSectorTag(),
+                  activeShipId = selectedShipId,
+                  screenDpSummary = "${configuration.screenWidthDp}x${configuration.screenHeightDp}dp",
+                )
+                toastMessage = "REPORTED PILOT $cleanReportedCallsign FOR SAFETY REVIEW"
+                toastVersion++
+              },
+              onEnterHudDragArenaMode = {
+                hudDragOpenedFromHelm = true
+                isNexusShellOpen = false
+                RiftCalibrationState.isCalibrationModalOpen = true
+                RiftCalibrationState.isUiUnlockedForDragging = true
+              },
+              onSyncSyndicateMetaNow = {
+                syndicateChannelsRefreshKey++
               },
               lobbyMessages = chatMessages,
               onSendChannelMessage = { channelKey, messageText ->
@@ -4098,7 +4167,7 @@ fun RiftArenaScreen(
               onSelectArchiveSubDeck = { sub ->
                 if (sub == ArchiveCodexSubDeck.TACTICAL_CODEX) {
                   archiveSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER
-                  openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 3)
+                  openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 0)
                 } else {
                   archiveSubDeck = ArchiveCodexSubDeck.PILOT_DOSSIER
                 }
@@ -4702,6 +4771,7 @@ fun RiftArenaScreen(
               RiftCalibrationDialog(
                 engine = engine,
                 onDismiss = {
+                  hudDragOpenedFromHelm = false
                   RiftCalibrationState.isUiUnlockedForDragging = false
                   RiftCalibrationState.isCalibrationModalOpen = false
                 },
@@ -4715,8 +4785,13 @@ fun RiftArenaScreen(
                 onReturnToNexusCalibration = {
                   RiftCalibrationState.isUiUnlockedForDragging = false
                   RiftCalibrationState.isCalibrationModalOpen = false
-                  forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
-                  openNexusNode(NexusCoreNode.STAR_FORGE)
+                  if (hudDragOpenedFromHelm) {
+                    hudDragOpenedFromHelm = false
+                    openNexusNode(NexusCoreNode.HELM_SYSTEMS, helmSubDeckOverride = 0)
+                  } else {
+                    forgeInitialTab = NexusForgeTab.DEV_STUDIO_STAGE
+                    openNexusNode(NexusCoreNode.STAR_FORGE)
+                  }
                 },
               )
             }

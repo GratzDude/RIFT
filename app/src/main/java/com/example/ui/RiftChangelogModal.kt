@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 139
+const val CURRENT_RIFT_BUILD_VERSION = 140
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 140,
+      versionTag = "v1.0.140 // BUILD #140",
+      releaseDate = "Nov 27, 2026",
+      headline = "End-to-End Live Routing Fixes, UGC Block/Report Safety, Squadron Slot Management, Helm HUD Drag & 2.5D Quality Sync, Syndicate Invites & Dossier/Codex Surfacing",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Subspace Comms Routing & UGC Pilot Safety: Fixed shared build Ask AI routing to open #rift-ai directly, unified #squadron-lfg and #strike-lfg channel keys, filtered blocked pilots out of Comms and Squadron lists, and added borderless 48dp Block/Unblock and Report safety controls inside circular Overwatch Pilot Inspect.",
+          "Live Squadron Slot Management & Helm Controls Upgrade: Replaced dead Squadron slot clicks with leader Squadron Tag renaming, wingmate removal confirmation, and open-slot invite guidance; synced Helm Graphics Quality tiers directly to live 2.5D point-light relighting, fixed Tactical Codex to open on Basics, and added Reposition Arena HUD with clean return to Helm Controls.",
+          "Syndicate Invites, Dossier Peak Sortie & Codex Obstacles: Wired real pilot eliminations, Sworn Pilot and 15-day transfer cooldown guards, cloud-synced Invite-Only controls, and live incoming Syndicate invites; surfaced Peak Resonance Sortie with Executioner telemetry and Syndicate Service Records in Pilot Dossier, plus Crystal Asteroids and Armed Orbital Stations in Tactical Codex.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 139,
       versionTag = "v1.0.139 // BUILD #139",
       releaseDate = "Nov 27, 2026",
       headline = "Pure-Light Cockpit Reticle Polish for Overwatch Rift Frame Drydock Sockets, Laser Stat Filaments & Hub Guide Hologram",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "COCKPIT RETICLES & FILAMENTS",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

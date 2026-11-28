@@ -81,9 +81,11 @@ import com.example.data.ArmadaMemberSlot
 import com.example.data.CloudSyncHealth
 import com.example.data.LeaderboardEntry
 import com.example.data.LocalPilotPrefs
+import com.example.data.SyndicateChatMessage
 import com.example.data.SyndicateInfo
 import com.example.data.SyndicateMemberEntry
 import com.example.data.SyndicateWarRecord
+import com.example.data.UgcModeration
 import com.example.data.formatSurvivalDurationSec
 import com.example.data.snapCustomFivePercentScale
 import com.example.engine.CustomGameConfig
@@ -96,6 +98,7 @@ import com.example.engine.RiftProgressionCatalog
 import com.example.engine.RiftSoundSynthesizer
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.RiftVisualForgeState
+import com.example.engine.SpaceObstacleStyle
 import com.example.engine.SyndicateCrestRecipe
 import java.io.File
 import java.util.Locale
@@ -851,6 +854,19 @@ internal fun DossierRightCareerBay(
     remember(currentUserId, liveResonance, dossierRefreshNonce) {
       localPrefs.getHubTapTelemetryHistory().size
     }
+  val allTimePeak =
+    remember(currentUserId, liveResonance, dossierRefreshNonce) {
+      localPrefs.getAllTimePeakBountySnapshot(uidOrNull)
+    }
+  val pvpPeak =
+    remember(currentUserId, liveResonance, dossierRefreshNonce) {
+      localPrefs.getPvpPeakBountySnapshot(uidOrNull)
+    }
+  val syndicateHistory =
+    remember(currentUserId, liveResonance, dossierRefreshNonce) {
+      localPrefs.getSyndicateServiceHistory(uidOrNull)
+    }
+  var peakTabIdx by remember { mutableIntStateOf(0) }
   val allShips = remember(RiftSpriteBaker.customShip9Version) { RiftCodex.getAllTenShips() }
   val hallOfFame = remember(cloudLeaderboardEntries) { cloudLeaderboardEntries.take(5) }
   var exportBanner by remember { mutableStateOf<String?>(null) }
@@ -969,6 +985,224 @@ internal fun DossierRightCareerBay(
             fontWeight = FontWeight.Black,
             fontFamily = FontFamily.Monospace,
           )
+        }
+      }
+
+      // Peak Resonance Sortie & Executioner Telemetry (ALL-TIME / PVP)
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .chamferedSciFiPodSurface(
+              isRightSide = true,
+              primaryBorder = Color(0xFFFFD700),
+              secondaryBorder = Color(0xFF091528),
+            )
+            .padding(horizontal = 9.dp, vertical = 7.dp)
+            .testTag("dossier_peak_run_card"),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+      ) {
+        Text(
+          text = "PEAK RESONANCE SORTIE & EXECUTIONER",
+          color = Color(0xFFFFD700),
+          fontSize = 7.6.sp,
+          fontWeight = FontWeight.Black,
+          fontFamily = FontFamily.Monospace,
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          listOf(0 to ("ALL-TIME" to "dossier_peak_tab_all"), 1 to ("PVP" to "dossier_peak_tab_pvp")).forEach { (idx, meta) ->
+            val sel = peakTabIdx == idx
+            Box(
+              modifier =
+                Modifier.weight(1f)
+                  .minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable { peakTabIdx = idx }
+                  .padding(vertical = 5.dp)
+                  .testTag(meta.second),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.fillMaxSize()
+                    .cockpitReticleSurface(
+                      accent = if (idx == 0) Color(0xFFFFD700) else Color(0xFF00F5D4),
+                      isSelected = sel,
+                      drawCornerTicks = sel,
+                      featherAlpha = if (sel) 0.42f else 0.14f,
+                    ),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = meta.first,
+                  color = if (sel) Color.White else Color(0xFF94A3B8),
+                  fontSize = 7.8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+          }
+        }
+        val activePeak = if (peakTabIdx == 0) allTimePeak else pvpPeak
+        if (activePeak == null) {
+          Text(
+            text =
+              if (peakTabIdx == 0) "No recorded Peak Resonance sorties yet — launch into a Rift to log your top run."
+              else "No recorded PvP Peak Resonance sorties yet — defeat rival pilots in ranked Rifts to log this record.",
+            color = Color(0xFFCBD5E1),
+            fontSize = 7.4.sp,
+            fontFamily = FontFamily.SansSerif,
+          )
+        } else {
+          val peakHullTitle =
+            cleanDisplayShipTitle(
+              activePeak.shipId.coerceIn(1, 10),
+              activePeak.shipFlown.ifBlank { RiftCodex.getShipById(activePeak.shipId.coerceIn(1, 10)).name },
+            )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text = "PEAK RESONANCE",
+              color = Color(0xFF94A3B8),
+              fontSize = 7.2.sp,
+              fontWeight = FontWeight.Bold,
+              fontFamily = FontFamily.Monospace,
+            )
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+              ResonanceCrestIcon(sizeDp = 11.dp)
+              Text(
+                text = String.format(Locale.US, "%,d", activePeak.bountyReached.coerceAtLeast(0)),
+                color = Color(0xFFFFD700),
+                fontSize = 8.0.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+          val peakRows =
+            listOf(
+              "HULL FLOWN" to peakHullTitle,
+              "TIME SURVIVED" to activePeak.formattedDuration(),
+              "PVP / BOT ELIMS" to "${activePeak.pvpKills} / ${activePeak.botKills}",
+              "ACCURACY" to "${activePeak.accuracyPercent()}%",
+            )
+          peakRows.forEach { (k, v) ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+              Text(
+                text = k,
+                color = Color(0xFF94A3B8),
+                fontSize = 7.2.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              )
+              Text(
+                text = v,
+                color = Color.White,
+                fontSize = 7.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+          val exec = activePeak.executioner
+          val cleanKillerTag =
+            exec.killerSyndicateTag
+              .trim()
+              .uppercase(Locale.US)
+              .takeIf { it.isNotEmpty() && it !in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS }
+              .orEmpty()
+          val execPrefix = if (cleanKillerTag.isNotEmpty()) "[$cleanKillerTag] " else ""
+          val (outcomeText, outcomeColor) =
+            when {
+              exec.survivedToConvergence -> "SURVIVED TO SECTOR CONVERGENCE" to Color(0xFF00F5D4)
+              exec.killerCallsign.isBlank() -> "ACTIVE UNDEFEATED STREAK" to Color(0xFFFFD700)
+              else -> {
+                val killerHull = exec.killerShip.ifBlank { "UNKNOWN HULL" }.uppercase(Locale.US)
+                val killerWeapon = exec.killingWeapon.ifBlank { "WEAPON FIRE" }.uppercase(Locale.US)
+                "ELIMINATED BY $execPrefix${exec.killerCallsign.uppercase(Locale.US)} • $killerHull • $killerWeapon" to
+                  Color(0xFFFB7185)
+              }
+            }
+          Text(
+            text = outcomeText,
+            color = outcomeColor,
+            fontSize = 7.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+      }
+
+      if (syndicateHistory.isNotEmpty()) {
+        Column(
+          modifier =
+            Modifier.fillMaxWidth()
+              .chamferedSciFiPodSurface(
+                isRightSide = true,
+                primaryBorder = Color(0xFFC084FC),
+                secondaryBorder = Color(0xFF091528),
+              )
+              .padding(horizontal = 9.dp, vertical = 7.dp)
+              .testTag("dossier_syndicate_history_card"),
+          verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          Text(
+            text = "SYNDICATE SERVICE RECORD",
+            color = Color(0xFFC084FC),
+            fontSize = 7.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+          )
+          syndicateHistory.take(5).forEach { entry ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
+                Text(
+                  text = "[${entry.syndicateTag.uppercase(Locale.US)}] ${entry.syndicateName}",
+                  color = Color.White,
+                  fontSize = 7.4.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                  text = "${entry.role.uppercase(Locale.US)} • ${entry.formatTenure()}",
+                  color = Color(0xFF94A3B8),
+                  fontSize = 6.8.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+              Text(
+                text = "${entry.totalKills} ELIMS • ${entry.publicGameWins}W",
+                color = Color(0xFF00F5D4),
+                fontSize = 7.0.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+            }
+          }
         }
       }
 
@@ -1232,10 +1466,41 @@ internal fun SyndicateLeftDirectoryBay(
   syndicateDirectory: List<SyndicateInfo>,
   syndicateWarRecord: SyndicateWarRecord,
   statusMessage: String?,
+  callsign: String = "",
+  lobbyMessages: List<SyndicateChatMessage> = emptyList(),
+  onAcceptSyndicateInvite: (tag: String, name: String) -> Unit = { _, _ -> },
   onBackToHub: () -> Unit,
   onInspectSyndicate: (SyndicateInfo) -> Unit,
 ) {
   var searchQuery by remember { mutableStateOf("") }
+  var dismissedInviteIds by remember { mutableStateOf(emptySet<String>()) }
+  val cleanCurrentTagNorm = currentTag.trim().uppercase(Locale.US)
+  val pendingSyndicateInvites =
+    remember(lobbyMessages, callsign, cleanCurrentTagNorm, dismissedInviteIds) {
+      val cleanCall = callsign.trim()
+      if (cleanCall.isBlank()) {
+        emptyList()
+      } else {
+        val seenTags = HashSet<String>()
+        lobbyMessages
+          .sortedByDescending { it.createdAtMs }
+          .mapNotNull { msg ->
+            if (msg.id in dismissedInviteIds) return@mapNotNull null
+            val obj = msg.armadaObjective.trim()
+            if (!obj.startsWith("SYNINVITE|", ignoreCase = true)) return@mapNotNull null
+            val parts = obj.split("|")
+            if (parts.size < 3) return@mapNotNull null
+            val invTag = parts[1].trim().uppercase(Locale.US)
+            val targetCall = parts[2].trim()
+            val invName = parts.getOrNull(3)?.trim().orEmpty().ifBlank { "[$invTag] Syndicate" }
+            if (invTag.isBlank() || invTag in LocalPilotPrefs.NON_PLAYER_SYNDICATE_TAGS) return@mapNotNull null
+            if (!targetCall.equals(cleanCall, ignoreCase = true)) return@mapNotNull null
+            if (invTag.equals(cleanCurrentTagNorm, ignoreCase = true)) return@mapNotNull null
+            if (!seenTags.add(invTag)) return@mapNotNull null
+            Triple(msg, invTag, invName)
+          }
+      }
+    }
   val realSyndicates =
     remember(syndicateDirectory, searchQuery) {
       val q = searchQuery.trim().uppercase(Locale.US)
@@ -1294,6 +1559,111 @@ internal fun SyndicateLeftDirectoryBay(
           fontWeight = FontWeight.Black,
           fontFamily = FontFamily.Monospace,
         )
+      }
+
+      // Pending Syndicate Invites addressed to this pilot
+      pendingSyndicateInvites.forEach { (inviteMsg, invTag, invName) ->
+        Column(
+          modifier =
+            Modifier.fillMaxWidth()
+              .chamferedSciFiPodSurface(
+                isRightSide = false,
+                primaryBorder = Color(0xFF00F5D4),
+                secondaryBorder = Color(0xFFFFD700),
+              )
+              .padding(horizontal = 9.dp, vertical = 7.dp)
+              .testTag("syndicate_pending_invite_$invTag"),
+          verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          Text(
+            text = "SYNDICATE INVITATION // [$invTag]",
+            color = Color(0xFF00F5D4),
+            fontSize = 7.6.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            text = "$invName • Invited by ${inviteMsg.senderCallsign.uppercase(Locale.US)}",
+            color = Color.White,
+            fontSize = 7.4.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Box(
+              modifier =
+                Modifier.weight(1f)
+                  .minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable {
+                    dismissedInviteIds = dismissedInviteIds + inviteMsg.id
+                    onAcceptSyndicateInvite(invTag, invName)
+                  }
+                  .padding(vertical = 5.dp)
+                  .testTag("syndicate_invite_accept_$invTag"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.fillMaxSize()
+                    .cockpitReticleSurface(
+                      accent = Color(0xFF00F5D4),
+                      isSelected = true,
+                      drawCornerTicks = true,
+                      featherAlpha = 0.44f,
+                    ),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = "ACCEPT",
+                  color = Color.White,
+                  fontSize = 7.8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+            Box(
+              modifier =
+                Modifier.weight(1f)
+                  .minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .clickable {
+                    dismissedInviteIds = dismissedInviteIds + inviteMsg.id
+                  }
+                  .padding(vertical = 5.dp)
+                  .testTag("syndicate_invite_decline_$invTag"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier =
+                  Modifier.fillMaxSize()
+                    .cockpitReticleSurface(
+                      accent = Color(0xFFFB7185),
+                      isSelected = false,
+                      drawCornerTicks = false,
+                      featherAlpha = 0.28f,
+                    ),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = "DECLINE",
+                  color = Color(0xFFFB7185),
+                  fontSize = 7.8.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+          }
+        }
       }
 
       // Live Search Bar
@@ -1418,10 +1788,14 @@ internal fun SyndicateRightCitadelBay(
   onLeaveCurrentSyndicate: () -> Unit,
   onCharterCustomSyndicate: (tag: String, name: String, motto: String) -> Unit,
   onOpenCrestBuilder: (String) -> Unit,
+  onToggleInviteOnlySynced: () -> Unit = {},
+  onInviteSyndicateGuest: (String) -> Unit = {},
 ) {
   var tagDraft by remember { mutableStateOf("") }
   var nameDraft by remember { mutableStateOf("") }
   var mottoDraft by remember { mutableStateOf("") }
+  var inviteCallsignDraft by remember { mutableStateOf("") }
+  var inviteSentNotice by remember { mutableStateOf<String?>(null) }
   var rosterRefreshTick by remember { mutableIntStateOf(0) }
   val cleanSynTag = syndicateTag.trim().uppercase(Locale.US)
   val isAffiliatedSyndicate =
@@ -1578,6 +1952,7 @@ internal fun SyndicateRightCitadelBay(
                         val next = !inviteOnly
                         inviteOnly = next
                         localPrefs.setSyndicateInviteOnly(cleanSynTag, next)
+                        onToggleInviteOnlySynced()
                       }
                       .padding(vertical = 4.dp)
                       .testTag("syndicate_toggle_invite_only"),
@@ -1603,6 +1978,117 @@ internal fun SyndicateRightCitadelBay(
                   }
                 }
               }
+            }
+          }
+        }
+
+        if (isLeaderOrOfficer) {
+          Column(
+            modifier =
+              Modifier.fillMaxWidth()
+                .chamferedSciFiPodSurface(
+                  isRightSide = true,
+                  primaryBorder = Color(0xFF00F5D4),
+                  secondaryBorder = Color(0xFF091528),
+                )
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            Text(
+              text = "INVITE PILOT BY CALLSIGN",
+              color = Color(0xFF00F5D4),
+              fontSize = 7.2.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              Box(
+                modifier =
+                  Modifier.weight(1f)
+                    .minimumInteractiveComponentSize()
+                    .heightIn(min = 48.dp)
+                    .cockpitLaserInputSurface(Color(0xFF00F5D4))
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                contentAlignment = Alignment.CenterStart,
+              ) {
+                if (inviteCallsignDraft.isEmpty()) {
+                  Text(
+                    text = "Target pilot callsign...",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 7.8.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                  )
+                }
+                BasicTextField(
+                  value = inviteCallsignDraft,
+                  onValueChange = { inviteCallsignDraft = it.take(16) },
+                  singleLine = true,
+                  cursorBrush = SolidColor(Color(0xFF00F5D4)),
+                  textStyle =
+                    TextStyle(
+                      color = Color.White,
+                      fontSize = 8.2.sp,
+                      fontWeight = FontWeight.Bold,
+                      fontFamily = FontFamily.Monospace,
+                    ),
+                  modifier = Modifier.fillMaxWidth().testTag("syndicate_invite_pilot_input"),
+                )
+              }
+              Box(
+                modifier =
+                  Modifier.minimumInteractiveComponentSize()
+                    .height(48.dp)
+                    .clickable {
+                      val cleanTarget =
+                        inviteCallsignDraft.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(14)
+                      when {
+                        cleanTarget.length < 2 -> inviteSentNotice = "ENTER AT LEAST 2 CHARACTERS"
+                        UgcModeration.containsProfanity(cleanTarget) ->
+                          inviteSentNotice = "CALLSIGN REJECTED BY SAFETY FILTER"
+                        else -> {
+                          onInviteSyndicateGuest(cleanTarget)
+                          inviteCallsignDraft = ""
+                          inviteSentNotice = "INVITE DISPATCHED TO $cleanTarget"
+                        }
+                      }
+                    }
+                    .padding(vertical = 4.dp)
+                    .testTag("syndicate_btn_send_invite"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Box(
+                  modifier =
+                    Modifier.cockpitReticleSurface(
+                        accent = Color(0xFF00F5D4),
+                        isSelected = true,
+                        drawCornerTicks = true,
+                        featherAlpha = 0.44f,
+                      )
+                      .padding(horizontal = 10.dp, vertical = 7.dp),
+                ) {
+                  Text(
+                    text = "INVITE",
+                    color = Color.White,
+                    fontSize = 7.8.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                  )
+                }
+              }
+            }
+            if (!inviteSentNotice.isNullOrBlank()) {
+              Text(
+                text = inviteSentNotice!!,
+                color = Color(0xFFFFD700),
+                fontSize = 7.0.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+              )
             }
           }
         }
@@ -2218,6 +2704,9 @@ internal fun SquadronRightPlayfieldShipBay(
   onLeaveSquadron: () -> Unit,
   onInspectPilotPrompt: (SquadronOnlinePilotItem) -> Unit,
   onOpenFullSquadronModal: () -> Unit,
+  onTapLeaderSlot: () -> Unit = {},
+  onTapMemberSlot: (ArmadaMemberSlot) -> Unit = {},
+  onTapOpenSlot: () -> Unit = {},
 ) {
   val context = LocalContext.current
   var voiceEnabled by remember { mutableStateOf(RiftCalibrationState.squadronVoiceEnabled) }
@@ -2444,7 +2933,7 @@ internal fun SquadronRightPlayfieldShipBay(
           RiftVerticalCard(
             modifier = Modifier.fillMaxWidth(),
             title = "SLOT $slotNum • $tagStr${member.callsign}",
-            subtitle = if (member.isLeader) "Squadron Leader" else "Active Wingmate",
+            subtitle = if (member.isLeader) "Squadron Leader • Tap to rename tag" else "Active Wingmate • Tap to manage",
             accent = if (member.isLeader) Color(0xFFFFD700) else Color(0xFF00F5D4),
             secondaryAccent = Color(0xFF38BDF8),
             isRightColumn = true,
@@ -2463,13 +2952,13 @@ internal fun SquadronRightPlayfieldShipBay(
                 sizeDp = (sizeDp * 0.86f).coerceAtLeast(32.dp),
               )
             },
-            onClick = { onOpenFullSquadronModal() },
+            onClick = { if (member.isLeader) onTapLeaderSlot() else onTapMemberSlot(member) },
           )
         } else {
           RiftVerticalCard(
             modifier = Modifier.fillMaxWidth(),
             title = "SLOT $slotNum • OPEN SLOT",
-            subtitle = "Invite an online pilot",
+            subtitle = "Tap to invite an online pilot",
             accent = Color(0xFF475569),
             secondaryAccent = Color(0xFF1E293B),
             isRightColumn = true,
@@ -2493,7 +2982,7 @@ internal fun SquadronRightPlayfieldShipBay(
                 )
               }
             },
-            onClick = { onOpenFullSquadronModal() },
+            onClick = { onTapOpenSlot() },
           )
         }
       }
@@ -3583,6 +4072,7 @@ internal fun HelmLeftSystemsBay(
   onCheckOrApplyUpdate: () -> Unit,
   onOpenSwitchAccountPrompt: () -> Unit,
   onBackToHub: () -> Unit,
+  onEnterHudDragArenaMode: () -> Unit = {},
   onOpenSliderWorkbench: (OverwatchCircularPrompt.SliderWorkbench) -> Unit = {},
 ) {
   val context = LocalContext.current
@@ -3735,6 +4225,32 @@ internal fun HelmLeftSystemsBay(
                 fontFamily = FontFamily.Monospace,
               )
             }
+          }
+
+          Box(
+            modifier =
+              Modifier.fillMaxWidth()
+                .minimumInteractiveComponentSize()
+                .height(48.dp)
+                .cockpitReticleSurface(
+                  accent = Color(0xFF00F5D4),
+                  isSelected = true,
+                  drawCornerTicks = true,
+                  featherAlpha = 0.44f,
+                )
+                .clickable { onEnterHudDragArenaMode() }
+                .padding(horizontal = 10.dp)
+                .testTag("helm_btn_reposition_hud"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = "REPOSITION ARENA HUD >>",
+              color = Color.White,
+              fontSize = 8.4.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+              maxLines = 1,
+            )
           }
 
           HelmStepperControlRow(
@@ -4536,6 +5052,21 @@ internal fun HelmLeftSystemsBay(
                     val next = (graphicsTier + 1) % 3
                     graphicsTier = next
                     RiftCalibrationState.graphicsQualityTier = next
+                    RiftVisualForgeState.pointLightEnabled = next != 0
+                    RiftVisualForgeState.dynamicLightIntensity =
+                      when (next) {
+                        0 -> 0.0f
+                        1 -> 0.85f
+                        else -> 1.35f
+                      }
+                    RiftVisualForgeState.projectileLightRadius =
+                      when (next) {
+                        0 -> 0.70f
+                        1 -> 0.90f
+                        else -> 1.25f
+                      }
+                    RiftCalibrationState.calibrationRevision++
+                    RiftVisualForgeState.visualRevision++
                     RiftCalibrationState.savePersistedLayout(context)
                   }
                   .testTag("helm_toggle_graphics_tier"),
@@ -5510,6 +6041,99 @@ internal fun HelmRightCodexBay(
               },
             )
           }
+          val crystalIdx = RiftCodex.RIFT_ANOMALIES_CODEX.size
+          val crystalSelected = selectedCardIndex == crystalIdx
+          val crystalBmp =
+            remember(RiftSpriteBaker.spriteVisualRevision, RiftVisualForgeState.visualRevision) {
+              RiftSpriteBaker.getSpaceObstacleBitmap(SpaceObstacleStyle.CRYSTAL_ASTEROID, 0).asImageBitmap()
+            }
+          RiftVerticalCard(
+            modifier = Modifier.fillMaxWidth(),
+            title = "CRYSTAL ASTEROIDS",
+            subtitle = "2,400 Flux • Supply Pod Drop",
+            accent = Color(0xFF38BDF8),
+            isRightColumn = true,
+            isHighlighted = crystalSelected,
+            isCompactPeer = !crystalSelected,
+            badgeText = "DESTRUCTIBLE",
+            badgeColor = Color(0xFF38BDF8),
+            isTabletDeck = isTabletDeck,
+            minHeightDp = if (crystalSelected) 108.dp else 52.dp,
+            testTag = "codex_obstacle_crystal_asteroid",
+            visualContent = { sizeDp ->
+              Image(
+                bitmap = crystalBmp,
+                contentDescription = "Crystal Asteroid Obstacle",
+                contentScale = ContentScale.Fit,
+                modifier =
+                  Modifier.size(if (crystalSelected) 64.dp else sizeDp)
+                    .graphicsLayer { rotationZ = shipSpinDeg * 0.25f },
+              )
+            },
+            onClick = {
+              selectedCardIndex = crystalIdx
+              onInspectCodexStage(
+                OverwatchCircularPrompt.InfoStageInspect(
+                  kicker = "ARENA HAZARD",
+                  title = "CRYSTAL ASTEROIDS",
+                  badge = "2,400 FLUX",
+                  summary =
+                    "Shatters after 2,400 Flux damage to drop a guaranteed Supply Pod and respawns 20.0 seconds later. Gravity Rifts at 260px radius or larger pull nearby Crystal Asteroids inward.",
+                  tacticalNote =
+                    "Break intact Crystal Asteroids between skirmishes for guaranteed Supply Pods, or force rivals near Gravity Rifts as asteroids implode.",
+                  accentHex = 0xFF38BDF8L,
+                  obstacleStyleOrdinal = SpaceObstacleStyle.CRYSTAL_ASTEROID.ordinal,
+                )
+              )
+            },
+          )
+
+          val stationIdx = RiftCodex.RIFT_ANOMALIES_CODEX.size + 1
+          val stationSelected = selectedCardIndex == stationIdx
+          val orbitalStationBmp =
+            remember(RiftSpriteBaker.spriteVisualRevision, RiftVisualForgeState.visualRevision) {
+              RiftSpriteBaker.getSpaceObstacleBitmap(SpaceObstacleStyle.ORBITAL_STATION, 0).asImageBitmap()
+            }
+          RiftVerticalCard(
+            modifier = Modifier.fillMaxWidth(),
+            title = "ARMED ORBITAL STATIONS",
+            subtitle = "10-Hit 360 Defense Nova",
+            accent = Color(0xFFFACC15),
+            isRightColumn = true,
+            isHighlighted = stationSelected,
+            isCompactPeer = !stationSelected,
+            badgeText = "16-BOLT NOVA",
+            badgeColor = Color(0xFFFACC15),
+            isTabletDeck = isTabletDeck,
+            minHeightDp = if (stationSelected) 108.dp else 52.dp,
+            testTag = "codex_obstacle_orbital_station",
+            visualContent = { sizeDp ->
+              Image(
+                bitmap = orbitalStationBmp,
+                contentDescription = "Armed Orbital Station Obstacle",
+                contentScale = ContentScale.Fit,
+                modifier =
+                  Modifier.size(if (stationSelected) 64.dp else sizeDp)
+                    .graphicsLayer { rotationZ = shipSpinDeg * 0.25f },
+              )
+            },
+            onClick = {
+              selectedCardIndex = stationIdx
+              onInspectCodexStage(
+                OverwatchCircularPrompt.InfoStageInspect(
+                  kicker = "ARENA HAZARD",
+                  title = "ARMED ORBITAL STATIONS",
+                  badge = "10-HIT NOVA",
+                  summary =
+                    "Absorbs 10 weapon hits or triggers immediately on Gravity Rift implosion to unleash a 16-bolt 360-degree Defense Nova.",
+                  tacticalNote =
+                    "Eliminating an opponent with a triggered Defense Nova awards +10% Resonance credit; catching yourself in your own trigger incurs a -15% self-backfire penalty.",
+                  accentHex = 0xFFFACC15L,
+                  obstacleStyleOrdinal = SpaceObstacleStyle.ORBITAL_STATION.ordinal,
+                )
+              )
+            },
+          )
         }
         else -> {
           allShips.forEachIndexed { idx, ship ->

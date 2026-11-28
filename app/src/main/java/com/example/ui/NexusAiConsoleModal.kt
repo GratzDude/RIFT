@@ -154,6 +154,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.R
 import com.example.data.ArmadaMemberSlot
 import com.example.data.CloudSyncHealth
+import com.example.data.FriendPilotEntry
 import com.example.data.LivePilotState
 import com.example.data.LocalPilotPrefs
 import androidx.compose.runtime.produceState
@@ -163,6 +164,7 @@ import com.example.data.RiftCommunityRoles
 import com.example.data.SyndicateChatMessage
 import com.example.data.SyndicateInfo
 import com.example.data.SyndicateWarRecord
+import com.example.data.UgcModeration
 import com.example.data.formatSurvivalDurationSec
 import com.example.data.snapCustomFivePercentScale
 import com.example.engine.CosmeticCatalogItem
@@ -178,6 +180,7 @@ import com.example.engine.RiftSoundSynthesizer
 import com.example.engine.RiftSpriteBaker
 import com.example.engine.RiftVisualForgeState
 import com.example.engine.ShipSpec
+import com.example.engine.SpaceObstacleStyle
 import com.example.engine.SyndicateCrestRecipe
 import java.util.Locale
 import kotlin.math.PI
@@ -290,6 +293,7 @@ internal sealed interface OverwatchCircularPrompt {
   data object ResonanceLeaderboard : OverwatchCircularPrompt
   data object RiftFrameDrydock : OverwatchCircularPrompt
   data class FrameSlotRename(val slotId: String, val initialName: String) : OverwatchCircularPrompt
+  data class SquadronTagRename(val initialTag: String) : OverwatchCircularPrompt
   data class SliderWorkbench(
     val key: String,
     val title: String,
@@ -327,6 +331,7 @@ internal sealed interface OverwatchCircularPrompt {
     val shipId: Int = 0,
     val buffTypeIndex: Int = Int.MIN_VALUE,
     val riftAnomalyId: String = "",
+    val obstacleStyleOrdinal: Int = -1,
     val showStationPreview: Boolean = false,
     val showResonanceCrest: Boolean = false,
     val codexBasicIndex: Int = -1,
@@ -1442,6 +1447,11 @@ fun NexusAiConsoleModal(
   updateStatusLabel: String = "v1.0.$CURRENT_RIFT_BUILD_VERSION UP TO DATE",
   hasUpdateAvailable: Boolean = false,
   onCheckOrApplyUpdate: () -> Unit = {},
+  blockedPilotUids: Set<String> = emptySet(),
+  onToggleBlockPilot: (String, String) -> Unit = { _, _ -> },
+  onReportPilot: (String, String) -> Unit = { _, _ -> },
+  onEnterHudDragArenaMode: () -> Unit = {},
+  onSyncSyndicateMetaNow: () -> Unit = {},
   renderModuleForNode: (@Composable (NexusCoreNode) -> Unit)? = null,
   embeddedModuleContent: (@Composable () -> Unit)? = null,
 ) {
@@ -1586,6 +1596,11 @@ fun NexusAiConsoleModal(
       updateStatusLabel = updateStatusLabel,
       hasUpdateAvailable = hasUpdateAvailable,
       onCheckOrApplyUpdate = onCheckOrApplyUpdate,
+      blockedPilotUids = blockedPilotUids,
+      onToggleBlockPilot = onToggleBlockPilot,
+      onReportPilot = onReportPilot,
+      onEnterHudDragArenaMode = onEnterHudDragArenaMode,
+      onSyncSyndicateMetaNow = onSyncSyndicateMetaNow,
       renderModuleForNode = renderModuleForNode,
       embeddedModuleContent = embeddedModuleContent,
     )
@@ -1732,6 +1747,11 @@ private class NexusAiConsoleParams(
   val updateStatusLabel: String,
   val hasUpdateAvailable: Boolean,
   val onCheckOrApplyUpdate: () -> Unit,
+  val blockedPilotUids: Set<String>,
+  val onToggleBlockPilot: (String, String) -> Unit,
+  val onReportPilot: (String, String) -> Unit,
+  val onEnterHudDragArenaMode: () -> Unit,
+  val onSyncSyndicateMetaNow: () -> Unit,
   val renderModuleForNode: (@Composable (NexusCoreNode) -> Unit)?,
   val embeddedModuleContent: (@Composable () -> Unit)?,
 ) {
@@ -1779,7 +1799,7 @@ private class NexusConsoleUiState(
   initialCustomGame: CustomGameConfig?,
   initialSideBayKey: String,
 ) {
-  var selectedChannelKey by mutableStateOf("#nexus-ai")
+  var selectedChannelKey by mutableStateOf("#rift-ai")
   var showOnlineRosterPane by mutableStateOf(true)
   var inputQuery by mutableStateOf("")
   var channelChatInput by mutableStateOf("")
@@ -2167,7 +2187,10 @@ private fun NexusConsoleSideEffects(
 
   val lastMsgTextLen = params.messages.lastOrNull()?.text?.length ?: 0
   LaunchedEffect(params.messages.size, lastMsgTextLen, params.streamState, uiState.selectedChannelKey) {
-    if (uiState.selectedChannelKey == "#nexus-ai") {
+    if (
+      uiState.selectedChannelKey.equals("#rift-ai", ignoreCase = true) ||
+        uiState.selectedChannelKey.equals("#nexus-ai", ignoreCase = true)
+    ) {
       val totalItems = listState.layoutInfo.totalItemsCount
       if (totalItems > 0) listState.animateScrollToItem(totalItems - 1)
     }
@@ -2600,6 +2623,14 @@ private fun NexusOrbitalHubStageHost(
         uiState.squadronStatusBanner = "BROADCASTED SQUADRON INVITE TO #SQUADRON-LFG"
       },
       squadronStatusBanner = uiState.squadronStatusBanner,
+      onSetSquadronStatusBanner = { uiState.squadronStatusBanner = it },
+      lobbyMessages = params.lobbyMessages,
+      onInviteSyndicateGuest = params.onInviteSyndicateGuest,
+      onSyncSyndicateMetaNow = params.onSyncSyndicateMetaNow,
+      onEnterHudDragArenaMode = params.onEnterHudDragArenaMode,
+      blockedPilotUids = params.blockedPilotUids,
+      onToggleBlockPilot = params.onToggleBlockPilot,
+      onReportPilot = params.onReportPilot,
       sideBayMode = uiState.sideBayMode,
       onChangeSideBayMode = { nextBay ->
         uiState.overwatchPrompt = OverwatchCircularPrompt.None
@@ -3010,6 +3041,7 @@ private fun NexusGlassTerminalDeckHost(
     onToggleOnlineRosterPane = { uiState.showOnlineRosterPane = !uiState.showOnlineRosterPane },
     onAddOnlinePilotFriend = params.onAddOnlinePilotFriend,
     onInviteOnlinePilotToWing = params.onInviteOnlinePilotToWing,
+    blockedPilotUids = params.blockedPilotUids,
     renderModuleForNode = params.renderModuleForNode,
     embeddedModuleContent = params.embeddedModuleContent,
   )
@@ -3184,6 +3216,7 @@ private fun NexusGlassTerminalDeckPanel(
   onToggleOnlineRosterPane: () -> Unit,
   onAddOnlinePilotFriend: (String) -> Unit,
   onInviteOnlinePilotToWing: (LivePilotState) -> Unit,
+  blockedPilotUids: Set<String> = emptySet(),
   renderModuleForNode: (@Composable (NexusCoreNode) -> Unit)?,
   embeddedModuleContent: (@Composable () -> Unit)?,
 ) {
@@ -3248,7 +3281,11 @@ private fun NexusGlassTerminalDeckPanel(
         onSelectArchiveSubDeck = onSelectArchiveSubDeck,
         onOpenCodexInHelm = onOpenCodex,
         armadaCount = armadaSlots.size.coerceAtLeast(1),
-        showClearAi = activeNode == NexusCoreNode.SUBSPACE_COMMS && selectedChannelKey == "#nexus-ai" && messages.isNotEmpty(),
+        showClearAi =
+          activeNode == NexusCoreNode.SUBSPACE_COMMS &&
+            (selectedChannelKey.equals("#rift-ai", ignoreCase = true) ||
+              selectedChannelKey.equals("#nexus-ai", ignoreCase = true)) &&
+            messages.isNotEmpty(),
         isInMatch = isInMatch,
         onSelectHubCard = { nextCardNode ->
           when (nextCardNode) {
@@ -3347,7 +3384,7 @@ private fun NexusGlassTerminalDeckPanel(
                 onShareRiftFrameBuild = onShareRiftFrameBuild,
                 onLoadSharedBuild = onLoadSharedBuild,
                 onAskAiAboutBuild = { prompt ->
-                  onSelectChannel("#nexus-ai")
+                  onSelectChannel("#rift-ai")
                   onSendQuestion(prompt)
                 },
                 onPostStrikeWingInvite = onPostStrikeWingInvite,
@@ -3360,6 +3397,7 @@ private fun NexusGlassTerminalDeckPanel(
                 onToggleOnlineRosterPane = onToggleOnlineRosterPane,
                 onAddOnlinePilotFriend = onAddOnlinePilotFriend,
                 onInviteOnlinePilotToWing = onInviteOnlinePilotToWing,
+                blockedPilotUids = blockedPilotUids,
               )
             }
 
@@ -3417,6 +3455,14 @@ private fun OrbitalHubSpatialStage(
   onAddOnlinePilotFriend: (String) -> Unit = {},
   onPostStrikeWingInvite: () -> Unit = {},
   squadronStatusBanner: String? = null,
+  onSetSquadronStatusBanner: (String) -> Unit = {},
+  lobbyMessages: List<SyndicateChatMessage> = emptyList(),
+  onInviteSyndicateGuest: (String) -> Unit = {},
+  onSyncSyndicateMetaNow: () -> Unit = {},
+  onEnterHudDragArenaMode: () -> Unit = {},
+  blockedPilotUids: Set<String> = emptySet(),
+  onToggleBlockPilot: (String, String) -> Unit = { _, _ -> },
+  onReportPilot: (String, String) -> Unit = { _, _ -> },
   sideBayMode: RiftHubSideBayMode = RiftHubSideBayMode.HUB_MAIN,
   onChangeSideBayMode: (RiftHubSideBayMode) -> Unit = {},
   overwatchPrompt: OverwatchCircularPrompt = OverwatchCircularPrompt.None,
@@ -3772,12 +3818,13 @@ private fun OrbitalHubSpatialStage(
         .toSet()
     }
   val allSquadronOnlinePilots =
-    remember(onlineHumanPilots, currentUserId, syndicateTag, friendLookupSet, squadronUidSet) {
+    remember(onlineHumanPilots, currentUserId, syndicateTag, friendLookupSet, squadronUidSet, blockedPilotUids) {
       val seen = HashSet<String>()
       val items = ArrayList<SquadronOnlinePilotItem>()
       for (p in onlineHumanPilots) {
         val uid = p.userId.ifBlank { p.id }.trim()
         if (uid.isBlank() || uid == currentUserId) continue
+        if (uid in blockedPilotUids || uid.lowercase(Locale.US) in blockedPilotUids) continue
         if (!seen.add(uid.lowercase(Locale.US))) continue
         val lockedHull = p.shipId.toInt().coerceIn(1, 10)
         val bestHull = onResolvePilotBestShipId(uid, lockedHull).coerceIn(1, 10)
@@ -4002,6 +4049,35 @@ private fun OrbitalHubSpatialStage(
       remember(activeCustomSlotId, activeCustomSlot.customName) {
         mutableStateOf(activeCustomSlot.customName.ifBlank { activeCustomSlotId })
       }
+    var squadronTagRenameDraft by
+      remember(activeArmadaName) {
+        mutableStateOf(activeArmadaName)
+      }
+    val applySquadronTagRename: (String) -> Unit = { rawTag ->
+      val cleanTag =
+        rawTag.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(12)
+      if (cleanTag.length >= 2 && !UgcModeration.containsProfanity(cleanTag)) {
+        val existingWingmen =
+          armadaSlots
+            .filter { !it.isLeader }
+            .map { slot ->
+              FriendPilotEntry(
+                uid = slot.uid,
+                callsign = slot.callsign,
+                syndicateTag = slot.syndicateTag,
+                shipId = slot.shipId,
+                statusText = "IN SQUADRON",
+                isOnline = slot.isOnline,
+                currentArmadaName = cleanTag,
+                currentArmadaCount = armadaSlots.size,
+                bounty = slot.resonance,
+              )
+            }
+        engine?.formOrJoinArmada(cleanTag, existingWingmen)
+        onSetSquadronStatusBanner("SQUADRON TAG UPDATED TO [$cleanTag]")
+        onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+      }
+    }
     val effectiveOverwatchPrompt =
       if (overwatchPrompt == OverwatchCircularPrompt.None && sideBayMode == RiftHubSideBayMode.RIFT_FRAME_BAY) {
         OverwatchCircularPrompt.RiftFrameDrydock
@@ -4049,6 +4125,9 @@ private fun OrbitalHubSpatialStage(
         dragPointerRootOffset = dragPointerRootOffset,
         frameRenameDraft = frameRenameDraft,
         onFrameRenameDraftChange = { frameRenameDraft = it },
+        squadronTagRenameDraft = squadronTagRenameDraft,
+        onSquadronTagRenameDraftChange = { squadronTagRenameDraft = it },
+        onSaveSquadronTagRename = applySquadronTagRename,
         currentUserId = currentUserId,
         callsign = callsign,
         syndicateTag = syndicateTag,
@@ -4056,6 +4135,7 @@ private fun OrbitalHubSpatialStage(
         cloudLeaderboardEntries = cloudLeaderboardEntries,
         onlineHumanPilots = onlineHumanPilots,
         syndicateDirectory = syndicateDirectory,
+        blockedPilotUids = blockedPilotUids,
         shipSpinDeg = shipSpinDeg,
         fluxOrbitRad = fluxOrbitRad,
         renameDraft = renameDraftState,
@@ -4093,6 +4173,8 @@ private fun OrbitalHubSpatialStage(
         onAddFriendPilot = { pilotItem ->
           onAddOnlinePilotFriend(pilotItem.callsign)
         },
+        onToggleBlockPilot = onToggleBlockPilot,
+        onReportPilot = onReportPilot,
         onConfirmActionPrompt = { confirmPrompt ->
           confirmPrompt.onConfirm()
           onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
@@ -4412,25 +4494,115 @@ private fun OrbitalHubSpatialStage(
                 syndicateDirectory = syndicateDirectory,
                 syndicateWarRecord = syndicateWarRecord,
                 statusMessage = syndicateStatusMessage,
+                callsign = callsign,
+                lobbyMessages = lobbyMessages,
+                onAcceptSyndicateInvite = { invTag, invName ->
+                  val uidOrNull = currentUserId.ifBlank { null }
+                  val isDrifter = !isGoogleAuthenticated || localPrefs.isGuestBypassEnabled()
+                  val lockDays = localPrefs.getRemainingSyndicateLockDays(uid = uidOrNull)
+                  when {
+                    isDrifter -> {
+                      onChangeOverwatchPrompt(
+                        OverwatchCircularPrompt.InfoStageInspect(
+                          kicker = "SYNDICATE CITADEL",
+                          title = "GOOGLE SIGN-IN REQUIRED",
+                          badge = "DRIFTER",
+                          summary =
+                            "Drifter pilots cannot join or charter Syndicates. Sign in with a verified Google account to accept invitations to [$invTag].",
+                          tacticalNote = "Use Switch Account inside Pilot Dossier or Helm Systems to sign in.",
+                          accentHex = 0xFFFACC15L,
+                          primaryActionLabel = "",
+                          onPrimaryAction = null,
+                        )
+                      )
+                    }
+                    lockDays > 0 -> {
+                      val remainingFmt = localPrefs.getRemainingSyndicateLockFormatted(uid = uidOrNull)
+                      onChangeOverwatchPrompt(
+                        OverwatchCircularPrompt.InfoStageInspect(
+                          kicker = "SYNDICATE ALLEGIANCE LOCK",
+                          title = "COOLDOWN ACTIVE",
+                          badge = remainingFmt.uppercase(Locale.US),
+                          summary =
+                            "Your pilot allegiance is currently locked ($remainingFmt remaining) before you can join [$invTag] $invName.",
+                          tacticalNote = "The 15-day allegiance lock prevents rapid faction hopping during Syndicate Wars.",
+                          accentHex = 0xFFFB7185L,
+                          primaryActionLabel = "",
+                          onPrimaryAction = null,
+                        )
+                      )
+                    }
+                    else -> {
+                      val matched =
+                        syndicateDirectory.firstOrNull { it.tag.equals(invTag, ignoreCase = true) }
+                          ?: SyndicateInfo(
+                            id = invTag.lowercase(Locale.US),
+                            tag = invTag,
+                            name = invName,
+                            memberCount = 1,
+                            isCustom = true,
+                          )
+                      onJoinOfficialSyndicate(matched)
+                    }
+                  }
+                },
                 onBackToHub = {
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
                 },
                 onInspectSyndicate = { syn ->
                   val isCurrent = syndicateTag.isNotBlank() && syn.tag.equals(syndicateTag, ignoreCase = true)
-                  onChangeOverwatchPrompt(
-                    OverwatchCircularPrompt.ActionConfirm(
-                      kicker = "SYNDICATE CITADEL",
-                      title = "[${syn.tag.uppercase(Locale.US)}] ${syn.name.uppercase(Locale.US)}",
-                      subtitle =
-                        "${syn.memberCount.coerceAtLeast(1)} PILOTS • ${String.format(Locale.US, "%,d", syn.combinedBounty.coerceAtLeast(0L))} RESONANCE\n${syn.motto.ifBlank { "Sector Syndicate" }}",
-                      confirmLabel = if (isCurrent) "LEAVE" else "JOIN",
-                      accentHex = if (isCurrent) 0xFFFB7185L else 0xFFFFD700L,
-                      onConfirm = {
-                        if (isCurrent) onLeaveCurrentSyndicate() else onJoinOfficialSyndicate(syn)
-                      },
-                    )
-                  )
+                  val uidOrNull = currentUserId.ifBlank { null }
+                  val isDrifter = !isGoogleAuthenticated || localPrefs.isGuestBypassEnabled()
+                  val lockDays = localPrefs.getRemainingSyndicateLockDays(uid = uidOrNull)
+                  when {
+                    !isCurrent && isDrifter -> {
+                      onChangeOverwatchPrompt(
+                        OverwatchCircularPrompt.InfoStageInspect(
+                          kicker = "SYNDICATE CITADEL",
+                          title = "[${syn.tag.uppercase(Locale.US)}] ${syn.name.uppercase(Locale.US)}",
+                          badge = "SIGN-IN REQUIRED",
+                          summary =
+                            "${syn.memberCount.coerceAtLeast(1)} PILOTS • ${String.format(Locale.US, "%,d", syn.combinedBounty.coerceAtLeast(0L))} RESONANCE. Drifter pilots must sign in with Google to enlist in a Syndicate.",
+                          tacticalNote = syn.motto.ifBlank { "Sign in with Google via Pilot Dossier or Helm Systems." },
+                          accentHex = 0xFFFACC15L,
+                          primaryActionLabel = "",
+                          onPrimaryAction = null,
+                        )
+                      )
+                    }
+                    !isCurrent && lockDays > 0 -> {
+                      val remainingFmt = localPrefs.getRemainingSyndicateLockFormatted(uid = uidOrNull)
+                      onChangeOverwatchPrompt(
+                        OverwatchCircularPrompt.InfoStageInspect(
+                          kicker = "SYNDICATE ALLEGIANCE LOCK",
+                          title = "[${syn.tag.uppercase(Locale.US)}] ${syn.name.uppercase(Locale.US)}",
+                          badge = remainingFmt.uppercase(Locale.US),
+                          summary =
+                            "${syn.memberCount.coerceAtLeast(1)} PILOTS • ${String.format(Locale.US, "%,d", syn.combinedBounty.coerceAtLeast(0L))} RESONANCE. Allegiance transfer unlocks in $remainingFmt.",
+                          tacticalNote = syn.motto.ifBlank { "15-day allegiance lock active between Syndicate transfers." },
+                          accentHex = 0xFFFB7185L,
+                          primaryActionLabel = "",
+                          onPrimaryAction = null,
+                        )
+                      )
+                    }
+                    else -> {
+                      onChangeOverwatchPrompt(
+                        OverwatchCircularPrompt.ActionConfirm(
+                          kicker = "SYNDICATE CITADEL",
+                          title = "[${syn.tag.uppercase(Locale.US)}] ${syn.name.uppercase(Locale.US)}",
+                          subtitle =
+                            "${syn.memberCount.coerceAtLeast(1)} PILOTS • ${String.format(Locale.US, "%,d", syn.combinedBounty.coerceAtLeast(0L))} RESONANCE\n${syn.motto.ifBlank { "Sector Syndicate" }}",
+                          confirmLabel = if (isCurrent) "LEAVE" else "JOIN",
+                          accentHex = if (isCurrent) 0xFFFB7185L else 0xFFFFD700L,
+                          onConfirm = {
+                            if (isCurrent) onLeaveCurrentSyndicate() else onJoinOfficialSyndicate(syn)
+                          },
+                        )
+                      )
+                    }
+                  }
                 },
               )
             }
@@ -4717,6 +4889,7 @@ private fun OrbitalHubSpatialStage(
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
                   onChangeSideBayMode(RiftHubSideBayMode.HUB_MAIN)
                 },
+                onEnterHudDragArenaMode = onEnterHudDragArenaMode,
                 onOpenSliderWorkbench = { wb ->
                   onChangeOverwatchPrompt(wb)
                 },
@@ -5026,9 +5199,35 @@ private fun OrbitalHubSpatialStage(
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.PilotInspect(pilotItem))
                 },
                 onOpenFullSquadronModal = onOpenFullSquadronModal,
+                onTapLeaderSlot = {
+                  squadronTagRenameDraft = activeArmadaName.ifBlank { "${callsign.take(8)}_SQD" }
+                  onChangeOverwatchPrompt(OverwatchCircularPrompt.SquadronTagRename(squadronTagRenameDraft))
+                },
+                onTapMemberSlot = { member ->
+                  onChangeOverwatchPrompt(
+                    OverwatchCircularPrompt.ActionConfirm(
+                      kicker = "SQUADRON FORMATION",
+                      title = "REMOVE ${member.callsign.uppercase(Locale.US)}?",
+                      subtitle =
+                        "Removes this wingmate from Squadron [${activeArmadaName.ifBlank { "SQUADRON" }}].",
+                      confirmLabel = "REMOVE",
+                      accentHex = 0xFFFB7185L,
+                      onConfirm = {
+                        engine?.removeMemberFromArmada(member.uid.ifBlank { member.callsign })
+                        onSetSquadronStatusBanner("REMOVED ${member.callsign.uppercase(Locale.US)} FROM SQUADRON")
+                      },
+                    )
+                  )
+                },
+                onTapOpenSlot = {
+                  onSetSquadronStatusBanner("SELECT AN ONLINE PILOT ON THE LEFT OR TAP LFG PING TO INVITE WINGMATES")
+                },
               )
             }
             RiftHubSideBayMode.SYNDICATE_BAY -> {
+              val resolvedCareerElims =
+                engine?.allTimeKills
+                  ?: localPrefs.getPilotCareerStatsSummary(currentUserId.ifBlank { null }).eliminations
               SyndicateRightCitadelBay(
                 isTabletDeck = isTabletDeck,
                 headerHeight = bayHeaderHeight,
@@ -5041,7 +5240,7 @@ private fun OrbitalHubSpatialStage(
                 callsign = callsign,
                 localShipId = hangarIndicatedShipId,
                 liveResonance = liveResonance.toLong(),
-                kills = 0L,
+                kills = resolvedCareerElims,
                 localPrefs = localPrefs,
                 onLeaveCurrentSyndicate = {
                   onChangeOverwatchPrompt(
@@ -5059,6 +5258,8 @@ private fun OrbitalHubSpatialStage(
                 onOpenCrestBuilder = { tag ->
                   onChangeOverwatchPrompt(OverwatchCircularPrompt.SyndicateCrestBuilder(tag))
                 },
+                onToggleInviteOnlySynced = onSyncSyndicateMetaNow,
+                onInviteSyndicateGuest = onInviteSyndicateGuest,
               )
             }
             RiftHubSideBayMode.GAME_MODES_BAY -> {
@@ -5320,6 +5521,9 @@ private fun OrbitalHubSpatialStage(
                 )
               }
               onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
+            }
+            is OverwatchCircularPrompt.SquadronTagRename -> {
+              applySquadronTagRename(squadronTagRenameDraft)
             }
             is OverwatchCircularPrompt.SliderWorkbench -> {
               onChangeOverwatchPrompt(OverwatchCircularPrompt.None)
@@ -7072,6 +7276,9 @@ private fun RoundRipplingOverwatchAperture(
   dragPointerRootOffset: Offset = Offset.Zero,
   frameRenameDraft: String = "",
   onFrameRenameDraftChange: (String) -> Unit = {},
+  squadronTagRenameDraft: String = "",
+  onSquadronTagRenameDraftChange: (String) -> Unit = {},
+  onSaveSquadronTagRename: (String) -> Unit = {},
   currentUserId: String = "",
   callsign: String = "",
   syndicateTag: String = "",
@@ -7079,6 +7286,7 @@ private fun RoundRipplingOverwatchAperture(
   cloudLeaderboardEntries: List<LeaderboardEntry> = emptyList(),
   onlineHumanPilots: List<LivePilotState> = emptyList(),
   syndicateDirectory: List<SyndicateInfo> = emptyList(),
+  blockedPilotUids: Set<String> = emptySet(),
   shipSpinDeg: Float = 0f,
   fluxOrbitRad: Float = 0f,
   renameDraft: String = "",
@@ -7094,6 +7302,8 @@ private fun RoundRipplingOverwatchAperture(
   onDismissPrompt: () -> Unit = {},
   onSquadUpPilot: (SquadronOnlinePilotItem) -> Unit = {},
   onAddFriendPilot: (SquadronOnlinePilotItem) -> Unit = {},
+  onToggleBlockPilot: (String, String) -> Unit = { _, _ -> },
+  onReportPilot: (String, String) -> Unit = { _, _ -> },
   onConfirmActionPrompt: (OverwatchCircularPrompt.ActionConfirm) -> Unit = {},
   onExecuteInfoStageAction: (OverwatchCircularPrompt.InfoStageInspect) -> Unit = {},
   onSaveCallsignRename: (String) -> Unit = {},
@@ -7488,6 +7698,9 @@ private fun RoundRipplingOverwatchAperture(
             dragPointerRootOffset = dragPointerRootOffset,
             frameRenameDraft = frameRenameDraft,
             onFrameRenameDraftChange = onFrameRenameDraftChange,
+            squadronTagRenameDraft = squadronTagRenameDraft,
+            onSquadronTagRenameDraftChange = onSquadronTagRenameDraftChange,
+            onSaveSquadronTagRename = onSaveSquadronTagRename,
             currentUserId = currentUserId,
             callsign = callsign,
             syndicateTag = syndicateTag,
@@ -7495,6 +7708,7 @@ private fun RoundRipplingOverwatchAperture(
             cloudLeaderboardEntries = cloudLeaderboardEntries,
             onlineHumanPilots = onlineHumanPilots,
             syndicateDirectory = syndicateDirectory,
+            blockedPilotUids = blockedPilotUids,
             shipSpinDeg = shipSpinDeg,
             fluxOrbitRad = fluxOrbitRad,
             renameDraft = renameDraft,
@@ -7510,6 +7724,8 @@ private fun RoundRipplingOverwatchAperture(
             onDismissPrompt = onDismissPrompt,
             onSquadUpPilot = onSquadUpPilot,
             onAddFriendPilot = onAddFriendPilot,
+            onToggleBlockPilot = onToggleBlockPilot,
+            onReportPilot = onReportPilot,
             onConfirmActionPrompt = onConfirmActionPrompt,
             onExecuteInfoStageAction = onExecuteInfoStageAction,
             onSaveCallsignRename = onSaveCallsignRename,
@@ -7534,6 +7750,9 @@ private fun OverwatchCircularGlassPromptOverlay(
   dragPointerRootOffset: Offset = Offset.Zero,
   frameRenameDraft: String = "",
   onFrameRenameDraftChange: (String) -> Unit = {},
+  squadronTagRenameDraft: String = "",
+  onSquadronTagRenameDraftChange: (String) -> Unit = {},
+  onSaveSquadronTagRename: (String) -> Unit = {},
   currentUserId: String = "",
   callsign: String = "",
   syndicateTag: String = "",
@@ -7541,6 +7760,7 @@ private fun OverwatchCircularGlassPromptOverlay(
   cloudLeaderboardEntries: List<LeaderboardEntry> = emptyList(),
   onlineHumanPilots: List<LivePilotState> = emptyList(),
   syndicateDirectory: List<SyndicateInfo> = emptyList(),
+  blockedPilotUids: Set<String> = emptySet(),
   shipSpinDeg: Float,
   fluxOrbitRad: Float,
   renameDraft: String = "",
@@ -7556,6 +7776,8 @@ private fun OverwatchCircularGlassPromptOverlay(
   onDismissPrompt: () -> Unit,
   onSquadUpPilot: (SquadronOnlinePilotItem) -> Unit,
   onAddFriendPilot: (SquadronOnlinePilotItem) -> Unit,
+  onToggleBlockPilot: (String, String) -> Unit = { _, _ -> },
+  onReportPilot: (String, String) -> Unit = { _, _ -> },
   onConfirmActionPrompt: (OverwatchCircularPrompt.ActionConfirm) -> Unit = {},
   onExecuteInfoStageAction: (OverwatchCircularPrompt.InfoStageInspect) -> Unit = {},
   onSaveCallsignRename: (String) -> Unit = {},
@@ -8069,6 +8291,69 @@ private fun OverwatchCircularGlassPromptOverlay(
               )
             }
           }
+
+          if (pilot.uid.isNotBlank() && pilot.uid != currentUserId && pilot.uid != "local_self") {
+            val isBlocked =
+              pilot.uid in blockedPilotUids || pilot.uid.lowercase(Locale.US) in blockedPilotUids
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Box(
+                modifier =
+                  Modifier.minimumInteractiveComponentSize()
+                    .height(48.dp)
+                    .cockpitReticleSurface(
+                      accent = if (isBlocked) Color(0xFF38BDF8) else Color(0xFFFB7185),
+                      isSelected = true,
+                      drawCornerTicks = false,
+                      featherAlpha = 0.34f,
+                    )
+                    .clickable {
+                      onToggleBlockPilot(pilot.uid, pilot.callsign)
+                      onDismissPrompt()
+                    }
+                    .padding(horizontal = 10.dp)
+                    .testTag("overwatch_pilot_block_button"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = if (isBlocked) "UNBLOCK" else "BLOCK",
+                  color = if (isBlocked) Color(0xFF38BDF8) else Color(0xFFFB7185),
+                  fontSize = 8.0.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+
+              Box(
+                modifier =
+                  Modifier.minimumInteractiveComponentSize()
+                    .height(48.dp)
+                    .cockpitReticleSurface(
+                      accent = Color(0xFFFACC15),
+                      isSelected = false,
+                      drawCornerTicks = false,
+                      featherAlpha = 0.32f,
+                    )
+                    .clickable {
+                      onReportPilot(pilot.uid, pilot.callsign)
+                      onDismissPrompt()
+                    }
+                    .padding(horizontal = 10.dp)
+                    .testTag("overwatch_pilot_report_button"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = "REPORT",
+                  color = Color(0xFFFACC15),
+                  fontSize = 8.0.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                )
+              }
+            }
+          }
         }
       }
 
@@ -8445,6 +8730,22 @@ private fun OverwatchCircularGlassPromptOverlay(
                   )
                 }
               }
+            }
+            prompt.obstacleStyleOrdinal in SpaceObstacleStyle.entries.indices -> {
+              val obstacleStyle = SpaceObstacleStyle.entries[prompt.obstacleStyleOrdinal]
+              val obstacleBmp =
+                remember(prompt.obstacleStyleOrdinal, RiftSpriteBaker.spriteVisualRevision, RiftVisualForgeState.visualRevision) {
+                  RiftSpriteBaker.getSpaceObstacleBitmap(obstacleStyle, 0).asImageBitmap()
+                }
+              Image(
+                bitmap = obstacleBmp,
+                contentDescription = prompt.title,
+                contentScale = ContentScale.Fit,
+                modifier =
+                  Modifier.size(72.dp).graphicsLayer {
+                    rotationZ = shipSpinDeg * 0.25f
+                  },
+              )
             }
             prompt.codexModeIndex >= 0 -> {
               RankedModeDistinctEmblem(
@@ -8925,6 +9226,138 @@ private fun OverwatchCircularGlassPromptOverlay(
                   }
                   .padding(horizontal = 12.dp)
                   .testTag("overwatch_frame_rename_cancel"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "CANCEL",
+                color = Color(0xFFCBD5E1),
+                fontSize = 8.2.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+          }
+        }
+      }
+
+      is OverwatchCircularPrompt.SquadronTagRename -> {
+        val keyboardController = LocalSoftwareKeyboardController.current
+        val cleanPreview =
+          squadronTagRenameDraft.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(12)
+        val isRejected = cleanPreview.isNotBlank() && UgcModeration.containsProfanity(cleanPreview)
+        Column(
+          modifier = Modifier.fillMaxWidth(0.84f).testTag("overwatch_squadron_rename_overlay"),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(if (isTabletDeck) 7.dp else 5.dp),
+        ) {
+          Text(
+            text = "SQUADRON FORMATION TAG",
+            color = Color(0xFFFFD700),
+            fontSize = if (isTabletDeck) 9.2.sp else 8.2.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+          )
+          Box(
+            modifier =
+              Modifier.fillMaxWidth(0.88f)
+                .height(48.dp)
+                .cockpitReticleSurface(
+                  accent = if (isRejected) Color(0xFFFB7185) else Color(0xFFFFD700),
+                  isSelected = true,
+                  drawCornerTicks = false,
+                  featherAlpha = 0.50f,
+                )
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+          ) {
+            if (squadronTagRenameDraft.isBlank()) {
+              Text(
+                text = prompt.initialTag.ifBlank { "SQUADRON TAG" },
+                color = Color(0xFF94A3B8),
+                fontSize = 9.8.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+              )
+            }
+            BasicTextField(
+              value = squadronTagRenameDraft,
+              onValueChange = { onSquadronTagRenameDraftChange(it.take(12)) },
+              singleLine = true,
+              cursorBrush = SolidColor(Color(0xFFFFD700)),
+              textStyle =
+                TextStyle(
+                  color = Color.White,
+                  fontSize = 10.6.sp,
+                  fontWeight = FontWeight.Black,
+                  fontFamily = FontFamily.Monospace,
+                ),
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+              keyboardActions =
+                KeyboardActions(
+                  onDone = {
+                    keyboardController?.hide()
+                    onSaveSquadronTagRename(squadronTagRenameDraft)
+                  }
+                ),
+              modifier = Modifier.fillMaxWidth().testTag("overwatch_squadron_rename_input"),
+            )
+          }
+          if (isRejected) {
+            Text(
+              text = "TAG REJECTED BY SAFETY FILTER",
+              color = Color(0xFFFB7185),
+              fontSize = 7.4.sp,
+              fontWeight = FontWeight.Black,
+              fontFamily = FontFamily.Monospace,
+            )
+          }
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFFFFD700),
+                    isSelected = cleanPreview.length >= 2 && !isRejected,
+                    drawCornerTicks = true,
+                    featherAlpha = 0.48f,
+                  )
+                  .clickable(enabled = cleanPreview.length >= 2 && !isRejected) {
+                    keyboardController?.hide()
+                    onSaveSquadronTagRename(squadronTagRenameDraft)
+                  }
+                  .padding(horizontal = 14.dp)
+                  .testTag("overwatch_squadron_rename_save"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "SAVE TAG",
+                color = Color.White,
+                fontSize = 8.4.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+              )
+            }
+            Box(
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .height(48.dp)
+                  .cockpitReticleSurface(
+                    accent = Color(0xFF94A3B8),
+                    isSelected = false,
+                    drawCornerTicks = false,
+                    featherAlpha = 0.28f,
+                  )
+                  .clickable {
+                    keyboardController?.hide()
+                    onDismissPrompt()
+                  }
+                  .padding(horizontal = 12.dp)
+                  .testTag("overwatch_squadron_rename_cancel"),
               contentAlignment = Alignment.Center,
             ) {
               Text(
@@ -11504,6 +11937,7 @@ private fun SubspaceCommsDiscordDeck(
   onToggleOnlineRosterPane: () -> Unit,
   onAddOnlinePilotFriend: (String) -> Unit,
   onInviteOnlinePilotToWing: (LivePilotState) -> Unit,
+  blockedPilotUids: Set<String> = emptySet(),
 ) {
   val strikeWingKey = "strike:${activeArmadaName.ifBlank { "WING" }.uppercase(Locale.US)}"
 
@@ -11529,7 +11963,13 @@ private fun SubspaceCommsDiscordDeck(
       verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
       ChannelCategoryHeader("// RIFT INTEL")
-      ChannelNavItem("RIFT AI", "AI", selectedChannelKey == "#nexus-ai", Color(0xFF00F5D4), { onSelectChannel("#nexus-ai") }, "nexus_ch_nexus_ai")
+      val isRiftAiSelected =
+        selectedChannelKey.equals("#rift-ai", ignoreCase = true) ||
+          selectedChannelKey.equals("#nexus-ai", ignoreCase = true)
+      val isLfgSelected =
+        selectedChannelKey.equals("#squadron-lfg", ignoreCase = true) ||
+          selectedChannelKey.equals("#strike-lfg", ignoreCase = true)
+      ChannelNavItem("RIFT AI", "AI", isRiftAiSelected, Color(0xFF00F5D4), { onSelectChannel("#rift-ai") }, "nexus_ch_nexus_ai")
       ChannelNavItem("#announcements", "DEV", selectedChannelKey == "#announcements", Color(0xFFFACC15), { onSelectChannel("#announcements") }, "nexus_ch_announcements")
       ChannelNavItem("#patch-log", "v1.0.$CURRENT_RIFT_BUILD_VERSION", selectedChannelKey == "#patch-log", Color(0xFF38BDF8), { onSelectChannel("#patch-log") }, "nexus_ch_change_log")
       ChannelNavItem("#bug-reports", "CLOUD", selectedChannelKey == "#bug-reports", Color(0xFFFB7185), { onSelectChannel("#bug-reports") }, "nexus_ch_bug_report")
@@ -11539,7 +11979,7 @@ private fun SubspaceCommsDiscordDeck(
       ChannelCategoryHeader("// COMMUNITY")
       ChannelNavItem("#sector-lounge", "$totalOnlinePilots", selectedChannelKey == "#sector-lounge", Color(0xFF38BDF8), { onSelectChannel("#sector-lounge") }, "nexus_ch_main_lobby")
       ChannelNavItem("#shipwright-meta", "100PT", selectedChannelKey == "#shipwright-meta", Color(0xFFC084FC), { onSelectChannel("#shipwright-meta") }, "nexus_ch_shipwright_meta")
-      ChannelNavItem("#squadron-lfg", "LFG", selectedChannelKey == "#strike-lfg", Color(0xFF34D399), { onSelectChannel("#strike-lfg") }, "nexus_ch_strike_lfg")
+      ChannelNavItem("#squadron-lfg", "LFG", isLfgSelected, Color(0xFF34D399), { onSelectChannel("#squadron-lfg") }, "nexus_ch_strike_lfg")
 
       Spacer(modifier = Modifier.height(3.dp))
       ChannelCategoryHeader("// SYNDICATE SERVER")
@@ -11668,19 +12108,41 @@ private fun SubspaceCommsDiscordDeck(
       }
 
       val normSelected = selectedChannelKey.trim().lowercase(Locale.US)
+      val isSelectedLfgChannel = normSelected == "#squadron-lfg" || normSelected == "#strike-lfg"
       val mergedChannelMessages =
-        remember(lobbyMessages.size, normSelected, localEchoMessages[normSelected]?.size) {
-          val fromCloud = lobbyMessages.filter { it.resolvedChannelKey() == normSelected }
+        remember(
+          lobbyMessages.size,
+          normSelected,
+          localEchoMessages[normSelected]?.size,
+          localEchoMessages["#squadron-lfg"]?.size,
+          localEchoMessages["#strike-lfg"]?.size,
+          blockedPilotUids,
+        ) {
+          fun isBlockedSender(msg: SyndicateChatMessage): Boolean =
+            msg.senderUid.isNotBlank() &&
+              (msg.senderUid in blockedPilotUids || msg.senderUid.lowercase(Locale.US) in blockedPilotUids)
+          fun matchesChannel(key: String): Boolean =
+            key == normSelected ||
+              (isSelectedLfgChannel && (key == "#squadron-lfg" || key == "#strike-lfg"))
+          val fromCloud =
+            lobbyMessages.filter { matchesChannel(it.resolvedChannelKey()) && !isBlockedSender(it) }
           val cloudTexts = fromCloud.map { "${it.senderCallsign}|${it.messageText}" }.toSet()
+          val rawEchoes =
+            if (isSelectedLfgChannel) {
+              (localEchoMessages["#squadron-lfg"] ?: emptyList()) +
+                (localEchoMessages["#strike-lfg"] ?: emptyList())
+            } else {
+              localEchoMessages[normSelected] ?: emptyList()
+            }
           val echoes =
-            (localEchoMessages[normSelected] ?: emptyList()).filterNot {
-              "${it.senderCallsign}|${it.messageText}" in cloudTexts
+            rawEchoes.filterNot {
+              isBlockedSender(it) || "${it.senderCallsign}|${it.messageText}" in cloudTexts
             }
           (fromCloud + echoes).sortedBy { it.createdAtMs }
         }
 
       when {
-        normSelected == "#nexus-ai" -> {
+        normSelected == "#rift-ai" || normSelected == "#nexus-ai" -> {
           Row(
             modifier =
               Modifier.fillMaxWidth()
@@ -11812,8 +12274,12 @@ private fun SubspaceCommsDiscordDeck(
         normSelected == "#rules" -> NexusRulesChannelView()
         normSelected == "#bug-reports" -> {
           val bugFeed =
-            remember(lobbyMessages.size, localEchoMessages["#bug-reports"]?.size) {
-              lobbyMessages.filter { it.isBugReportCard() }
+            remember(lobbyMessages.size, localEchoMessages["#bug-reports"]?.size, blockedPilotUids) {
+              lobbyMessages.filter { msg ->
+                msg.isBugReportCard() &&
+                  (msg.senderUid.isBlank() ||
+                    (msg.senderUid !in blockedPilotUids && msg.senderUid.lowercase(Locale.US) !in blockedPilotUids))
+              }
             }
           NexusBugReportChannelView(
             selectedCategory = bugCategory,
@@ -11859,7 +12325,7 @@ private fun SubspaceCommsDiscordDeck(
         else -> {
           val isAnnouncements = normSelected == "#announcements"
           val isShipwright = normSelected == "#shipwright-meta"
-          val isLfg = normSelected == "#strike-lfg"
+          val isLfg = normSelected == "#squadron-lfg" || normSelected == "#strike-lfg"
           val isSyndicateCh = normSelected.startsWith("syn:")
           val isStrikeWingCh = normSelected.startsWith("strike:")
 
