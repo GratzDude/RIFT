@@ -434,6 +434,9 @@ class LocalPilotPrefs(context: Context) {
         .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
     }
     ed.apply()
+    if (apply15DayLock) {
+      touchProgUpdatedAtMs(uid, now)
+    }
     appendSyndicateServiceTransition(
       newTag = cleanTag,
       newName = cleanName,
@@ -463,6 +466,7 @@ class LocalPilotPrefs(context: Context) {
         .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, lockUntil)
     }
     ed.apply()
+    touchProgUpdatedAtMs(uid, now)
     appendSyndicateServiceTransition(
       newTag = "UNAFFILIATED",
       newName = "Unaffiliated",
@@ -483,13 +487,20 @@ class LocalPilotPrefs(context: Context) {
     userSettingsPrefs.edit().putFloat(KEY_CAMERA_ZOOM, clamped).apply()
   }
 
-  // Active Named Squadron / Armada (SOLO = "", or up-to-14-char Squadron tag e.g. "ASTRAL_FLEET")
-  fun getActiveArmadaName(): String = prefs.getString(KEY_ARMADA_NAME, "") ?: ""
+  // Active Named Squadron (SOLO = "", or up-to-14-char Squadron tag e.g. "ASTRAL_FLEET")
+  fun getActiveArmadaName(uid: String? = null): String {
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getString(KEY_ARMADA_NAME, "") ?: "" else ""
+    return prefs.getString(uidKey(KEY_ARMADA_NAME, uid), fallback) ?: ""
+  }
 
-  fun setActiveArmadaName(armadaName: String) {
+  fun setActiveArmadaName(armadaName: String, uid: String? = null) {
     val rawClean = armadaName.trim().uppercase(Locale.US).replace(Regex("[^A-Z0-9_\\-]"), "").take(14)
     val clean = if (UgcModeration.containsProfanity(rawClean)) "APEX_5" else rawClean
-    prefs.edit().putString(KEY_ARMADA_NAME, clean).apply()
+    val ed = prefs.edit().putString(uidKey(KEY_ARMADA_NAME, uid), clean)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putString(KEY_ARMADA_NAME, clean)
+    }
+    ed.apply()
   }
 
   fun getMySyndicateRoster(
@@ -534,7 +545,7 @@ class LocalPilotPrefs(context: Context) {
       getAllSyndicates().firstOrNull { it.tag.equals(tag, ignoreCase = true) }?.ownerId.orEmpty()
     val kickedMembers = getKickedSyndicateMembers(tag)
     val realSyndicateFriends =
-      getFriendsList()
+      getFriendsList(scopedUid)
         .filter {
           it.syndicateTag.equals(tag, ignoreCase = true) &&
             !it.callsign.equals(callsign, ignoreCase = true) &&
@@ -584,6 +595,7 @@ class LocalPilotPrefs(context: Context) {
       ed.putInt(KEY_SHIP_ID, clamped)
     }
     ed.apply()
+    touchProgUpdatedAtMs(uid)
   }
 
   fun getLastShipId(uid: String? = null): Int = getPreferredShipId(uid)
@@ -869,17 +881,19 @@ class LocalPilotPrefs(context: Context) {
   @Suppress("UNUSED_PARAMETER")
   fun getCustomizationPointsTotal(uid: String? = null): Int = 100
 
-  fun getSpentCustomizationPoints(uid: String? = null): Int =
-    prefs.getInt(uidKey(KEY_SPENT_CUSTOM_POINTS, uid), prefs.getInt(KEY_SPENT_CUSTOM_POINTS, 0))
+  fun getSpentCustomizationPoints(uid: String? = null): Int {
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_SPENT_CUSTOM_POINTS, 0) else 0
+    return prefs.getInt(uidKey(KEY_SPENT_CUSTOM_POINTS, uid), fallback)
       .coerceIn(0, getCustomizationPointsTotal(uid))
+  }
 
   fun setSpentCustomizationPoints(points: Int, uid: String? = null) {
     val clamped = points.coerceIn(0, 100)
-    prefs
-      .edit()
-      .putInt(KEY_SPENT_CUSTOM_POINTS, clamped)
-      .putInt(uidKey(KEY_SPENT_CUSTOM_POINTS, uid), clamped)
-      .apply()
+    val ed = prefs.edit().putInt(uidKey(KEY_SPENT_CUSTOM_POINTS, uid), clamped)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putInt(KEY_SPENT_CUSTOM_POINTS, clamped)
+    }
+    ed.apply()
   }
 
   fun getRiftShards(uid: String? = null): Long {
@@ -896,38 +910,44 @@ class LocalPilotPrefs(context: Context) {
 
   fun setRiftShards(shards: Long, uid: String? = null) {
     val clean = shards.coerceAtLeast(0L)
-    prefs
-      .edit()
-      .putLong(KEY_RIFT_SHARDS, clean)
-      .putLong(uidKey(KEY_RIFT_SHARDS, uid), clean)
-      .apply()
+    val ed = prefs.edit().putLong(uidKey(KEY_RIFT_SHARDS, uid), clean)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putLong(KEY_RIFT_SHARDS, clean)
+    }
+    ed.apply()
   }
 
-  fun getHighestMilestoneLevelClaimed(uid: String? = null): Int =
-    prefs.getInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), prefs.getInt(KEY_HIGHEST_MILESTONE_LVL, 0))
+  fun getHighestMilestoneLevelClaimed(uid: String? = null): Int {
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_HIGHEST_MILESTONE_LVL, 0) else 0
+    return prefs.getInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), fallback)
+  }
 
-  fun getUnlockedExtraSlots(uid: String? = null): Int =
-    prefs.getInt(uidKey(KEY_UNLOCKED_EXTRA_SLOTS, uid), prefs.getInt(KEY_UNLOCKED_EXTRA_SLOTS, 0))
+  fun getUnlockedExtraSlots(uid: String? = null): Int {
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_UNLOCKED_EXTRA_SLOTS, 0) else 0
+    return prefs.getInt(uidKey(KEY_UNLOCKED_EXTRA_SLOTS, uid), fallback)
+  }
 
   fun setUnlockedExtraSlots(slots: Int, uid: String? = null) {
     val clean = slots.coerceAtLeast(0)
-    prefs
-      .edit()
-      .putInt(KEY_UNLOCKED_EXTRA_SLOTS, clean)
-      .putInt(uidKey(KEY_UNLOCKED_EXTRA_SLOTS, uid), clean)
-      .apply()
+    val ed = prefs.edit().putInt(uidKey(KEY_UNLOCKED_EXTRA_SLOTS, uid), clean)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putInt(KEY_UNLOCKED_EXTRA_SLOTS, clean)
+    }
+    ed.apply()
   }
 
-  fun getAiShipDesignTokens(uid: String? = null): Int =
-    prefs.getInt(uidKey(KEY_AI_DESIGN_TOKENS, uid), prefs.getInt(KEY_AI_DESIGN_TOKENS, 0))
+  fun getAiShipDesignTokens(uid: String? = null): Int {
+    val fallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getInt(KEY_AI_DESIGN_TOKENS, 0) else 0
+    return prefs.getInt(uidKey(KEY_AI_DESIGN_TOKENS, uid), fallback)
+  }
 
   fun setAiShipDesignTokens(tokens: Int, uid: String? = null) {
     val clean = tokens.coerceAtLeast(0)
-    prefs
-      .edit()
-      .putInt(KEY_AI_DESIGN_TOKENS, clean)
-      .putInt(uidKey(KEY_AI_DESIGN_TOKENS, uid), clean)
-      .apply()
+    val ed = prefs.edit().putInt(uidKey(KEY_AI_DESIGN_TOKENS, uid), clean)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putInt(KEY_AI_DESIGN_TOKENS, clean)
+    }
+    ed.apply()
   }
 
   // Custom Modular Ship Loadout Slots (Frame A through Frame E) with seamless legacy migration
@@ -977,6 +997,7 @@ class LocalPilotPrefs(context: Context) {
       ed.putString(KEY_ACTIVE_CUSTOM_SLOT_ID, clean)
     }
     ed.apply()
+    touchProgUpdatedAtMs(uid)
   }
 
   fun isCustomSlotUnlocked(slotId: String, uid: String? = null): Boolean {
@@ -1377,15 +1398,15 @@ class LocalPilotPrefs(context: Context) {
   fun setPeakResonance(value: Int, uid: String? = null) {
     ensureResonanceMigrated(uid)
     val clean = kotlin.math.max(getPeakResonance(uid), value.coerceAtLeast(0))
-    prefs
-      .edit()
-      .putInt(KEY_PEAK_RESONANCE, clean)
-      .putInt(uidKey(KEY_PEAK_RESONANCE, uid), clean)
-      .apply()
+    val ed = prefs.edit().putInt(uidKey(KEY_PEAK_RESONANCE, uid), clean)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putInt(KEY_PEAK_RESONANCE, clean)
+    }
+    ed.apply()
   }
 
   fun applyResonanceDelta(delta: Int, uid: String? = null): Pair<Int, Int> {
-    val activeShip = getLastShipId().coerceIn(1, 10)
+    val activeShip = getLastShipId(uid).coerceIn(1, 10)
     val (_, nextLive, nextPeak) = applyShipResonanceDelta(activeShip, delta, uid)
     return nextLive to nextPeak
   }
@@ -1598,7 +1619,7 @@ class LocalPilotPrefs(context: Context) {
     return true
   }
 
-  private fun persistVerifiedFriendsList(list: List<FriendPilotEntry>) {
+  private fun persistVerifiedFriendsList(list: List<FriendPilotEntry>, uid: String? = null) {
     val arr = JSONArray()
     for (f in list) {
       if (!isVerifiedRealFriend(f)) continue
@@ -1616,11 +1637,22 @@ class LocalPilotPrefs(context: Context) {
         }
       )
     }
-    prefs.edit().putString(KEY_CUSTOM_FRIENDS_JSON, arr.toString()).apply()
+    val json = arr.toString()
+    val ed = prefs.edit().putString(uidKey(KEY_CUSTOM_FRIENDS_JSON, uid), json)
+    if (canUseLegacyUnscopedFallback(uid)) {
+      ed.putString(KEY_CUSTOM_FRIENDS_JSON, json)
+    }
+    ed.apply()
   }
 
-  fun getFriendsList(): List<FriendPilotEntry> {
-    val customRaw = prefs.getString(KEY_CUSTOM_FRIENDS_JSON, "[]") ?: "[]"
+  fun saveVerifiedFriendsList(list: List<FriendPilotEntry>, uid: String? = null) {
+    persistVerifiedFriendsList(list, uid)
+  }
+
+  fun getFriendsList(uid: String? = null): List<FriendPilotEntry> {
+    val fallback =
+      if (canUseLegacyUnscopedFallback(uid)) prefs.getString(KEY_CUSTOM_FRIENDS_JSON, "[]") ?: "[]" else "[]"
+    val customRaw = prefs.getString(uidKey(KEY_CUSTOM_FRIENDS_JSON, uid), fallback) ?: "[]"
     val verifiedList = mutableListOf<FriendPilotEntry>()
     var purgedStale = false
     try {
@@ -1648,14 +1680,14 @@ class LocalPilotPrefs(context: Context) {
     } catch (_: Exception) {}
 
     if (purgedStale) {
-      persistVerifiedFriendsList(verifiedList)
+      persistVerifiedFriendsList(verifiedList, uid)
     }
     return verifiedList
   }
 
-  fun saveVerifiedFriendPilot(entry: FriendPilotEntry) {
+  fun saveVerifiedFriendPilot(entry: FriendPilotEntry, uid: String? = null) {
     if (!isVerifiedRealFriend(entry)) return
-    val current = getFriendsList().toMutableList()
+    val current = getFriendsList(uid).toMutableList()
     val existingIdx =
       current.indexOfFirst {
         it.uid == entry.uid || it.callsign.equals(entry.callsign, ignoreCase = true)
@@ -1665,24 +1697,28 @@ class LocalPilotPrefs(context: Context) {
     } else {
       current.add(entry)
     }
-    persistVerifiedFriendsList(current)
+    persistVerifiedFriendsList(current, uid)
   }
 
-  fun removeFriendPilot(uidOrCallsign: String) {
+  fun removeFriendPilot(uidOrCallsign: String, uid: String? = null) {
     val clean = uidOrCallsign.trim()
     if (clean.isEmpty()) return
     val remaining =
-      getFriendsList().filterNot {
+      getFriendsList(uid).filterNot {
         it.uid == clean || it.callsign.equals(clean, ignoreCase = true)
       }
-    persistVerifiedFriendsList(remaining)
+    persistVerifiedFriendsList(remaining, uid)
+  }
+
+  fun removeFriend(uidOrCallsign: String, uid: String? = null) {
+    removeFriendPilot(uidOrCallsign, uid)
   }
 
   /**
    * Returns an already-verified Sworn Pilot friend matching [rawCallsign], or null.
    * Never fabricates fake local pilots; new pilot discovery goes through Firestore lookup.
    */
-  fun addFriendByCallsign(rawCallsign: String): FriendPilotEntry? {
+  fun addFriendByCallsign(rawCallsign: String, uid: String? = null): FriendPilotEntry? {
     val clean =
       rawCallsign
         .trim()
@@ -1690,7 +1726,7 @@ class LocalPilotPrefs(context: Context) {
         .replace(Regex("[^A-Z0-9_\\-]"), "")
         .take(14)
     if (clean.length < 2 || UgcModeration.containsProfanity(clean)) return null
-    return getFriendsList().firstOrNull { it.callsign.equals(clean, ignoreCase = true) }
+    return getFriendsList(uid).firstOrNull { it.callsign.equals(clean, ignoreCase = true) }
   }
 
   fun getAllSyndicates(): List<SyndicateInfo> {
@@ -2381,249 +2417,308 @@ class LocalPilotPrefs(context: Context) {
    * to RiftBillingManager.effectiveShardBalance(150L).
    * Preserves Sworn Pilot callsigns and all user audio/BPM/Music Forge preferences in userSettingsPrefs.
    */
+  private fun unscopedLegacyPilotKeys(): Set<String> {
+    val keys = linkedSetOf(
+      KEY_SYNDICATE_TAG,
+      KEY_SYNDICATE_NAME,
+      KEY_SYNDICATE_LOCK_UNTIL_MS,
+      KEY_ARMADA_NAME,
+      KEY_CUSTOM_FRIENDS_JSON,
+      KEY_SHIP_ID,
+      KEY_MODE,
+      KEY_SYNDICATE_WAR_RECORDS_JSON,
+      KEY_PVP_KILLS,
+      KEY_PVP_DEATHS,
+      KEY_PVP_BOUNTY_PEAK,
+      KEY_ALL_KILLS,
+      KEY_ALL_DEATHS,
+      KEY_ALL_BOUNTY_PEAK,
+      KEY_CONVERGENCES_WON,
+      KEY_HVT_ELIMINATIONS,
+      KEY_GREENS_COLLECTED,
+      KEY_XP_BUFFS,
+      KEY_XP_DAMAGE,
+      KEY_XP_ACCURACY,
+      KEY_XP_BOUNTY_EARNED,
+      KEY_XP_BOUNTY_KILLED,
+      KEY_RIFT_SHARDS,
+      KEY_HIGHEST_MILESTONE_LVL,
+      KEY_SPENT_CUSTOM_POINTS,
+      KEY_UNLOCKED_EXTRA_SLOTS,
+      KEY_AI_DESIGN_TOKENS,
+      KEY_ACTIVE_CUSTOM_SLOT_ID,
+      KEY_SLOT_B_UNLOCKED,
+      KEY_SLOT_C_UNLOCKED,
+      KEY_SLOT_D_UNLOCKED,
+      KEY_SLOT_E_UNLOCKED,
+      KEY_ALL_TIME_PEAK_SNAPSHOT,
+      KEY_PVP_PEAK_SNAPSHOT,
+      KEY_SYNDICATE_HISTORY_JSON,
+      KEY_FIRST_COMMISSION_MS,
+      KEY_LIVE_RESONANCE,
+      KEY_PEAK_RESONANCE,
+      KEY_RESONANCE_MIGRATED,
+      KEY_SHIP_RESONANCE_MIGRATED,
+      KEY_DAILY_DIRECTIVES_UTC_DAY,
+      KEY_DAILY_DIRECTIVE_REROLL_USED,
+      KEY_DAILY_SWEEP_CLAIMED,
+      KEY_SWORN_PRACTICE_TUTORIAL_DONE,
+      KEY_RECENT_SHIP_LIVES_JSON,
+      KEY_MATCHES_PLAYED,
+      KEY_MATCHES_LOST,
+      KEY_CAREER_ASSISTS,
+      KEY_CAREER_SHOTS_FIRED,
+      KEY_CAREER_SHOTS_HIT,
+      KEY_RIFT_CAPTURES,
+      KEY_PROG_UPDATED_AT_MS,
+      "cosmetic_unlocked_FRAME_SLOT_PURCHASE_2",
+      "cosmetic_equipped_HULL_TRIM",
+      "cosmetic_equipped_KILL_FINISHER",
+      "cosmetic_equipped_WARP_SIGNATURE",
+      "cosmetic_equipped_HVT_HALO",
+    )
+    for (slot in 0..2) {
+      keys.add("${KEY_DAILY_DIRECTIVE_PROGRESS_PREFIX}$slot")
+      keys.add("${KEY_DAILY_DIRECTIVE_CLAIMED_PREFIX}$slot")
+      keys.add("${KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX}$slot")
+    }
+    for (tier in 1..5) {
+      keys.add("armada_tier_${tier}_kills")
+      keys.add("armada_tier_${tier}_bounty")
+    }
+    for (skinId in 0..5) {
+      keys.add("cosmetic_unlocked_HULL_TRIM_$skinId")
+      keys.add("cosmetic_unlocked_SHIP_SKIN_PURCHASE_$skinId")
+    }
+    for (finId in 0..4) {
+      keys.add("cosmetic_unlocked_KILL_FINISHER_$finId")
+    }
+    for (styleId in 0..3) {
+      keys.add("cosmetic_unlocked_WARP_SIGNATURE_$styleId")
+      keys.add("cosmetic_unlocked_HVT_HALO_$styleId")
+    }
+    for (shipId in 1..10) {
+      keys.add(shipResonanceBaseKey(shipId))
+      keys.add("${KEY_SHIP_SURVIVAL_PREFIX}${shipId}_pilot_lives")
+      keys.add("${KEY_SHIP_SURVIVAL_PREFIX}${shipId}_pilot_total")
+      keys.add("${KEY_SHIP_SURVIVAL_PREFIX}${shipId}_pilot_best")
+      keys.add("${KEY_SHIP_SURVIVAL_PREFIX}${shipId}_bot_lives")
+      keys.add("${KEY_SHIP_SURVIVAL_PREFIX}${shipId}_bot_total")
+      keys.add("${KEY_SHIP_SURVIVAL_PREFIX}${shipId}_bot_best")
+    }
+    for (slotId in com.example.engine.CustomShipLoadoutSlot.ALL_SLOT_IDS) {
+      keys.add("${KEY_CUSTOM_SLOT_PREFIX}_$slotId")
+      keys.add("${KEY_CUSTOM_SLOT_PREFIX}_${legacySlotKeySuffix(slotId)}")
+    }
+    return keys
+  }
+
+  private fun clearChargedShipForPilot(uid: String?, resetLegacyUnscoped: Boolean) {
+    val cleanUid = uid?.trim().orEmpty()
+    val ed = chargedShipPrefs.edit()
+    if (cleanUid.isNotEmpty()) {
+      ed.remove("hub_charged_ship_$cleanUid")
+      ed.remove("charged_ship_$cleanUid")
+    }
+    if (resetLegacyUnscoped) {
+      ed.remove("hub_charged_ship_local")
+      ed.remove("charged_ship_local")
+    }
+    ed.apply()
+  }
+
   fun wipeAllStatsArmadasAndSyndicates(uid: String? = null) {
+    val cleanUid = uid?.trim().orEmpty()
+    val hasUid = cleanUid.isNotEmpty()
+    val resetLegacyUnscoped = !hasUid || canUseLegacyUnscopedFallback(uid)
     val preservedCallsign = if (!isGuestBypassEnabled()) getCallsign(uid) else null
     val preservedChangeCount = getCallsignChangeCount(uid)
     val preservedChosenFlag = hasChosenInitialCallsign(uid)
-
-    val dynamicKeysToRemove =
-      prefs.all.keys.filter { key ->
-        key.startsWith(KEY_SYNDICATE_CHANNELS_PREFIX) ||
-          key.startsWith("syndicate_channels_") ||
-          key.startsWith(KEY_SYNDICATE_GUESTS_PREFIX) ||
-          key.startsWith("syndicate_guests_") ||
-          key.startsWith(KEY_SYNDICATE_CREST_PREFIX) ||
-          key.startsWith("syndicate_war_record_") ||
-          key.startsWith(KEY_CUSTOM_SLOT_PREFIX) ||
-          key.startsWith(KEY_SHIP_SURVIVAL_PREFIX) ||
-          key.startsWith("ship_survival_") ||
-          key.startsWith(KEY_RECENT_SHIP_LIVES_JSON) ||
-          key.startsWith("recent_ship_lives") ||
-          key.startsWith("recent_completed_lives") ||
-          key.startsWith(KEY_ALL_TIME_PEAK_SNAPSHOT) ||
-          key.startsWith(KEY_PVP_PEAK_SNAPSHOT) ||
-          key.startsWith(KEY_MATCHES_PLAYED) ||
-          key.startsWith(KEY_MATCHES_LOST) ||
-          key.startsWith(KEY_CAREER_ASSISTS) ||
-          key.startsWith(KEY_CAREER_SHOTS_FIRED) ||
-          key.startsWith(KEY_CAREER_SHOTS_HIT) ||
-          key.startsWith(KEY_RIFT_CAPTURES) ||
-          key.startsWith(KEY_SHIP_RESONANCE_PREFIX) ||
-          key.startsWith("cosmetic_unlocked_") ||
-          key.startsWith("cosmetic_equipped_")
-      }
+    val protectedGlobalKeys = setOf(KEY_PRIMARY_SWORN_UID, KEY_CUSTOM_SYNDICATES_JSON, KEY_DEVICE_UID, KEY_GUEST_BYPASS)
+    val unscopedKeys = if (resetLegacyUnscoped) unscopedLegacyPilotKeys() else emptySet()
 
     val editor = prefs.edit()
-    for (k in dynamicKeysToRemove) {
-      editor.remove(k)
-    }
-
-    // Combat stats (both unscoped and UID-scoped)
-    editor
-      .putLong(KEY_PVP_KILLS, 0L)
-      .putLong(uidKey(KEY_PVP_KILLS, uid), 0L)
-      .putLong(KEY_PVP_DEATHS, 0L)
-      .putLong(uidKey(KEY_PVP_DEATHS, uid), 0L)
-      .putLong(KEY_PVP_BOUNTY_PEAK, 100L)
-      .putLong(uidKey(KEY_PVP_BOUNTY_PEAK, uid), 100L)
-      .putLong(KEY_ALL_KILLS, 0L)
-      .putLong(uidKey(KEY_ALL_KILLS, uid), 0L)
-      .putLong(KEY_ALL_DEATHS, 0L)
-      .putLong(uidKey(KEY_ALL_DEATHS, uid), 0L)
-      .putLong(KEY_ALL_BOUNTY_PEAK, 100L)
-      .putLong(uidKey(KEY_ALL_BOUNTY_PEAK, uid), 100L)
-      .putLong(KEY_CONVERGENCES_WON, 0L)
-      .putLong(uidKey(KEY_CONVERGENCES_WON, uid), 0L)
-      .putLong(KEY_HVT_ELIMINATIONS, 0L)
-      .putLong(uidKey(KEY_HVT_ELIMINATIONS, uid), 0L)
-      .putLong(KEY_GREENS_COLLECTED, 0L)
-      .putLong(uidKey(KEY_GREENS_COLLECTED, uid), 0L)
-      .putLong(KEY_MATCHES_PLAYED, 0L)
-      .putLong(uidKey(KEY_MATCHES_PLAYED, uid), 0L)
-      .putLong(KEY_MATCHES_LOST, 0L)
-      .putLong(uidKey(KEY_MATCHES_LOST, uid), 0L)
-      .putLong(KEY_CAREER_ASSISTS, 0L)
-      .putLong(uidKey(KEY_CAREER_ASSISTS, uid), 0L)
-      .putLong(KEY_CAREER_SHOTS_FIRED, 0L)
-      .putLong(uidKey(KEY_CAREER_SHOTS_FIRED, uid), 0L)
-      .putLong(KEY_CAREER_SHOTS_HIT, 0L)
-      .putLong(uidKey(KEY_CAREER_SHOTS_HIT, uid), 0L)
-      .putLong(KEY_RIFT_CAPTURES, 0L)
-      .putLong(uidKey(KEY_RIFT_CAPTURES, uid), 0L)
-
-    // 5 XP sources + progression + Rift Shards (effectiveShardBalance(150L))
-    val effectiveShards = RiftBillingManager.effectiveShardBalance(150L)
-    editor
-      .putLong(KEY_XP_BUFFS, 0L)
-      .putLong(uidKey(KEY_XP_BUFFS, uid), 0L)
-      .putLong(KEY_XP_DAMAGE, 0L)
-      .putLong(uidKey(KEY_XP_DAMAGE, uid), 0L)
-      .putLong(KEY_XP_ACCURACY, 0L)
-      .putLong(uidKey(KEY_XP_ACCURACY, uid), 0L)
-      .putLong(KEY_XP_BOUNTY_EARNED, 0L)
-      .putLong(uidKey(KEY_XP_BOUNTY_EARNED, uid), 0L)
-      .putLong(KEY_XP_BOUNTY_KILLED, 0L)
-      .putLong(uidKey(KEY_XP_BOUNTY_KILLED, uid), 0L)
-      .putLong(KEY_RIFT_SHARDS, effectiveShards)
-      .putLong(uidKey(KEY_RIFT_SHARDS, uid), effectiveShards)
-      .putInt(KEY_HIGHEST_MILESTONE_LVL, 1)
-      .putInt(uidKey(KEY_HIGHEST_MILESTONE_LVL, uid), 1)
-      .putInt(KEY_SPENT_CUSTOM_POINTS, 0)
-      .putInt(uidKey(KEY_SPENT_CUSTOM_POINTS, uid), 0)
-      .putInt(KEY_UNLOCKED_EXTRA_SLOTS, 0)
-      .putInt(uidKey(KEY_UNLOCKED_EXTRA_SLOTS, uid), 0)
-      .putInt(KEY_AI_DESIGN_TOKENS, 0)
-      .putInt(uidKey(KEY_AI_DESIGN_TOKENS, uid), 0)
-      .putInt(KEY_LIVE_RESONANCE, 0)
-      .putInt(uidKey(KEY_LIVE_RESONANCE, uid), 0)
-      .putInt(KEY_PEAK_RESONANCE, 0)
-      .putInt(uidKey(KEY_PEAK_RESONANCE, uid), 0)
-      .putBoolean(uidKey(KEY_RESONANCE_MIGRATED, uid), true)
-      .putLong(uidKey(KEY_DAILY_DIRECTIVES_UTC_DAY, uid), -1L)
-      .putBoolean(uidKey(KEY_DAILY_DIRECTIVE_REROLL_USED, uid), false)
-      .putBoolean(uidKey(KEY_DAILY_SWEEP_CLAIMED, uid), false)
-    for (slot in 0..2) {
-      editor.putInt(uidKey("${KEY_DAILY_DIRECTIVE_PROGRESS_PREFIX}$slot", uid), 0)
-      editor.putBoolean(uidKey("${KEY_DAILY_DIRECTIVE_CLAIMED_PREFIX}$slot", uid), false)
-      editor.putInt(uidKey("${KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX}$slot", uid), 0)
-    }
-
-    // Peak bounty snapshots
-    editor
-      .remove(KEY_ALL_TIME_PEAK_SNAPSHOT)
-      .remove(uidKey(KEY_ALL_TIME_PEAK_SNAPSHOT, uid))
-      .remove(KEY_PVP_PEAK_SNAPSHOT)
-      .remove(uidKey(KEY_PVP_PEAK_SNAPSHOT, uid))
-
-    // Armada Tier 1..5 kills and bounty peaks
-    for (tier in 1..5) {
-      editor.putLong("armada_tier_${tier}_kills", 0L)
-      editor.putLong("armada_tier_${tier}_bounty", 100L)
-    }
-
-    // Active Armada, custom friends, custom Syndicates, Syndicate history, Syndicate War records
-    editor
-      .putString(KEY_ARMADA_NAME, "")
-      .putString(KEY_CUSTOM_FRIENDS_JSON, "[]")
-      .putString(KEY_CUSTOM_SYNDICATES_JSON, "[]")
-      .putString(KEY_SYNDICATE_HISTORY_JSON, "[]")
-      .putString(uidKey(KEY_SYNDICATE_HISTORY_JSON, uid), "[]")
-      .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, 0L)
-      .putString(KEY_SYNDICATE_TAG, "")
-      .putString(KEY_SYNDICATE_NAME, "Unaffiliated")
-      .putString(KEY_SYNDICATE_WAR_RECORDS_JSON, "{}")
-      .putBoolean(KEY_SLOT_B_UNLOCKED, false)
-      .putBoolean(uidKey(KEY_SLOT_B_UNLOCKED, uid), false)
-      .putBoolean(KEY_SLOT_C_UNLOCKED, false)
-      .putBoolean(uidKey(KEY_SLOT_C_UNLOCKED, uid), false)
-      .putBoolean(KEY_SLOT_D_UNLOCKED, false)
-      .putBoolean(uidKey(KEY_SLOT_D_UNLOCKED, uid), false)
-      .putBoolean(KEY_SLOT_E_UNLOCKED, false)
-      .putBoolean(uidKey(KEY_SLOT_E_UNLOCKED, uid), false)
-      .putString(KEY_ACTIVE_CUSTOM_SLOT_ID, "Frame A")
-      .putString(uidKey(KEY_ACTIVE_CUSTOM_SLOT_ID, uid), "Frame A")
-      .putBoolean(KEY_SWORN_PRACTICE_TUTORIAL_DONE, false)
-      .putBoolean(uidKey(KEY_SWORN_PRACTICE_TUTORIAL_DONE, uid), false)
-
-    if (!preservedCallsign.isNullOrBlank() && preservedCallsign != "COMMANDER") {
-      editor.putString(KEY_CALLSIGN, preservedCallsign)
-      if (!uid.isNullOrBlank()) {
-        editor.putString(uidKey(KEY_CALLSIGN, uid), preservedCallsign)
+    val uidSuffix = if (hasUid) "_$cleanUid" else ""
+    for (key in prefs.all.keys) {
+      if (key in protectedGlobalKeys) continue
+      val matchesTargetUid = hasUid && key.endsWith(uidSuffix)
+      val matchesLegacyUnscoped = resetLegacyUnscoped && key in unscopedKeys
+      if (matchesTargetUid || matchesLegacyUnscoped) {
+        editor.remove(key)
       }
     }
-    editor.putInt(KEY_CALLSIGN_CHANGE_COUNT, preservedChangeCount)
-    editor.putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, preservedChosenFlag)
-    if (!uid.isNullOrBlank()) {
+
+    fun putScopedLong(baseKey: String, value: Long) {
+      if (hasUid) editor.putLong(uidKey(baseKey, uid), value)
+      if (resetLegacyUnscoped) editor.putLong(baseKey, value)
+    }
+
+    fun putScopedInt(baseKey: String, value: Int) {
+      if (hasUid) editor.putInt(uidKey(baseKey, uid), value)
+      if (resetLegacyUnscoped) editor.putInt(baseKey, value)
+    }
+
+    fun putScopedBoolean(baseKey: String, value: Boolean) {
+      if (hasUid) editor.putBoolean(uidKey(baseKey, uid), value)
+      if (resetLegacyUnscoped) editor.putBoolean(baseKey, value)
+    }
+
+    fun putScopedString(baseKey: String, value: String) {
+      if (hasUid) editor.putString(uidKey(baseKey, uid), value)
+      if (resetLegacyUnscoped) editor.putString(baseKey, value)
+    }
+
+    // Combat stats
+    putScopedLong(KEY_PVP_KILLS, 0L)
+    putScopedLong(KEY_PVP_DEATHS, 0L)
+    putScopedLong(KEY_PVP_BOUNTY_PEAK, 100L)
+    putScopedLong(KEY_ALL_KILLS, 0L)
+    putScopedLong(KEY_ALL_DEATHS, 0L)
+    putScopedLong(KEY_ALL_BOUNTY_PEAK, 100L)
+    putScopedLong(KEY_CONVERGENCES_WON, 0L)
+    putScopedLong(KEY_HVT_ELIMINATIONS, 0L)
+    putScopedLong(KEY_GREENS_COLLECTED, 0L)
+    putScopedLong(KEY_MATCHES_PLAYED, 0L)
+    putScopedLong(KEY_MATCHES_LOST, 0L)
+    putScopedLong(KEY_CAREER_ASSISTS, 0L)
+    putScopedLong(KEY_CAREER_SHOTS_FIRED, 0L)
+    putScopedLong(KEY_CAREER_SHOTS_HIT, 0L)
+    putScopedLong(KEY_RIFT_CAPTURES, 0L)
+
+    // Progression & Rift Shards
+    val effectiveShards = RiftBillingManager.effectiveShardBalance(150L)
+    putScopedLong(KEY_XP_BUFFS, 0L)
+    putScopedLong(KEY_XP_DAMAGE, 0L)
+    putScopedLong(KEY_XP_ACCURACY, 0L)
+    putScopedLong(KEY_XP_BOUNTY_EARNED, 0L)
+    putScopedLong(KEY_XP_BOUNTY_KILLED, 0L)
+    putScopedLong(KEY_RIFT_SHARDS, effectiveShards)
+    putScopedInt(KEY_HIGHEST_MILESTONE_LVL, 1)
+    putScopedInt(KEY_SPENT_CUSTOM_POINTS, 0)
+    putScopedInt(KEY_UNLOCKED_EXTRA_SLOTS, 0)
+    putScopedInt(KEY_AI_DESIGN_TOKENS, 0)
+    putScopedInt(KEY_LIVE_RESONANCE, 0)
+    putScopedInt(KEY_PEAK_RESONANCE, 0)
+    putScopedBoolean(KEY_RESONANCE_MIGRATED, true)
+    putScopedBoolean(KEY_SHIP_RESONANCE_MIGRATED, true)
+    putScopedLong(KEY_DAILY_DIRECTIVES_UTC_DAY, -1L)
+    putScopedBoolean(KEY_DAILY_DIRECTIVE_REROLL_USED, false)
+    putScopedBoolean(KEY_DAILY_SWEEP_CLAIMED, false)
+    for (slot in 0..2) {
+      putScopedInt("${KEY_DAILY_DIRECTIVE_PROGRESS_PREFIX}$slot", 0)
+      putScopedBoolean("${KEY_DAILY_DIRECTIVE_CLAIMED_PREFIX}$slot", false)
+      putScopedInt("${KEY_DAILY_DIRECTIVE_REROLL_SALT_PREFIX}$slot", 0)
+    }
+
+    if (resetLegacyUnscoped) {
+      for (tier in 1..5) {
+        editor.putLong("armada_tier_${tier}_kills", 0L)
+        editor.putLong("armada_tier_${tier}_bounty", 100L)
+      }
+      editor.putString(KEY_SYNDICATE_WAR_RECORDS_JSON, "{}")
+    }
+
+    // Active Squadron, verified Friends, Syndicate membership & Frame slots (never wipes KEY_CUSTOM_SYNDICATES_JSON)
+    putScopedString(KEY_ARMADA_NAME, "")
+    putScopedString(KEY_CUSTOM_FRIENDS_JSON, "[]")
+    putScopedString(KEY_SYNDICATE_HISTORY_JSON, "[]")
+    putScopedLong(KEY_SYNDICATE_LOCK_UNTIL_MS, 0L)
+    putScopedString(KEY_SYNDICATE_TAG, "")
+    putScopedString(KEY_SYNDICATE_NAME, "Unaffiliated")
+    putScopedBoolean(KEY_SLOT_B_UNLOCKED, false)
+    putScopedBoolean(KEY_SLOT_C_UNLOCKED, false)
+    putScopedBoolean(KEY_SLOT_D_UNLOCKED, false)
+    putScopedBoolean(KEY_SLOT_E_UNLOCKED, false)
+    putScopedString(KEY_ACTIVE_CUSTOM_SLOT_ID, "Frame A")
+    putScopedBoolean(KEY_SWORN_PRACTICE_TUTORIAL_DONE, false)
+
+    if (!preservedCallsign.isNullOrBlank() && preservedCallsign != "COMMANDER") {
+      if (hasUid) editor.putString(uidKey(KEY_CALLSIGN, uid), preservedCallsign)
+      if (resetLegacyUnscoped) editor.putString(KEY_CALLSIGN, preservedCallsign)
+    }
+    if (hasUid) {
       editor.putInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), preservedChangeCount)
       editor.putBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), preservedChosenFlag)
     }
+    if (resetLegacyUnscoped) {
+      editor.putInt(KEY_CALLSIGN_CHANGE_COUNT, preservedChangeCount)
+      editor.putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, preservedChosenFlag)
+    }
     editor.apply()
 
-    // Reset Custom Modular Ship Slots (Frame A through Frame E) to default state
+    // Reset Custom Modular Ship Slots (Frame A through Frame E) to default state for target pilot
     for (slotId in com.example.engine.CustomShipLoadoutSlot.ALL_SLOT_IDS) {
       saveCustomShipSlot(com.example.engine.CustomShipLoadoutSlot.defaultSlot(slotId), uid)
     }
 
     clearHubTapTelemetryHistory()
     userSettingsPrefs.edit().putString(KEY_HUB_TAP_BUFFER, "").apply()
-    chargedShipPrefs.edit().clear().apply()
+    clearChargedShipForPilot(uid, resetLegacyUnscoped)
   }
 
   /**
-   * Resets all local pilot progression, combat stats, Syndicate/Armada affiliation, custom friends,
-   * and Rift Shards back to a clean Level 1, 0 XP, 0 Kills, 0 Shards, Solo, Unaffiliated state,
-   * while preserving the Sworn Pilot's permanent callsign, rename counter, and user audio/BPM/visual settings.
+   * Resets local pilot progression, combat stats, Syndicate/Squadron affiliation, and verified Friends
+   * for the specified [uid] without wiping other Google accounts on shared devices.
+   * Preserves permanent Shard purchases (Frame B and Ship Skins 1..5), the target pilot's callsign,
+   * rename counter, initial callsign flag, custom Syndicate directory, and user audio/visual settings.
    */
   fun resetAllLocalPilotData(uid: String? = null) {
+    val cleanUid = uid?.trim().orEmpty()
+    val hasUid = cleanUid.isNotEmpty()
+    val resetLegacyUnscoped = !hasUid || canUseLegacyUnscopedFallback(uid)
     val guestBypass = isGuestBypassEnabled()
     val preservedCallsign = if (!guestBypass) getCallsign(uid) else null
     val preservedChangeCount = getCallsignChangeCount(uid)
     val preservedChosenFlag = if (!guestBypass) hasChosenInitialCallsign(uid) else false
-    val preservedBootNexus = getBootToNexusHub()
-    val preservedMusicEnabled = getMusicEnabled()
-    val preservedSfxEnabled = getSfxEnabled()
-    val preservedMusicBpm = getMusicBpm()
-    val preservedMusicVol = getMusicVolume()
-    val preservedSfxVol = getSfxVolume()
-    val preservedMusicArch = getMusicArchetypeId()
-    val preservedMusicPrompt = getMusicForgePrompt()
-    val preservedZoom = getCameraZoom()
-    val preservedTextScale = getPlayfieldTextScale()
-    val seenBuild = getLastSeenChangelogBuild()
+    val preservedFrameBOwned =
+      isCosmeticUnlocked("FRAME_SLOT_PURCHASE", 2, 1, uid) || isCustomSlotUnlocked("Frame B", uid)
+    val preservedOwnedHullSkins =
+      (1..5).filter { skinId -> isCosmeticUnlocked("HULL_TRIM", skinId, 1, uid) }
 
-    val allCallsignEntries =
-      if (!guestBypass) {
-        prefs.all.filter { (k, v) ->
-          (k == KEY_CALLSIGN ||
-            k.startsWith("${KEY_CALLSIGN}_") ||
-            k == KEY_CALLSIGN_CHANGE_COUNT ||
-            k.startsWith("${KEY_CALLSIGN_CHANGE_COUNT}_") ||
-            k == KEY_INITIAL_CALLSIGN_CHOSEN ||
-            k.startsWith("${KEY_INITIAL_CALLSIGN_CHOSEN}_")) && v != null
-        }
-      } else {
-        emptyMap()
+    val protectedGlobalKeys = setOf(KEY_PRIMARY_SWORN_UID, KEY_CUSTOM_SYNDICATES_JSON, KEY_DEVICE_UID, KEY_GUEST_BYPASS)
+    val unscopedKeys = if (resetLegacyUnscoped) unscopedLegacyPilotKeys() else emptySet()
+    val uidSuffix = if (hasUid) "_$cleanUid" else ""
+
+    val editor = prefs.edit()
+    for (key in prefs.all.keys) {
+      if (key in protectedGlobalKeys) continue
+      val matchesTargetUid = hasUid && key.endsWith(uidSuffix)
+      val matchesLegacyUnscoped = resetLegacyUnscoped && key in unscopedKeys
+      if (matchesTargetUid || matchesLegacyUnscoped) {
+        editor.remove(key)
       }
+    }
+    editor.apply()
 
-    prefs.edit().clear().apply()
-    chargedShipPrefs.edit().clear().apply()
+    clearChargedShipForPilot(uid, resetLegacyUnscoped)
     clearHubTapTelemetryHistory()
     userSettingsPrefs.edit().putString(KEY_HUB_TAP_BUFFER, "").apply()
-    setLastSeenChangelogBuild(seenBuild)
-    setBootToNexusHub(preservedBootNexus)
-    setMusicEnabled(preservedMusicEnabled)
-    setSfxEnabled(preservedSfxEnabled)
-    setMusicBpm(preservedMusicBpm)
-    setMusicVolume(preservedMusicVol)
-    setSfxVolume(preservedSfxVol)
-    setMusicArchetypeId(preservedMusicArch)
-    setMusicForgePrompt(preservedMusicPrompt)
-    setCameraZoom(preservedZoom)
-    setPlayfieldTextScale(preservedTextScale)
-    setGuestBypassEnabled(guestBypass)
     getOrCreatePermanentDeviceUid()
     setRiftShards(RiftBillingManager.effectiveShardBalance(150L), uid)
 
+    // Restore permanent Shard purchases (Frame B and owned Ship Skins 1..5) for this pilot
+    if (preservedFrameBOwned) {
+      setCosmeticUnlocked("FRAME_SLOT_PURCHASE", 2, true, uid)
+      setCustomSlotUnlocked("Frame B", true, uid)
+    }
+    for (skinId in preservedOwnedHullSkins) {
+      setCosmeticUnlocked("HULL_TRIM", skinId, true, uid)
+      setCosmeticUnlocked("SHIP_SKIN_PURCHASE", skinId, true, uid)
+    }
+
     if (!guestBypass) {
       val restoreEditor = prefs.edit()
-      for ((k, v) in allCallsignEntries) {
-        when (v) {
-          is String -> restoreEditor.putString(k, v)
-          is Int -> restoreEditor.putInt(k, v)
-          is Boolean -> restoreEditor.putBoolean(k, v)
-        }
-      }
       if (!preservedCallsign.isNullOrBlank() && preservedCallsign != "COMMANDER") {
-        restoreEditor.putString(KEY_CALLSIGN, preservedCallsign)
-        if (!uid.isNullOrBlank()) {
-          restoreEditor.putString(uidKey(KEY_CALLSIGN, uid), preservedCallsign)
-        }
+        if (hasUid) restoreEditor.putString(uidKey(KEY_CALLSIGN, uid), preservedCallsign)
+        if (resetLegacyUnscoped) restoreEditor.putString(KEY_CALLSIGN, preservedCallsign)
       }
-      restoreEditor.putInt(KEY_CALLSIGN_CHANGE_COUNT, preservedChangeCount)
-      restoreEditor.putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, preservedChosenFlag)
-      if (!uid.isNullOrBlank()) {
+      if (hasUid) {
         restoreEditor.putInt(uidKey(KEY_CALLSIGN_CHANGE_COUNT, uid), preservedChangeCount)
         restoreEditor.putBoolean(uidKey(KEY_INITIAL_CALLSIGN_CHOSEN, uid), preservedChosenFlag)
+      }
+      if (resetLegacyUnscoped) {
+        restoreEditor.putInt(KEY_CALLSIGN_CHANGE_COUNT, preservedChangeCount)
+        restoreEditor.putBoolean(KEY_INITIAL_CALLSIGN_CHOSEN, preservedChosenFlag)
       }
       restoreEditor.apply()
     }
@@ -2758,6 +2853,12 @@ class LocalPilotPrefs(context: Context) {
         put("HVT_HALO", getEquippedCosmeticId("HVT_HALO", uid))
       }
     obj.put("equippedCosmetics", equippedCosmeticsObj)
+    val lockFallback = if (canUseLegacyUnscopedFallback(uid)) prefs.getLong(KEY_SYNDICATE_LOCK_UNTIL_MS, 0L) else 0L
+    val lockUntilMs = prefs.getLong(uidKey(KEY_SYNDICATE_LOCK_UNTIL_MS, uid), lockFallback).coerceAtLeast(0L)
+    obj.put("syndicateDecisionMade", hasExplicitSyndicateDecision(uid))
+    obj.put("syndicateTag", getSyndicateTag(uid))
+    obj.put("syndicateName", getSyndicateName(uid))
+    obj.put("syndicateLockUntilMs", lockUntilMs)
     obj.put("shipSurvival", exportShipSurvivalJsonObject(uid))
     obj.put("updatedAtMs", localProgUpdatedAtMs)
     return obj.toString()
@@ -2772,7 +2873,8 @@ class LocalPilotPrefs(context: Context) {
       }
 
       val localUpdatedAtMs = getProgUpdatedAtMs(uid)
-      val cloudUpdatedAtMs = obj.optLong("progUpdatedAtMs", 0L)
+      val cloudUpdatedAtMs =
+        obj.optLong("progUpdatedAtMs", 0L).let { if (it > 0L) it else obj.optLong("updatedAtMs", 0L) }
       val adoptNewerCloudState = localUpdatedAtMs == 0L || cloudUpdatedAtMs > localUpdatedAtMs
 
       val mergedXpBuffs = kotlin.math.max(getXpFromBuffs(uid), obj.optLong("xpBuffs", 0L))
@@ -2918,6 +3020,40 @@ class LocalPilotPrefs(context: Context) {
               0
             }
           setEquippedCosmeticId("HVT_HALO", validHvtHalo, uid)
+        }
+
+        if (obj.optBoolean("syndicateDecisionMade", false) || obj.has("syndicateTag")) {
+          val rawCloudSynTag = sanitizeSyndicateTag(obj.optString("syndicateTag", ""))
+          val validCloudSynTag =
+            if (rawCloudSynTag.length in 1..3 && rawCloudSynTag !in NON_PLAYER_SYNDICATE_TAGS) {
+              rawCloudSynTag
+            } else {
+              ""
+            }
+          val rawCloudSynName = obj.optString("syndicateName", "").trim().take(48)
+          val validCloudSynName =
+            when {
+              validCloudSynTag.isEmpty() -> "Unaffiliated"
+              rawCloudSynName.isNotEmpty() && !isGhostSyndicateName(rawCloudSynName) -> rawCloudSynName
+              else -> "$validCloudSynTag Syndicate"
+            }
+          val localLockFallback = if (allowLegacy) prefs.getLong(KEY_SYNDICATE_LOCK_UNTIL_MS, 0L) else 0L
+          val localLockMs = prefs.getLong(uidKey(KEY_SYNDICATE_LOCK_UNTIL_MS, uid), localLockFallback).coerceAtLeast(0L)
+          val cloudLockUntilMs = obj.optLong("syndicateLockUntilMs", 0L).coerceAtLeast(0L)
+          val mergedLockMs = kotlin.math.max(localLockMs, cloudLockUntilMs)
+          val synEd =
+            prefs
+              .edit()
+              .putString(uidKey(KEY_SYNDICATE_TAG, uid), validCloudSynTag)
+              .putString(uidKey(KEY_SYNDICATE_NAME, uid), validCloudSynName)
+              .putLong(uidKey(KEY_SYNDICATE_LOCK_UNTIL_MS, uid), mergedLockMs)
+          if (allowLegacy) {
+            synEd
+              .putString(KEY_SYNDICATE_TAG, validCloudSynTag)
+              .putString(KEY_SYNDICATE_NAME, validCloudSynName)
+              .putLong(KEY_SYNDICATE_LOCK_UNTIL_MS, mergedLockMs)
+          }
+          synEd.apply()
         }
       }
 

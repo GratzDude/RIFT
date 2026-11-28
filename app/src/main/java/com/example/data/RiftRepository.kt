@@ -374,7 +374,14 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
             safeCallsign
           }
         val existingCleanTag = existingObj?.syndicateTag?.let { sanitizeSyndicateTag(it) }.orEmpty()
-        val mergedSynTag = if (safeSynTag.isNotEmpty()) safeSynTag else existingCleanTag
+        val explicitUnaffiliated =
+          safeSynTag.isEmpty() && dossier.syndicateName.trim().equals("Unaffiliated", ignoreCase = true)
+        val mergedSynTag =
+          when {
+            safeSynTag.isNotEmpty() -> safeSynTag
+            explicitUnaffiliated -> ""
+            else -> existingCleanTag
+          }
         val existingCleanName =
           existingObj
             ?.syndicateName
@@ -1219,9 +1226,6 @@ class RiftRepository(private val dbProvider: () -> FirebaseFirestore) {
     val cleanName = syndicate.name.trim().take(36).ifEmpty { "$cleanTag Syndicate" }
     if (isReservedOrGhostSyndicateName(cleanName)) {
       throw IllegalArgumentException("Syndicate name is reserved.")
-    }
-    if (cleanTag.length < 2) {
-      return@runCatching
     }
     val docRef = db.collection("syndicates").document(cleanTag)
     try {

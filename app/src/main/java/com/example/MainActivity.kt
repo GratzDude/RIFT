@@ -1458,9 +1458,9 @@ fun RiftArenaScreen(
 
         localPlayer.callsign = callsign
         localPlayer.syndicateTag = syndicateTag
-        val savedArmada = localPrefs.getActiveArmadaName()
+        val savedArmada = localPrefs.getActiveArmadaName(currentUserId)
         if (savedArmada.isNotEmpty()) {
-          runCatching { formOrJoinArmada(savedArmada, localPrefs.getFriendsList().take(2)) }
+          runCatching { formOrJoinArmada(savedArmada, localPrefs.getFriendsList(currentUserId).take(2)) }
         }
         switchLocalPlayerShip(selectedShipId, forceFromHangar = true)
         syncEquippedCosmeticsToEngine(this)
@@ -1614,7 +1614,7 @@ fun RiftArenaScreen(
         frameTick++
       } else {
       engine.riftShards = RiftBillingManager.effectiveShardBalance(engine.riftShards)
-      localPrefs.setActiveArmadaName(engine.activeArmadaName)
+      localPrefs.setActiveArmadaName(engine.activeArmadaName, currentUserId)
       localPrefs.saveCombatStats(
         pvpKills = engine.pvpKills,
         pvpDeaths = engine.pvpDeaths,
@@ -2082,6 +2082,12 @@ fun RiftArenaScreen(
       RiftCodex.updateActiveCustomShipSlot(reloadedSlot)
       engine.spentCustomizationPoints = reloadedSlot.totalAllocatedPoints()
       engine.syncLocalPlayerCustomShipSpec()
+
+      syndicateTag = localPrefs.getSyndicateTag(currentUserId)
+      syndicateName = localPrefs.getSyndicateName(currentUserId)
+      engine.localPlayer.syndicateTag = syndicateTag
+      engine.syncLocalArmadaSelfSlot()
+      syndicateHistory = localPrefs.getSyndicateServiceHistory(currentUserId)
 
       syncEquippedCosmeticsToEngine(engine)
       frameTick++
@@ -3134,8 +3140,8 @@ fun RiftArenaScreen(
                 localPrefs.getSyndicateWarRecord(syndicateTag)
               }
             val syndicateFriends =
-              remember(syndicateTag, frameTick, friendsRefreshKey) {
-                localPrefs.getFriendsList()
+              remember(syndicateTag, frameTick, friendsRefreshKey, currentUserId) {
+                localPrefs.getFriendsList(currentUserId)
               }
             val humanPilotsOnline =
               remember(frameTick, sectorPilotsState, onlineHumanPilotsList, isDeviceOnline, isGoogleAuthenticated) {
@@ -4181,7 +4187,7 @@ fun RiftArenaScreen(
                       currentArmadaName = targetWing,
                       currentArmadaCount = msg.armadaCurrentSize.coerceIn(1, 5),
                       bounty = 100,
-                    ).also { localPrefs.saveVerifiedFriendPilot(it) }
+                    ).also { localPrefs.saveVerifiedFriendPilot(it, currentUserId) }
                   } else {
                     null
                   }
@@ -4223,7 +4229,7 @@ fun RiftArenaScreen(
                       currentArmadaCount = engine.getCurrentArmadaSize().coerceIn(1, 5),
                       bounty = livePilot.bounty.toInt().coerceAtLeast(100),
                     )
-                  localPrefs.saveVerifiedFriendPilot(verified)
+                  localPrefs.saveVerifiedFriendPilot(verified, currentUserId)
                   if (engine.activeArmadaName.isBlank()) {
                     engine.formOrJoinArmada(wingTag, listOf(verified))
                   } else {
@@ -4497,6 +4503,7 @@ fun RiftArenaScreen(
                   syndicateStatusBanner =
                     "JOINED [$syndicateTag] $syndicateName! 15-DAY LOCK COOLDOWN (15d 00h) ACTIVE."
                   engine.onStatsUpdated()
+                  pushCloudProgressionNow()
                   if (isGoogleAuthenticated && isDeviceOnline) {
                     pushLivePilotHeartbeatNow()
                   }
@@ -4516,6 +4523,7 @@ fun RiftArenaScreen(
                   syndicateStatusBanner =
                     "LEFT SYNDICATE -> UNAFFILIATED. 15-DAY LOCK COOLDOWN TRIGGERED."
                   engine.onStatsUpdated()
+                  pushCloudProgressionNow()
                   if (isGoogleAuthenticated && isDeviceOnline) {
                     pushLivePilotHeartbeatNow()
                   }
@@ -4546,6 +4554,7 @@ fun RiftArenaScreen(
                     syndicateStatusBanner =
                       "CHARTERED [${created.tag}] ${created.name}! LOCKED FOR 15d 00h."
                     engine.onStatsUpdated()
+                    pushCloudProgressionNow()
                     if (isGoogleAuthenticated && isDeviceOnline) {
                       pushLivePilotHeartbeatNow()
                     }
@@ -4562,14 +4571,28 @@ fun RiftArenaScreen(
                   localPrefs.setRiftShards(engine.riftShards, currentUserId)
                   engine.xpFromAccuracy = localPrefs.getXpFromAccuracy(currentUserId).toFloat()
                   engine.pilotLevel = localPrefs.getPilotLevel(currentUserId)
-                  engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
-                  engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
+                  val refreshedShipRes = localPrefs.getAllShipResonances(currentUserId)
+                  val refreshedLiveRes = localPrefs.getLiveResonance(currentUserId)
+                  shipResonancesState = refreshedShipRes
+                  engine.liveResonance = refreshedLiveRes
+                  engine.peakResonance = maxOf(engine.peakResonance, localPrefs.getPeakResonance(currentUserId))
+                  engine.loadShipResonances(refreshedShipRes, refreshedLiveRes)
+                  for (id in 1..10) {
+                    engine.shipResonanceById[id] = refreshedShipRes[id] ?: 0
+                  }
+                  engine.localPlayer.liveResonanceRating = engine.getShipResonance(engine.localPlayer.shipId)
+                  val bOwned = isFrameBPurchasedNow()
+                  slot9CUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame C", refreshedLiveRes, bOwned)
+                  slot9DUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame D", refreshedLiveRes, bOwned)
+                  slot9EUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame E", refreshedLiveRes, bOwned)
+                  syncEquippedCosmeticsToEngine(engine)
                   if (!engine.hasJoinedMatch) {
                     engine.localPlayer.bounty = engine.getLocalStartingBounty()
                   }
                   frameTick++
                   sfx.playPrize()
                   engine.onStatsUpdated()
+                  pushCloudProgressionNow()
                   claimed.first
                 } else {
                   0L
@@ -4591,14 +4614,28 @@ fun RiftArenaScreen(
                   localPrefs.setRiftShards(engine.riftShards, currentUserId)
                   engine.xpFromAccuracy = localPrefs.getXpFromAccuracy(currentUserId).toFloat()
                   engine.pilotLevel = localPrefs.getPilotLevel(currentUserId)
-                  engine.liveResonance = localPrefs.getLiveResonance(currentUserId)
-                  engine.peakResonance = localPrefs.getPeakResonance(currentUserId)
+                  val refreshedShipRes = localPrefs.getAllShipResonances(currentUserId)
+                  val refreshedLiveRes = localPrefs.getLiveResonance(currentUserId)
+                  shipResonancesState = refreshedShipRes
+                  engine.liveResonance = refreshedLiveRes
+                  engine.peakResonance = maxOf(engine.peakResonance, localPrefs.getPeakResonance(currentUserId))
+                  engine.loadShipResonances(refreshedShipRes, refreshedLiveRes)
+                  for (id in 1..10) {
+                    engine.shipResonanceById[id] = refreshedShipRes[id] ?: 0
+                  }
+                  engine.localPlayer.liveResonanceRating = engine.getShipResonance(engine.localPlayer.shipId)
+                  val bOwned = isFrameBPurchasedNow()
+                  slot9CUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame C", refreshedLiveRes, bOwned)
+                  slot9DUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame D", refreshedLiveRes, bOwned)
+                  slot9EUnlocked = RiftProgressionCatalog.isFrameSlotActive("Frame E", refreshedLiveRes, bOwned)
+                  syncEquippedCosmeticsToEngine(engine)
                   if (!engine.hasJoinedMatch) {
                     engine.localPlayer.bounty = engine.getLocalStartingBounty()
                   }
                   frameTick++
                   sfx.playPrize()
                   engine.onStatsUpdated()
+                  pushCloudProgressionNow()
                   sweep.first
                 } else {
                   0L

@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-const val CURRENT_RIFT_BUILD_VERSION = 142
+const val CURRENT_RIFT_BUILD_VERSION = 143
 
 data class RiftVersionLogEntry(
   val buildNumber: Int,
@@ -62,11 +62,25 @@ data class RiftVersionLogEntry(
 val RIFT_FULL_CHANGELOG: List<RiftVersionLogEntry> =
   listOf(
     RiftVersionLogEntry(
+      buildNumber = 143,
+      versionTag = "v1.0.143 // BUILD #143",
+      releaseDate = "Nov 28, 2026",
+      headline = "Multi-Account Reset Isolation, UID-Scoped Squadron & Friends, Daily Directive Hull Resonance Hydration & Cloud Syndicate Leave Sync",
+      badgeLabel = "LATEST RELEASE",
+      accentColorHex = "#00F5D4",
+      highlights =
+        listOf(
+          "Non-Destructive Multi-Account Reset & Legacy Guards: Replaced full preference clears during local pilot resets and telemetry wipes with strict per-UID key cleanup that preserves other Google accounts, custom Syndicate directories, pilot callsigns, and permanent Frame B and Ship Skin Shard unlocks, while guarding legacy unscoped reads and writes across Shards, peak Resonance, custom Frame loadouts, and customization points.",
+          "UID-Scoped Squadron, Friends & Hub Ship Charge: Scoped active Squadron tags, verified Friends lists, Syndicate roster lookups, and Hub Charged Ship preferences strictly by pilot UID so switching accounts on a shared device never leaks another pilot's Squadron, Friends, or preferred ship.",
+          "Daily Directive Hull Resonance Hydration & Cloud Syndicate Leave Sync: Credited Daily Directive and Daily Sweep Resonance rewards to the active pilot's hull with immediate engine per-ship Resonance, Frame slot, and cosmetic refresh, enabled 1-character Syndicate cloud charters, and persisted explicit Syndicate leaves to Unaffiliated across both cloud Dossiers and cross-device progression snapshots.",
+        ),
+    ),
+    RiftVersionLogEntry(
       buildNumber = 142,
       versionTag = "v1.0.142 // BUILD #142",
       releaseDate = "Nov 28, 2026",
       headline = "UID-Scoped Syndicate Persistence, Multi-Account Isolation & End-to-End Cloud Progression Sync",
-      badgeLabel = "LATEST RELEASE",
+      badgeLabel = "SYNDICATE UID & CLOUD SYNC",
       accentColorHex = "#00F5D4",
       highlights =
         listOf(

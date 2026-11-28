@@ -1888,7 +1888,7 @@ private class NexusConsoleUiState(
     val clamped = targetShipId.coerceIn(1, 10)
     chargedShipId = clamped
     chargedPrefs.edit().putInt(chargedPrefsKey, clamped).apply()
-    localPrefs.setPreferredShipId(clamped)
+    localPrefs.setPreferredShipId(clamped, params.currentUserId.ifBlank { null })
     params.onOpenHangarForShip(clamped)
     params.engine?.let { eng ->
       if (eng.hasJoinedMatch && !eng.isHubOverwatchActive) {
@@ -2157,7 +2157,7 @@ private fun NexusConsoleSideEffects(
   // Keep any persisted Charged ship locked across all game modes on mount / user switch (never auto-launching)
   LaunchedEffect(uiState.chargedShipId, params.currentUserId) {
     if (uiState.chargedShipId in 1..10 && params.activeShipId.coerceIn(1, 10) != uiState.chargedShipId) {
-      uiState.localPrefs.setPreferredShipId(uiState.chargedShipId)
+      uiState.localPrefs.setPreferredShipId(uiState.chargedShipId, params.currentUserId.ifBlank { null })
       params.onOpenHangarForShip(uiState.chargedShipId)
     }
   }
@@ -3805,7 +3805,7 @@ private fun OrbitalHubSpatialStage(
   val friendLookupSet =
     remember(sideBayMode, currentUserId, onlineHumanPilots.size) {
       localPrefs
-        .getFriendsList()
+        .getFriendsList(currentUserId.ifBlank { null })
         .flatMap { listOf(it.uid.trim().lowercase(Locale.US), it.callsign.trim().lowercase(Locale.US)) }
         .filter { it.isNotBlank() }
         .toSet()
